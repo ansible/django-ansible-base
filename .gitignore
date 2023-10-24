@@ -1,0 +1,45 @@
+# User level pre-commit hooks
+pre-commit-user
+
+# Make target touch files
+.docker-compose-built
+
+# Python & setuptools
+__pycache__
+/build
+/deb-build
+/reprepro
+/rpm-build
+/tar-build
+/setup-bundle-build
+/dist
+/*.egg-info
+*.py[c,o]
+/.eggs
+.coverage
+coverage.xml
+coverage.json
+htmlcov
+*.tox
+
+# Mac OS X
+*.DS_Store
+
+# VSCode
+.vscode/
+
+# Editors
+*.sw[poj]
+*~
+
+# SQLite
+*.sqlite3
+*.sqlite3_gw*
+*.sqlite3-journal
+
+# Container customizations
+container-startup.yml
+tools/generated/*
+
+# Gets created when testing sonar-scanner locally
+.scannerwork

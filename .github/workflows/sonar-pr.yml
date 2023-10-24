@@ -1,0 +1,63 @@
+# With much help from:
+# https://community.sonarsource.com/t/how-to-use-sonarcloud-with-a-forked-repository-on-github/7363/30
+# https://community.sonarsource.com/t/how-to-use-sonarcloud-with-a-forked-repository-on-github/7363/32
+name: SonarCloud
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+jobs:
+  sonar:
+    name: Upload to SonarCloud
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request'
+    steps:
+      - uses: actions/checkout@v3
+
+      # Always use a full sha here to protect tokens, it's a third-party action
+      - name: Download coverage artifact
+        uses: dawidd6/action-download-artifact@246dbf436b23d7c49e21a7ab8204ca9ecd1fe615
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: CI
+          run_id: ${{ github.event.workflow_run.id }}
+          name: coverage
+
+      - name: Extract PR number from coverage.xml
+        run: |
+          echo "PR_NUMBER=$(grep -m 1 '<!-- PR' coverage.xml | awk '{print $3}')" >> $GITHUB_ENV
+
+      - name: Get PR info
+        uses: octokit/request-action@v2.x
+        id: pr_info
+        with:
+          route: GET /repos/{repo}/pulls/{number}
+          repo: ${{ github.event.repository.full_name }}
+          number: ${{ env.PR_NUMBER }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set PR info into env
+        run: |
+          echo "PR_BASE=${{ fromJson(steps.pr_info.outputs.data).base.ref }}" >> $GITHUB_ENV
+          echo "PR_HEAD=${{ fromJson(steps.pr_info.outputs.data).head.ref }}" >> $GITHUB_ENV
+
+      - name: Add base branch
+        run: |
+          gh pr checkout ${{ env.PR_NUMBER }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.scm.revision=${{ github.event.workflow_run.head_sha }}
+            -Dsonar.pullrequest.key=${{ env.PR_NUMBER }}
+            -Dsonar.pullrequest.branch=${{ env.PR_HEAD }}
+            -Dsonar.pullrequest.base=${{ env.PR_BASE }}

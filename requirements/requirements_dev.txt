@@ -1,0 +1,11 @@
+ansible  # Used in build process to generate some configs
+black
+build
+flake8
+ipython
+isort
+tox
+pytest
+pytest-xdist
+pytest-cov
+pytest-django
