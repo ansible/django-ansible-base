@@ -1,0 +1,9 @@
+cryptography
+Django>=4.2.5,<4.3.0
+djangorestframework
+django-auth-ldap
+django-crum
+inflection
+python-ldap
+social-auth-app-django
+tabulate

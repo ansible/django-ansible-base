@@ -1,0 +1,16 @@
+---
+name: Bug Report
+description: "🐞 Create a report to help us improve"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Bug Report issues are for **concrete, actionable bugs** only.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Bug Summary
+      description: Briefly describe the problem.
+    validations:
+      required: false

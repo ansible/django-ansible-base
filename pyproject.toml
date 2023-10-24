@@ -1,0 +1,80 @@
+[project]
+name = "django-ansible-base"
+dynamic = ["version"]
+
+[build-system]
+requires = ['setuptools>=40.8.0']
+build-backend = 'setuptools.build_meta'
+
+[tool.black]
+line-length = 160
+fast = true
+skip-string-normalization = true
+force-exclude = '''
+.*/migrations/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 160
+extend_skip = [ "ansible_base/migrations" ]
+
+
+[tool.flake8]
+max-line-length = 160
+extend-ignore = [ "E203" ]
+exclude = [ 'ansible_base/migrations/*', '.tox' ]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "ansible_base.tests.settings_overrides"
+addopts = "--strict-markers --reuse-db --create-db --migrations -s -vvv"
+
+[tool.tox]
+legacy_tox_ini = """
+    [tox]
+    min_version = 4.0
+    no_package = true
+    env_list =
+        check
+        py311
+        py310
+        py39
+    labels =
+        test = py39, py310, py311, check
+        lint = flake8, black, isort
+
+    [testenv]
+    deps =
+        -r{toxinidir}/requirements/requirements.txt
+        -r{toxinidir}/requirements/requirements_dev.txt
+    commands = pytest -n auto --cov=. --cov-report=xml:coverage.xml --cov-report=html --cov-report=json --cov-branch ansible_base/tests {posargs}
+
+    [testenv:check]
+    deps =
+         -r{toxinidir}/requirements/requirements.txt
+         psycopg[binary]
+    commands = python3 manage.py check
+
+    [testenv:flake8]
+    deps =
+        flake8
+        Flake8-pyproject
+    commands = flake8 {posargs:.}
+
+    [testenv:black]
+    deps =
+        black
+    commands = black {posargs:.}
+
+    [testenv:isort]
+    deps =
+        isort
+    commands = isort {posargs:.}
+"""
+
+[tool.coverage.run]
+omit = ["ansible_base/tests/*"]
+relative_files = true
+
+[tool.setuptools]
+packages = ['ansible_base']
