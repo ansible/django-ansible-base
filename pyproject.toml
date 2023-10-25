@@ -25,10 +25,10 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
 ]
-dependencies = [
-    "django>=4.2,<4.3",
-]
-dynamic = ["version"]
+dynamic = ["version", "dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements/requirements.in"]}
 
 [build-system]
 requires = ["setuptools>=64", "setuptools_scm>=8"]
