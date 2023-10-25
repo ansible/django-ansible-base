@@ -8,7 +8,6 @@ from ansible_base.authentication.session import SessionAuthentication
 from ansible_base.models import Authenticator
 from ansible_base.utils.encryption import ENCRYPTED_STRING
 
-
 authenticated_test_page = "authenticator-list"
 
 

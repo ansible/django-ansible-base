@@ -3,8 +3,8 @@ import logging
 from crum import get_current_user
 from django.contrib.auth import get_user_model
 from django.db import models
-from django.utils.timezone import now
 from django.urls.exceptions import NoReverseMatch
+from django.utils.timezone import now
 from inflection import underscore
 from rest_framework.reverse import reverse
 

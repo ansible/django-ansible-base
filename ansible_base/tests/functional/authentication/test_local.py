@@ -5,7 +5,6 @@ from django.urls import reverse
 
 from ansible_base.authentication.session import SessionAuthentication
 
-
 authenticated_test_page = "authenticator-list"
 
 
