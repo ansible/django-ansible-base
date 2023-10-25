@@ -1,9 +1,37 @@
+[project.urls]
+Repository = "https://github.com/ansible/django-ansible-base"
+
 [project]
 name = "django-ansible-base"
+authors = [
+    {name = "Red Hat, Inc.", email = "info@ansible.com"},
+    {name = "John Westcott IV", email = "john.westcott.iv@redhat.com"},
+]
+description = "A Django app used by ansible services"
+readme = "README.md"
+requires-python = ">=3.11"
+keywords = ["ansible", "django"]
+license = {file = "LICENSE.md"}
+classifiers = [
+    "Framework :: Django",
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Web Environment",
+    "Framework :: Django",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+]
+dependencies = [
+    "django>=4.2,<4.3",
+]
 dynamic = ["version"]
 
 [build-system]
-requires = ['setuptools>=40.8.0']
+requires = ["setuptools>=64", "setuptools_scm>=8"]
 build-backend = 'setuptools.build_meta'
 
 [tool.black]
@@ -75,6 +103,3 @@ legacy_tox_ini = """
 [tool.coverage.run]
 omit = ["ansible_base/tests/*"]
 relative_files = true
-
-[tool.setuptools]
-packages = ['ansible_base']
