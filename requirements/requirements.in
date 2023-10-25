@@ -3,6 +3,8 @@ Django>=4.2.5,<4.3.0
 djangorestframework
 django-auth-ldap
 django-crum
+django-filter
+drf-spectacular
 inflection
 python-ldap
 social-auth-app-django
