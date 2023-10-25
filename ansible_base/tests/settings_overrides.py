@@ -14,7 +14,7 @@ DATABASES = {
 for logger in LOGGING["loggers"]:  # noqa: F405
     LOGGING["loggers"][logger]["level"] = "ERROR"  # noqa: F405
 
-SECRET_KEY="asdf1234"
+SECRET_KEY = "asdf1234"
 
 INSTALLED_APPS = [
     'django.contrib.admin',
