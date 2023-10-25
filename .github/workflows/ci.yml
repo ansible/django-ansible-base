@@ -5,7 +5,7 @@ on:
   push:
 jobs:
   tox:
-    name: ansible_base - ${{ matrix.tests.env }}
+    name: django-ansible-base - ${{ matrix.tests.env }}
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -53,7 +53,7 @@ jobs:
 
       - name: SonarCloud Scan (on push)
         uses: SonarSource/sonarcloud-github-action@master
-        if: matrix.tests.sonar && github.event_name == 'push' && github.repository == 'ansible/ansible_base'
+        if: matrix.tests.sonar && github.event_name == 'push' && github.repository == 'ansible/django-ansible-base'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
