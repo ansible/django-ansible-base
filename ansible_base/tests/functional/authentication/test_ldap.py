@@ -169,7 +169,7 @@ def test_ldap_create_authenticator_error_handling(
 
 
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
-def test_ldap_backend_authenticate_encrypted_fields_update(admin_api_client, ldap_authenticator):
+def test_ldap_backend_authenticate_encrypted_fields_update(admin_api_client, ldap_authenticator, shut_up_logging):
     url = reverse("authenticator-detail", kwargs={"pk": ldap_authenticator.pk})
     # BIND_PASSWORD is encrypted
     config = ldap_authenticator.configuration

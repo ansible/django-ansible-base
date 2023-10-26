@@ -51,7 +51,7 @@ def test_local_auth_failure(unauthenticated_api_client, local_authenticator, use
         ('{"anything": "here"}', 400),
     ],
 )
-def test_local_auth_create_configuration_must_be_empty(admin_api_client, configuration, expected_status_code):
+def test_local_auth_create_configuration_must_be_empty(admin_api_client, configuration, expected_status_code, shut_up_logging):
     """
     Attempt to create a local authenticator with invalid configuration and test
     that it fails.
