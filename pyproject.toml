@@ -65,10 +65,8 @@ legacy_tox_ini = """
     env_list =
         check
         py311
-        py310
-        py39
     labels =
-        test = py39, py310, py311, check
+        test = py311, check
         lint = flake8, black, isort
 
     [testenv]
