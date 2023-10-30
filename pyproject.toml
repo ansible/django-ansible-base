@@ -73,7 +73,8 @@ legacy_tox_ini = """
     deps =
         -r{toxinidir}/requirements/requirements.txt
         -r{toxinidir}/requirements/requirements_dev.txt
-    commands = pytest -n auto --cov=. --cov-report=xml:coverage.xml --cov-report=html --cov-report=json --cov-branch ansible_base/tests {posargs}
+        pyfakefs
+    commands = pytest -n auto --cov=. --cov-report=xml:coverage.xml --cov-report=html --cov-report=json --cov-branch {env:GATEWAY_TEST_DIRS:ansible_base/tests} {posargs}
 
     [testenv:check]
     deps =
