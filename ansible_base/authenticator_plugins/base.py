@@ -26,7 +26,6 @@ class BaseAuthenticatorConfiguration(serializers.Serializer):
         for f in fields:
             field = fields[f]
             default = None
-            print(empty)
             if field.default is not empty:
                 default = field.default
 
