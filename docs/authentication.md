@@ -87,7 +87,7 @@ Then we will include the ansible_base endpoints as follows:
 ```
 urlpatterns = [
     ...
-    re_path(r'api/v1/', include(base_urls)),
+    path('api/v1/', include(base_urls)),
     ...
 ]
 ```
