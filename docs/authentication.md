@@ -29,13 +29,13 @@ MIDDLEWARE = [
 Note: this must come before django.contrib.auth.middleware.AuthenticationMiddlware in order to have precedence over it. Otherwise a local user will be authenticated even if the user was destined for LDAP/Tacacs+/Radius/etc. 
 
 
-### ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIX
+### ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXS
 Next we need to setup the class prefix for the installed authenticator classes, this can be:
 ```
-ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIX = "ansible_base.authenticator_plugins"
+ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXS = ["ansible_base.authenticator_plugins"]
 ```
 
-If you are going to create a different class to hold the plugins you can change this as needed.
+If you are going to create a different class to hold the plugins you can change or add to this as needed.
 
 ### REST_FRAMEWORK
 
@@ -110,6 +110,6 @@ django-ansible-base comes with many types of authenticators which can be found i
 
 If you wanted to remove authenticators from your application there are two ways to do this:
 1. Remove the unwanted files from your ansible_base installation.
-2. Create a new class directory in your application and only add in the authenticators you care about and then set `ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIX` to be the prefix for your class.
+2. Create a new class directory in your application and only add in the authenticators you care about and then set `ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXS` to be the prefix for your class.
 
 
