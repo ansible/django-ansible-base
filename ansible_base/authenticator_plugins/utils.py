@@ -5,14 +5,16 @@ from os.path import basename, isfile, join
 from django.conf import settings
 
 logger = logging.getLogger('ansible_base.authenticator_plugins.utils')
-setting = 'ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXS'
+setting = 'ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES'
 
 
 def get_authenticator_plugins() -> list:
     class_prefixes = getattr(settings, setting, [])
     plugins = []
     for class_prefix in class_prefixes:
-        parent_class = __import__(class_prefix, globals(), locals(), ['authenticator_plugins'], 0)
+        path_info = class_prefix.split('.')
+        last_class_path = path_info[-1]
+        parent_class = __import__(class_prefix, globals(), locals(), [last_class_path], 0)
         for path in parent_class.__path__:
             for file in glob(join(path, "*.py")):
                 file_name = basename(file)
@@ -28,7 +30,7 @@ def get_authenticator_class(authenticator_type: str):
         logger.debug(f"Attempting to load class {authenticator_type}")
         auth_class = __import__(authenticator_type, globals(), locals(), ['AuthenticatorPlugin'], 0)
         return auth_class.AuthenticatorPlugin
-    except ImportError as e:
+    except (ImportError, SyntaxError) as e:
         logger.exception(f"The specified authenticator type {authenticator_type} could not be loaded")
         raise ImportError(f"The specified authenticator type {authenticator_type} could not be loaded") from e
 

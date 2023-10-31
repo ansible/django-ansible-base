@@ -63,4 +63,4 @@ AUTHENTICATION_BACKENDS = [
     "ansible_base.authentication.backend.AnsibleBaseAuth",
 ]
 
-ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXS = ['ansible_base.authenticator_plugins']
+ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES = ['ansible_base.authenticator_plugins']
