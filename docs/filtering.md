@@ -11,7 +11,7 @@ REST_FRAMEWORK = {
 }
 ```
 
-be sure to allso add `django_filters` to your `INSTALLED_APPS` setting:
+be sure to also add `django_filters` to your `INSTALLED_APPS` setting:
 ```
 INSTALLED_APPS = [
     ...
