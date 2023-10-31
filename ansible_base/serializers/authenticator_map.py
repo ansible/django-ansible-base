@@ -42,7 +42,7 @@ class AuthenticatorMapSerializer(CommonModelSerializer):
         for trigger_type in triggers.keys():
             type_definition = definition.get(trigger_type, definition.get('*', None))
             if not type_definition:
-                errors[f'{error_prefix}.{trigger_type}'] = f"Is invalid, can only be one of {list(definition.keys())}"
+                errors[f'{error_prefix}.{trigger_type}'] = f"Invalid, can only be one of: {', '.join(definition.keys())}"
                 continue
 
             # Validate the type we got is what we expect
@@ -55,7 +55,7 @@ class AuthenticatorMapSerializer(CommonModelSerializer):
             elif isinstance(triggers[trigger_type], str):
                 if 'choices' in type_definition:
                     if triggers[trigger_type] not in type_definition['choices']:
-                        errors[f'{error_prefix}.{trigger_type}'] = f"Invalid, can only be one of {', '.join(type_definition['choices'])}"
+                        errors[f'{error_prefix}.{trigger_type}'] = f"Invalid, can only be one of: {', '.join(type_definition['choices'])}"
             elif isinstance(triggers[trigger_type], list):
                 if 'contents' in type_definition:
                     for item in triggers[trigger_type]:
