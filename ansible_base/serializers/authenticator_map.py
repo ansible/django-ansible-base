@@ -3,15 +3,15 @@ from rest_framework.serializers import ValidationError
 from ansible_base.authentication.trigger_definition import TRIGGER_DEFINITION
 from ansible_base.models import AuthenticatorMap
 
-from .common import CommonModelSerializer
+from .common import NamedCommonModelSerializer
 
 
-class AuthenticatorMapSerializer(CommonModelSerializer):
+class AuthenticatorMapSerializer(NamedCommonModelSerializer):
     reverse_url_name = 'authenticator_map-detail'
 
     class Meta:
         model = AuthenticatorMap
-        fields = CommonModelSerializer.Meta.fields + ['authenticator', 'order', 'organization', 'revoke', 'team', 'triggers', 'map_type']
+        fields = NamedCommonModelSerializer.Meta.fields + ['authenticator', 'order', 'organization', 'revoke', 'team', 'triggers', 'map_type', 'role']
 
     def validate(self, data) -> dict:
         errors = {}
@@ -23,10 +23,15 @@ class AuthenticatorMapSerializer(CommonModelSerializer):
         map_type = data.get('map_type', None)
         team = data.get('team', None)
         org = data.get('organization', None)
+        role = data.get('role', None)
         if map_type == 'team' and not team:
             errors["team"] = "You must specify a team with the selected map type"
         if map_type == 'team' and not org:
             errors["organization"] = "You must specify an organization with the selected map type"
+        if map_type == 'organization' and not org:
+            errors["organization"] = "You must specify an organization with the selected map type"
+        if map_type == 'role' and not role:
+            errors["role"] = "You must specify a role with the selected map type"
 
         if not data.get('order', None):
             errors['order'] = "Must be a valid integer"

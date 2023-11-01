@@ -51,6 +51,7 @@ def test_authenticator_map_create(admin_api_client, local_authenticator, trigger
     """
     url = reverse("authenticator_map-list")
     data = {
+        'name': 'Rule 3',
         'authenticator': local_authenticator.id,
         'map_type': 'is_superuser',
         'triggers': triggers,
@@ -88,63 +89,63 @@ def test_authenticator_map_invalid_map_type(admin_api_client, local_authenticato
     [
         pytest.param(
             'is_superuser',
-            {'map_type': 'team', 'triggers': {'always': {}}, 'order': 1, 'organization': 'foobar-org'},
+            {'name': 'Rule 1', 'map_type': 'team', 'triggers': {'always': {}}, 'order': 1, 'organization': 'foobar-org'},
             'team',
             'You must specify a team with the selected map type',
             id="map_type=team, missing team param",
         ),
         pytest.param(
             'is_superuser',
-            {'map_type': 'team', 'triggers': {'always': {}}, 'order': 1, 'organization': 'foobar-org', 'team': None},
+            {'name': 'Rule 1', 'map_type': 'team', 'triggers': {'always': {}}, 'order': 1, 'organization': 'foobar-org', 'team': None},
             'team',
             'You must specify a team with the selected map type',
             id="map_type=team, team param is None",
         ),
         pytest.param(
             'is_superuser',
-            {'map_type': 'team', 'triggers': {'always': {}}, 'order': 1, 'organization': 'foobar-org', 'team': ''},
+            {'name': 'Rule 1', 'map_type': 'team', 'triggers': {'always': {}}, 'order': 1, 'organization': 'foobar-org', 'team': ''},
             'team',
             "This field may not be blank.",
             id="map_type=team, team param is empty string",
         ),
         pytest.param(
             'is_superuser',
-            {'map_type': 'team', 'triggers': {'always': {}}, 'order': 1, 'team': 'foobar-team'},
+            {'name': 'Rule 1', 'map_type': 'team', 'triggers': {'always': {}}, 'order': 1, 'team': 'foobar-team'},
             'organization',
             "You must specify an organization with the selected map type",
             id="map_type=team, missing organization param",
         ),
         pytest.param(
             'is_superuser',
-            {'map_type': 'team', 'triggers': {'always': {}}, 'order': 1, 'team': 'foobar-team', 'organization': None},
+            {'name': 'Rule 1', 'map_type': 'team', 'triggers': {'always': {}}, 'order': 1, 'team': 'foobar-team', 'organization': None},
             'organization',
             "You must specify an organization with the selected map type",
             id="map_type=team, organization param is None",
         ),
         pytest.param(
             'is_superuser',
-            {'map_type': 'team', 'triggers': {'always': {}}, 'order': 1, 'team': 'foobar-team', 'organization': ''},
+            {'name': 'Rule 1', 'map_type': 'team', 'triggers': {'always': {}}, 'order': 1, 'team': 'foobar-team', 'organization': ''},
             'organization',
             "This field may not be blank.",
             id="map_type=team, organization param is empty string",
         ),
         pytest.param(
             'is_superuser',
-            {'map_type': 'is_superuser', 'order': 1},
+            {'name': 'Rule 1', 'map_type': 'is_superuser', 'order': 1},
             'triggers',
             "Triggers must be a valid dict",
             id="map_type=is_superuser, missing triggers param",
         ),
         pytest.param(
             'is_superuser',
-            {'map_type': 'is_superuser', 'triggers': {'always': {}}, 'order': "hey"},
+            {'name': 'Rule 1', 'map_type': 'is_superuser', 'triggers': {'always': {}}, 'order': "hey"},
             'order',
             "A valid integer is required.",
             id="map_type=is_superuser, order param is a non-digit string",
         ),
         pytest.param(
             'is_superuser',
-            {'map_type': 'is_superuser', 'triggers': {'always': {}}},
+            {'name': 'Rule 1', 'map_type': 'is_superuser', 'triggers': {'always': {}}},
             'order',
             "Must be a valid integer",
             id="map_type=is_superuser, missing order param",
@@ -266,6 +267,7 @@ def test_authenticator_map_validate_trigger_data(admin_api_client, local_authent
     """
     url = reverse("authenticator_map-list")
     data = {
+        'name': 'Rule 2',
         'triggers': triggers,
         'map_type': 'is_superuser',
         'order': 1,
@@ -274,3 +276,13 @@ def test_authenticator_map_validate_trigger_data(admin_api_client, local_authent
     response = admin_api_client.post(url, data=data, format='json')
     assert response.status_code == 400, response.data
     assert error_message in response.data[error_field][0]
+
+
+def test_required_fields():
+    # TODO: Check to make sure that the org/team are required for a team map, org is required for an org map and role is required or a role map
+    assert True
+
+
+def test_unique_names():
+    # TODO: Check to make sure that roles names can be the same with different authenticators but not the same within a single authenticator
+    assert True

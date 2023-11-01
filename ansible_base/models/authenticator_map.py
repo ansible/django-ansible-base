@@ -1,10 +1,10 @@
 from django.db import models
 
 from .authenticator import Authenticator
-from .common import CommonModel
+from .common import NamedCommonModel
 
 
-class AuthenticatorMap(CommonModel):
+class AuthenticatorMap(NamedCommonModel):
     class Meta:
         app_label = 'ansible_base'
         # If the map type is a team then we must have an org/team
@@ -30,7 +30,14 @@ class AuthenticatorMap(CommonModel):
         max_length=17,
         null=False,
         default="team",
-        choices=[('team', 'team'), ('is_superuser', 'is_superuser'), ('is_system_auditor', 'is_system_auditor'), ('allow', 'allow')],
+        choices=[
+            ('team', 'team'),
+            ('is_superuser', 'is_superuser'),
+            ('is_system_auditor', 'is_system_auditor'),
+            ('allow', 'allow'),
+            ('role', 'role'),
+            ('organization', 'organization'),
+        ],
         help_text='What does the map work on, a team, a user flag or is this an allow rule',
     )
     team = models.CharField(
@@ -44,6 +51,12 @@ class AuthenticatorMap(CommonModel):
         null=True,
         default=None,
         help_text='An organization name this rule works on',
+    )
+    role = models.CharField(
+        max_length=512,
+        null=True,
+        default=None,
+        help_text="A role name this rule works on",
     )
     triggers = models.JSONField(
         null=False,
