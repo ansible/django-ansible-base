@@ -63,7 +63,7 @@ def test_ldap_search_exception(
         "users_unique": False,
         "remove_users": True,
         "configuration": ldap_configuration,
-        "type": "ldap",
+        "type": "ansible_base.authenticator_plugins.ldap",
     }
     response = admin_api_client.post(url, data=data, format="json")
     assert response.status_code == 400
@@ -158,7 +158,7 @@ def test_ldap_create_authenticator_error_handling(
         "users_unique": False,
         "remove_users": True,
         "configuration": ldap_configuration,
-        "type": "ldap",
+        "type": "ansible_base.authenticator_plugins.ldap",
     }
     response = admin_api_client.post(url, data=data, format="json")
     assert response.status_code == 400 if expected_errors else 201

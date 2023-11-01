@@ -64,7 +64,7 @@ def test_local_auth_create_configuration_must_be_empty(admin_api_client, configu
         "create_objects": True,
         "users_unique": False,
         "remove_users": True,
-        "type": "local",
+        "type": "ansible_base.authenticator_plugins.local",
     }
     response = admin_api_client.post(url, data=data)
     assert response.status_code == expected_status_code
