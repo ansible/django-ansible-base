@@ -40,7 +40,7 @@ class Authenticator(NamedCommonModel):
                 self.configuration[field] = ansible_encryption.encrypt_string(self.configuration[field])
 
         if not self.slug:
-            self.slug = slugify(f"{self.type}-{self.name}")
+            self.slug = slugify(f"{self.type.replace('.', ' ')}__{self.name}")
             # TODO: What happens if computed slug is not unique?
             # You would have to create an adapter with a name, rename it and then create a new one with the same name
         super().save(*args, **kwargs)
