@@ -72,7 +72,7 @@ class Command(BaseCommand):
             )
             self.stdout.write("Created admin user with password 'admin'")
 
-        existing_authenticator = Authenticator.objects.filter(type="local").first()
+        existing_authenticator = Authenticator.objects.filter(type="ansible_base.authenticator_plugins.local").first()
         if not existing_authenticator:
             existing_authenticator = Authenticator.objects.create(
                 name='Local Database Authenticator',
@@ -84,7 +84,7 @@ class Command(BaseCommand):
                 modified_by=admin_user,
                 modified_on=now(),
                 remove_users=False,
-                type='local',
+                type='ansible_base.authenticator_plugins.local',
             )
             self.stdout.write("Created default local authenticator")
 

@@ -61,7 +61,13 @@ def ldap_authenticator(ldap_configuration):
     from ansible_base.models import Authenticator
 
     authenticator = Authenticator.objects.create(
-        name="Test LDAP Authenticator", enabled=True, create_objects=True, users_unique=False, remove_users=True, type="ldap", configuration=ldap_configuration
+        name="Test LDAP Authenticator",
+        enabled=True,
+        create_objects=True,
+        users_unique=False,
+        remove_users=True,
+        type="ansible_base.authenticator_plugins.ldap",
+        configuration=ldap_configuration,
     )
     yield authenticator
     authenticator.delete()
@@ -72,7 +78,13 @@ def local_authenticator(db):
     from ansible_base.models import Authenticator
 
     authenticator = Authenticator.objects.create(
-        name="Test Local Authenticator", enabled=True, create_objects=True, users_unique=False, remove_users=True, type="local", configuration={}
+        name="Test Local Authenticator",
+        enabled=True,
+        create_objects=True,
+        users_unique=False,
+        remove_users=True,
+        type="ansible_base.authenticator_plugins.local",
+        configuration={},
     )
     yield authenticator
     authenticator.authenticator_user.all().delete()
@@ -84,7 +96,13 @@ def keycloak_authenticator(db):
     from ansible_base.models import Authenticator
 
     authenticator = Authenticator.objects.create(
-        name="Test Keycloak Authenticator", enabled=True, create_objects=True, users_unique=False, remove_users=True, type="keycloak", configuration={}
+        name="Test Keycloak Authenticator",
+        enabled=True,
+        create_objects=True,
+        users_unique=False,
+        remove_users=True,
+        type="ansible_base.authenticator_plugins.keycloak",
+        configuration={},
     )
     yield authenticator
     authenticator.delete()

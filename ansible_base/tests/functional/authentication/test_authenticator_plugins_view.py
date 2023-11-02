@@ -14,8 +14,8 @@ def test_plugin_authenticator_view(admin_api_client):
     assert 'authenticators' in response.data
 
     auth_types = [x['type'] for x in response.data['authenticators']]
-    assert 'ldap' in auth_types
-    assert 'local' in auth_types
+    assert 'ansible_base.authenticator_plugins.ldap' in auth_types
+    assert 'ansible_base.authenticator_plugins.local' in auth_types
 
 
 def test_plugin_authenticator_view_import_error(admin_api_client, fs, shut_up_logging):
@@ -33,10 +33,10 @@ def test_plugin_authenticator_view_import_error(admin_api_client, fs, shut_up_lo
     assert 'authenticators' in response.data
 
     auth_types = [x['type'] for x in response.data['authenticators']]
-    assert 'ldap' in auth_types
-    assert 'local' in auth_types
+    assert 'ansible_base.authenticator_plugins.ldap' in auth_types
+    assert 'ansible_base.authenticator_plugins.local' in auth_types
     assert 'broken' not in auth_types
 
     assert 'errors' in response.data
-    assert 'The specified authenticator type broken could not be loaded' in response.data['errors']
-    assert 'The specified authenticator type really_broken could not be loaded' in response.data['errors']
+    assert 'The specified authenticator type ansible_base.authenticator_plugins.broken could not be loaded' in response.data['errors']
+    assert 'The specified authenticator type ansible_base.authenticator_plugins.really_broken could not be loaded' in response.data['errors']
