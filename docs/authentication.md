@@ -113,3 +113,23 @@ If you wanted to remove authenticators from your application there are two ways 
 2. Create a new class directory in your application and only add in the authenticators you care about and then set `ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES` to be the prefix for your class.
 
 
+
+## Reconciling User Attributes
+
+At the end of the login sequence we need to reconcile a users claims. To do this we pass a user and authenticator_user object into a method called `reconcile_user_claims` of a class called `ReconcileUser`. There is a default method in django-ansible-base. If you would like to create a custom method you can create an object like:
+```
+class ReconcileUser:
+    def reconcile_user_claims(user, authenticator_user):
+        logger.error("TODO: Fix reconciliation of user claims")
+        claims = getattr(user, 'claims', getattr(authenticator_user, 'claims'))
+        logger.error(claims)
+```
+
+Then in your settings add an entry like:
+```
+ANSIBLE_BASE_AUTHENTICATOR_RECONCILE_CLASS = "path.to.my.module"
+```
+
+Doing this will cause your custom module to run in place of the default module in django-ansible-base.
+
+In this function the user claims will be a dictionary defined by the authentication_maps. You need to update the users permissions in your application based on this.

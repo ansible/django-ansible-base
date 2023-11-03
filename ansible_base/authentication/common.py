@@ -1,6 +1,7 @@
 import logging
 import re
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.utils.timezone import now
 from social_core.pipeline.user import get_username
@@ -296,7 +297,7 @@ def update_user_claims(user, database_authenticator, groups):
     results = create_claims(database_authenticator, user.username, user.authenticator_user.extra, groups)
 
     needs_save = False
-    authenticator_user = AuthenticatorUser.objects.filter(provider=database_authenticator.id, user=user.id)
+    authenticator_user, _ = AuthenticatorUser.objects.get_or_create(provider=database_authenticator, user=user.id)
     for attribute, attr_value in results.items():
         if attr_value is None:
             continue
@@ -323,6 +324,19 @@ def update_user_claims(user, database_authenticator, groups):
         return None
 
     # We have allowed access so now we need to make the user within the system
-    logger.error("TODO: Implement claims into our system")
+    reconcile_class = getattr(settings, 'ANSIBLE_BASE_AUTHENTICATOR_RECONCILE_CLASS', 'ansible_base.authentication.common')
+    try:
+        module = __import__(reconcile_class, fromlist=['ReconcileUser'])
+        klass = getattr(module, 'ReconcileUser')
+        klass.reconcile_user_claims(user, authenticator_user)
+    except Exception as e:
+        logger.error(f"Failed to reconcile user attributes! {e}")
 
     return user
+
+
+class ReconcileUser:
+    def reconcile_user_claims(user, authenticator_user):
+        logger.error("TODO: Fix reconciliation of user claims")
+        claims = getattr(user, 'claims', getattr(authenticator_user, 'claims'))
+        logger.error(claims)
