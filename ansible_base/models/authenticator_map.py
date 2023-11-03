@@ -1,10 +1,10 @@
 from django.db import models
 
 from .authenticator import Authenticator
-from .common import NamedCommonModel
+from .common import UniqueNamedCommonModel
 
 
-class AuthenticatorMap(NamedCommonModel):
+class AuthenticatorMap(UniqueNamedCommonModel):
     class Meta:
         app_label = 'ansible_base'
         # If the map type is a team then we must have an org/team

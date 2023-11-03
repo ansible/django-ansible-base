@@ -107,7 +107,7 @@ class CommonModel(models.Model):
         return response
 
 
-class NamedCommonModel(CommonModel):
+class UniqueNamedCommonModel(CommonModel):
     class Meta:
         abstract = True
 

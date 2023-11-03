@@ -3,10 +3,10 @@ from django.utils.text import slugify
 
 from ansible_base.authenticator_plugins.utils import get_authenticator_plugin
 
-from .common import NamedCommonModel
+from .common import UniqueNamedCommonModel
 
 
-class Authenticator(NamedCommonModel):
+class Authenticator(UniqueNamedCommonModel):
     enabled = fields.BooleanField(default=False, help_text="Should this authenticator be enabled")
     create_objects = fields.BooleanField(default=True, help_text="Allow authenticator to create objects (users, teams, organizations)")
     # TODO: Implement unique users, remove user, etc with team and org mapping feature.
