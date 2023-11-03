@@ -7,7 +7,7 @@ from .common import CommonModelSerializer
 
 
 class AuthenticatorMapSerializer(CommonModelSerializer):
-    reverse_url_name = 'authenticator-map-detail'
+    reverse_url_name = 'authenticator_map-detail'
 
     class Meta:
         model = AuthenticatorMap
