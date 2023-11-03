@@ -1,10 +1,10 @@
 from django.db import models
 
 from .authenticator import Authenticator
-from .common import UniqueNamedCommonModel
+from .common import NamedCommonModel
 
 
-class AuthenticatorMap(UniqueNamedCommonModel):
+class AuthenticatorMap(NamedCommonModel):
     class Meta:
         app_label = 'ansible_base'
         # If the map type is a team then we must have an org/team
@@ -13,7 +13,16 @@ class AuthenticatorMap(UniqueNamedCommonModel):
                 name="%(app_label)s_%(class)s_require_org_team_if_team_map",
                 check=(~models.Q(map_type='team') | models.Q(team__isnull=False) & models.Q(organization__isnull=False)),
             ),
+            models.CheckConstraint(
+                name="%(app_label)s_%(class)s_require_org_if_org_map",
+                check=(~models.Q(map_type='organization') | models.Q(organization__isnull=False)),
+            ),
+            models.CheckConstraint(
+                name="%(app_label)s_%(class)s_require_role_if_role_map",
+                check=(~models.Q(map_type='role') | models.Q(role__isnull=False)),
+            ),
         ]
+        unique_together = ['name', 'authenticator']
 
     authenticator = models.ForeignKey(
         Authenticator,
