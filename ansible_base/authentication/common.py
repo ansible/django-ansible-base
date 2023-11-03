@@ -277,7 +277,7 @@ def get_or_create_authenticator_user(user_id, user_details, authenticator, extra
 
 def update_user_claims(user, database_authenticator, groups):
     if not user:
-        return
+        return None
 
     results = create_claims(database_authenticator, user.username, user.authenticator_user.extra, groups)
 
