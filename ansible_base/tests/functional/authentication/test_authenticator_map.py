@@ -6,7 +6,7 @@ def test_authenticator_map_list_empty_by_default(admin_api_client):
     """
     Test that we can list authenticator maps. No maps are listed by default.
     """
-    url = reverse("authenticator-map-list")
+    url = reverse("authenticator_map-list")
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert response.data == []
@@ -16,7 +16,7 @@ def test_authenticator_map_list(admin_api_client, local_authenticator_map):
     """
     Test that we can list authenticator maps, if they exist.
     """
-    url = reverse("authenticator-map-list")
+    url = reverse("authenticator_map-list")
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert len(response.data) == 1
@@ -28,7 +28,7 @@ def test_authenticator_map_detail(admin_api_client, local_authenticator_map):
     """
     Test that we can get a single authenticator map.
     """
-    url = reverse("authenticator-map-detail", kwargs={'pk': local_authenticator_map.id})
+    url = reverse("authenticator_map-detail", kwargs={'pk': local_authenticator_map.id})
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert response.data['id'] == local_authenticator_map.id
@@ -49,7 +49,7 @@ def test_authenticator_map_create(admin_api_client, local_authenticator, trigger
     """
     Test that we can create an authenticator map.
     """
-    url = reverse("authenticator-map-list")
+    url = reverse("authenticator_map-list")
     data = {
         'authenticator': local_authenticator.id,
         'map_type': 'is_superuser',
@@ -69,7 +69,7 @@ def test_authenticator_map_invalid_map_type(admin_api_client, local_authenticato
     """
     Invalid map_type should be rejected.
     """
-    url = reverse("authenticator-map-list")
+    url = reverse("authenticator_map-list")
     data = {
         'authenticator': local_authenticator.id,
         'map_type': 'invalid',
@@ -155,7 +155,7 @@ def test_authenticator_map_validate(admin_api_client, local_authenticator, shut_
     """
     Create invalid authenticator maps and ensure that they are rejected.
     """
-    url = reverse("authenticator-map-list")
+    url = reverse("authenticator_map-list")
     data = {
         'authenticator': local_authenticator.id,
     }
@@ -264,7 +264,7 @@ def test_authenticator_map_validate_trigger_data(admin_api_client, local_authent
     """
     Test trigger validation for authenticator maps.
     """
-    url = reverse("authenticator-map-list")
+    url = reverse("authenticator_map-list")
     data = {
         'triggers': triggers,
         'map_type': 'is_superuser',

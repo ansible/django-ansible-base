@@ -16,8 +16,8 @@ urls = [
         name='authenticator-authenticator-map',
     ),
     # Maps
-    path('authenticator_maps/', views.AuthenticatorMapViewSet.as_view(list_actions), name='authenticator-map-list'),
-    re_path(r'authenticator_maps/(?P<pk>[0-9]+)/$', views.AuthenticatorMapViewSet.as_view(detail_actions), name='authenticator-map-detail'),
+    path('authenticator_maps/', views.AuthenticatorMapViewSet.as_view(list_actions), name='authenticator_map-list'),
+    re_path(r'authenticator_maps/(?P<pk>[0-9]+)/$', views.AuthenticatorMapViewSet.as_view(detail_actions), name='authenticator_map-detail'),
     # Plugin List
     path('authenticator_plugins/', views.AuthenticatorPluginView.as_view(), name='authenticator_plugin-view'),
     # Trigger definition
