@@ -15,10 +15,37 @@ from ansible_base.authentication import common
         ({}, "is_system_auditor", {}, [], True, None, None, {"team_membership": {}, "roles": {}, "org_membership": {}}, [{1: "skipped"}]),
         ({"always": {}, "never": {}}, "is_superuser", {}, [], True, False, None, {"team_membership": {}, "roles": {}, "org_membership": {}}, [{1: False}]),
         ({"never": {}}, "allow", {}, [], False, None, None, {"team_membership": {}, "roles": {}, "org_membership": {}}, [{1: False}]),
-        ({"always": {}}, "team", {}, [], True, None, None, {"org_membership": {}, "roles": {}, "team_membership": {"testorg": {"testteam": True}}}, [{1: True}]),
+        (
+            {"always": {}},
+            "team",
+            {},
+            [],
+            True,
+            None,
+            None,
+            {"org_membership": {}, "roles": {}, "team_membership": {"testorg": {"testteam": True}}},
+            [{1: True}],
+        ),
+        (
+            {"never": {}},
+            "team",
+            {},
+            [],
+            True,
+            None,
+            None,
+            {"org_membership": {}, "roles": {}, "team_membership": {"testorg": {"testteam": False}}},
+            [{1: False}],
+        ),
+        ({"always": {}}, "organization", {}, [], True, None, None, {"org_membership": {"testorg": True}, "roles": {}, "team_membership": {}}, [{1: True}]),
+        ({"never": {}}, "organization", {}, [], True, None, None, {"org_membership": {"testorg": False}, "roles": {}, "team_membership": {}}, [{1: False}]),
+        ({"always": {}}, "role", {}, [], True, None, None, {"org_membership": {}, "roles": {"testrole": True}, "team_membership": {}}, [{1: True}]),
+        ({"never": {}}, "role", {}, [], True, None, None, {"org_membership": {}, "roles": {"testrole": False}, "team_membership": {}}, [{1: False}]),
+        ({"never": {}}, "bad_map_type", {}, [], True, None, None, {"org_membership": {}, "roles": {}, "team_membership": {}}, [{1: False}]),
     ],
 )
 def test_create_claims_single_map_acl(
+    shut_up_logging,
     local_authenticator_map,
     triggers,
     map_type,
@@ -47,6 +74,51 @@ def test_create_claims_single_map_acl(
     assert res["is_system_auditor"] == exp_is_system_auditor
     assert res["claims"] == exp_claims
     assert res["last_login_map_results"] == exp_last_login_map_results
+
+
+@mock.patch("ansible_base.authentication.common.logger")
+def test_create_claims_bad_map_type_logged(
+    logger,
+    local_authenticator_map,
+    shut_up_logging,
+):
+    """
+    Test that we log properly when a bad map_type is specified.
+    """
+    local_authenticator_map.map_type = "bad_map_type"
+    local_authenticator_map.save()
+
+    authenticator = local_authenticator_map.authenticator
+    common.create_claims(authenticator, "username", {}, [])
+
+    # Most of the actual logic is tested in the above test case, so we just
+    # check that the log message is correct here.
+    logger.error.assert_called_once_with(f"Map type bad_map_type of rule {local_authenticator_map.name} does not know how to be processed")
+
+
+def test_create_claims_multiple_same_org(
+    local_authenticator_map,
+    local_authenticator_map_1,
+):
+    """
+    Test that we properly append to org_team_mapping
+    """
+    local_authenticator_map_1.triggers = {"never": {}}
+    local_authenticator_map_1.team = "different_team"
+    local_authenticator_map_1.map_type = "team"
+    local_authenticator_map_1.save()
+
+    local_authenticator_map.map_type = "team"
+    local_authenticator_map.save()
+
+    authenticator = local_authenticator_map.authenticator
+    res = common.create_claims(authenticator, "username", {}, [])
+
+    assert res["claims"] == {
+        "team_membership": {"testorg": {"testteam": True, "different_team": False}},
+        "roles": {},
+        "org_membership": {},
+    }
 
 
 @pytest.mark.parametrize(
