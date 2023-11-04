@@ -297,7 +297,7 @@ def update_user_claims(user, database_authenticator, groups):
     results = create_claims(database_authenticator, user.username, user.authenticator_user.extra, groups)
 
     needs_save = False
-    authenticator_user, _ = AuthenticatorUser.objects.get_or_create(provider=database_authenticator, user=user.id)
+    authenticator_user, _ = AuthenticatorUser.objects.get_or_create(provider=database_authenticator, user=user)
     for attribute, attr_value in results.items():
         if attr_value is None:
             continue
@@ -307,7 +307,7 @@ def update_user_claims(user, database_authenticator, groups):
         elif hasattr(authenticator_user, attribute):
             object = authenticator_user
         else:
-            logger.error(f"Neither user nor authentcator user has attribute {attribute}")
+            logger.error(f"Neither user nor authenticator user has attribute {attribute}")
             continue
 
         if getattr(object, attribute, None) != attr_value:
