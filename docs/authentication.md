@@ -127,7 +127,7 @@ class ReconcileUser:
 
 Then in your settings add an entry like:
 ```
-ANSIBLE_BASE_AUTHENTICATOR_RECONCILE_CLASS = "path.to.my.module"
+ANSIBLE_BASE_AUTHENTICATOR_RECONCILE_MODULE = "path.to.my.module"
 ```
 
 Doing this will cause your custom module to run in place of the default module in django-ansible-base.

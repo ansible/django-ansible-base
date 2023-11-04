@@ -8,14 +8,14 @@ from ansible_base.authentication import common
 @pytest.mark.parametrize(
     "triggers, map_type, attrs, groups, exp_access_allowed, exp_is_superuser, exp_is_system_auditor, exp_claims, exp_last_login_map_results",
     [
-        ({"always": {}}, "is_superuser", {}, [], True, True, None, {}, [{1: True}]),
-        ({"never": {}}, "is_superuser", {}, [], True, False, None, {}, [{1: False}]),
-        ({"always": {}}, "is_system_auditor", {}, [], True, None, True, {}, [{1: True}]),
-        ({"badkey": {}}, "is_system_auditor", {}, [], True, None, None, {}, [{1: "invalid"}]),
-        ({}, "is_system_auditor", {}, [], True, None, None, {}, [{1: "skipped"}]),
-        ({"always": {}, "never": {}}, "is_superuser", {}, [], True, False, None, {}, [{1: False}]),
-        ({"never": {}}, "allow", {}, [], False, None, None, {}, [{1: False}]),
-        ({"always": {}}, "team", {}, [], True, None, None, {"testorg": {"testteam": True}}, [{1: True}]),
+        ({"always": {}}, "is_superuser", {}, [], True, True, None, {"team_membership": {}, "roles": {}, "org_membership": {}}, [{1: True}]),
+        ({"never": {}}, "is_superuser", {}, [], True, False, None, {"team_membership": {}, "roles": {}, "org_membership": {}}, [{1: False}]),
+        ({"always": {}}, "is_system_auditor", {}, [], True, None, True, {"team_membership": {}, "roles": {}, "org_membership": {}}, [{1: True}]),
+        ({"badkey": {}}, "is_system_auditor", {}, [], True, None, None, {"team_membership": {}, "roles": {}, "org_membership": {}}, [{1: "invalid"}]),
+        ({}, "is_system_auditor", {}, [], True, None, None, {"team_membership": {}, "roles": {}, "org_membership": {}}, [{1: "skipped"}]),
+        ({"always": {}, "never": {}}, "is_superuser", {}, [], True, False, None, {"team_membership": {}, "roles": {}, "org_membership": {}}, [{1: False}]),
+        ({"never": {}}, "allow", {}, [], False, None, None, {"team_membership": {}, "roles": {}, "org_membership": {}}, [{1: False}]),
+        ({"always": {}}, "team", {}, [], True, None, None, {"org_membership": {}, "roles": {}, "team_membership": {"testorg": {"testteam": True}}}, [{1: True}]),
     ],
 )
 def test_create_claims_single_map_acl(
@@ -97,7 +97,7 @@ def test_create_claims_revoke(
     assert res["access_allowed"] is True
     assert res["is_superuser"] is granted
     assert res["is_system_auditor"] is None
-    assert res["claims"] == {}
+    assert res["claims"] == {"team_membership": {}, "roles": {}, "org_membership": {}}
     if revoke:
         assert res["last_login_map_results"] == [{1: False}]
     else:

@@ -324,7 +324,7 @@ def update_user_claims(user, database_authenticator, groups):
         return None
 
     # We have allowed access so now we need to make the user within the system
-    reconcile_class = getattr(settings, 'ANSIBLE_BASE_AUTHENTICATOR_RECONCILE_CLASS', 'ansible_base.authentication.common')
+    reconcile_class = getattr(settings, 'ANSIBLE_BASE_AUTHENTICATOR_RECONCILE_MODULE', 'ansible_base.authentication.common')
     try:
         module = __import__(reconcile_class, fromlist=['ReconcileUser'])
         klass = getattr(module, 'ReconcileUser')
