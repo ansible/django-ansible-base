@@ -17,10 +17,6 @@ class AuthenticatorMap(NamedCommonModel):
                 name="%(app_label)s_%(class)s_require_org_if_org_map",
                 check=(~models.Q(map_type='organization') | models.Q(organization__isnull=False)),
             ),
-            models.CheckConstraint(
-                name="%(app_label)s_%(class)s_require_role_if_role_map",
-                check=(~models.Q(map_type='role') | models.Q(role__isnull=False)),
-            ),
         ]
         unique_together = ['name', 'authenticator']
 
@@ -44,7 +40,6 @@ class AuthenticatorMap(NamedCommonModel):
             ('is_superuser', 'is_superuser'),
             ('is_system_auditor', 'is_system_auditor'),
             ('allow', 'allow'),
-            ('role', 'role'),
             ('organization', 'organization'),
         ],
         help_text='What does the map work on, a team, a user flag or is this an allow rule',
@@ -60,12 +55,6 @@ class AuthenticatorMap(NamedCommonModel):
         null=True,
         default=None,
         help_text='An organization name this rule works on',
-    )
-    role = models.CharField(
-        max_length=512,
-        null=True,
-        default=None,
-        help_text="A role name this rule works on",
     )
     triggers = models.JSONField(
         null=False,

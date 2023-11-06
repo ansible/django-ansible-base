@@ -8,11 +8,11 @@ from ansible_base.authentication import common
 @pytest.mark.parametrize(
     "triggers, map_type, attrs, groups, exp_access_allowed, exp_is_superuser, exp_is_system_auditor, exp_claims, exp_last_login_map_results",
     [
-        ({"always": {}}, "is_superuser", {}, [], True, True, None, {"team_membership": {}, "roles": {}, "organization_membership": {}}, [{1: True}]),
-        ({"never": {}}, "is_superuser", {}, [], True, False, None, {"team_membership": {}, "roles": {}, "organization_membership": {}}, [{1: False}]),
-        ({"always": {}}, "is_system_auditor", {}, [], True, None, True, {"team_membership": {}, "roles": {}, "organization_membership": {}}, [{1: True}]),
-        ({"badkey": {}}, "is_system_auditor", {}, [], True, None, None, {"team_membership": {}, "roles": {}, "organization_membership": {}}, [{1: "invalid"}]),
-        ({}, "is_system_auditor", {}, [], True, None, None, {"team_membership": {}, "roles": {}, "organization_membership": {}}, [{1: "skipped"}]),
+        ({"always": {}}, "is_superuser", {}, [], True, True, None, {"team_membership": {}, "organization_membership": {}}, [{1: True}]),
+        ({"never": {}}, "is_superuser", {}, [], True, False, None, {"team_membership": {}, "organization_membership": {}}, [{1: False}]),
+        ({"always": {}}, "is_system_auditor", {}, [], True, None, True, {"team_membership": {}, "organization_membership": {}}, [{1: True}]),
+        ({"badkey": {}}, "is_system_auditor", {}, [], True, None, None, {"team_membership": {}, "organization_membership": {}}, [{1: "invalid"}]),
+        ({}, "is_system_auditor", {}, [], True, None, None, {"team_membership": {}, "organization_membership": {}}, [{1: "skipped"}]),
         (
             {"always": {}, "never": {}},
             "is_superuser",
@@ -21,10 +21,10 @@ from ansible_base.authentication import common
             True,
             False,
             None,
-            {"team_membership": {}, "roles": {}, "organization_membership": {}},
+            {"team_membership": {}, "organization_membership": {}},
             [{1: False}],
         ),
-        ({"never": {}}, "allow", {}, [], False, None, None, {"team_membership": {}, "roles": {}, "organization_membership": {}}, [{1: False}]),
+        ({"never": {}}, "allow", {}, [], False, None, None, {"team_membership": {}, "organization_membership": {}}, [{1: False}]),
         (
             {"always": {}},
             "team",
@@ -33,7 +33,7 @@ from ansible_base.authentication import common
             True,
             None,
             None,
-            {"organization_membership": {}, "roles": {}, "team_membership": {"testorg": {"testteam": True}}},
+            {"organization_membership": {}, "team_membership": {"testorg": {"testteam": True}}},
             [{1: True}],
         ),
         (
@@ -44,7 +44,7 @@ from ansible_base.authentication import common
             True,
             None,
             None,
-            {"organization_membership": {}, "roles": {}, "team_membership": {"testorg": {"testteam": False}}},
+            {"organization_membership": {}, "team_membership": {"testorg": {"testteam": False}}},
             [{1: False}],
         ),
         (
@@ -55,7 +55,7 @@ from ansible_base.authentication import common
             True,
             None,
             None,
-            {"organization_membership": {"testorg": True}, "roles": {}, "team_membership": {}},
+            {"organization_membership": {"testorg": True}, "team_membership": {}},
             [{1: True}],
         ),
         (
@@ -66,12 +66,10 @@ from ansible_base.authentication import common
             True,
             None,
             None,
-            {"organization_membership": {"testorg": False}, "roles": {}, "team_membership": {}},
+            {"organization_membership": {"testorg": False}, "team_membership": {}},
             [{1: False}],
         ),
-        ({"always": {}}, "role", {}, [], True, None, None, {"organization_membership": {}, "roles": {"testrole": True}, "team_membership": {}}, [{1: True}]),
-        ({"never": {}}, "role", {}, [], True, None, None, {"organization_membership": {}, "roles": {"testrole": False}, "team_membership": {}}, [{1: False}]),
-        ({"never": {}}, "bad_map_type", {}, [], True, None, None, {"organization_membership": {}, "roles": {}, "team_membership": {}}, [{1: False}]),
+        ({"never": {}}, "bad_map_type", {}, [], True, None, None, {"organization_membership": {}, "team_membership": {}}, [{1: False}]),
     ],
 )
 def test_create_claims_single_map_acl(
@@ -146,7 +144,6 @@ def test_create_claims_multiple_same_org(
 
     assert res["claims"] == {
         "team_membership": {"testorg": {"testteam": True, "different_team": False}},
-        "roles": {},
         "organization_membership": {},
     }
 
@@ -199,7 +196,7 @@ def test_create_claims_revoke(
     assert res["access_allowed"] is True
     assert res["is_superuser"] is granted
     assert res["is_system_auditor"] is None
-    assert res["claims"] == {"team_membership": {}, "roles": {}, "organization_membership": {}}
+    assert res["claims"] == {"team_membership": {}, "organization_membership": {}}
     if revoke:
         assert res["last_login_map_results"] == [{1: False}]
     else:

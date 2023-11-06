@@ -279,10 +279,10 @@ def test_authenticator_map_validate_trigger_data(admin_api_client, local_authent
 
 
 def test_required_fields():
-    # TODO: Check to make sure that the org/team are required for a team map, org is required for an org map and role is required or a role map
+    # TODO: Check to make sure that the org/team are required for a team map, org is required for an org
     assert True
 
 
 def test_unique_names():
-    # TODO: Check to make sure that roles names can be the same with different authenticators but not the same within a single authenticator
+    # TODO: Check to make sure that authenticator names can be the same with different authenticators but not the same within a single authenticator
     assert True

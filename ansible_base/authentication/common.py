@@ -58,8 +58,6 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
     org_team_mapping = {}
     # Assume we are not members of any orgs (direct members)
     organization_membership = {}
-    # Assume we have no roles
-    roles_mapping = {}
     # Start with an empty rule responses
     rule_responses = []
     # Assume we will have access
@@ -112,8 +110,6 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
             org_team_mapping[auth_map.organization][auth_map.team] = has_permission
         elif auth_map.map_type == 'organization':
             organization_membership[auth_map.organization] = has_permission
-        elif auth_map.map_type == 'role':
-            roles_mapping[auth_map.role] = has_permission
         else:
             logger.error(f"Map type {auth_map.map_type} of rule {auth_map.name} does not know how to be processed")
 
@@ -123,7 +119,6 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
         "is_system_auditor": is_system_auditor,
         "claims": {
             "team_membership": org_team_mapping,
-            "roles": roles_mapping,
             "organization_membership": organization_membership,
         },
         "last_login_map_results": rule_responses,

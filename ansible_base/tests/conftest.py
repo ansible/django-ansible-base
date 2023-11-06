@@ -149,7 +149,6 @@ def local_authenticator_map(db, local_authenticator, user, randname):
         triggers={"always": {}},
         organization="testorg",
         team="testteam",
-        role="testrole",
     )
     yield authenticator_map
     authenticator_map.delete()
