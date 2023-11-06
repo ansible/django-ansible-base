@@ -11,39 +11,7 @@ from ansible_base.models import Authenticator, AuthenticatorMap, AuthenticatorUs
 
 from .trigger_definition import TRIGGER_DEFINITION
 
-User = get_user_model()
-
 logger = logging.getLogger('ansible_base.authentication.common')
-
-
-def check_user_attribute_map(user_attr_map: dict, name: str = 'USER_ATTR_MAP') -> dict:
-    '''
-    Validates an attribute map to user map.
-    i.e. does the authenticator know how to extract email, username, first_name, last_name, etc
-    '''
-
-    errors = {}
-    if type(user_attr_map) is not dict:
-        errors[name] = "Must be dict"
-        return errors
-
-    valid_user_attr_fields = set(["email", "username", "first_name", "last_name"])
-    given_fields = set(list(user_attr_map.keys()))
-
-    missing_required_fields = set(User.REQUIRED_FIELDS) - given_fields
-    for field in missing_required_fields:
-        errors[f"{name}.{field}"] = "Must be present"
-
-    invalid_fields = given_fields - valid_user_attr_fields
-    for field in invalid_fields:
-        errors[f"{name}.{field}"] = "Is not valid"
-
-    valid_fields = given_fields.intersection(valid_user_attr_fields)
-    for field in valid_fields:
-        if type(user_attr_map[field]) is not str:
-            errors[f"{name}.{field}"] = "Must be a string"
-
-    return errors
 
 
 def create_claims(authenticator: Authenticator, username: str, attrs: dict, groups: list) -> (bool, bool, dict, list):
