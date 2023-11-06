@@ -57,7 +57,7 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
     # Assume we start with no mappings
     org_team_mapping = {}
     # Assume we are not members of any orgs (direct members)
-    org_membership = {}
+    organization_membership = {}
     # Assume we have no roles
     roles_mapping = {}
     # Start with an empty rule responses
@@ -111,7 +111,7 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
                 org_team_mapping[auth_map.organization] = {}
             org_team_mapping[auth_map.organization][auth_map.team] = has_permission
         elif auth_map.map_type == 'organization':
-            org_membership[auth_map.organization] = has_permission
+            organization_membership[auth_map.organization] = has_permission
         elif auth_map.map_type == 'role':
             roles_mapping[auth_map.role] = has_permission
         else:
@@ -124,7 +124,7 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
         "claims": {
             "team_membership": org_team_mapping,
             "roles": roles_mapping,
-            "org_membership": org_membership,
+            "organization_membership": organization_membership,
         },
         "last_login_map_results": rule_responses,
     }
