@@ -1,9 +1,9 @@
 from collections import OrderedDict
 
 from rest_framework.reverse import reverse
-from rest_framework.serializers import ValidationError
+from rest_framework.serializers import ChoiceField, ValidationError
 
-from ansible_base.authenticator_plugins.utils import get_authenticator_plugin
+from ansible_base.authenticator_plugins.utils import get_authenticator_plugin, get_authenticator_plugins
 from ansible_base.models import Authenticator
 from ansible_base.utils.encryption import ENCRYPTED_STRING
 
@@ -12,10 +12,12 @@ from .common import NamedCommonModelSerializer
 
 class AuthenticatorSerializer(NamedCommonModelSerializer):
     reverse_url_name = 'authenticator-detail'
+    type = ChoiceField(get_authenticator_plugins())
 
     class Meta:
         model = Authenticator
         fields = NamedCommonModelSerializer.Meta.fields + [x.name for x in Authenticator._meta.concrete_fields]
+        fields.remove("category")
 
     # TODO: Do we need/want to delve into dicts and search their keys?
     def to_representation(self, authenticator):
