@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from ansible_base.utils.validation import validate_url
+from ansible_base.utils.validation import validate_url, validate_url_list
 
 User = get_user_model()
 
@@ -14,6 +14,18 @@ class URLField(serializers.CharField):
 
         def validator(value):
             return validate_url(value, schemes=self.schemes, allow_plain_hostname=self.allow_plain_hostname)
+
+        self.validators.append(validator)
+
+
+class URLListField(serializers.ListField):
+    def __init__(self, **kwargs):
+        self.schemes = kwargs.pop('schemes', ['https', 'http'])
+        self.allow_plain_hostname = kwargs.pop('allow_plain_hostname', True)
+        super().__init__(**kwargs)
+
+        def validator(value):
+            return validate_url_list(value, schemes=self.schemes, allow_plain_hostname=self.allow_plain_hostname)
 
         self.validators.append(validator)
 
