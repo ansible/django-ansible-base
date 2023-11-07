@@ -53,7 +53,7 @@ extend_skip = [ "ansible_base/migrations" ]
 [tool.flake8]
 max-line-length = 160
 extend-ignore = [ "E203" ]
-exclude = [ 'ansible_base/migrations/*', '.tox' ]
+exclude = [ 'ansible_base/migrations/*', '.tox', 'build']
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "ansible_base.tests.settings_overrides"

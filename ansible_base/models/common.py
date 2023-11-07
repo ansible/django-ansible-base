@@ -113,6 +113,24 @@ class NamedCommonModel(CommonModel):
 
     name = models.CharField(
         max_length=512,
+        help_text="The name of this resource",
+    )
+
+    def summary_fields(self):
+        res = super().summary_fields()
+        res['name'] = self.name
+        return res
+
+    def __str__(self):
+        return self.name
+
+
+class UniqueNamedCommonModel(CommonModel):
+    class Meta:
+        abstract = True
+
+    name = models.CharField(
+        max_length=512,
         unique=True,
         help_text="The name of this resource",
     )

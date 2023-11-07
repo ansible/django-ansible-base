@@ -1,4 +1,33 @@
+import uuid
+
 import pytest
+
+
+def copy_fixture(copies=1):
+    """
+    Decorator to create 'copies' copies of a fixture.
+
+    The copies will be named func_1, func_2, ..., func_n in the same module as
+    the original fixture.
+    """
+
+    def wrapper(func):
+        if '_pytestfixturefunction' not in dir(func):
+            raise TypeError(f"Can't apply copy_fixture to {func.__name__} because it is not a fixture. HINT: @copy_fixture must be *above* @pytest.fixture")
+        for i in range(copies):
+            new_name = f"{func.__name__}_{i + 1}"
+            globals()[new_name] = func
+        return func
+
+    return wrapper
+
+
+@pytest.fixture
+def randname():
+    def _randname(prefix):
+        return f"{prefix} {uuid.uuid4().hex[:6]}"
+
+    return _randname
 
 
 @pytest.fixture
@@ -108,11 +137,13 @@ def keycloak_authenticator(db):
     authenticator.delete()
 
 
+@copy_fixture(copies=3)
 @pytest.fixture
-def local_authenticator_map(db, local_authenticator, user):
+def local_authenticator_map(db, local_authenticator, user, randname):
     from ansible_base.models import AuthenticatorMap
 
     authenticator_map = AuthenticatorMap.objects.create(
+        name=randname("Test Local Authenticator Map"),
         authenticator=local_authenticator,
         map_type="is_superuser",
         triggers={"always": {}},
