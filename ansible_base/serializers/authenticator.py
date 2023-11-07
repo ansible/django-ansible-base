@@ -1,3 +1,4 @@
+import logging
 from collections import OrderedDict
 
 from rest_framework.reverse import reverse
@@ -8,6 +9,8 @@ from ansible_base.models import Authenticator
 from ansible_base.utils.encryption import ENCRYPTED_STRING
 
 from .common import NamedCommonModelSerializer
+
+logger = logging.getLogger('ansible_base.serializers.authenticator')
 
 
 class AuthenticatorSerializer(NamedCommonModelSerializer):
@@ -25,7 +28,6 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
         configuration = authenticator.configuration
         masked_configuration = OrderedDict()
         keys = list(configuration.keys())
-        encrypted_keys = []
 
         authenticator_plugin = get_authenticator_plugin(authenticator.type)
         encrypted_keys = authenticator_plugin.configuration_encrypted_fields
@@ -45,6 +47,20 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
 
         return ret
 
+    def to_internal_value(self, data):
+        parsed_data = super().to_internal_value(data)
+
+        authenticator_plugin = get_authenticator_plugin(parsed_data['type'])
+        encrypted_keys = authenticator_plugin.configuration_encrypted_fields
+
+        configuration = parsed_data.get('configuration', {})
+
+        for key in encrypted_keys:
+            if configuration.get(key, None) and self.instance and configuration.get(key, None) == ENCRYPTED_STRING:
+                configuration[key] = self.instance.configuration.get(key)
+
+        return parsed_data
+
     def validate(self, data) -> dict:
         validator_type = data.get('type', None)
         # if we didn't have a type, try to get the type of the existing object (if we have one)
@@ -52,8 +68,15 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
             validator_type = self.instance.type
 
         try:
+            invalid_encrypted_keys = {}
+            configuration = data['configuration']
             authenticator = get_authenticator_plugin(validator_type)
-            authenticator.validate_configuration(data['configuration'], self.instance)
+            for key in authenticator.configuration_encrypted_fields:
+                if not self.instance and configuration.get(key, None) == ENCRYPTED_STRING:
+                    invalid_encrypted_keys[key] = f"Can not be set to {ENCRYPTED_STRING}"
+            if invalid_encrypted_keys:
+                raise ValidationError(invalid_encrypted_keys)
+            authenticator.validate_configuration(configuration, self.instance)
         except ImportError as e:
-            raise ValidationError({'type': e})
+            raise ValidationError({'type': f'Failed to import {e}'})
         return data
