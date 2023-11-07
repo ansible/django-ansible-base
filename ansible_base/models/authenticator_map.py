@@ -1,10 +1,10 @@
 from django.db import models
 
 from .authenticator import Authenticator
-from .common import CommonModel
+from .common import NamedCommonModel
 
 
-class AuthenticatorMap(CommonModel):
+class AuthenticatorMap(NamedCommonModel):
     class Meta:
         app_label = 'ansible_base'
         # If the map type is a team then we must have an org/team
@@ -13,7 +13,12 @@ class AuthenticatorMap(CommonModel):
                 name="%(app_label)s_%(class)s_require_org_team_if_team_map",
                 check=(~models.Q(map_type='team') | models.Q(team__isnull=False) & models.Q(organization__isnull=False)),
             ),
+            models.CheckConstraint(
+                name="%(app_label)s_%(class)s_require_org_if_org_map",
+                check=(~models.Q(map_type='organization') | models.Q(organization__isnull=False)),
+            ),
         ]
+        unique_together = ['name', 'authenticator']
 
     authenticator = models.ForeignKey(
         Authenticator,
@@ -30,7 +35,13 @@ class AuthenticatorMap(CommonModel):
         max_length=17,
         null=False,
         default="team",
-        choices=[('team', 'team'), ('is_superuser', 'is_superuser'), ('is_system_auditor', 'is_system_auditor'), ('allow', 'allow')],
+        choices=[
+            ('team', 'team'),
+            ('is_superuser', 'is_superuser'),
+            ('is_system_auditor', 'is_system_auditor'),
+            ('allow', 'allow'),
+            ('organization', 'organization'),
+        ],
         help_text='What does the map work on, a team, a user flag or is this an allow rule',
     )
     team = models.CharField(

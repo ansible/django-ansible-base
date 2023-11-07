@@ -1,6 +1,7 @@
 import logging
 import re
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.utils.timezone import now
 from social_core.pipeline.user import get_username
@@ -55,6 +56,8 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
     is_system_auditor = None
     # Assume we start with no mappings
     org_team_mapping = {}
+    # Assume we are not members of any orgs (direct members)
+    organization_membership = {}
     # Start with an empty rule responses
     rule_responses = []
     # Assume we will have access
@@ -101,16 +104,23 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
             is_superuser = has_permission
         elif auth_map.map_type == 'is_system_auditor':
             is_system_auditor = has_permission
-        else:
+        elif auth_map.map_type == 'team':
             if auth_map.organization not in org_team_mapping:
                 org_team_mapping[auth_map.organization] = {}
             org_team_mapping[auth_map.organization][auth_map.team] = has_permission
+        elif auth_map.map_type == 'organization':
+            organization_membership[auth_map.organization] = has_permission
+        else:
+            logger.error(f"Map type {auth_map.map_type} of rule {auth_map.name} does not know how to be processed")
 
     return {
         "access_allowed": access_allowed,
         "is_superuser": is_superuser,
         "is_system_auditor": is_system_auditor,
-        "claims": org_team_mapping,
+        "claims": {
+            "team_membership": org_team_mapping,
+            "organization_membership": organization_membership,
+        },
         "last_login_map_results": rule_responses,
     }
 
@@ -282,7 +292,7 @@ def update_user_claims(user, database_authenticator, groups):
     results = create_claims(database_authenticator, user.username, user.authenticator_user.extra, groups)
 
     needs_save = False
-    authenticator_user = AuthenticatorUser.objects.filter(provider=database_authenticator.id, user=user.id)
+    authenticator_user, _ = AuthenticatorUser.objects.get_or_create(provider=database_authenticator, user=user)
     for attribute, attr_value in results.items():
         if attr_value is None:
             continue
@@ -292,7 +302,7 @@ def update_user_claims(user, database_authenticator, groups):
         elif hasattr(authenticator_user, attribute):
             object = authenticator_user
         else:
-            logger.error(f"Neither user not authentcator user has attribute {attribute}")
+            logger.error(f"Neither user nor authenticator user has attribute {attribute}")
             continue
 
         if getattr(object, attribute, None) != attr_value:
@@ -307,4 +317,21 @@ def update_user_claims(user, database_authenticator, groups):
     if results['access_allowed'] is not True:
         logger.warning(f"User {user.username} failed an allow map and was denied access")
         return None
+
+    # We have allowed access so now we need to make the user within the system
+    reconcile_class = getattr(settings, 'ANSIBLE_BASE_AUTHENTICATOR_RECONCILE_MODULE', 'ansible_base.authentication.common')
+    try:
+        module = __import__(reconcile_class, fromlist=['ReconcileUser'])
+        klass = getattr(module, 'ReconcileUser')
+        klass.reconcile_user_claims(user, authenticator_user)
+    except Exception as e:
+        logger.error(f"Failed to reconcile user attributes! {e}")
+
     return user
+
+
+class ReconcileUser:
+    def reconcile_user_claims(user, authenticator_user):
+        logger.error("TODO: Fix reconciliation of user claims")
+        claims = getattr(user, 'claims', getattr(authenticator_user, 'claims'))
+        logger.error(claims)
