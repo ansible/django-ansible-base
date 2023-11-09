@@ -4,29 +4,14 @@ from unittest.mock import MagicMock
 
 import ldap
 import pytest
+from rest_framework.serializers import ValidationError
 
-from ansible_base.authentication.common import check_user_attribute_map
-from ansible_base.authenticator_plugins.ldap import AuthenticatorPlugin, LDAPSettings
+from ansible_base.authenticator_plugins.ldap import AuthenticatorPlugin, LDAPSettings, validate_ldap_filter
 
 
 @pytest.fixture
 def ldap_settings(ldap_configuration):
     return LDAPSettings(defaults=ldap_configuration)
-
-
-@pytest.mark.parametrize(
-    "user_attr_map, expected",
-    [
-        ({"username": "uid", "email": "mail", "first_name": "givenName", "last_name": "sn"}, {}),
-        ({"email": False}, {"USER_ATTR_MAP.email": "Must be a string"}),
-        ({"username": "uid"}, {"USER_ATTR_MAP.email": "Must be present"}),
-        ({"weird_field": "oh_no"}, {"USER_ATTR_MAP.email": "Must be present", "USER_ATTR_MAP.weird_field": "Is not valid"}),
-        ({"weird_field": "oh_no", "email": "mail"}, {"USER_ATTR_MAP.weird_field": "Is not valid"}),
-        ("string!", {"USER_ATTR_MAP": "Must be dict"}),
-    ],
-)
-def test_check_user_attribute_map(user_attr_map, expected):
-    assert check_user_attribute_map(user_attr_map) == expected
 
 
 def test_ldap_validate_connection_options_newctx_comes_last(ldap_configuration):
@@ -46,7 +31,9 @@ def test_ldap_validate_ldap_filter(ldap_configuration, ldap_settings):
     validate_ldap_filter should return False if the overall filter is invalid.
     """
     invalid_filter = "(&(cn=%(user)s)(objectClass=posixAccount)(invalid))"
-    assert ldap_settings.validate_ldap_filter(invalid_filter, 'foo') is False
+    with pytest.raises(ValidationError) as e:
+        validate_ldap_filter(invalid_filter, 'foo')
+    assert e.value.args[0] == 'Invalid filter: (invalid)'
 
 
 @pytest.mark.django_db

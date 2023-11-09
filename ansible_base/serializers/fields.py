@@ -32,7 +32,6 @@ class URLListField(serializers.ListField):
 
 class UserAttrMap(serializers.DictField):
     def __init__(self, **kwargs):
-        self.field_name = kwargs.pop('field_name', 'USER_ATTR_MAP')
         super().__init__(**kwargs)
 
         def validator(value):
@@ -43,16 +42,16 @@ class UserAttrMap(serializers.DictField):
 
             missing_required_fields = set(User.REQUIRED_FIELDS) - given_fields
             for field in missing_required_fields:
-                errors[f"{self.field_name}.{field}"] = "Must be present"
+                errors[field] = "Must be present"
 
             invalid_fields = given_fields - valid_user_attr_fields
             for field in invalid_fields:
-                errors[f"{self.field_name}.{field}"] = "Is not valid"
+                errors[field] = "Is not valid"
 
             valid_fields = given_fields.intersection(valid_user_attr_fields)
             for field in valid_fields:
                 if type(value[field]) is not str:
-                    errors[f"{self.field_name}.{field}"] = "Must be a string"
+                    errors[field] = "Must be a string"
 
             if errors:
                 raise serializers.ValidationError(errors)

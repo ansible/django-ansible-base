@@ -25,9 +25,6 @@ user_search_string = '%(user)s'
 
 
 def validate_ldap_dn(value: str, with_user: bool = False, required: bool = True) -> bool:
-    # True is a valid DN
-    # False means the DN is invalid
-
     if not value and not required:
         return
 
@@ -40,7 +37,6 @@ def validate_ldap_dn(value: str, with_user: bool = False, required: bool = True)
 
     try:
         ldap.dn.str2dn(dn_value.encode('utf-8'))
-        return
     except ldap.DECODING_ERROR:
         raise ValidationError(_('Invalid DN: %s') % value)
 
@@ -65,7 +61,7 @@ class LDAPConnectionOptions(serializers.DictField):
             errors = {}
             for key in value.keys():
                 if key not in valid_options:
-                    errors[f'CONNECTION_OPTIONS.{key}'] = 'Not a valid connection option'
+                    errors[key] = 'Not a valid connection option'
             if errors:
                 raise ValidationError(errors)
 
@@ -98,6 +94,13 @@ class LDAPSearchField(serializers.ListField):
 
             if errors:
                 raise ValidationError(errors)
+
+            # We made it all the way here, make sure we can instantiate an LDAPSearch object
+            try:
+                # Search fields should be LDAPSearch objects, so we need to convert them from [] to these objects
+                config.LDAPSearch(value[0], getattr(ldap, value[1]), value[2])
+            except Exception as e:
+                raise ValidationError(f'Failed to instantiate LDAPSearch object: {e}')
 
         self.validators.append(validator)
 
@@ -228,7 +231,6 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
         ),
         allow_null=False,
         required=True,
-        field_name='USER_ATTR_MAP',
     )
     USER_SEARCH = LDAPSearchField(
         help_text=_(

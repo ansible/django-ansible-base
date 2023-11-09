@@ -67,8 +67,8 @@ def test_ldap_search_exception(
     }
     response = admin_api_client.post(url, data=data, format="json")
     assert response.status_code == 400
-    assert "Something went wrong" in response.data["configuration"]["USER_SEARCH"]
-    assert "Something went wrong" in response.data["configuration"]["GROUP_SEARCH"]
+    assert "Something went wrong" in response.data["USER_SEARCH"][0]
+    assert "Something went wrong" in response.data["GROUP_SEARCH"][0]
 
 
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
@@ -76,26 +76,26 @@ def test_ldap_search_exception(
 @pytest.mark.parametrize(
     "setting_override, expected_errors",
     [
-        ({"BIND_PASSWORD": False}, {"BIND_PASSWORD": "Must be a valid string"}),
-        ({"SERVER_URI": "foobar"}, {"SERVER_URI": "Must be a list of urls"}),
+        ({"BIND_PASSWORD": False}, {"BIND_PASSWORD": "Not a valid string."}),
+        ({"SERVER_URI": "foobar"}, {"SERVER_URI": 'Expected a list of items but got type "str".'}),
         (
             {"SERVER_URI": ["https://not.ldap.example.com"]},
-            {"SERVER_URI": "SERVER_URI must contain only valid urls with schemes ldap, ldaps, the following are invalid: https://not.ldap.example.com"},
+            {"SERVER_URI": "https://not.ldap.example.com is invalid"},
         ),
-        ({"-SERVER_URI": None}, {"SERVER_URI": "Must be a list of valid LDAP URLs"}),
-        ({"START_TLS": "foobar"}, {"START_TLS": "Must be a boolean value"}),
-        ({"USER_ATTR_MAP": {"email": False}}, {"USER_ATTR_MAP.email": "Must be a string"}),
-        ({"USER_ATTR_MAP": {"email": False, "monkey": 39}}, {"USER_ATTR_MAP.email": "Must be a string", "USER_ATTR_MAP.monkey": "Is not valid"}),
+        ({"-SERVER_URI": None}, {"SERVER_URI": "This field is required."}),
+        ({"START_TLS": "foobar"}, {"START_TLS": "Must be a valid boolean."}),
+        ({"USER_ATTR_MAP": {"email": False}}, {"USER_ATTR_MAP": {"email": "Must be a string"}}),
+        ({"USER_ATTR_MAP": {"email": False, "monkey": 39}}, {"USER_ATTR_MAP": {"email": "Must be a string", "monkey": "Is not valid"}}),
         # TODO: Should this fail? We set configuration_valid=False, but don't set an error so the serializer accepts it.
         ({"-USER_ATTR_MAP": None}, None),
-        ({"UNKNOWN_SETTING": "foobar"}, {"UNKNOWN_SETTING": "Is not a valid setting for an LDAP authenticator"}),
+        ({"UNKNOWN_SETTING": "foobar"}, {"UNKNOWN_SETTING": "UNKNOWN_SETTING is not a supported configuration option."}),
         ({"-CONNECTION_OPTIONS": None}, None),
-        ({"CONNECTION_OPTIONS": "pineapple does not belong on pizza"}, {"CONNECTION_OPTIONS": "Must be a dict of options"}),
-        ({"CONNECTION_OPTIONS": {"badoption": "yep"}}, {"CONNECTION_OPTIONS.badoption": "Not a valid connection option"}),
-        ({"-GROUP_TYPE": None}, {"GROUP_TYPE": "Must be present"}),
-        ({"GROUP_TYPE": 29}, {"GROUP_TYPE": "Must be string"}),
-        ({"GROUP_TYPE": "invalid"}, {"GROUP_TYPE": "Specified group type is invalid"}),
-        ({"GROUP_TYPE_PARAMS": "groupofnames"}, {"GROUP_TYPE_PARAMS": "Must be a dict object"}),
+        ({"CONNECTION_OPTIONS": "pineapple does not belong on pizza"}, {"CONNECTION_OPTIONS": 'Expected a dictionary of items but got type "str".'}),
+        ({"CONNECTION_OPTIONS": {"badoption": "yep"}}, {"CONNECTION_OPTIONS": {"badoption": "Not a valid connection option"}}),
+        ({"-GROUP_TYPE": None}, {"GROUP_TYPE": "This field is required."}),
+        ({"GROUP_TYPE": 29}, {"GROUP_TYPE": '"29" is not a valid choice.'}),
+        ({"GROUP_TYPE": "invalid"}, {"GROUP_TYPE": '"invalid" is not a valid choice.'}),
+        ({"GROUP_TYPE_PARAMS": "groupofnames"}, {"GROUP_TYPE_PARAMS": 'Expected a dictionary of items but got type "str".'}),
         ({"GROUP_TYPE_PARAMS": {"badparam": "yep"}}, {"GROUP_TYPE_PARAMS.badparam": "Invalid option for specified GROUP_TYPE"}),
         ({"GROUP_TYPE_PARAMS": {"member_attr": "yep"}}, {"GROUP_TYPE_PARAMS.name_attr": "Missing required field for GROUP_TYPE"}),
         ({"GROUP_TYPE_PARAMS": {"name_attr": "yep"}}, {"GROUP_TYPE_PARAMS.member_attr": "Missing required field for GROUP_TYPE"}),
@@ -112,24 +112,27 @@ def test_ldap_search_exception(
         ({"GROUP_SEARCH": None}, None),
         ({"GROUP_SEARCH": None, "USER_SEARCH": None}, None),
         ({"GROUP_SEARCH": [], "USER_SEARCH": []}, None),
-        ({"GROUP_SEARCH": "not a list"}, {"GROUP_SEARCH": "Must be an array of 3 items:"}),
-        ({"USER_SEARCH": "not a list"}, {"USER_SEARCH": "Must be an array of 3 items:"}),
-        ({"GROUP_SEARCH": ["only", "two"]}, {"GROUP_SEARCH": "Must be an array of 3 items:"}),
+        ({"GROUP_SEARCH": "not a list"}, {"GROUP_SEARCH": 'Expected a list of items but got type "str".'}),
+        ({"USER_SEARCH": "not a list"}, {"USER_SEARCH": 'Expected a list of items but got type "str".'}),
+        ({"GROUP_SEARCH": ["only", "two"]}, {"GROUP_SEARCH": "Must be an array of 3 items: search DN, search scope and a filter"}),
         ({"USER_SEARCH": ["ou=users,dc=example,dc=org", "SCOPE_SUBTREE", "invalid"]}, None),
         ({"USER_SEARCH": ["invalid", "SCOPE_SUBTREE", "(cn=%(user)s)"]}, None),
-        ({"USER_SEARCH": ["ou=users,dc=example,dc=org", "invalid", "(cn=%(user)s)"]}, {"USER_SEARCH.1": "Must be a string representing an LDAP scope object"}),
-        ({"USER_SEARCH": ["ou=users,dc=example,dc=org", 1337, "(cn=%(user)s)"]}, {"USER_SEARCH.1": "Must be a string representing an LDAP scope object"}),
+        (
+            {"USER_SEARCH": ["ou=users,dc=example,dc=org", "invalid", "(cn=%(user)s)"]},
+            {"USER_SEARCH": {1: "Must be a string representing an LDAP scope object"}},
+        ),
+        ({"USER_SEARCH": ["ou=users,dc=example,dc=org", 1337, "(cn=%(user)s)"]}, {"USER_SEARCH": {1: "Must be a string representing an LDAP scope object"}}),
         (
             {"USER_SEARCH": ["ou=users,dc=example,dc=org", True, "(cn=%(user)s)"]},
-            {"USER_SEARCH.1": "Must be a string representing an LDAP scope object"},
+            {"USER_SEARCH": {1: "Must be a string representing an LDAP scope object"}},
         ),
         ({"GROUP_SEARCH": ["ou=groups,dc=example,dc=org", "SCOPE_SUBTREE", "(&(|(objectClass=person))(uid=jdoe)(cn=%(user)s))"]}, None),
-        ({"GROUP_SEARCH": ["ou=groups,dc=example,dc=org", "SCOPE_SUBTREE", 1337]}, {"GROUP_SEARCH.2": "Must be a valid string"}),
+        ({"GROUP_SEARCH": ["ou=groups,dc=example,dc=org", "SCOPE_SUBTREE", 1337]}, {"GROUP_SEARCH": {2: "Must be a valid string"}}),
         ({"BIND_DN": ""}, None),
         ({"BIND_DN": False}, None),
         ({"USER_DN_TEMPLATE": ""}, None),
-        ({"USER_DN_TEMPLATE": False}, {"USER_DN_TEMPLATE": "Must be a valid string"}),
-        ({"USER_DN_TEMPLATE": "cn=invalid,ou=users,dc=example,dc=org"}, {"USER_DN_TEMPLATE": "DN must include \"%(user)s\""}),
+        ({"USER_DN_TEMPLATE": False}, {"USER_DN_TEMPLATE": "Not a valid string."}),
+        ({"USER_DN_TEMPLATE": "cn=invalid,ou=users,dc=example,dc=org"}, {"USER_DN_TEMPLATE": 'DN must include "%(user)s"'}),
     ],
 )
 def test_ldap_create_authenticator_error_handling(
@@ -164,8 +167,18 @@ def test_ldap_create_authenticator_error_handling(
     assert response.status_code == 400 if expected_errors else 201
     if expected_errors:
         for key, value in expected_errors.items():
-            assert key in response.data["configuration"]
-            assert value in response.data["configuration"][key]
+            assert key in response.data
+            if type(response.data[key]) is dict:
+                for sub_key in response.data[key]:
+                    assert value[sub_key] in response.data[key][sub_key]
+            elif type(response.data[key]) is list:
+                valid = False
+                for item in response.data[key]:
+                    if value in item:
+                        valid = True
+                assert valid
+            else:
+                assert value in response.data[key]
 
 
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
@@ -204,27 +217,6 @@ def test_ldap_backend_validate_configuration_warn_specific_fields(
     response = admin_api_client.patch(url, data={"configuration": config}, format="json")
     assert response.status_code == 200
     assert "better to use the authenticator field" in response.data["warnings"]["DENY_GROUP"]
-
-
-@pytest.mark.django_db
-@mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
-@mock.patch("ansible_base.authenticator_plugins.ldap.logger")
-def test_ldap_backend_authenticate_configuration_invalid(
-    logger,
-    unauthenticated_api_client,
-    ldap_authenticator,
-    shut_up_logging,
-):
-    """
-    Ensure we log properly when the LDAP configuration is invalid.
-    """
-    del ldap_authenticator.configuration["USER_ATTR_MAP"]
-    ldap_authenticator.save()
-    unauthenticated_api_client.login(username="foo", password="bar")
-    url = reverse(authenticated_test_page)
-    response = unauthenticated_api_client.get(url)
-    assert response.status_code == 401
-    logger.error.assert_any_call(f"LDAP authenticator {ldap_authenticator.name} can not be used due to configuration errors.")
 
 
 @pytest.mark.django_db
