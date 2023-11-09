@@ -50,7 +50,9 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
     def to_internal_value(self, data):
         parsed_data = super().to_internal_value(data)
 
-        authenticator_plugin = get_authenticator_plugin(parsed_data['type'])
+        # Incase type was not passed in the data (like from a patch) we need to take it from the existing instance
+        type = parsed_data.get('type', getattr(self.instance, 'type', None))
+        authenticator_plugin = get_authenticator_plugin(type)
         encrypted_keys = authenticator_plugin.configuration_encrypted_fields
 
         configuration = parsed_data.get('configuration', {})
