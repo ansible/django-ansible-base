@@ -1,16 +1,13 @@
-from django.conf import settings
 from django.contrib.auth import BACKEND_SESSION_KEY
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.deprecation import MiddlewareMixin
 
 from ansible_base.authenticator_plugins.utils import get_authenticator_plugins
-from ansible_base.authenticator_plugins.utils import setting as authenticator_prefix
 
 
 def get_authenticator_module_paths() -> list:
-    class_prefix = getattr(settings, authenticator_prefix, None)
     plugins = get_authenticator_plugins()
-    plugins = [f'{class_prefix}.{name}.AuthenticatorPlugin' for name in plugins]
+    plugins = [f'{name}.AuthenticatorPlugin' for name in plugins]
     return plugins
 
 
