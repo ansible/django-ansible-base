@@ -61,6 +61,18 @@ def user(db, django_user_model, local_authenticator):
 
 
 @pytest.fixture
+def user_api_client(db, user, unauthenticated_api_client, local_authenticator):
+    client = unauthenticated_api_client
+    client.login(username="user", password="password")
+    yield client
+    try:
+        client.logout()
+    except AttributeError:
+        # The test might have logged the user out already (e.g. to test the logout signal)
+        pass
+
+
+@pytest.fixture
 def shut_up_logging():
     """
     This fixture allows you to temporarily disable logging for a test.
