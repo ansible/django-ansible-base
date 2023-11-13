@@ -80,9 +80,7 @@ def test_authenticators_cli_list_without_tabulate(command_args, local_authentica
 def test_authenticators_cli_initialize(django_user_model):
     """
     Calling with --initialize will create:
-    - An admin user
-    - An authenticator
-    - An AuthenticatorUser for the admin user
+    - An authenticator if there is an admin user
     """
     out = StringIO()
     err = StringIO()
@@ -90,13 +88,14 @@ def test_authenticators_cli_initialize(django_user_model):
     # Sanity check:
     assert django_user_model.objects.count() == 0
 
+    with pytest.raises(SystemExit) as pytest_wrapped_e:
+        call_command('authenticators', "--initialize", stdout=out, stderr=err)
+    assert pytest_wrapped_e.type == SystemExit
+    assert pytest_wrapped_e.value.code == 255
+    assert "No admin user exists" in err.getvalue()
+
+    django_user_model.objects.create(username="admin")
     call_command('authenticators', "--initialize", stdout=out, stderr=err)
-
-    # Make sure the user (and only the user) got created
-    assert django_user_model.objects.count() == 1
-    assert django_user_model.objects.filter(username="admin").count() == 1
-
-    assert "Created admin user" in out.getvalue()
     assert "Created default local authenticator" in out.getvalue()
 
 

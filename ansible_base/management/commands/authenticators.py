@@ -1,3 +1,5 @@
+from sys import exit
+
 try:
     from tabulate import tabulate
 
@@ -60,17 +62,10 @@ class Command(BaseCommand):
         self.stdout.write('')
 
     def initialize_authenticators(self):
-        admin_created = None
         admin_user = User.objects.filter(username="admin").first()
         if not admin_user:
-            user, admin_created = User.objects.update_or_create(
-                username="admin",
-                is_superuser=True,
-                first_name='Local',
-                last_name='Admin',
-                password='admin',
-            )
-            self.stdout.write("Created admin user with password 'admin'")
+            self.stderr.write("No admin user exists")
+            exit(255)
 
         existing_authenticator = Authenticator.objects.filter(type="ansible_base.authenticator_plugins.local").first()
         if not existing_authenticator:
@@ -88,9 +83,8 @@ class Command(BaseCommand):
             )
             self.stdout.write("Created default local authenticator")
 
-        if admin_created:
             AuthenticatorUser.objects.get_or_create(
-                uid='admin',
-                user=user,
+                uid=admin_user.username,
+                user=admin_user,
                 provider=existing_authenticator,
             )
