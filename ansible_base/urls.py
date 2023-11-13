@@ -23,12 +23,4 @@ urls = [
     # Trigger definition
     path('trigger_definition/', views.TriggerDefinitionView.as_view(), name='trigger_definition-view'),
     path('ui_auth/', views.UIAuth.as_view(), name='ui_auth-view'),
-    # Ansible Resource
-    path('ansible-resources/', views.ResourceViewSet.as_view(view_only_list), name='resource-list'),
-    re_path(r'ansible-resources/(?P<ansible_id>[0-9a-zA-Z\-]+)/$', views.ResourceViewSet.as_view({'get': 'retrieve'}), name='resource-detail'),
-    re_path(
-        r'ansible-resources/(?P<ansible_id>[0-9a-zA-Z\-]+)/permissions/$', views.ResourceViewSet.as_view({'get': 'permissions'}), name='resource-permission'
-    ),
-    path('ansible-resource-types/', views.ResourceTypeViewSet.as_view(view_only_list), name='resourcetype-list'),
-    re_path(r'ansible-resource-types/(?P<pk>[0-9a-zA-Z\-]+)/$', views.ResourceTypeViewSet.as_view({'get': 'retrieve'}), name='resourcetype-detail'),
 ]
