@@ -1,6 +1,8 @@
 import logging
 
+from django.db.models.fields import NOT_PROVIDED
 from rest_framework import serializers
+from rest_framework.fields import empty
 from rest_framework.reverse import reverse_lazy
 
 from ansible_base.utils.encryption import ENCRYPTED_STRING
@@ -16,6 +18,20 @@ class CommonModelSerializer(serializers.ModelSerializer):
 
     class Meta:
         fields = ['id', 'url', 'created_on', 'created_by', 'modified_on', 'modified_by', 'related', 'summary_fields']
+
+    def __init__(self, instance=None, data=empty, **kwargs):
+        # pre-populate the form with the defaults from the model
+        model = getattr(self.Meta, 'model', None)
+        if model:
+            extra_kwargs = getattr(self.Meta, 'extra_kwargs', {})
+            for field in model._meta.concrete_fields:
+                if field.name not in extra_kwargs:
+                    extra_kwargs[field.name] = {}
+                if not extra_kwargs[field.name].get('initial', None):
+                    if field.default and field.default is not NOT_PROVIDED:
+                        extra_kwargs[field.name]['initial'] = field.default
+            setattr(self.Meta, 'extra_kwargs', extra_kwargs)
+        super().__init__(instance, data, **kwargs)
 
     def get_url(self, obj):
         if self.reverse_url_name:
