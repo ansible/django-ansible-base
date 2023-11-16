@@ -34,6 +34,10 @@ class Fernet256(Fernet):
         self._backend = default_backend()
 
     def encrypt_string(self, value: str) -> str:
+        # Its possible for a serializer to accept a number for a CharField (like 5). In the serializer its "5" but when we get here it might be 5
+        if type(value) is not str:
+            value = str(value)
+
         if value.startswith(ENCRYPTED_STRING):
             return value
         encrypted = self.encrypt(smart_bytes(value))
@@ -41,6 +45,9 @@ class Fernet256(Fernet):
         return f'{ENCRYPTED_STRING}UTF8${ENCRYPTION_METHOD}${b64data}'
 
     def decrypt_string(self, value: str) -> str:
+        if type(value) is not str:
+            raise ValueError("decrypt_string can only accept string")
+
         if not value.startswith(ENCRYPTED_STRING):
             return value
 
