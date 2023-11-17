@@ -65,3 +65,7 @@ class Authenticator(UniqueNamedCommonModel):
             pass
 
         return instance
+
+    def get_login_url(self):
+        plugin = get_authenticator_plugin(self.type)
+        return plugin.get_login_url(self)

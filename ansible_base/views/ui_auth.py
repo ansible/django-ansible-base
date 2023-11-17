@@ -1,7 +1,6 @@
 import logging
 
 from rest_framework.response import Response
-from rest_framework.reverse import reverse
 from rest_framework.views import APIView
 
 from ansible_base.models import Authenticator
@@ -29,7 +28,7 @@ class UIAuth(APIView):
                 response['ssos'].append(
                     {
                         'name': authenticator.name,
-                        'login_url': reverse('social:begin', kwargs={'backend': authenticator.slug}),
+                        'login_url': authenticator.get_login_url(),
                         'type': authenticator.type,
                     }
                 )
