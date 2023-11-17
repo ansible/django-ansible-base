@@ -66,7 +66,7 @@ class AbstractAuthenticatorPlugin:
         if not issubclass(self.configuration_class, BaseAuthenticatorConfiguration):
             raise TypeError("self.configuration_class must subclass BaseAuthenticatorConfiguration.")
 
-        serializer = self.configuration_class(data=data)
+        serializer = self.configuration_class(data=data, instance=instance)
         serializer.is_valid(raise_exception=True)
 
         allowed_fields = serializer.get_fields()
