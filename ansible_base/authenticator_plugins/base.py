@@ -3,7 +3,8 @@ import logging
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from rest_framework.fields import empty
-from rest_framework.serializers import ValidationError
+from rest_framework.reverse import reverse
+from rest_framework.serializers import JSONField, ValidationError
 
 from ansible_base.models import Authenticator
 from ansible_base.serializers.fields import JSONField
@@ -103,3 +104,7 @@ class AbstractAuthenticatorPlugin:
         once user's have started logging in with the authenticator.
         """
         raise NotImplementedError("Implement in subclass.")
+
+    def get_login_url(self, authenticator):
+        if authenticator.category == 'sso':
+            return reverse('social:begin', kwargs={'backend': authenticator.slug})

@@ -1,7 +1,6 @@
 import logging
 from collections import OrderedDict
 
-from rest_framework.reverse import reverse
 from rest_framework.serializers import ChoiceField, ValidationError
 
 from ansible_base.authenticator_plugins.utils import get_authenticator_plugin, get_authenticator_plugins
@@ -47,8 +46,9 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
             ret['error'] = 'Failed to load the plugin behind this authenticator, configuration hidden to protect secrets'
 
         # Generate a sso login URL if this is an sso category
-        if authenticator.category == 'sso':
-            ret['sso_login_url'] = reverse('social:begin', kwargs={'backend': authenticator.slug})
+        login_url = authenticator.get_login_url()
+        if login_url:
+            ret['sso_login_url'] = login_url
 
         return ret
 
