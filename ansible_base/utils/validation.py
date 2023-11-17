@@ -19,7 +19,7 @@ def validate_url_list(urls: list, schemes: list = ['https'], allow_plain_hostnam
         try:
             validate_url(a_url, schemes=schemes, allow_plain_hostname=allow_plain_hostname)
         except ValidationError:
-            errors.append(a_url)
+            errors.append(f"{a_url} is invalid")
     if errors:
         raise ValidationError(', '.join(errors))
 
