@@ -78,6 +78,15 @@ class AbstractAuthenticatorPlugin:
         if errors:
             raise ValidationError(errors)
 
+        return serializer.validated_data
+
+    def to_representation(self, instance: object):
+        if not issubclass(self.configuration_class, BaseAuthenticatorConfiguration):
+            raise TypeError("self.configuration_class must subclass BaseAuthenticatorConfiguration.")
+        serializer = self.configuration_class(data=instance.configuration, instance=instance)
+        response = serializer.to_representation(instance.configuration)
+        return response
+
     def update_settings(self, database_authenticator: Authenticator) -> None:
         self.settings = database_authenticator.configuration
 
