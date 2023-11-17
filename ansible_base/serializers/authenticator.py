@@ -26,12 +26,15 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
         ret = super().to_representation(authenticator)
         configuration = authenticator.configuration
         masked_configuration = OrderedDict()
-        keys = list(configuration.keys())
 
         try:
             authenticator_plugin = get_authenticator_plugin(authenticator.type)
             encrypted_keys = authenticator_plugin.configuration_encrypted_fields
 
+            # If the authenticator configuration has a to_representation we need to respect it
+            ret['configuration'] = authenticator_plugin.to_representation(authenticator)
+
+            keys = list(configuration.keys())
             keys.sort()
             # Mask any keys in the encryption that should be masked
             for key in keys:
@@ -86,7 +89,7 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
                     invalid_encrypted_keys[key] = f"Can not be set to {ENCRYPTED_STRING}"
             if invalid_encrypted_keys:
                 raise ValidationError(invalid_encrypted_keys)
-            authenticator.validate_configuration(configuration, self.instance)
+            data['configuration'] = authenticator.validate_configuration(configuration, self.instance)
+            return data
         except ImportError as e:
             raise ValidationError({'type': f'Failed to import {e}'})
-        return data
