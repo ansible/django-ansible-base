@@ -23,4 +23,6 @@ class AuthenticatorPluginView(APIView):
                     resp['errors'] = []
                 resp['errors'].append(ie.__str__())
 
+        resp['authenticators'] = sorted(resp['authenticators'], key=lambda k: k['type'])
+
         return Response(resp)
