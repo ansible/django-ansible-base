@@ -51,6 +51,7 @@ class AbstractAuthenticatorPlugin:
     """
 
     configuration_class = BaseAuthenticatorConfiguration
+    configuration_encrypted_fields = []
 
     def __init__(self, database_instance=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
