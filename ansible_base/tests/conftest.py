@@ -147,7 +147,13 @@ def keycloak_authenticator(db):
         users_unique=False,
         remove_users=True,
         type="ansible_base.authenticator_plugins.keycloak",
-        configuration={},
+        configuration={
+            "ACCESS_TOKEN_URL": "asdf",
+            "AUTHORIZATION_URL": "asdf",
+            "KEY": "asdf",
+            "PUBLIC_KEY": "asdf",
+            "SECRET": "asdf",
+        },
     )
     yield authenticator
     authenticator.delete()
