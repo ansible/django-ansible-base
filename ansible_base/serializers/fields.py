@@ -1,6 +1,9 @@
+from cryptography.hazmat.primitives import serialization
+from cryptography.x509 import load_pem_x509_certificate
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
+from ansible_base.utils.encryption import ENCRYPTED_STRING
 from ansible_base.utils.validation import validate_url, validate_url_list
 
 User = get_user_model()
@@ -91,5 +94,35 @@ class UserAttrMap(UILabelMixIn, serializers.DictField):
 
             if errors:
                 raise serializers.ValidationError(errors)
+
+        self.validators.append(validator)
+
+
+class PublicCert(serializers.CharField):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.public_cert = None
+
+        def validator(value):
+            if value:
+                try:
+                    self.public_cert = load_pem_x509_certificate(bytes(value, "UTF-8"))
+                except Exception as e:
+                    raise serializers.ValidationError(f"Unable to load as PEM data {e}")
+
+        self.validators.append(validator)
+
+
+class PrivateKey(serializers.CharField):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.private_key = None
+
+        def validator(value):
+            if value and value != ENCRYPTED_STRING:
+                try:
+                    self.private_key = serialization.load_pem_private_key(bytes(value, "UTF-8"), password=None)
+                except Exception as e:
+                    raise serializers.ValidationError(f"Unable to load as PEM data {e}")
 
         self.validators.append(validator)

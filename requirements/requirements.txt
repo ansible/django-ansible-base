@@ -45,10 +45,16 @@ inflection==0.5.1
     # via
     #   -r requirements/requirements.in
     #   drf-spectacular
+isodate==0.6.1
+    # via python3-saml
 jsonschema==4.19.1
     # via drf-spectacular
 jsonschema-specifications==2023.7.1
     # via jsonschema
+lxml==4.9.3
+    # via
+    #   python3-saml
+    #   xmlsec
 oauthlib==3.2.2
     # via
     #   requests-oauthlib
@@ -69,6 +75,8 @@ python-ldap==3.4.3
     #   django-auth-ldap
 python3-openid==3.2.0
     # via social-auth-core
+python3-saml==1.16.0
+    # via -r requirements/requirements.in
 pytz==2023.3.post1
     # via djangorestframework
 pyyaml==6.0.1
@@ -87,6 +95,8 @@ rpds-py==0.10.6
     # via
     #   jsonschema
     #   referencing
+six==1.16.0
+    # via isodate
 social-auth-app-django==5.4.0
     # via -r requirements/requirements.in
 social-auth-core==4.4.2
@@ -99,3 +109,5 @@ uritemplate==4.1.1
     # via drf-spectacular
 urllib3==2.0.7
     # via requests
+xmlsec==1.3.13
+    # via python3-saml

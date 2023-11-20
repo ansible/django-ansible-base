@@ -1,5 +1,8 @@
 from urllib.parse import urlparse, urlunsplit
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.x509 import load_pem_x509_certificate
 from django.core.exceptions import ValidationError as LowLevelValidationError
 from django.core.validators import URLValidator
 from django.utils.translation import gettext_lazy as _
@@ -52,3 +55,36 @@ def validate_url(url: str, schemes: list = ['https'], allow_plain_hostname: bool
         validator(url)
     except LowLevelValidationError as e:
         raise ValidationError(e.message)
+
+
+def validate_cert_with_key(public_cert_string, private_key_string):
+    # Returns:
+    # None if one of the parameters wasn't set
+    # False if we failed to load an item (should be pre-tried by your serializer)
+    # A ValidationError exception if the key/value don't match
+    # True if everything checks out
+
+    if not private_key_string or not public_cert_string:
+        return None
+
+    private_key = None
+    public_cert = None
+    try:
+        private_key = serialization.load_pem_private_key(bytes(private_key_string, "UTF-8"), password=None)
+        public_cert = load_pem_x509_certificate(bytes(public_cert_string, "UTF-8"))
+    except Exception:
+        return False
+
+    try:
+        # We have both pieces of the puzzle, lets make sure they interlock
+        private_key.public_key().verify(
+            public_cert.signature,
+            public_cert.tbs_certificate_bytes,
+            # Depends on the algorithm used to create the certificate
+            padding.PKCS1v15(),
+            public_cert.signature_hash_algorithm,
+        )
+    except Exception as e:
+        raise ValidationError(f"Unable to validate SP cert and key {e}")
+
+    return True
