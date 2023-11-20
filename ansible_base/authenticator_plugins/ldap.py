@@ -177,7 +177,7 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
             'https://www.python-ldap.org/doc/html/ldap.html#options for '
             'possible options and values that can be set.'
         ),
-        default="{}",
+        default={},
         allow_null=False,
         required=False,
         ui_field_label=_('LDAP Connection Options'),
