@@ -7,5 +7,6 @@ django-filter
 drf-spectacular
 inflection
 python-ldap
+python3-saml
 social-auth-app-django
 tabulate
