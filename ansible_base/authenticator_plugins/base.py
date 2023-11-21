@@ -3,9 +3,10 @@ import logging
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from rest_framework.fields import empty
-from rest_framework.serializers import JSONField, ValidationError
+from rest_framework.serializers import ValidationError
 
 from ansible_base.models import Authenticator
+from ansible_base.serializers.fields import JSONField
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_lib')
 
@@ -13,9 +14,10 @@ logger = logging.getLogger('ansible_base.authentication.authenticator_lib')
 class BaseAuthenticatorConfiguration(serializers.Serializer):
     documentation_url = None
     ADDITIONAL_UNVERIFIED_ARGS = JSONField(
-        help_text="Any additional fields that this authenticator can take, they are not validated and passed directly back to the authenticator",
+        help_text=_("Any additional fields that this authenticator can take, they are not validated and passed directly back to the authenticator"),
         required=False,
         allow_null=True,
+        ui_field_label=_('Additional Authenticator Fields'),
     )
 
     def get_configuration_schema(self):
@@ -29,7 +31,16 @@ class BaseAuthenticatorConfiguration(serializers.Serializer):
             if field.default is not empty:
                 default = field.default
 
-            schema.append({"name": f, "help_text": field.help_text, "required": not field.allow_null, "default": default, "type": field.__class__.__name__})
+            schema.append(
+                {
+                    "name": f,
+                    "help_text": field.help_text,
+                    "required": not field.allow_null,
+                    "default": default,
+                    "type": field.__class__.__name__,
+                    "ui_field_label": getattr(field, 'ui_field_label', _('Undefined')),
+                }
+            )
         return schema
 
 
