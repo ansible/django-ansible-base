@@ -6,7 +6,43 @@ from ansible_base.utils.validation import validate_url, validate_url_list
 User = get_user_model()
 
 
-class URLField(serializers.CharField):
+class UILabelMixIn:
+    def __init__(self, **kwargs):
+        self.ui_field_label = kwargs.pop('ui_field_label', 'Undefined')
+        super().__init__(**kwargs)
+
+
+class BooleanField(UILabelMixIn, serializers.BooleanField):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+
+class CharField(UILabelMixIn, serializers.CharField):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+
+class ChoiceField(UILabelMixIn, serializers.ChoiceField):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+
+class DictField(UILabelMixIn, serializers.DictField):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+
+class ListField(UILabelMixIn, serializers.ListField):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+
+class JSONField(UILabelMixIn, serializers.JSONField):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+
+class URLField(UILabelMixIn, serializers.CharField):
     def __init__(self, **kwargs):
         self.schemes = kwargs.pop('schemes', ['https', 'http'])
         self.allow_plain_hostname = kwargs.pop('allow_plain_hostname', True)
@@ -18,7 +54,7 @@ class URLField(serializers.CharField):
         self.validators.append(validator)
 
 
-class URLListField(serializers.ListField):
+class URLListField(UILabelMixIn, serializers.ListField):
     def __init__(self, **kwargs):
         self.schemes = kwargs.pop('schemes', ['https', 'http'])
         self.allow_plain_hostname = kwargs.pop('allow_plain_hostname', True)
@@ -30,7 +66,7 @@ class URLListField(serializers.ListField):
         self.validators.append(validator)
 
 
-class UserAttrMap(serializers.DictField):
+class UserAttrMap(UILabelMixIn, serializers.DictField):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 

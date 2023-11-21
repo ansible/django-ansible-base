@@ -10,12 +10,11 @@ from django_auth_ldap import config
 from django_auth_ldap.backend import LDAPBackend
 from django_auth_ldap.backend import LDAPSettings as BaseLDAPSettings
 from django_auth_ldap.config import LDAPGroupType
-from rest_framework import serializers
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.common import get_or_create_authenticator_user, update_user_claims
 from ansible_base.authenticator_plugins.base import AbstractAuthenticatorPlugin, Authenticator, BaseAuthenticatorConfiguration
-from ansible_base.serializers.fields import URLListField, UserAttrMap
+from ansible_base.serializers.fields import BooleanField, CharField, ChoiceField, DictField, ListField, URLListField, UserAttrMap
 from ansible_base.utils.validation import VALID_STRING
 
 logger = logging.getLogger('ansible_base.authenticator_plugins.ldap')
@@ -41,7 +40,7 @@ def validate_ldap_dn(value: str, with_user: bool = False, required: bool = True)
         raise ValidationError(_('Invalid DN: %s') % value)
 
 
-class DNField(serializers.CharField):
+class DNField(CharField):
     def __init__(self, **kwargs):
         self.with_user = kwargs.pop('with_user', False)
         super().__init__(**kwargs)
@@ -52,7 +51,7 @@ class DNField(serializers.CharField):
         self.validators.append(validator)
 
 
-class LDAPConnectionOptions(serializers.DictField):
+class LDAPConnectionOptions(DictField):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -68,7 +67,7 @@ class LDAPConnectionOptions(serializers.DictField):
         self.validators.append(validator)
 
 
-class LDAPSearchField(serializers.ListField):
+class LDAPSearchField(ListField):
     def __init__(self, **kwargs):
         self.search_must_have_user = kwargs.pop('search_must_have_user', False)
         super().__init__(**kwargs)
@@ -148,7 +147,9 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
         allow_null=False,
         required=True,
         schemes=['ldap', 'ldaps'],
+        ui_field_label=_('LDAP Server URI'),
     )
+
     BIND_DN = DNField(
         help_text=_(
             'DN (Distinguished Name) of user to bind for all search queries. This'
@@ -158,11 +159,13 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
         allow_null=False,
         required=False,
         with_user=False,
+        ui_field_label=_('LDAP Bind DN'),
     )
-    BIND_PASSWORD = serializers.CharField(
+    BIND_PASSWORD = CharField(
         help_text=_("The password used for BIND_DN."),
         allow_null=False,
         required=False,
+        ui_field_label=_('LDAP Bind Password'),
     )
 
     CONNECTION_OPTIONS = LDAPConnectionOptions(
@@ -177,9 +180,10 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
         default="{}",
         allow_null=False,
         required=False,
+        ui_field_label=_('LDAP Connection Options'),
     )
 
-    GROUP_TYPE = serializers.ChoiceField(
+    GROUP_TYPE = ChoiceField(
         help_text=_(
             'The group type may need to be changed based on the type of the '
             'LDAP server.  Values are listed at: '
@@ -188,11 +192,13 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
         allow_null=False,
         required=True,
         choices=get_all_sub_classes(LDAPGroupType),
+        ui_field_label=_('LDAP Group Type'),
     )
-    GROUP_TYPE_PARAMS = serializers.DictField(
+    GROUP_TYPE_PARAMS = DictField(
         help_text=_('Key value parameters to send the chosen group type init method.'),
         allow_null=False,
         required=True,
+        ui_field_label=_('LDAP Group Type Parameters'),
     )
     GROUP_SEARCH = LDAPSearchField(
         help_text=_(
@@ -203,12 +209,14 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
         allow_null=True,
         required=False,
         search_must_have_user=False,
+        ui_field_label=_('LDAP Group Search'),
     )
-    START_TLS = serializers.BooleanField(
+    START_TLS = BooleanField(
         help_text=_("Whether to enable TLS when the LDAP connection is not using SSL."),
         allow_null=False,
         required=False,
         default=False,
+        ui_field_label=_('LDAP Start TLS'),
     )
     USER_DN_TEMPLATE = DNField(
         help_text=_(
@@ -221,6 +229,7 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
         allow_null=False,
         required=True,
         with_user=True,
+        ui_field_label=_('LDAP User DN Template'),
     )
     USER_ATTR_MAP = UserAttrMap(
         help_text=_(
@@ -231,6 +240,7 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
         ),
         allow_null=False,
         required=True,
+        ui_field_label=_('LDAP User Attribute Map'),
     )
     USER_SEARCH = LDAPSearchField(
         help_text=_(
@@ -244,6 +254,7 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
         allow_null=False,
         required=False,
         search_must_have_user=True,
+        ui_field_label=_('LDAP User Search'),
     )
 
     def validate(self, attrs):
