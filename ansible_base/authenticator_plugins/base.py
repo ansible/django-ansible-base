@@ -118,3 +118,6 @@ class AbstractAuthenticatorPlugin:
     def get_login_url(self, authenticator):
         if authenticator.category == 'sso':
             return reverse('social:begin', kwargs={'backend': authenticator.slug})
+
+    def validate(self, serializer, data):
+        return data

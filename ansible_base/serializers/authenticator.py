@@ -85,6 +85,7 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
             invalid_encrypted_keys = {}
             configuration = data['configuration']
             authenticator = get_authenticator_plugin(validator_type)
+            data = authenticator.validate(self, data)
             for key in authenticator.configuration_encrypted_fields:
                 if not self.instance and configuration.get(key, None) == ENCRYPTED_STRING:
                     invalid_encrypted_keys[key] = f"Can not be set to {ENCRYPTED_STRING}"
