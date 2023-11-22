@@ -119,5 +119,8 @@ class AbstractAuthenticatorPlugin:
         if authenticator.category == 'sso':
             return reverse('social:begin', kwargs={'backend': authenticator.slug})
 
+    def add_related_fields(self, request, authenticator):
+        return {}
+
     def validate(self, serializer, data):
         return data
