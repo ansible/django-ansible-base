@@ -38,3 +38,12 @@ def get_authenticator_class(authenticator_type: str):
 def get_authenticator_plugin(authenticator_type: str):
     AuthClass = get_authenticator_class(authenticator_type)
     return AuthClass()
+
+
+def get_authenticator_urls(authenticator_type: str) -> list:
+    try:
+        urls = __import__(authenticator_type, globals(), locals(), ['urls'], 0)
+        return urls
+    except Exception as e:
+        logger.error(f"Failed to load urls form {authenticator_type} {e}")
+    return None
