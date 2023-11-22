@@ -29,17 +29,22 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
         masked_configuration = OrderedDict()
         keys = list(configuration.keys())
 
-        authenticator_plugin = get_authenticator_plugin(authenticator.type)
-        encrypted_keys = authenticator_plugin.configuration_encrypted_fields
+        try:
+            authenticator_plugin = get_authenticator_plugin(authenticator.type)
+            encrypted_keys = authenticator_plugin.configuration_encrypted_fields
 
-        keys.sort()
-        # Mask any keys in the encryption that should be masked
-        for key in keys:
-            if key in encrypted_keys:
-                masked_configuration[key] = ENCRYPTED_STRING
-            else:
-                masked_configuration[key] = configuration[key]
-        ret['configuration'] = masked_configuration
+            keys.sort()
+            # Mask any keys in the encryption that should be masked
+            for key in keys:
+                if key in encrypted_keys:
+                    masked_configuration[key] = ENCRYPTED_STRING
+                else:
+                    masked_configuration[key] = configuration[key]
+            ret['configuration'] = masked_configuration
+        except ImportError:
+            # A log message will already be displayed if we can't load this
+            ret['configuration'] = {}
+            ret['error'] = 'Failed to load the plugin behind this authenticator, configuration hidden to protect secrets'
 
         # Generate a sso login URL if this is an sso category
         if authenticator.category == 'sso':
@@ -52,7 +57,10 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
 
         # Incase type was not passed in the data (like from a patch) we need to take it from the existing instance
         type = parsed_data.get('type', getattr(self.instance, 'type', None))
+
+        # Here we will let a stack trace propagate because we can't convert this thing to an internal value and we likely don't want to save
         authenticator_plugin = get_authenticator_plugin(type)
+
         encrypted_keys = authenticator_plugin.configuration_encrypted_fields
 
         configuration = parsed_data.get('configuration', {})

@@ -30,6 +30,7 @@ class Authenticator(UniqueNamedCommonModel):
     def save(self, *args, **kwargs):
         from ansible_base.utils.encryption import ansible_encryption
 
+        # Here we are going to allow an exception to raise because what else can we do at this point?
         authenticator = get_authenticator_plugin(self.type)
 
         if not self.category:
@@ -54,9 +55,13 @@ class Authenticator(UniqueNamedCommonModel):
 
         instance = super().from_db(db, field_names, values)
 
-        authenticator = get_authenticator_plugin(instance.type)
-        for field in getattr(authenticator, 'configuration_encrypted_fields', []):
-            if field in instance.configuration and instance.configuration[field].startswith(ENCRYPTED_STRING):
-                instance.configuration[field] = ansible_encryption.decrypt_string(instance.configuration[field])
+        try:
+            authenticator = get_authenticator_plugin(instance.type)
+            for field in getattr(authenticator, 'configuration_encrypted_fields', []):
+                if field in instance.configuration and instance.configuration[field].startswith(ENCRYPTED_STRING):
+                    instance.configuration[field] = ansible_encryption.decrypt_string(instance.configuration[field])
+        except ImportError:
+            # A log message will already be displayed if this fails
+            pass
 
         return instance
