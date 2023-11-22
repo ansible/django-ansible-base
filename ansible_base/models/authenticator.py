@@ -1,7 +1,6 @@
 from django.db.models import JSONField, fields
-from django.utils.text import slugify
 
-from ansible_base.authenticator_plugins.utils import get_authenticator_plugin
+from ansible_base.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_plugin
 
 from .common import UniqueNamedCommonModel
 
@@ -41,7 +40,7 @@ class Authenticator(UniqueNamedCommonModel):
                 self.configuration[field] = ansible_encryption.encrypt_string(self.configuration[field])
 
         if not self.slug:
-            self.slug = slugify(f"{self.type.replace('.', ' ')}__{self.name}")
+            self.slug = generate_authenticator_slug(self.type, self.name)
             # TODO: What happens if computed slug is not unique?
             # You would have to create an adapter with a name, rename it and then create a new one with the same name
         super().save(*args, **kwargs)
