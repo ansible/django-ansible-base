@@ -68,3 +68,15 @@ class Authenticator(UniqueNamedCommonModel):
     def get_login_url(self):
         plugin = get_authenticator_plugin(self.type)
         return plugin.get_login_url(self)
+
+    def related_fields(self, request):
+        response = super().related_fields(request)
+
+        try:
+            plugin = get_authenticator_plugin(self.type)
+            response.update(plugin.add_related_fields(request, self))
+        except ImportError:
+            # If the plugin was removed we could get an ImportError but we still want to return what we can.
+            pass
+
+        return response
