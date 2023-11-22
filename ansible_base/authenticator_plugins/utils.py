@@ -3,6 +3,7 @@ from glob import glob
 from os.path import basename, isfile, join
 
 from django.conf import settings
+from django.utils.text import slugify
 
 logger = logging.getLogger('ansible_base.authenticator_plugins.utils')
 setting = 'ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES'
@@ -47,3 +48,7 @@ def get_authenticator_urls(authenticator_type: str) -> list:
     except Exception as e:
         logger.error(f"Failed to load urls form {authenticator_type} {e}")
     return None
+
+
+def generate_authenticator_slug(type: str, name: str) -> str:
+    return slugify(f"{type.replace('.', ' ')}__{name}")
