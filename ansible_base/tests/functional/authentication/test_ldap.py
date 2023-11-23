@@ -72,7 +72,6 @@ def test_ldap_search_exception(
 
 
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
-@mock.patch("ansible_base.authenticator_plugins.ldap.AuthenticatorPlugin.authenticate")
 @pytest.mark.parametrize(
     "setting_override, expected_errors",
     [
@@ -136,7 +135,6 @@ def test_ldap_search_exception(
     ],
 )
 def test_ldap_create_authenticator_error_handling(
-    authenticate,
     admin_api_client,
     ldap_configuration,
     user,
