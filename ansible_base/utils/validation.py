@@ -1,5 +1,6 @@
 from urllib.parse import urlparse, urlunsplit
 
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.x509 import load_pem_x509_certificate
@@ -84,7 +85,14 @@ def validate_cert_with_key(public_cert_string, private_key_string):
             padding.PKCS1v15(),
             public_cert.signature_hash_algorithm,
         )
+    except InvalidSignature:
+        raise ValidationError(_("The certificate and private key do not match"))
     except Exception as e:
-        raise ValidationError(f"Unable to validate SP cert and key {e}")
+        error = _("Unable to validate SP cert and key")
+        if hasattr(e, 'message'):
+            error = f"{error}: {e.message}"
+        else:
+            error = f"{error}: {e.__class__.__name__}"
+        raise ValidationError(error)
 
     return True

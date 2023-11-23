@@ -153,9 +153,9 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
     def to_internal_value(self, data):
         resp = super().to_internal_value(data)
         idp_data = {}
-        for field in self.settings_to_enabled_idps_fields:
+        for field, idp_field in self.settings_to_enabled_idps_fields.items():
             if field in resp:
-                idp_data[self.settings_to_enabled_idps_fields[field]] = resp[field]
+                idp_data[idp_field] = resp[field]
                 del resp[field]
         resp['ENABLED_IDPS'] = {idp_string: idp_data}
         return resp

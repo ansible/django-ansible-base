@@ -170,11 +170,7 @@ def test_ldap_create_authenticator_error_handling(
                 for sub_key in response.data[key]:
                     assert value[sub_key] in response.data[key][sub_key]
             elif type(response.data[key]) is list:
-                valid = False
-                for item in response.data[key]:
-                    if value in item:
-                        valid = True
-                assert valid
+                assert any(value in item for item in response.data[key])
             else:
                 assert value in response.data[key]
 
