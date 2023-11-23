@@ -47,6 +47,7 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
             # A log message will already be displayed if we can't load this
             ret['configuration'] = {}
             ret['error'] = 'Failed to load the plugin behind this authenticator, configuration hidden to protect secrets'
+            return ret
 
         # Generate a sso login URL if this is an sso category
         login_url = authenticator.get_login_url()
