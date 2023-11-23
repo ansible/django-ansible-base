@@ -4,7 +4,7 @@ from ansible_base.serializers import AuthenticatorSerializer
 
 
 @pytest.mark.django_db
-def test_removed_authenticator_plugin(ldap_authenticator):
+def test_removed_authenticator_plugin(ldap_authenticator, shut_up_logging):
     serializer = AuthenticatorSerializer()
     item = serializer.to_representation(ldap_authenticator)
     assert 'error' not in item
