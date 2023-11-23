@@ -4,7 +4,7 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from rest_framework.fields import empty
 from rest_framework.reverse import reverse
-from rest_framework.serializers import JSONField, ValidationError
+from rest_framework.serializers import ValidationError
 
 from ansible_base.models import Authenticator
 from ansible_base.serializers.fields import JSONField
