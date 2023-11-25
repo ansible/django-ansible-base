@@ -1,13 +1,19 @@
 import logging
 
+from django.http import HttpResponse, HttpResponseNotFound
+from django.urls import re_path
 from django.utils.translation import gettext_lazy as _
+from onelogin.saml2.errors import OneLogin_Saml2_Error
 from rest_framework import serializers
 from rest_framework.reverse import reverse
 from rest_framework.serializers import ValidationError
+from rest_framework.views import View
 from social_core.backends.saml import SAMLAuth
 
-from ansible_base.authentication.social_auth import SocialAuthMixin
+from ansible_base.authentication.social_auth import AuthenticatorStorage, AuthenticatorStrategy, SocialAuthMixin
 from ansible_base.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
+from ansible_base.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_plugin
+from ansible_base.models import Authenticator
 from ansible_base.serializers.fields import PrivateKey, PublicCert, URLField
 from ansible_base.utils.encryption import ENCRYPTED_STRING
 from ansible_base.utils.validation import validate_cert_with_key
@@ -111,6 +117,14 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
         required=False,
         help_text=_("The field in the assertion which represents the users permanent id (overrides IDP_ATTR_USERNAME)"),
     )
+    CALLBACK_URL = URLField(
+        required=False,
+        allow_null=True,
+        help_text=_(
+            '''Register the service as a service provider (SP) with each identity provider (IdP) you have configured.'''
+            '''Provide your SP Entity ID and this ACS URL for your application.'''
+        ),
+    )
 
     def validate(self, attrs):
         # attrs is only the data in the configuration field
@@ -181,3 +195,49 @@ class AuthenticatorPlugin(SocialAuthMixin, SAMLAuth, AbstractAuthenticatorPlugin
     def get_login_url(self, authenticator):
         url = reverse('social:begin', kwargs={'backend': authenticator.slug})
         return f'{url}?idp={idp_string}'
+
+    def add_related_fields(self, request, authenticator):
+        return {"metadata": reverse('authenticator-metadata', kwargs={'pk': authenticator.id})}
+
+    def validate(self, serializer, data):
+        # if we have an instance already and we didn't get a configuration parameter we are just updating other fields and can return
+        if serializer.instance and 'configuration' not in data:
+            return data
+
+        configuration = data['configuration']
+        if not configuration.get('CALLBACK_URL', None):
+            if not serializer.instance:
+                slug = generate_authenticator_slug(data['type'], data['name'])
+            else:
+                slug = serializer.instance.slug
+
+            configuration['CALLBACK_URL'] = reverse('social:complete', request=serializer.context['request'], kwargs={'backend': slug})
+
+        return data
+
+
+class SAMLMetadataView(View):
+    def get(self, request, pk=None, format=None):
+        authenticator = Authenticator.objects.get(id=pk)
+        plugin = get_authenticator_plugin(authenticator.type)
+        if plugin.type != 'SAML':
+            logger.debug(f"Authenticator {authenticator.id} has a type which does not support metadata {plugin.type}")
+            return HttpResponseNotFound()
+
+        strategy = AuthenticatorStrategy(AuthenticatorStorage())
+        complete_url = authenticator.configuration.get('CALLBACK_URL')
+        saml_backend = strategy.get_backend(slug=authenticator.slug, redirect_uri=complete_url)
+        try:
+            metadata, errors = saml_backend.generate_metadata_xml()
+        except OneLogin_Saml2_Error as e:
+            errors = e
+        if not errors:
+            return HttpResponse(content=metadata, content_type='text/xml')
+        else:
+            return HttpResponse(content=errors, content_type='text/plain')
+
+
+urls = [
+    # SAML Metadata
+    re_path(r'authenticators/(?P<pk>[0-9]+)/metadata/$', SAMLMetadataView.as_view(), name='authenticator-metadata'),
+]

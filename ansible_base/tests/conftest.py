@@ -195,13 +195,13 @@ def ldap_authenticator(ldap_configuration):
 @pytest.fixture
 def saml_configuration(rsa_keypair_with_cert, rsa_keypair_with_cert_1):
     return {
+        "CALLBACK_URL": "https://localhost/api/gateway/social/complete/ansible_base-authenticator_plugins-saml__test-saml-authenticator/",
         "SP_ENTITY_ID": "aap_gateway",
         "SP_PUBLIC_CERT": rsa_keypair_with_cert.certificate,
         "SP_PRIVATE_KEY": rsa_keypair_with_cert.private,
         "ORG_INFO": {"en-US": {"url": "http://localhost", "name": "test app", "displayname": "Test App"}},
         "TECHNICAL_CONTACT": {'givenName': "Technical Doe", 'emailAddress': "tdoe@example.com"},
         "SUPPORT_CONTACT": {'givenName': "Support Doe", 'emailAddress': "sdoe@example.com"},
-        # "ENABLED_IDPS": ,
         "SP_EXTRA": {"requestedAuthnContext": False},
         "SECURITY_CONFIG": {},
         "EXTRA_DATA": [],

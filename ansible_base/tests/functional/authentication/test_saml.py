@@ -165,3 +165,31 @@ def test_saml_create_authenticator_errors_with_cert_key_mismatch(
     response = admin_api_client.post(url, data=data, format="json")
     assert response.status_code == 400
     assert any("The certificate and private key do not match" in err for err in response.data["SP_PRIVATE_KEY"])
+
+
+@pytest.mark.django_db
+def test_saml_metadata_on_ldap_authenticator(admin_api_client, ldap_authenticator):
+    url = reverse('authenticator-metadata', kwargs={'pk': ldap_authenticator.id})
+    response = admin_api_client.get(url)
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_saml_metadata_on_good_saml_authenticator(admin_api_client, saml_authenticator):
+    url = reverse('authenticator-metadata', kwargs={'pk': saml_authenticator.id})
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    headers = response.headers
+    assert str(headers['content-type']) == 'text/xml'
+
+
+@pytest.mark.django_db
+def test_saml_metadata_on_bad_saml_authenticator(admin_api_client, saml_authenticator):
+    saml_authenticator.configuration['CALLBACK_URL'] = ''
+    saml_authenticator.save()
+    url = reverse('authenticator-metadata', kwargs={'pk': saml_authenticator.id})
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    headers = response.headers
+    assert str(headers['content-type']) == 'text/plain'
+    assert response.content.decode("utf-8") == 'Invalid dict settings: sp_acs_not_found'
