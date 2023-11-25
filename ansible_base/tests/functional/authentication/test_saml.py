@@ -36,7 +36,7 @@ def test_saml_auth_successful(authenticate, unauthenticated_api_client, saml_aut
         pytest.param({"SP_PRIVATE_KEY": "really invalid"}, {"SP_PRIVATE_KEY": "Unable to load as PEM data"}, id="SP_PRIVATE_KEY is utterly invalid"),
         pytest.param(
             {"IDP_ATTR_USERNAME": None, "IDP_ATTR_USER_PERMANENT_ID": None},
-            {"IDP_ATTR_USERNAME": "This field may not be null.", "IDP_ATTR_USER_PERMANENT_ID": "This field may not be null."},
+            {"IDP_ATTR_USERNAME": "Either IDP_ATTR_USERNAME or IDP_ATTR_USER_PERMANENT_ID needs to be set"},
             id="null IDP_ATTR_USERNAME and IDP_ATTR_USER_PERMANENT_ID",
         ),
         pytest.param(
@@ -51,7 +51,7 @@ def test_saml_auth_successful(authenticate, unauthenticated_api_client, saml_aut
         ),
         pytest.param(
             {"-IDP_ATTR_USERNAME": None, "-IDP_ATTR_USER_PERMANENT_ID": None},
-            {"IDP_ATTR_USERNAME": "This field is required.", "IDP_ATTR_USER_PERMANENT_ID": "This field is required."},
+            {"IDP_ATTR_USERNAME": "Either IDP_ATTR_USERNAME or IDP_ATTR_USER_PERMANENT_ID needs to be set"},
             id="missing IDP_ATTR_USERNAME and IDP_ATTR_USER_PERMANENT_ID",
         ),
     ],

@@ -85,6 +85,8 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
         help_text=_("The entity ID returned in the assertion."),
     )
     IDP_GROUPS = serializers.CharField(
+        allow_null=True,
+        required=False,
         help_text=_("The field in the assertion which represents the users groups."),
     )
     IDP_ATTR_EMAIL = serializers.CharField(
@@ -92,6 +94,8 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
         help_text=_("The field in the assertion which represents the users email."),
     )
     IDP_ATTR_USERNAME = serializers.CharField(
+        allow_null=True,
+        required=False,
         help_text=_("The field in the assertion which represents the users username."),
     )
     IDP_ATTR_LAST_NAME = serializers.CharField(
@@ -103,6 +107,8 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
         help_text=_("The field in the assertion which represents the users first name."),
     )
     IDP_ATTR_USER_PERMANENT_ID = serializers.CharField(
+        allow_null=True,
+        required=False,
         help_text=_("The field in the assertion which represents the users permanent id (overrides IDP_ATTR_USERNAME)"),
     )
 
@@ -112,19 +118,15 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
         # pull the cert_info out of the existing object (if we have one)
         cert_info = {
             "SP_PRIVATE_KEY": getattr(self.instance, 'configuration', {}).get('SP_PRIVATE_KEY', None),
-            "SP_PUBLIC_CERT": getattr(self.instance, 'configuration', {}).get('SP_PUBLIC_CERT', None),
+            "SP_PUBLIC_CERT": getattr(self.instance, 'configuration', {}).get('SP_PUBLIC_CERT', attrs.get('SP_PUBLIC_CERT', None)),
         }
 
-        # Now get the cert_info out of the passed in attrs (if there is any)
-        for cert_type in cert_info.keys():
-            item = attrs.get(cert_type, None)
-            if item and item == ENCRYPTED_STRING and not self.instance:
-                # Catch a case where we got input but it was ENCRYPTED and we don't have an object yet
-                errors[cert_type] = f"Can not be {ENCRYPTED_STRING} on creation"
-            elif item and item != ENCRYPTED_STRING:
-                # We got an input form the attrs so let that override whatever was in the object
-                cert_info[cert_type] = item
-            # If we didn't get an input or we got ENCRYPTED_STRING but there is an item, we will just use whatever we got from the item
+        # Now get the SP_PRIVATE_KEY out of the passed in attrs (if there is any)
+        private_key = attrs.get('SP_PRIVATE_KEY', None)
+        if private_key and private_key != ENCRYPTED_STRING:
+            # We got an input form the attrs so let that override whatever was in the object
+            cert_info['SP_PRIVATE_KEY'] = private_key
+        # If we didn't get an input or we got ENCRYPTED_STRING but there is an item, we will just use whatever we got from the item
 
         # If we made it here the cert_info has one of three things:
         #  * None (error state or not passed in on PUT)
@@ -140,8 +142,7 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
             errors['SP_PRIVATE_KEY'] = e
 
         idp_data = attrs.get('ENABLED_IDPS', {}).get(idp_string, {})
-        # TODO: Check to make sure either ID or Perminant ID is set
-        if not idp_data['attr_user_permanent_id'] and not idp_data['attr_username']:
+        if not idp_data.get('attr_user_permanent_id', None) and not idp_data.get('attr_username'):
             errors['IDP_ATTR_USERNAME'] = "Either IDP_ATTR_USERNAME or IDP_ATTR_USER_PERMANENT_ID needs to be set"
 
         if errors:
