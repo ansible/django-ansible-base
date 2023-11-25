@@ -253,6 +253,24 @@ def local_authenticator(db):
 
 
 @pytest.fixture
+def custom_authenticator(db):
+    from ansible_base.models import Authenticator
+
+    authenticator = Authenticator.objects.create(
+        name="Test Custom Authenticator",
+        enabled=True,
+        create_objects=True,
+        users_unique=False,
+        remove_users=True,
+        type="ansible_base.tests.fixtures.authenticator_plugins.custom",
+        configuration={},
+    )
+    yield authenticator
+    authenticator.authenticator_user.all().delete()
+    authenticator.delete()
+
+
+@pytest.fixture
 def keycloak_authenticator(db):
     from ansible_base.models import Authenticator
 
