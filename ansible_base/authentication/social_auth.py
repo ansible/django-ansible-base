@@ -1,5 +1,7 @@
+import importlib
 import logging
 
+from django.conf import settings
 from django.db import models
 from django.db.utils import IntegrityError
 from social_core.utils import setting_name
@@ -26,6 +28,19 @@ class AuthenticatorStorage(BaseDjangoStorage):
 
 
 class AuthenticatorStrategy(DjangoStrategy):
+    def __init__(self, storage, request=None, tpl=None):
+        super().__init__(storage, request, tpl)
+        self.settings = {}
+        fq_function_name = getattr(settings, 'ANSIBLE_BASE_SOCIAL_AUTH_STRATEGY_SETTINGS_FUNCTION', None)
+        if fq_function_name:
+            logger.info(f"Attempting to load social settings from {fq_function_name}")
+            try:
+                module_name, _, function_name = fq_function_name.rpartition('.')
+                the_function = getattr(importlib.import_module(module_name), function_name)
+                self.settings = the_function()
+            except Exception as e:
+                logger.error(f"Failed to run {fq_function_name} to get additional settings: {e}")
+
     # override setting to pass the backend to get_setting
     def setting(self, name, default=None, backend=None):
         names = [setting_name(name), name]
@@ -41,15 +56,20 @@ class AuthenticatorStrategy(DjangoStrategy):
     # load the authenticator setting from the database object.
     def get_setting(self, name, backend):
         # try to load the value from the db.
-        value = backend.database_instance.configuration.get(name, None)
-        if value is not None:
-            return value
+        if backend:
+            value = backend.database_instance.configuration.get(name, None)
+            if value is not None:
+                return value
 
-        # next check the ADDITIONAL_UNVERIFIED_ARGS
-        additional_args = backend.database_instance.configuration.get('ADDITIONAL_UNVERIFIED_ARGS', {})
-        value = additional_args.get(name, None)
-        if value is not None:
-            return value
+            # next check the ADDITIONAL_UNVERIFIED_ARGS
+            additional_args = backend.database_instance.configuration.get('ADDITIONAL_UNVERIFIED_ARGS', {})
+            value = additional_args.get(name, None)
+            if value is not None:
+                return value
+
+        # See if we have the setting ourselves
+        if self.settings.get(name, None):
+            return self.settings.get(name)
 
         # fall back to settings module
         return super().get_setting(name)
