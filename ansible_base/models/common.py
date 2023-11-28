@@ -96,7 +96,7 @@ class CommonModel(models.Model):
 
         # Add any reverse relations required
         for field in getattr(self, 'reverse_foreign_key_fields', []):
-            reverse_view = f"{underscore(self.__class__.__name__)}-{field}"
+            reverse_view = f"{underscore(self.__class__.__name__)}-{field}-list"
             response[field] = reverse(reverse_view, kwargs={'pk': self.pk})
 
         return response
