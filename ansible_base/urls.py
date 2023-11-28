@@ -28,7 +28,7 @@ urls.extend(
         re_path(
             r'authenticators/(?P<pk>[0-9]+)/authenticator_maps/$',
             views.AuthenticatorAuthenticatorMapViewSet.as_view(view_only_list),
-            name='authenticator-authenticator-map',
+            name='authenticator-authenticator-map-list',
         ),
         # Maps
         path('authenticator_maps/', views.AuthenticatorMapViewSet.as_view(list_actions), name='authenticator_map-list'),
