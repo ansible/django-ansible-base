@@ -75,6 +75,22 @@ SOCIAL_AUTH_LOGIN_REDIRECT_URL = "/api/v1/me"
 
 If you have additional steps for the social pipeline feel free to add them here.
 
+Additionally, if you want to support any "global" SOCIAL_AUTH variables (like SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL) you can add a setting like:
+```
+ANSIBLE_BASE_SOCIAL_AUTH_STRATEGY_SETTINGS_FUNCTION = "aap_gateway_api.authentication.util.load_social_auth_settings"
+```
+
+This setting points to a function which needs to return a dictionary of settings/values like:
+```
+def load_social_auth_settings():
+    logger.info("Loading Gateway social auth settings")
+    return {
+        "SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL": get_preference_value('social_auth', 'SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL', encrypted=False)
+    }
+```
+
+Any additional settings supplied by this function will be applied to out default SocialAuth strategy strategy(ansible_base.authentication.social_auth.AuthenticatorStrategy) and will thus be available to the social-core libraries at runtime.
+
 
 ## URLS
 

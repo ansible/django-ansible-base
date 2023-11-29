@@ -1,12 +1,16 @@
 cryptography
 Django>=4.2.5,<4.3.0
 djangorestframework
-django-auth-ldap
 django-crum
 django-filter
 drf-spectacular
 inflection
-python-ldap
-python3-saml
-social-auth-app-django
 tabulate
+
+# LDAP Authenticator Plugins
+django-auth-ldap
+python-ldap
+
+# Social Authenticator Plugins
+social-auth-app-django
+python3-saml
