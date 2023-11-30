@@ -98,7 +98,7 @@ class UserAttrMap(UILabelMixIn, serializers.DictField):
         self.validators.append(validator)
 
 
-class PublicCert(serializers.CharField):
+class PublicCert(UILabelMixIn, serializers.CharField):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.public_cert = None
@@ -113,7 +113,7 @@ class PublicCert(serializers.CharField):
         self.validators.append(validator)
 
 
-class PrivateKey(serializers.CharField):
+class PrivateKey(UILabelMixIn, serializers.CharField):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.private_key = None
