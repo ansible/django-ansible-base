@@ -4,7 +4,6 @@ from django.http import HttpResponse, HttpResponseNotFound
 from django.urls import re_path
 from django.utils.translation import gettext_lazy as _
 from onelogin.saml2.errors import OneLogin_Saml2_Error
-from rest_framework import serializers
 from rest_framework.reverse import reverse
 from rest_framework.serializers import ValidationError
 from rest_framework.views import View
@@ -14,7 +13,7 @@ from ansible_base.authentication.social_auth import AuthenticatorStorage, Authen
 from ansible_base.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_plugin
 from ansible_base.models import Authenticator
-from ansible_base.serializers.fields import PrivateKey, PublicCert, URLField
+from ansible_base.serializers.fields import CharField, JSONField, ListField, PrivateKey, PublicCert, URLField
 from ansible_base.utils.encryption import ENCRYPTED_STRING
 from ansible_base.utils.validation import validate_cert_with_key
 
@@ -38,7 +37,7 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
 
     documentation_url = "https://python-social-auth.readthedocs.io/en/latest/backends/saml.html"
 
-    SP_ENTITY_ID = serializers.CharField(
+    SP_ENTITY_ID = CharField(
         allow_null=False,
         max_length=512,
         default="aap_gateway",
@@ -46,76 +45,100 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
             "The application-defined unique identifier used as the audience of the SAML service provider (SP) configuration. This is usually the URL for the"
             " service."
         ),
+        ui_field_label=_('SAML Service Provider Entity ID'),
     )
-    SP_PUBLIC_CERT = PublicCert(allow_null=False, help_text=_("Create a keypair to use as a service provider (SP) and include the certificate content here."))
-    SP_PRIVATE_KEY = PrivateKey(allow_null=False, help_text=_("Create a keypair to use as a service provider (SP) and include the private key content here."))
-    ORG_INFO = serializers.JSONField(
+    SP_PUBLIC_CERT = PublicCert(
+        allow_null=False,
+        help_text=_("Create a keypair to use as a service provider (SP) and include the certificate content here."),
+        ui_field_label=_('SAML Service Provider Public Certificate'),
+    )
+    SP_PRIVATE_KEY = PrivateKey(
+        allow_null=False,
+        help_text=_("Create a keypair to use as a service provider (SP) and include the private key content here."),
+        ui_field_label=_('SAML Service Provider Private Key'),
+    )
+    ORG_INFO = JSONField(
         allow_null=False,
         default={"en-US": {"url": "", "name": "", "displayname": ""}},
         help_text=_("Provide the URL, display name, and the name of your app. Refer to the documentation for example syntax."),
+        ui_field_label=_('SAML Service Provider Organization Info'),
     )
-    TECHNICAL_CONTACT = serializers.JSONField(
+    TECHNICAL_CONTACT = JSONField(
         allow_null=False,
         default={'givenName': "", 'emailAddress': ""},
         help_text=_("Provide the name and email address of the technical contact for your service provider. Refer to the documentation for example syntax."),
+        ui_field_label=_('SAML Service Provider Technical Contact'),
     )
-    SUPPORT_CONTACT = serializers.JSONField(
+    SUPPORT_CONTACT = JSONField(
         allow_null=False,
         default={'givenName': "", 'emailAddress': ""},
         help_text=_("Provide the name and email address of the support contact for your service provider. Refer to the documentation for example syntax."),
+        ui_field_label=_('SAML Service Provider Support Contact'),
     )
-    SP_EXTRA = serializers.JSONField(
+    SP_EXTRA = JSONField(
         default={"requestedAuthnContext": False},
         help_text=_("A dict of key value pairs to be passed to the underlying python-saml Service Provider configuration setting."),
+        ui_field_label=_('SAML Service Provider extra configuration data'),
     )
-    SECURITY_CONFIG = serializers.JSONField(
+    SECURITY_CONFIG = JSONField(
         default={},
         help_text=_(
             "A dict of key value pairs that are passed to the underlying python-saml security setting https://github.com/onelogin/python-saml#settings"
         ),
+        ui_field_label=_('SAML Security Config'),
     )
-    EXTRA_DATA = serializers.ListField(
+    EXTRA_DATA = ListField(
         default=[],
         help_text=_("A list of tuples that maps IDP attributes to extra_attributes. Each attribute will be a list of values, even if only 1 value."),
+        ui_field_label=_('SAML IDP to extra_data attribute mapping'),
     )
     IDP_URL = URLField(
         allow_null=False,
         help_text=_("The URL to redirect the user to for login initiation."),
+        ui_field_label=_('IdP Login URL'),
     )
     IDP_X509_CERT = PublicCert(
         allow_null=False,
         help_text=_("The public cert used for secrets coming from the IdP."),
+        ui_field_label=_('IdP Public Cert'),
     )
-    IDP_ENTITY_ID = serializers.CharField(
+    IDP_ENTITY_ID = CharField(
         allow_null=False,
         help_text=_("The entity ID returned in the assertion."),
+        ui_field_label=_('Entity ID'),
     )
-    IDP_GROUPS = serializers.CharField(
+    IDP_GROUPS = CharField(
         allow_null=True,
         required=False,
         help_text=_("The field in the assertion which represents the users groups."),
+        ui_field_label=_('Groups'),
     )
-    IDP_ATTR_EMAIL = serializers.CharField(
+    IDP_ATTR_EMAIL = CharField(
         allow_null=False,
         help_text=_("The field in the assertion which represents the users email."),
+        ui_field_label=_('User Email'),
     )
-    IDP_ATTR_USERNAME = serializers.CharField(
+    IDP_ATTR_USERNAME = CharField(
         allow_null=True,
         required=False,
         help_text=_("The field in the assertion which represents the users username."),
+        ui_field_label=_('Username'),
     )
-    IDP_ATTR_LAST_NAME = serializers.CharField(
+    IDP_ATTR_LAST_NAME = CharField(
         allow_null=False,
         help_text=_("The field in the assertion which represents the users last name."),
+        ui_field_label=_('User Last Name'),
     )
-    IDP_ATTR_FIRST_NAME = serializers.CharField(
+    IDP_ATTR_FIRST_NAME = CharField(
         allow_null=False,
         help_text=_("The field in the assertion which represents the users first name."),
+        ui_field_label=_('User First Name'),
     )
-    IDP_ATTR_USER_PERMANENT_ID = serializers.CharField(
+    IDP_ATTR_USER_PERMANENT_ID = CharField(
         allow_null=True,
         required=False,
         help_text=_("The field in the assertion which represents the users permanent id (overrides IDP_ATTR_USERNAME)"),
+        ui_field_label=_('User Permanent ID'),
     )
     CALLBACK_URL = URLField(
         required=False,
@@ -124,6 +147,7 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
             '''Register the service as a service provider (SP) with each identity provider (IdP) you have configured.'''
             '''Provide your SP Entity ID and this ACS URL for your application.'''
         ),
+        ui_field_label=_('SAML Assertion Consumer Service (ACS) URL'),
     )
 
     def validate(self, attrs):
@@ -160,7 +184,7 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
             errors['IDP_ATTR_USERNAME'] = "Either IDP_ATTR_USERNAME or IDP_ATTR_USER_PERMANENT_ID needs to be set"
 
         if errors:
-            raise serializers.ValidationError(errors)
+            raise ValidationError(errors)
 
         response = super().validate(attrs)
         return response
