@@ -56,7 +56,7 @@ class AuthenticatorStrategy(DjangoStrategy):
     # load the authenticator setting from the database object.
     def get_setting(self, name, backend):
         # try to load the value from the db.
-        if backend:
+        if backend and hasattr(backend, 'database_instance'):
             value = backend.database_instance.configuration.get(name, None)
             if value is not None:
                 return value
@@ -106,6 +106,12 @@ class AuthenticatorStrategy(DjangoStrategy):
         if isinstance(value, models.Model):
             value = str(value)
         return super().session_set(name, value)
+
+
+class AuthenticatorConfigTestStrategy(AuthenticatorStrategy):
+    def __init__(self, storage, request=None, tpl=None, additional_settings={}):
+        super().__init__(storage, request, tpl)
+        self.settings.update(additional_settings)
 
 
 class SocialAuthMixin:

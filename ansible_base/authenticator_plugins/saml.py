@@ -4,12 +4,13 @@ from django.http import HttpResponse, HttpResponseNotFound
 from django.urls import re_path
 from django.utils.translation import gettext_lazy as _
 from onelogin.saml2.errors import OneLogin_Saml2_Error
+from onelogin.saml2.settings import OneLogin_Saml2_Settings
 from rest_framework.reverse import reverse
 from rest_framework.serializers import ValidationError
 from rest_framework.views import View
-from social_core.backends.saml import SAMLAuth
+from social_core.backends.saml import SAMLAuth, SAMLIdentityProvider
 
-from ansible_base.authentication.social_auth import AuthenticatorStorage, AuthenticatorStrategy, SocialAuthMixin
+from ansible_base.authentication.social_auth import AuthenticatorConfigTestStrategy, AuthenticatorStorage, AuthenticatorStrategy, SocialAuthMixin
 from ansible_base.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_plugin
 from ansible_base.models import Authenticator
@@ -185,6 +186,24 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
 
         if errors:
             raise ValidationError(errors)
+
+        saml_auth = SAMLAuth(AuthenticatorConfigTestStrategy(AuthenticatorStorage(), additional_settings=attrs))
+        saml_auth.redirect_uri = attrs['CALLBACK_URL']
+        idp = SAMLIdentityProvider(idp_string, **attrs['ENABLED_IDPS'][idp_string])
+        config = saml_auth.generate_saml_config(idp=idp)
+        invalid_security_settings = []
+        try:
+            settings = OneLogin_Saml2_Settings(settings=config)
+            settings._security = {}
+            settings._add_default_values()
+            valid_security_settings = set(settings._security.keys())
+            security_settings = set(attrs.get('SECURITY_CONFIG').keys())
+            invalid_security_settings = security_settings.difference(valid_security_settings)
+        except Exception as e:
+            raise ValidationError(f"Failed to load config: {e}")
+
+        if invalid_security_settings:
+            raise ValidationError({'SECURITY_CONFIG': f"Invalid keys: {', '.join(invalid_security_settings)}"})
 
         response = super().validate(attrs)
         return response
