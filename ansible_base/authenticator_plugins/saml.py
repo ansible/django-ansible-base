@@ -114,7 +114,7 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('Groups'),
     )
     IDP_ATTR_EMAIL = CharField(
-        allow_null=False,
+        allow_null=True,
         help_text=_("The field in the assertion which represents the users email."),
         ui_field_label=_('User Email'),
     )
@@ -125,12 +125,12 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('Username'),
     )
     IDP_ATTR_LAST_NAME = CharField(
-        allow_null=False,
+        allow_null=True,
         help_text=_("The field in the assertion which represents the users last name."),
         ui_field_label=_('User Last Name'),
     )
     IDP_ATTR_FIRST_NAME = CharField(
-        allow_null=False,
+        allow_null=True,
         help_text=_("The field in the assertion which represents the users first name."),
         ui_field_label=_('User First Name'),
     )
