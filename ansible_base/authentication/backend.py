@@ -34,6 +34,11 @@ class AnsibleBaseAuth(ModelBackend):
             authenticator_object.update_if_needed(database_authenticator)
             user = authenticator_object.authenticate(request, *args, **kwargs)
             if user:
+                # The local authenticator handles this but we want to check this for other authentication types
+                if not getattr(user, 'is_active', True):
+                    logger.warning(f'User {user.username} attempted to login from {database_authenticator} their user is inactive, denying permission')
+                    return None
+
                 logger.info(f'User {user.username} logged in from {database_authenticator.name}')
                 return user
 
