@@ -226,7 +226,7 @@ def test_authenticator_map_validate(admin_api_client, local_authenticator, shut_
         pytest.param(
             {'attributes': {"email": {"equals": "foo@example.com"}, "join_condition": "invalid"}},
             "triggers.attributes.join_condition",
-            "Invalid, can only be one of",
+            "Invalid, choices can only be one of",
             id="triggers attributes invalid join condition is supplied",
         ),
         pytest.param(
