@@ -1,7 +1,32 @@
 import pytest
 from rest_framework.exceptions import ValidationError
 
-from ansible_base.utils.validation import validate_cert_with_key
+from ansible_base.utils.validation import validate_cert_with_key, validate_url
+
+
+@pytest.mark.parametrize(
+    "valid,url,schemes,allow_plain_hostname",
+    [
+        (False, 4, [], True),
+        (False, "https://example", ['https'], False),
+        (True, "https://example", ['https'], True),
+        (True, "https://somedomain.example.com/sso/complete/saml/", ['https'], True),
+        (False, "https://somedomain.example.com/sso/complete/saml/", ['ldaps'], True),
+        (True, "ldaps://somedomain.example.com/sso/complete/saml/", ['ldaps'], True),
+        (False, "https://somedomain.[obfuscated.domain]/sso/complete/saml/", ['https'], True),
+    ],
+)
+def test_validate_bad_urls(valid, url, schemes, allow_plain_hostname):
+    exception = None
+    try:
+        validate_url(url, schemes=schemes, allow_plain_hostname=allow_plain_hostname)
+    except ValidationError as e:
+        exception = e
+
+    if valid and exception:
+        assert False, f"Configuration should have been valid but got exception: {exception}"
+    elif not valid and not exception:
+        assert False, "Expected an exception but test passed"
 
 
 @pytest.mark.parametrize(

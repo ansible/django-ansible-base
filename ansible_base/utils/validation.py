@@ -33,7 +33,10 @@ def validate_url(url: str, schemes: list = ['https'], allow_plain_hostname: bool
         raise ValidationError(VALID_STRING)
     if allow_plain_hostname:
         # The default validator will not allow names like https://junk so, if we are ok with simple hostnames we are going to munge up the URL for the validator
-        url_parts = urlparse(url)
+        try:
+            url_parts = urlparse(url)
+        except ValueError as e:
+            raise ValidationError(str(e)) from e
 
         # Determine the user_info part of the URL
         user_info = ''
