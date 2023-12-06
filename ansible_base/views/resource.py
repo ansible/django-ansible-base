@@ -1,10 +1,10 @@
 from rest_framework import permissions
-from rest_framework.viewsets import mixins, GenericViewSet
-from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework.viewsets import GenericViewSet, mixins
 
-from ansible_base.models import Resource, Permission, ResourceType
-from ansible_base.serializers import ResourceSerializer, ResourcePermissionSerializer, ResourceTypeSerializer
+from ansible_base.models import Resource, ResourceType, get_registry, service_id
+from ansible_base.serializers import ResourceSerializer, ResourceTypeSerializer
 
 
 class ResourceViewSet(
@@ -19,17 +19,10 @@ class ResourceViewSet(
     Index of all the resources in the system.
     """
 
-    queryset = Resource.objects.all()
+    queryset = Resource.objects.select_related("content_type__resource_type").prefetch_related("content_object").all()
     serializer_class = ResourceSerializer
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = "ansible_id"
-
-    @action(methods=["GET"], detail=True, serializer_class=ResourcePermissionSerializer)
-    def permissions(self, request, ansible_id):
-        obj = super().get_object()
-        serializer = ResourcePermissionSerializer(Permission.objects.filter(resource_type=obj.content_type.resource_type), many=True)
-
-        return Response(serializer.data)
 
 
 class ResourceTypeViewSet(
@@ -43,3 +36,30 @@ class ResourceTypeViewSet(
     queryset = ResourceType.objects.all()
     serializer_class = ResourceTypeSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+
+# Use classes from config as mixin here?
+class UserRolesViewSet:
+    pass
+
+
+class TeamRoleViewSet:
+    pass
+
+
+class RoleDefinitionsViewSet:
+    pass
+
+
+class PermissionsViewSet:
+    pass
+
+
+class AuthorizeUserView:
+    pass
+
+
+class ServiceMetadataView(APIView):
+    def get(self, request, **kwargs):
+        registry = get_registry()
+        return Response({"service_id": service_id(), "service_type": registry.api_config.service_type})

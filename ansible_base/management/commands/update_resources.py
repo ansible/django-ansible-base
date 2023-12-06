@@ -1,5 +1,7 @@
 from django.core.management.base import BaseCommand
-from ansible_base.models import Resource, ResourceType, Permission
+
+from ansible_base.models import Permission, Resource, ResourceType
+
 
 class Command(BaseCommand):
     help = "Reset resource index"

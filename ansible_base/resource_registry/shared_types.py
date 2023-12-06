@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+
 class UserType(serializers.Serializer):
     RESOURCE_TYPE = "user"
 

@@ -1,8 +1,23 @@
-from rest_framework.schemas.generators import BaseSchemaGenerator
-
 from collections import namedtuple
 
+from rest_framework import permissions
+from rest_framework.schemas.generators import BaseSchemaGenerator
+
 ChildResource = namedtuple("ChildResource", ["model", "field_name"])
+
+
+class ServiceAPIConfig:
+    service_type = None
+
+    role_definitions_viewset = None
+    user_role_assignment_viewset = None
+    team_role_assignment_viewset = None
+    permission_viewset = None
+
+    permission_class = permissions.IsAuthenticated
+
+    def authorize_user(username, password=None, ansible_id=None):
+        raise NotImplementedError
 
 
 class ResourceInspector(BaseSchemaGenerator):
@@ -33,60 +48,34 @@ class ResourceInspector(BaseSchemaGenerator):
 
 class ResourceRegistry:
     registry = {}
-    resource_graph = {}
-    child_nodes = set()
 
-    def __init__(self, urlpatterns=None):
+    def __init__(self, service_api_config: ServiceAPIConfig = None, urlpatterns=None):
         self.resource_inspector = ResourceInspector(urlpatterns=urlpatterns)
 
-    def get_root_resources(self):
-        return set(self.registry.keys()) - self.child_nodes
+        self._validate_api_config(service_api_config)
+        self.api_config = service_api_config
 
-    def get_all_children(self, model_label):
-        children = set()
+    def _validate_api_config(self, config):
+        """
+        Needs to validate that:
+            - Viewsets have the correct serializer, pagination and filter classes
+            - Service type is set to one of awx, galaxy, eda or gateway
+        """
+        pass
 
-        if model_label in self.resource_graph:
-            children = self.resource_graph[model_label]
-            for child in self.resource_graph[model_label]:
-                children = children.union(self.get_all_children(child))
-
-        return children
-
-    def get_parents(self, model_label):
-        parents = set()
-        for label, children in self.resource_graph.items():
-            if model_label in children:
-                parents.add(label)
-        return parents
-
-    # TODO: For external types, provide a library of extensible serializers that
-    # each service can integrate + list of external types
-    def register(self, model, externally_managed=False, managed_serializer=None, child_resources=None):
+    def register(self, model, externally_managed=False, managed_serializer=None, parent_resources=None):
         model_label = model._meta.label
 
-        if child_resources and len(child_resources) > 0:
-            self.resource_graph[model_label] = set()
-            for child in child_resources:
-                child_label = child["model"]._meta.label
-                self.child_nodes.add(child_label)
-                # validate that there aren't any cycles
-                if child_label in self.resource_graph:
-                    if model_label == child_label or model_label in self.get_all_children(child_label):
-                        msg = f"Circular resource detected: {model_label}"
-                        raise AssertionError(msg)
-
-                self.resource_graph[model_label].add(child_label)
-
-        child_map = {}
-        if child_resources:
-            for child in child_resources:
-                child_map[child["model"]._meta.label] = child
+        parent_map = {}
+        if parent_resources:
+            for parent in parent_resources:
+                parent_map[parent["model"]._meta.label] = parent
 
         self.registry[model_label] = {
             "model": model,
             "externally_managed": externally_managed,
             "managed_serializer": managed_serializer,
-            "child_resources": child_map,
+            "child_resources": parent_map,
             "actions": self.resource_inspector.model_map.get(model_label),
         }
 

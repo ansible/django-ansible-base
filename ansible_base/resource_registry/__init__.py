@@ -1,2 +1,3 @@
-from .shared_types import UserType, TeamType, OrganizationType  # noqa: F401
-from .registry import ResourceRegistry  # noqa: F401
+from .registry import ResourceRegistry, ServiceAPIConfig  # noqa: F401
+from .resource_urls import resource_api_urls  # noqa: F401
+from .shared_types import OrganizationType, TeamType, UserType  # noqa: F401
