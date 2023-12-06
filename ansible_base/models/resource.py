@@ -36,11 +36,11 @@ class ResourceType(models.Model):
     content_type = models.OneToOneField(ContentType, on_delete=models.CASCADE, related_name="resource_type", unique=True)
     externally_managed = models.BooleanField()
     migrated = models.BooleanField(null=False, default=False)
+    resource_type = models.CharField(max_length=256, unique=True, db_index=True)
 
     @property
-    def resource_type(self):
-        service_type = get_registry().api_config.service_type
-        return f"{service_type}.{self.content_type.model}"
+    def serializer_class(self):
+        return self.get_resource_config()["managed_serializer"]
 
     def get_resource_config(self):
         return self.resource_registry.get_config_for_model(model=self.content_type.model_class())

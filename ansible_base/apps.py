@@ -12,9 +12,11 @@ def initialize_resources(sender, apps, **kwargs):
     ContentType = apps.get_model("contenttypes", "ContentType")
 
     print("updating resource types")
-    for key, resource in get_registry().get_resources().items():
+    registry = get_registry()
+    for key, resource in registry.get_resources().items():
         content = ContentType.objects.get_for_model(resource["model"])
-        defaults = {"externally_managed": resource["externally_managed"]}
+        resource_type = f"{registry.api_config.service_type}.{content.model}"
+        defaults = {"externally_managed": resource["externally_managed"], "resource_type": resource_type}
         ResourceType.objects.update_or_create(content_type=content, defaults=defaults)
 
     for r_type in ResourceType.objects.filter(migrated=False):

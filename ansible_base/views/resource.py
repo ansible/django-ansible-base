@@ -1,3 +1,4 @@
+from django.db import transaction
 from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -26,16 +27,21 @@ class ResourceViewSet(
 
 
 class ResourceTypeViewSet(
-    # mixins.CreateModelMixin,
+    mixins.CreateModelMixin,
     mixins.RetrieveModelMixin,
-    # mixins.UpdateModelMixin,
-    # mixins.DestroyModelMixin,
+    mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
     mixins.ListModelMixin,
     GenericViewSet,
 ):
     queryset = ResourceType.objects.all()
     serializer_class = ResourceTypeSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    @transaction.atomic
+    def perform_destroy(self, instance):
+        instance.content_object.delete()
+        instance.delete()
 
 
 # Use classes from config as mixin here?

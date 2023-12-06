@@ -1,5 +1,7 @@
 import logging
 
+from django.db import transaction
+from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from ansible_base.models import Resource, ResourceType
@@ -14,13 +16,13 @@ class ResourceDataField(serializers.JSONField):
     """
 
     def to_representation(self, resource):
-        resource_config = resource.content_type.resource_type.get_resource_config()
-        if serializer := resource_config.get("managed_serializer"):
+        if serializer := resource.content_type.resource_type.serializer_class:
             return serializer(resource.content_object).data
         return {}
 
-    # def to_internal_value(self, data):
-    #     pass
+    def to_internal_value(self, data):
+        data = super().to_internal_value(data)
+        return {self.field_name: data}
 
 
 class ResourceSerializer(serializers.ModelSerializer):
@@ -28,6 +30,7 @@ class ResourceSerializer(serializers.ModelSerializer):
     shared_resource_type = serializers.SerializerMethodField()
     is_externally_managed = serializers.BooleanField(source="content_type.resource_type.externally_managed", read_only=True)
     resource_data = ResourceDataField(source="*")
+    resource_type = serializers.CharField()
 
     class Meta:
         model = Resource
@@ -42,26 +45,55 @@ class ResourceSerializer(serializers.ModelSerializer):
             "resource_data",
         ]
 
-    def get_content_type(self, obj):
-        # TODO: n+1 query
-        return obj.content_type.resource_type.resource_type
-
-    def get_parents(self, obj):
-        parents = []
-        for r in obj.get_parents():
-            parents.append(r.ansible_id)
-        return parents
-
     def get_shared_resource_type(self, obj):
         if serializer := obj.content_type.resource_type.get_resource_config().get("managed_serializer"):
             return serializer.RESOURCE_TYPE
         else:
             return None
 
+    def get_resource_data(self, resource_data, serializer):
+        resource_data = serializer(data=resource_data)
+        resource_data.is_valid(raise_exception=True)
+        return resource_data.data
+
+    def update(self, instance, validated_data):
+        if serializer := instance.content_type.resource_type.serializer_class:
+            with transaction.atomic():
+                resource = instance.content_object
+                resource_data = self.get_resource_data(validated_data["resource_data"], serializer)
+                for k, val in resource_data.items():
+                    setattr(resource, k, val)
+                resource.save()
+
+            instance.refresh_from_db()
+            return instance
+
+        raise serializers.ValidationError(
+            {"resource_type": _(f"Resource type: {instance.content_type.resource_type.resource_type} cannot be managed by this API.")}
+        )
+
+    def create(self, validated_data):
+        try:
+            r_type = ResourceType.objects.get(resource_type=validated_data["resource_type"])
+            if not r_type.serializer_class:
+                raise serializers.ValidationError({"resource_type": _(f"Resource type: {validated_data['resource_type']} cannot be managed by this API.")})
+
+            c_type = r_type.content_type
+            resource_data = self.get_resource_data(validated_data["resource_data"], r_type.serializer_class)
+
+            # putting this in a transaction to ensure the post save signal fires before we load the
+            # object's Resource instance.
+            with transaction.atomic():
+                resource = c_type.model_class().objects.create(**resource_data)
+                resource.save()
+
+            return Resource.objects.get(object_id=resource.pk, content_type=c_type)
+
+        except ResourceType.DoesNotExist:
+            raise serializers.ValidationError({"resource_type": _(f"Resource type: {validated_data['resource_type']} does not exist.")})
+
 
 class ResourceTypeSerializer(serializers.ModelSerializer):
-    # permissions = serializers.SerializerMethodField()
-    # inherited_permissions = serializers.SerializerMethodField()
     shared_resource_type = serializers.SerializerMethodField()
 
     class Meta:
