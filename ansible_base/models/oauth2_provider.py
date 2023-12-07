@@ -19,6 +19,16 @@ logger = logging.getLogger('ansible_base.models.oauth')
 # There were a lot of problems making the initial migrations for this class
 # See https://github.com/jazzband/django-oauth-toolkit/issues/634 which helped
 #
+# Here were my steps:
+#  1. Start the server
+#  2. Set all values in settings.py in the not ansible_base app
+#  3. Comment out all OAUTH2_PROVIDER_* setting but leave ANSIBLE_BASE_FEATURES.OAUTH2_PROVIDER as True
+#  4. Move models/oauth2_provider.py.temp to models/oauth2_provider.py
+#  5. gateway-manage createmigrations && gateway-manage migrate ansible_base
+#  6. Uncomment all OAUTH2_PROVIDER_* settings
+#  7. Replace the original oauth2_provider.py model file
+#  8. gateway-manage createmigrations && gateway-manage migrate ansible_base
+#
 
 
 def get_external_account(user):
@@ -90,7 +100,7 @@ if feature_enabled('OAUTH2_PROVIDER'):
             max_length=32, choices=GRANT_TYPES, help_text=_('The Grant type the user must use for acquire tokens for this application.')
         )
 
-    class OAuth2IDToken(oauth2_models.AbstractIDToken):
+    class OAuth2IDToken(oauth2_models.AbstractIDToken, CommonModel):
         class Meta(oauth2_models.AbstractIDToken.Meta):
             app_label = 'ansible_base'
             verbose_name = _('id token')
@@ -153,7 +163,7 @@ if feature_enabled('OAUTH2_PROVIDER'):
                 self.validate_external_users()
             super(OAuth2AccessToken, self).save(*args, **kwargs)
 
-    class OAuth2RefreshToken(oauth2_models.AbstractRefreshToken):
+    class OAuth2RefreshToken(oauth2_models.AbstractRefreshToken, CommonModel):
         class Meta(oauth2_models.AbstractRefreshToken.Meta):
             app_label = 'ansible_base'
             verbose_name = _('access token')
