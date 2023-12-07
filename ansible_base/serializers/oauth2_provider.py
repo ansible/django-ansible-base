@@ -1,6 +1,5 @@
 from datetime import timedelta
 
-from awx.main.utils import has_model_field_prefetched
 from django.core.exceptions import ObjectDoesNotExist
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
@@ -9,28 +8,24 @@ from oauthlib.oauth2 import AccessDeniedError
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.serializers import ModelSerializer, SerializerMethodField
 
-from ansible_base.models.oauth2_provider import OAuth2AccessRefreshToken, OAuth2AccessToken, OAuth2Application
+from ansible_base.models.oauth2_provider import OAuth2AccessToken, OAuth2Application, OAuth2RefreshToken
 from ansible_base.utils.encryption import ENCRYPTED_STRING
 from ansible_base.utils.settings import get_setting
 
+from .common import NamedCommonModelSerializer
 
-class OAuth2ApplicationSerializer(ModelSerializer):
+
+def has_model_field_prefetched(obj, thing):
+    # from awx.main.utils import has_model_field_prefetched
+    pass
+
+
+class OAuth2ApplicationSerializer(NamedCommonModelSerializer):
     show_capabilities = ['edit', 'delete']
 
     class Meta:
         model = OAuth2Application
-        fields = (
-            '*',
-            'description',
-            '-user',
-            'client_id',
-            'client_secret',
-            'client_type',
-            'redirect_uris',
-            'authorization_grant_type',
-            'skip_authorization',
-            'organization',
-        )
+        fields = NamedCommonModelSerializer.Meta.fields + [x.name for x in OAuth2Application._meta.concrete_fields]
         read_only_fields = ('client_id', 'client_secret')
         read_only_on_update_fields = ('user', 'authorization_grant_type')
         extra_kwargs = {
@@ -97,7 +92,7 @@ class BaseOAuth2TokenSerializer(ModelSerializer):
 
     class Meta:
         model = OAuth2AccessToken
-        fields = ('*', '-name', 'description', 'user', 'token', 'refresh_token', 'application', 'expires', 'scope')
+        fields = ('-name', 'description', 'user', 'token', 'refresh_token', 'application', 'expires', 'scope')
         read_only_fields = ('user', 'token', 'expires', 'refresh_token')
         extra_kwargs = {'scope': {'allow_null': False, 'required': False}, 'user': {'allow_null': False, 'required': True}}
 
@@ -166,5 +161,5 @@ class OAuth2TokenSerializer(BaseOAuth2TokenSerializer):
             obj.user = obj.application.user
         obj.save()
         if obj.application:
-            OAuth2AccessRefreshToken.objects.create(user=current_user, token=generate_token(), application=obj.application, access_token=obj)
+            OAuth2RefreshToken.objects.create(user=current_user, token=generate_token(), application=obj.application, access_token=obj)
         return obj

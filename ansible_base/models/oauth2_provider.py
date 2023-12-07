@@ -1,13 +1,13 @@
 import logging
 import re
 
-from awx.sso.common import get_external_account
 from django.conf import settings
 from django.core.validators import RegexValidator
 from django.db import connection, models
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 
+from ansible_base.models.common import CommonModel, NamedCommonModel
 from ansible_base.utils.encryption import ansible_encryption
 from ansible_base.utils.settings import feature_enabled
 
@@ -15,22 +15,33 @@ DATA_URI_RE = re.compile(r'.*')  # FIXME
 
 logger = logging.getLogger('ansible_base.models.oauth')
 
+#
+# There were a lot of problems making the initial migrations for this class
+# See https://github.com/jazzband/django-oauth-toolkit/issues/634 which helped
+#
 
-if feature_enabled('OAUTH2_SERVER'):
+
+def get_external_account(user):
+    # from awx.sso.common import get_external_account
+    return False
+
+
+class OAuth2ClientSecretField(models.CharField):
+    def get_db_prep_value(self, value, connection, prepared=False):
+        return super().get_db_prep_value(ansible_encryption.encrypt(value), connection, prepared)
+
+    def from_db_value(self, value, expression, connection):
+        if value and value.startswith('$encrypted$'):
+            return ansible_encryption.decrypt(value)
+        return value
+
+
+if feature_enabled('OAUTH2_PROVIDER'):
     import oauth2_provider.models as oauth2_models
     from oauth2_provider.generators import generate_client_secret
     from oauthlib import oauth2
 
-    class OAuth2ClientSecretField(models.CharField):
-        def get_db_prep_value(self, value, connection, prepared=False):
-            return super().get_db_prep_value(ansible_encryption.encrypt(value), connection, prepared)
-
-        def from_db_value(self, value, expression, connection):
-            if value and value.startswith('$encrypted$'):
-                return ansible_encryption.decrypt(value)
-            return value
-
-    class OAuth2Application(oauth2_models.AbstractApplication):
+    class OAuth2Application(oauth2_models.AbstractApplication, NamedCommonModel):
         class Meta(oauth2_models.AbstractAccessToken.Meta):
             app_label = 'ansible_base'
             verbose_name = _('application')
@@ -58,7 +69,7 @@ if feature_enabled('OAUTH2_SERVER'):
             validators=[RegexValidator(DATA_URI_RE)],
         )
         organization = models.ForeignKey(
-            'Organization',
+            getattr(settings, 'ANSIBLE_BASE_ORGANIZATION_MODEL', 'Organization'),
             related_name='applications',
             help_text=_('Organization containing this application.'),
             on_delete=models.CASCADE,
@@ -79,7 +90,13 @@ if feature_enabled('OAUTH2_SERVER'):
             max_length=32, choices=GRANT_TYPES, help_text=_('The Grant type the user must use for acquire tokens for this application.')
         )
 
-    class OAuth2AccessToken(oauth2_models.AbstractAccessToken):
+    class OAuth2IDToken(oauth2_models.AbstractIDToken):
+        class Meta(oauth2_models.AbstractIDToken.Meta):
+            app_label = 'ansible_base'
+            verbose_name = _('id token')
+            swappable = "OAUTH2_PROVIDER_ID_TOKEN_MODEL"
+
+    class OAuth2AccessToken(oauth2_models.AbstractAccessToken, CommonModel):
         class Meta(oauth2_models.AbstractAccessToken.Meta):
             app_label = 'ansible_base'
             verbose_name = _('access token')
@@ -110,7 +127,6 @@ if feature_enabled('OAUTH2_SERVER'):
                 'Allowed scopes, further restricts user\'s permissions. Must be a simple space-separated string with allowed scopes [\'read\', \'write\'].'
             ),
         )
-        modified = models.DateTimeField(editable=False, auto_now=True)
 
         def is_valid(self, scopes=None):
             valid = super(OAuth2AccessToken, self).is_valid(scopes)
@@ -137,15 +153,9 @@ if feature_enabled('OAUTH2_SERVER'):
                 self.validate_external_users()
             super(OAuth2AccessToken, self).save(*args, **kwargs)
 
-    class OAuth2AccessRefreshToken(oauth2_models.AbstractRefreshToken):
+    class OAuth2RefreshToken(oauth2_models.AbstractRefreshToken):
         class Meta(oauth2_models.AbstractRefreshToken.Meta):
             app_label = 'ansible_base'
             verbose_name = _('access token')
             ordering = ('id',)
             swappable = "OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL"
-
-    class OAuth2IDToken(oauth2.models.AbstractIDToken):
-        class Meta(oauth2.models.AbstractIDToken):
-            app_label = 'ansible_base'
-            verbose_name = _('id token')
-            swappable = "OAUTH2_PROVIDER_ID_TOKEN_MODEL"
