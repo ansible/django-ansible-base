@@ -43,6 +43,7 @@ See the following table for a mapping.
 | ansible_base.rest_filters      | dab_rest_filters      | rest_filters            |
 | ansible_base.resource_registry | dab_resource_registry | resource_registry       |
 | ansible_base.jwt_consumer      | dab_jwt_consumer      | jwt_consumer            |
+| ansible_base.rbac              | dab_rbac              | rbac                    |
 
 ## settings.py
 

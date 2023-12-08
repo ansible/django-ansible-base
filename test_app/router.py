@@ -41,3 +41,7 @@ router.register(
     },
     basename='user',
 )
+router.register(r'inventories', views.InventoryViewSet, basename='inventory')
+router.register(r'instance_groups', views.InstanceGroupViewSet, basename='instancegroup')
+router.register(r'cows', views.CowViewSet, basename='cow')
+router.register(r'uuidmodels', views.UUIDModelViewSet, basename='uuidmodel')

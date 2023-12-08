@@ -34,6 +34,19 @@ def get_type_for_model(model):
     return underscore(opts.object_name)
 
 
+def is_add_perm(codename: str) -> bool:
+    """Utility method to say whether codename represents adding permission.
+
+    This type of permission requires special treatment in several places
+    in DAB RBAC because the permission defers to the parent object.
+    Although the function is trivial, this standardizes the criteria.
+    """
+    use_codename = codename
+    if codename.count('.') == 1:
+        _, use_codename = codename.split('.')
+    return use_codename.startswith('add_')
+
+
 def prevent_search(relation):
     """
     Used to mark a model field or relation as "restricted from filtering"
