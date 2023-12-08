@@ -19,14 +19,12 @@ def get_registry():
     if _resource_registry is None:
         from django.conf import settings
 
-        if settings.RESOURCE_REGISTRY_CONFIG:
+        if hasattr(settings, "RESOURCE_REGISTRY_CONFIG"):
             from django.utils.module_loading import import_string
 
             _resource_registry = import_string(settings.RESOURCE_REGISTRY_CONFIG)
         else:
-            from ansible_base.resource_registry import ResourceRegistry
-
-            _resource_registry = ResourceRegistry()
+            _resource_registry = False
     return _resource_registry
 
 

@@ -11,8 +11,10 @@ from ansible_base.models.resource import get_registry
 @lru_cache(maxsize=1)
 def get_resource_models():
     resource_models = set()
-    for k, resource in get_registry().get_resources().items():
-        resource_models.add(resource["model"])
+    registry = get_registry()
+    if registry:
+        for k, resource in registry.get_resources().items():
+            resource_models.add(resource["model"])
 
     return resource_models
 
