@@ -41,14 +41,14 @@ def initialize_resources(sender, **kwargs):
     registry = get_registry()
     if registry:
         # Create resource types
-        for key, resource in registry.get_resources().items():
-            content = ContentType.objects.get_for_model(resource.model)
+        for key, resource_config in registry.get_resources().items():
+            content = ContentType.objects.get_for_model(resource_config.model)
 
-            if serializer := resource.managed_serializer:
+            if serializer := resource_config.managed_serializer:
                 resource_type = f"shared.{serializer.RESOURCE_TYPE}"
             else:
                 resource_type = f"{registry.api_config.service_type}.{content.model}"
-            defaults = {"externally_managed": resource.externally_managed, "name": resource_type}
+            defaults = {"externally_managed": resource_config.externally_managed, "name": resource_type}
             ResourceType.objects.update_or_create(content_type=content, defaults=defaults)
 
         # Create resources

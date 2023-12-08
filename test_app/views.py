@@ -1,21 +1,22 @@
 from rest_framework import permissions
-from rest_framework.decorators import api_view
+from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework.reverse import reverse
 from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
+from ansible_base.rbac.api.permissions import AnsibleBaseObjectPermissions
 from test_app import serializers
-from test_app.models import RelatedFieldsTestModel
+from test_app.models import RelatedFieldsTestModel, User
 
 
 class TestAppViewSet(ModelViewSet, AnsibleBaseView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [AnsibleBaseObjectPermissions]
     prefetch_related = ()
     select_related = ()
 
     def get_queryset(self):
-        qs = self.serializer_class.Meta.model.objects.all()
+        qs = self.serializer_class.Meta.model.access_qs(self.request.user)
         if self.prefetch_related:
             qs = qs.prefetch_related(*self.prefetch_related)
         if self.select_related:
@@ -35,18 +36,48 @@ class TeamViewSet(TestAppViewSet):
     select_related = ('resource__content_type',)
 
 
-class UserViewSet(TestAppViewSet):
+class UserViewSet(ModelViewSet):
+    permission_classes = [permissions.IsAuthenticated]
     serializer_class = serializers.UserSerializer
     prefetch_related = ('created_by', 'modified_by', 'resource', 'resource__content_type')
 
+    def get_queryset(self):
+        return User.objects.all()
+
 
 class EncryptionModelViewSet(TestAppViewSet):
-    serializer_class = serializers.EncryptionTestSerializer
+    serializer_class = serializers.EncryptionModelSerializer
 
 
 class RelatedFieldsTestModelViewSet(TestAppViewSet):
     queryset = RelatedFieldsTestModel.objects.all()  # needed for automatic basename from router
     serializer_class = serializers.RelatedFieldsTestModelSerializer
+
+
+class EncryptedModelViewSet(TestAppViewSet):
+    serializer_class = serializers.EncryptionModelSerializer
+
+
+class InventoryViewSet(TestAppViewSet):
+    serializer_class = serializers.InventorySerializer
+
+
+class InstanceGroupViewSet(TestAppViewSet):
+    serializer_class = serializers.InstanceGroupSerializer
+
+
+class CowViewSet(TestAppViewSet):
+    serializer_class = serializers.CowSerializer
+    rbac_action = None
+
+    @action(detail=True, rbac_action='say', methods=['post'])
+    def cowsay(self, request, pk=None):
+        self.get_object()  # this triggers the permission check
+        return Response({'detail': 'moooooo'})
+
+
+class UUIDModelViewSet(TestAppViewSet):
+    serializer_class = serializers.UUIDModelSerializer
 
 
 # create api root view from the router
