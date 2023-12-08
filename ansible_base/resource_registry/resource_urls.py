@@ -11,6 +11,7 @@ service_router = routers.SimpleRouter()
 
 service_router.register(r'resources', views.ResourceViewSet)
 service_router.register(r'resource-types', views.ResourceTypeViewSet)
+service_router.register(r'transactions', views.TransactionViewSet)
 
 services = [path('metadata/', views.ServiceMetadataView.as_view()), path('', include(service_router.urls))]
 

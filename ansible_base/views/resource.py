@@ -1,14 +1,49 @@
 from django.db import transaction
 from django.http import HttpResponseNotFound
 from django.shortcuts import redirect
-from rest_framework import permissions
+from rest_framework import permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import GenericViewSet, mixins
 
-from ansible_base.models import Resource, ResourceType, get_registry, service_id
-from ansible_base.serializers import ResourceSerializer, ResourceTypeSerializer, get_resource_detail_view
+from ansible_base.models import PostgresTransaction, Resource, ResourceType, get_registry, service_id
+from ansible_base.serializers import DestroyResourceSerializer, ResourceSerializer, ResourceTypeSerializer, TransactionSerializer, get_resource_detail_view
+from ansible_base.utils.transactions import commit_transaction, create_transaction, rollback_transaction
+
+
+class TransactionViewSet(
+    mixins.RetrieveModelMixin,
+    mixins.ListModelMixin,
+    GenericViewSet,
+):
+    queryset = PostgresTransaction.objects.all()
+    serializer_class = TransactionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = "gid"
+
+    @action(detail=True, methods=["post"])
+    def commit(self, *args, **kwargs):
+        gid = kwargs["gid"]
+        commit_transaction(gid)
+
+        return Response({"status": "commited"})
+
+    @action(detail=True, methods=["post"])
+    def rollback(self, *args, **kwargs):
+        gid = kwargs["gid"]
+        rollback_transaction(gid)
+
+        return Response({"status": "rolled back"})
+
+    @action(detail=False, methods=["post"])
+    def flush_transactions(self, *args, **kwargs):
+        rolled_back = []
+        for psql_transaction in self.get_queryset():
+            rollback_transaction(psql_transaction.gid)
+            rolled_back.append(psql_transaction.gid)
+
+        return Response({"rolled_back": rolled_back})
 
 
 class ResourceViewSet(
@@ -38,18 +73,31 @@ class ResourceViewSet(
 
         return HttpResponseNotFound()
 
+    def destroy(self, request, *args, **kwargs):
+        data = DestroyResourceSerializer(data=request.data)
+        data.is_valid(raise_exception=True)
+        instance = self.get_object()
+
+        if t_id := data.validated_data.get("transaction_id"):
+            with transaction.atomic():
+                self.perform_destroy(instance)
+                create_transaction(t_id)
+                return Response({"transaction": t_id, "vote_commit": True})
+
+        self.perform_destroy(instance)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class ResourceTypeViewSet(
-    mixins.CreateModelMixin,
     mixins.RetrieveModelMixin,
-    mixins.UpdateModelMixin,
-    mixins.DestroyModelMixin,
     mixins.ListModelMixin,
     GenericViewSet,
 ):
     queryset = ResourceType.objects.all()
     serializer_class = ResourceTypeSerializer
     permission_classes = [permissions.IsAuthenticated]
+    lookup_field = "resource_type"
+    lookup_value_regex = "[^/]+"
 
     @transaction.atomic
     def perform_destroy(self, instance):

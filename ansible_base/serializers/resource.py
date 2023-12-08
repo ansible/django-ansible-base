@@ -3,8 +3,10 @@ import logging
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
+from rest_framework.reverse import reverse_lazy
 
-from ansible_base.models import Resource, ResourceType
+from ansible_base.models import PostgresTransaction, Resource, ResourceType
+from ansible_base.utils.transactions import create_transaction
 
 logger = logging.getLogger('ansible_base.serializers')
 
@@ -15,10 +17,10 @@ def get_resource_detail_view(resource: Resource):
 
     # TODO: this needs some more logic to handle cases where the detail view isn't
     # name or pk, and in cases where there may be multiple detail views (such as with
-    # nested API views). This may be solveable by providing a reverse_url_name when
+    # nested API views). This may be solvable by providing a reverse_url_name when
     # resources are registered.
     if detail := actions.get("retrieve"):
-        return detail[0][1].format(pk=resource.pk, name=resource.name)
+        return detail[0][1].format(pk=resource.object_id, name=resource.name)
 
     return None
 
@@ -39,14 +41,33 @@ class ResourceDataField(serializers.JSONField):
         return {self.field_name: data}
 
 
+class DestroyResourceSerializer(serializers.Serializer):
+    transaction_id = serializers.UUIDField(write_only=True, required=False)
+
+
+class TransactionSerializer(serializers.ModelSerializer):
+    url = serializers.SerializerMethodField()
+
+    class Meta:
+        read_only_fields = [
+            "gid",
+            "prepared",
+        ]
+        model = PostgresTransaction
+        fields = ["gid", "prepared", "url"]
+
+    def get_url(self, obj):
+        return reverse_lazy('postgrestransaction-detail', kwargs={"gid": obj.gid})
+
+
 class ResourceSerializer(serializers.ModelSerializer):
-    # parents = serializers.SerializerMethodField()
     shared_resource_type = serializers.SerializerMethodField()
     is_externally_managed = serializers.BooleanField(source="content_type.resource_type.externally_managed", read_only=True)
     resource_data = ResourceDataField(source="*")
     resource_type = serializers.CharField()
     detail_url = serializers.SerializerMethodField()
-    # ansible_id = serializers.SerializerMethodField()
+    transaction_id = serializers.UUIDField(write_only=True, allow_null=True)
+    url = serializers.SerializerMethodField()
 
     class Meta:
         model = Resource
@@ -55,17 +76,17 @@ class ResourceSerializer(serializers.ModelSerializer):
             "object_id",
             "name",
             "ansible_id",
-            # "service_id",
-            # "service_short_id",
             "resource_type",
             "is_externally_managed",
             "shared_resource_type",
             "resource_data",
             "detail_url",
+            "url",
+            "transaction_id",
         ]
 
-    def get_ansible_id(self, obj):
-        return f"{obj.service_short_id}:{obj.ansible_id}"
+    def get_url(self, obj):
+        return reverse_lazy('resource-detail', kwargs={"_ansible_id": obj.ansible_id})
 
     def get_detail_url(self, obj):
         return get_resource_detail_view(obj)
@@ -90,7 +111,9 @@ class ResourceSerializer(serializers.ModelSerializer):
                     setattr(resource, k, val)
                 resource.save()
 
-            instance.refresh_from_db()
+                if t_id := validated_data.get("transaction_id"):
+                    create_transaction(t_id)
+
             return instance
 
         raise serializers.ValidationError(
@@ -112,21 +135,37 @@ class ResourceSerializer(serializers.ModelSerializer):
                 resource = c_type.model_class().objects.create(**resource_data)
                 resource.save()
 
+                if t_id := validated_data.get("transaction_id"):
+                    create_transaction(t_id)
+                    return True
+
             return Resource.objects.get(object_id=resource.pk, content_type=c_type)
 
         except ResourceType.DoesNotExist:
             raise serializers.ValidationError({"resource_type": _(f"Resource type: {validated_data['resource_type']} does not exist.")})
 
+    def save(self, **kwargs):
+        instance = super().save(**kwargs)
+        if t_id := self.validated_data.get("transaction_id", False):
+            self._data = {"transaction": t_id, "vote_commit": True}
+            return None
+        else:
+            return instance
+
 
 class ResourceTypeSerializer(serializers.ModelSerializer):
     shared_resource_type = serializers.SerializerMethodField()
+    url = serializers.SerializerMethodField()
 
     class Meta:
         model = ResourceType
-        fields = ["id", "resource_type", "externally_managed", "shared_resource_type"]
+        fields = ["id", "resource_type", "externally_managed", "shared_resource_type", "url"]
 
     def get_shared_resource_type(self, obj):
         if serializer := obj.get_resource_config().get("managed_serializer"):
             return serializer.RESOURCE_TYPE
         else:
             return None
+
+    def get_url(self, obj):
+        return reverse_lazy('resourcetype-detail', kwargs={"resource_type": obj.resource_type})
