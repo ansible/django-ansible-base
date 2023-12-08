@@ -1,11 +1,14 @@
 from django.db import transaction
+from django.http import HttpResponseNotFound
+from django.shortcuts import redirect
 from rest_framework import permissions
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import GenericViewSet, mixins
 
 from ansible_base.models import Resource, ResourceType, get_registry, service_id
-from ansible_base.serializers import ResourceSerializer, ResourceTypeSerializer
+from ansible_base.serializers import ResourceSerializer, ResourceTypeSerializer, get_resource_detail_view
 
 
 class ResourceViewSet(
@@ -23,7 +26,17 @@ class ResourceViewSet(
     queryset = Resource.objects.select_related("content_type__resource_type").prefetch_related("content_object").all()
     serializer_class = ResourceSerializer
     permission_classes = [permissions.IsAuthenticated]
-    lookup_field = "ansible_id"
+    lookup_field = "_ansible_id"
+
+    @action(detail=True, methods=['get'])
+    def resource_detail(self, *args, **kwargs):
+        obj = self.get_object()
+        url = get_resource_detail_view(obj)
+
+        if url:
+            return redirect(url, permanent=False)
+
+        return HttpResponseNotFound()
 
 
 class ResourceTypeViewSet(

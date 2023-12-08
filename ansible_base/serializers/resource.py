@@ -9,6 +9,20 @@ from ansible_base.models import Resource, ResourceType
 logger = logging.getLogger('ansible_base.serializers')
 
 
+def get_resource_detail_view(resource: Resource):
+    # TODO: format this so that it uses the correct API base path for the gateway.
+    actions = resource.content_type.resource_type.get_resource_config().get("actions")
+
+    # TODO: this needs some more logic to handle cases where the detail view isn't
+    # name or pk, and in cases where there may be multiple detail views (such as with
+    # nested API views). This may be solveable by providing a reverse_url_name when
+    # resources are registered.
+    if detail := actions.get("retrieve"):
+        return detail[0][1].format(pk=resource.pk, name=resource.name)
+
+    return None
+
+
 class ResourceDataField(serializers.JSONField):
     """
     Inspects the content object. If it has a managed serializer,
@@ -31,6 +45,8 @@ class ResourceSerializer(serializers.ModelSerializer):
     is_externally_managed = serializers.BooleanField(source="content_type.resource_type.externally_managed", read_only=True)
     resource_data = ResourceDataField(source="*")
     resource_type = serializers.CharField()
+    detail_url = serializers.SerializerMethodField()
+    # ansible_id = serializers.SerializerMethodField()
 
     class Meta:
         model = Resource
@@ -39,11 +55,20 @@ class ResourceSerializer(serializers.ModelSerializer):
             "object_id",
             "name",
             "ansible_id",
+            # "service_id",
+            # "service_short_id",
             "resource_type",
             "is_externally_managed",
             "shared_resource_type",
             "resource_data",
+            "detail_url",
         ]
+
+    def get_ansible_id(self, obj):
+        return f"{obj.service_short_id}:{obj.ansible_id}"
+
+    def get_detail_url(self, obj):
+        return get_resource_detail_view(obj)
 
     def get_shared_resource_type(self, obj):
         if serializer := obj.content_type.resource_type.get_resource_config().get("managed_serializer"):
