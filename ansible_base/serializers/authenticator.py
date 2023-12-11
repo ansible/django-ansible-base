@@ -81,17 +81,24 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
         if not validator_type and self.instance:
             validator_type = self.instance.type
 
+        configuration = data.get('configuration', None)
+        # Not having configuration is only valid for a PATCH
+        request = self.context.get('request', None)
+        if not request or (request.method != 'PATCH' and configuration is None):
+            raise ValidationError("You must specify configuration for the authenticator")
+
         try:
             invalid_encrypted_keys = {}
-            configuration = data['configuration']
             authenticator = get_authenticator_plugin(validator_type)
             data = authenticator.validate(self, data)
-            for key in authenticator.configuration_encrypted_fields:
-                if not self.instance and configuration.get(key, None) == ENCRYPTED_STRING:
-                    invalid_encrypted_keys[key] = f"Can not be set to {ENCRYPTED_STRING}"
-            if invalid_encrypted_keys:
-                raise ValidationError(invalid_encrypted_keys)
-            data['configuration'] = authenticator.validate_configuration(configuration, self.instance)
+
+            if configuration:
+                for key in authenticator.configuration_encrypted_fields:
+                    if not self.instance and configuration.get(key, None) == ENCRYPTED_STRING:
+                        invalid_encrypted_keys[key] = f"Can not be set to {ENCRYPTED_STRING}"
+                if invalid_encrypted_keys:
+                    raise ValidationError(invalid_encrypted_keys)
+                data['configuration'] = authenticator.validate_configuration(configuration, self.instance)
             return data
         except ImportError as e:
             raise ValidationError({'type': f'Failed to import {e}'})
