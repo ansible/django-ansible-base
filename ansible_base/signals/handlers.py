@@ -32,6 +32,6 @@ def update_resource(sender, instance, created, **kwargs):
         if hasattr(instance, "name"):
             name = instance.name
         if created:
-            Resource.objects.create(content_object=instance, name=name)
+            Resource.objects.update_or_create(object_id=instance.pk, content_type=ContentType.objects.get_for_model(instance), defaults={"name": name})
         elif name:
-            Resource.objects.filter(object_id=instance.pk, content_type=ContentType.objects.get_for_model(instance).pk).update(name=instance.name)
+            Resource.objects.filter(object_id=instance.pk, content_type=ContentType.objects.get_for_model(instance)).update(name=instance.name)

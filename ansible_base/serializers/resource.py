@@ -1,4 +1,6 @@
 import logging
+import re
+import uuid
 
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
@@ -9,6 +11,8 @@ from ansible_base.models import PostgresTransaction, Resource, ResourceType
 from ansible_base.utils.transactions import create_transaction
 
 logger = logging.getLogger('ansible_base.serializers')
+
+ANSIBLE_ID_REGEX = re.compile(r"^[0-9a-fA-F]{8}:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 
 def get_resource_detail_view(resource: Resource):
@@ -23,6 +27,25 @@ def get_resource_detail_view(resource: Resource):
         return detail[0][1].format(pk=resource.object_id, name=resource.name)
 
     return None
+
+
+def ansible_id_validator(val):
+    message = _(
+        "Ansible ID must in the format of <service_id>:<resource_id>, "
+        "where service_id is the first 8 characters of the service's ID "
+        "and resource_id is a valid UUID 4."
+    )
+
+    if not ANSIBLE_ID_REGEX.match(val):
+        raise serializers.ValidationError(message)
+
+    (s_id, r_id) = val.split(":")
+
+    try:
+        if str(uuid.UUID(r_id, version=4)) != r_id:
+            raise serializers.ValidationError(message)
+    except ValueError:
+        raise serializers.ValidationError(message)
 
 
 class ResourceDataField(serializers.JSONField):
@@ -66,12 +89,16 @@ class ResourceSerializer(serializers.ModelSerializer):
     resource_data = ResourceDataField(source="*")
     resource_type = serializers.CharField()
     detail_url = serializers.SerializerMethodField()
-    transaction_id = serializers.UUIDField(write_only=True, allow_null=True)
+    transaction_id = serializers.UUIDField(write_only=True, allow_null=True, required=False)
     url = serializers.SerializerMethodField()
+    ansible_id = serializers.CharField(validators=[ansible_id_validator], required=False)
 
     class Meta:
         model = Resource
-        read_only_fields = ["object_id", "name", "ansible_id"]
+        read_only_fields = [
+            "object_id",
+            "name",
+        ]
         fields = [
             "object_id",
             "name",
@@ -102,6 +129,7 @@ class ResourceSerializer(serializers.ModelSerializer):
         resource_data.is_valid(raise_exception=True)
         return resource_data.data
 
+    # update ansible ID
     def update(self, instance, validated_data):
         if serializer := instance.content_type.resource_type.serializer_class:
             with transaction.atomic():
@@ -110,6 +138,10 @@ class ResourceSerializer(serializers.ModelSerializer):
                 for k, val in resource_data.items():
                     setattr(resource, k, val)
                 resource.save()
+
+                if ansible_id := validated_data.get("ansible_id"):
+                    instance.ansible_id = ansible_id
+                    instance.save()
 
                 if t_id := validated_data.get("transaction_id"):
                     create_transaction(t_id)
@@ -120,6 +152,7 @@ class ResourceSerializer(serializers.ModelSerializer):
             {"resource_type": _(f"Resource type: {instance.content_type.resource_type.resource_type} cannot be managed by this API.")}
         )
 
+    # allow setting ansible ID at create time
     def create(self, validated_data):
         try:
             r_type = ResourceType.objects.get(resource_type=validated_data["resource_type"])
@@ -129,11 +162,12 @@ class ResourceSerializer(serializers.ModelSerializer):
             c_type = r_type.content_type
             resource_data = self.get_resource_data(validated_data["resource_data"], r_type.serializer_class)
 
-            # putting this in a transaction to ensure the post save signal fires before we load the
-            # object's Resource instance.
             with transaction.atomic():
                 resource = c_type.model_class().objects.create(**resource_data)
                 resource.save()
+
+                if ansible_id := validated_data.get("ansible_id"):
+                    Resource.objects.update_or_create(object_id=resource.pk, content_type=c_type, defaults={"ansible_id": ansible_id})
 
                 if t_id := validated_data.get("transaction_id"):
                     create_transaction(t_id)
