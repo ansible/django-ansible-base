@@ -64,3 +64,19 @@ AUTHENTICATION_BACKENDS = [
 ]
 
 ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES = ['ansible_base.authenticator_plugins']
+
+# Must be defined to use management commands with test settings
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            'context_processors': [
+                'django.contrib.auth.context_processors.auth',
+                'django.contrib.messages.context_processors.messages',
+                'django.template.context_processors.request',
+            ]
+        },
+    },
+]

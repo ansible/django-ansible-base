@@ -57,7 +57,7 @@ exclude = [ 'ansible_base/migrations/*', '.tox', 'build']
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "ansible_base.tests.settings_overrides"
-addopts = "--strict-markers --reuse-db --create-db --migrations -s -vvv"
+addopts = "--strict-markers --reuse-db --migrations -s -vvv"
 
 [tool.tox]
 legacy_tox_ini = """
