@@ -1,6 +1,7 @@
 from django.db import transaction
 from django.http import HttpResponseNotFound
 from django.shortcuts import redirect
+from django_filters import rest_framework as filters
 from rest_framework import permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -12,6 +13,16 @@ from ansible_base.serializers import DestroyResourceSerializer, ResourceSerializ
 from ansible_base.utils.transactions import commit_transaction, create_transaction, rollback_transaction
 
 
+class ResourceFilter(filters.FilterSet):
+    service_id = filters.CharFilter(field_name="_computed_service_id")
+    ansible_id = filters.CharFilter(field_name="_ansible_id")
+    resource_type = filters.CharFilter(field_name="content_type__resource_type__resource_type")
+
+    class Meta:
+        model = Resource
+        fields = ["name", "object_id"]
+
+
 class TransactionViewSet(
     mixins.RetrieveModelMixin,
     mixins.ListModelMixin,
@@ -19,7 +30,7 @@ class TransactionViewSet(
 ):
     queryset = PostgresTransaction.objects.all()
     serializer_class = TransactionSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAdminUser]
     lookup_field = "gid"
 
     @action(detail=True, methods=["post"])
@@ -60,8 +71,10 @@ class ResourceViewSet(
 
     queryset = Resource.objects.select_related("content_type__resource_type").prefetch_related("content_object").all()
     serializer_class = ResourceSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAdminUser]
     lookup_field = "_ansible_id"
+    filterset_class = ResourceFilter
+    filter_backends = (filters.DjangoFilterBackend,)
 
     @action(detail=True, methods=['get'])
     def resource_detail(self, *args, **kwargs):

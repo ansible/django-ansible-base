@@ -52,7 +52,7 @@ class ResourceManager(models.Manager):
             .get_queryset()
             .annotate(
                 _computed_service_id=models.Case(
-                    models.When(_service_id__isnull=False, then=models.F('name')), default=models.Value(s_id), output_field=models.CharField()
+                    models.When(_service_id__isnull=False, then=models.F('_service_id')), default=models.Value(s_id), output_field=models.CharField()
                 ),
                 _ansible_id=Concat("_computed_service_id", models.Value(":"), models.F("resource_id"), output_field=models.CharField()),
             )
