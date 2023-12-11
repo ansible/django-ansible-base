@@ -1,7 +1,11 @@
+import logging
+
 from django.apps import AppConfig
 from django.db.models.signals import post_migrate
 
 import ansible_base.checks  # noqa: F401 - register checks
+
+logger = logging.getLogger('ansible_base.apps')
 
 
 def initialize_resources(sender, apps, **kwargs):
@@ -11,24 +15,30 @@ def initialize_resources(sender, apps, **kwargs):
     ResourceType = apps.get_model("ansible_base", "ResourceType")
     ContentType = apps.get_model("contenttypes", "ContentType")
 
-    print("updating resource types")
+    logger.info("updating resource types")
     registry = get_registry()
     if registry:
         for key, resource in registry.get_resources().items():
             content = ContentType.objects.get_for_model(resource["model"])
-            resource_type = f"{registry.api_config.service_type}.{content.model}"
+
+            if serializer := resource.get("managed_serializer"):
+                resource_type = f"shared.{serializer.RESOURCE_TYPE}"
+            else:
+                resource_type = f"{registry.api_config.service_type}.{content.model}"
             defaults = {"externally_managed": resource["externally_managed"], "resource_type": resource_type}
             ResourceType.objects.update_or_create(content_type=content, defaults=defaults)
 
         for r_type in ResourceType.objects.filter(migrated=False):
             resource_model = apps.get_model(r_type.content_type.app_label, r_type.content_type.model)
-            print(f"adding unmigrated resources for {r_type.content_type.model}")
+            resource_config = registry.get_config_for_model(model=resource_model)
+
+            logger.info(f"adding unmigrated resources for {r_type.resource_type}")
 
             data = []
             for obj in resource_model.objects.all():
                 resource = Resource(object_id=obj.pk, content_type=r_type.content_type)
-                if hasattr(obj, "name"):
-                    resource.name = obj.name
+                if hasattr(obj, resource_config["name_field"]):
+                    resource.name = getattr(obj, resource_config["name_field"])
                 data.append(resource)
 
             Resource.objects.bulk_create(data, ignore_conflicts=True)

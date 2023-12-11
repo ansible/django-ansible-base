@@ -1,9 +1,11 @@
 from collections import namedtuple
+from typing import List
 
 from rest_framework import permissions
 from rest_framework.schemas.generators import BaseSchemaGenerator
 
-ChildResource = namedtuple("ChildResource", ["model", "field_name"])
+ParentResource = namedtuple("ParentResource", ["model", "field_name"])
+SharedResource = namedtuple("SharedResource", ["serializer", "is_provider"])
 
 
 class ServiceAPIConfig:
@@ -49,8 +51,8 @@ class ResourceInspector(BaseSchemaGenerator):
 class ResourceRegistry:
     registry = {}
 
-    def __init__(self, service_api_config: ServiceAPIConfig = None, urlpatterns=None):
-        self.resource_inspector = ResourceInspector(urlpatterns=urlpatterns)
+    def __init__(self, service_api_config: ServiceAPIConfig = None):
+        self.resource_inspector = ResourceInspector()
 
         self._validate_api_config(service_api_config)
         self.api_config = service_api_config
@@ -61,22 +63,31 @@ class ResourceRegistry:
             - Viewsets have the correct serializer, pagination and filter classes
             - Service type is set to one of awx, galaxy, eda or gateway
         """
-        pass
+        assert config.service_type in ["aap", "awx", "galaxy", "eda"]
 
-    def register(self, model, externally_managed=False, managed_serializer=None, parent_resources=None):
+    def register(self, model, shared_resource: SharedResource = None, parent_resources: List[ParentResource] = None, name_field: str = None):
         model_label = model._meta.label
+        managed_serializer = None
+        externally_managed = False
+        if name_field is None:
+            name_field = "name"
+
+        if shared_resource:
+            managed_serializer = shared_resource.serializer
+            externally_managed = not shared_resource.is_provider
 
         parent_map = {}
         if parent_resources:
             for parent in parent_resources:
-                parent_map[parent["model"]._meta.label] = parent
+                parent_map[parent.model._meta.label] = parent
 
         self.registry[model_label] = {
             "model": model,
             "externally_managed": externally_managed,
             "managed_serializer": managed_serializer,
-            "child_resources": parent_map,
+            "parent_resources": parent_map,
             "actions": self.resource_inspector.model_map.get(model_label),
+            "name_field": name_field,
         }
 
     def get_resources(self):
@@ -89,7 +100,3 @@ class ResourceRegistry:
             return self.registry[model_label]
 
         raise AttributeError("Must include either model or model_label arg.")
-
-    def get_urls(self):
-        # remove calls for gateway managed resources
-        return self.resource_inspector.patterns

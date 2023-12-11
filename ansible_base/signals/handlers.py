@@ -29,9 +29,10 @@ def remove_resource(sender, instance, **kwargs):
 def update_resource(sender, instance, created, **kwargs):
     if sender in get_resource_models():
         name = None
-        if hasattr(instance, "name"):
-            name = instance.name
+        resource_config = get_registry().get_config_for_model(model=sender)
+        if hasattr(instance, resource_config["name_field"]):
+            name = getattr(instance, resource_config["name_field"])
         if created:
             Resource.objects.update_or_create(object_id=instance.pk, content_type=ContentType.objects.get_for_model(instance), defaults={"name": name})
         elif name:
-            Resource.objects.filter(object_id=instance.pk, content_type=ContentType.objects.get_for_model(instance)).update(name=instance.name)
+            Resource.objects.filter(object_id=instance.pk, content_type=ContentType.objects.get_for_model(instance)).update(name=name)
