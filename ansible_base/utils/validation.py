@@ -99,3 +99,15 @@ def validate_cert_with_key(public_cert_string, private_key_string):
         raise ValidationError(error)
 
     return True
+
+
+def to_python_boolean(value, allow_none=False):
+    value = str(value)
+    if value.lower() in ('true', '1', 't'):
+        return True
+    elif value.lower() in ('false', '0', 'f'):
+        return False
+    elif allow_none and (value is None or value.lower() in ('none', 'null')):
+        return None
+    else:
+        raise ValueError(_(u'Unable to convert "%s" to boolean') % value)

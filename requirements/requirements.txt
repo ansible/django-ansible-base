@@ -23,15 +23,12 @@ django==4.2.6
     #   -r requirements/requirements.in
     #   django-auth-ldap
     #   django-crum
-    #   django-filter
     #   djangorestframework
     #   drf-spectacular
     #   social-auth-app-django
 django-auth-ldap==4.6.0
     # via -r requirements/requirements.in
 django-crum==0.7.9
-    # via -r requirements/requirements.in
-django-filter==23.3
     # via -r requirements/requirements.in
 djangorestframework==3.14.0
     # via

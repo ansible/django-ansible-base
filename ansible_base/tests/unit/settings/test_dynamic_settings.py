@@ -106,3 +106,14 @@ def test_dont_update_class_prefixes():
     )
     updated_settings = get_updated_settings(additional_config)
     assert 'ansible_base.authenticator_plugins' not in updated_settings['ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES']
+
+
+def test_filtering():
+    additional_config = dedent(
+        '''
+        ANSIBLE_BASE_FEATURES = {'FILTERING': True}
+        REST_FRAMEWORK = {}
+    '''
+    )
+    updated_settings = get_updated_settings(additional_config)
+    assert 'ansible_base.utils.rest_filters.TypeFilterBackend' in updated_settings['REST_FRAMEWORK']['DEFAULT_FILTER_BACKENDS']
