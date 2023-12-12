@@ -5,8 +5,10 @@ django-ansible-base has a plugable authentication setup allowing you to add logi
 
 ## Settings
 
+First you need to enable the `AUTHENTICATION` feature of django-ansible-base.
+
 ### AUTHENTICATION_BACKENDS
-In your settings.py file we will start by changing the AUTHENTICATION_BACKENDS:
+django-ansible-base will automatically set the AUTHENTICATION_BACKENDS as follows unless you explicitly have an `AUTHENTICATION_BACKENDS` in your settings.py:
 ```
 AUTHENTICATION_BACKENDS = [
     "ansible_base.authentication.backend.AnsibleBaseAuth",
@@ -16,7 +18,7 @@ AUTHENTICATION_BACKENDS = [
 If you have other backends in there please consider whether or not you need them. If you do can you make a plugin for django-ansible-base?
 
 ### MIDDLEWARE
-Next in your MIDDLEWARE, we want to add a django-ansible-base class like:
+django-ansible-base will automatically insert it's middleware class into your MIDDLEWARE array if you have not already added it. If `django.contrib.auth.middleware.AuthenticationMiddleware` is not in your middleware the django-ansible-base class will be appended as the last item in your MIDDLEWARE. If `django.contrib.auth.middleware.AuthenticationMiddleware` is in your MIDDLEWARE the django-ansible-base class will be inserted before that.
 ```
 MIDDLEWARE = [
     ...
@@ -30,7 +32,7 @@ Note: this must come before django.contrib.auth.middleware.AuthenticationMiddlwa
 
 
 ### ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES
-Next we need to setup the class prefix for the installed authenticator classes, this can be:
+By default, django-ansible-base will look in the class `ansible_base.authenticator_plugins` for the available authenticator plugins. If you would like to provide additional or custom paths you can set the following setting:
 ```
 ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES = ["ansible_base.authenticator_plugins"]
 ```
@@ -39,7 +41,7 @@ If you are going to create a different class to hold the plugins you can change 
 
 ### REST_FRAMEWORK
 
-If you are using DRF and want to use django-ansible-base authentication we need to make changes to your REST_FRAMEWORK settings. Configure your DEFAULT_AUTHENTICATION_CLASSES to use the ansible_base class as follows:
+If you are using DRF and enable django-ansible-base authentication we prepend our authentication class to your REST_FRAMEWORK settings if our class is not already present:
 ```
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -54,7 +56,7 @@ REST_FRAMEWORK = {
 
 
 ### Social Auth Settings
-Finally, if you are using any of the social authentication classes we need to define some social classes:
+django-ansible-base will add the following social auth settings:
 ```
 SOCIAL_AUTH_PIPELINE = (
     'social_core.pipeline.social_auth.social_details',
@@ -70,10 +72,10 @@ SOCIAL_AUTH_PIPELINE = (
 )
 SOCIAL_AUTH_STORAGE = "ansible_base.authentication.social_auth.AuthenticatorStorage"
 SOCIAL_AUTH_STRATEGY = "ansible_base.authentication.social_auth.AuthenticatorStrategy"
-SOCIAL_AUTH_LOGIN_REDIRECT_URL = "/api/v1/me"
+SOCIAL_AUTH_LOGIN_REDIRECT_URL = "/"
 ```
 
-If you have additional steps for the social pipeline feel free to add them here.
+If you have additional steps for the social pipeline you should extend this variable after including the ansible_base settings.
 
 Additionally, if you want to support any "global" SOCIAL_AUTH variables (like SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL) you can add a setting like:
 ```

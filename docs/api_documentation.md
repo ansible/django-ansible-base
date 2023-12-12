@@ -2,7 +2,7 @@
 
 django-ansible-base uses django-spectacular to auto-generate both Open API and Swagger documentation of the API.
 
-To enable this first edit your settings and add `drf_spectacular` in `INSTALLED_APPS`:
+If you enable the `SWAGGER` feature of django-ansible-base we will auto-append `drf_spectacular` to your `INSTALLED_APPS` if its not already present:
 ```
 INSTALLED_APPS = [
     ...
@@ -10,7 +10,8 @@ INSTALLED_APPS = [
     ...
 ]
 ```
-then add the following
+
+You will need to add the following `SPECTACULAR_SETTINGS`:
 ```
 SPECTACULAR_SETTINGS = {
     'TITLE': 'AAP <Service Name> API',
