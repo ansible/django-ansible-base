@@ -15,3 +15,20 @@ INSTALLED_APPS = [
     'ansible_base',
 ]
 ```
+
+Next we can turn on various feature of django-ansible base in your settings file:
+```
+ANSIBLE_BASE_FEATURES = {
+    'AUTHENTICATION': True,
+    'FILTERING': False
+}
+```
+
+Finally, we can let django-ansible-base add the settings it needs to function:
+```
+from ansible_base import settings
+settings_file = os.path.join(os.path.dirname(settings.__file__), 'dynamic_settings.py')
+include(settings_file)
+```
+
+Please read the various sections of this documentation for what django-ansible-base will do to your settings.
