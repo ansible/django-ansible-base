@@ -1,4 +1,5 @@
-from django.db.models import JSONField, fields
+from django.conf import settings
+from django.db.models import JSONField, ManyToManyField, fields
 
 from ansible_base.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_plugin
 
@@ -23,6 +24,12 @@ class Authenticator(UniqueNamedCommonModel):
     )
     slug = fields.SlugField(max_length=1024, default=None, editable=False, unique=True, help_text="An immutable identifier for the authenticator")
     category = fields.CharField(max_length=30, default=None, help_text="The base type of this authenticator")
+    users = ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        related_name='users',
+        blank=False,
+        help_text="The list of users who have authenticated from this authenticator",
+    )
 
     reverse_foreign_key_fields = ['authenticator-map']
 
