@@ -35,10 +35,12 @@ optional-dependencies.all = { file = [
     "requirements/requirements_authentication.in",
     "requirements/requirements_swagger.in",
     "requirements/requirements_filtering.in",
+    "requirements/requirements_channel_auth.in",
 ] }
 optional-dependencies.authentication = { file = [ "requirements/requirements_authentication.in" ] }
 optional-dependencies.swagger = { file = [ "requirements/requirements_swagger.in" ] }
 optional-dependencies.filtering = { file = [ "requirements/requirements_filtering.in" ] }
+optional-dependencies.channel_auth = { file = [ "requirements/requirements_channel_auth.in" ] }
 
 [build-system]
 requires = ["setuptools>=64", "setuptools_scm>=8"]
