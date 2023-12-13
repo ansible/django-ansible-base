@@ -14,3 +14,6 @@ python-ldap
 # Social Authenticator Plugins
 social-auth-app-django
 python3-saml
+
+# OAuth2 Server
+django-oauth-toolkit>=1.7.1 # This is pinned this way so that DAB is compatable with AWX
