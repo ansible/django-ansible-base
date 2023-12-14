@@ -8,6 +8,14 @@ ParentResource = namedtuple("ParentResource", ["model", "field_name"])
 SharedResource = namedtuple("SharedResource", ["serializer", "is_provider"])
 
 
+def get_concrete_model(model):
+    _model = model
+    while _model._meta.proxy_for_model:
+        _model = _model._meta.proxy_for_model
+    
+    return _model
+
+
 class ServiceAPIConfig:
     service_type = None
 
@@ -33,19 +41,24 @@ class ResourceInspector(BaseSchemaGenerator):
             view = self.create_view(callback, method)
 
             if hasattr(view, "get_serializer_class"):
-                serializer_class = view.get_serializer_class()
-                if hasattr(serializer_class, "Meta"):
-                    label = serializer_class.Meta.model._meta.label
-                    if label not in self.model_map:
-                        self.model_map[label] = {}
+                try:
+                    serializer_class = view.get_serializer_class()
+                    if hasattr(serializer_class, "Meta"):
+                        model = get_concrete_model(serializer_class.Meta.model)
+                        label = model._meta.label
+                        if label not in self.model_map:
+                            self.model_map[label] = {}
 
-                    if hasattr(view, "action"):
-                        action = view.action
-                        if action == "partial_update":
-                            action = "update"
-                        if action not in self.model_map[label]:
-                            self.model_map[label][action] = []
-                        self.model_map[label][action].append((method, path))
+                        if hasattr(view, "action"):
+                            action = view.action
+                            if action == "partial_update":
+                                action = "update"
+                            if action not in self.model_map[label]:
+                                self.model_map[label][action] = []
+                            self.model_map[label][action].append((method, path))
+                except:
+                    pass
+
 
 
 class ResourceRegistry:
@@ -66,7 +79,9 @@ class ResourceRegistry:
         assert config.service_type in ["aap", "awx", "galaxy", "eda"]
 
     def register(self, model, shared_resource: SharedResource = None, parent_resources: List[ParentResource] = None, name_field: str = None):
+        model = get_concrete_model(model)
         model_label = model._meta.label
+
         managed_serializer = None
         externally_managed = False
         if name_field is None:
@@ -86,7 +101,7 @@ class ResourceRegistry:
             "externally_managed": externally_managed,
             "managed_serializer": managed_serializer,
             "parent_resources": parent_map,
-            "actions": self.resource_inspector.model_map.get(model_label),
+            "actions": self.resource_inspector.model_map.get(model_label, {}),
             "name_field": name_field,
         }
 

@@ -6,7 +6,8 @@ from django.dispatch import receiver
 
 from ansible_base.models import Resource
 from ansible_base.models.resource import get_registry
-
+from ansible_base.resource_registry.registry import get_concrete_model
+from ansible_base.utils.transactions import create_transaction
 
 @lru_cache(maxsize=1)
 def get_resource_models():
@@ -21,15 +22,21 @@ def get_resource_models():
 
 @receiver(post_delete)
 def remove_resource(sender, instance, **kwargs):
-    if sender in get_resource_models():
+    if sender._meta.object_name == 'Migration':
+        return
+    model = get_concrete_model(sender)
+    if model in get_resource_models():
         Resource.objects.filter(object_id=instance.pk, content_type=ContentType.objects.get_for_model(instance).pk).delete()
 
 
 @receiver(post_save)
 def update_resource(sender, instance, created, **kwargs):
-    if sender in get_resource_models():
+    if sender._meta.object_name == 'Migration':
+        return
+    model = get_concrete_model(sender)
+    if model in get_resource_models():
         name = None
-        resource_config = get_registry().get_config_for_model(model=sender)
+        resource_config = get_registry().get_config_for_model(model=model)
         if hasattr(instance, resource_config["name_field"]):
             name = getattr(instance, resource_config["name_field"])
         if created:

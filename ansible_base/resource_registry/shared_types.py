@@ -9,7 +9,7 @@ class UserType(serializers.Serializer):
     first_name = serializers.CharField()
     last_name = serializers.CharField()
     is_superuser = serializers.BooleanField()
-    is_system_auditor = serializers.BooleanField()
+    # is_system_auditor = serializers.BooleanField()
 
 
 class OrganizationType(serializers.Serializer):
