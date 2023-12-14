@@ -1,7 +1,7 @@
 import pytest
 from rest_framework.exceptions import ValidationError
 
-from ansible_base.utils.validation import validate_cert_with_key, validate_url
+from ansible_base.utils.validation import to_python_boolean, validate_cert_with_key, validate_url
 
 
 @pytest.mark.parametrize(
@@ -79,3 +79,45 @@ def test_validate_cert_with_key_mismatch(rsa_keypair_with_cert_1, rsa_keypair_wi
     with pytest.raises(ValidationError) as e:
         validate_cert_with_key(rsa_keypair_with_cert_1.certificate, rsa_keypair_with_cert_2.private)
     assert "The certificate and private key do not match" in str(e.value)
+
+
+@pytest.mark.parametrize(
+    "value,return_value,raises",
+    (
+        (True, True, False),
+        ("true", True, False),
+        ("TRUE", True, False),
+        (1, True, False),
+        ("t", True, False),
+        ("T", True, False),
+        ("on", None, True),
+        (False, False, False),
+        ("false", False, False),
+        ("FALSE", False, False),
+        (0, False, False),
+        ("f", False, False),
+        ("F", False, False),
+        ("off", False, True),
+    ),
+)
+def test_to_python_boolean(value, return_value, raises):
+    try:
+        response = to_python_boolean(value)
+        assert response == return_value
+    except ValueError:
+        if not raises:
+            assert False, "We did not expect this to raise an exception"
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        (None),
+        ("none"),
+        ("None"),
+        ("null"),
+        ("Null"),
+    ),
+)
+def test_to_python_boolean_none(value):
+    assert to_python_boolean(value, allow_none=True) is None
