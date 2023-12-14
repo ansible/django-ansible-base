@@ -52,10 +52,10 @@ if ANSIBLE_BASE_FEATURES.get('FILTERING', False):  # noqa: F821
     REST_FRAMEWORK.update(  # noqa: F821
         {
             'DEFAULT_FILTER_BACKENDS': (
-                'ansible_base.utils.rest_filters.TypeFilterBackend',
-                'ansible_base.utils.rest_filters.FieldLookupBackend',
+                'ansible_base.filters.rest_framework.type_filter_backend.TypeFilterBackend',
+                'ansible_base.filters.rest_framework.field_lookup_backend.FieldLookupBackend',
                 'rest_framework.filters.SearchFilter',
-                'ansible_base.utils.rest_filters.OrderByBackend',
+                'ansible_base.filters.rest_framework.order_backend.OrderByBackend',
             )
         }
     )

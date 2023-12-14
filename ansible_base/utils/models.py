@@ -37,7 +37,7 @@ def prevent_search(relation):
         sensitive_data = prevent_search(models.CharField(...))
 
     The flag set by this function is used by
-    `ansible_base.utils.rest_filters.FieldLookupBackend` to block fields and relations that
+    `ansible_base.filters.rest_framework.field_lookup_backend.FieldLookupBackend` to block fields and relations that
     should not be searchable/filterable via search query params
     """
     setattr(relation, '__prevent_search__', True)

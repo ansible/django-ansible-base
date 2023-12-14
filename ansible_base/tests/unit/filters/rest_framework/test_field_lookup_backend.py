@@ -1,15 +1,12 @@
 from unittest.mock import MagicMock, Mock
 
 import pytest
-from django.contrib.auth import get_user_model
 from django.core.exceptions import FieldDoesNotExist, FieldError, ValidationError
 from rest_framework.exceptions import ParseError, PermissionDenied
 
+from ansible_base.filters.rest_framework.field_lookup_backend import FieldLookupBackend
 from ansible_base.models import Authenticator, AuthenticatorMap
-from ansible_base.utils.rest_filters import FieldLookupBackend, OrderByBackend, TypeFilterBackend, get_field_from_path
 from ansible_base.views import AuthenticatorViewSet
-
-User = get_user_model()
 
 
 def test_filters_related():
@@ -29,19 +26,6 @@ def test_invalid_filter_key():
     # FieldDoesNotExist is caught and converted to ParseError by filter_queryset
     with pytest.raises(FieldDoesNotExist) as excinfo:
         field_lookup.value_to_python(Authenticator, 'created_by.gibberish', 'foo')
-    assert 'has no field named' in str(excinfo)
-
-
-def test_invalid_field_hop():
-    with pytest.raises(ParseError) as excinfo:
-        get_field_from_path(Authenticator, 'created_by__last_name__user')
-    assert 'No related model for' in str(excinfo)
-
-
-def test_invalid_order_by_key():
-    field_order_by = OrderByBackend()
-    with pytest.raises(ParseError) as excinfo:
-        [f for f in field_order_by._validate_ordering_fields(Authenticator, ('modified_by.junk',))]
     assert 'has no field named' in str(excinfo)
 
 
@@ -137,73 +121,8 @@ def test_value_to_python_for_field_fk_field_exception():
         field_lookup.value_to_python_for_field(AuthenticatorMap._meta.get_field('authenticator'), True)
 
 
-def test_OrderByBackend_get_default_ordering_no_order():
-    order_by = OrderByBackend()
-    order_by.get_default_ordering(AuthenticatorViewSet)
-
-
-def test_OrderByBackend_get_default_ordering_order():
-    order_by = OrderByBackend()
-    view = AuthenticatorViewSet()
-    setattr(view, 'ordering', 'id')
-    order_by.get_default_ordering(view)
-
-
-@pytest.mark.parametrize(
-    ("query"),
-    (
-        ({'order': 'id'}),
-        ({'order': 'id,name'}),
-        ({'order': '-id'}),
-        ({'not_order': 'id'}),
-    ),
-)
-def test_OrderByBackend_filter_query_set(query):
-    order_by = OrderByBackend()
-    request = MagicMock()
-    request.query_params = query
-
-    order_by.filter_queryset(request, Authenticator.objects.all(), AuthenticatorViewSet)
-
-
-def test_OrderByBackend_filter_query_set_exception():
-    order_by = OrderByBackend()
-    request = MagicMock()
-    request.query_params = {}
-    order_by.get_default_ordering = Mock(side_effect=FieldError("missing field"))
-
-    with pytest.raises(ParseError):
-        order_by.filter_queryset(request, Authenticator.objects.all(), AuthenticatorViewSet)
-
-
-@pytest.mark.parametrize(
-    "query",
-    (
-        ({}),
-        ({'not_type': 'something'}),
-        ({'type': 'a,b'}),
-        ({'type': 'a'}),
-    ),
-)
-@pytest.mark.django_db
-def test_TypeFilterBackend_filter_query_set(query):
-    filter = TypeFilterBackend()
-    request = MagicMock()
-    request.query_params = query
-    filter.filter_queryset(request, Authenticator.objects.all(), AuthenticatorViewSet)
-
-
-def test_TypeFilterBackend_filter_query_set_exception():
-    filter = TypeFilterBackend()
-    request = MagicMock()
-    request.query_params.items = Mock(side_effect=FieldError("missing field"))
-
-    with pytest.raises(ParseError):
-        filter.filter_queryset(request, Authenticator.objects.all(), AuthenticatorViewSet)
-
-
 @pytest.mark.parametrize("exception", ((ValidationError("")), (FieldError(""))))
-def test_FieldLookupBackend_filter_queryset_exception(exception):
+def test_filter_queryset_exception(exception):
     filter = FieldLookupBackend()
     request = MagicMock()
     request.query_params.lists = Mock(side_effect=exception)
@@ -225,7 +144,7 @@ def test_FieldLookupBackend_filter_queryset_exception(exception):
         ((('authenticator__search', ['find_me,also_me']),)),
     ),
 )
-def test_FieldLookupBackend_filter_queryset(query):
+def test_filter_queryset(query):
     filter = FieldLookupBackend()
     request = MagicMock()
     iterator = MagicMock()

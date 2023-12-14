@@ -116,4 +116,4 @@ def test_filtering():
     '''
     )
     updated_settings = get_updated_settings(additional_config)
-    assert 'ansible_base.utils.rest_filters.TypeFilterBackend' in updated_settings['REST_FRAMEWORK']['DEFAULT_FILTER_BACKENDS']
+    assert 'ansible_base.filters.rest_framework.type_filter_backend.TypeFilterBackend' in updated_settings['REST_FRAMEWORK']['DEFAULT_FILTER_BACKENDS']

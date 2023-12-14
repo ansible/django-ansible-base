@@ -3,7 +3,6 @@ import re
 from functools import reduce
 
 from django.contrib.contenttypes.fields import GenericForeignKey
-from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import FieldDoesNotExist, FieldError, ValidationError
 from django.db import models
 from django.db.models import BooleanField, CharField, IntegerField, JSONField, Q, TextField
@@ -11,113 +10,11 @@ from django.db.models.fields.related import ForeignKey, ForeignObjectRel, ManyTo
 from django.db.models.functions import Cast
 from django.utils.encoding import force_str
 from django.utils.translation import gettext_lazy as _
-from rest_framework.exceptions import ParseError, PermissionDenied
+from rest_framework.exceptions import ParseError
 from rest_framework.filters import BaseFilterBackend
 
-from .models import get_all_field_names, get_type_for_model
-from .validation import to_python_boolean
-
-
-class TypeFilterBackend(BaseFilterBackend):
-    """
-    Filter on type field now returned with all objects.
-    """
-
-    def filter_queryset(self, request, queryset, view):
-        try:
-            types = None
-            for key, value in request.query_params.items():
-                if key == 'type':
-                    if ',' in value:
-                        types = value.split(',')
-                    else:
-                        types = (value,)
-            if types:
-                types_map = {}
-                # TODO: We need to revisit this out since we don't have a main app
-                for ct in ContentType.objects.filter(Q(app_label='main') | Q(app_label='auth', model='user')):
-                    ct_model = ct.model_class()
-                    if not ct_model:
-                        continue
-                    ct_type = get_type_for_model(ct_model)
-                    types_map[ct_type] = ct.pk
-                model = queryset.model
-                model_type = get_type_for_model(model)
-                if 'polymorphic_ctype' in get_all_field_names(model):
-                    types_pks = set([v for k, v in types_map.items() if k in types])
-                    queryset = queryset.filter(polymorphic_ctype_id__in=types_pks)
-                elif model_type not in types:
-                    queryset = queryset.none()
-            return queryset
-        except FieldError as e:
-            # Return a 400 for invalid field names.
-            raise ParseError(*e.args)
-
-
-def get_fields_from_path(model, path):
-    """
-    Given a Django ORM lookup path (possibly over multiple models)
-    Returns the fields in the line, and also the revised lookup path
-    ex., given
-        model=Organization
-        path='project__timeout'
-    returns tuple of fields traversed as well and a corrected path,
-    for special cases we do substitutions
-        ([<IntegerField for timeout>], 'project__timeout')
-    """
-    # Store of all the fields used to detect repeats
-    field_list = []
-    new_parts = []
-    for name in path.split('__'):
-        if model is None:
-            raise ParseError(_('No related model for field {}.').format(name))
-        # TODO: Do we want to keep these AWX specific items here?
-        # HACK: Make project and inventory source filtering by old field names work for backwards compatibility.
-        if model._meta.object_name in ('Project', 'InventorySource'):
-            name = {'current_update': 'current_job', 'last_update': 'last_job', 'last_update_failed': 'last_job_failed', 'last_updated': 'last_job_run'}.get(
-                name, name
-            )
-
-        if name == 'type' and 'polymorphic_ctype' in get_all_field_names(model):
-            name = 'polymorphic_ctype'
-            new_parts.append('polymorphic_ctype__model')
-        else:
-            new_parts.append(name)
-
-        if name in getattr(model, 'PASSWORD_FIELDS', ()):
-            raise PermissionDenied(_('Filtering on password fields is not allowed.'))
-        elif name == 'pk':
-            field = model._meta.pk
-        else:
-            name_alt = name.replace("_", "")
-            if name_alt in model._meta.fields_map.keys():
-                field = model._meta.fields_map[name_alt]
-                new_parts.pop()
-                new_parts.append(name_alt)
-            else:
-                field = model._meta.get_field(name)
-            if isinstance(field, ForeignObjectRel) and getattr(field.field, '__prevent_search__', False):
-                raise PermissionDenied(_('Filtering on %s is not allowed.' % name))
-            elif getattr(field, '__prevent_search__', False):
-                raise PermissionDenied(_('Filtering on %s is not allowed.' % name))
-        if field in field_list:
-            # Field traversed twice, could create infinite JOINs, DoS-ing the service
-            raise ParseError(_('Loops not allowed in filters, detected on field {}.').format(field.name))
-        field_list.append(field)
-        model = getattr(field, 'related_model', None)
-
-    return field_list, '__'.join(new_parts)
-
-
-def get_field_from_path(model, path):
-    """
-    Given a Django ORM lookup path (possibly over multiple models)
-    Returns the last field in the line, and the revised lookup path
-    ex.
-        (<IntegerField for timeout>, 'project__timeout')
-    """
-    field_list, new_path = get_fields_from_path(model, path)
-    return (field_list[-1], new_path)
+from ansible_base.utils.filters import get_fields_from_path
+from ansible_base.utils.validation import to_python_boolean
 
 
 class FieldLookupBackend(BaseFilterBackend):
@@ -376,68 +273,3 @@ class FieldLookupBackend(BaseFilterBackend):
             raise ParseError(e.args[0]) from e
         except ValidationError as e:
             raise ParseError(json.dumps(e.messages, ensure_ascii=False))
-
-
-class OrderByBackend(BaseFilterBackend):
-    """
-    Filter to apply ordering based on query string parameters.
-    """
-
-    def filter_queryset(self, request, queryset, view):
-        try:
-            order_by = None
-            for key, value in request.query_params.items():
-                if key in ('order', 'order_by'):
-                    order_by = value
-                    if ',' in value:
-                        order_by = value.split(',')
-                    else:
-                        order_by = (value,)
-            default_order_by = self.get_default_ordering(view)
-            # glue the order by and default order by together so that the default is the backup option
-            order_by = list(order_by or []) + list(default_order_by or [])
-            if order_by:
-                order_by = self._validate_ordering_fields(queryset.model, order_by)
-                # Special handling of the type field for ordering. In this
-                # case, we're not sorting exactly on the type field, but
-                # given the limited number of views with multiple types,
-                # sorting on polymorphic_ctype.model is effectively the same.
-                new_order_by = []
-                if 'polymorphic_ctype' in get_all_field_names(queryset.model):
-                    for field in order_by:
-                        if field == 'type':
-                            new_order_by.append('polymorphic_ctype__model')
-                        elif field == '-type':
-                            new_order_by.append('-polymorphic_ctype__model')
-                        else:
-                            new_order_by.append(field)
-                else:
-                    for field in order_by:
-                        if field not in ('type', '-type'):
-                            new_order_by.append(field)
-                queryset = queryset.order_by(*new_order_by)
-            return queryset
-        except FieldError as e:
-            # Return a 400 for invalid field names.
-            raise ParseError(*e.args)
-
-    def get_default_ordering(self, view):
-        ordering = getattr(view, 'ordering', None)
-        if isinstance(ordering, str):
-            return (ordering,)
-        return ordering
-
-    def _validate_ordering_fields(self, model, order_by):
-        for field_name in order_by:
-            # strip off the negation prefix `-` if it exists
-            prefix = ''
-            path = field_name
-            if field_name[0] == '-':
-                prefix = field_name[0]
-                path = field_name[1:]
-            try:
-                field, new_path = get_field_from_path(model, path)
-                new_path = '{}{}'.format(prefix, new_path)
-            except (FieldError, FieldDoesNotExist) as e:
-                raise ParseError(e.args[0])
-            yield new_path
