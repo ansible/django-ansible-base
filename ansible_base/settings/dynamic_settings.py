@@ -46,3 +46,16 @@ if ANSIBLE_BASE_FEATURES.get('AUTHENTICATION', False):  # noqa: F821
 if ANSIBLE_BASE_FEATURES.get('SWAGGER', False):  # noqa: F821
     if 'drf_spectacular' not in INSTALLED_APPS:  # noqa: F821
         INSTALLED_APPS.append('drf_spectacular')  # noqa: F821
+
+
+if ANSIBLE_BASE_FEATURES.get('FILTERING', False):  # noqa: F821
+    REST_FRAMEWORK.update(  # noqa: F821
+        {
+            'DEFAULT_FILTER_BACKENDS': (
+                'ansible_base.filters.rest_framework.type_filter_backend.TypeFilterBackend',
+                'ansible_base.filters.rest_framework.field_lookup_backend.FieldLookupBackend',
+                'rest_framework.filters.SearchFilter',
+                'ansible_base.filters.rest_framework.order_backend.OrderByBackend',
+            )
+        }
+    )

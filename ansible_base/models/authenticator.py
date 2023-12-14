@@ -2,6 +2,7 @@ from django.conf import settings
 from django.db.models import JSONField, ManyToManyField, fields
 
 from ansible_base.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_plugin
+from ansible_base.utils.models import prevent_search
 
 from .common import UniqueNamedCommonModel
 
@@ -14,7 +15,7 @@ class Authenticator(UniqueNamedCommonModel):
     remove_users = fields.BooleanField(
         default=True, help_text="When a user authenticates from this source should they be removed from any other groups they were previously added to"
     )
-    configuration = JSONField(default=dict, help_text="The required configuration for this source")
+    configuration = prevent_search(JSONField(default=dict, help_text="The required configuration for this source"))
     type = fields.CharField(
         max_length=256,
         help_text="The type of authentication service this is",
