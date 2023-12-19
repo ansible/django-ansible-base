@@ -1,5 +1,6 @@
 from django.db import models
 
+from ansible_base.models import AbstractOrganization
 from ansible_base.models.common import NamedCommonModel
 
 
@@ -11,3 +12,11 @@ class EncryptionModel(NamedCommonModel):
 
     testing1 = models.CharField(max_length=1, null=True, default='a')
     testing2 = models.CharField(max_length=1, null=True, default='b')
+
+
+class Organization(AbstractOrganization):
+    pass
+
+
+class Team(models.Model):
+    name = models.CharField(max_length=512)
