@@ -100,3 +100,5 @@ TEMPLATES = [
 ]
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+ANSIBLE_BASE_TEAM_MODEL = 'test_app.Team'
