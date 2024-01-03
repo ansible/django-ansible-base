@@ -7,7 +7,7 @@ from ansible_base.serializers import AuthenticatorMapSerializer
 
 class AuthenticatorMapViewSet(ModelViewSet):
     """
-    API endpoint that allows groups to be viewed or edited.
+    API endpoint that allows authenticator maps to be viewed or edited.
     """
 
     queryset = AuthenticatorMap.objects.all().order_by("id")
