@@ -8,7 +8,7 @@ for FILE in requirements.in requirements.txt ; do
 		touch ${FILE}
 	fi
 done
-requirements_in="$(readlink -f ./requirements.in)"
+requirements_dir="$(readlink -f .)"
 requirements_txt="$(readlink -f ./requirements.txt)"
 pip_compile="pip-compile --no-header --quiet -r --allow-unsafe"
 
@@ -26,7 +26,7 @@ generate_requirements() {
 
   ${venv}/bin/python -m pip install -U 'pip' pip-tools
 
-  ${pip_compile} "${requirements_in}" --output-file requirements.txt
+  ${pip_compile} $(ls ${requirements_dir}/requirements*.in | xargs) --output-file requirements.txt
 }
 
 main() {

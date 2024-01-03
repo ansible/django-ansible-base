@@ -2,12 +2,24 @@
 
 Currently we install django-ansible-base via a pip install from the repository:
 ```
-pip install git+https://github.com/ansible/django-ansible-base.git
+pip install git+https://github.com/ansible/django-ansible-base.git[all]
 ```
 
-This will install django-ansible-base as well as all its dependencies.
-Dependencies can be found in `requirements/requirements.in`
+This will install django-ansible-base as well as all its optional dependencies.
+These can be found in `requirements/requirements.in`
 
+If there are features you are not going to use you can tell pip to only install required packages for the features you will use.
+As of this writing there are three features:
+  * authentication
+  * swagger
+  * filtering
+
+So if you only wanted api_docs and filtering you could install the library like:
+```
+pip install git+https://github.com/ansible/django-ansible-base.git[api_docs,filtering]
+```
+
+# Configuration
 Once the library is installed you will need to add it to your installed apps in settings.py:
 ```
 INSTALLED_APPS = [
