@@ -1,3 +1,10 @@
+#
+# If you are adding a new dynamic setting:
+#     Please be sure to modify pyproject.toml with your new settings in tool.setuptools.dynamic
+#     Add a new requirements/requirements_<section>.in /even if its an empty file/
+#
+
+
 if ANSIBLE_BASE_FEATURES.get('AUTHENTICATION', False):  # noqa: F821
     try:
         AUTHENTICATION_BACKENDS  # noqa: F821

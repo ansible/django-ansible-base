@@ -1,15 +1,9 @@
+#
+# Only generic requirements for django-ansible-base should be listed here.
+# if you are add a new feature which requires dependencies they should be in a seperate requirements_<feature>.in file
+#
 cryptography
 Django>=4.2.5,<4.3.0
 djangorestframework
 django-crum
-drf-spectacular
 inflection
-tabulate
-
-# LDAP Authenticator Plugins
-django-auth-ldap
-python-ldap
-
-# Social Authenticator Plugins
-social-auth-app-django
-python3-saml

@@ -27,10 +27,18 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
 ]
-dynamic = ["version", "dependencies"]
+dynamic = ["version", "dependencies", "optional-dependencies"]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements/requirements.in"]}
+optional-dependencies.all = { file = [
+    "requirements/requirements_authentication.in",
+    "requirements/requirements_swagger.in",
+    "requirements/requirements_filtering.in",
+] }
+optional-dependencies.authentication = { file = [ "requirements/requirements_authentication.in" ] }
+optional-dependencies.swagger = { file = [ "requirements/requirements_swagger.in" ] }
+optional-dependencies.filtering = { file = [ "requirements/requirements_filtering.in" ] }
 
 [build-system]
 requires = ["setuptools>=64", "setuptools_scm>=8"]
