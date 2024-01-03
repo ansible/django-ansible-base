@@ -7,8 +7,7 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from rest_framework.reverse import reverse_lazy
 
-from ansible_base.models import PostgresTransaction, Resource, ResourceType
-from ansible_base.utils.transactions import create_transaction
+from ansible_base.models import Resource, ResourceType
 
 logger = logging.getLogger('ansible_base.serializers')
 
@@ -64,32 +63,12 @@ class ResourceDataField(serializers.JSONField):
         return {self.field_name: data}
 
 
-class DestroyResourceSerializer(serializers.Serializer):
-    transaction_id = serializers.UUIDField(write_only=True, required=False)
-
-
-class TransactionSerializer(serializers.ModelSerializer):
-    url = serializers.SerializerMethodField()
-
-    class Meta:
-        read_only_fields = [
-            "gid",
-            "prepared",
-        ]
-        model = PostgresTransaction
-        fields = ["gid", "prepared", "url"]
-
-    def get_url(self, obj):
-        return reverse_lazy('postgrestransaction-detail', kwargs={"gid": obj.gid})
-
-
 class ResourceSerializer(serializers.ModelSerializer):
     shared_resource_type = serializers.SerializerMethodField()
     is_externally_managed = serializers.BooleanField(source="content_type.resource_type.externally_managed", read_only=True)
     resource_data = ResourceDataField(source="*")
     resource_type = serializers.CharField()
     detail_url = serializers.SerializerMethodField()
-    transaction_id = serializers.UUIDField(write_only=True, allow_null=True, required=False)
     url = serializers.SerializerMethodField()
     ansible_id = serializers.CharField(validators=[ansible_id_validator], required=False)
 
@@ -109,7 +88,6 @@ class ResourceSerializer(serializers.ModelSerializer):
             "resource_data",
             "detail_url",
             "url",
-            "transaction_id",
         ]
 
     def get_url(self, obj):
@@ -143,9 +121,6 @@ class ResourceSerializer(serializers.ModelSerializer):
                     instance.ansible_id = ansible_id
                     instance.save()
 
-                if t_id := validated_data.get("transaction_id"):
-                    create_transaction(t_id)
-
             return instance
 
         raise serializers.ValidationError(
@@ -169,22 +144,10 @@ class ResourceSerializer(serializers.ModelSerializer):
                 if ansible_id := validated_data.get("ansible_id"):
                     Resource.objects.update_or_create(object_id=resource.pk, content_type=c_type, defaults={"ansible_id": ansible_id})
 
-                if t_id := validated_data.get("transaction_id"):
-                    create_transaction(t_id)
-                    return True
-
             return Resource.objects.get(object_id=resource.pk, content_type=c_type)
 
         except ResourceType.DoesNotExist:
             raise serializers.ValidationError({"resource_type": _(f"Resource type: {validated_data['resource_type']} does not exist.")})
-
-    def save(self, **kwargs):
-        instance = super().save(**kwargs)
-        if t_id := self.validated_data.get("transaction_id", False):
-            self._data = {"transaction": t_id, "vote_commit": True}
-            return None
-        else:
-            return instance
 
 
 class ResourceTypeSerializer(serializers.ModelSerializer):

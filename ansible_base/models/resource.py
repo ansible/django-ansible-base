@@ -120,13 +120,3 @@ class Resource(models.Model):
         indexes = [
             models.Index(fields=["content_type", "object_id"]),
         ]
-
-
-class PostgresTransaction(models.Model):
-    transaction = models.BigIntegerField(primary_key=True)
-    gid = models.CharField(max_length=200)
-    prepared = models.DateTimeField()
-
-    class Meta:
-        managed = False
-        db_table = "pg_prepared_xacts"

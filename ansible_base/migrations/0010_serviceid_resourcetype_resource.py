@@ -15,7 +15,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('contenttypes', '0002_remove_content_type_name'),
-        ('ansible_base', '0008_authenticatormap_name_and_more'),
+        ('ansible_base', '0009_authenticator_users'),
     ]
 
     operations = [

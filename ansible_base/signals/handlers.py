@@ -7,7 +7,7 @@ from django.dispatch import receiver
 from ansible_base.models import Resource
 from ansible_base.models.resource import get_registry
 from ansible_base.resource_registry.registry import get_concrete_model
-from ansible_base.utils.transactions import create_transaction
+
 
 @lru_cache(maxsize=1)
 def get_resource_models():
