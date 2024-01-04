@@ -1,8 +1,8 @@
 import logging
 
 from crum import get_current_user
-from django.contrib.auth import get_user_model
 from django.db import models
+from django.conf import settings
 from django.urls.exceptions import NoReverseMatch
 from django.utils.timezone import now
 from inflection import underscore
@@ -26,7 +26,7 @@ class CommonModel(models.Model):
         help_text="The date/time this resource was created",
     )
     created_by = models.ForeignKey(
-        get_user_model(),
+        settings.AUTH_USER_MODEL,
         related_name='%(app_label)s_%(class)s_created+',
         default=None,
         null=True,
@@ -40,7 +40,7 @@ class CommonModel(models.Model):
         help_text="The date/time this resource was created",
     )
     modified_by = models.ForeignKey(
-        get_user_model(),
+        settings.AUTH_USER_MODEL,
         related_name='%(app_label)s_%(class)s_modified+',
         default=None,
         null=True,
