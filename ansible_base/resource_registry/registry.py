@@ -12,22 +12,16 @@ def get_concrete_model(model):
     _model = model
     while _model._meta.proxy_for_model:
         _model = _model._meta.proxy_for_model
-    
+
     return _model
 
 
 class ServiceAPIConfig:
+    """
+    This will be the interface for configuring the resource registry for each service.
+    """
+
     service_type = None
-
-    role_definitions_viewset = None
-    user_role_assignment_viewset = None
-    team_role_assignment_viewset = None
-    permission_viewset = None
-
-    permission_class = permissions.IsAuthenticated
-
-    def authorize_user(username, password=None, ansible_id=None):
-        raise NotImplementedError
 
 
 class ResourceInspector(BaseSchemaGenerator):
@@ -58,7 +52,6 @@ class ResourceInspector(BaseSchemaGenerator):
                             self.model_map[label][action].append((method, path))
                 except:
                     pass
-
 
 
 class ResourceRegistry:

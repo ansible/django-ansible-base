@@ -64,8 +64,7 @@ class ResourceDataField(serializers.JSONField):
 
 
 class ResourceSerializer(serializers.ModelSerializer):
-    shared_resource_type = serializers.SerializerMethodField()
-    is_externally_managed = serializers.BooleanField(source="content_type.resource_type.externally_managed", read_only=True)
+    has_serializer = serializers.SerializerMethodField()
     resource_data = ResourceDataField(source="*")
     name = serializers.CharField()
     detail_url = serializers.SerializerMethodField()
@@ -83,8 +82,7 @@ class ResourceSerializer(serializers.ModelSerializer):
             "name",
             "ansible_id",
             "name",
-            "is_externally_managed",
-            "shared_resource_type",
+            "has_serializer",
             "resource_data",
             "detail_url",
             "url",
@@ -96,11 +94,8 @@ class ResourceSerializer(serializers.ModelSerializer):
     def get_detail_url(self, obj):
         return get_resource_detail_view(obj)
 
-    def get_shared_resource_type(self, obj):
-        if serializer := obj.content_type.resource_type.get_resource_config().get("managed_serializer"):
-            return serializer.RESOURCE_TYPE
-        else:
-            return None
+    def get_has_serializer(self, obj):
+        return bool(obj.content_type.resource_type.get_resource_config().get("managed_serializer", False))
 
     def get_resource_data(self, resource_data, serializer):
         resource_data = serializer(data=resource_data)
