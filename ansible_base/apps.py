@@ -25,14 +25,14 @@ def initialize_resources(sender, apps, **kwargs):
                 resource_type = f"shared.{serializer.RESOURCE_TYPE}"
             else:
                 resource_type = f"{registry.api_config.service_type}.{content.model}"
-            defaults = {"externally_managed": resource["externally_managed"], "resource_type": resource_type}
+            defaults = {"externally_managed": resource["externally_managed"], "name": resource_type}
             ResourceType.objects.update_or_create(content_type=content, defaults=defaults)
 
         for r_type in ResourceType.objects.filter(migrated=False):
             resource_model = apps.get_model(r_type.content_type.app_label, r_type.content_type.model)
             resource_config = registry.get_config_for_model(model=resource_model)
 
-            logger.info(f"adding unmigrated resources for {r_type.resource_type}")
+            logger.info(f"adding unmigrated resources for {r_type.name}")
 
             data = []
             for obj in resource_model.objects.all():

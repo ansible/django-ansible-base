@@ -67,7 +67,7 @@ class ResourceType(models.Model):
     content_type = models.OneToOneField(ContentType, on_delete=models.CASCADE, related_name="resource_type", unique=True)
     externally_managed = models.BooleanField()
     migrated = models.BooleanField(null=False, default=False)
-    resource_type = models.CharField(max_length=256, unique=True, db_index=True)
+    name = models.CharField(max_length=256, unique=True, db_index=True, editable=False, blank=False, null=False)
 
     @property
     def serializer_class(self):
@@ -112,8 +112,8 @@ class Resource(models.Model):
         self.resource_id = r_id
 
     @property
-    def resource_type(self):
-        return self.content_type.resource_type.resource_type
+    def type_name(self):
+        return self.content_type.resource_type.type_name
 
     class Meta:
         unique_together = ('content_type', 'object_id')

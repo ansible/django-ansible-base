@@ -67,7 +67,7 @@ class ResourceSerializer(serializers.ModelSerializer):
     shared_resource_type = serializers.SerializerMethodField()
     is_externally_managed = serializers.BooleanField(source="content_type.resource_type.externally_managed", read_only=True)
     resource_data = ResourceDataField(source="*")
-    resource_type = serializers.CharField()
+    name = serializers.CharField()
     detail_url = serializers.SerializerMethodField()
     url = serializers.SerializerMethodField()
     ansible_id = serializers.CharField(validators=[ansible_id_validator], required=False)
@@ -82,7 +82,7 @@ class ResourceSerializer(serializers.ModelSerializer):
             "object_id",
             "name",
             "ansible_id",
-            "resource_type",
+            "name",
             "is_externally_managed",
             "shared_resource_type",
             "resource_data",
@@ -123,16 +123,14 @@ class ResourceSerializer(serializers.ModelSerializer):
 
             return instance
 
-        raise serializers.ValidationError(
-            {"resource_type": _(f"Resource type: {instance.content_type.resource_type.resource_type} cannot be managed by this API.")}
-        )
+        raise serializers.ValidationError({"name": _(f"Resource type: {instance.content_type.resource_type.type_name} cannot be managed by this API.")})
 
     # allow setting ansible ID at create time
     def create(self, validated_data):
         try:
-            r_type = ResourceType.objects.get(resource_type=validated_data["resource_type"])
+            r_type = ResourceType.objects.get(type_name=validated_data["name"])
             if not r_type.serializer_class:
-                raise serializers.ValidationError({"resource_type": _(f"Resource type: {validated_data['resource_type']} cannot be managed by this API.")})
+                raise serializers.ValidationError({"name": _(f"Resource type: {validated_data['name']} cannot be managed by this API.")})
 
             c_type = r_type.content_type
             resource_data = self.get_resource_data(validated_data["resource_data"], r_type.serializer_class)
@@ -147,7 +145,7 @@ class ResourceSerializer(serializers.ModelSerializer):
             return Resource.objects.get(object_id=resource.pk, content_type=c_type)
 
         except ResourceType.DoesNotExist:
-            raise serializers.ValidationError({"resource_type": _(f"Resource type: {validated_data['resource_type']} does not exist.")})
+            raise serializers.ValidationError({"name": _(f"Resource type: {validated_data['name']} does not exist.")})
 
 
 class ResourceTypeSerializer(serializers.ModelSerializer):
@@ -156,7 +154,7 @@ class ResourceTypeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ResourceType
-        fields = ["id", "resource_type", "externally_managed", "shared_resource_type", "url"]
+        fields = ["id", "name", "externally_managed", "shared_resource_type", "url"]
 
     def get_shared_resource_type(self, obj):
         if serializer := obj.get_resource_config().get("managed_serializer"):
@@ -165,4 +163,4 @@ class ResourceTypeSerializer(serializers.ModelSerializer):
             return None
 
     def get_url(self, obj):
-        return reverse_lazy('resourcetype-detail', kwargs={"resource_type": obj.resource_type})
+        return reverse_lazy('resourcetype-detail', kwargs={"name": obj.type_name})

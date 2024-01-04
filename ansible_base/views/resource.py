@@ -11,16 +11,6 @@ from ansible_base.models import Resource, ResourceType, get_registry, service_id
 from ansible_base.serializers import ResourceSerializer, ResourceTypeSerializer, get_resource_detail_view
 
 
-# class ResourceFilter(filters.FilterSet):
-#     service_id = filters.CharFilter(field_name="_computed_service_id")
-#     ansible_id = filters.CharFilter(field_name="_ansible_id")
-#     resource_type = filters.CharFilter(field_name="content_type__resource_type__resource_type")
-
-#     class Meta:
-#         model = Resource
-#         fields = ["name", "object_id"]
-
-
 class ResourceViewSet(
     mixins.CreateModelMixin,
     mixins.RetrieveModelMixin,
@@ -62,7 +52,7 @@ class ResourceTypeViewSet(
     queryset = ResourceType.objects.all()
     serializer_class = ResourceTypeSerializer
     permission_classes = [permissions.IsAuthenticated]
-    lookup_field = "resource_type"
+    lookup_field = "name"
     lookup_value_regex = "[^/]+"
 
 
