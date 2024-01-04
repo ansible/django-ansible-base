@@ -1,8 +1,8 @@
 import logging
 
 from crum import get_current_user
-from django.db import models
 from django.conf import settings
+from django.db import models
 from django.urls.exceptions import NoReverseMatch
 from django.utils.timezone import now
 from inflection import underscore

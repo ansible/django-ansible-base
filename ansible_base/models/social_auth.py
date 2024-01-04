@@ -1,5 +1,5 @@
-from django.db import models
 from django.conf import settings
+from django.db import models
 from social_django.models import AbstractUserSocialAuth
 
 from ansible_base.models import Authenticator
