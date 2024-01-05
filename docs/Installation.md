@@ -32,7 +32,8 @@ Next we can turn on various feature of django-ansible base in your settings file
 ```
 ANSIBLE_BASE_FEATURES = {
     'AUTHENTICATION': True,
-    'FILTERING': False
+    'FILTERING': False,
+    'RBAC': True
 }
 ```
 
