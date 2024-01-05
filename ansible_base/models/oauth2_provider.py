@@ -9,7 +9,8 @@ from django.utils.translation import gettext_lazy as _
 
 from ansible_base.models.common import CommonModel, NamedCommonModel
 from ansible_base.utils.encryption import ansible_encryption
-from ansible_base.utils.settings import feature_enabled
+from ansible_base.utils.features import OAUTH2_PROVIDER, feature_enabled
+from ansible_base.utils.oauth2_provider import generate_client_id, generate_client_secret
 
 DATA_URI_RE = re.compile(r'.*')  # FIXME
 
@@ -21,13 +22,18 @@ logger = logging.getLogger('ansible_base.models.oauth')
 #
 # Here were my steps:
 #  1. Start the server
-#  2. Set all values in settings.py in the not ansible_base app
-#  3. Comment out all OAUTH2_PROVIDER_* setting but leave ANSIBLE_BASE_FEATURES.OAUTH2_PROVIDER as True
-#  4. Move models/oauth2_provider.py.temp to models/oauth2_provider.py
-#  5. gateway-manage createmigrations && gateway-manage migrate ansible_base
+#  2. Set all values in settings.py in the main app
+#  3. Set ANSIBLE_BASE_FEATURES.OAUTH2_PROVIDER as True
+#  3. Comment out all OAUTH2_PROVIDER_* settings in dynamic_settings.py
+#  4. Change all classes in here to remove oauth2_models.Abstract* as superclasses (including the meta ones)
+#  5. gateway-manage makemigrations && gateway-manage migrate ansible_base
 #  6. Uncomment all OAUTH2_PROVIDER_* settings
-#  7. Replace the original oauth2_provider.py model file
-#  8. gateway-manage createmigrations && gateway-manage migrate ansible_base
+#  7. Revert step 4
+#  8. gateway-manage makemigrations && gateway-manage migrate ansible_base
+#       When you do this django does not realize that you are creating an initial migration and tell you its impossible to migrate so fields
+#       It will ask you to either: 1. Enter a default 2. Quit
+#       Tell it to use the default if it has one populated at the prompt. Other wise use django.utils.timezone.now for timestamps and  '' for other items
+#       This wont matter for us because there will be no data in the tables between these two migrations
 #
 
 
@@ -38,18 +44,22 @@ def get_external_account(user):
 
 class OAuth2ClientSecretField(models.CharField):
     def get_db_prep_value(self, value, connection, prepared=False):
-        return super().get_db_prep_value(ansible_encryption.encrypt(value), connection, prepared)
+        return super().get_db_prep_value(ansible_encryption.encrypt_string(value), connection, prepared)
 
     def from_db_value(self, value, expression, connection):
         if value and value.startswith('$encrypted$'):
-            return ansible_encryption.decrypt(value)
+            return ansible_encryption.decrypt_string(value)
         return value
 
 
-if feature_enabled('OAUTH2_PROVIDER'):
-    import oauth2_provider.models as oauth2_models
-    from oauth2_provider.generators import generate_client_secret
+if feature_enabled(OAUTH2_PROVIDER):
+    # Only import this code if the feature is enabled.
+    # The DB will still have the tables built from the migration
+    # But we will get errors if we try to import the oauth2_provider classes if the application is not installed
+
     from oauthlib import oauth2
+
+    import oauth2_provider.models as oauth2_models
 
     class OAuth2Application(oauth2_models.AbstractApplication, NamedCommonModel):
         class Meta(oauth2_models.AbstractAccessToken.Meta):
@@ -69,6 +79,8 @@ if feature_enabled('OAUTH2_PROVIDER'):
             ("password", _("Resource owner password-based")),
         )
 
+        # Here we are going to overwrite this from the parent class so that we can change the default
+        client_id = models.CharField(db_index=True, default=generate_client_id, max_length=100, unique=True)
         description = models.TextField(
             default='',
             blank=True,
@@ -130,12 +142,12 @@ if feature_enabled('OAUTH2_PROVIDER'):
             default=None,
             editable=False,
         )
-        scope = models.TextField(
+        scope = models.CharField(
             blank=True,
             default='write',
-            help_text=_(
-                'Allowed scopes, further restricts user\'s permissions. Must be a simple space-separated string with allowed scopes [\'read\', \'write\'].'
-            ),
+            max_length=32,
+            choices=[('read', 'read'), ('write', 'write')],
+            help_text=_("Allowed scopes, further restricts user's permissions. Must be a simple space-separated string with allowed scopes ['read', 'write']."),
         )
 
         def is_valid(self, scopes=None):

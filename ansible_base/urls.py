@@ -4,7 +4,7 @@ from django.urls import path, re_path
 
 from ansible_base import views
 from ansible_base.authenticator_plugins.utils import get_authenticator_plugins, get_authenticator_urls
-from ansible_base.utils.settings import feature_enabled
+from ansible_base.utils.features import AUTHENTICATION, OAUTH2_PROVIDER, feature_enabled
 
 logger = logging.getLogger('ansible_base.urls')
 
@@ -15,7 +15,7 @@ view_only_list = {'get': 'list'}
 urls = []
 oauth2_urls = []
 
-if feature_enabled('AUTHENTICATION'):
+if feature_enabled(AUTHENTICATION):
     # Load urls from authenticator plugins
     for plugin_name in get_authenticator_plugins():
         plugin_urls = getattr(get_authenticator_urls(plugin_name), 'urls', None)
@@ -44,14 +44,13 @@ if feature_enabled('AUTHENTICATION'):
         ]
     )
 
-if feature_enabled('OAUTH2_PROVIDER'):
-    from oauth2_provider import views as oauth_views
-
+if feature_enabled(OAUTH2_PROVIDER):
     from ansible_base.views import oauth2_provider as oauth2_providers_views
+    from oauth2_provider import views as oauth_views
 
     urls.extend(
         [
-            re_path(r'^applications/', oauth2_providers_views.OAuth2ApplicationViewSet.as_view(list_actions), name='application-list'),
+            path('applications/', oauth2_providers_views.OAuth2ApplicationViewSet.as_view(list_actions), name='application-list'),
             re_path(r'^applications/(?P<pk>[0-9]+)/$', oauth2_providers_views.OAuth2ApplicationViewSet.as_view(detail_actions), name='application-detail'),
             # re_path(
             #     r'^applications/(?P<pk>[0-9]+)/tokens/$',
@@ -63,7 +62,7 @@ if feature_enabled('OAUTH2_PROVIDER'):
             #     oauth2_providers_views.OAuth2ApplicationActivityStreamList.as_view(),
             #     name='o_auth2_application_activity_stream_list'
             # ),
-            re_path(r'^tokens/', oauth2_providers_views.OAuth2TokenViewSet.as_view(list_actions), name='token-list'),
+            path('tokens/', oauth2_providers_views.OAuth2TokenViewSet.as_view(list_actions), name='token-list'),
             re_path(r'^tokens/(?P<pk>[0-9]+)/$', oauth2_providers_views.OAuth2TokenViewSet.as_view(detail_actions), name='token-detail'),
             # re_path(
             #     r'^tokens/(?P<pk>[0-9]+)/activity_stream/$',

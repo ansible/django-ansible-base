@@ -6,13 +6,13 @@ from django.utils.translation import gettext_lazy as _
 from oauthlib.common import generate_token
 from oauthlib.oauth2 import AccessDeniedError
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.serializers import ModelSerializer, SerializerMethodField
+from rest_framework.serializers import SerializerMethodField
 
 from ansible_base.models.oauth2_provider import OAuth2AccessToken, OAuth2Application, OAuth2RefreshToken
 from ansible_base.utils.encryption import ENCRYPTED_STRING
 from ansible_base.utils.settings import get_setting
 
-from .common import NamedCommonModelSerializer
+from .common import CommonModelSerializer, NamedCommonModelSerializer
 
 
 def has_model_field_prefetched(obj, thing):
@@ -21,7 +21,7 @@ def has_model_field_prefetched(obj, thing):
 
 
 class OAuth2ApplicationSerializer(NamedCommonModelSerializer):
-    show_capabilities = ['edit', 'delete']
+    reverse_url_name = 'application-detail'
 
     class Meta:
         model = OAuth2Application
@@ -41,7 +41,7 @@ class OAuth2ApplicationSerializer(NamedCommonModelSerializer):
     def to_representation(self, obj):
         ret = super(OAuth2ApplicationSerializer, self).to_representation(obj)
         request = self.context.get('request', None)
-        if request.method != 'POST' and obj.client_type == 'confidential':
+        if not request or (request.method != 'POST' and obj.client_type == 'confidential'):
             ret['client_secret'] = ENCRYPTED_STRING
         if obj.client_type == 'public':
             ret.pop('client_secret', None)
@@ -85,14 +85,15 @@ class OAuth2ApplicationSerializer(NamedCommonModelSerializer):
         return ret
 
 
-class BaseOAuth2TokenSerializer(ModelSerializer):
+class BaseOAuth2TokenSerializer(CommonModelSerializer):
+    reverse_url_name = 'token-detail'
     refresh_token = SerializerMethodField()
     token = SerializerMethodField()
     ALLOWED_SCOPES = ['read', 'write']
 
     class Meta:
         model = OAuth2AccessToken
-        fields = ('-name', 'description', 'user', 'token', 'refresh_token', 'application', 'expires', 'scope')
+        fields = ('description', 'user', 'token', 'refresh_token', 'application', 'expires', 'scope')
         read_only_fields = ('user', 'token', 'expires', 'refresh_token')
         extra_kwargs = {'scope': {'allow_null': False, 'required': False}, 'user': {'allow_null': False, 'required': True}}
 

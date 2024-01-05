@@ -5,7 +5,11 @@
 #
 
 
-if ANSIBLE_BASE_FEATURES.get('AUTHENTICATION', False):  # noqa: F821
+from ansible_base.utils.features import AUTHENTICATION, FILTERING
+from ansible_base.utils.features import OAUTH2_PROVIDER as OAUTH2_PROVIDER_SETTING_STRING
+from ansible_base.utils.features import SWAGGER
+
+if ANSIBLE_BASE_FEATURES.get(AUTHENTICATION, False):  # noqa: F821
     try:
         AUTHENTICATION_BACKENDS  # noqa: F821
     except NameError:
@@ -50,12 +54,12 @@ if ANSIBLE_BASE_FEATURES.get('AUTHENTICATION', False):  # noqa: F821
     SOCIAL_AUTH_LOGIN_REDIRECT_URL = "/"
 
 
-if ANSIBLE_BASE_FEATURES.get('SWAGGER', False):  # noqa: F821
+if ANSIBLE_BASE_FEATURES.get(SWAGGER, False):  # noqa: F821
     if 'drf_spectacular' not in INSTALLED_APPS:  # noqa: F821
         INSTALLED_APPS.append('drf_spectacular')  # noqa: F821
 
 
-if ANSIBLE_BASE_FEATURES.get('FILTERING', False):  # noqa: F821
+if ANSIBLE_BASE_FEATURES.get(FILTERING, False):  # noqa: F821
     REST_FRAMEWORK.update(  # noqa: F821
         {
             'DEFAULT_FILTER_BACKENDS': (
@@ -66,3 +70,29 @@ if ANSIBLE_BASE_FEATURES.get('FILTERING', False):  # noqa: F821
             )
         }
     )
+
+if ANSIBLE_BASE_FEATURES.get(OAUTH2_PROVIDER_SETTING_STRING, False):  # noqa: F821
+    if 'oauth2_provider' not in INSTALLED_APPS:  # noqa: F821
+        INSTALLED_APPS.append('oauth2_provider')  # noqa: F821
+
+    try:
+        OAUTH2_PROVIDER  # noqa: F821
+    except NameError:
+        OAUTH2_PROVIDER = {}
+
+    if 'ACCESS_TOKEN_EXPIRE_SECONDS' not in OAUTH2_PROVIDER:
+        OAUTH2_PROVIDER['ACCESS_TOKEN_EXPIRE_SECONDS'] = 31536000000
+    if 'AUTHORIZATION_CODE_EXPIRE_SECONDS' not in OAUTH2_PROVIDER:
+        OAUTH2_PROVIDER['AUTHORIZATION_CODE_EXPIRE_SECONDS'] = 600
+    if 'REFRESH_TOKEN_EXPIRE_SECONDS' not in OAUTH2_PROVIDER:
+        OAUTH2_PROVIDER['REFRESH_TOKEN_EXPIRE_SECONDS'] = 2628000
+
+    OAUTH2_PROVIDER['SCOPES_BACKEND_CLASS'] = 'ansible_base.backend.DjangoScopes'
+    OAUTH2_PROVIDER['APPLICATION_MODEL'] = 'ansible_base.OAuth2Application'
+    OAUTH2_PROVIDER['ACCESS_TOKEN_MODEL'] = 'ansible_base.OAuth2AccessToken'
+
+# These have to be defined for the migration to function
+OAUTH2_PROVIDER_APPLICATION_MODEL = 'ansible_base.OAuth2Application'
+OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL = 'ansible_base.OAuth2AccessToken'
+OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL = "ansible_base.OAuth2RefreshToken"
+OAUTH2_PROVIDER_ID_TOKEN_MODEL = "ansible_base.OAuth2IDToken"

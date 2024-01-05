@@ -1,9 +1,9 @@
+import logging
 from collections import OrderedDict
 from datetime import timedelta
 
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
-from oauth2_provider import views as oauth_views
 from oauthlib import oauth2
 from rest_framework import permissions
 from rest_framework.response import Response
@@ -14,6 +14,9 @@ from rest_framework.viewsets import ModelViewSet
 from ansible_base.models.oauth2_provider import OAuth2AccessToken, OAuth2Application, OAuth2RefreshToken
 from ansible_base.serializers.oauth2_provider import OAuth2ApplicationSerializer, OAuth2TokenSerializer
 from ansible_base.utils.settings import get_setting
+from oauth2_provider import views as oauth_views
+
+logger = logging.getLogger('ansible_base')
 
 
 class TokenView(oauth_views.TokenView):
@@ -38,14 +41,13 @@ class TokenView(oauth_views.TokenView):
 
 
 class OAuth2ApplicationViewSet(ModelViewSet):
-    # model = OAuth2Application
     queryset = OAuth2Application.objects.all()
     serializer_class = OAuth2ApplicationSerializer
     permission_classes = [permissions.IsAuthenticated]
 
 
 class OAuth2TokenViewSet(ModelViewSet):
-    model = OAuth2AccessToken
+    queryset = OAuth2AccessToken.objects.all()
     serializer_class = OAuth2TokenSerializer
     permission_classes = [permissions.IsAuthenticated]
 
