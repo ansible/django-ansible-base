@@ -4,7 +4,7 @@ from crum import get_current_user
 from django.contrib.auth import get_user_model
 from django.db import models
 from django.urls.exceptions import NoReverseMatch
-from django.utils.timezone import now
+from django.utils import timezone
 from inflection import underscore
 from rest_framework.reverse import reverse
 
@@ -53,15 +53,16 @@ class CommonModel(models.Model):
         update_fields = list(kwargs.get('update_fields', []))
         user = get_current_user()
         # Manually perform auto_now_add and auto_now logic.
+        now = timezone.now()
         if not self.pk and not self.created_on:
-            self.created_on = now()
+            self.created_on = now
             self.created_by = user
             if 'created_on' not in update_fields:
                 update_fields.append('created_on')
             if 'created_by' not in update_fields:
                 update_fields.append('created_by')
         if 'modified_on' not in update_fields or not self.modified_on:
-            self.modified_on = now()
+            self.modified_on = now
             self.modified_by = user
             update_fields.append('modified_on')
             update_fields.append('modified_by')
