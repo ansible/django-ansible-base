@@ -1,7 +1,8 @@
 import logging
+
 from rest_framework import permissions, status
-from rest_framework.viewsets import ModelViewSet
 from rest_framework.response import Response
+from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.models import Authenticator, AuthenticatorMap, AuthenticatorUser
 from ansible_base.serializers import AuthenticatorMapSerializer, AuthenticatorSerializer
@@ -22,7 +23,7 @@ class AuthenticatorViewSet(ModelViewSet):
         instance = self.get_object()
         users_exist = AuthenticatorUser.objects.filter(provider_id=instance.slug).exists()
         if users_exist:
-            logger.info(f"Found existing users from the authenticator")
+            logger.info("Found existing users from the authenticator")
             return Response(
                 status=status.HTTP_409_CONFLICT, data={"details": "Authenticator cannot be deleted, as users from the authenticator exist in the system"}
             )
