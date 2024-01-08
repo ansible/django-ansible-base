@@ -1,7 +1,4 @@
-import sys
-
 from django.urls import reverse
-from pyfakefs.fake_filesystem_unittest import Patcher
 
 
 def test_plugin_authenticator_view(admin_api_client):
@@ -19,20 +16,19 @@ def test_plugin_authenticator_view(admin_api_client):
     assert 'ansible_base.authenticator_plugins.local' in auth_types
 
 
-def test_plugin_authenticator_view_import_error(admin_api_client, shut_up_logging):
+def test_plugin_authenticator_view_import_error(admin_api_client, shut_up_logging, settings):
     """
     Test that import errors are returned as expected.
     """
 
-    # We use pyfakefs here, copy in the real directory, and then create a fake broken file.
-    # We *avoid* the 'fs' fixture because it *breaks DRF in weird ways*.
-    url = reverse("authenticator_plugin-view")
+    fixture_module = "ansible_base.tests.fixtures.authenticator_plugins"
+    settings.ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES = [
+        "ansible_base.authenticator_plugins",
+        fixture_module,
+    ]
 
-    with Patcher() as patcher:
-        patcher.fs.add_real_directory(sys.modules['ansible_base.authenticator_plugins'].__path__[0])
-        patcher.fs.create_file(sys.modules['ansible_base.authenticator_plugins'].__path__[0] + '/broken.py', contents='invalid')
-        patcher.fs.create_file(sys.modules['ansible_base.authenticator_plugins'].__path__[0] + '/really_broken.py', contents='invalid')
-        response = admin_api_client.get(url)
+    url = reverse("authenticator_plugin-view")
+    response = admin_api_client.get(url)
 
     assert response.status_code == 200
     assert 'authenticators' in response.data
@@ -43,5 +39,29 @@ def test_plugin_authenticator_view_import_error(admin_api_client, shut_up_loggin
     assert 'broken' not in auth_types
 
     assert 'errors' in response.data
-    assert 'The specified authenticator type ansible_base.authenticator_plugins.broken could not be loaded' in response.data['errors']
-    assert 'The specified authenticator type ansible_base.authenticator_plugins.really_broken could not be loaded' in response.data['errors']
+    assert f'The specified authenticator type {fixture_module}.broken could not be loaded' in response.data['errors']
+    assert f'The specified authenticator type {fixture_module}.really_broken could not be loaded' in response.data['errors']
+
+
+def test_plugin_authenticator_plugin_from_custom_module(admin_user, unauthenticated_api_client, shut_up_logging, settings, custom_authenticator):
+    """
+    Test that we can auth with a fully custom authenticator plugin.
+    """
+
+    fixture_module = "ansible_base.tests.fixtures.authenticator_plugins"
+    settings.ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES = [
+        "ansible_base.authenticator_plugins",
+        fixture_module,
+    ]
+
+    url = reverse("authenticator-detail", kwargs={'pk': custom_authenticator.pk})
+
+    client = unauthenticated_api_client
+    client.login(username=admin_user.username, password="wrongpw")
+    response = client.get(url)
+    assert response.status_code == 403
+
+    client.login(username=admin_user.username, password="hello123")
+    response = client.get(url)
+    assert response.status_code == 200
+    assert response.data['type'] == f'{fixture_module}.custom'
