@@ -3,6 +3,7 @@ build
 ipython
 tox
 pytest
+pytest-asyncio
 pytest-xdist
 pytest-cov
 pytest-django
