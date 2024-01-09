@@ -8,9 +8,11 @@ from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 
 from ansible_base.models.common import CommonModel, NamedCommonModel
+from ansible_base.utils.authentication import is_external_account
 from ansible_base.utils.encryption import ansible_encryption
 from ansible_base.utils.features import OAUTH2_PROVIDER, feature_enabled
 from ansible_base.utils.oauth2_provider import generate_client_id, generate_client_secret
+from ansible_base.utils.settings import get_setting
 
 DATA_URI_RE = re.compile(r'.*')  # FIXME
 
@@ -37,11 +39,6 @@ logger = logging.getLogger('ansible_base.models.oauth')
 #
 
 
-def get_external_account(user):
-    # from awx.sso.common import get_external_account
-    return False
-
-
 class OAuth2ClientSecretField(models.CharField):
     def get_db_prep_value(self, value, connection, prepared=False):
         return super().get_db_prep_value(ansible_encryption.encrypt_string(value), connection, prepared)
@@ -57,11 +54,12 @@ if feature_enabled(OAUTH2_PROVIDER):
     # The DB will still have the tables built from the migration
     # But we will get errors if we try to import the oauth2_provider classes if the application is not installed
 
+    import oauth2_provider.models as oauth2_models
     from oauthlib import oauth2
 
-    import oauth2_provider.models as oauth2_models
-
     class OAuth2Application(oauth2_models.AbstractApplication, NamedCommonModel):
+        reverse_name_override = 'application'
+
         class Meta(oauth2_models.AbstractAccessToken.Meta):
             app_label = 'ansible_base'
             verbose_name = _('application')
@@ -119,6 +117,12 @@ if feature_enabled(OAUTH2_PROVIDER):
             swappable = "OAUTH2_PROVIDER_ID_TOKEN_MODEL"
 
     class OAuth2AccessToken(oauth2_models.AbstractAccessToken, CommonModel):
+        reverse_name_override = 'token'
+        # There is a special condition where, as the user is logging in we want to update the last_used field.
+        # However, this happens before the user is set for the request.
+        # If this is the only field attempting to be saved, don't update the modified on/by fields
+        not_user_modified_fields = ['last_used']
+
         class Meta(oauth2_models.AbstractAccessToken.Meta):
             app_label = 'ansible_base'
             verbose_name = _('access token')
@@ -163,9 +167,9 @@ if feature_enabled(OAUTH2_PROVIDER):
             return valid
 
         def validate_external_users(self):
-            if self.user and settings.ALLOW_OAUTH2_FOR_EXTERNAL_USERS is False:
-                external_account = get_external_account(self.user)
-                if external_account is not None:
+            if self.user and get_setting('ALLOW_OAUTH2_FOR_EXTERNAL_USERS') is False:
+                external_account = is_external_account(self.user)
+                if external_account:
                     raise oauth2.AccessDeniedError(
                         _('OAuth2 Tokens cannot be created by users associated with an external authentication provider ({})').format(external_account)
                     )
@@ -173,7 +177,7 @@ if feature_enabled(OAUTH2_PROVIDER):
         def save(self, *args, **kwargs):
             if not self.pk:
                 self.validate_external_users()
-            super(OAuth2AccessToken, self).save(*args, **kwargs)
+            super().save(*args, **kwargs)
 
     class OAuth2RefreshToken(oauth2_models.AbstractRefreshToken, CommonModel):
         class Meta(oauth2_models.AbstractRefreshToken.Meta):

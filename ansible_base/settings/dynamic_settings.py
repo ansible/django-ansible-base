@@ -87,9 +87,14 @@ if ANSIBLE_BASE_FEATURES.get(OAUTH2_PROVIDER_SETTING_STRING, False):  # noqa: F8
     if 'REFRESH_TOKEN_EXPIRE_SECONDS' not in OAUTH2_PROVIDER:
         OAUTH2_PROVIDER['REFRESH_TOKEN_EXPIRE_SECONDS'] = 2628000
 
-    OAUTH2_PROVIDER['SCOPES_BACKEND_CLASS'] = 'ansible_base.backend.DjangoScopes'
     OAUTH2_PROVIDER['APPLICATION_MODEL'] = 'ansible_base.OAuth2Application'
     OAUTH2_PROVIDER['ACCESS_TOKEN_MODEL'] = 'ansible_base.OAuth2AccessToken'
+
+    oauth2_authentication_class = 'ansible_base.authentication.oauth2.LoggedOAuth2Authentication'
+    if 'DEFAULT_AUTHENTICATION_CLASSES' not in REST_FRAMEWORK:  # noqa: F821
+        REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES'] = []  # noqa: F821
+    if oauth2_authentication_class not in REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES']:  # noqa: F821
+        REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES'].insert(0, oauth2_authentication_class)  # noqa: F821
 
 # These have to be defined for the migration to function
 OAUTH2_PROVIDER_APPLICATION_MODEL = 'ansible_base.OAuth2Application'

@@ -45,8 +45,9 @@ if feature_enabled(AUTHENTICATION):
     )
 
 if feature_enabled(OAUTH2_PROVIDER):
-    from ansible_base.views import oauth2_provider as oauth2_providers_views
     from oauth2_provider import views as oauth_views
+
+    from ansible_base.views import oauth2_provider as oauth2_providers_views
 
     urls.extend(
         [

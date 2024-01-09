@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -13,6 +14,8 @@ from ansible_base.utils.encryption import ENCRYPTED_STRING
 from ansible_base.utils.settings import get_setting
 
 from .common import CommonModelSerializer, NamedCommonModelSerializer
+
+logger = logging.getLogger("ansible_base.serializers.oauth2_provider")
 
 
 def has_model_field_prefetched(obj, thing):
@@ -93,7 +96,10 @@ class BaseOAuth2TokenSerializer(CommonModelSerializer):
 
     class Meta:
         model = OAuth2AccessToken
-        fields = ('description', 'user', 'token', 'refresh_token', 'application', 'expires', 'scope')
+        fields = CommonModelSerializer.Meta.fields + [x.name for x in OAuth2AccessToken._meta.concrete_fields] + ['refresh_token']
+        # The source_refresh_token and id_token are the concrete field but we change them to just token and refresh_token
+        fields.remove('source_refresh_token')
+        fields.remove('id_token')
         read_only_fields = ('user', 'token', 'expires', 'refresh_token')
         extra_kwargs = {'scope': {'allow_null': False, 'required': False}, 'user': {'allow_null': False, 'required': True}}
 
@@ -156,7 +162,10 @@ class OAuth2TokenSerializer(BaseOAuth2TokenSerializer):
     def create(self, validated_data):
         current_user = self.context['request'].user
         validated_data['token'] = generate_token()
-        validated_data['expires'] = now() + timedelta(seconds=get_setting('OAUTH2_PROVIDER', {}).get('ACCESS_TOKEN_EXPIRE_SECONDS', 0))
+        expires_delta = get_setting('OAUTH2_PROVIDER', {}).get('ACCESS_TOKEN_EXPIRE_SECONDS', 0)
+        if expires_delta == 0:
+            logger.warning("OAUTH2_PROVIDER.ACCESS_TOKEN_EXPIRE_SECONDS was set to 0, creating token that has already expired")
+        validated_data['expires'] = now() + timedelta(seconds=expires_delta)
         obj = super(OAuth2TokenSerializer, self).create(validated_data)
         if obj.application and obj.application.user:
             obj.user = obj.application.user

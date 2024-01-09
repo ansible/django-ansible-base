@@ -51,6 +51,13 @@ class CommonModel(models.Model):
 
     def save(self, *args, **kwargs):
         update_fields = list(kwargs.get('update_fields', []))
+
+        # If the updating fields lists matches the objects `not_user_modified_fields` then we can just save and return
+        if update_fields == getattr(self, 'not_user_modified_fields', []):
+            logger.debug("Skipping modified field update because update_fields only contain not user modified fields")
+            super().save(*args, **kwargs)
+            return
+
         user = get_current_user()
         # Manually perform auto_now_add and auto_now logic.
         now = timezone.now()
@@ -89,7 +96,8 @@ class CommonModel(models.Model):
                     continue
                 pk = getattr(self, field.name).pk
                 if pk:
-                    reverse_view = f"{underscore(field.related_model.__name__)}-detail"
+                    model_name = str(getattr(field.related_model, 'reverse_name_override', field.related_model.__name__))
+                    reverse_view = f"{underscore(model_name)}-detail"
                     try:
                         response[field.name] = reverse(reverse_view, kwargs={'pk': pk})
                     except NoReverseMatch:
@@ -97,7 +105,8 @@ class CommonModel(models.Model):
 
         # Add any reverse relations required
         for field in getattr(self, 'reverse_foreign_key_fields', []):
-            reverse_view = f"{underscore(self.__class__.__name__)}-{field}-list"
+            model_name = getattr(self.__class__, 'reverse_name_override', self.__class__.__name__)
+            reverse_view = f"{underscore(model_name)}-{field}-list"
             response[field] = reverse(reverse_view, kwargs={'pk': self.pk})
 
         return response
