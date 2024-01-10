@@ -1,11 +1,6 @@
 from itertools import chain
 
-from django.apps import apps as django_apps
-from django.core.exceptions import ImproperlyConfigured
-from django.utils.translation import gettext as _
 from inflection import underscore
-
-from ansible_base.utils.settings import get_setting
 
 
 def get_all_field_names(model):
@@ -47,14 +42,3 @@ def prevent_search(relation):
     """
     setattr(relation, '__prevent_search__', True)
     return relation
-
-
-def get_organization_model():
-    setting = 'ANSIBLE_BASE_ORGANIZATION_MODEL'
-    org_model = get_setting(setting, '.Organization')
-    try:
-        return django_apps.get_model(org_model, require_ready=False)
-    except ValueError:
-        raise ImproperlyConfigured(_(f"{setting} must be of the form 'app_label.model_name', got {org_model}"))
-    except LookupError:
-        raise ImproperlyConfigured(_(f"{setting} refers to model '{org_model}' that has not been installed"))

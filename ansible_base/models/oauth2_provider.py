@@ -11,7 +11,6 @@ from ansible_base.models.common import CommonModel, NamedCommonModel
 from ansible_base.utils.authentication import is_external_account
 from ansible_base.utils.encryption import ansible_encryption
 from ansible_base.utils.features import OAUTH2_PROVIDER, feature_enabled
-from ansible_base.utils.models import get_organization_model
 from ansible_base.utils.oauth2_provider import generate_client_id, generate_client_secret
 from ansible_base.utils.settings import get_setting
 
@@ -30,9 +29,16 @@ logger = logging.getLogger('ansible_base.models.oauth')
 #  3. Comment out all OAUTH2_PROVIDER_* settings in dynamic_settings.py
 #  4. Change all classes in here to remove oauth2_models.Abstract* as superclasses (including the meta ones)
 #  5. gateway-manage makemigrations && gateway-manage migrate ansible_base
-#  6. Uncomment all OAUTH2_PROVIDER_* settings
-#  7. Revert step 4
-#  8. gateway-manage makemigrations && gateway-manage migrate ansible_base
+#  6. Look at the generated migration, if this has a direct reference to your applications organization model in OAuth2Application model we need to update it
+#     for example, if it looks like:
+#       ('organization', ... to='<your app>.organization')),
+#     We want to change this to reference the setting:
+#       ('organization', ... to=settings.ANSIBLE_BASE_ORGANIZATION_MODEL)),
+#     We should also add this in the migration dependencies:
+#       migrations.swappable_dependency(settings.ANSIBLE_BASE_ORGANIZATION_MODEL),
+#  7. Uncomment all OAUTH2_PROVIDER_* settings
+#  8. Revert step 4
+#  9. gateway-manage makemigrations && gateway-manage migrate ansible_base
 #       When you do this django does not realize that you are creating an initial migration and tell you its impossible to migrate so fields
 #       It will ask you to either: 1. Enter a default 2. Quit
 #       Tell it to use the default if it has one populated at the prompt. Other wise use django.utils.timezone.now for timestamps and  '' for other items
@@ -90,7 +96,7 @@ if feature_enabled(OAUTH2_PROVIDER):
             validators=[RegexValidator(DATA_URI_RE)],
         )
         organization = models.ForeignKey(
-            get_organization_model(),
+            getattr(settings, 'ANSIBLE_BASE_ORGANIZATION_MODEL'),
             related_name='applications',
             help_text=_('Organization containing this application.'),
             on_delete=models.CASCADE,

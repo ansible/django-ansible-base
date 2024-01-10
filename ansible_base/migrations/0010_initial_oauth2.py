@@ -13,6 +13,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
+        migrations.swappable_dependency(settings.ANSIBLE_BASE_ORGANIZATION_MODEL),
         ('ansible_base', '0009_authenticator_users'),
     ]
 
@@ -81,7 +82,7 @@ class Migration(migrations.Migration):
                 ('authorization_grant_type', models.CharField(choices=[('authorization-code', 'Authorization code'), ('password', 'Resource owner password-based')], help_text='The Grant type the user must use for acquire tokens for this application.', max_length=32)),
                 ('created_by', models.ForeignKey(default=None, editable=False, help_text='The user who created this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_created+', to=settings.AUTH_USER_MODEL)),
                 ('modified_by', models.ForeignKey(default=None, editable=False, help_text='The user who last modified this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_modified+', to=settings.AUTH_USER_MODEL)),
-                ('organization', models.ForeignKey(help_text='Organization containing this application.', null=True, on_delete=django.db.models.deletion.CASCADE, related_name='applications', to='aap_gateway_api.organization')),
+                ('organization', models.ForeignKey(help_text='Organization containing this application.', null=True, on_delete=django.db.models.deletion.CASCADE, related_name='applications', to=settings.ANSIBLE_BASE_ORGANIZATION_MODEL)),
             ],
             options={
                 'verbose_name': 'application',
