@@ -13,7 +13,6 @@ class Migration(migrations.Migration):
 
     dependencies = [
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
-        ('aap_gateway_api', '0006_alter_organization_environment'),
         ('ansible_base', '0009_authenticator_users'),
     ]
 
