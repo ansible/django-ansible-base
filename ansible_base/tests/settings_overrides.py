@@ -1,3 +1,7 @@
+import os
+
+from split_settings.tools import include
+
 # noqa: F405
 DATABASES = {
     "default": {
@@ -99,3 +103,8 @@ TEMPLATES = [
 ]
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+from ansible_base import settings  # noqa: E402
+
+settings_file = os.path.join(os.path.dirname(settings.__file__), 'dynamic_settings.py')
+include(settings_file)
