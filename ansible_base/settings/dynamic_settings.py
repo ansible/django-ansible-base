@@ -9,6 +9,11 @@ from ansible_base.utils.features import AUTHENTICATION, FILTERING
 from ansible_base.utils.features import OAUTH2_PROVIDER as OAUTH2_PROVIDER_SETTING_STRING
 from ansible_base.utils.features import SWAGGER
 
+try:
+    ANSIBLE_BASE_FEATURES  # noqa: F821
+except NameError:
+    ANSIBLE_BASE_FEATURES = {}  # noqa: F821
+
 if ANSIBLE_BASE_FEATURES.get(AUTHENTICATION, False):  # noqa: F821
     try:
         AUTHENTICATION_BACKENDS  # noqa: F821
