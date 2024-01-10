@@ -43,7 +43,24 @@ logger = logging.getLogger('ansible_base.models.oauth')
 #       It will ask you to either: 1. Enter a default 2. Quit
 #       Tell it to use the default if it has one populated at the prompt. Other wise use django.utils.timezone.now for timestamps and  '' for other items
 #       This wont matter for us because there will be no data in the tables between these two migrations
-#
+#  10. You can now combine the migration into one.
+#      Add the `import uuid` to the top of the migration file
+#      Copy all of the operations from the second file to the first
+#      Find the AddFields commands for oauth2refreshtoken.access_token and oauth2accesstoken.source_refresh_token and move them to the end of the operations
+#      If desired, convert the remaining AddFilds into actual fields on the table creation. For example:
+#           migrations.AddField(
+#                model_name='oauth2accesstoken',
+#                name='created',
+#                field=models.DateTimeField(auto_now_add=True, default=django.utils.timezone.now),
+#                preserve_default=False,
+#            ),
+#      Would become the following field on the oauth2accesstoken table:
+#            ('created', models.DateTimeField(auto_now_add=True, default=django.utils.timezone.now)),
+#      Next put the table creation in the following order: OAuth2Application, OAuth2IDToken, OAuth2RefreshToken, OAuth2AccessToken
+#      Finally, be sure to add this to the migration file:
+#            run_before = [
+#              ('oauth2_provider', '0001_initial'),
+#            ]
 
 
 class OAuth2ClientSecretField(models.CharField):

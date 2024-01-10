@@ -7,9 +7,14 @@ import django.core.validators
 from django.db import migrations, models
 import django.db.models.deletion
 import re
+import uuid
 
 
 class Migration(migrations.Migration):
+
+    run_before = [
+        ('oauth2_provider', '0001_initial'),
+    ]
 
     dependencies = [
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
@@ -18,54 +23,6 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.CreateModel(
-            name='OAuth2RefreshToken',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('created_on', models.DateTimeField(default=None, editable=False, help_text='The date/time this resource was created')),
-                ('modified_on', models.DateTimeField(default=None, editable=False, help_text='The date/time this resource was created')),
-                ('created_by', models.ForeignKey(default=None, editable=False, help_text='The user who created this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_created+', to=settings.AUTH_USER_MODEL)),
-                ('modified_by', models.ForeignKey(default=None, editable=False, help_text='The user who last modified this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_modified+', to=settings.AUTH_USER_MODEL)),
-            ],
-            options={
-                'verbose_name': 'access token',
-                'ordering': ('id',),
-                'swappable': 'OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL',
-            },
-        ),
-        migrations.CreateModel(
-            name='OAuth2IDToken',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('created_on', models.DateTimeField(default=None, editable=False, help_text='The date/time this resource was created')),
-                ('modified_on', models.DateTimeField(default=None, editable=False, help_text='The date/time this resource was created')),
-                ('created_by', models.ForeignKey(default=None, editable=False, help_text='The user who created this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_created+', to=settings.AUTH_USER_MODEL)),
-                ('modified_by', models.ForeignKey(default=None, editable=False, help_text='The user who last modified this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_modified+', to=settings.AUTH_USER_MODEL)),
-            ],
-            options={
-                'verbose_name': 'id token',
-                'swappable': 'OAUTH2_PROVIDER_ID_TOKEN_MODEL',
-            },
-        ),
-        migrations.CreateModel(
-            name='OAuth2AccessToken',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('created_on', models.DateTimeField(default=None, editable=False, help_text='The date/time this resource was created')),
-                ('modified_on', models.DateTimeField(default=None, editable=False, help_text='The date/time this resource was created')),
-                ('description', models.TextField(blank=True, default='')),
-                ('last_used', models.DateTimeField(default=None, editable=False, null=True)),
-                ('scope', models.TextField(blank=True, default='write', help_text="Allowed scopes, further restricts user's permissions. Must be a simple space-separated string with allowed scopes ['read', 'write'].")),
-                ('created_by', models.ForeignKey(default=None, editable=False, help_text='The user who created this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_created+', to=settings.AUTH_USER_MODEL)),
-                ('modified_by', models.ForeignKey(default=None, editable=False, help_text='The user who last modified this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_modified+', to=settings.AUTH_USER_MODEL)),
-                ('user', models.ForeignKey(blank=True, help_text='The user representing the token owner', null=True, on_delete=django.db.models.deletion.CASCADE, related_name='%(app_label)s_%(class)s', to=settings.AUTH_USER_MODEL)),
-            ],
-            options={
-                'verbose_name': 'access token',
-                'ordering': ('id',),
-                'swappable': 'OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL',
-            },
-        ),
         migrations.CreateModel(
             name='OAuth2Application',
             fields=[
@@ -83,6 +40,12 @@ class Migration(migrations.Migration):
                 ('created_by', models.ForeignKey(default=None, editable=False, help_text='The user who created this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_created+', to=settings.AUTH_USER_MODEL)),
                 ('modified_by', models.ForeignKey(default=None, editable=False, help_text='The user who last modified this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_modified+', to=settings.AUTH_USER_MODEL)),
                 ('organization', models.ForeignKey(help_text='Organization containing this application.', null=True, on_delete=django.db.models.deletion.CASCADE, related_name='applications', to=settings.ANSIBLE_BASE_ORGANIZATION_MODEL)),
+                ('algorithm', models.CharField(blank=True, choices=[('', 'No OIDC support'), ('RS256', 'RSA with SHA-2 256'), ('HS256', 'HMAC with SHA-2 256')], default='', max_length=5)),
+                ('created', models.DateTimeField(auto_now_add=True, default=django.utils.timezone.now)),
+                ('post_logout_redirect_uris', models.TextField(blank=True, help_text='Allowed Post Logout URIs list, space separated')),
+                ('redirect_uris', models.TextField(blank=True, help_text='Allowed URIs list, space separated')),
+                ('updated', models.DateTimeField(auto_now=True)),
+                ('user', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='%(app_label)s_%(class)s', to=settings.AUTH_USER_MODEL)),
             ],
             options={
                 'verbose_name': 'application',
@@ -90,5 +53,111 @@ class Migration(migrations.Migration):
                 'swappable': 'OAUTH2_PROVIDER_APPLICATION_MODEL',
                 'unique_together': {('name', 'organization')},
             },
+        ),
+        migrations.CreateModel(
+            name='OAuth2IDToken',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('created_on', models.DateTimeField(default=None, editable=False, help_text='The date/time this resource was created')),
+                ('modified_on', models.DateTimeField(default=None, editable=False, help_text='The date/time this resource was created')),
+                ('created_by', models.ForeignKey(default=None, editable=False, help_text='The user who created this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_created+', to=settings.AUTH_USER_MODEL)),
+                ('modified_by', models.ForeignKey(default=None, editable=False, help_text='The user who last modified this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_modified+', to=settings.AUTH_USER_MODEL)),
+                ('application', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, to=settings.OAUTH2_PROVIDER_APPLICATION_MODEL)),
+                ('created', models.DateTimeField(auto_now_add=True, default=django.utils.timezone.now)),
+                ('expires', models.DateTimeField(default=django.utils.timezone.now)),
+                ('jti', models.UUIDField(default=uuid.uuid4, editable=False, unique=True, verbose_name='JWT Token ID')),
+                ('scope', models.TextField(blank=True)),
+                ('updated', models.DateTimeField(auto_now=True)),
+                ('user', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='%(app_label)s_%(class)s', to=settings.AUTH_USER_MODEL)),
+            ],
+            options={
+                'verbose_name': 'id token',
+                'swappable': 'OAUTH2_PROVIDER_ID_TOKEN_MODEL',
+            },
+        ),
+        migrations.CreateModel(
+            name='OAuth2RefreshToken',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('created_on', models.DateTimeField(default=None, editable=False, help_text='The date/time this resource was created')),
+                ('modified_on', models.DateTimeField(default=None, editable=False, help_text='The date/time this resource was created')),
+                ('created_by', models.ForeignKey(default=None, editable=False, help_text='The user who created this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_created+', to=settings.AUTH_USER_MODEL)),
+                ('modified_by', models.ForeignKey(default=None, editable=False, help_text='The user who last modified this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_modified+', to=settings.AUTH_USER_MODEL)),
+                ('application', models.ForeignKey(default='', on_delete=django.db.models.deletion.CASCADE, to=settings.OAUTH2_PROVIDER_APPLICATION_MODEL)),
+                ('created', models.DateTimeField(auto_now_add=True, default=django.utils.timezone.now)),
+                ('revoked', models.DateTimeField(null=True)),
+                ('token', models.CharField(default='', max_length=255)),
+                ('updated', models.DateTimeField(auto_now=True)),
+                ('user', models.ForeignKey(default='', on_delete=django.db.models.deletion.CASCADE, related_name='%(app_label)s_%(class)s', to=settings.AUTH_USER_MODEL)),
+            ],
+            options={
+                'verbose_name': 'access token',
+                'ordering': ('id',),
+                'swappable': 'OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL',
+            },
+        ),
+        migrations.CreateModel(
+            name='OAuth2AccessToken',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('created_on', models.DateTimeField(default=None, editable=False, help_text='The date/time this resource was created')),
+                ('modified_on', models.DateTimeField(default=None, editable=False, help_text='The date/time this resource was created')),
+                ('description', models.TextField(blank=True, default='')),
+                ('last_used', models.DateTimeField(default=None, editable=False, null=True)),
+                ('scope', models.CharField(blank=True, choices=[('read', 'read'), ('write', 'write')], default='write', help_text="Allowed scopes, further restricts user's permissions. Must be a simple space-separated string with allowed scopes ['read', 'write'].", max_length=32)),
+                ('created_by', models.ForeignKey(default=None, editable=False, help_text='The user who created this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_created+', to=settings.AUTH_USER_MODEL)),
+                ('modified_by', models.ForeignKey(default=None, editable=False, help_text='The user who last modified this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_modified+', to=settings.AUTH_USER_MODEL)),
+                ('user', models.ForeignKey(blank=True, help_text='The user representing the token owner', null=True, on_delete=django.db.models.deletion.CASCADE, related_name='%(app_label)s_%(class)s', to=settings.AUTH_USER_MODEL)),
+                ('application', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, to=settings.OAUTH2_PROVIDER_APPLICATION_MODEL)),
+                ('created', models.DateTimeField(auto_now_add=True, default=django.utils.timezone.now)),
+                ('expires', models.DateTimeField(default=django.utils.timezone.now)),
+                ('id_token', models.OneToOneField(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='access_token', to=settings.OAUTH2_PROVIDER_ID_TOKEN_MODEL)),
+                ('token', models.CharField(default='', max_length=255, unique=True)),
+                ('updated', models.DateTimeField(auto_now=True)),
+            ],
+            options={
+                'verbose_name': 'access token',
+                'ordering': ('id',),
+                'swappable': 'OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL',
+            },
+        ),
+        migrations.AlterField(
+            model_name='oauth2accesstoken',
+            name='id',
+            field=models.BigAutoField(primary_key=True, serialize=False),
+        ),
+        migrations.AlterField(
+            model_name='oauth2application',
+            name='id',
+            field=models.BigAutoField(primary_key=True, serialize=False),
+        ),
+        migrations.AlterField(
+            model_name='oauth2application',
+            name='name',
+            field=models.CharField(blank=True, max_length=255),
+        ),
+        migrations.AlterField(
+            model_name='oauth2idtoken',
+            name='id',
+            field=models.BigAutoField(primary_key=True, serialize=False),
+        ),
+        migrations.AlterField(
+            model_name='oauth2refreshtoken',
+            name='id',
+            field=models.BigAutoField(primary_key=True, serialize=False),
+        ),
+        migrations.AlterUniqueTogether(
+            name='oauth2refreshtoken',
+            unique_together={('token', 'revoked')},
+        ),
+        migrations.AddField(
+            model_name='oauth2refreshtoken',
+            name='access_token',
+            field=models.OneToOneField(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='refresh_token', to=settings.OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL),
+        ),
+        migrations.AddField(
+            model_name='oauth2accesstoken',
+            name='source_refresh_token',
+            field=models.OneToOneField(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='refreshed_access_token', to=settings.OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL),
         ),
     ]
