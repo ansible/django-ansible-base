@@ -11,6 +11,7 @@ from ansible_base.models.common import CommonModel, NamedCommonModel
 from ansible_base.utils.authentication import is_external_account
 from ansible_base.utils.encryption import ansible_encryption
 from ansible_base.utils.features import OAUTH2_PROVIDER, feature_enabled
+from ansible_base.utils.models import get_organization_model
 from ansible_base.utils.oauth2_provider import generate_client_id, generate_client_secret
 from ansible_base.utils.settings import get_setting
 
@@ -89,7 +90,7 @@ if feature_enabled(OAUTH2_PROVIDER):
             validators=[RegexValidator(DATA_URI_RE)],
         )
         organization = models.ForeignKey(
-            getattr(settings, 'ANSIBLE_BASE_ORGANIZATION_MODEL', 'Organization'),
+            get_organization_model(),
             related_name='applications',
             help_text=_('Organization containing this application.'),
             on_delete=models.CASCADE,
