@@ -95,10 +95,9 @@ def test_validate_image_data_with_wrong_format():
     Ensure that validate_image_data raises a ValidationError when data format doesn't match.
     """
     image_data = "image"
-    try:
+    with pytest.raises(ValidationError) as e:
         validate_image_data(image_data)
-    except ValidationError as ve:
-        assert ve.default_detail == "Invalid format for custom logo. Must be a data URL with a base64-encoded GIF, PNG or JPEG image."
+    assert "Invalid format for custom logo. Must be a data URL with a base64-encoded GIF, PNG or JPEG image." in str(e.value)
 
 
 def test_validate_image_data_with_bad_data():
@@ -106,10 +105,9 @@ def test_validate_image_data_with_bad_data():
     Ensure that validate_image_data raises a ValidationError when data is bad/corrupted.
     """
     image_data = "data:image/gif;base64,thisisbaddata"
-    try:
+    with pytest.raises(ValidationError) as e:
         validate_image_data(image_data)
-    except ValidationError as ve:
-        assert ve.default_detail == "Invalid base64-encoded data in data URL."
+    assert "Invalid base64-encoded data in data URL." in str(e.value)
 
 
 @pytest.mark.parametrize(

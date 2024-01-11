@@ -59,9 +59,10 @@ def test_generate_ui_auth_data_valid_login_info():
 
 @override_settings(custom_login_info=12343)
 @pytest.mark.django_db
-def test_generate_ui_auth_data_invalid_login_info(logger):
-    with pytest.raises(ValidationError):
+def test_generate_ui_auth_data_invalid_login_info():
+    with pytest.raises(ValidationError) as e:
         generate_ui_auth_data()
+    assert "custom_login_info was set but was not a valid string, ignoring" in str(e.value)
 
 
 @override_settings(custom_logo='data:image/gif;base64,R0lGODlhAQABAIABAP///wAAACwAAAAAAQABAAACAkQBADs=')
