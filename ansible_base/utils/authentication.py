@@ -55,7 +55,7 @@ def generate_ui_auth_data():
         raise ValidationError("custom_login_info was set but was not a valid string, ignoring")
 
     try:
-        custom_logo = get_setting('custom_logo', None)
+        custom_logo = get_setting('custom_logo', '')
         validate_image_data(custom_logo)
         response['custom_logo'] = custom_logo
     except ValidationError:

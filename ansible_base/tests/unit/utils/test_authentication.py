@@ -5,6 +5,7 @@ from django.conf import settings
 from django.test import override_settings
 
 from ansible_base.utils.authentication import generate_ui_auth_data
+from rest_framework.serializers import ValidationError
 
 
 @pytest.mark.django_db
@@ -56,12 +57,11 @@ def test_generate_ui_auth_data_valid_login_info():
     }
 
 
-@mock.patch("ansible_base.utils.authentication.logger")
 @override_settings(custom_login_info=12343)
 @pytest.mark.django_db
 def test_generate_ui_auth_data_invalid_login_info(logger):
-    generate_ui_auth_data()
-    logger.exception.assert_called_with('custom_login_info was set but was not a valid string, ignoring')
+    with pytest.raises(ValidationError) as e:
+        generate_ui_auth_data()
 
 
 @override_settings(custom_logo='data:image/gif;base64,R0lGODlhAQABAIABAP///wAAACwAAAAAAQABAAACAkQBADs=')
@@ -83,12 +83,12 @@ def test_generate_ui_auth_data_valid_logo_image():
 @pytest.mark.django_db
 def test_generate_ui_auth_data_invalid_logo_image_format(logger):
     generate_ui_auth_data()
-    logger.exception.assert_called_with('Invalid format for custom logo. Must be a data URL with a base64-encoded GIF, PNG or JPEG image.')
+    logger.exception.assert_called_with('custom_logo was set but was not a valid image data, ignoring')
 
 
 @mock.patch("ansible_base.utils.authentication.logger")
-@override_settings(custom_logo='data:image/gif;base64,badimagedata')
+@override_settings(custom_logo='data:image/gif;base64,baddata')
 @pytest.mark.django_db
 def test_generate_ui_auth_data_bad_logo_image_data(logger):
     generate_ui_auth_data()
-    logger.exception.assert_called_with('Invalid base64-encoded data in data URL.')
+    logger.exception.assert_called_with('custom_logo was set but was not a valid image data, ignoring')

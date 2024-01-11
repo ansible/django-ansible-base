@@ -105,6 +105,10 @@ def validate_cert_with_key(public_cert_string, private_key_string):
 
 
 def validate_image_data(data: str) -> None:
+    # in case we are passed an empty string, we can skip validation
+    if not data:
+        return None
+
     CUSTOM_LOGO_RE = re.compile(r'^data:image/(?:png|jpeg|gif);base64,([A-Za-z0-9+/=]+?)$')
 
     match = CUSTOM_LOGO_RE.match(data)
