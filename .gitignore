@@ -21,6 +21,8 @@ coverage.xml
 coverage.json
 htmlcov
 *.tox
+venv/
+.venv/
 
 # Mac OS X
 *.DS_Store
