@@ -1,3 +1,6 @@
+import base64
+import binascii
+import re
 from urllib.parse import urlparse, urlunsplit
 
 from cryptography.exceptions import InvalidSignature
@@ -99,6 +102,19 @@ def validate_cert_with_key(public_cert_string, private_key_string):
         raise ValidationError(error)
 
     return True
+
+
+def validate_image_data(data: str) -> None:
+    CUSTOM_LOGO_RE = re.compile(r'^data:image/(?:png|jpeg|gif);base64,([A-Za-z0-9+/=]+?)$')
+
+    match = CUSTOM_LOGO_RE.match(data)
+    if not match:
+        raise ValidationError("Invalid format for custom logo. Must be a data URL with a base64-encoded GIF, PNG or JPEG image.")
+    b64data = match.group(1)
+    try:
+        base64.b64decode(b64data)
+    except (TypeError, binascii.Error):
+        raise ValidationError("Invalid base64-encoded data in data URL.")
 
 
 def to_python_boolean(value, allow_none=False):
