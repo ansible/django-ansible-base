@@ -1,7 +1,7 @@
 import pytest
 from rest_framework.exceptions import ValidationError
 
-from ansible_base.utils.validation import to_python_boolean, validate_cert_with_key, validate_url
+from ansible_base.utils.validation import to_python_boolean, validate_cert_with_key, validate_image_data, validate_url
 
 
 @pytest.mark.parametrize(
@@ -79,6 +79,37 @@ def test_validate_cert_with_key_mismatch(rsa_keypair_with_cert_1, rsa_keypair_wi
     with pytest.raises(ValidationError) as e:
         validate_cert_with_key(rsa_keypair_with_cert_1.certificate, rsa_keypair_with_cert_2.private)
     assert "The certificate and private key do not match" in str(e.value)
+
+
+def test_validate_image_data_with_valid_data():
+    """
+    Ensure that validate_image_data accepts valid data.
+    """
+    image_data = "data:image/gif;base64,R0lGODlhAQABAIABAP///wAAACwAAAAAAQABAAACAkQBADs="
+    res = validate_image_data(image_data)
+    assert res == None
+
+
+def test_validate_image_data_with_wrong_format():
+    """
+    Ensure that validate_image_data raises a ValidationError when data format doesn't match.
+    """
+    image_data = "image"
+    try:
+        validate_image_data(image_data)
+    except ValidationError as ve:
+        assert ve.default_detail == "Invalid format for custom logo. Must be a data URL with a base64-encoded GIF, PNG or JPEG image."
+
+
+def test_validate_image_data_with_bad_data():
+    """
+    Ensure that validate_image_data raises a ValidationError when data is bad/corrupted.
+    """
+    image_data = "data:image/gif;base64,thisisbaddata"
+    try:
+        validate_image_data(image_data)
+    except ValidationError as ve:
+        assert ve.default_detail == "Invalid base64-encoded data in data URL."
 
 
 @pytest.mark.parametrize(
