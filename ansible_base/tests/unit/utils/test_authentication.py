@@ -3,9 +3,9 @@ from unittest import mock
 import pytest
 from django.conf import settings
 from django.test import override_settings
+from rest_framework.serializers import ValidationError
 
 from ansible_base.utils.authentication import generate_ui_auth_data
-from rest_framework.serializers import ValidationError
 
 
 @pytest.mark.django_db
@@ -60,7 +60,7 @@ def test_generate_ui_auth_data_valid_login_info():
 @override_settings(custom_login_info=12343)
 @pytest.mark.django_db
 def test_generate_ui_auth_data_invalid_login_info(logger):
-    with pytest.raises(ValidationError) as e:
+    with pytest.raises(ValidationError):
         generate_ui_auth_data()
 
 
