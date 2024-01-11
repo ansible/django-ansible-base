@@ -113,12 +113,12 @@ def validate_image_data(data: str) -> None:
 
     match = CUSTOM_LOGO_RE.match(data)
     if not match:
-        raise ValidationError("Invalid format for custom logo. Must be a data URL with a base64-encoded GIF, PNG or JPEG image.")
+        raise ValidationError(_("Invalid format for custom logo. Must be a data URL with a base64-encoded GIF, PNG or JPEG image."))
     b64data = match.group(1)
     try:
         base64.b64decode(b64data)
     except (TypeError, binascii.Error):
-        raise ValidationError("Invalid base64-encoded data in data URL.")
+        raise ValidationError(_("Invalid base64-encoded data in data URL."))
 
 
 def to_python_boolean(value, allow_none=False):
