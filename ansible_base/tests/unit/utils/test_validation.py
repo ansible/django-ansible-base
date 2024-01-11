@@ -87,7 +87,7 @@ def test_validate_image_data_with_valid_data():
     """
     image_data = "data:image/gif;base64,R0lGODlhAQABAIABAP///wAAACwAAAAAAQABAAACAkQBADs="
     res = validate_image_data(image_data)
-    assert res == None
+    assert not res
 
 
 def test_validate_image_data_with_wrong_format():
