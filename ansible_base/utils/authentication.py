@@ -4,7 +4,7 @@ from rest_framework.serializers import ValidationError
 
 from ansible_base.models import Authenticator
 from ansible_base.utils.settings import get_setting
-from ansible_base.utils.validation import validate_url
+from ansible_base.utils.validation import validate_image_data, validate_url
 
 logger = logging.getLogger('ansible_base.utils.authentication')
 
@@ -16,6 +16,8 @@ def generate_ui_auth_data():
         'passwords': [],
         'ssos': [],
         'login_redirect_override': '',
+        'custom_login_info': '',
+        'custom_logo': '',
     }
 
     for authenticator in authenticators:
@@ -44,5 +46,19 @@ def generate_ui_auth_data():
         response['login_redirect_override'] = login_redirect_override
     except ValidationError:
         logger.exception('LOGIN_REDIRECT_OVERRIDE was set but was not a valid URL, ignoring')
+
+    custom_login_info = get_setting('custom_login_info', '')
+    if isinstance(custom_login_info, str):
+        response['custom_login_info'] = custom_login_info
+    else:
+        logger.exception("custom_login_info was not a string")
+        raise ValidationError("custom_login_info was set but was not a valid string, ignoring")
+
+    try:
+        custom_logo = get_setting('custom_logo', '')
+        validate_image_data(custom_logo)
+        response['custom_logo'] = custom_logo
+    except ValidationError:
+        logger.exception("custom_logo was set but was not a valid image data, ignoring")
 
     return response
