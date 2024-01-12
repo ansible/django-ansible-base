@@ -57,13 +57,13 @@ force-exclude = '''
 [tool.isort]
 profile = "black"
 line_length = 160
-extend_skip = [ "ansible_base/migrations" ]
+extend_skip = [ "ansible_base/migrations", "test_app/migrations" ]
 
 
 [tool.flake8]
 max-line-length = 160
 extend-ignore = [ "E203" ]
-exclude = [ 'ansible_base/migrations/*', '.tox', 'build']
+exclude = [ 'ansible_base/migrations/*', 'test_app/migrations/*', '.tox', 'build']
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "ansible_base.tests.settings_overrides"

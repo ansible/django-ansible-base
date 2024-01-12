@@ -8,6 +8,8 @@ from django.utils import timezone
 from inflection import underscore
 from rest_framework.reverse import reverse
 
+from ansible_base.utils.encryption import ENCRYPTED_STRING, ansible_encryption
+
 logger = logging.getLogger('ansible_base.models.common')
 
 
@@ -16,6 +18,9 @@ class CommonModel(models.Model):
     # For example, an environment has related organizations so environment might specify reverse_foreign_key_fields = ['organizations']
     # This would end up with a view like environment/1/organizations
     reverse_foreign_key_fields = []
+
+    # Any field marked as encrypted will automatically be stored in an encrypted fashion
+    encrypted_fields = []
 
     class Meta:
         abstract = True
@@ -66,7 +71,25 @@ class CommonModel(models.Model):
             self.modified_by = user
             update_fields.append('modified_on')
             update_fields.append('modified_by')
+
+        # Encrypt any fields
+        for field in self.encrypted_fields:
+            field_value = getattr(self, field, None)
+            if field_value:
+                setattr(self, field, ansible_encryption.encrypt_string(field_value))
+
         super().save(*args, **kwargs)
+
+    @classmethod
+    def from_db(self, db, field_names, values):
+        instance = super().from_db(db, field_names, values)
+
+        for field in self.encrypted_fields:
+            field_value = getattr(instance, field, None)
+            if field_value and field_value.startswith(ENCRYPTED_STRING):
+                setattr(instance, field, ansible_encryption.decrypt_string(field_value))
+
+        return instance
 
     def get_summary_fields(self):
         response = {}
