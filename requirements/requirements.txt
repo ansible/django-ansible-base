@@ -1,16 +1,20 @@
 asgiref==3.7.2
-    # via django
+    # via
+    #   channels
+    #   django
 attrs==23.1.0
     # via
     #   jsonschema
     #   referencing
-certifi==2023.7.22
+certifi==2023.11.17
     # via requests
 cffi==1.16.0
     # via cryptography
-charset-normalizer==3.3.1
+channels==4.0.0
+    # via -r requirements/requirements.in
+charset-normalizer==3.3.2
     # via requests
-cryptography==41.0.4
+cryptography==41.0.7
     # via
     #   -r requirements/requirements.in
     #   social-auth-core
@@ -18,9 +22,10 @@ defusedxml==0.8.0rc2
     # via
     #   python3-openid
     #   social-auth-core
-django==4.2.6
+django==4.2.8
     # via
     #   -r requirements/requirements.in
+    #   channels
     #   django-auth-ldap
     #   django-crum
     #   djangorestframework
@@ -34,9 +39,9 @@ djangorestframework==3.14.0
     # via
     #   -r requirements/requirements.in
     #   drf-spectacular
-drf-spectacular==0.26.5
+drf-spectacular==0.27.0
     # via -r requirements/requirements.in
-idna==3.4
+idna==3.6
     # via requests
 inflection==0.5.1
     # via
@@ -44,9 +49,9 @@ inflection==0.5.1
     #   drf-spectacular
 isodate==0.6.1
     # via python3-saml
-jsonschema==4.19.1
+jsonschema==4.20.0
     # via drf-spectacular
-jsonschema-specifications==2023.7.1
+jsonschema-specifications==2023.11.2
     # via jsonschema
 lxml==4.9.3
     # via
@@ -56,7 +61,7 @@ oauthlib==3.2.2
     # via
     #   requests-oauthlib
     #   social-auth-core
-pyasn1==0.5.0
+pyasn1==0.5.1
     # via
     #   pyasn1-modules
     #   python-ldap
@@ -66,7 +71,7 @@ pycparser==2.21
     # via cffi
 pyjwt==2.8.0
     # via social-auth-core
-python-ldap==3.4.3
+python-ldap==3.4.4
     # via
     #   -r requirements/requirements.in
     #   django-auth-ldap
@@ -78,7 +83,7 @@ pytz==2023.3.post1
     # via djangorestframework
 pyyaml==6.0.1
     # via drf-spectacular
-referencing==0.30.2
+referencing==0.32.0
     # via
     #   jsonschema
     #   jsonschema-specifications
@@ -88,7 +93,7 @@ requests==2.31.0
     #   social-auth-core
 requests-oauthlib==1.3.1
     # via social-auth-core
-rpds-py==0.10.6
+rpds-py==0.15.2
     # via
     #   jsonschema
     #   referencing
@@ -96,7 +101,7 @@ six==1.16.0
     # via isodate
 social-auth-app-django==5.4.0
     # via -r requirements/requirements.in
-social-auth-core==4.4.2
+social-auth-core==4.5.1
     # via social-auth-app-django
 sqlparse==0.4.4
     # via django
@@ -104,7 +109,7 @@ tabulate==0.9.0
     # via -r requirements/requirements.in
 uritemplate==4.1.1
     # via drf-spectacular
-urllib3==2.0.7
+urllib3==2.1.0
     # via requests
 xmlsec==1.3.13
     # via python3-saml
