@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'social_django',
     'ansible_base',
+    'test_app',
 ]
 
 MIDDLEWARE = [
