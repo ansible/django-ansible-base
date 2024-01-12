@@ -38,6 +38,6 @@ While you can wrap the middleware around each consumer individually, it’s reco
 
 Note that the DrfAuthMiddleware will only work on protocols that provide HTTP headers in their scope - by default, this is HTTP and WebSocket.
 
-If the user can be retreieved from the stored session or by any backend in `settings.AUTHENTICATION_BACKEND`, the user is stored in `scope["user"]`. Othwerwise the websocket connection is denied and closed with return code 403.
+If the user can be retrieved from the stored session or by any backend in `settings.AUTHENTICATION_BACKEND`, the user is stored in `scope["user"]`. Othwerwise the websocket connection is denied and closed with return code 403.
 
 If the authentication succeeded with a valid user, your consumer code can access it use `self.scope["user"]` to further assert the role permission.
