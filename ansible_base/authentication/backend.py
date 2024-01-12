@@ -13,7 +13,7 @@ authentication_backends = OrderedDict()
 
 class AnsibleBaseAuth(ModelBackend):
     def authenticate(self, request, *args, **kwargs):
-        logger.info("Starting AnsibleBaseAuth authentication")
+        logger.debug("Starting AnsibleBaseAuth authentication")
 
         for database_authenticator in Authenticator.objects.filter(enabled=True):
             # Either get the existing object out of the backends or get a new one for us
