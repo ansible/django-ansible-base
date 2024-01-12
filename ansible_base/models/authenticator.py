@@ -17,6 +17,7 @@ class Authenticator(UniqueNamedCommonModel):
     )
     configuration = prevent_search(JSONField(default=dict, help_text="The required configuration for this source"))
     type = fields.CharField(
+        editable=False,
         max_length=256,
         help_text="The type of authentication service this is",
     )
