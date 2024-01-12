@@ -16,6 +16,11 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
     reverse_url_name = 'authenticator-detail'
     type = ChoiceField(get_authenticator_plugins())
 
+    def validate_type(self, value):
+        if self.instance and self.instance.type != value:
+            raise ValidationError("Cannot change authenticator type after it has been created.")
+        return value
+
     class Meta:
         model = Authenticator
         fields = NamedCommonModelSerializer.Meta.fields + [x.name for x in Authenticator._meta.concrete_fields]
