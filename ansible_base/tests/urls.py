@@ -1,5 +1,5 @@
-from django.urls import include, path, re_path
 from django.contrib import admin
+from django.urls import include, path, re_path
 
 from ansible_base.urls import urls as base_urls
 
