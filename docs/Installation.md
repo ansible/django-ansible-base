@@ -43,4 +43,7 @@ settings_file = os.path.join(os.path.dirname(settings.__file__), 'dynamic_settin
 include(settings_file)
 ```
 
+Other mandatory settings:
+- [organizations.md#configuration](./organizations.md#configuration)
+
 Please read the various sections of this documentation for what django-ansible-base will do to your settings.
