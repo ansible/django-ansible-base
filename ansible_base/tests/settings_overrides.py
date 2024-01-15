@@ -1,3 +1,5 @@
+DEBUG = True
+
 # noqa: F405
 DATABASES = {
     "default": {
@@ -80,6 +82,7 @@ SOCIAL_AUTH_LOGIN_REDIRECT_URL = "/api/v1/me"
 
 AUTHENTICATION_BACKENDS = [
     "ansible_base.authentication.backend.AnsibleBaseAuth",
+    "django.contrib.auth.backends.ModelBackend",  # for use by admin pages in test_app
 ]
 
 ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES = ['ansible_base.authenticator_plugins']
@@ -102,3 +105,7 @@ TEMPLATES = [
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 ANSIBLE_BASE_TEAM_MODEL = 'test_app.Team'
+
+STATIC_URL = '/static/'
+
+AUTH_USER_MODEL = 'auth.User'

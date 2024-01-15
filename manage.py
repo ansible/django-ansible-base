@@ -6,7 +6,7 @@ import sys
 
 def main():
     """Run administrative tasks."""
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ansible_base.settings')
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ansible_base.tests.settings_overrides')
     try:
         from django.core.management import execute_from_command_line
     except ImportError as exc:
