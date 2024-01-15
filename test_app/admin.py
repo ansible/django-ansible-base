@@ -1,3 +1,7 @@
-from django.contrib import admin  # noqa: F401
+from django.contrib import admin
 
-# Register your models here.
+from test_app.models import EncryptionModel, Organization, Team
+
+admin.site.register(EncryptionModel)
+admin.site.register(Organization)
+admin.site.register(Team)
