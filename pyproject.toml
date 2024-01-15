@@ -28,6 +28,8 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
 ]
 dynamic = ["version", "dependencies", "optional-dependencies"]
+
+[tool.setuptools]
 packages =["test_app", "ansible_base"]
 
 [tool.setuptools.dynamic]
