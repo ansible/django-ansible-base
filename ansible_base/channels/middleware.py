@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from channels.auth import AuthMiddleware
 from channels.auth import get_user as get_session_user

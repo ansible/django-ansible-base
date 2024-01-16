@@ -70,4 +70,4 @@ class Fernet256(Fernet):
         return smart_str(value)
 
 
-ansible_encryption = SimpleLazyObject(func = lambda: Fernet256())
+ansible_encryption = SimpleLazyObject(func=lambda: Fernet256())
