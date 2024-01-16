@@ -1,6 +1,6 @@
 from .authenticator import Authenticator
 from .authenticator_map import AuthenticatorMap
-from .organization import AbstractOrganization
+from .organization import AbstractOrganization, AbstractTeam
 from .social_auth import AuthenticatorUser
 
 __all__ = (
@@ -8,4 +8,5 @@ __all__ = (
     'AuthenticatorMap',
     'AuthenticatorUser',
     'AbstractOrganization',
+    'AbstractTeam',
 )
