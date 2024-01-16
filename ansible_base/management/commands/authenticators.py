@@ -7,6 +7,7 @@ try:
 except ImportError:
     HAS_TABULATE = False
 
+from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.utils.timezone import now
 
@@ -59,7 +60,7 @@ class Command(BaseCommand):
         self.stdout.write('')
 
     def initialize_authenticators(self):
-        admin_user = User.objects.filter(username="admin").first()
+        admin_user = get_user_model().objects.filter(username="admin").first()
         if not admin_user:
             self.stderr.write("No admin user exists")
             exit(255)
