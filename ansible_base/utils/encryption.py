@@ -5,6 +5,7 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.backends import default_backend
 from django.conf import settings
 from django.utils.encoding import smart_bytes, smart_str
+from django.utils.functional import SimpleLazyObject
 
 __all__ = [
     'ENCRYPTED_STRING',
@@ -69,4 +70,4 @@ class Fernet256(Fernet):
         return smart_str(value)
 
 
-ansible_encryption = Fernet256()
+ansible_encryption = SimpleLazyObject(func = lambda: Fernet256())

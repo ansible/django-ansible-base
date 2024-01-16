@@ -6,17 +6,15 @@ from channels.auth import get_user as get_session_user
 from channels.db import database_sync_to_async
 from channels.security.websocket import WebsocketDenier
 from channels.sessions import CookieMiddleware, SessionMiddleware
-from django.contrib.auth import get_user_model
 from django.http import HttpRequest
 from rest_framework.request import Request
 from rest_framework.settings import api_settings
 
 logger = logging.getLogger(__name__)
-User = get_user_model()
 
 
 @database_sync_to_async
-def _get_authenticated_user(scope: dict) -> Optional[User]:
+def _get_authenticated_user(scope: dict):
     request = HttpRequest()
     request.META = {_http_key(k.decode()): v.decode() for (k, v) in scope["headers"]}
     auth_classes = [auth() for auth in api_settings.DEFAULT_AUTHENTICATION_CLASSES]

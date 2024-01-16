@@ -109,3 +109,5 @@ ANSIBLE_BASE_TEAM_MODEL = 'test_app.Team'
 STATIC_URL = '/static/'
 
 AUTH_USER_MODEL = 'auth.User'
+
+SECRET_KEY = ""
