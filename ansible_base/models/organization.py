@@ -49,5 +49,5 @@ class AbstractTeam(NamedCommonModel):
         null=False,
         on_delete=models.CASCADE,
         related_name="teams",
-        help_text=_("The organization of this team.")
+        help_text=_("The organization of this team."),
     )
