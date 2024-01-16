@@ -6,6 +6,7 @@ from channels.auth import get_user as get_session_user
 from channels.db import database_sync_to_async
 from channels.security.websocket import WebsocketDenier
 from channels.sessions import CookieMiddleware, SessionMiddleware
+from django.contrib.auth import get_user_model
 from django.http import HttpRequest
 from rest_framework.request import Request
 from rest_framework.settings import api_settings
@@ -32,7 +33,7 @@ class DrfAuthMiddleware(AuthMiddleware):
         else:
             user = await _get_authenticated_user(scope)
 
-        if not user or not isinstance(user, User):
+        if not user or not isinstance(user, get_user_model()):
             logger.error("Websocket connection does not provide valid authentication")
             denier = WebsocketDenier()
             return await denier(scope, receive, send)
