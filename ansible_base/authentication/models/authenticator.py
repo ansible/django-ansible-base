@@ -28,7 +28,7 @@ class Authenticator(UniqueNamedCommonModel):
     users = ManyToManyField(
         settings.AUTH_USER_MODEL,
         related_name='users',
-        blank=False,
+        blank=True,
         help_text="The list of users who have authenticated from this authenticator",
     )
 
