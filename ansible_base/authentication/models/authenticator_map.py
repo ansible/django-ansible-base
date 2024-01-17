@@ -1,6 +1,6 @@
 from django.db import models
 
-from ansible_base.common.models.common import NamedCommonModel
+from ansible_base.lib.abstract_models.common import NamedCommonModel
 
 from .authenticator import Authenticator
 

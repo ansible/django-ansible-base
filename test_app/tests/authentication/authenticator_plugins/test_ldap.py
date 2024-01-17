@@ -10,7 +10,7 @@ from rest_framework.serializers import ValidationError
 from ansible_base.authentication.authenticator_plugins.ldap import AuthenticatorPlugin, LDAPSettings, validate_ldap_filter
 from ansible_base.authentication.models import Authenticator
 from ansible_base.authentication.session import SessionAuthentication
-from ansible_base.common.utils.encryption import ENCRYPTED_STRING
+from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 
 authenticated_test_page = "authenticator-list"
 

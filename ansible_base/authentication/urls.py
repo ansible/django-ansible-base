@@ -1,6 +1,6 @@
 import logging
 
-from django.urls import path, re_path
+from django.urls import include, path, re_path
 
 from ansible_base.authentication import views
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugins, get_authenticator_urls
@@ -11,16 +11,16 @@ list_actions = {'get': 'list', 'post': 'create'}
 detail_actions = {'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}
 view_only_list = {'get': 'list'}
 
-urlpatterns = []
+api_version_urls = []
 
 # Load urls from authenticator plugins
 for plugin_name in get_authenticator_plugins():
     plugin_urls = getattr(get_authenticator_urls(plugin_name), 'urls', None)
     if plugin_urls:
-        urlpatterns.extend(plugin_urls)
+        api_version_urls.extend(plugin_urls)
         logger.debug(f"Loaded URLS from {plugin_name}")
 
-urlpatterns.extend(
+api_version_urls.extend(
     [
         # Authenticators
         path('authenticators/', views.AuthenticatorViewSet.as_view(list_actions), name='authenticator-list'),
@@ -40,3 +40,8 @@ urlpatterns.extend(
         path('ui_auth/', views.UIAuth.as_view(), name='ui_auth-view'),
     ]
 )
+
+
+api_urls = [
+    path('social/', include('social_django.urls', namespace='social')),
+]

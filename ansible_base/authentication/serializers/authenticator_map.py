@@ -2,7 +2,7 @@ from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.models import AuthenticatorMap
 from ansible_base.authentication.utils.trigger_definition import TRIGGER_DEFINITION
-from ansible_base.common.serializers.common import NamedCommonModelSerializer
+from ansible_base.lib.serializers.common import NamedCommonModelSerializer
 
 
 class AuthenticatorMapSerializer(NamedCommonModelSerializer):

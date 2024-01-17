@@ -1,7 +1,7 @@
 from unittest import mock
 
 from ansible_base.authentication.models.authenticator import Authenticator
-from ansible_base.checks import check_charfield_has_max_length
+from ansible_base.lib.checks import check_charfield_has_max_length
 
 
 def test_check_charfield_has_max_length_fails():

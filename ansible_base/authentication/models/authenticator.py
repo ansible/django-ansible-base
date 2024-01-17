@@ -2,8 +2,8 @@ from django.conf import settings
 from django.db.models import JSONField, ManyToManyField, fields
 
 from ansible_base.authentication.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_plugin
-from ansible_base.common.models.common import UniqueNamedCommonModel
-from ansible_base.common.utils.models import prevent_search
+from ansible_base.lib.abstract_models.common import UniqueNamedCommonModel
+from ansible_base.lib.utils.models import prevent_search
 
 
 class Authenticator(UniqueNamedCommonModel):
@@ -35,7 +35,7 @@ class Authenticator(UniqueNamedCommonModel):
     reverse_foreign_key_fields = ['authenticator-map']
 
     def save(self, *args, **kwargs):
-        from ansible_base.common.utils.encryption import ansible_encryption
+        from ansible_base.lib.utils.encryption import ansible_encryption
 
         # Here we are going to allow an exception to raise because what else can we do at this point?
         authenticator = get_authenticator_plugin(self.type)
@@ -58,7 +58,7 @@ class Authenticator(UniqueNamedCommonModel):
 
     @classmethod
     def from_db(cls, db, field_names, values):
-        from ansible_base.common.utils.encryption import ENCRYPTED_STRING, ansible_encryption
+        from ansible_base.lib.utils.encryption import ENCRYPTED_STRING, ansible_encryption
 
         instance = super().from_db(db, field_names, values)
 

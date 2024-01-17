@@ -5,8 +5,8 @@ from rest_framework.serializers import ChoiceField, ValidationError
 
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin, get_authenticator_plugins
 from ansible_base.authentication.models import Authenticator
-from ansible_base.common.serializers.common import NamedCommonModelSerializer
-from ansible_base.common.utils.encryption import ENCRYPTED_STRING
+from ansible_base.lib.serializers.common import NamedCommonModelSerializer
+from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 
 logger = logging.getLogger('ansible_base.authentication.serializers.authenticator')
 

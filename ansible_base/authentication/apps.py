@@ -1,6 +1,6 @@
 from django.apps import AppConfig
 
-import ansible_base.checks  # noqa: F401 - register checks
+import ansible_base.lib.checks  # noqa: F401 - register checks
 
 
 class AuthenticationConfig(AppConfig):

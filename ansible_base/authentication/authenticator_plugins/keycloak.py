@@ -5,7 +5,7 @@ from social_core.backends.keycloak import KeycloakOAuth2
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.social_auth import SocialAuthMixin
-from ansible_base.common.serializers.fields import CharField, URLField
+from ansible_base.lib.serializers.fields import CharField, URLField
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.keycloak')
 

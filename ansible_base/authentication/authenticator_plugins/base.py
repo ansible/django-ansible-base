@@ -7,7 +7,7 @@ from rest_framework.reverse import reverse
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.models import Authenticator
-from ansible_base.common.serializers.fields import JSONField
+from ansible_base.lib.serializers.fields import JSONField
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.base')
 

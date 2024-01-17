@@ -14,8 +14,8 @@ from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, Authenticator, BaseAuthenticatorConfiguration
 from ansible_base.authentication.utils.claims import get_or_create_authenticator_user, update_user_claims
-from ansible_base.common.serializers.fields import BooleanField, CharField, ChoiceField, DictField, ListField, URLListField, UserAttrMap
-from ansible_base.common.utils.validation import VALID_STRING
+from ansible_base.lib.serializers.fields import BooleanField, CharField, ChoiceField, DictField, ListField, URLListField, UserAttrMap
+from ansible_base.lib.utils.validation import VALID_STRING
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.ldap')
 

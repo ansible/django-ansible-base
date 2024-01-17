@@ -5,8 +5,8 @@ from rest_framework.serializers import ValidationError
 from rest_framework.views import APIView
 
 from ansible_base.authentication.models import Authenticator
-from ansible_base.common.utils.settings import get_setting
-from ansible_base.common.utils.validation import validate_image_data, validate_url
+from ansible_base.lib.utils.settings import get_setting
+from ansible_base.lib.utils.validation import validate_image_data, validate_url
 
 logger = logging.getLogger('ansible_base.authentication.views.ui_auth')
 

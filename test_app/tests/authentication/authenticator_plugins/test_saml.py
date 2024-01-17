@@ -4,7 +4,7 @@ import pytest
 from django.urls import reverse
 
 from ansible_base.authentication.session import SessionAuthentication
-from ansible_base.common.utils.encryption import ENCRYPTED_STRING
+from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 
 authenticated_test_page = "authenticator-list"
 

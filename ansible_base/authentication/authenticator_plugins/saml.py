@@ -14,9 +14,9 @@ from ansible_base.authentication.authenticator_plugins.base import AbstractAuthe
 from ansible_base.authentication.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_plugin
 from ansible_base.authentication.models import Authenticator
 from ansible_base.authentication.social_auth import AuthenticatorConfigTestStrategy, AuthenticatorStorage, AuthenticatorStrategy, SocialAuthMixin
-from ansible_base.common.serializers.fields import CharField, JSONField, ListField, PrivateKey, PublicCert, URLField
-from ansible_base.common.utils.encryption import ENCRYPTED_STRING
-from ansible_base.common.utils.validation import validate_cert_with_key
+from ansible_base.lib.serializers.fields import CharField, JSONField, ListField, PrivateKey, PublicCert, URLField
+from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
+from ansible_base.lib.utils.validation import validate_cert_with_key
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.saml')
 
@@ -41,7 +41,7 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
     SP_ENTITY_ID = CharField(
         allow_null=False,
         max_length=512,
-        default="aap",
+        default="saml_entity",
         help_text=_(
             "The application-defined unique identifier used as the audience of the SAML service provider (SP) configuration. This is usually the URL for the"
             " service."
