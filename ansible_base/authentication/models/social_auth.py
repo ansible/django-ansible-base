@@ -15,8 +15,8 @@ class AuthenticatorUser(AbstractUserSocialAuth):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="authenticator_user", on_delete=models.CASCADE)
     # TODO: set self.authenticated based on the provider that is passed to this method.
     # the provider should be the name of the Authenticator model instance
-    claims = models.JSONField(default=dict, null=False)
-    last_login_map_results = models.JSONField(default=list, null=False)
+    claims = models.JSONField(default=dict, null=False, blank=True)
+    last_login_map_results = models.JSONField(default=list, null=False, blank=True)
     # This field tracks if a user passed or failed an allow map
     access_allowed = models.BooleanField(default=None, null=True)
 

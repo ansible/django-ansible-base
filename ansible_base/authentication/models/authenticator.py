@@ -14,7 +14,7 @@ class Authenticator(UniqueNamedCommonModel):
     remove_users = fields.BooleanField(
         default=True, help_text="When a user authenticates from this source should they be removed from any other groups they were previously added to"
     )
-    configuration = prevent_search(JSONField(default=dict, help_text="The required configuration for this source"))
+    configuration = prevent_search(JSONField(default=dict, help_text="The required configuration for this source", blank=True))
     type = fields.CharField(
         editable=False,
         max_length=256,

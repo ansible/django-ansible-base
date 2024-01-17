@@ -22,11 +22,11 @@ class AuthenticatorMapSerializer(NamedCommonModelSerializer):
         map_type = data.get('map_type', None)
         team = data.get('team', None)
         org = data.get('organization', None)
-        if map_type == 'team' and not team:
+        if map_type == 'team' and (not team or team == ''):
             errors["team"] = "You must specify a team with the selected map type"
-        if map_type == 'team' and not org:
+        if map_type == 'team' and (not org or org == ''):
             errors["organization"] = "You must specify an organization with the selected map type"
-        if map_type == 'organization' and not org:
+        if map_type == 'organization' and (not org or org == ''):
             errors["organization"] = "You must specify an organization with the selected map type"
 
         if not data.get('order', None):

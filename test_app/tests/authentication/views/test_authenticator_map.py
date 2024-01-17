@@ -105,7 +105,7 @@ def test_authenticator_map_invalid_map_type(admin_api_client, local_authenticato
             'is_superuser',
             {'name': 'Rule 1', 'map_type': 'team', 'triggers': {'always': {}}, 'order': 1, 'organization': 'foobar-org', 'team': ''},
             'team',
-            "This field may not be blank.",
+            "You must specify a team with the selected map type",
             id="map_type=team, team param is empty string",
         ),
         pytest.param(
@@ -126,7 +126,7 @@ def test_authenticator_map_invalid_map_type(admin_api_client, local_authenticato
             'is_superuser',
             {'name': 'Rule 1', 'map_type': 'team', 'triggers': {'always': {}}, 'order': 1, 'team': 'foobar-team', 'organization': ''},
             'organization',
-            "This field may not be blank.",
+            "You must specify an organization with the selected map type",
             id="map_type=team, organization param is empty string",
         ),
         pytest.param(

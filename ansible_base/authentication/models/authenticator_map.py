@@ -48,17 +48,20 @@ class AuthenticatorMap(NamedCommonModel):
         max_length=512,
         null=True,
         default=None,
+        blank=True,
         help_text='A team name this rule works on',
     )
     organization = models.CharField(
         max_length=512,
         null=True,
         default=None,
+        blank=True,
         help_text='An organization name this rule works on',
     )
     triggers = models.JSONField(
         null=False,
         default=dict,
+        blank=True,
         help_text="Trigger information for this rule",
     )
     order = models.PositiveIntegerField(
