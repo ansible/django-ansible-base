@@ -3,8 +3,8 @@ from collections import OrderedDict
 
 from django.contrib.auth.backends import ModelBackend
 
-from ansible_base.authenticator_plugins.utils import get_authenticator_plugin
-from ansible_base.models import Authenticator
+from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
+from ansible_base.authentication.models import Authenticator
 
 logger = logging.getLogger('ansible_base.authentication.backend')
 

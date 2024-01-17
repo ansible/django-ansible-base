@@ -1,7 +1,7 @@
 # Organizations
 
 The django-ansible-base project provides the 
-`ansible_base.models.organization.AbstractOrganization` base class. Projects that implement 
+`ansible_base.common.models.organization.AbstractOrganization` base class. Projects that implement 
 organizations MUST inherit this model.
 
 The `AbstractOrganization` has the following fields:
@@ -11,7 +11,7 @@ The `AbstractOrganization` has the following fields:
 * `users` – A many to many relationship to the user model (defined by the `AUTH_USER_MODEL` setting),
 * `teams` – A many to many relationship to the team model (defined by the `ANSIBLE_BASE_TEAM_MODEL` setting),
 
-for the list of remaining fields see `ansible_base.models.common.CommonModel`.
+for the list of remaining fields see `ansible_base.common.models.common.CommonModel`.
 
 The user and the team models will receive an additional field named `organizations`, that references
 related organizations of a respective model.

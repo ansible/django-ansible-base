@@ -6,7 +6,7 @@ pip install git+https://github.com/ansible/django-ansible-base.git[all]
 ```
 
 This will install django-ansible-base as well as all its optional dependencies.
-These can be found in `requirements/requirements.in`
+These can be found in `requirements/requirements_all.in`
 
 If there are features you are not going to use you can tell pip to only install required packages for the features you will use.
 As of this writing there are three features:
@@ -25,6 +25,16 @@ Once the library is installed you will need to add it to your installed apps in 
 INSTALLED_APPS = [
     ...
     'ansible_base',
+]
+```
+
+Some features in django-ansible-base are also applications that need to be added to installed_apps.
+For example, if you want to use authentication you would need to add it like:
+```
+INSTALLED_APPS = [
+    ...
+    'ansible_base',
+    'ansible_base.authentication',
 ]
 ```
 

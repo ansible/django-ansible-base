@@ -2,7 +2,7 @@ from django.core.exceptions import FieldDoesNotExist, FieldError
 from rest_framework.exceptions import ParseError
 from rest_framework.filters import BaseFilterBackend
 
-from ansible_base.utils.filters import get_all_field_names, get_field_from_path
+from ansible_base.filters.utils import get_all_field_names, get_field_from_path
 
 
 class OrderByBackend(BaseFilterBackend):

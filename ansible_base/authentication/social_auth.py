@@ -9,8 +9,8 @@ from social_django.models import Association, Code, Nonce, Partial
 from social_django.storage import BaseDjangoStorage
 from social_django.strategy import DjangoStrategy
 
-from ansible_base.authenticator_plugins.utils import get_authenticator_class, get_authenticator_plugins
-from ansible_base.models import Authenticator, AuthenticatorUser
+from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_class, get_authenticator_plugins
+from ansible_base.authentication.models import Authenticator, AuthenticatorUser
 
 logger = logging.getLogger('ansible_base.authentication.social_auth')
 
@@ -145,6 +145,6 @@ class SocialAuthMixin:
 
 
 def create_user_claims_pipeline(*args, backend, **kwargs):
-    from ansible_base.authentication.common import update_user_claims
+    from ansible_base.authentication.utils.claims import update_user_claims
 
     update_user_claims(kwargs["user"], backend.database_instance, backend.get_user_groups())

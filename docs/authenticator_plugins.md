@@ -12,13 +12,13 @@ Authenticator plugins in django-ansible-base should be individual files in the a
 ### The AuthenticatorPlugin Class
 The primary class you need to implement in your file is called `AuthenticatorPlugin`. When django-ansible-base attempts to instantiate an authenticator from an authenticator_plugin it will be loading this class. This class must be a superclass of `AbstractAuthenticatorPlugin` but can also subclass additional classes if required. For example, the SAML authenticator class subclasses `SAMLAuth` and `SocialAuthMixin` in addition to `AbstractAuthenticatorPlugin`.
 
-The abstract class can be found in ansible_base.authenticator_plugins.base in here you can see several fields and methods that can be set or overridden as part of the authenticator class.
+The abstract class can be found in ansible_base.authentication.authenticator_plugins.base in here you can see several fields and methods that can be set or overridden as part of the authenticator class.
 
 #### Customizable Fields
 `configuration_class`: This must be a class of type `BaseAuthenticatorConfiguration` (see section The Configuration Class) for more details about this class.
 `configuration_encrypted_fields`: An array of fields from the configuration_class that are to be stored encrypted in the database. Putting the name of the field in here will automatically perform the encryption/decryption of the field through the serializer.
 `type`: The specific type name for this authenticator_plugin, i.e. SAML. This should be unique across the authenticator_plugins.
-`logger`: The plugin will default to a logger of `ansible_base.models.abstract_authenticator` but you can set logger to be more specific for your plugin. i.e. `ansible_base.authenticator_plugins.saml`. Note: this takes the logger class, not a string of the logger name.
+`logger`: The plugin will default to a logger of `ansible_base.authentication.models.abstract_authenticator` but you can set logger to be more specific for your plugin. i.e. `ansible_base.authentication.authenticator_plugins.saml`. Note: this takes the logger class, not a string of the logger name.
 `category`: Currently there are two supported categories: `password` and `sso`. This field indicates to the UI if the username/password fields should be displayed on the login form or if there should be an SSO icon for any authenticator of this type. Additional categories may be added in the future but are out of scope for this document.
 
 
@@ -32,13 +32,13 @@ Methods other than those described above should not be overridden in normal circ
 
 
 ### The Configuration Class
-The Configuration Class tells the plugin system what attributes are needed for this authentication_plugin to work with its backend and will vary based on backend implementation. This is a Serializer field and as such has several fields related to serialization. The configuration class for your authenticator_plugin must be a superclass of `ansible_base.authenticator_plugins.base.BaseAUthenticatorConfiguration`
+The Configuration Class tells the plugin system what attributes are needed for this authentication_plugin to work with its backend and will vary based on backend implementation. This is a Serializer field and as such has several fields related to serialization. The configuration class for your authenticator_plugin must be a superclass of `ansible_base.authentication.authenticator_plugins.base.BaseAUthenticatorConfiguration`
 
 #### Documentation URL
 Your configuration class should first override the documentation_url property. This is a URL to point a user towards the documentation for the library you are implementing. This can be used to reference the general architecture of the backend and how the configuration classes' fields are used by any supporting libraries. 
 
 #### Serializer Fields
-Your configuration class can then specify 0 or more configuration fields. These fields are serializer fields but should come from `ansible_base.serializers.fields`. There we subclass serializer fields to add the ui_field_label and any additional fields we might require in the future.
+Your configuration class can then specify 0 or more configuration fields. These fields are serializer fields but should come from `ansible_base.common.serializers.fields`. There we subclass serializer fields to add the ui_field_label and any additional fields we might require in the future.
 
 Here is an example of a serializer field from the SAML authenticator:
 ```

@@ -13,8 +13,8 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ParseError
 from rest_framework.filters import BaseFilterBackend
 
-from ansible_base.utils.filters import get_fields_from_path
-from ansible_base.utils.validation import to_python_boolean
+from ansible_base.common.utils.validation import to_python_boolean
+from ansible_base.filters.utils import get_fields_from_path
 
 
 class FieldLookupBackend(BaseFilterBackend):

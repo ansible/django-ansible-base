@@ -4,7 +4,7 @@ from django.db.models import Q
 from rest_framework.exceptions import ParseError
 from rest_framework.filters import BaseFilterBackend
 
-from ansible_base.utils.models import get_all_field_names, get_type_for_model
+from ansible_base.common.utils.models import get_all_field_names, get_type_for_model
 
 
 class TypeFilterBackend(BaseFilterBackend):

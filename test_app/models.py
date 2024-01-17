@@ -1,7 +1,7 @@
 from django.db import models
 
-from ansible_base.models import AbstractOrganization, AbstractTeam
-from ansible_base.models.common import NamedCommonModel
+from ansible_base.common.models import AbstractOrganization, AbstractTeam
+from ansible_base.common.models.common import NamedCommonModel
 
 
 class EncryptionModel(NamedCommonModel):

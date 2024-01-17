@@ -23,7 +23,7 @@ django-ansible-base will automatically insert it's middleware class into your MI
 MIDDLEWARE = [
     ...
     # must come before django.contrib.auth.middleware.AuthenticationMiddleware
-    'ansible_base.utils.middleware.AuthenticatorBackendMiddleware',
+    'ansible_base.authentication.middleware.AuthenticatorBackendMiddleware',
     ...
 ]
 ``` 
@@ -32,9 +32,9 @@ Note: this must come before django.contrib.auth.middleware.AuthenticationMiddlwa
 
 
 ### ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES
-By default, django-ansible-base will look in the class `ansible_base.authenticator_plugins` for the available authenticator plugins. If you would like to provide additional or custom paths you can set the following setting:
+By default, django-ansible-base will look in the class `ansible_base.authentication.authenticator_plugins` for the available authenticator plugins. If you would like to provide additional or custom paths you can set the following setting:
 ```
-ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES = ["ansible_base.authenticator_plugins"]
+ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES = ["ansible_base.authentication.authenticator_plugins"]
 ```
 
 If you are going to create a different class to hold the plugins you can change or add to this as needed.
@@ -121,7 +121,7 @@ urlpatterns = [
 
 ## Restricting available authenticators
 
-django-ansible-base comes with many types of authenticators which can be found in `ansible_base.authenticator_plugins` some of these include:
+django-ansible-base comes with many types of authenticators which can be found in `ansible_base.authentication.authenticator_plugins` some of these include:
   * local (local.py) Akin to local model authentication but can still be enabled/disabled and have authenticator maps applied
   * LDAP (ldap.py) An LDAP adapter
   * Keycloak (keycloak.py) An OIDC social authenticator

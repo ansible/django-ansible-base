@@ -3,13 +3,13 @@ set -ue
 
 PYTHON=python3.11
 
-for FILE in requirements.in requirements.txt ; do
+for FILE in requirements.in requirements_all.txt ; do
 	if [ ! -f ${FILE} ] ; then
 		touch ${FILE}
 	fi
 done
 requirements_dir="$(readlink -f .)"
-requirements_txt="$(readlink -f ./requirements.txt)"
+requirements_txt="$(readlink -f ./requirements_all.txt)"
 pip_compile="pip-compile --no-header --quiet -r --allow-unsafe"
 
 _cleanup() {
@@ -26,7 +26,7 @@ generate_requirements() {
 
   ${venv}/bin/python -m pip install -U 'pip' pip-tools
 
-  ${pip_compile} $(ls ${requirements_dir}/requirements*.in | xargs) --output-file requirements.txt
+  ${pip_compile} $(ls ${requirements_dir}/requirements*.in | xargs) --output-file requirements_all.txt
 }
 
 main() {
@@ -56,13 +56,13 @@ main() {
   esac 
 
   if [[ "$NEEDS_HELP" == "1" ]] ; then
-    echo "This script generates requirements.txt from requirements.in"
+    echo "This script generates requirements_all.txt from requirements[_*].in"
     echo ""
     echo "Usage: $0 [run|upgrade]"
     echo ""
     echo "Commands:"
     echo "help      Print this message"
-    echo "run       Run the process only upgrading pinned libraries from requirements.in"
+    echo "run       Run the process only upgrading pinned libraries from requirements[_*].in"
     echo "upgrade   Upgrade all libraries to latest while respecting pinnings"
     echo ""
     exit
@@ -74,7 +74,7 @@ main() {
   generate_requirements
 
   echo "Changing $base_dir to requirements"
-  cat requirements.txt | sed "s:$base_dir:requirements:" > "${requirements_txt}"
+  cat requirements_all.txt | sed "s:$base_dir:requirements:" > "${requirements_txt}"
 
   _cleanup
 }

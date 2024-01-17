@@ -2,10 +2,10 @@
 
 django-ansible-base has a built in method for encrypting and decryption of strings as well as a constant which can be displayed in an API to indicate that a string is encrypted.
 
-These come from `ansible_base.utils.encryption` like:
+These come from `ansible_base.common.utils.encryption` like:
 
 ```
-from ansible_base.utils.encryption import ENCRYPTED_STRING, ansible_encryption
+from ansible_base.common.utils.encryption import ENCRYPTED_STRING, ansible_encryption
 ```
 
 You could then have code like:

@@ -21,11 +21,11 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from social_core.backends.keycloak import KeycloakOAuth2
 
-from ansible_base.authentication.authenticator_lib import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
+from ansible_base.authentication.utils.authenticator_lib import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.social_auth import SocialAuthMixin
-from ansible_base.serializers.fields import URLField
+from ansible_base.common.serializers.fields import URLField
 
-logger = logging.getLogger('ansible_base.authenticator_plugins.keycloak')
+logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.keycloak')
 
 
 class KeycloakConfiguration(BaseAuthenticatorConfiguration):

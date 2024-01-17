@@ -23,7 +23,7 @@ REST_FRAMEWORK = {
 Sensitive fields like passwords should be excluded from being searched. To do there is there a function called `prevent_search` which can wrap your model fields like:
 
 ```
-from ansible_base.utils.models import prevent_search
+from ansible_base.common.utils.models import prevent_search
 
 class Authenticator(UniqueNamedCommonModel):
    ...
