@@ -4,16 +4,7 @@ from split_settings.tools import include
 
 DEBUG = True
 
-# noqa: F405
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": "test_app/tests/sqllite_dbs/db.sqlite3",
-        "TEST": {
-            "NAME": "test_app/tests/sqllite_dbs/db_test.sqlite3",
-        },
-    }
-}
+ALLOWED_HOSTS = ["*"]
 
 LOGGING = {
     'version': 1,
@@ -38,8 +29,6 @@ LOGGING = {
 for logger in LOGGING["loggers"]:  # noqa: F405
     LOGGING["loggers"][logger]["level"] = "ERROR"  # noqa: F405
 
-SECRET_KEY = "asdf1234"
-
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -55,6 +44,8 @@ INSTALLED_APPS = [
     'test_app',
 ]
 
+AUTH_USER_MODEL = 'auth.User'
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -65,6 +56,24 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'crum.CurrentRequestUserMiddleware',
 ]
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': ['test_app.authentication.logged_basic_auth.LoggedBasicAuthentication'],
+    'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.IsAuthenticated'],
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 50,
+}
+
+# noqa: F405
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": "test_app/tests/sqllite_dbs/db.sqlite3",
+        "TEST": {
+            "NAME": "test_app/tests/sqllite_dbs/db_test.sqlite3",
+        },
+    }
+}
 
 ROOT_URLCONF = 'test_app.urls'
 
@@ -83,14 +92,22 @@ TEMPLATES = [
     },
 ]
 
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+LANGUAGE_CODE = 'en-us'
+
+TIME_ZONE = 'UTC'
+
+USE_I18N = True
+
+USE_TZ = True
 
 ANSIBLE_BASE_TEAM_MODEL = 'test_app.Team'
 ANSIBLE_BASE_ORGANIZATION_MODEL = 'test_app.Organization'
 
 STATIC_URL = '/static/'
 
-AUTH_USER_MODEL = 'auth.User'
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+SECRET_KEY = "asdf1234"
 
 ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES = ['ansible_base.authentication.authenticator_plugins']
 
