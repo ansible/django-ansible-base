@@ -13,8 +13,6 @@ from django.utils.timezone import now
 
 from ansible_base.models import Authenticator, AuthenticatorUser
 
-User = get_user_model()
-
 
 class Command(BaseCommand):
     help = "Initialize service configuration with an admin user and a local authenticator"
@@ -62,7 +60,7 @@ class Command(BaseCommand):
         self.stdout.write('')
 
     def initialize_authenticators(self):
-        admin_user = User.objects.filter(username="admin").first()
+        admin_user = get_user_model().objects.filter(username="admin").first()
         if not admin_user:
             self.stderr.write("No admin user exists")
             exit(255)

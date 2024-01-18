@@ -6,8 +6,6 @@ from rest_framework import serializers
 from ansible_base.utils.encryption import ENCRYPTED_STRING
 from ansible_base.utils.validation import validate_url, validate_url_list
 
-User = get_user_model()
-
 
 class UILabelMixIn:
     def __init__(self, **kwargs):
@@ -79,7 +77,7 @@ class UserAttrMap(UILabelMixIn, serializers.DictField):
             valid_user_attr_fields = set(["email", "username", "first_name", "last_name"])
             given_fields = set(list(value.keys()))
 
-            missing_required_fields = set(User.REQUIRED_FIELDS) - given_fields
+            missing_required_fields = set(get_user_model().REQUIRED_FIELDS) - given_fields
             for field in missing_required_fields:
                 errors[field] = "Must be present"
 

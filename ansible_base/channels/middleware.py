@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from channels.auth import AuthMiddleware
 from channels.auth import get_user as get_session_user
@@ -12,11 +11,10 @@ from rest_framework.request import Request
 from rest_framework.settings import api_settings
 
 logger = logging.getLogger(__name__)
-User = get_user_model()
 
 
 @database_sync_to_async
-def _get_authenticated_user(scope: dict) -> Optional[User]:
+def _get_authenticated_user(scope: dict):
     request = HttpRequest()
     request.META = {_http_key(k.decode()): v.decode() for (k, v) in scope["headers"]}
     auth_classes = [auth() for auth in api_settings.DEFAULT_AUTHENTICATION_CLASSES]
@@ -34,7 +32,7 @@ class DrfAuthMiddleware(AuthMiddleware):
         else:
             user = await _get_authenticated_user(scope)
 
-        if not user or not isinstance(user, User):
+        if not user or not isinstance(user, get_user_model()):
             logger.error("Websocket connection does not provide valid authentication")
             denier = WebsocketDenier()
             return await denier(scope, receive, send)

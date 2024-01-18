@@ -6,8 +6,6 @@ from django.db import IntegrityError
 
 from test_app.models import Organization, Team
 
-User = get_user_model()
-
 
 @pytest.mark.django_db
 def test_organization_model():
@@ -30,7 +28,7 @@ def test_organization_model_unique():
 
 @pytest.mark.django_db
 def test_organization_model_users():
-    user = User.objects.create(username="alice")
+    user = get_user_model().objects.create(username="alice")
     org = Organization.objects.create(name="acme")
     org.users.add(user)
 
