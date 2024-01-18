@@ -23,9 +23,3 @@ class AbstractOrganization(UniqueNamedCommonModel):
         related_name="organizations",
         help_text=_("The list of users in this organization."),
     )
-
-    teams = models.ManyToManyField(
-        settings.ANSIBLE_BASE_TEAM_MODEL,
-        related_name="organizations",
-        help_text=_("The list of teams in this organization."),
-    )

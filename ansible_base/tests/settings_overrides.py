@@ -105,6 +105,7 @@ TEMPLATES = [
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 ANSIBLE_BASE_TEAM_MODEL = 'test_app.Team'
+ANSIBLE_BASE_ORGANIZATION_MODEL = 'test_app.Organization'
 
 STATIC_URL = '/static/'
 

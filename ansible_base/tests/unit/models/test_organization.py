@@ -37,8 +37,7 @@ def test_organization_model_users():
 
 @pytest.mark.django_db
 def test_organization_model_teams():
-    team = Team.objects.create(name="red")
     org = Organization.objects.create(name="acme")
-    org.teams.add(team)
+    team = Team.objects.create(name="red", organization=org)
 
-    assert list(team.organizations.all()) == [org]
+    assert list(org.teams.all()) == [team]
