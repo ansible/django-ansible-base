@@ -4,9 +4,16 @@
 #     Add a new requirements/requirements_<section>.in /even if its an empty file/
 #
 
-# These settings will cause errors if not set, even if abstract models referencing them are not used
-ANSIBLE_BASE_TEAM_MODEL = 'auth.Group'
-ANSIBLE_BASE_ORGANIZATION_MODEL = 'auth.Group'
+# The org and team abstract models cause errors if not set, even if not used
+try:
+    ANSIBLE_BASE_TEAM_MODEL
+except NameError:
+    ANSIBLE_BASE_TEAM_MODEL = 'auth.Group'
+
+try:
+    ANSIBLE_BASE_ORGANIZATION_MODEL
+except NameError:
+    ANSIBLE_BASE_ORGANIZATION_MODEL = 'auth.Group'
 
 
 if ANSIBLE_BASE_FEATURES.get('AUTHENTICATION', False):  # noqa: F821
