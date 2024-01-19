@@ -27,7 +27,8 @@ LOGGING = {
     },
 }
 for logger in LOGGING["loggers"]:  # noqa: F405
-    LOGGING["loggers"][logger]["level"] = "ERROR"  # noqa: F405
+    # We want to ensure that all loggers are at DEBUG because we have tests which validate log messages
+    LOGGING["loggers"][logger]["level"] = "DEBUG"  # noqa: F405
 
 INSTALLED_APPS = [
     'django.contrib.admin',
