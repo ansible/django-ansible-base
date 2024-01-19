@@ -23,7 +23,7 @@ logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.ld
 user_search_string = '%(user)s'
 
 
-def validate_ldap_dn(value: str, with_user: bool = False, required: bool = True):
+def validate_ldap_dn(value: str, with_user: bool = False, required: bool = True) -> None:
     if not value and not required:
         return
 

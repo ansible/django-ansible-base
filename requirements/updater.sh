@@ -32,7 +32,7 @@ generate_requirements() {
 main() {
   base_dir=$(pwd)
 
-  _tmp=$(${PYTHON} -c "import tempfile; print(tempfile.mkdtemp(suffix='.aap-gw-requirements', dir='/tmp'))")
+  _tmp=$(${PYTHON} -c "import tempfile; print(tempfile.mkdtemp(suffix='.ansible_base-requirements', dir='/tmp'))")
 
   trap _cleanup INT TERM EXIT
 

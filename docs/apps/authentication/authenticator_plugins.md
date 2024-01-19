@@ -45,7 +45,7 @@ Here is an example of a serializer field from the SAML authenticator:
     SP_ENTITY_ID = CharField(
         allow_null=False,
         max_length=512,
-        default="aap",
+        default="saml_entity",
         help_text=_(
             "The application-defined unique identifier used as the audience of the SAML service provider (SP) configuration. This is usually the URL for the"
             " service."

@@ -29,8 +29,8 @@ INSTALLED_APPS = [
 Additionally, we create a `SPECTACULAR_SETTINGS` entry if its not already present:
 ```
 SPECTACULAR_SETTINGS = {
-    'TITLE': 'AAP Open API',
-    'DESCRIPTION': 'AAP Open API',
+    'TITLE': 'Open API',
+    'DESCRIPTION': 'Open API',
     'VERSION': 'v1',
     'SCHEMA_PATH_PREFIX': '/api/v1/',
 }
