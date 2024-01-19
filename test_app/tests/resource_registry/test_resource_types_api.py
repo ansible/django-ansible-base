@@ -8,7 +8,7 @@ def test_resource_type_list(admin_api_client):
     url = reverse("resourcetype-list")
     response = admin_api_client.get(url)
     assert response.status_code == 200
-    assert set([x["name"] for x in response.data]) == set(["shared.user", "shared.team", "aap.authenticator"])
+    assert set([x["name"] for x in response.data['results']]) == set(["shared.user", "shared.team", "aap.authenticator"])
 
 
 def test_resource_type_detail(admin_api_client):
