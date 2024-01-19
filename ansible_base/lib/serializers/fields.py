@@ -25,8 +25,6 @@ class CharField(UILabelMixIn, serializers.CharField):
 
 class ChoiceField(UILabelMixIn, serializers.ChoiceField):
     def __init__(self, **kwargs):
-        # TODO: SEE IF THIS WORKS FOR KEITH on the authenticator_plugin page see if its now shows options for the choice fields.
-        self.ui_field_label = kwargs.pop('ui_field_label', 'Undefined')
         super().__init__(**kwargs)
 
 
