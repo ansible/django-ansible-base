@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'ansible_base.authentication',
     'ansible_base.rest_filters',
     'ansible_base.jwt_consumer',
+    'ansible_base.resource_registry',
     'test_app',
 ]
 
@@ -117,3 +118,5 @@ from ansible_base.lib import dynamic_config  # noqa: E402
 
 settings_file = os.path.join(os.path.dirname(dynamic_config.__file__), 'dynamic_settings.py')
 include(settings_file)
+
+ANSIBLE_BASE_RESOURCE_CONFIG_MODULE = "test_app.resource_api"
