@@ -1,4 +1,4 @@
-from ansible_base.serializers.common import NamedCommonModelSerializer
+from ansible_base.lib.serializers.common import NamedCommonModelSerializer
 from test_app.models import EncryptionModel
 
 
