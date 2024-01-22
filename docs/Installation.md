@@ -29,6 +29,19 @@ INSTALLED_APPS = [
 ]
 ```
 
+The final component of the import path (what is listed in INSTALLED_APPS) is not the
+same as the app label which is what is sometimes referenced programmatically
+using `from django.apps import apps`.
+
+The pip optional dependencies as the same as the app label without "dab_".
+See the following table for a mapping.
+
+| App path                       | Django app label      | Pip optional dependency |
+|--------------------------------|-----------------------|-------------------------|
+| ansible_base.authentication    | dab_authentication    | authentication          |
+| ansible_base.api_documentation | dab_api_documentation | api_documentation       |
+| ansible_base.rest_filters      | dab_rest_filters      | rest_filters            |
+
 ## settings.py
 
 Please read the various sections of this documentation for what settings django-ansible-base requires to function.
