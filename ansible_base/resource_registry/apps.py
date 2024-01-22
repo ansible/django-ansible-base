@@ -8,8 +8,28 @@ import ansible_base.lib.checks  # noqa: F401 - register checks
 logger = logging.getLogger('ansible_base.resource_registry.apps')
 
 
-def initialize_resources(sender, apps, **kwargs):
+def initialize_resources(sender, **kwargs):
     from ansible_base.resource_registry.registry import get_registry
+
+    # There isn't any evidence of this in the documentation, but it appears as though
+    # Django doesn't always send the "apps" arg when it dispatches the post migrate signal
+    # (https://github.com/django/django/blob/stable/4.2.x/django/core/management/sql.py#L52)
+    # This seems to be the case when it is called via `django-admin flush` as well as in
+    # tests that use the @pytest.mark.django_db(transaction=True) decorator.
+    #
+    # Since the documentation doesn't provide any clues for what do to here, we've opted
+    # to rescue from scenarios where "apps" is missing by just importing the "apps" module
+    # directly (which is not advised to do by the django documentation for post migrate signals
+    # https://docs.djangoproject.com/en/5.0/ref/signals/#post-migrate).
+    #
+    # While handling this for tests doesn't matter, ignoring this function when
+    # `django-admin flush` is called seems like a bad idea, since that will prevent the
+    # resource types from being initialized in the database, so a direct import appears to be
+    # better than doing nothing.
+
+    apps = kwargs.get("apps")
+    if apps is None:
+        from django.apps import apps
 
     Resource = apps.get_model("dab_resource_registry", "Resource")
     ResourceType = apps.get_model("dab_resource_registry", "ResourceType")
