@@ -1,8 +1,7 @@
 from itertools import chain
 
-from inflection import underscore
-
 from django.contrib.auth import get_user_model
+from inflection import underscore
 
 
 def get_all_field_names(model):
