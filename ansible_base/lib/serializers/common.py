@@ -11,7 +11,6 @@ logger = logging.getLogger('ansible_base.lib.serializers.common')
 
 
 class CommonModelSerializer(serializers.ModelSerializer):
-    show_capabilities = ['edit', 'delete']
     url = serializers.SerializerMethodField()
     related = serializers.SerializerMethodField('_get_related')
     summary_fields = serializers.SerializerMethodField('_get_summary_fields')

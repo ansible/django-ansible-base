@@ -1,4 +1,3 @@
-import logging
 from collections import OrderedDict
 
 from rest_framework.serializers import ChoiceField, ValidationError
@@ -7,8 +6,6 @@ from ansible_base.authentication.authenticator_plugins.utils import get_authenti
 from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.serializers.common import NamedCommonModelSerializer
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
-
-logger = logging.getLogger('ansible_base.authentication.serializers.authenticator')
 
 
 class AuthenticatorSerializer(NamedCommonModelSerializer):
