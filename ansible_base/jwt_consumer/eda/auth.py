@@ -1,7 +1,7 @@
 import logging
 
-from ansible_base.lib.jwt_auth.common.auth import JWTAuthentication
-from ansible_base.lib.jwt_auth.common.exceptions import InvalidService
+from ansible_base.jwt_consumer.common.auth import JWTAuthentication
+from ansible_base.jwt_consumer.common.exceptions import InvalidService
 
 try:
     from aap_eda.core import models
@@ -9,7 +9,7 @@ try:
 except ImportError:
     raise InvalidService("eda")
 
-logger = logging.getLogger("ansible_base.lib.jwt_auth.eda.auth")
+logger = logging.getLogger("ansible_base.jwt_consumer.eda.auth")
 
 
 class EDAJWTAuthentication(JWTAuthentication):

@@ -1,5 +1,5 @@
-from ansible_base.lib.jwt_auth.common.auth import JWTAuthentication
-from ansible_base.lib.jwt_auth.common.exceptions import InvalidService
+from ansible_base.jwt_consumer.common.auth import JWTAuthentication
+from ansible_base.jwt_consumer.common.exceptions import InvalidService
 
 
 class HubJWTAuth(JWTAuthentication):

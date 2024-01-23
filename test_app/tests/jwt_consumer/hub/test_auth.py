@@ -3,8 +3,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ansible_base.lib.jwt_auth.common.exceptions import InvalidService
-from ansible_base.lib.jwt_auth.hub.auth import HubJWTAuth
+from ansible_base.jwt_consumer.common.exceptions import InvalidService
+from ansible_base.jwt_consumer.hub.auth import HubJWTAuth
 
 
 def test_hub_import_error(user):

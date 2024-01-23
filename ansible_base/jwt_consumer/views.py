@@ -3,13 +3,14 @@ import logging
 from os.path import dirname, join
 from urllib.parse import urlparse, urlunsplit
 
-from django.conf import settings
 from django.http import HttpResponse, HttpResponseNotFound
 from django.template import Context, Template
 from django.utils.translation import gettext_lazy as _
 from rest_framework import exceptions, permissions, views
 
-logger = logging.getLogger('ansible_base.lib.jwt_auth.common.views')
+from ansible_base.lib.utils.settings import get_setting
+
+logger = logging.getLogger('ansible_base.jwt_consumer.views')
 
 
 class PlatformUIRedirectView(views.APIView):
@@ -21,8 +22,8 @@ class PlatformUIRedirectView(views.APIView):
     name = _('Platform UI Redirect')
 
     def finalize_response(self, request, response, *args, **kwargs):
-        url = getattr(settings, "ANSIBLE_BASE_JWT_REDIRECT_URI", getattr(settings, "ANSIBLE_BASE_JWT_KEY", None))
-        service_type = getattr(settings, "ANSIBLE_BASE_JWT_REDIRECT_TYPE", "unknown")
+        url = get_setting("ANSIBLE_BASE_JWT_REDIRECT_URI", get_setting("ANSIBLE_BASE_JWT_KEY", None))
+        service_type = get_setting("ANSIBLE_BASE_JWT_REDIRECT_TYPE", "unknown")
         if not url:
             return HttpResponseNotFound()
 
