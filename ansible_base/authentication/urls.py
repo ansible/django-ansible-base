@@ -3,9 +3,12 @@ import logging
 from django.urls import include, path, re_path
 
 from ansible_base.authentication import views
+from ansible_base.authentication.apps import AuthenticationConfig
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugins, get_authenticator_urls
 
 logger = logging.getLogger('ansible_base.authentication.urls')
+
+app_name = AuthenticationConfig.label
 
 list_actions = {'get': 'list', 'post': 'create'}
 detail_actions = {'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}
