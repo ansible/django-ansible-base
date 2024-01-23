@@ -1,9 +1,7 @@
 from rest_framework.serializers import ModelSerializer
 
 from ansible_base.lib.serializers.common import NamedCommonModelSerializer
-
-from test_app.models import User
-from test_app.models import EncryptionModel
+from test_app.models import EncryptionModel, User
 
 
 class EncryptionTestSerializer(NamedCommonModelSerializer):
