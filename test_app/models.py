@@ -1,5 +1,5 @@
-from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.db import models
 
 from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam
 from ansible_base.lib.abstract_models.common import NamedCommonModel

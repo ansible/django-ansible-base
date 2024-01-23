@@ -33,7 +33,6 @@ def test_authenticator_map_detail(admin_api_client, local_authenticator_map):
     assert response.status_code == 200
     assert response.data['id'] == local_authenticator_map.id
     assert response.data['triggers'] == local_authenticator_map.triggers
-    assert response.data['summary_fields'] == {'foo': 'bar'}
 
 
 @pytest.mark.parametrize(

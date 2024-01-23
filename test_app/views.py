@@ -1,7 +1,6 @@
-from rest_framework import serializers
-from rest_framework import permissions
-from rest_framework.viewsets import ModelViewSet
+from rest_framework import permissions, serializers
 from rest_framework.routers import SimpleRouter
+from rest_framework.viewsets import ModelViewSet
 
 from test_app.models import User
 

@@ -1,11 +1,9 @@
 import pytest
+from crum import impersonate
 
 from ansible_base.authentication.models import AuthenticatorMap
 from ansible_base.lib.serializers.common import CommonModelSerializer
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
-
-from crum import impersonate
-
 from test_app.models import EncryptionModel
 from test_app.serializers import EncryptionTestSerializer
 
@@ -98,5 +96,5 @@ def test_summary_of_model_with_created_user(user, ldap_authenticator):
     assert serializer._get_related(model) == {
         'authenticator': f'/api/v1/authenticators/{ldap_authenticator.pk}/',
         'created_by': f'/api/v1/users/{user.pk}/',
-        'modified_by': f'/api/v1/users/{user.pk}/'
+        'modified_by': f'/api/v1/users/{user.pk}/',
     }
