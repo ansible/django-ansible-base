@@ -1,14 +1,9 @@
-from rest_framework import permissions, serializers
+from rest_framework import permissions
 from rest_framework.routers import SimpleRouter
 from rest_framework.viewsets import ModelViewSet
 
 from test_app.models import User
-
-
-class UserSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = '__all__'
+from test_app.serializers import UserSerializer
 
 
 class UserViewSet(ModelViewSet):

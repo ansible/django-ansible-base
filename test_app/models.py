@@ -20,8 +20,7 @@ class Organization(AbstractOrganization):
 
 
 class User(AbstractUser):
-    def summary_fields(self):
-        return {'username': self.username}
+    pass
 
 
 class Team(AbstractTeam):

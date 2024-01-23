@@ -90,8 +90,9 @@ def test_summary_of_model_with_created_user(user, ldap_authenticator):
     serializer = CommonModelSerializer()
 
     summary_fields = serializer._get_summary_fields(model)
-    assert summary_fields['created_by'] == {'username': user.username}
-    assert summary_fields['modified_by'] == {'username': user.username}
+    expected_summary = {'username': user.username, 'first_name': user.first_name, 'last_name': user.last_name, 'id': user.id}
+    assert summary_fields['created_by'] == expected_summary
+    assert summary_fields['modified_by'] == expected_summary
 
     assert serializer._get_related(model) == {
         'authenticator': f'/api/v1/authenticators/{ldap_authenticator.pk}/',
