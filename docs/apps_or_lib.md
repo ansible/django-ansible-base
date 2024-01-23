@@ -86,3 +86,10 @@ Finally, if your application will add endpoints to the API be sure to add `urls.
  * `root_urls`: These are intended to be mounted on /. An example of this is OAuths /o endpoint.
 
 These will all be loaded through the dynamic url loader.
+
+In your urls.py be sure to include lines like:
+```
+from ansible_base.<app_name>.apps import <app class>
+app_name = <app class>.label
+```
+
