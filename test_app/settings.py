@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'ansible_base.api_documentation',
     'ansible_base.authentication',
     'ansible_base.rest_filters',
+    'ansible_base.jwt_consumer',
     'test_app',
 ]
 

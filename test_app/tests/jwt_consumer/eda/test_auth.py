@@ -6,15 +6,15 @@ import pytest
 
 
 def test_eda_import_error():
-    from ansible_base.lib.jwt_auth.common.exceptions import InvalidService
+    from ansible_base.jwt_consumer.common.exceptions import InvalidService
 
     with pytest.raises(InvalidService):
-        import ansible_base.lib.jwt_auth.eda.auth  # noqa: 401
+        import ansible_base.jwt_consumer.eda.auth  # noqa: 401
 
 
 def test_eda_jwt_auth_scheme():
     sys.modules['aap_eda.core'] = MagicMock()
-    from ansible_base.lib.jwt_auth.eda.auth import EDAJWTAuthScheme  # noqa: E402
+    from ansible_base.jwt_consumer.eda.auth import EDAJWTAuthScheme  # noqa: E402
 
     scheme = EDAJWTAuthScheme(None)
     response = scheme.get_security_definition(None)
@@ -33,8 +33,8 @@ def filter_function(name):
 @pytest.fixture
 def mocked_authenticator():
     sys.modules['aap_eda.core'] = MagicMock()
-    from ansible_base.lib.jwt_auth.eda.auth import EDAJWTAuthentication  # noqa: E402
-    from ansible_base.lib.jwt_auth.eda.auth import models
+    from ansible_base.jwt_consumer.eda.auth import EDAJWTAuthentication  # noqa: E402
+    from ansible_base.jwt_consumer.eda.auth import models
 
     models.Role.objects.filter = filter_function
 

@@ -1,9 +1,9 @@
 # Python
 import logging
 
-from ansible_base.lib.jwt_auth.common.auth import JWTAuthentication
+from ansible_base.jwt_consumer.common.auth import JWTAuthentication
 
-logger = logging.getLogger('ansible_base.lib.jwt_auth.awx.auth')
+logger = logging.getLogger('ansible_base.jwt_consumer.awx.auth')
 
 
 class AwxJWTAuthentication(JWTAuthentication):

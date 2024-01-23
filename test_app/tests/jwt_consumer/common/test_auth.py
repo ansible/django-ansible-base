@@ -9,7 +9,7 @@ import requests
 from django.test.utils import override_settings
 from rest_framework.exceptions import AuthenticationFailed
 
-from ansible_base.lib.jwt_auth.common.auth import JWTAuthentication, JWTCommonAuth, default_mapped_user_fields
+from ansible_base.jwt_consumer.common.auth import JWTAuthentication, JWTCommonAuth, default_mapped_user_fields
 
 
 class TestJWTCommonAuth:
@@ -95,7 +95,7 @@ class TestJWTCommonAuth:
 
     def test_get_decryption_key_file_read(self, tmp_path_factory, test_encryption_public_key):
         common_auth = JWTCommonAuth()
-        temp_dir = tmp_path_factory.mktemp("ansible_base.lib.jwt_auth.common.auth")
+        temp_dir = tmp_path_factory.mktemp("ansible_base.jwt_consumer.common.auth")
         temp_file_name = f"{temp_dir}/test.file"
         for cert_data in [test_encryption_public_key, test_encryption_public_key.replace("\n", "")]:
             with open(temp_file_name, "w") as f:
@@ -269,14 +269,14 @@ class TestJWTAuthentication:
             assert user == created_user
 
     def test_2authenticate_no_user(self, user):
-        with mock.patch('ansible_base.lib.jwt_auth.common.auth.JWTCommonAuth.parse_jwt_token') as mock_parse:
+        with mock.patch('ansible_base.jwt_consumer.common.auth.JWTCommonAuth.parse_jwt_token') as mock_parse:
             mock_parse.return_value = (None, {})
             jwt_auth = JWTAuthentication()
             created_user, _ = jwt_auth.authenticate(mock.MagicMock())
             assert created_user is None
 
     def test_process_user_data(self):
-        with mock.patch("ansible_base.lib.jwt_auth.common.auth.JWTCommonAuth.map_user_fields") as mock_inspect:
+        with mock.patch("ansible_base.jwt_consumer.common.auth.JWTCommonAuth.map_user_fields") as mock_inspect:
             jwt_auth = JWTAuthentication()
             jwt_auth.process_user_data("a", "b")
             mock_inspect.assert_called_with("a", "b")

@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, mock_open, patch
 
 from django.test import override_settings
 
-from ansible_base.lib.jwt_auth.common.views import PlatformUIRedirectView
+from ansible_base.jwt_consumer.views import PlatformUIRedirectView
 
 
 def test_view_no_redirect_uri_setting(mocked_http):

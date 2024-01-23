@@ -3,16 +3,21 @@ from urllib.parse import urljoin, urlparse
 
 import jwt
 import requests
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
-logger = logging.getLogger("ansible_base.lib.jwt_auth.common.auth")
+from ansible_base.lib.utils.settings import get_setting
+
+logger = logging.getLogger("ansible_base.jwt_consumer.common.auth")
 
 
-# These are additional fields to map aside from first_name, last_name, email, is_superuser and username
+# These fields are used to both map the user as well as to validate the JWT token
 default_mapped_user_fields = [
+    "first_name",
+    "last_name",
+    "email",
+    "is_superuser",
     "is_system_auditor",
 ]
 
@@ -29,17 +34,15 @@ class JWTCommonAuth:
             return None, None
         logger.debug(f"Received JWT auth token: {token}")
 
-        jwt_key_setting = None
-        try:
-            jwt_key_setting = settings.ANSIBLE_BASE_JWT_KEY
-        except (NameError, AttributeError):
+        jwt_key_setting = get_setting("ANSIBLE_BASE_JWT_KEY")
+        if not jwt_key_setting:
             logger.info("Failed to get the setting ANSIBLE_BASE_JWT_KEY")
             return None, None
 
         decryption_key = self.get_decryption_key(
             jwt_key_setting,
-            validate_certs=getattr(settings, "ANSIBLE_BASE_JWT_VALIDATE_CERT", True),
-            timeout=getattr(settings, "ANSIBLE_BASE_JWT_URL_TIMEOUT", 30),
+            validate_certs=get_setting("ANSIBLE_BASE_JWT_VALIDATE_CERT", True),
+            timeout=get_setting("ANSIBLE_BASE_JWT_URL_TIMEOUT", 30),
         )
         validated_body = self.validate_token(token, decryption_key)
         user_model = get_user_model()

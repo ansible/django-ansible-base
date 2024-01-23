@@ -1,6 +1,6 @@
 import logging
 
-from ansible_base.lib.jwt_auth.awx.auth import AwxJWTAuthentication
+from ansible_base.jwt_consumer.awx.auth import AwxJWTAuthentication
 
 
 def test_awx_process_permissions(user, caplog):

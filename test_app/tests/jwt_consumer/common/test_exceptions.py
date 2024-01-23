@@ -1,6 +1,6 @@
 import pytest
 
-from ansible_base.lib.jwt_auth.common import exceptions
+from ansible_base.jwt_consumer.common import exceptions
 
 
 def test_invalid_service_exception():
