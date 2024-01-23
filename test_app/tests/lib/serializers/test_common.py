@@ -3,6 +3,9 @@ import pytest
 from ansible_base.authentication.models import AuthenticatorMap
 from ansible_base.lib.serializers.common import CommonModelSerializer
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
+
+from crum import impersonate
+
 from test_app.models import EncryptionModel
 from test_app.serializers import EncryptionTestSerializer
 
@@ -76,3 +79,24 @@ def test_summary_of_model_with_summary(ldap_authenticator):
     )
     serializer = CommonModelSerializer()
     assert serializer._get_summary_fields(model) == {'authenticator': {'id': ldap_authenticator.id, 'name': ldap_authenticator.name}}
+
+
+@pytest.mark.django_db
+def test_summary_of_model_with_created_user(user, ldap_authenticator):
+    with impersonate(user):
+        model = AuthenticatorMap.objects.create(
+            authenticator=ldap_authenticator,
+            map_type='always',
+        )
+    assert model.created_by == user
+    serializer = CommonModelSerializer()
+
+    summary_fields = serializer._get_summary_fields(model)
+    assert summary_fields['created_by'] == {'username': user.username}
+    assert summary_fields['modified_by'] == {'username': user.username}
+
+    assert serializer._get_related(model) == {
+        'authenticator': f'/api/v1/authenticators/{ldap_authenticator.pk}/',
+        'created_by': f'/api/v1/users/{user.pk}/',
+        'modified_by': f'/api/v1/users/{user.pk}/'
+    }
