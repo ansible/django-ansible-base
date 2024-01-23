@@ -4,9 +4,6 @@ from django.conf import settings
 
 logger = logging.getLogger('ansible_base.lib.dynamic_config.dynamic_urls')
 
-list_actions = {'get': 'list', 'post': 'create'}
-detail_actions = {'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}
-view_only_list = {'get': 'list'}
 
 url_types = ['api_version_urls', 'root_urls', 'api_urls']
 for url_type in url_types:

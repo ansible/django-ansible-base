@@ -23,7 +23,7 @@ logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.ld
 user_search_string = '%(user)s'
 
 
-def validate_ldap_dn(value: str, with_user: bool = False, required: bool = True) -> bool:
+def validate_ldap_dn(value: str, with_user: bool = False, required: bool = True):
     if not value and not required:
         return
 
@@ -143,7 +143,7 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
     documentation_url = "https://django-auth-ldap.readthedocs.io/en/latest/"
 
     SERVER_URI = URLListField(
-        help_text=_('A list of URIs to connect to LDAP server, such as "ldap://ldap.example.com:389" ' '(non-SSL) or "ldaps://ldap.example.com:636" (SSL).'),
+        help_text=_('A list of URIs to connect to LDAP server, such as "ldap://ldap.example.com:389" (non-SSL) or "ldaps://ldap.example.com:636" (SSL).'),
         allow_null=False,
         required=True,
         schemes=['ldap', 'ldaps'],
