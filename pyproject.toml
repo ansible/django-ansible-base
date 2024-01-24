@@ -30,7 +30,7 @@ classifiers = [
 dynamic = ["version", "dependencies", "optional-dependencies"]
 
 [tool.setuptools.packages.find]
-include = ["test_app*", "ansible_base*"]
+include = ["ansible_base*"]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements/requirements.in"]}
