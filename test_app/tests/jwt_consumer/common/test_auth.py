@@ -27,7 +27,7 @@ class TestJWTCommonAuth:
             assert "X-DAB-JW-TOKEN header not set for JWT authentication" in caplog.text
 
     @pytest.mark.django_db
-    @override_settings(INSTALLED_APPS=['django.contrib.auth', 'django.contrib.contenttypes'])
+    @override_settings(INSTALLED_APPS=['django.contrib.auth', 'django.contrib.contenttypes', 'test_app'])
     def test_parse_jwt_happy_path(self, mocked_http, test_encryption_public_key, shut_up_logging, jwt_token):
         with override_settings(ANSIBLE_BASE_JWT_KEY=test_encryption_public_key):
             my_auth = JWTCommonAuth()
