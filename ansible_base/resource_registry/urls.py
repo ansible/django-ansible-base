@@ -15,5 +15,5 @@ service_router.register(r'resource-types', views.ResourceTypeViewSet)
 service = [path('metadata/', views.ServiceMetadataView.as_view(), name="service-metadata"), path('', include(service_router.urls))]
 
 urlpatterns = [
-    path('service/', include(service)),
+    path('service-index/', include(service)),
 ]

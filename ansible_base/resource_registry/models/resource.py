@@ -2,7 +2,9 @@ import uuid
 
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
-from django.db import models
+from django.db import models, transaction
+from django.utils.translation import gettext_lazy as _
+from rest_framework.serializers import ValidationError
 
 from .service_id import service_id
 
@@ -26,6 +28,10 @@ class ResourceType(models.Model):
     @property
     def serializer_class(self):
         return self.get_resource_config().managed_serializer
+
+    @property
+    def can_be_managed(self):
+        return self.externally_managed and self.serializer_class
 
     def get_resource_config(self):
         return self.resource_registry.get_config_for_model(model=self.content_type.model_class())
@@ -106,3 +112,51 @@ class Resource(models.Model):
         Get the Resource instances for another model instance.
         """
         return cls.objects.get(object_id=obj.pk, content_type=ContentType.objects.get_for_model(obj).pk)
+
+    def delete_resource(self):
+        if not self.content_type.resource_type.can_be_managed:
+            raise ValidationError({"resource_type": _(f"Resource type: {self.content_type.resource_type.name} cannot be managed by Resources.")})
+
+        with transaction.atomic():
+            self.content_object.delete()
+            self.delete()
+
+    @classmethod
+    def create_resource(cls, resource_type: ResourceType, resource_data: dict, ansible_id: str = None):
+        if not resource_type.can_be_managed:
+            raise ValidationError({"resource_type": _(f"Resource type: {resource_type.name} cannot be managed by Resources.")})
+        c_type = resource_type.content_type
+        serializer = resource_type.serializer_class(data=resource_data)
+        serializer.is_valid(raise_exception=True)
+        resource_data = serializer.validated_data
+
+        with transaction.atomic():
+            content_object = c_type.model_class().objects.create(**resource_data)
+            content_object.save()
+
+            resource = cls.objects.get(object_id=content_object.pk, content_type=c_type)
+
+            if ansible_id:
+                resource.ansible_id = ansible_id
+                resource.save()
+
+            return resource
+
+    def update_resource(self, resource_data: dict, ansible_id=None, partial=False):
+        resource_type = self.content_type.resource_type
+
+        if not resource_type.can_be_managed:
+            raise ValidationError({"resource_type": _(f"Resource type: {resource_type.name} cannot be managed by Resources.")})
+
+        serializer = resource_type.serializer_class(data=resource_data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        resource_data = serializer.validated_data
+
+        with transaction.atomic():
+            for k, val in resource_data.items():
+                setattr(self.content_object, k, val)
+                self.content_object.save()
+
+            if ansible_id:
+                self.ansible_id = ansible_id
+                self.save()

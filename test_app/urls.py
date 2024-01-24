@@ -13,5 +13,5 @@ urlpatterns = [
     path('api/v1/', include(user_router.urls)),
     # Admin application
     re_path(r"^admin/", admin.site.urls, name="admin"),
-    path('api/', include(resource_api_urls)),
+    path('api/v1/', include(resource_api_urls)),
 ]

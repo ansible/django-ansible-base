@@ -11,7 +11,7 @@ class APIConfig(ServiceAPIConfig):
 
 
 RESOURCE_LIST = (
-    ResourceConfig(get_user_model(), shared_resource=SharedResource(serializer=UserType, is_provider=True), name_field="username"),
+    ResourceConfig(get_user_model(), shared_resource=SharedResource(serializer=UserType, is_provider=False), name_field="username"),
     ResourceConfig(
         Group,
         shared_resource=SharedResource(serializer=TeamType, is_provider=True),

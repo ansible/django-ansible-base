@@ -1,4 +1,3 @@
-from django.db import transaction
 from django.http import HttpResponseNotFound
 from django.shortcuts import get_object_or_404, redirect
 from rest_framework import permissions
@@ -9,7 +8,7 @@ from rest_framework.viewsets import GenericViewSet, mixins
 
 from ansible_base.resource_registry.models import Resource, ResourceType, service_id
 from ansible_base.resource_registry.registry import get_registry
-from ansible_base.resource_registry.serializers import ResourceSerializer, ResourceTypeSerializer, get_resource_detail_view
+from ansible_base.resource_registry.serializers import ResourceListSerializer, ResourceSerializer, ResourceTypeSerializer, get_resource_detail_view
 
 
 class ResourceViewSet(
@@ -24,10 +23,16 @@ class ResourceViewSet(
     Index of all the resources in the system.
     """
 
-    queryset = Resource.objects.select_related("content_type__resource_type").prefetch_related("content_object").all()
+    queryset = Resource.objects.select_related("content_type__resource_type").all()
     serializer_class = ResourceSerializer
     permission_classes = [permissions.IsAdminUser]
     lookup_field = "ansible_id"
+
+    def get_serializer_class(self):
+        if self.action == "list":
+            return ResourceListSerializer
+
+        return super().get_serializer_class()
 
     def get_object(self):
         resource_id = self.kwargs[self.lookup_field]
@@ -47,10 +52,8 @@ class ResourceViewSet(
 
         return HttpResponseNotFound()
 
-    @transaction.atomic
     def perform_destroy(self, instance):
-        instance.content_object.delete()
-        instance.delete()
+        instance.delete_resource()
 
 
 class ResourceTypeViewSet(

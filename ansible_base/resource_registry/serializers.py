@@ -1,6 +1,5 @@
 import logging
 
-from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from rest_framework.reverse import reverse_lazy
@@ -75,53 +74,23 @@ class ResourceSerializer(serializers.ModelSerializer):
     def get_has_serializer(self, obj):
         return bool(obj.content_type.resource_type.get_resource_config().managed_serializer)
 
-    def get_resource_data(self, resource_data, serializer):
-        resource_data = serializer(data=resource_data, partial=self.partial)
-        resource_data.is_valid(raise_exception=True)
-        return resource_data.validated_data
-
     # update ansible ID
     def update(self, instance, validated_data):
-        if serializer := instance.content_type.resource_type.serializer_class:
-            with transaction.atomic():
-                resource = instance.content_object
-                if resource_data := validated_data.get("resource_data"):
-                    resource_data = self.get_resource_data(resource_data, serializer)
-                    for k, val in resource_data.items():
-                        setattr(resource, k, val)
-                    resource.save()
-
-                if ansible_id := validated_data.get("ansible_id"):
-                    instance.ansible_id = ansible_id
-                    instance.save()
-
-            return instance
-
-        raise serializers.ValidationError(
-            {"resource_type": _(f"Resource type: {instance.content_type.resource_type.type_name} cannot be managed by this API.")}
-        )
+        instance.update_resource(validated_data.get("resource_data", {}), ansible_id=validated_data.get("ansible_id"), partial=self.partial)
+        return instance
 
     # allow setting ansible ID at create time
     def create(self, validated_data):
         try:
             r_type = ResourceType.objects.get(name=validated_data["resource_type"])
-            if not r_type.serializer_class:
-                raise serializers.ValidationError({"resource_type": _(f"Resource type: {validated_data['resource_type']} cannot be managed by this API.")})
-
-            c_type = r_type.content_type
-            resource_data = self.get_resource_data(validated_data["resource_data"], r_type.serializer_class)
-
-            with transaction.atomic():
-                resource = c_type.model_class().objects.create(**resource_data)
-                resource.save()
-
-                if ansible_id := validated_data.get("ansible_id"):
-                    Resource.objects.update_or_create(object_id=resource.pk, content_type=c_type, defaults={"ansible_id": ansible_id})
-
-            return Resource.objects.get(object_id=resource.pk, content_type=c_type)
+            return Resource.create_resource(r_type, validated_data["resource_data"], ansible_id=validated_data.get("ansible_id"))
 
         except ResourceType.DoesNotExist:
             raise serializers.ValidationError({"resource_type": _(f"Resource type: {validated_data['resource_type']} does not exist.")})
+
+
+class ResourceListSerializer(ResourceSerializer):
+    resource_data = ResourceDataField(source="*", write_only=True)
 
 
 class ResourceTypeSerializer(serializers.ModelSerializer):

@@ -5,6 +5,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 
 from ansible_base.resource_registry.models import Resource
+from django.contrib.auth.models import Group
 
 
 def test_resources_list(admin_api_client):
@@ -37,6 +38,21 @@ def test_resources_delete_api(admin_api_client, django_user_model):
 
     assert not Resource.objects.filter(object_id=user.pk, content_type=c_type.pk).exists()
     assert not django_user_model.objects.filter(pk=user.pk).exists()
+
+
+def test_resources_api_invalid_delete(admin_api_client):
+    """Test that resources can be correctly deleted via the API."""
+
+    # Since groups are not set to be managed externally, we can't delete them with this API
+    group = Group.objects.create(name="super group")
+    c_type = ContentType.objects.get_for_model(group)
+    assert Resource.objects.filter(object_id=group.pk, content_type=c_type.pk).exists()
+
+    ansible_id = Resource.objects.get(object_id=group.pk, content_type=c_type.pk).ansible_id
+    resp = admin_api_client.delete(reverse("resource-detail", kwargs={"ansible_id": ansible_id}))
+
+    assert resp.status_code == 400
+    assert "resource_type" in resp.data
 
 
 def test_resource_update(
@@ -119,8 +135,6 @@ def test_resource_partial_update(admin_api_client, user):
 @pytest.mark.parametrize(
     'resource',
     [
-        {"ansible_id": "0433e6b7:a0057c59-776d-48f8-97f1-8f8033e68d91", "resource_type": "shared.team", "resource_data": {"name": "foo"}},
-        {"resource_type": "shared.team", "resource_data": {"name": "My Super Awesome Team"}},
         {"ansible_id": "0433e6b7:a0057c59-776d-48f8-97f1-8f8033e68d93", "resource_type": "shared.user", "resource_data": {"username": "foo"}},
         {
             "ansible_id": "0433e6b7:a0057c59-776d-48f8-97f1-8f8033e68d93",
@@ -165,7 +179,7 @@ def test_resources_api_crd(admin_api_client, resource):
 @pytest.mark.parametrize(
     'resource',
     [
-        {"data": {"ansible_id": "bogus", "resource_type": "shared.team", "resource_data": {"name": "foo"}}, "field_name": "ansible_id"},
+        {"data": {"ansible_id": "bogus", "resource_type": "shared.user", "resource_data": {"name": "foo"}}, "field_name": "ansible_id"},
         {
             "data": {"ansible_id": "a0057c59-776d-48f8-97f1-8f8033e68d91", "resource_type": "shared.team", "resource_data": {"name": "foo"}},
             "field_name": "ansible_id",
@@ -179,7 +193,8 @@ def test_resources_api_crd(admin_api_client, resource):
             "data": {"ansible_id": "????????:a0057c59-776d-48f8-97f1-8f8033e68d91", "resource_type": "shared.team", "resource_data": {"name": "foo"}},
             "field_name": "ansible_id",
         },
-        {"data": {"resource_type": "shared.team", "resource_data": {}}, "field_name": "name"},
+        {"data": {"resource_type": "shared.team", "resource_data": {"name": "foo"}}, "field_name": "resource_type"},
+        {"data": {"resource_type": "shared.user", "resource_data": {}}, "field_name": "username"},
         {"data": {"resource_type": "aap.authenticator", "resource_data": {}}, "field_name": "resource_type"},
         {"data": {"resource_type": "fake.fake", "resource_data": {}}, "field_name": "resource_type"},
         {"data": {"resource_type": "shared.user", "resource_data": {"last_name": "stark"}}, "field_name": "username"},
