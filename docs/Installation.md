@@ -13,6 +13,7 @@ As of this writing there are three django application features:
   * api_documentation
   * authentication
   * rest_filters
+  * resource_registry
 
 So if you only wanted api_docs and filtering you could install the library like:
 ```
@@ -41,6 +42,7 @@ See the following table for a mapping.
 | ansible_base.authentication    | dab_authentication    | authentication          |
 | ansible_base.api_documentation | dab_api_documentation | api_documentation       |
 | ansible_base.rest_filters      | dab_rest_filters      | rest_filters            |
+| ansible_base.resource_registry | dab_resource_registry | resource_registry       |
 
 ## settings.py
 

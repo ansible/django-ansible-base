@@ -1,11 +1,11 @@
 import uuid
 
 import pytest
+from django.contrib.auth.models import Group
 from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 
 from ansible_base.resource_registry.models import Resource
-from django.contrib.auth.models import Group
 
 
 def test_resources_list(admin_api_client):
