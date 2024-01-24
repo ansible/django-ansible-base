@@ -1,6 +1,3 @@
-[project.urls]
-Repository = "https://github.com/ansible/django-ansible-base"
-
 [project]
 name = "django-ansible-base"
 authors = [
@@ -29,8 +26,11 @@ classifiers = [
 ]
 dynamic = ["version", "dependencies", "optional-dependencies"]
 
-[tool.setuptools.packages.find]
-include = ["test_app*", "ansible_base*"]
+[project.urls]
+Repository = "https://github.com/ansible/django-ansible-base"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements/requirements.in"]}
@@ -62,13 +62,13 @@ force-exclude = '''
 [tool.isort]
 profile = "black"
 line_length = 160
-extend_skip = [ "ansible_base/authentication/migrations", "test_app/migrations" ]
+extend_skip = [ "src/ansible_base/authentication/migrations", "test_app/migrations" ]
 
 
 [tool.flake8]
 max-line-length = 160
 extend-ignore = [ "E203" ]
-exclude = [ 'ansible_base/authentication/migrations/*', 'test_app/migrations/*', '.tox', 'build']
+exclude = [ 'src/ansible_base/authentication/migrations/*', 'test_app/migrations/*', '.tox', 'build']
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "test_app.settings"
@@ -90,13 +90,15 @@ legacy_tox_ini = """
 
     [testenv]
     deps =
-        -r{toxinidir}/requirements/requirements_all.txt
-        -r{toxinidir}/requirements/requirements_dev.txt
+        -r {toxinidir}/requirements/requirements_all.txt
+        -r {toxinidir}/requirements/requirements_dev.txt
+        -e .
     commands = pytest -n auto --cov=. --cov-report=xml:coverage.xml --cov-report=html --cov-report=json --cov-branch {env:ANSIBLE_BASE_TEST_DIRS:test_app/tests} {posargs}
 
     [testenv:check]
     deps =
-         -r{toxinidir}/requirements/requirements_all.txt
+         -r {toxinidir}/requirements/requirements_all.txt
+         -e .
          psycopg[binary]
     commands = python3 manage.py check
 
