@@ -340,28 +340,36 @@ def test_encryption_public_key():
 
 
 @pytest.fixture
-def jwt_token(test_encryption_private_key):
-    class Token:
-        def __init__(self):
-            expiration_date = datetime.datetime.now() + datetime.timedelta(minutes=10)
-            self.unencrypted_token = {
-                "iss": "ansible-issuer",
-                "exp": int(expiration_date.timestamp()),
-                "aud": "ansible-services",
-                "sub": "john.westcott.iv",
-                "first_name": "john",
-                "last_name": "westcott",
-                "email": "noone@redhat.com",
-                "is_superuser": False,
-                "is_system_auditor": False,
-                "claims": {"organizations": {}, "teams": {}},
-            }
+def jwt_token_generator(test_encryption_private_key):
+    def fn(issuer, audience):
+        class Token:
+            def __init__(self):
+                expiration_date = datetime.datetime.now() + datetime.timedelta(minutes=10)
+                self.unencrypted_token = {
+                    "iss": issuer,
+                    "exp": int(expiration_date.timestamp()),
+                    "aud": audience,
+                    "sub": "john.westcott.iv",
+                    "first_name": "john",
+                    "last_name": "westcott",
+                    "email": "noone@redhat.com",
+                    "is_superuser": False,
+                    "is_system_auditor": False,
+                    "claims": {"organizations": {}, "teams": {}},
+                }
 
-        def encrypt_token(self):
-            return jwt.encode(self.unencrypted_token, test_encryption_private_key, algorithm="RS256")
+            def encrypt_token(self):
+                return jwt.encode(self.unencrypted_token, test_encryption_private_key, algorithm="RS256")
 
-    test_token = Token()
-    return test_token
+        test_token = Token()
+        return test_token
+
+    return fn
+
+
+@pytest.fixture
+def jwt_token(jwt_token_generator):
+    return jwt_token_generator("ansible-issuer", "ansible-services")
 
 
 @pytest.fixture

@@ -249,11 +249,21 @@ class TestJWTCommonAuth:
             with pytest.raises(AuthenticationFailed, match=exception_text):
                 common_auth.validate_token(None, None)
 
-    def test_validate_token_valid_token(self, jwt_token, test_encryption_public_key):
-        # Test the function
-        common_auth = JWTCommonAuth()
-        parsed_token = common_auth.validate_token(jwt_token.encrypt_token(), test_encryption_public_key)
-        assert parsed_token == jwt_token.unencrypted_token
+    @pytest.mark.parametrize(
+        "issuer,audience",
+        [
+            ('ansible-services', 'ansible-issuer'),  # default fallback if not defined
+            ('hello world', 'foo bar'),
+        ],
+    )
+    def test_validate_token_valid_token(self, jwt_token_generator, test_encryption_public_key, issuer, audience):
+        jwt_token = jwt_token_generator(issuer, audience)
+
+        with override_settings(ANSIBLE_BASE_JWT_ISSUER=issuer, ANSIBLE_BASE_JWT_AUDIENCE=audience):
+            # Test the function
+            common_auth = JWTCommonAuth()
+            parsed_token = common_auth.validate_token(jwt_token.encrypt_token(), test_encryption_public_key)
+            assert parsed_token == jwt_token.unencrypted_token
 
 
 class TestJWTAuthentication:

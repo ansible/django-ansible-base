@@ -157,9 +157,9 @@ class JWTCommonAuth:
             validated_body = jwt.decode(
                 token,
                 decryption_key,
-                audience="ansible-services",
+                audience=get_setting("ANSIBLE_BASE_JWT_AUDIENCE", "ansible-services"),
                 options={"require": local_required_field},
-                issuer="ansible-issuer",
+                issuer=get_setting("ANSIBLE_BASE_JWT_ISSUER", "ansible-issuer"),
                 algorithms=["RS256"],
             )
         except jwt.exceptions.DecodeError as e:
