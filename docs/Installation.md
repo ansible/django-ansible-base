@@ -67,3 +67,7 @@ urlpatterns = [
     path('', include(root_urls)),
 ]
 ```
+
+This will not set up views for the user model, which is expected to be done by your application.
+However, serializers will link your own user detail view when applicable, assuming the view name "user-detail" exists.
+See the test_app/ folder if you need an example setup.

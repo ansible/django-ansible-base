@@ -1,3 +1,4 @@
+from django.contrib.auth.models import AbstractUser
 from django.db import models
 
 from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam
@@ -15,6 +16,10 @@ class EncryptionModel(NamedCommonModel):
 
 
 class Organization(AbstractOrganization):
+    pass
+
+
+class User(AbstractUser):
     pass
 
 

@@ -77,6 +77,8 @@ DATABASES = {
     }
 }
 
+AUTH_USER_MODEL = 'test_app.User'
+
 ROOT_URLCONF = 'test_app.urls'
 
 TEMPLATES = [
