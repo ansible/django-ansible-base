@@ -47,14 +47,15 @@ class JWTCommonAuth:
         validated_body = self.validate_token(token, decryption_key)
         user_model = get_user_model()
         user, created = user_model.objects.update_or_create(
-            {
-                "username": validated_body["sub"],
+            username=validated_body["sub"],
+            defaults={
                 "first_name": validated_body["first_name"],
                 "last_name": validated_body["last_name"],
                 "email": validated_body["email"],
                 "is_superuser": validated_body["is_superuser"],
-            }
+            },
         )
+
         if created:
             logger.warn(f"New user {user.username} created from JWT auth")
         else:
