@@ -47,7 +47,6 @@ def prevent_search(relation):
 
 def user_summary_fields(user):
     sf = {}
-    # field names come from from AWX awx.api.serializers
     for field_name in ('id', 'username', 'first_name', 'last_name'):
         sf[field_name] = getattr(user, field_name)
     return sf
