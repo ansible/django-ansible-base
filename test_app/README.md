@@ -15,6 +15,13 @@ pip install -r requirements/requirements_all.txt
 
 # Initialize the test app
 
+These initialization steps are also captured in a bootstrap script.
+Be aware that this will delete your existing sqlite3 database and populate a new one.
+
+```
+./test_app/scripts/bootstrap.sh
+```
+
 ## Initialize the database
 test_app uses a sqllite database as its backend but we first need to initialize that database. From the root of your django-ansible-base checkout run the command:
 
@@ -39,8 +46,8 @@ NOTE: you must name the user admin but you can use any email or password you'd l
 $ python manage.py createsuperuser
 Username (leave blank to use 'local_user'): admin
 Email address: admin@nowhere.com
-Password: 
-Password (again): 
+Password:
+Password (again):
 Superuser created successfully.
 ```
 
