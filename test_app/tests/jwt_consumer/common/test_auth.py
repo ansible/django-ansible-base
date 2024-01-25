@@ -272,7 +272,7 @@ class TestJWTAuthentication:
         with mock.patch('ansible_base.jwt_consumer.common.auth.JWTCommonAuth.parse_jwt_token') as mock_parse:
             mock_parse.return_value = (None, {})
             jwt_auth = JWTAuthentication()
-            created_user, _ = jwt_auth.authenticate(mock.MagicMock())
+            created_user = jwt_auth.authenticate(mock.MagicMock())
             assert created_user is None
 
     def test_process_user_data(self):
