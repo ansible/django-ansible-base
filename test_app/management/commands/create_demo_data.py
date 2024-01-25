@@ -1,8 +1,7 @@
+from crum import impersonate
 from django.core.management.base import BaseCommand
 
-from test_app.models import Organization, Team, User, EncryptionModel
-
-from crum import impersonate
+from test_app.models import EncryptionModel, Organization, Team, User
 
 
 class Command(BaseCommand):
@@ -20,12 +19,9 @@ class Command(BaseCommand):
         bull_bot = User.objects.create(username='ansibullbot')
 
         with impersonate(spud):
-            awx_docs = Team.objects.create(name='awx_docs', organization=awx)
-            awx_devs = Team.objects.create(name='awx_devs', organization=awx)
-            EncryptionModel.objects.create(
-                testing1='should not show this value!!',
-                testing2='this value should also not be shown!'
-            )
+            Team.objects.create(name='awx_docs', organization=awx)
+            Team.objects.create(name='awx_devs', organization=awx)
+            EncryptionModel.objects.create(testing1='should not show this value!!', testing2='this value should also not be shown!')
             Organization.objects.create(name='Operator_community')
 
         with impersonate(bull_bot):
