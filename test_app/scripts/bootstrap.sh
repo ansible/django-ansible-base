@@ -7,4 +7,6 @@ DJANGO_SUPERUSER_PASSWORD=password DJANGO_SUPERUSER_USERNAME=admin DJANGO_SUPERU
 
 python manage.py authenticators --initialize
 
+python manage.py create_demo_data
+
 python manage.py runserver

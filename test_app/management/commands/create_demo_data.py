@@ -21,8 +21,10 @@ class Command(BaseCommand):
         with impersonate(spud):
             Team.objects.create(name='awx_docs', organization=awx)
             Team.objects.create(name='awx_devs', organization=awx)
-            EncryptionModel.objects.create(testing1='should not show this value!!', testing2='this value should also not be shown!')
+            EncryptionModel.objects.create(name='foo', testing1='should not show this value!!', testing2='this value should also not be shown!')
             Organization.objects.create(name='Operator_community')
 
         with impersonate(bull_bot):
             Team.objects.create(name='community.general maintainers', organization=galaxy)
+
+        print('Finished creating demo data!')
