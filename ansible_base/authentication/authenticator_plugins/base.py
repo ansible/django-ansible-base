@@ -32,16 +32,18 @@ class BaseAuthenticatorConfiguration(serializers.Serializer):
             if field.default is not empty:
                 default = field.default
 
-            schema.append(
-                {
-                    "name": f,
-                    "help_text": field.help_text,
-                    "required": not field.allow_null,
-                    "default": default,
-                    "type": field.__class__.__name__,
-                    "ui_field_label": getattr(field, 'ui_field_label', _('Undefined')),
-                }
-            )
+            schema_data = {
+                "name": f,
+                "help_text": field.help_text,
+                "required": not field.allow_null,
+                "default": default,
+                "type": field.__class__.__name__,
+                "ui_field_label": getattr(field, 'ui_field_label', _('Undefined')),
+            }
+            if getattr(field, 'choices', None):
+                schema_data["choices"] = getattr(field, 'choices')
+
+            schema.append(schema_data)
         return schema
 
 

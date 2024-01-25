@@ -46,7 +46,7 @@ def get_authenticator_urls(authenticator_type: str) -> list:
         urls = __import__(authenticator_type, globals(), locals(), ['urls'], 0)
         return urls
     except Exception as e:
-        logger.error(f"Failed to load urls form {authenticator_type} {e}")
+        logger.error(f"Failed to load urls from {authenticator_type} {e}")
     return None
 
 
