@@ -1,11 +1,11 @@
 import uuid
 
 import pytest
-from django.contrib.auth.models import Group
 from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 
 from ansible_base.resource_registry.models import Resource
+from test_app.models import EncryptionModel, Organization, Team
 
 
 def test_resources_list(admin_api_client):
@@ -44,7 +44,8 @@ def test_resources_api_invalid_delete(admin_api_client):
     """Test that resources can be correctly deleted via the API."""
 
     # Since groups are not set to be managed externally, we can't delete them with this API
-    group = Group.objects.create(name="super group")
+    org = Organization.objects.create(name="my org")
+    group = Team.objects.create(name="super group", organization=org)
     c_type = ContentType.objects.get_for_model(group)
     assert Resource.objects.filter(object_id=group.pk, content_type=c_type.pk).exists()
 
@@ -53,6 +54,12 @@ def test_resources_api_invalid_delete(admin_api_client):
 
     assert resp.status_code == 400
     assert "resource_type" in resp.data
+
+
+@pytest.mark.django_db
+def test_non_resources_arent_created():
+    obj = EncryptionModel.objects.create()
+    assert not Resource.objects.filter(object_id=obj.pk, content_type=ContentType.objects.get_for_model(obj)).exists()
 
 
 def test_resource_update(
@@ -135,6 +142,8 @@ def test_resource_partial_update(admin_api_client, user):
 @pytest.mark.parametrize(
     'resource',
     [
+        {"ansible_id": "0433e6b7:a0057c59-776d-48f8-97f1-8f8033e68d93", "resource_type": "shared.organization", "resource_data": {"name": "foo"}},
+        {"resource_type": "shared.organization", "resource_data": {"name": "my super cool org"}},
         {"ansible_id": "0433e6b7:a0057c59-776d-48f8-97f1-8f8033e68d93", "resource_type": "shared.user", "resource_data": {"username": "foo"}},
         {
             "ansible_id": "0433e6b7:a0057c59-776d-48f8-97f1-8f8033e68d93",
@@ -199,6 +208,7 @@ def test_resources_api_crd(admin_api_client, resource):
         {"data": {"resource_type": "fake.fake", "resource_data": {}}, "field_name": "resource_type"},
         {"data": {"resource_type": "shared.user", "resource_data": {"last_name": "stark"}}, "field_name": "username"},
         {"data": {"resource_type": "shared.user", "resource_data": {"username": "bad_email", "email": "null"}}, "field_name": "email"},
+        {"data": {"resource_type": "shared.organization", "resource_data": {}}, "field_name": "name"},
     ],
 )
 def test_resources_create_invalid(admin_api_client, resource):
