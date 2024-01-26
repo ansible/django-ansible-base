@@ -61,8 +61,8 @@ class AuthenticatorMapSerializer(NamedCommonModelSerializer):
                 if 'contents' in type_definition:
                     for item in triggers[trigger_type]:
                         if not isinstance(item, type(type_definition['contents'])):
-                            errors[
-                                f'{error_prefix}.{trigger_type}.{item}'
-                            ] = f"Invalid, must be of type {type(type_definition['contents']).__name__}, got {type(item)}"
+                            errors[f'{error_prefix}.{trigger_type}.{item}'] = (
+                                f"Invalid, must be of type {type(type_definition['contents']).__name__}, got {type(item)}"
+                            )
 
         return errors
