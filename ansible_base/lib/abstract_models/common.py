@@ -55,7 +55,7 @@ class CommonModel(models.Model):
         help_text="The user who last modified this resource",
     )
 
-    def _attributable_user(self):
+    def _attributable_user(self, warn_nonexistent_system_user):
         user = get_current_user()
         if user is None:
             # If no user is logged in, we try attributing the action to the system user
@@ -70,10 +70,9 @@ class CommonModel(models.Model):
                     user = None
         return user
 
-
     def save(self, *args, warn_nonexistent_system_user=True, **kwargs):
         update_fields = list(kwargs.get('update_fields', []))
-        user = self._attributable_user()
+        user = self._attributable_user(warn_nonexistent_system_user)
 
         # Manually perform auto_now_add and auto_now logic.
         now = timezone.now()
