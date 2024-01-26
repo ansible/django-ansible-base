@@ -1,6 +1,7 @@
 import datetime
 import uuid
 from collections import namedtuple
+from contextlib import contextmanager
 from unittest import mock
 
 import jwt
@@ -39,7 +40,7 @@ def copy_fixture(copies=1):
 @pytest.fixture
 def randname():
     def _randname(prefix):
-        return f"{prefix} {uuid.uuid4().hex[:6]}"
+        return f"{prefix}-{uuid.uuid4().hex[:6]}"
 
     return _randname
 
@@ -71,6 +72,13 @@ def user(db, django_user_model, local_authenticator):
 
 
 @pytest.fixture
+def random_user(db, django_user_model, randname, local_authenticator):
+    user = django_user_model.objects.create_user(username=randname("user"), password="password")
+    yield user
+    user.delete()
+
+
+@pytest.fixture
 def user_api_client(db, user, unauthenticated_api_client, local_authenticator):
     client = unauthenticated_api_client
     client.login(username="user", password="password")
@@ -83,15 +91,63 @@ def user_api_client(db, user, unauthenticated_api_client, local_authenticator):
 
 
 @pytest.fixture
-def shut_up_logging():
+def no_log_messages():
     """
-    This fixture allows you to temporarily disable logging for a test.
+    This fixture returns a function (a context manager) which allows you to disable
+    logging for a very specific part of a test.
     """
-    import logging
 
-    logging.disable(logging.CRITICAL)
-    yield
-    logging.disable(logging.NOTSET)
+    @contextmanager
+    def f():
+        import logging
+
+        logging.disable(logging.CRITICAL)
+        yield
+        logging.disable(logging.NOTSET)
+
+    return f
+
+
+@pytest.fixture
+def shut_up_logging(no_log_messages):
+    """
+    This fixture allows you to temporarily disable logging for an entire test.
+    """
+    with no_log_messages():
+        yield
+
+
+@pytest.fixture
+def expected_log(no_log_messages):
+    """
+    This fixture returns a function (a context manager) which allows you to assert
+    that a logger is called appropriately for a line or block of code.
+
+    Use it as a fixture, and then in your test:
+
+    with expected_log("path.to.logger", "info", "some substring"):
+        # code that should trigger the log message
+
+    Or you can use functools.partial to make it even more concise if you're
+    testing the same logger a bunch of times:
+
+    expected_log = partial(expected_log, "path.to.logger")
+
+    with expected_log("info", "some substring"):
+        # code that should trigger the log message
+    """
+
+    @contextmanager
+    def f(patch, severity, substr):
+        with mock.patch(patch) as logger:
+            with no_log_messages():
+                yield
+            sev_logger = getattr(logger, severity)
+            sev_logger.assert_called_once()
+            args, kwargs = sev_logger.call_args
+            assert substr in args[0]
+
+    return f
 
 
 @pytest.fixture
@@ -403,3 +459,37 @@ def mocked_http(test_encryption_public_key, jwt_token):
             return get_request
 
     return MockedHttp()
+
+
+@pytest.fixture
+def system_user_without_self_reference(db, settings, no_log_messages):
+    settings.SYSTEM_USERNAME = '_system'
+    from test_app.models import User
+
+    with no_log_messages():
+        user_obj = User.objects.create_user(settings.SYSTEM_USERNAME)
+    assert user_obj.created_by is None
+    assert user_obj.modified_by is None
+    yield user_obj
+    user_obj.delete()
+
+
+@pytest.fixture
+def system_user(system_user_without_self_reference):
+    sys_user = system_user_without_self_reference
+    sys_user.created_by = sys_user
+    sys_user.save()
+    sys_user.refresh_from_db()
+    assert sys_user.created_by == sys_user
+    assert sys_user.modified_by == sys_user
+    yield sys_user
+    # system_user_without_self_reference cleans up after itself
+
+
+@pytest.fixture
+def organization(db, randname):
+    from test_app.models import Organization
+
+    organization = Organization.objects.create(name=randname("Test Organization"))
+    yield organization
+    organization.delete()
