@@ -1,6 +1,6 @@
 import logging
 
-from rest_framework import permissions, status
+from rest_framework import permissions, status, mixins
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
@@ -10,7 +10,7 @@ from ansible_base.authentication.serializers import AuthenticatorMapSerializer, 
 logger = logging.getLogger('ansible_base.authentication.views.authenticator')
 
 
-class AuthenticatorViewSet(ModelViewSet):
+class AuthenticatorViewSet(mixins.RetrieveModelMixin, mixins.UpdateModelMixin, mixins.ListModelMixin, viewsets.GenericViewSet):
     """
     API endpoint that allows authenticators to be viewed or edited.
     """
