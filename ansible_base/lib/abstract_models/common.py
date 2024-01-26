@@ -55,7 +55,7 @@ class CommonModel(models.Model):
         help_text="The user who last modified this resource",
     )
 
-    def save(self, *args, **kwargs):
+    def save(self, *args, warn_nonexistent_system_user=True, **kwargs):
         update_fields = list(kwargs.get('update_fields', []))
         user = get_current_user()
         if user is None:
@@ -66,7 +66,8 @@ class CommonModel(models.Model):
                 try:
                     user = get_user_model().objects.get(username=system_username)
                 except get_user_model().DoesNotExist:
-                    logger.error(f"SYSTEM_USERNAME is set to {system_username} but no user with that username exists. User attribution will be None.")
+                    if warn_nonexistent_system_user:
+                        logger.warn(f"SYSTEM_USERNAME is set to {system_username} but no user with that username exists. User attribution will be None.")
                     user = None
 
         # Manually perform auto_now_add and auto_now logic.
