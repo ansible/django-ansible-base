@@ -11,8 +11,6 @@ logger = logging.getLogger('ansible_base.authentication.urls')
 
 app_name = AuthenticationConfig.label
 
-list_actions = {'get': 'list', 'post': 'create'}
-detail_actions = {'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}
 view_only_list = {'get': 'list'}
 
 api_version_urls = []
