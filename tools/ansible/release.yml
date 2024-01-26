@@ -4,7 +4,7 @@
   connection: local
   gather_facts: true
   vars:
-    repo_identifier: "ansible/django-ansible-base"
+    repo_identifier: "john-westcott-iv/django-ansible-base"
     api_repo_prefix: "https://api.github.com/repos/{{ repo_identifier }}"
 
   # Note:
