@@ -11,7 +11,7 @@ logger = logging.getLogger('ansible_base.serializers')
 
 
 def get_resource_detail_view(resource: Resource):
-    # TODO: format this so that it uses the correct API base path for the gateway.
+    # TODO: format this so that it uses the correct API base path for the proxy.
     actions = resource.content_type.resource_type.get_resource_config().actions
 
     # TODO: this needs some more logic to handle cases where the detail view isn't

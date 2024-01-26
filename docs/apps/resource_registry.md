@@ -124,8 +124,8 @@ The list view displays resource metadata for each resource in the system:
     "ansible_id": "4c4ef945:faed95ca-2cea-43d4-ae18-4a5f0782a5de",
     "resource_type": "aap.servicecluster",
     "has_serializer": false,
-    "detail_url": "/api/gateway/v1/service_clusters/2/",
-    "url": "/api/gateway/service-index/resources/4c4ef945:faed95ca-2cea-43d4-ae18-4a5f0782a5de/"
+    "detail_url": "/api/galaxy/v1/service_clusters/2/",
+    "url": "/api/galaxy/service-index/resources/4c4ef945:faed95ca-2cea-43d4-ae18-4a5f0782a5de/"
 }
 ```
 
@@ -145,8 +145,8 @@ The retrieve view can also display some resource data if a serializer is declare
         "last_name": "",
         "is_superuser": true
     },
-    "detail_url": "/api/gateway/v1/users/1/",
-    "url": "/api/gateway/service-index/resources/4c4ef945:57289235-e68e-4abf-8e50-f868f9e5ff04/"
+    "detail_url": "/api/galaxy/v1/users/1/",
+    "url": "/api/galaxy/service-index/resources/4c4ef945:57289235-e68e-4abf-8e50-f868f9e5ff04/"
 }
 ```
 
@@ -196,7 +196,7 @@ This purely a list and retrieve view. It displays all the resource types that ar
             "name": "shared.organization",
             "externally_managed": false,
             "shared_resource_type": "organization",
-            "url": "/api/gateway/service-index/resource-types/shared.organization/"
+            "url": "/api/galaxy/service-index/resource-types/shared.organization/"
         }
     ]
 }

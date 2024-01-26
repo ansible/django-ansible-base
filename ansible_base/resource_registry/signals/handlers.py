@@ -24,8 +24,11 @@ def remove_resource(sender, instance, **kwargs):
         return
     model = get_concrete_model(sender)
     if model in get_resource_models():
-        resource = Resource.get_resource_for_object(instance)
-        resource.delete()
+        try:
+            resource = Resource.get_resource_for_object(instance)
+            resource.delete()
+        except Resource.DoesNotExist:
+            return
 
 
 @receiver(post_save)

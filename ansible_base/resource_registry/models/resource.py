@@ -38,8 +38,6 @@ class ResourceType(models.Model):
 
 
 class Resource(models.Model):
-    # objects = ResourceManager()
-
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, related_name="resources")
 
     # this has to accommodate integer and UUID object IDs
