@@ -29,6 +29,13 @@ classifiers = [
 ]
 dynamic = ["version", "dependencies", "optional-dependencies"]
 
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools_scm]
+version_scheme = 'calver-by-date'
+version_file = "ansible_base/_version.py"
+
 [tool.setuptools.packages.find]
 include = ["ansible_base*"]
 
