@@ -1,6 +1,5 @@
 from itertools import chain
 
-from django.contrib.auth import get_user_model
 from inflection import underscore
 
 
@@ -50,9 +49,3 @@ def user_summary_fields(user):
     for field_name in ('id', 'username', 'first_name', 'last_name'):
         sf[field_name] = getattr(user, field_name)
     return sf
-
-
-def decorate_user_model():
-    user_cls = get_user_model()
-    if not hasattr(user_cls, 'summary_fields'):
-        user_cls.add_to_class('summary_fields', user_summary_fields)

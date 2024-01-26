@@ -2,11 +2,14 @@ import logging
 
 from crum import get_current_user
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import models
 from django.urls.exceptions import NoReverseMatch
 from django.utils import timezone
 from inflection import underscore
 from rest_framework.reverse import reverse
+
+from ansible_base.lib.utils.settings import get_setting
 
 logger = logging.getLogger('ansible_base.lib.abstract_models.common')
 
@@ -55,6 +58,17 @@ class CommonModel(models.Model):
     def save(self, *args, **kwargs):
         update_fields = list(kwargs.get('update_fields', []))
         user = get_current_user()
+        if user is None:
+            # If no user is logged in, we try attributing the action to the system user
+            # If there is no system username defined, we just leave the user as None
+            system_username = get_setting('SYSTEM_USERNAME')
+            if system_username is not None:
+                try:
+                    user = get_user_model().objects.get(username=system_username)
+                except get_user_model().DoesNotExist:
+                    logger.error(f"SYSTEM_USERNAME is set to {system_username} but no user with that username exists. User attribution will be None.")
+                    user = None
+
         # Manually perform auto_now_add and auto_now logic.
         now = timezone.now()
         if not self.pk and not self.created_on:
@@ -107,18 +121,24 @@ class CommonModel(models.Model):
     def related_fields(self, request):
         response = {}
         # Automatically add all of the ForeignKeys for the model as related fields
-        for field in self._meta.concrete_fields:
-            if isinstance(field, models.ForeignKey) and getattr(self, field.name):
+        for field in self._meta.concrete_fields + self._meta.many_to_many:
+            if isinstance(field, (models.ForeignKey, models.ManyToManyField)) and getattr(self, field.name):
                 # ignore relations on inherited django models
                 if field.name.endswith("_ptr"):
                     continue
-                pk = getattr(self, field.name).pk
-                if pk:
+
+                if isinstance(field, models.ManyToManyField):
+                    # If it's m2m, we want to get the related "filtered" route
+                    # It will usually be in the form <model>-<related_model>s-list
+                    reverse_view = f"{underscore(self.__class__.__name__)}-{underscore(field.related_model.__name__)}s-list"
+                    pk = self.pk
+                else:
                     reverse_view = f"{underscore(field.related_model.__name__)}-detail"
-                    try:
-                        response[field.name] = reverse(reverse_view, kwargs={'pk': pk})
-                    except NoReverseMatch:
-                        logger.error(f"Model {self.__class__.__name__} wanted to reverse view to {reverse_view} but said view is not defined")
+                    pk = getattr(self, field.name).pk
+                try:
+                    response[field.name] = reverse(reverse_view, kwargs={'pk': pk})
+                except NoReverseMatch:
+                    logger.debug(f"Model {self.__class__.__name__} wanted to reverse view to {reverse_view} but said view is not defined")
 
         # Add any reverse relations required
         for field in getattr(self, 'reverse_foreign_key_fields', []):
