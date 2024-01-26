@@ -3,6 +3,7 @@ import logging
 from django.contrib.auth.backends import ModelBackend
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
+
 # import tacacs_plus
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
@@ -11,9 +12,10 @@ from ansible_base.lib.serializers.fields import CharField, IntegerField, ChoiceF
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.tacacs')
 
+
 class TacacsConfiguration(BaseAuthenticatorConfiguration):
     documentation_url = "https://docs.djangoproject.com/en/4.2/ref/contrib/auth/#django.contrib.auth.backends.ModelBackend"
-#TODO: Change the documentation URL to the correct one for TACACS
+    # TODO: Change the documentation URL to the correct one for TACACS
     HOST = CharField(
         allow_blank=True,
         default='',
@@ -66,7 +68,6 @@ class TacacsConfiguration(BaseAuthenticatorConfiguration):
     )
 
 
-
 class AuthenticatorPlugin(ModelBackend, AbstractAuthenticatorPlugin):
     configuration_class = TacacsConfiguration
     logger = logger
@@ -88,8 +89,9 @@ class AuthenticatorPlugin(ModelBackend, AbstractAuthenticatorPlugin):
 
         # TODO, we will need to return attributes and claims eventually
         return user
-    
-#TODO: merge TACACSPlus Backend with class above
+
+
+# TODO: merge TACACSPlus Backend with class above
 # # class TACACSPlusBackend(object):
 #     """
 #     Custom TACACS+ auth backend for AWX
