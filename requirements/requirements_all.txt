@@ -17,6 +17,7 @@ charset-normalizer==3.3.2
 cryptography==41.0.7
     # via
     #   -r requirements/requirements.in
+    #   -r requirements/requirements_testing.in
     #   social-auth-core
 defusedxml==0.8.0rc2
     # via
