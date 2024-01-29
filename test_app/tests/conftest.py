@@ -138,14 +138,17 @@ def expected_log(no_log_messages):
     """
 
     @contextmanager
-    def f(patch, severity, substr):
+    def f(patch, severity, substr, assert_not_called=False):
         with mock.patch(patch) as logger:
             with no_log_messages():
                 yield
             sev_logger = getattr(logger, severity)
-            sev_logger.assert_called_once()
-            args, kwargs = sev_logger.call_args
-            assert substr in args[0]
+            if assert_not_called:
+                sev_logger.assert_not_called()
+            else:
+                sev_logger.assert_called_once()
+                args, kwargs = sev_logger.call_args
+                assert substr in args[0]
 
     return f
 
