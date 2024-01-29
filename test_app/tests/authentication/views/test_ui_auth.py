@@ -40,7 +40,7 @@ def test_generate_ui_auth_data_valid_login_redirect():
 @pytest.mark.django_db
 def test_generate_ui_auth_data_invalid_login_redirect_function(logger):
     generate_ui_auth_data()
-    logger.exception.assert_called_with('LOGIN_REDIRECT_OVERRIDE was set but was not a valid URL, ignoring')
+    logger.error.assert_called_with('LOGIN_REDIRECT_OVERRIDE was set but was not a valid URL, ignoring')
 
 
 @override_settings(custom_login_info='Login with your username and password')
@@ -84,7 +84,7 @@ def test_generate_ui_auth_data_valid_logo_image():
 @pytest.mark.django_db
 def test_generate_ui_auth_data_invalid_logo_image_format(logger):
     generate_ui_auth_data()
-    logger.exception.assert_called_with('custom_logo was set but was not a valid image data, ignoring')
+    logger.error.assert_called_with('custom_logo was set but was not a valid image data, ignoring')
 
 
 @mock.patch("ansible_base.authentication.views.ui_auth.logger")
@@ -92,4 +92,4 @@ def test_generate_ui_auth_data_invalid_logo_image_format(logger):
 @pytest.mark.django_db
 def test_generate_ui_auth_data_bad_logo_image_data(logger):
     generate_ui_auth_data()
-    logger.exception.assert_called_with('custom_logo was set but was not a valid image data, ignoring')
+    logger.error.assert_called_with('custom_logo was set but was not a valid image data, ignoring')

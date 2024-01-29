@@ -53,7 +53,7 @@ def generate_ui_auth_data():
             logger.error(f"Don't know how to handle authenticator of type {authenticator.type}")
 
     try:
-        login_redirect_override = get_setting('LOGIN_REDIRECT_OVERRIDE', None)
+        login_redirect_override = get_setting('LOGIN_REDIRECT_OVERRIDE', '')
         validate_url(url=login_redirect_override, allow_plain_hostname=True)
         response['login_redirect_override'] = login_redirect_override
     except ValidationError:
