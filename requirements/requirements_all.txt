@@ -82,7 +82,7 @@ pyjwt==2.8.0
     # via
     #   -r requirements/requirements_jwt_consumer.in
     #   social-auth-core
-pytest==8.0.0
+pytest==7.4.4
     # via
     #   -r requirements/requirements_testing.in
     #   pytest-django

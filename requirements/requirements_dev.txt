@@ -2,7 +2,7 @@ ansible  # Used in build process to generate some configs
 build
 ipython
 tox
-pytest
+pytest<8  # https://github.com/pytest-dev/pytest/issues/11868
 pytest-asyncio
 pytest-xdist
 pytest-cov
