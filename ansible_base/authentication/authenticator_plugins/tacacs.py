@@ -12,7 +12,11 @@ from ansible_base.lib.serializers.fields import CharField, IntegerField, ChoiceF
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.tacacs')
 
-
+def validate_tacacsplus_disallow_nonascii(value):
+    try:
+        value.encode('ascii')
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        raise ValidationError(_('TACACS+ secret does not allow non-ascii characters'))
 class TacacsConfiguration(BaseAuthenticatorConfiguration):
     documentation_url = "https://docs.djangoproject.com/en/4.2/ref/contrib/auth/#django.contrib.auth.backends.ModelBackend"
     # TODO: Change the documentation URL to the correct one for TACACS
