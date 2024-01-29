@@ -33,6 +33,9 @@ def validate_url_list(urls: list, schemes: list = ['https'], allow_plain_hostnam
 
 
 def validate_url(url: str, schemes: list = ['https'], allow_plain_hostname: bool = False) -> None:
+    # this captures both None and '' empty string scenarios
+    if not url:
+        return None
     if type(url) is not str:
         raise ValidationError(VALID_STRING)
     if allow_plain_hostname:
