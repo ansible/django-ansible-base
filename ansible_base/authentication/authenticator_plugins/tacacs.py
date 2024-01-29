@@ -12,11 +12,14 @@ from ansible_base.lib.serializers.fields import CharField, IntegerField, ChoiceF
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.tacacs')
 
+
 def validate_tacacsplus_disallow_nonascii(value):
     try:
         value.encode('ascii')
     except (UnicodeEncodeError, UnicodeDecodeError):
         raise ValidationError(_('TACACS+ secret does not allow non-ascii characters'))
+
+
 class TacacsConfiguration(BaseAuthenticatorConfiguration):
     documentation_url = "https://docs.djangoproject.com/en/4.2/ref/contrib/auth/#django.contrib.auth.backends.ModelBackend"
     # TODO: Change the documentation URL to the correct one for TACACS
@@ -26,6 +29,7 @@ class TacacsConfiguration(BaseAuthenticatorConfiguration):
         label="TACACS+ Server",
         required=False,
         help_text="Hostname of TACACS+ server.",
+        ui_field_label=_('Hostname of TACACS+ Server'),
     )
     PORT = IntegerField(
         min_value=1,
@@ -33,23 +37,20 @@ class TacacsConfiguration(BaseAuthenticatorConfiguration):
         default=49,
         label=_('TACACS+ Port'),
         help_text=_('Port number of TACACS+ server.'),
-        category=_('TACACS+'),
-        category_slug='tacacsplus',
+        ui_field_label=_('Port number of TACACS+ Server'),
     )
     AUTH_PROTOCOL = ChoiceField(
         choices=['ascii', 'pap'],
         default='ascii',
         label=_('TACACS+ Authentication Protocol'),
         help_text=_('Choose the authentication protocol used by TACACS+ client.'),
-        category=_('TACACS+'),
-        category_slug='tacacsplus',
+        ui_field_label=_('TACACS+ Authentication Protocol'),
     )
     REM_ADDR = BooleanField(
         default=True,
         label=_('TACACS+ client address sending enabled'),
         help_text=_('Enable the client address sending by TACACS+ client.'),
-        category=_('TACACS+'),
-        category_slug='tacacsplus',
+        ui_field_label=_('TACACS+ client address sending enabled'),
     )
     SECRET = CharField(
         allow_blank=True,
@@ -57,18 +58,14 @@ class TacacsConfiguration(BaseAuthenticatorConfiguration):
         validators=[validate_tacacsplus_disallow_nonascii],
         label=_('TACACS+ Secret'),
         help_text=_('Shared secret for authenticating to TACACS+ server.'),
-        category=_('TACACS+'),
-        category_slug='tacacsplus',
-        encrypted=True,
+        ui_field_label=_('Shared secret for authenticating to TACACS+ server.'),
     )
     SESSION_TIMEOUT = IntegerField(
         min_value=0,
         default=5,
         label=_('TACACS+ Auth Session Timeout'),
         help_text=_('TACACS+ session timeout value in seconds, 0 disables timeout.'),
-        category=_('TACACS+'),
-        category_slug='tacacsplus',
-        unit=_('seconds'),
+        ui_field_label=_('TACACS+ Auth Session Timeout'),
     )
 
 
