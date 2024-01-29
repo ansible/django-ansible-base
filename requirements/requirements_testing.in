@@ -1,0 +1,4 @@
+# NOTE: Only dependencies needed to use ansible_base.lib.testing.* should go here.
+# Deps specific to django-ansible-base tests should go in requirements_dev.txt
+pytest
+pytest-django
