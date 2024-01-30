@@ -53,6 +53,9 @@ optional-dependencies.testing = { file = [ "requirements/requirements_testing.in
 requires = ["setuptools>=64", "setuptools_scm>=8"]
 build-backend = 'setuptools.build_meta'
 
+[tool.setuptools_scm]
+version_scheme = "calver-by-date"
+
 [tool.black]
 line-length = 160
 fast = true
