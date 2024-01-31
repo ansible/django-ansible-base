@@ -29,9 +29,6 @@ classifiers = [
 ]
 dynamic = ["version", "dependencies", "optional-dependencies"]
 
-[tool.setuptools]
-include-package-data = false
-
 [tool.setuptools.packages.find]
 include = ["ansible_base*"]
 
@@ -51,14 +48,15 @@ optional-dependencies.rest_filters = { file = [ "requirements/requirements_rest_
 optional-dependencies.channel_auth = { file = [ "requirements/requirements_channels.in" ] }
 optional-dependencies.jwt_consumer = { file = [ "requirements/requirements_jwt_consumer.in" ] }
 optional-dependencies.testing = { file = [ "requirements/requirements_testing.in" ] }
-version = {attr = "ansible_base.__version__"}
 
 [build-system]
-requires = ["setuptools>=64"]
+requires = ["setuptools>=64", "setuptools_scm>=8"]
 build-backend = 'setuptools.build_meta'
 
 [tool.setuptools_scm]
 version_scheme = "calver-by-date"
+version_file = 'ansible_base/_version.py'
+local_scheme = 'no-local-version'
 
 [tool.black]
 line-length = 160

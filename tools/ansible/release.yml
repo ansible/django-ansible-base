@@ -4,7 +4,7 @@
   connection: local
   gather_facts: true
   vars:
-    repo_identifier: "john-westcott-iv/django-ansible-base"
+    repo_identifier: "ansible/django-ansible-base"
     api_repo_prefix: "https://api.github.com/repos/{{ repo_identifier }}"
 
   # Note:
@@ -13,19 +13,27 @@
   tasks:
     - name: Generate calver release number
       set_fact:
-        release_number: "{{ ansible_date_time.year }}.{{ ansible_date_time.month }}.{{ ansible_date_time.day }}"
+        # setuptools-scm will strip leading 0's off the date format so we need to do that too
+        release_number: "{{ (ansible_date_time.date | to_datetime('%Y-%m-%d')).strftime('%Y.%m.%d') | regex_replace('\\.0', '.') }}"
 
-    - name: "Update version file with {{ release_number }}"
-      ansible.builtin.lineinfile:
-        create: True
-        line: "version = '{{ release_number }}'"
-        path: "../../ansible_base/_version.py"
-        regex: "^version = .*"
+    - name: Tag the repo
+      command:
+        cmd: "git tag -f {{ release_number }}"
+
+    - name: Get the build number from setuptools-scm
+      command:
+        cmd: python -m setuptools_scm
+      register: setuptools_command_version
+
+    - name: Make sure the selected release number and setuptools_scm agree
+      assert:
+        that:
+          release_number == setuptools_command_version.stdout
+        msg: "We expected the release number to be {{ release_number }} but setuptools-scm wanted it to be {{ setuptools_command_version.stdout }}"
 
     - name: Build django-ansible-base
       command:
         cmd: make build
-        creates: 'dist/django-ansible-base-{{ release_number }}.tar.gz'
       args:
         chdir: '../../'
       tags:
