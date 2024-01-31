@@ -22,32 +22,7 @@ So if you only wanted api_docs and filtering you could install the library like:
 pip install git+https://github.com/ansible/django-ansible-base.git[api_documentation,rest_filters]
 ```
 
-## Pinning versions
-
 If you are using django-ansible-base from another project you will likely want to install a specific version from one of the github releases.
-There is a small caveat when doing this.
-
-If you install from the tag like:
-```
-pip install git+https://github.com/ansible/django-ansible-base@2024.01.27#egg=django-ansible-base[all]
-```
-It will be a fixed version of django-ansible-base but it will not have a locked __version__ attribute and will appear like a devel version with the current data:
-```
-python -c "import ansible_base; print(ansible_base.__version__)"
-2024.01.31-83d3eb1
-```
-
-However, if you install form a tar.gz in a release like:
-```
-pip install https://github.com/ansible/django-ansible-base/releases/download/2024.01.27/django-ansible-base-2024.1.27.tar.gz[all]
-```
-
-Than the version will be locked:
-```
-python -c "import ansible_base; print(ansible_base.__version__)"
-2024.01.26
-```
-
 
 # Configuration
 

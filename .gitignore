@@ -4,9 +4,6 @@ pre-commit-user
 # Make target touch files
 .docker-compose-built
 
-# Ignore the build version file
-ansible_base/_version.py
-
 # Python & setuptools
 __pycache__
 /build
