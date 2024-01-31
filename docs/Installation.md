@@ -1,6 +1,8 @@
 # Installation
 
-Currently we install django-ansible-base via a pip install from the repository:
+Currently we install django-ansible-base via a pip install from the git repository.
+
+If you want the devel version you can simply install from the repo:
 ```
 pip install git+https://github.com/ansible/django-ansible-base.git[all]
 ```
@@ -19,6 +21,8 @@ So if you only wanted api_docs and filtering you could install the library like:
 ```
 pip install git+https://github.com/ansible/django-ansible-base.git[api_documentation,rest_filters]
 ```
+
+If you are using django-ansible-base from another project you will likely want to install a specific version from one of the github releases.
 
 # Configuration
 
