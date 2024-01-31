@@ -5,7 +5,7 @@ pre-commit-user
 .docker-compose-built
 
 # Ignore the build version file
-ansible_base._version.py
+ansible_base/_version.py
 
 # Python & setuptools
 __pycache__
