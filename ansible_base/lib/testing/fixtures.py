@@ -67,7 +67,7 @@ def user_api_client(db, user, unauthenticated_api_client, local_authenticator):
 
 
 @pytest.fixture
-def no_log_messages():
+def no_log_messages(settings):
     """
     This fixture returns a function (a context manager) which allows you to disable
     logging for a very specific part of a test.
