@@ -40,6 +40,7 @@ class CommonModel(models.Model):
         on_delete=models.DO_NOTHING,
         help_text="The user who created this resource",
     )
+    created_by.related_view = 'user-detail'
     modified_on = models.DateTimeField(
         default=None,
         editable=False,
@@ -54,6 +55,7 @@ class CommonModel(models.Model):
         on_delete=models.DO_NOTHING,
         help_text="The user who last modified this resource",
     )
+    modified_by.related_view = 'user-detail'
 
     def _attributable_user(self, warn_nonexistent_system_user):
         user = get_current_user()
@@ -132,14 +134,32 @@ class CommonModel(models.Model):
                 if field.name.endswith("_ptr"):
                     continue
 
+                # A field can specify a related_view to use for the reverse lookup
+                # This looks like:
+                #
+                # foo = models.ManyToManyField(...)
+                # foo.related_view = 'foo-list'
+                #
+                # It can also specify related_view = None to opt out of showing up here.
+                #
+                # The default is to try to guess the view name based on the model and field name.
+                # But this won't always work in every case, so this gives models a way to specify.
+                reverse_view = getattr(field, 'related_view', False)
+                if reverse_view is None:
+                    # Give fields a chance to opt out of showing up here by forcing related_view to None
+                    continue
+
                 if isinstance(field, models.ManyToManyField):
                     # If it's m2m, we want to get the related "filtered" route
                     # It will usually be in the form <model>-<related_model>s-list
-                    reverse_view = f"{underscore(self.__class__.__name__)}-{underscore(field.related_model.__name__)}s-list"
+                    if not reverse_view:
+                        reverse_view = f"{underscore(self.__class__.__name__)}-{field.name}-list"
                     pk = self.pk
                 else:
-                    reverse_view = f"{underscore(field.related_model.__name__)}-detail"
+                    if not reverse_view:
+                        reverse_view = f"{underscore(field.name)}-detail"
                     pk = getattr(self, field.name).pk
+
                 try:
                     response[field.name] = reverse(reverse_view, kwargs={'pk': pk})
                 except NoReverseMatch:
