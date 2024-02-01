@@ -57,6 +57,7 @@ def generate_ui_auth_data():
         # ignore validation if login_redirect_override is None or empty string
         if login_redirect_override is not None and login_redirect_override != '':
             validate_url(url=login_redirect_override, allow_plain_hostname=True)
+            response['login_redirect_override'] = login_redirect_override
     except ValidationError:
         logger.error('LOGIN_REDIRECT_OVERRIDE was set but was not a valid URL, ignoring')
 
