@@ -2,11 +2,8 @@ import logging
 
 from django.contrib.auth.backends import ModelBackend
 from django.core.exceptions import ValidationError
-from django.utils.timezone import now
-from rest_framework.serializers import DateTimeField
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
-from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.authentication.utils.claims import get_or_create_authenticator_user
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.local')
