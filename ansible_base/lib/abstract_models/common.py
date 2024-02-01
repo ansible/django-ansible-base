@@ -40,6 +40,7 @@ class CommonModel(models.Model):
         on_delete=models.DO_NOTHING,
         help_text="The user who created this resource",
     )
+    created_by.related_view = 'user-detail'
     modified_on = models.DateTimeField(
         default=None,
         editable=False,
@@ -54,6 +55,7 @@ class CommonModel(models.Model):
         on_delete=models.DO_NOTHING,
         help_text="The user who last modified this resource",
     )
+    modified_by.related_view = 'user-detail'
 
     def _attributable_user(self, warn_nonexistent_system_user):
         user = get_current_user()
@@ -125,6 +127,29 @@ class CommonModel(models.Model):
                     response[field.name] = getattr(self, field.name).summary_fields()
         return response
 
+    def _get_reverse_view(self, field):
+        # A field can specify a related_view to use for the reverse lookup
+        # This looks like:
+        #
+        # foo = models.ManyToManyField(...)
+        # foo.related_view = 'foo-list'
+        #
+        # It can also specify related_view = None to opt out of showing up here.
+        #
+        # The default is to try to guess the view name based on the model and field name.
+        # But this won't always work in every case, so this gives models a way to specify.
+        reverse_view = getattr(field, 'related_view', False)
+
+        if reverse_view is None or reverse_view:
+            # Give fields a chance to opt out of showing up here by forcing related_view to None
+            return reverse_view
+
+        # otherwise reverse_view is False, meaning we should try to guess the view name
+        if isinstance(field, models.ManyToManyField):
+            return f"{underscore(self.__class__.__name__)}-{field.name}-list"
+
+        return f"{underscore(field.name)}-detail"
+
     def related_fields(self, request):
         response = {}
         # Automatically add all of the ForeignKeys for the model as related fields
@@ -134,18 +159,12 @@ class CommonModel(models.Model):
                 if field.name.endswith("_ptr"):
                     continue
 
-                if isinstance(field, models.ManyToManyField):
-                    # If it's m2m, we want to get the related "filtered" route
-                    # It will usually be in the form <model>-<related_model>s-list
-                    reverse_view = f"{underscore(self.__class__.__name__)}-{underscore(field.related_model.__name__)}s-list"
-                    pk = self.pk
-                else:
-                    rel_model = field.related_model
-                    if hasattr(rel_model, 'router_basename'):
-                        reverse_view = f"{underscore(rel_model.router_basename)}-detail"
-                    else:
-                        reverse_view = f"{underscore(rel_model.__name__)}-detail"
-                    pk = getattr(self, field.name).pk
+                reverse_view = self._get_reverse_view(field)
+                if reverse_view is None:
+                    continue
+
+                pk = self.pk if isinstance(field, models.ManyToManyField) else getattr(self, field.name).pk
+
                 try:
                     response[field.name] = reverse(reverse_view, kwargs={'pk': pk})
                 except NoReverseMatch:
