@@ -7,6 +7,7 @@ from rest_framework.serializers import DateTimeField
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.models import AuthenticatorUser
+from ansible_base.authentication.utils.claims import get_or_create_authenticator_user
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.local')
 
@@ -45,9 +46,15 @@ class AuthenticatorPlugin(ModelBackend, AbstractAuthenticatorPlugin):
                 "last_name": user.last_name,
                 "email": user.email,
                 "is_superuser": user.is_superuser,
-                "auth_time": DateTimeField().to_representation(now()),
             }
-            AuthenticatorUser.objects.update_or_create(uid=username, provider=self.database_instance, defaults={"extra_data": user_attrs})
+            get_or_create_authenticator_user(
+                user_id=username,
+                user_details={
+                    "username": username,
+                },
+                authenticator=self.database_instance,
+                extra_data=user_attrs,
+            )
 
         # TODO, we will need to return attributes and claims eventually
         return user
