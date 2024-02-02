@@ -6,11 +6,12 @@ from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.authentication.models import Authenticator, AuthenticatorMap, AuthenticatorUser
 from ansible_base.authentication.serializers import AuthenticatorMapSerializer, AuthenticatorSerializer
+from ansible_base.lib.utils.views import ViewWithHeaders
 
 logger = logging.getLogger('ansible_base.authentication.views.authenticator')
 
 
-class AuthenticatorViewSet(ModelViewSet):
+class AuthenticatorViewSet(ModelViewSet, ViewWithHeaders):
     """
     API endpoint that allows authenticators to be viewed or edited.
     """
@@ -32,7 +33,7 @@ class AuthenticatorViewSet(ModelViewSet):
             return super().destroy(request, *args, **kwargs)
 
 
-class AuthenticatorAuthenticatorMapViewSet(ModelViewSet):
+class AuthenticatorAuthenticatorMapViewSet(ModelViewSet, ViewWithHeaders):
     serializer_class = AuthenticatorMapSerializer
 
     def get_queryset(self):
