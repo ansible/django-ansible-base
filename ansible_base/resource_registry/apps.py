@@ -31,6 +31,8 @@ def initialize_resources(sender, **kwargs):
     if apps is None:
         from django.apps import apps
 
+    from ansible_base.resource_registry.models import init_resource_from_object
+
     Resource = apps.get_model("dab_resource_registry", "Resource")
     ResourceType = apps.get_model("dab_resource_registry", "ResourceType")
     ContentType = apps.get_model("contenttypes", "ContentType")
@@ -52,16 +54,26 @@ def initialize_resources(sender, **kwargs):
         # Create resources
         for r_type in ResourceType.objects.filter(migrated=False):
             resource_model = apps.get_model(r_type.content_type.app_label, r_type.content_type.model)
+            resource_config = registry.get_config_for_model(resource_model)
 
             logger.info(f"adding unmigrated resources for {r_type.name}")
 
             data = []
             for obj in resource_model.objects.all():
-                data.append(Resource.init_from_object(obj, resource_type=r_type))
+                data.append(init_resource_from_object(obj, resource_model=Resource, resource_type=r_type, resource_config=resource_config))
 
             Resource.objects.bulk_create(data, ignore_conflicts=True)
             r_type.migrated = True
             r_type.save()
+
+
+def connect_signals(*args, **kwargs):
+    from django.db.models.signals import post_delete, post_save
+
+    from ansible_base.resource_registry.signals import handlers
+
+    post_save.connect(handlers.update_resource)
+    post_delete.connect(handlers.remove_resource)
 
 
 class AnsibleAuthConfig(AppConfig):
@@ -71,6 +83,5 @@ class AnsibleAuthConfig(AppConfig):
     verbose_name = 'Service resources API'
 
     def ready(self):
+        post_migrate.connect(connect_signals, sender=self)
         post_migrate.connect(initialize_resources, sender=self)
-
-        from ansible_base.resource_registry.signals import handlers  # noqa: F401 - register signals
