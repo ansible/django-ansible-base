@@ -22,10 +22,6 @@ def validate_tacacsplus_disallow_nonascii(value):
 
 
 class TacacsConfiguration(BaseAuthenticatorConfiguration):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.configuration_encrypted_fields = ['SECRET']
-
     documentation_url = "https://docs.djangoproject.com/en/4.2/ref/contrib/auth/#django.contrib.auth.backends.ModelBackend"
     # TODO: Change the documentation URL to the correct one for TACACS
     HOST = CharField(
@@ -74,6 +70,7 @@ class TacacsConfiguration(BaseAuthenticatorConfiguration):
     )
 
 
+# TODO: Add TACACSClient
 class AuthenticatorPlugin(SocialAuthMixin, AbstractAuthenticatorPlugin):
     configuration_class = TacacsConfiguration
     logger = logger
@@ -82,6 +79,7 @@ class AuthenticatorPlugin(SocialAuthMixin, AbstractAuthenticatorPlugin):
 
     def __init__(self, database_instance=None, *args, **kwargs):
         super().__init__(database_instance, *args, **kwargs)
+        self.configuration_encrypted_fields = ['SECRET']
 
     def authenticate(self, request, username=None, password=None, **kwargs):
         if not username or not password:
@@ -93,28 +91,20 @@ class AuthenticatorPlugin(SocialAuthMixin, AbstractAuthenticatorPlugin):
         if user:
             AuthenticatorUser.objects.get_or_create(uid=username, user=user, provider=self.database_instance)
 
-        # TODO, we will need to return attributes and claims eventually
-        return user
-
-
-class TACACSPlusBackend(object):
-    """
-    Custom TACACS+ auth backend for AWX
-    """
-
-    def authenticate(self, request, username, password):
-        if not self.settings.TACACSPLUS_HOST:
+            # TODO, we will need to return attributes and claims eventually
+            return user
+        if not self.settings.HOST:
             return None
         try:
             # Upstream TACACS+ client does not accept non-string, so convert if needed.
-            tacacs_client = tacacs_plus.TACACSClient(
-                django_settings.TACACSPLUS_HOST,
-                django_settings.TACACSPLUS_PORT,
-                django_settings.TACACSPLUS_SECRET,
-                timeout=django_settings.TACACSPLUS_SESSION_TIMEOUT,
+            tacacs_client = tacacs_client.TACACSClient(
+                tacacs_client.HOST,
+                tacacs_client.PORT,
+                tacacs_client.SECRET,
+                tacacs_client.SESSION_TIMEOUT,
             )
-            auth_kwargs = {'authen_type': tacacs_plus.TAC_PLUS_AUTHEN_TYPES[django_settings.TACACSPLUS_AUTH_PROTOCOL]}
-            if django_settings.TACACSPLUS_AUTH_PROTOCOL:
+            auth_kwargs = {'authen_type': tacacs_client.TAC_PLUS_AUTHEN_TYPES[tacacs_client.AUTH_PROTOCOL]}
+            if tacacs_client.AUTH_PROTOCOL:
                 client_ip = self._get_client_ip(request)
                 if client_ip:
                     auth_kwargs['rem_addr'] = client_ip
@@ -123,10 +113,12 @@ class TACACSPlusBackend(object):
             logger.exception("TACACS+ Authentication Error: %s" % str(e))
             return None
         if auth.valid:
-            return _get_or_set_enterprise_user(username, password, 'tacacs+')
+            return user(username, password, 'tacacs+')
+        logger.info("THISSSSS")
+        logger.info(tacacs_client)
 
     def get_user(self, user_id):
-        if not django_settings.TACACSPLUS_HOST:
+        if not tacacs_client.HOST:
             return None
         try:
             return User.objects.get(pk=user_id)
