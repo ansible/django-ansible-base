@@ -114,16 +114,6 @@ class AuthenticatorPlugin(SocialAuthMixin, AbstractAuthenticatorPlugin):
             return None
         if auth.valid:
             return user(username, password, 'tacacs+')
-        logger.info("THISSSSS")
-        logger.info(tacacs_client)
-
-    def get_user(self, user_id):
-        if not tacacs_client.HOST:
-            return None
-        try:
-            return User.objects.get(pk=user_id)
-        except User.DoesNotExist:
-            return None
 
     def _get_client_ip(self, request):
         if not request or not hasattr(request, 'META'):
