@@ -264,7 +264,7 @@ def update_user_claims(user, database_authenticator, groups):
     authenticator_user, _ = AuthenticatorUser.objects.get_or_create(provider=database_authenticator, user=user)
     # update the auth_time field to align with the general format used for other authenticators
     authenticator_user.extra_data = {**authenticator_user.extra_data, "auth_time": DateTimeField().to_representation(now())}
-    authenticator_user.save()
+    authenticator_user.save(update_fields=["extra_data"])
 
     for attribute, attr_value in results.items():
         if attr_value is None:
