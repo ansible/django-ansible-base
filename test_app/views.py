@@ -1,17 +1,27 @@
 from rest_framework import permissions
-from rest_framework.routers import SimpleRouter
 from rest_framework.viewsets import ModelViewSet
 
-from test_app.models import User
-from test_app.serializers import UserSerializer
+from test_app import serializers
 
 
-class UserViewSet(ModelViewSet):
-    queryset = User.objects.all()
-    serializer_class = UserSerializer
+class TestAppViewSet(ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_queryset(self):
+        return self.serializer_class.Meta.model.objects.all()
 
-router = SimpleRouter()
 
-router.register(r'users', UserViewSet)
+class OrganizationViewSet(TestAppViewSet):
+    serializer_class = serializers.OrganizationSerializer
+
+
+class TeamViewSet(TestAppViewSet):
+    serializer_class = serializers.TeamSerializer
+
+
+class UserViewSet(TestAppViewSet):
+    serializer_class = serializers.UserSerializer
+
+
+class EncryptionModelViewSet(TestAppViewSet):
+    serializer_class = serializers.EncryptionTestSerializer
