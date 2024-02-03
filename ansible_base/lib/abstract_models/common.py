@@ -140,7 +140,11 @@ class CommonModel(models.Model):
                     reverse_view = f"{underscore(self.__class__.__name__)}-{underscore(field.related_model.__name__)}s-list"
                     pk = self.pk
                 else:
-                    reverse_view = f"{underscore(field.related_model.__name__)}-detail"
+                    rel_model = field.related_model
+                    if hasattr(rel_model, 'router_basename'):
+                        reverse_view = f"{underscore(rel_model.router_basename)}-detail"
+                    else:
+                        reverse_view = f"{underscore(rel_model.__name__)}-detail"
                     pk = getattr(self, field.name).pk
                 try:
                     response[field.name] = reverse(reverse_view, kwargs={'pk': pk})

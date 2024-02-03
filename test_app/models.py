@@ -6,16 +6,6 @@ from ansible_base.lib.abstract_models.common import CommonModel, NamedCommonMode
 from ansible_base.lib.utils.models import user_summary_fields
 
 
-class EncryptionModel(NamedCommonModel):
-    class Meta:
-        app_label = "test_app"
-
-    encrypted_fields = ['testing1', 'testing2']
-
-    testing1 = models.CharField(max_length=1, null=True, default='a')
-    testing2 = models.CharField(max_length=1, null=True, default='b')
-
-
 class Organization(AbstractOrganization):
     pass
 
@@ -26,8 +16,20 @@ class User(AbstractUser, CommonModel):
 
 
 class Team(AbstractTeam):
-    pass
+    encryptioner = models.ForeignKey('EncryptionModel', on_delete=models.SET_NULL, null=True)
 
 
 class ResourceMigrationTestModel(models.Model):
     name = models.CharField(max_length=255)
+
+
+class EncryptionModel(NamedCommonModel):
+    router_basename = 'encryption_test_model'
+
+    class Meta:
+        app_label = "test_app"
+
+    encrypted_fields = ['testing1', 'testing2']
+
+    testing1 = models.CharField(max_length=1, null=True, default='a')
+    testing2 = models.CharField(max_length=1, null=True, default='b')

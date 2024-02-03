@@ -86,6 +86,7 @@ class Migration(migrations.Migration):
                 ('created_by', models.ForeignKey(default=None, editable=False, help_text='The user who created this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_created+', to=settings.AUTH_USER_MODEL)),
                 ('modified_by', models.ForeignKey(default=None, editable=False, help_text='The user who last modified this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_modified+', to=settings.AUTH_USER_MODEL)),
                 ('organization', models.ForeignKey(help_text='The organization of this team.', on_delete=django.db.models.deletion.CASCADE, related_name='teams', to='test_app.organization')),
+                ('encryptioner', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, to='test_app.encryptionmodel'))
             ],
             options={
                 'ordering': ('organization__name', 'name'),
