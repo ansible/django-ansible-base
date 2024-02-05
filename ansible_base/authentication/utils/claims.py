@@ -4,6 +4,7 @@ import re
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.utils.timezone import now
+from rest_framework.serializers import DateTimeField
 from social_core.pipeline.user import get_username
 
 from ansible_base.authentication.models import Authenticator, AuthenticatorMap, AuthenticatorUser
@@ -234,7 +235,7 @@ def get_or_create_authenticator_user(user_id, user_details, authenticator, extra
     Create the user object in the database along with it's associated AuthenticatorUser class.
     """
 
-    extra = {**extra_data, "auth_time": now().isoformat()}
+    extra = {**extra_data, "auth_time": DateTimeField().to_representation(now())}
 
     try:
         auth_user = AuthenticatorUser.objects.get(uid=user_id, provider=authenticator)
@@ -261,6 +262,10 @@ def update_user_claims(user, database_authenticator, groups):
 
     needs_save = False
     authenticator_user, _ = AuthenticatorUser.objects.get_or_create(provider=database_authenticator, user=user)
+    # update the auth_time field to align with the general format used for other authenticators
+    authenticator_user.extra_data = {**authenticator_user.extra_data, "auth_time": DateTimeField().to_representation(now())}
+    authenticator_user.save(update_fields=["extra_data"])
+
     for attribute, attr_value in results.items():
         if attr_value is None:
             continue
