@@ -242,22 +242,6 @@ class AuthenticatorPlugin(SocialAuthMixin, SAMLAuth, AbstractAuthenticatorPlugin
     def add_related_fields(self, request, authenticator):
         return {"metadata": reverse('authenticator-metadata', kwargs={'pk': authenticator.id})}
 
-    def validate(self, serializer, data):
-        # if we have an instance already and we didn't get a configuration parameter we are just updating other fields and can return
-        if serializer.instance and 'configuration' not in data:
-            return data
-
-        configuration = data['configuration']
-        if not configuration.get('CALLBACK_URL', None):
-            if not serializer.instance:
-                slug = generate_authenticator_slug(data['type'], data['name'])
-            else:
-                slug = serializer.instance.slug
-
-            configuration['CALLBACK_URL'] = reverse('social:complete', request=serializer.context['request'], kwargs={'backend': slug})
-
-        return data
-
 
 class SAMLMetadataView(View):
     def get(self, request, pk=None, format=None):

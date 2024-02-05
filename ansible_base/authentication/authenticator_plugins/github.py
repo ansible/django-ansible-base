@@ -42,19 +42,3 @@ class AuthenticatorPlugin(SocialAuthMixin, GithubOAuth2, AbstractAuthenticatorPl
     type = "github"
     category = "sso"
     configuration_encrypted_fields = ['SECRET']
-
-    def validate(self, serializer, data):
-        # if we have an instance already and we didn't get a configuration parameter we are just updating other fields and can return
-        if serializer.instance and 'configuration' not in data:
-            return data
-
-        configuration = data['configuration']
-        if not configuration.get('CALLBACK_URL', None):
-            if not serializer.instance:
-                slug = generate_authenticator_slug(data['type'], data['name'])
-            else:
-                slug = serializer.instance.slug
-
-            configuration['CALLBACK_URL'] = reverse('social:complete', request=serializer.context['request'], kwargs={'backend': slug})
-
-        return data

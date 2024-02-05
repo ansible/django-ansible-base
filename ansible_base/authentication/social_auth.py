@@ -151,6 +151,22 @@ class SocialAuthMixin:
 
         return args
 
+    def validate(self, serializer, data):
+        # if we have an instance already and we didn't get a configuration parameter we are just updating other fields and can return
+        if serializer.instance and 'configuration' not in data:
+            return data
+
+        configuration = data['configuration']
+        if not configuration.get('CALLBACK_URL', None):
+            if not serializer.instance:
+                slug = generate_authenticator_slug(data['type'], data['name'])
+            else:
+                slug = serializer.instance.slug
+
+            configuration['CALLBACK_URL'] = reverse('social:complete', request=serializer.context['request'], kwargs={'backend': slug})
+
+        return data
+
 
 def create_user_claims_pipeline(*args, backend, **kwargs):
     from ansible_base.authentication.utils.claims import update_user_claims
