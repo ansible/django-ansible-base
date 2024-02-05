@@ -88,23 +88,6 @@ class Resource(models.Model):
                 self.save()
 
     @classmethod
-    def init_from_object(cls, obj, resource_type=None):
-        """
-        Initialize a new Resource object from another model instance.
-        """
-        if resource_type is None:
-            c_type = ContentType.objects.get_for_model(obj)
-            resource_type = c_type.resource_type
-            assert resource_type is not None
-
-        resource = cls(object_id=obj.pk, content_type=resource_type.content_type)
-        resource_config = resource_type.get_resource_config()
-        if hasattr(obj, resource_config.name_field):
-            resource.name = str(getattr(obj, resource_config.name_field))[:512]
-
-        return resource
-
-    @classmethod
     def get_resource_for_object(cls, obj):
         """
         Get the Resource instances for another model instance.
@@ -158,3 +141,27 @@ class Resource(models.Model):
             if ansible_id:
                 self.ansible_id = ansible_id
                 self.save()
+
+
+# This is a separate function so that it can work with models from apps in the
+# post migration signal.
+def init_resource_from_object(obj, resource_model=None, resource_type=None, resource_config=None):
+    """
+    Initialize a new Resource object from another model instance.
+    """
+    if resource_type is None:
+        c_type = ContentType.objects.get_for_model(obj)
+        resource_type = c_type.resource_type
+        assert resource_type is not None
+
+    if resource_config is None:
+        resource_config = resource_type.get_resource_config()
+
+    if resource_model is None:
+        resource_model = Resource
+
+    resource = resource_model(object_id=obj.pk, content_type=resource_type.content_type)
+    if hasattr(obj, resource_config.name_field):
+        resource.name = str(getattr(obj, resource_config.name_field))[:512]
+
+    return resource
