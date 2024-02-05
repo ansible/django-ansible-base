@@ -15,7 +15,6 @@ def get_resource_models():
     return resource_models
 
 
-# @receiver(post_delete)
 def remove_resource(sender, instance, **kwargs):
     model = get_concrete_model(sender)
     if model in get_resource_models():
@@ -26,7 +25,6 @@ def remove_resource(sender, instance, **kwargs):
             return
 
 
-# @receiver(post_save)
 def update_resource(sender, instance, created, **kwargs):
     model = get_concrete_model(sender)
     if model in get_resource_models():
