@@ -5,12 +5,13 @@ from django.conf import settings
 from django.db import models
 from django.db.utils import IntegrityError
 from django.http import HttpResponseNotFound
+from rest_framework.reverse import reverse
 from social_core.utils import setting_name
 from social_django.models import Association, Code, Nonce, Partial
 from social_django.storage import BaseDjangoStorage
 from social_django.strategy import DjangoStrategy
 
-from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_class, get_authenticator_plugins
+from ansible_base.authentication.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_class, get_authenticator_plugins
 from ansible_base.authentication.models import Authenticator, AuthenticatorUser
 
 logger = logging.getLogger('ansible_base.authentication.social_auth')
@@ -151,6 +152,8 @@ class SocialAuthMixin:
 
         return args
 
+
+class SocialAuthValidateCallbackMixin:
     def validate(self, serializer, data):
         # if we have an instance already and we didn't get a configuration parameter we are just updating other fields and can return
         if serializer.instance and 'configuration' not in data:

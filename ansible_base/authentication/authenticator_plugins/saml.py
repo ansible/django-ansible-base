@@ -11,9 +11,15 @@ from rest_framework.views import View
 from social_core.backends.saml import SAMLAuth, SAMLIdentityProvider
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
-from ansible_base.authentication.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_plugin
+from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
 from ansible_base.authentication.models import Authenticator
-from ansible_base.authentication.social_auth import AuthenticatorConfigTestStrategy, AuthenticatorStorage, AuthenticatorStrategy, SocialAuthMixin
+from ansible_base.authentication.social_auth import (
+    AuthenticatorConfigTestStrategy,
+    AuthenticatorStorage,
+    AuthenticatorStrategy,
+    SocialAuthMixin,
+    SocialAuthValidateCallbackMixin,
+)
 from ansible_base.lib.serializers.fields import CharField, JSONField, ListField, PrivateKey, PublicCert, URLField
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.lib.utils.validation import validate_cert_with_key
@@ -228,7 +234,7 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
         return configuration
 
 
-class AuthenticatorPlugin(SocialAuthMixin, SAMLAuth, AbstractAuthenticatorPlugin):
+class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAMLAuth, AbstractAuthenticatorPlugin):
     configuration_class = SAMLConfiguration
     type = "SAML"
     logger = logger
