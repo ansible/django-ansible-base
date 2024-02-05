@@ -3,7 +3,7 @@ from unittest import mock
 from django.conf import settings
 from django.test import override_settings
 
-from ansible_base.authentication.social_auth import AuthenticatorStorage, AuthenticatorStrategy
+from ansible_base.authentication.social_auth import AuthenticatorStorage, AuthenticatorStrategy, SocialAuthValidateCallbackMixin
 
 
 @mock.patch("ansible_base.authentication.social_auth.logger")
@@ -37,3 +37,53 @@ class SubstringMatcher:
         return 'a string containing "%s"' % self.containing
 
     __repr__ = __unicode__
+
+
+@mock.patch("ansible_base.authentication.social_auth.reverse")
+@mock.patch("ansible_base.authentication.social_auth.generate_authenticator_slug")
+def test_social_auth_validate_callback_mixin(mocked_reverse, mocked_generate_slug):
+
+    SerializerInstance = mock.Mock()
+    Serializer = mock.Mock()
+    serializer = Serializer()
+    serializer.instance = SerializerInstance()
+
+    # check data with no configuration key ...
+    data = {'foo': 'bar'}
+    mixin = SocialAuthValidateCallbackMixin()
+    res = mixin.validate(serializer, data)
+    assert res == data
+
+    # check data with configuration key and CALLBACK_URL ...
+    data = {'configuration': {'CALLBACK_URL': '/foo/bar'}}
+    mixin = SocialAuthValidateCallbackMixin()
+    res = mixin.validate(serializer, data)
+    assert res == data
+
+    # check data with configuration key and no CALLBACK_URL ...
+    serializer = Serializer()
+    serializer.instance = SerializerInstance()
+    serializer.context = {'request': None}
+    data = {'configuration': {}}
+    mixin = SocialAuthValidateCallbackMixin()
+    res = mixin.validate(serializer, data)
+    assert 'CALLBACK_URL' in res['configuration']
+
+    # check data with configuration key and no CALLBACK_URL and no instance...
+    serializer = Serializer()
+    serializer.instance = None
+    serializer.context = {'request': None}
+    data = {'type': 'foo', 'name': 'bar', 'configuration': {}}
+    mixin = SocialAuthValidateCallbackMixin()
+    res = mixin.validate(serializer, data)
+    assert 'CALLBACK_URL' in res['configuration']
+
+    # check data with configuration key and no CALLBACK_URL w/ instance&slug ...
+    serializer = Serializer()
+    serializer.instance = SerializerInstance()
+    serializer.instance.slug = 'slug'
+    serializer.context = {'request': None}
+    data = {'type': 'foo', 'name': 'bar', 'configuration': {}}
+    mixin = SocialAuthValidateCallbackMixin()
+    res = mixin.validate(serializer, data)
+    assert 'CALLBACK_URL' in res['configuration']
