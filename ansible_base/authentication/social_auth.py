@@ -4,6 +4,7 @@ import logging
 from django.conf import settings
 from django.db import models
 from django.db.utils import IntegrityError
+from django.http import HttpResponseNotFound
 from social_core.utils import setting_name
 from social_django.models import Association, Code, Nonce, Partial
 from social_django.storage import BaseDjangoStorage
@@ -126,6 +127,13 @@ class SocialAuthMixin:
         self.database_instance = kwargs.pop("database_instance", None)
         super().__init__(*args, **kwargs)
         self.set_logger(self.logger)
+
+    def start(self):
+        # This will be run on the /login call and we want to return a 404 if the authenticator is not enabled.
+        if not self.database_instance.enabled:
+            logger.error(f"Authentication attempted with disabled authenticator {self.database_instance.name}")
+            return HttpResponseNotFound()
+        return super().start()
 
     @property
     def name(self):
