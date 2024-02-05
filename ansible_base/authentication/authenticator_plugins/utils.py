@@ -32,7 +32,7 @@ def get_authenticator_class(authenticator_type: str):
         auth_class = __import__(authenticator_type, globals(), locals(), ['AuthenticatorPlugin'], 0)
         return auth_class.AuthenticatorPlugin
     except Exception as e:
-        logger.exception(f"The specified authenticator type {authenticator_type} could not be loaded")
+        logger.exception(f"The specified authenticator type {authenticator_type} could not be loaded, see exception below")
         raise ImportError(f"The specified authenticator type {authenticator_type} could not be loaded") from e
 
 
