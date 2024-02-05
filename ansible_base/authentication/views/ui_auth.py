@@ -42,13 +42,16 @@ def generate_ui_auth_data():
                 }
             )
         elif authenticator.category == 'sso':
-            response['ssos'].append(
-                {
-                    'name': authenticator.name,
-                    'login_url': authenticator.get_login_url(),
-                    'type': authenticator.type,
-                }
-            )
+            try:
+                response['ssos'].append(
+                    {
+                        'name': authenticator.name,
+                        'login_url': authenticator.get_login_url(),
+                        'type': authenticator.type,
+                    }
+                )
+            except ImportError:
+                logger.error(f"There is an enabled authenticator id {authenticator.id} whose plugin is not working {authenticator.type}")
         else:
             logger.error(f"Don't know how to handle authenticator of type {authenticator.type}")
 
