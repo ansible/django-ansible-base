@@ -4,8 +4,8 @@ from crum import impersonate
 from ansible_base.authentication.models import AuthenticatorMap
 from ansible_base.lib.serializers.common import CommonModelSerializer
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
-from test_app.models import EncryptionModel, Team
-from test_app.serializers import EncryptionTestSerializer, TeamSerializer
+from test_app.models import EncryptionModel, ResourceMigrationTestModel, Team
+from test_app.serializers import EncryptionTestSerializer, ResourceMigrationTestModelSerializer, TeamSerializer
 
 
 @pytest.mark.django_db
@@ -52,8 +52,8 @@ def test_related_of_model_with_no_related(ldap_authenticator):
 
 @pytest.mark.django_db
 def test_no_reverse_url_name():
-    model = EncryptionModel.objects.create()
-    serializer = EncryptionTestSerializer()
+    model = ResourceMigrationTestModel.objects.create()
+    serializer = ResourceMigrationTestModelSerializer()
     assert serializer.get_url(model) == ''
 
 
