@@ -5,7 +5,7 @@ from social_core.backends.github import GithubOAuth2
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.social_auth import SocialAuthMixin, SocialAuthValidateCallbackMixin
-from ansible_base.lib.serializers.fields import CharField, URLField
+from ansible_base.lib.serializers.fields import CharField
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.github')
 
