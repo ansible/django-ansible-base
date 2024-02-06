@@ -79,7 +79,6 @@ class TacacsConfiguration(BaseAuthenticatorConfiguration):
     )
 
 
-# TODO: Add TACACSClient
 class AuthenticatorPlugin(SocialAuthMixin, AbstractAuthenticatorPlugin, ModelBackend):
     configuration_class = TacacsConfiguration
     logger = logger
