@@ -40,16 +40,21 @@ optional-dependencies.all = { file = [
     "requirements/requirements_rest_filters.in",
     "requirements/requirements_channels.in",
     "requirements/requirements_jwt_consumer.in",
+    "requirements/requirements_testing.in",
 ] }
 optional-dependencies.authentication = { file = [ "requirements/requirements_authentication.in" ] }
 optional-dependencies.api_documentation = { file = [ "requirements/requirements_api_documentation.in" ] }
 optional-dependencies.rest_filters = { file = [ "requirements/requirements_rest_filters.in" ] }
 optional-dependencies.channel_auth = { file = [ "requirements/requirements_channels.in" ] }
 optional-dependencies.jwt_consumer = { file = [ "requirements/requirements_jwt_consumer.in" ] }
+optional-dependencies.testing = { file = [ "requirements/requirements_testing.in" ] }
 
 [build-system]
 requires = ["setuptools>=64", "setuptools_scm>=8"]
 build-backend = 'setuptools.build_meta'
+
+[tool.setuptools_scm]
+version_scheme = "calver-by-date"
 
 [tool.black]
 line-length = 160

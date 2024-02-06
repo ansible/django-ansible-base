@@ -17,6 +17,7 @@ charset-normalizer==3.3.2
 cryptography==41.0.7
     # via
     #   -r requirements/requirements.in
+    #   -r requirements/requirements_testing.in
     #   social-auth-core
 defusedxml==0.8.0rc2
     # via
@@ -49,6 +50,8 @@ inflection==0.5.1
     # via
     #   -r requirements/requirements.in
     #   drf-spectacular
+iniconfig==2.0.0
+    # via pytest
 isodate==0.6.1
     # via python3-saml
 jsonschema==4.20.0
@@ -63,6 +66,10 @@ oauthlib==3.2.2
     # via
     #   requests-oauthlib
     #   social-auth-core
+packaging==23.2
+    # via pytest
+pluggy==1.4.0
+    # via pytest
 pyasn1==0.5.1
     # via
     #   pyasn1-modules
@@ -73,8 +80,14 @@ pycparser==2.21
     # via cffi
 pyjwt==2.8.0
     # via
-    #   -r requirements/requirements_jwt_auth.in
+    #   -r requirements/requirements_jwt_consumer.in
     #   social-auth-core
+pytest==7.4.4
+    # via
+    #   -r requirements/requirements_testing.in
+    #   pytest-django
+pytest-django==4.7.0
+    # via -r requirements/requirements_testing.in
 python-ldap==3.4.4
     # via
     #   -r requirements/requirements_authentication.in
@@ -93,7 +106,7 @@ referencing==0.32.0
     #   jsonschema-specifications
 requests==2.31.0
     # via
-    #   -r requirements/requirements_jwt_auth.in
+    #   -r requirements/requirements_jwt_consumer.in
     #   requests-oauthlib
     #   social-auth-core
 requests-oauthlib==1.3.1

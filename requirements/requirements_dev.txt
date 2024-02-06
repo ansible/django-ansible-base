@@ -7,3 +7,4 @@ pytest-asyncio
 pytest-xdist
 pytest-cov
 pytest-django
+setuptools-scm

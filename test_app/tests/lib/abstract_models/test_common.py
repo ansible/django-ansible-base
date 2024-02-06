@@ -36,14 +36,18 @@ def test_save_attribution_no_system_username():
 
 @pytest.mark.django_db
 @override_settings(SYSTEM_USERNAME='_system')
-def test_save_attribution_with_system_username_set_but_nonexistent(organization, expected_log):
+@pytest.mark.parametrize(
+    'warn_nonexistent_system_user',
+    (True, False),
+)
+def test_save_attribution_with_system_username_set_but_nonexistent(organization, expected_log, warn_nonexistent_system_user):
     expected_log = partial(expected_log, "ansible_base.lib.abstract_models.common.logger")
 
     assert organization.created_by is None
     assert organization.modified_by is None
 
-    with expected_log("error", "no user with that username exists"):
-        organization.save()
+    with expected_log("warn", "no user with that username exists", assert_not_called=not warn_nonexistent_system_user):
+        organization.save(warn_nonexistent_system_user=warn_nonexistent_system_user)
 
     assert organization.created_by is None
     assert organization.modified_by is None

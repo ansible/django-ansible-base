@@ -1,6 +1,8 @@
 # Installation
 
-Currently we install django-ansible-base via a pip install from the repository:
+Currently we install django-ansible-base via a pip install from the git repository.
+
+If you want the devel version you can simply install from the repo:
 ```
 pip install git+https://github.com/ansible/django-ansible-base.git[all]
 ```
@@ -13,11 +15,14 @@ As of this writing there are three django application features:
   * api_documentation
   * authentication
   * rest_filters
+  * resource_registry
 
 So if you only wanted api_docs and filtering you could install the library like:
 ```
 pip install git+https://github.com/ansible/django-ansible-base.git[api_documentation,rest_filters]
 ```
+
+If you are using django-ansible-base from another project you will likely want to install a specific version from one of the github releases.
 
 # Configuration
 
@@ -41,6 +46,7 @@ See the following table for a mapping.
 | ansible_base.authentication    | dab_authentication    | authentication          |
 | ansible_base.api_documentation | dab_api_documentation | api_documentation       |
 | ansible_base.rest_filters      | dab_rest_filters      | rest_filters            |
+| ansible_base.resource_registry | dab_resource_registry | resource_registry       |
 
 ## settings.py
 

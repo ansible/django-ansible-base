@@ -53,17 +53,19 @@ def generate_ui_auth_data():
             logger.error(f"Don't know how to handle authenticator of type {authenticator.type}")
 
     try:
-        login_redirect_override = get_setting('LOGIN_REDIRECT_OVERRIDE', None)
-        validate_url(url=login_redirect_override, allow_plain_hostname=True)
-        response['login_redirect_override'] = login_redirect_override
+        login_redirect_override = get_setting('LOGIN_REDIRECT_OVERRIDE', '')
+        # ignore validation if login_redirect_override is None or empty string
+        if login_redirect_override is not None and login_redirect_override != '':
+            validate_url(url=login_redirect_override, allow_plain_hostname=True)
+            response['login_redirect_override'] = login_redirect_override
     except ValidationError:
-        logger.exception('LOGIN_REDIRECT_OVERRIDE was set but was not a valid URL, ignoring')
+        logger.error('LOGIN_REDIRECT_OVERRIDE was set but was not a valid URL, ignoring')
 
     custom_login_info = get_setting('custom_login_info', '')
     if isinstance(custom_login_info, str):
         response['custom_login_info'] = custom_login_info
     else:
-        logger.exception("custom_login_info was not a string")
+        logger.error("custom_login_info was not a string")
         raise ValidationError("custom_login_info was set but was not a valid string, ignoring")
 
     try:
@@ -71,6 +73,6 @@ def generate_ui_auth_data():
         validate_image_data(custom_logo)
         response['custom_logo'] = custom_logo
     except ValidationError:
-        logger.exception("custom_logo was set but was not a valid image data, ignoring")
+        logger.error("custom_logo was set but was not a valid image data, ignoring")
 
     return response
