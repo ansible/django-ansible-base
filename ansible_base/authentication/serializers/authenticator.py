@@ -9,7 +9,6 @@ from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 
 
 class AuthenticatorSerializer(NamedCommonModelSerializer):
-    reverse_url_name = 'authenticator-detail'
     type = ChoiceField(get_authenticator_plugins())
 
     def validate_type(self, value):

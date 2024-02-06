@@ -7,7 +7,7 @@ from ansible_base.lib.utils.models import user_summary_fields
 
 
 class Organization(AbstractOrganization):
-    pass
+    reverse_foreign_key_fields = ['teams']
 
 
 class User(AbstractUser, CommonModel):
@@ -16,7 +16,7 @@ class User(AbstractUser, CommonModel):
 
 
 class Team(AbstractTeam):
-    encryptioner = models.ForeignKey('EncryptionModel', on_delete=models.SET_NULL, null=True)
+    encryptioner = models.ForeignKey('test_app.EncryptionModel', on_delete=models.SET_NULL, null=True)
 
 
 class ResourceMigrationTestModel(models.Model):
@@ -42,4 +42,3 @@ class RelatedFieldsTestModel(CommonModel):
     teams_with_no_view.related_view = None
 
     more_teams = models.ManyToManyField(Team, related_name='related_fields_test_model_more_teams')
-    more_teams.related_view = "related_fields_test_model-more_teams-list"

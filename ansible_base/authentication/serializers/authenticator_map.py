@@ -6,8 +6,6 @@ from ansible_base.lib.serializers.common import NamedCommonModelSerializer
 
 
 class AuthenticatorMapSerializer(NamedCommonModelSerializer):
-    reverse_url_name = 'authenticator_map-detail'
-
     class Meta:
         model = AuthenticatorMap
         fields = NamedCommonModelSerializer.Meta.fields + ['authenticator', 'order', 'organization', 'revoke', 'team', 'triggers', 'map_type']

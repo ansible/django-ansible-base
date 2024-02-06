@@ -1,4 +1,5 @@
 import logging
+from collections import OrderedDict
 
 from crum import get_current_user
 from django.conf import settings
@@ -12,6 +13,27 @@ from rest_framework.reverse import reverse
 from ansible_base.lib.utils.settings import get_setting
 
 logger = logging.getLogger('ansible_base.lib.abstract_models.common')
+
+
+def get_cls_view_basename(cls):
+    # This gives the expected base Django view name of cls
+    if hasattr(cls, 'router_basename'):
+        return cls.router_basename
+    return underscore(cls.__name__)
+
+
+def get_url_for_object(obj, request=None):
+    # get_absolute_url mainly exists to support AWX
+    if hasattr(obj, 'get_absolute_url'):
+        return obj.get_absolute_url()
+
+    basename = get_cls_view_basename(obj.__class__)
+
+    try:
+        return reverse(f'{basename}-detail', kwargs={'pk': obj.pk})
+    except NoReverseMatch:
+        logger.debug(f"Tried to reverse {basename}-detail for model {obj.__class__.__name__} but said view is not defined")
+        return ''
 
 
 class CommonModel(models.Model):
@@ -40,7 +62,6 @@ class CommonModel(models.Model):
         on_delete=models.DO_NOTHING,
         help_text="The user who created this resource",
     )
-    created_by.related_view = 'user-detail'
     modified_on = models.DateTimeField(
         default=None,
         editable=False,
@@ -55,7 +76,6 @@ class CommonModel(models.Model):
         on_delete=models.DO_NOTHING,
         help_text="The user who last modified this resource",
     )
-    modified_by.related_view = 'user-detail'
 
     def _attributable_user(self, warn_nonexistent_system_user):
         user = get_current_user()
@@ -127,53 +147,37 @@ class CommonModel(models.Model):
                     response[field.name] = getattr(self, field.name).summary_fields()
         return response
 
-    def _get_reverse_view(self, field):
-        # A field can specify a related_view to use for the reverse lookup
-        # This looks like:
-        #
-        # foo = models.ManyToManyField(...)
-        # foo.related_view = 'foo-list'
-        #
-        # It can also specify related_view = None to opt out of showing up here.
-        #
-        # The default is to try to guess the view name based on the model and field name.
-        # But this won't always work in every case, so this gives models a way to specify.
-        reverse_view = getattr(field, 'related_view', False)
-
-        if reverse_view is None or reverse_view:
-            # Give fields a chance to opt out of showing up here by forcing related_view to None
-            return reverse_view
-
-        # otherwise reverse_view is False, meaning we should try to guess the view name
-        if isinstance(field, models.ManyToManyField):
-            return f"{underscore(self.__class__.__name__)}-{field.name}-list"
-
-        return f"{underscore(field.name)}-detail"
-
     def related_fields(self, request):
-        response = {}
+        # See docs/lib/default_models.md
+        response = OrderedDict()
         # Automatically add all of the ForeignKeys for the model as related fields
-        for field in self._meta.concrete_fields + self._meta.many_to_many:
-            if isinstance(field, (models.ForeignKey, models.ManyToManyField)) and getattr(self, field.name):
-                # ignore relations on inherited django models
-                if field.name.endswith("_ptr"):
-                    continue
+        for field in self._meta.concrete_fields:
+            # ignore relations on inherited django models
+            if not isinstance(field, models.ForeignKey) or field.name.endswith("_ptr"):
+                continue
 
-                reverse_view = self._get_reverse_view(field)
-                if reverse_view is None:
-                    continue
+            if obj := getattr(self, field.name):
+                if related_url := get_url_for_object(obj):
+                    response[field.name] = related_url
 
-                pk = self.pk if isinstance(field, models.ManyToManyField) else getattr(self, field.name).pk
+        basename = get_cls_view_basename(self.__class__)
 
-                try:
-                    response[field.name] = reverse(reverse_view, kwargs={'pk': pk})
-                except NoReverseMatch:
-                    logger.debug(f"Model {self.__class__.__name__} wanted to reverse view to {reverse_view} but said view is not defined")
+        for field in self._meta.many_to_many:
+            if getattr(field, 'related_view', False) is None:
+                # Give fields a chance to opt out of showing up here by forcing related_view to None
+                continue
+
+            reverse_view = f"{basename}-{field.name}-list"
+
+            try:
+                response[field.name] = reverse(reverse_view, kwargs={'pk': self.pk})
+            except NoReverseMatch:
+                logger.debug(f"Model {self.__class__.__name__} wanted to reverse view to {reverse_view} but said view is not defined")
 
         # Add any reverse relations required
-        for field in getattr(self, 'reverse_foreign_key_fields', []):
-            reverse_view = f"{underscore(self.__class__.__name__)}-{field}-list"
-            response[field] = reverse(reverse_view, kwargs={'pk': self.pk})
+        for field_name in getattr(self, 'reverse_foreign_key_fields', []):
+            reverse_view = f"{basename}-{field_name}-list"
+            response[field_name] = reverse(reverse_view, kwargs={'pk': self.pk})
 
         return response
 

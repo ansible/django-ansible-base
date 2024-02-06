@@ -2,6 +2,7 @@ from rest_framework import permissions
 from rest_framework.viewsets import ModelViewSet
 
 from test_app import serializers
+from test_app.models import RelatedFieldsTestModel
 
 
 class TestAppViewSet(ModelViewSet):
@@ -25,3 +26,8 @@ class UserViewSet(TestAppViewSet):
 
 class EncryptionModelViewSet(TestAppViewSet):
     serializer_class = serializers.EncryptionTestSerializer
+
+
+class RelatedFieldsTestModelViewSet(TestAppViewSet):
+    queryset = RelatedFieldsTestModel.objects.all()  # needed to automatic basename from router
+    serializer_class = serializers.RelatedFieldsTestModelSerializer
