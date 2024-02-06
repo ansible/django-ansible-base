@@ -6,12 +6,12 @@ from rest_framework.serializers import ValidationError
 from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.validation import validate_image_data, validate_url
-from ansible_base.lib.utils.views import ViewWithHeaders
+from ansible_base.lib.utils.views import AnsibleBaseDjanoAppApiView
 
 logger = logging.getLogger('ansible_base.authentication.views.ui_auth')
 
 
-class UIAuth(ViewWithHeaders):
+class UIAuth(AnsibleBaseDjanoAppApiView):
     authentication_classes = []
     permission_classes = []
 

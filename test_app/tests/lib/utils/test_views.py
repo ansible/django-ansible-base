@@ -3,12 +3,12 @@ from django.http.response import HttpResponseBase
 from django.test import override_settings
 from django.test.client import RequestFactory
 
-from ansible_base.lib.utils.views import ViewWithHeaders
+from ansible_base.lib.utils.views import AnsibleBaseView
 
 
 @pytest.fixture
 def view_with_headers():
-    view = ViewWithHeaders()
+    view = AnsibleBaseView()
     view.headers = {}
     return view
 

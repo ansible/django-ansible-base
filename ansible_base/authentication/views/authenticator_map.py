@@ -3,10 +3,10 @@ from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.authentication.models import AuthenticatorMap
 from ansible_base.authentication.serializers import AuthenticatorMapSerializer
-from ansible_base.lib.utils.views import ViewWithHeaders
+from ansible_base.lib.utils.views import AnsibleBaseDjanoAppApiView
 
 
-class AuthenticatorMapViewSet(ModelViewSet, ViewWithHeaders):
+class AuthenticatorMapViewSet(ModelViewSet, AnsibleBaseDjanoAppApiView):
     """
     API endpoint that allows authenticator maps to be viewed or edited.
     """
