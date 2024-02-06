@@ -14,6 +14,7 @@ from ansible_base.lib.testing.fixtures import *  # noqa: F403, F401
 @pytest.fixture
 def github_configuration():
     return {
+        "CALLBACK_URL": "https://localhost/api/gateway/callback/github_test/",
         "KEY": "12345",
         "SECRET": "abcdefg12345",
     }
