@@ -3,15 +3,25 @@ import logging
 from django.contrib.auth.backends import ModelBackend
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
-
-# import tacacs_plus
+from tacacs_plus.client import TACACSClient
+from tacacs_plus.flags import TAC_PLUS_AUTHEN_TYPES, TAC_PLUS_VIRTUAL_REM_ADDR
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.authentication.social_auth import SocialAuthMixin
 from ansible_base.lib.serializers.fields import CharField, IntegerField, ChoiceField, BooleanField
 
+from aap_gateway_api.models import User
+
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.tacacs')
+
+#
+# Someone created a django library for tacacs: https://github.com/mwallraf/django-auth-tacacs
+# It's appears to leverage tacacs-plus but has a single maintainer and has not been touched in a year.
+# There are no issues on the repo but there has only been one release.
+# The library is farily minimal so for now we are just going to do our own coding in this authenticator.
+# Later on, if we choose, it should be a simple lift to use django-auth-tacacs
+#
 
 
 def validate_tacacsplus_disallow_nonascii(value):
@@ -22,7 +32,7 @@ def validate_tacacsplus_disallow_nonascii(value):
 
 
 class TacacsConfiguration(BaseAuthenticatorConfiguration):
-    documentation_url = "https://docs.djangoproject.com/en/4.2/ref/contrib/auth/#django.contrib.auth.backends.ModelBackend"
+    documentation_url = "https://github.com/ansible/aap-gateway/blob/devel/README.md#tacacs-integration"
     # TODO: Change the documentation URL to the correct one for TACACS
     HOST = CharField(
         allow_blank=True,
@@ -41,7 +51,7 @@ class TacacsConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('Port number of TACACS+ Server'),
     )
     AUTH_PROTOCOL = ChoiceField(
-        choices=['ascii', 'pap'],
+        choices=['ascii', 'pap', 'chap'],
         default='ascii',
         label=_('TACACS+ Authentication Protocol'),
         help_text=_('Choose the authentication protocol used by TACACS+ client.'),
@@ -71,7 +81,7 @@ class TacacsConfiguration(BaseAuthenticatorConfiguration):
 
 
 # TODO: Add TACACSClient
-class AuthenticatorPlugin(SocialAuthMixin, AbstractAuthenticatorPlugin):
+class AuthenticatorPlugin(SocialAuthMixin, AbstractAuthenticatorPlugin, ModelBackend):
     configuration_class = TacacsConfiguration
     logger = logger
     type = "tacacs"
@@ -84,36 +94,44 @@ class AuthenticatorPlugin(SocialAuthMixin, AbstractAuthenticatorPlugin):
     def authenticate(self, request, username=None, password=None, **kwargs):
         if not username or not password:
             return None
-        user = super().authenticate(request, username, password, **kwargs)
 
-        # This auth class doesn't create any new local users, so we just need to make sure
-        # it has an AuthenticatorUser associated with it.
-        if user:
-            AuthenticatorUser.objects.get_or_create(uid=username, user=user, provider=self.database_instance)
-
-            # TODO, we will need to return attributes and claims eventually
-            return user
-        if not self.settings.HOST:
+        if not self.database_instance:
+            logger.error("AuthenticatorPlugin was missing an authenticator")
             return None
+
         try:
-            # Upstream TACACS+ client does not accept non-string, so convert if needed.
-            tacacs_client = tacacs_client.TACACSClient(
-                tacacs_client.HOST,
-                tacacs_client.PORT,
-                tacacs_client.SECRET,
-                tacacs_client.SESSION_TIMEOUT,
+            tacacs_client = TACACSClient(
+                self.database_instance.configuration["HOST"],
+                self.database_instance.configuration["PORT"],
+                self.database_instance.configuration["SECRET"],
+                timeout=self.database_instance.configuration["SESSION_TIMEOUT"],
             )
-            auth_kwargs = {'authen_type': tacacs_client.TAC_PLUS_AUTHEN_TYPES[tacacs_client.AUTH_PROTOCOL]}
-            if tacacs_client.AUTH_PROTOCOL:
+            rem_addr = TAC_PLUS_VIRTUAL_REM_ADDR
+            if self.database_instance.configuration['AUTH_PROTOCOL']:
                 client_ip = self._get_client_ip(request)
                 if client_ip:
-                    auth_kwargs['rem_addr'] = client_ip
-            auth = tacacs_client.authenticate(username, password, **auth_kwargs)
+                    rem_addr = client_ip
+
+            reply = tacacs_client.authenticate(
+                username,
+                password,
+                authen_type=TAC_PLUS_AUTHEN_TYPES[self.database_instance.configuration['AUTH_PROTOCOL']],
+                rem_addr=rem_addr,
+            )
+
+            if reply.valid:
+                # At this point tacacs+ has validated our username and password, so we need to create the user and AuthenticatorUser object
+                user, created = User.objects.get_or_create(username=username)
+                if created:
+                    logger.info(f"TACAC+ created user {user.username}")
+                AuthenticatorUser.objects.get_or_create(uid=username, user=user, provider=self.database_instance)
+
+                return user
         except Exception as e:
             logger.exception("TACACS+ Authentication Error: %s" % str(e))
-            return None
-        if auth.valid:
-            return user(username, password, 'tacacs+')
+
+        # Tacacs could not validate us so return None.
+        return None
 
     def _get_client_ip(self, request):
         if not request or not hasattr(request, 'META'):
