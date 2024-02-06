@@ -32,8 +32,7 @@ def validate_tacacsplus_disallow_nonascii(value):
 
 
 class TacacsConfiguration(BaseAuthenticatorConfiguration):
-    documentation_url = "https://github.com/ansible/aap-gateway/blob/devel/README.md#tacacs-integration"
-    # TODO: Change the documentation URL to the correct one for TACACS
+    documentation_url = "https://github.com/ansible/tacacs_plus"
     HOST = CharField(
         allow_blank=True,
         default='',
