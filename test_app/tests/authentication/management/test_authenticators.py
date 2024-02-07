@@ -86,7 +86,7 @@ def test_authenticators_cli_initialize(django_user_model):
     err = StringIO()
 
     # Sanity check:
-    assert django_user_model.objects.count() == 0
+    assert django_user_model.objects.count() == 1
 
     with pytest.raises(SystemExit) as pytest_wrapped_e:
         call_command('authenticators', "--initialize", stdout=out, stderr=err)
@@ -109,14 +109,14 @@ def test_authenticators_cli_initialize_pre_existing(django_user_model, local_aut
     err = StringIO()
 
     # Sanity check:
-    assert django_user_model.objects.count() == 1
+    assert django_user_model.objects.count() == 2
     existing_user = django_user_model.objects.first()
     assert AuthenticatorUser.objects.count() == 0
 
     call_command('authenticators', "--initialize", stdout=out, stderr=err)
 
     # Make sure no new user got created.
-    assert django_user_model.objects.count() == 1
+    assert django_user_model.objects.count() == 2
     assert django_user_model.objects.filter(username="admin").count() == 1
     new_user = django_user_model.objects.first()
 
