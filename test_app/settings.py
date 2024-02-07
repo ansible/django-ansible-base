@@ -120,3 +120,5 @@ settings_file = os.path.join(os.path.dirname(dynamic_config.__file__), 'dynamic_
 include(settings_file)
 
 ANSIBLE_BASE_RESOURCE_CONFIG_MODULE = "test_app.resource_api"
+
+ANSIBLE_BASE_SERVICE_PREFIX = "aap"

@@ -63,6 +63,11 @@ class ResourceConfig:
     name_field = None
 
     def __init__(self, model, shared_resource: SharedResource = None, parent_resources: List[ParentResource] = None, name_field: str = None):
+        if not hasattr(self, 'service_type'):
+            from django.conf import settings  # delay import until use to reduce chance of circular imports
+
+            self.service_type = settings.ANSIBLE_BASE_SERVICE_PREFIX
+
         model = get_concrete_model(model)
         self.model_label = model._meta.label
 

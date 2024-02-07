@@ -3,14 +3,20 @@
 ## Setup
 
 ### App Setup
-Add `ansible_base.resource_registry` to your installed apps:
+Add `ansible_base.resource_registry` to your installed apps and set the name of the local service.
 
 ```
 INSTALLED_APPS = [
     ...
     'ansible_base.resource_registry',
 ]
+
+ANSIBLE_BASE_SERVICE_PREFIX = 'my_app'
 ```
+
+The name of the local service will prefix model names for local resources.
+An inventory model will be referred to as "my_app.inventory" in this example.
+The local service may be one of "awx", "galaxy" or "eda".
 
 ### Configure the Resource List
 
@@ -26,7 +32,7 @@ from ansible_base.resource_registry.shared_types import TeamType, UserType
 
 
 class APIConfig(ServiceAPIConfig):
-    service_type = "aap"
+    pass
 
 
 RESOURCE_LIST = (
@@ -38,8 +44,6 @@ RESOURCE_LIST = (
     ResourceConfig(Authenticator),
 )
 ```
-
-`APIConfig.service_type` must be one of "awx", "galaxy" or "eda".
 
 `RESOURCE_LIST` must be a list or set of `ResourceConfig` objects. This object defines a model to be included in the resource registry, as well
 as a set of metadata from that resource. Right now it accepts the following args:

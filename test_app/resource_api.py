@@ -7,7 +7,7 @@ from test_app.models import Organization, ResourceMigrationTestModel, Team
 
 
 class APIConfig(ServiceAPIConfig):
-    service_type = "aap"
+    pass
 
 
 RESOURCE_LIST = (

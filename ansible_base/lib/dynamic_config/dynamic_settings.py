@@ -26,6 +26,12 @@ except NameError:
     REST_FRAMEWORK = {}
 
 
+try:
+    ANSIBLE_BASE_SERVICE_PREFIX
+except NameError:
+    ANSIBLE_BASE_SERVICE_PREFIX = 'local'
+
+
 if 'ansible_base.api_documentation' in INSTALLED_APPS:
     if 'drf_spectacular' not in INSTALLED_APPS:
         INSTALLED_APPS.append('drf_spectacular')
