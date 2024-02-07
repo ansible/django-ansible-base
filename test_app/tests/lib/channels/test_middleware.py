@@ -20,7 +20,7 @@ async def test_middleware_auth_pass(local_authenticator, user):
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 @patch('ansible_base.lib.channels.middleware.WebsocketDenier')
-async def test_middleware_auth_denied(denier_class, local_authenticator, user):
+async def test_middleware_auth_denied(denier_class, system_user, local_authenticator, user):
     denier = AsyncMock()
     denier_class.return_value = denier
 
