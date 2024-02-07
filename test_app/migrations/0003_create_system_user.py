@@ -16,9 +16,9 @@ def create_system_user(apps, schema_editor):
     system_username = settings.SYSTEM_USERNAME
     if not User.objects.filter(username=system_username).exists():
         # Avoid using .create_user() here because it'll call save and we can't
-        # pass in our warn_nonexistent_system_user arg.
+        # pass in our non_existent_user_fatal arg.
         system_user = User(username=system_username, is_active=False)
-        system_user.save(warn_nonexistent_system_user=False)
+        system_user.save(non_existent_user_fatal=False)
         system_user.created_by = system_user
         system_user.modified_by = system_user
         system_user.save()
