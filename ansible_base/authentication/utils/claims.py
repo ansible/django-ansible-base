@@ -258,8 +258,7 @@ def update_user_claims(user, database_authenticator, groups):
     if not user:
         return None
 
-    extra_data = user.authenticator_user.get(provider=database_authenticator).extra_data
-    results = create_claims(database_authenticator, user.username, extra_data, groups)
+    results = create_claims(database_authenticator, user.username, user.authenticator_user.extra, groups)
 
     needs_save = False
     authenticator_user, _ = AuthenticatorUser.objects.get_or_create(provider=database_authenticator, user=user)
