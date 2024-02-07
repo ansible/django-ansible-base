@@ -4,6 +4,7 @@ from collections import OrderedDict
 from crum import get_current_user
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.urls.exceptions import NoReverseMatch
 from django.utils import timezone
@@ -74,9 +75,23 @@ class CommonModel(models.Model):
         help_text="The user who last modified this resource",
     )
 
-    def _attributable_user(self, warn_nonexistent_system_user):
+    def _attributable_user(self, non_existent_user_fatal=True):
+        # returns:
+        #    The logged in user object
+        #    The system user object
+        #    None if there is no user and the system user is not defined
+        #    AnonymousUser if an anonymous request came in
+
         user = get_current_user()
-        if user is None:
+
+        # We might be AnonymousUser but there could be conditions where something might need to save even if we are Anonymous.
+        convert_anonymous_user_to_system = False
+        if user and user.is_anonymous:
+            # There is a special case where, when creating an user from an authenticator we will be anonymous user until the user is actually created
+            if not self.pk and isinstance(self, AbstractUser):
+                convert_anonymous_user_to_system = True
+
+        if user is None or convert_anonymous_user_to_system:
             # If no user is logged in, we try attributing the action to the system user
             # If there is no system username defined, we just leave the user as None
             system_username = get_setting('SYSTEM_USERNAME')
@@ -84,30 +99,51 @@ class CommonModel(models.Model):
                 try:
                     user = get_user_model().objects.get(username=system_username)
                 except get_user_model().DoesNotExist:
-                    if warn_nonexistent_system_user:
-                        logger.warn(f"SYSTEM_USERNAME is set to {system_username} but no user with that username exists. User attribution will be None.")
+                    if non_existent_user_fatal:
+                        logger.warning(f"SYSTEM_USERNAME is set to {system_username} but no user with that username exists.")
                     user = None
+
         return user
 
-    def save(self, *args, warn_nonexistent_system_user=True, **kwargs):
+    def _check_user(self, user, non_existent_user_fatal=True):
+        # Its possible for _attributable_user to return None or anonymous user in which case we don't want to save
+        if (not user or user.is_anonymous) and non_existent_user_fatal:
+            # TODO: See if there is a better way to figure out how to identify this object?
+            # Maybe instead of trying to send a single identifier we try and dump the object?
+            obj_id = getattr(self, 'pk', getattr(self, 'name', getattr(self, 'username', 'Unknown')))
+            logger.error(f"Request to save a {self.__class__} object, id {obj_id} without a user making the request!")
+            raise ValueError("Unable to save model without user!")
+
+    def save(self, *args, non_existent_user_fatal=True, **kwargs):
+        '''
+        This save function will provide several features automatically.
+          * It will automatically encrypt any fields in the classes `encrypt_fields` property
+          * It will automatically add a created_by/created_on fields for new items
+          * It will automatically add the modified_on/modified_by fields for changing items
+        '''
         update_fields = list(kwargs.get('update_fields', []))
-        user = self._attributable_user(warn_nonexistent_system_user)
 
         # Manually perform auto_now_add and auto_now logic.
         now = timezone.now()
-        if not self.pk and not self.created_on:
-            self.created_on = now
-            if user is not None and not user.is_anonymous:
+        user = self._attributable_user(non_existent_user_fatal)
+
+        if not self.pk:
+            if self.created_by is None:
+                self._check_user(user, non_existent_user_fatal)
                 self.created_by = user
-            if 'created_on' not in update_fields:
-                update_fields.append('created_on')
-            if 'created_by' not in update_fields:
                 update_fields.append('created_by')
-        if 'modified_on' not in update_fields or not self.modified_on:
+
+            if self.created_on is None:
+                self.created_on = now
+                update_fields.append('created_on')
+
+        if 'modified_on' not in update_fields:
             self.modified_on = now
-            if user is not None and not user.is_anonymous:
-                self.modified_by = user
             update_fields.append('modified_on')
+
+        if 'modified_by' not in update_fields:
+            self._check_user(user, non_existent_user_fatal)
+            self.modified_by = user
             update_fields.append('modified_by')
 
         # Encrypt any fields
@@ -118,7 +154,7 @@ class CommonModel(models.Model):
             if field_value:
                 setattr(self, field, ansible_encryption.encrypt_string(field_value))
 
-        super().save(*args, **kwargs)
+        return super().save(*args, **kwargs)
 
     @classmethod
     def from_db(self, db, field_names, values):
