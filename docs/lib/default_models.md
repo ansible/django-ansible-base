@@ -19,7 +19,7 @@ The common serializers expect certain things from your models in order to reduce
 needed to populate standard patterns in the returned API data. In particular:
 
  - "url" - the URL of the object itself
- - "related" - linked to related objects
+ - "related" - links to related objects
  - "summary_fields" - details of related objects
 
 Doing this without lots of redundancy requires standardization of _view names_.
@@ -58,7 +58,7 @@ It is expected that models have a sublist for many-to-many relationships.
 For example, `/api/v2/organizations/1/admins/` would list users who are admins
 of the organization.
 
-If this doesn't apply, and it is not intended to have a view for a realationship
+If this doesn't apply, and it is not intended to have a view for a relationship
 you can set `related_view` to `None`. The relationship will be ignored by the serializer.
 
 ```
