@@ -16,7 +16,7 @@ ANSIBLE_BASE_SERVICE_PREFIX = 'my_app'
 
 The name of the local service will prefix model names for local resources.
 An inventory model will be referred to as "my_app.inventory" in this example.
-The local service may be one of "awx", "galaxy" or "eda".
+The local service must be one of "local" (placeholder), "aap", "awx", "galaxy" or "eda".
 
 ### Configure the Resource List
 
