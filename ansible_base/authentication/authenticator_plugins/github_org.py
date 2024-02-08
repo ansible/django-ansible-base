@@ -55,4 +55,4 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Gith
     logger = logger
     type = "github-org"
     category = "sso"
-    configuration_encrypted_fields = ['SECRET']
+    configuration_encrypted_fields = ['ORG_SECRET']

@@ -57,4 +57,4 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Gith
     logger = logger
     type = "github-team"
     category = "sso"
-    configuration_encrypted_fields = ['SECRET']
+    configuration_encrypted_fields = ['TEAM_SECRET']
