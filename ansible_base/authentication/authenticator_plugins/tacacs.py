@@ -1,5 +1,6 @@
 import logging
 
+from aap_gateway_api.models import User
 from django.contrib.auth.backends import ModelBackend
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
@@ -9,9 +10,7 @@ from tacacs_plus.flags import TAC_PLUS_AUTHEN_TYPES, TAC_PLUS_VIRTUAL_REM_ADDR
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.authentication.social_auth import SocialAuthMixin
-from ansible_base.lib.serializers.fields import CharField, IntegerField, ChoiceField, BooleanField
-
-from aap_gateway_api.models import User
+from ansible_base.lib.serializers.fields import BooleanField, CharField, ChoiceField, IntegerField
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.tacacs')
 
