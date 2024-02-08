@@ -13,7 +13,7 @@ logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.gi
 class GithubEnterpriseConfiguration(BaseAuthenticatorConfiguration):
     documenation_url = "https://python-social-auth.readthedocs.io/en/latest/backends/github.html"
 
-    CALLBACK_URL = URLField(
+    ENTERPRISE_CALLBACK_URL = URLField(
         help_text=_(
             'Provide this URL as the callback URL for your application as part of your registration process. Refer to the documentation for more detail.'
         ),
@@ -21,7 +21,7 @@ class GithubEnterpriseConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('Callback URL'),
     )
 
-    URL = URLField(
+    ENTERPRISE_URL = URLField(
         help_text=_(
             'The base url for the GithHb enterprise instance.'
         ),
@@ -29,7 +29,7 @@ class GithubEnterpriseConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('Base URL'),
     )
 
-    API_URL = URLField(
+    ENTERPRISE_API_URL = URLField(
         help_text=_(
             'The base url for the GithHb enterprise instance.'
         ),
@@ -37,16 +37,28 @@ class GithubEnterpriseConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('API URL'),
     )
 
-    KEY = CharField(
+    ENTERPRISE_KEY = CharField(
         help_text=_('The OAuth2 key (Client ID) from your GitHub developer application.'),
         allow_null=False,
         ui_field_label=_('GitHub OAuth2 Key'),
     )
 
-    SECRET = CharField(
+    ENTERPRISE_SECRET = CharField(
         help_text=_('The OAuth2 secret (Client Secret) from your GitHub developer application.'),
         allow_null=False,
         ui_field_label=_('GitHub OAuth2 Secret'),
+    )
+
+    ENTERPRISE_ORG_MAP = CharField(
+        help_text=_('The OAuth2 secret (Client Secret) from your GitHub developer application.'),
+        allow_null=False,
+        ui_field_label=_('GitHub enterprise org map'),
+    )
+
+    ENTERPRISE_TEAM_MAP = CharField(
+        help_text=_('The OAuth2 secret (Client Secret) from your GitHub developer application.'),
+        allow_null=False,
+        ui_field_label=_('GitHub enterprise org map'),
     )
 
 
