@@ -13,7 +13,7 @@ logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.gi
 class GithubEnterpriseOrgConfiguration(BaseAuthenticatorConfiguration):
     documenation_url = "https://python-social-auth.readthedocs.io/en/latest/backends/github.html"
 
-    CALLBACK_URL = URLField(
+    ENTERPRISE_ORG_CALLBACK_URL = URLField(
         help_text=_(
             'Provide this URL as the callback URL for your application as part of your registration process. Refer to the documentation for more detail.'
         ),
@@ -21,7 +21,7 @@ class GithubEnterpriseOrgConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('Callback URL'),
     )
 
-    URL = URLField(
+    ENTERPRISE_ORG_URL = URLField(
         help_text=_(
             'The base url for the GithHb enterprise instance.'
         ),
@@ -29,7 +29,7 @@ class GithubEnterpriseOrgConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('Base URL'),
     )
 
-    API_URL = URLField(
+    ENTERPRISE_ORG_API_URL = URLField(
         help_text=_(
             'The base url for the GithHb enterprise instance.'
         ),
@@ -37,16 +37,34 @@ class GithubEnterpriseOrgConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('API URL'),
     )
 
-    KEY = CharField(
+    ENTERPRISE_ORG_KEY = CharField(
         help_text=_('The OAuth2 key (Client ID) from your GitHub developer application.'),
         allow_null=False,
         ui_field_label=_('GitHub OAuth2 Key'),
     )
 
-    SECRET = CharField(
+    ENTERPRISE_ORG_SECRET = CharField(
         help_text=_('The OAuth2 secret (Client Secret) from your GitHub developer application.'),
         allow_null=False,
         ui_field_label=_('GitHub OAuth2 Secret'),
+    )
+
+    ENTERPRISE_ORG_NAME = CharField(
+        help_text=_('The OAuth2 key (Client ID) from your GitHub developer application.'),
+        allow_null=False,
+        ui_field_label=_('GitHub enterprise org name'),
+    )
+
+    ENTERPRISE_ORG_ORGANIZATION_MAP = CharField(
+        help_text=_('The OAuth2 key (Client ID) from your GitHub developer application.'),
+        allow_null=False,
+        ui_field_label=_('GitHub enterprise org org map'),
+    )
+
+    ENTERPRISE_ORG_TEAM_MAP = CharField(
+        help_text=_('The OAuth2 key (Client ID) from your GitHub developer application.'),
+        allow_null=False,
+        ui_field_label=_('GitHub enterprise org team map'),
     )
 
 
@@ -55,4 +73,4 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Gith
     logger = logger
     type = "github-enterprise-org"
     category = "sso"
-    configuration_encrypted_fields = ['SECRET']
+    configuration_encrypted_fields = ['ENTERPRISE_ORG_SECRET']
