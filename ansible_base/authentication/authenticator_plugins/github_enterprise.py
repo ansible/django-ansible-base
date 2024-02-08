@@ -22,17 +22,13 @@ class GithubEnterpriseConfiguration(BaseAuthenticatorConfiguration):
     )
 
     ENTERPRISE_URL = URLField(
-        help_text=_(
-            'The base url for the GithHb enterprise instance.'
-        ),
+        help_text=_('The base url for the GithHb enterprise instance.'),
         allow_null=False,
         ui_field_label=_('Base URL'),
     )
 
     ENTERPRISE_API_URL = URLField(
-        help_text=_(
-            'The base url for the GithHb enterprise instance.'
-        ),
+        help_text=_('The base url for the GithHb enterprise instance.'),
         allow_null=False,
         ui_field_label=_('API URL'),
     )
