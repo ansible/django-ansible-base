@@ -5,7 +5,7 @@ from social_core.backends.github_enterprise import GithubEnterpriseOAuth2
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.social_auth import SocialAuthMixin, SocialAuthValidateCallbackMixin
-from ansible_base.lib.serializers.fields import CharField, URLField
+from ansible_base.lib.serializers.fields import CharField, SocialOrganizationMapField, SocialTeamMapField, URLField
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.github_enterprise')
 
@@ -45,13 +45,13 @@ class GithubEnterpriseConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('GitHub OAuth2 Secret'),
     )
 
-    ENTERPRISE_ORG_MAP = CharField(
+    ENTERPRISE_ORG_MAP = SocialOrganizationMapField(
         help_text=_('The OAuth2 secret (Client Secret) from your GitHub developer application.'),
         allow_null=False,
         ui_field_label=_('GitHub enterprise org map'),
     )
 
-    ENTERPRISE_TEAM_MAP = CharField(
+    ENTERPRISE_TEAM_MAP = SocialTeamMapField(
         help_text=_('The OAuth2 secret (Client Secret) from your GitHub developer application.'),
         allow_null=False,
         ui_field_label=_('GitHub enterprise org map'),

@@ -5,7 +5,7 @@ from social_core.backends.github import GithubTeamOAuth2
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.social_auth import SocialAuthMixin, SocialAuthValidateCallbackMixin
-from ansible_base.lib.serializers.fields import CharField, URLField
+from ansible_base.lib.serializers.fields import CharField, SocialOrganizationMapField, SocialTeamMapField, URLField
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.github_team')
 
@@ -39,13 +39,13 @@ class GithubTeamConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('GitHub OAuth2 Key'),
     )
 
-    TEAM_ORGANIZATION_MAP = CharField(
+    TEAM_ORGANIZATION_MAP = SocialOrganizationMapField(
         help_text=_('The github team ID.'),
         allow_null=False,
         ui_field_label=_('GitHub team organization map'),
     )
 
-    TEAM_TEAM_MAP = CharField(
+    TEAM_TEAM_MAP = SocialTeamMapField(
         help_text=_('The github team ID.'),
         allow_null=False,
         ui_field_label=_('GitHub team organization map'),
