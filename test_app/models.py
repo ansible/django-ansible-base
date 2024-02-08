@@ -27,3 +27,7 @@ class User(AbstractUser, CommonModel):
 
 class Team(AbstractTeam):
     pass
+
+
+class ResourceMigrationTestModel(models.Model):
+    name = models.CharField(max_length=255)

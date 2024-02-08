@@ -4,7 +4,7 @@ from django.contrib.auth.backends import ModelBackend
 from django.core.exceptions import ValidationError
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
-from ansible_base.authentication.models import AuthenticatorUser
+from ansible_base.authentication.utils.claims import get_or_create_authenticator_user
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.local')
 
@@ -37,7 +37,21 @@ class AuthenticatorPlugin(ModelBackend, AbstractAuthenticatorPlugin):
         # This auth class doesn't create any new local users, so we just need to make sure
         # it has an AuthenticatorUser associated with it.
         if user:
-            AuthenticatorUser.objects.get_or_create(uid=username, user=user, provider=self.database_instance)
+            user_attrs = {
+                "username": username,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "email": user.email,
+                "is_superuser": user.is_superuser,
+            }
+            get_or_create_authenticator_user(
+                user_id=username,
+                user_details={
+                    "username": username,
+                },
+                authenticator=self.database_instance,
+                extra_data=user_attrs,
+            )
 
         # TODO, we will need to return attributes and claims eventually
         return user

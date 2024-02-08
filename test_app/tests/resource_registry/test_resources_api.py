@@ -11,9 +11,12 @@ from test_app.models import EncryptionModel, Organization, Team
 def test_resources_list(admin_api_client):
     """Test that the resource list is working."""
     url = reverse("resource-list")
-    resp = admin_api_client.get(url)
+    resp = admin_api_client.get(url + "?content_type__resource_type__name=aap.resourcemigrationtestmodel")
 
     assert resp.status_code == 200
+    assert resp.data['count'] == 1
+    assert resp.data['results'][0]["name"] == "migration resource"
+    assert resp.data['results'][0]["resource_type"] == "aap.resourcemigrationtestmodel"
 
 
 def test_resources_delete(django_user_model):
