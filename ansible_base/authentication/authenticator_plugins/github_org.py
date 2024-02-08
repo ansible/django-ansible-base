@@ -3,7 +3,7 @@ import logging
 from django.utils.translation import gettext_lazy as _
 from social_core.backends.github import GithubOrganizationOAuth2
 
-from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin
+from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.social_auth import SocialAuthMixin, SocialAuthValidateCallbackMixin
 from ansible_base.lib.serializers.fields import CharField, URLField
 
