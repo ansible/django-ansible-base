@@ -11,11 +11,12 @@ logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.gi
 
 
 class GithubOrganizationConfiguration(BaseAuthenticatorConfiguration):
-    ORG_CALLBACK_URL = URLField(
+    CALLBACK_URL = URLField(
         help_text=_(
             'Provide this URL as the callback URL for your application as part of your registration process. Refer to the documentation for more detail.'
         ),
         allow_null=False,
+        default='',
         ui_field_label=_('Callback URL'),
     )
 
