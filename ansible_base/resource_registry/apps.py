@@ -76,7 +76,7 @@ def connect_signals(*args, **kwargs):
     post_delete.connect(handlers.remove_resource)
 
 
-class AnsibleAuthConfig(AppConfig):
+class ResourceRegistryConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'ansible_base.resource_registry'
     label = 'dab_resource_registry'
