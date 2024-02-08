@@ -78,14 +78,16 @@ class CommonModel(models.Model):
         now = timezone.now()
         if not self.pk and not self.created_on:
             self.created_on = now
-            self.created_by = user
+            if user is not None and not user.is_anonymous:
+                self.created_by = user
             if 'created_on' not in update_fields:
                 update_fields.append('created_on')
             if 'created_by' not in update_fields:
                 update_fields.append('created_by')
         if 'modified_on' not in update_fields or not self.modified_on:
             self.modified_on = now
-            self.modified_by = user
+            if user is not None and not user.is_anonymous:
+                self.modified_by = user
             update_fields.append('modified_on')
             update_fields.append('modified_by')
 

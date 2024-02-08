@@ -11,9 +11,15 @@ from rest_framework.views import View
 from social_core.backends.saml import SAMLAuth, SAMLIdentityProvider
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
-from ansible_base.authentication.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_plugin
+from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
 from ansible_base.authentication.models import Authenticator
-from ansible_base.authentication.social_auth import AuthenticatorConfigTestStrategy, AuthenticatorStorage, AuthenticatorStrategy, SocialAuthMixin
+from ansible_base.authentication.social_auth import (
+    AuthenticatorConfigTestStrategy,
+    AuthenticatorStorage,
+    AuthenticatorStrategy,
+    SocialAuthMixin,
+    SocialAuthValidateCallbackMixin,
+)
 from ansible_base.lib.serializers.fields import CharField, JSONField, ListField, PrivateKey, PublicCert, URLField
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.lib.utils.validation import validate_cert_with_key
@@ -228,7 +234,7 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
         return configuration
 
 
-class AuthenticatorPlugin(SocialAuthMixin, SAMLAuth, AbstractAuthenticatorPlugin):
+class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAMLAuth, AbstractAuthenticatorPlugin):
     configuration_class = SAMLConfiguration
     type = "SAML"
     logger = logger
@@ -241,22 +247,6 @@ class AuthenticatorPlugin(SocialAuthMixin, SAMLAuth, AbstractAuthenticatorPlugin
 
     def add_related_fields(self, request, authenticator):
         return {"metadata": reverse('authenticator-metadata', kwargs={'pk': authenticator.id})}
-
-    def validate(self, serializer, data):
-        # if we have an instance already and we didn't get a configuration parameter we are just updating other fields and can return
-        if serializer.instance and 'configuration' not in data:
-            return data
-
-        configuration = data['configuration']
-        if not configuration.get('CALLBACK_URL', None):
-            if not serializer.instance:
-                slug = generate_authenticator_slug(data['type'], data['name'])
-            else:
-                slug = serializer.instance.slug
-
-            configuration['CALLBACK_URL'] = reverse('social:complete', request=serializer.context['request'], kwargs={'backend': slug})
-
-        return data
 
 
 class SAMLMetadataView(View):
