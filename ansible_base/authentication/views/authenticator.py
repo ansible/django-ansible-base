@@ -6,12 +6,12 @@ from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.authentication.models import Authenticator, AuthenticatorMap, AuthenticatorUser
 from ansible_base.authentication.serializers import AuthenticatorMapSerializer, AuthenticatorSerializer
-from ansible_base.lib.utils.views import AnsibleBaseDjanoAppApiView
+from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 
 logger = logging.getLogger('ansible_base.authentication.views.authenticator')
 
 
-class AuthenticatorViewSet(ModelViewSet, AnsibleBaseDjanoAppApiView):
+class AuthenticatorViewSet(ModelViewSet, AnsibleBaseDjangoAppApiView):
     """
     API endpoint that allows authenticators to be viewed or edited.
     """
@@ -33,7 +33,7 @@ class AuthenticatorViewSet(ModelViewSet, AnsibleBaseDjanoAppApiView):
             return super().destroy(request, *args, **kwargs)
 
 
-class AuthenticatorAuthenticatorMapViewSet(ModelViewSet, AnsibleBaseDjanoAppApiView):
+class AuthenticatorAuthenticatorMapViewSet(ModelViewSet, AnsibleBaseDjangoAppApiView):
     serializer_class = AuthenticatorMapSerializer
 
     def get_queryset(self):

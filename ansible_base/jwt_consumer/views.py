@@ -9,12 +9,12 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import exceptions, permissions
 
 from ansible_base.lib.utils.settings import get_setting
-from ansible_base.lib.utils.views import AnsibleBaseDjanoAppApiView
+from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 
 logger = logging.getLogger('ansible_base.jwt_consumer.views')
 
 
-class PlatformUIRedirectView(AnsibleBaseDjanoAppApiView):
+class PlatformUIRedirectView(AnsibleBaseDjangoAppApiView):
     authentication_classes = []
     permission_classes = (permissions.AllowAny,)
     metadata_class = None

@@ -1,10 +1,10 @@
 from rest_framework.response import Response
 
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_class, get_authenticator_plugins
-from ansible_base.lib.utils.views import AnsibleBaseDjanoAppApiView
+from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 
 
-class AuthenticatorPluginView(AnsibleBaseDjanoAppApiView):
+class AuthenticatorPluginView(AnsibleBaseDjangoAppApiView):
     def get(self, request, format=None):
         plugins = get_authenticator_plugins()
         resp = {"authenticators": []}

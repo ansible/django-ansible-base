@@ -9,7 +9,7 @@ from django.test import override_settings
 from django.test.client import RequestFactory
 from rest_framework.views import APIView
 
-from ansible_base.lib.utils.views import AnsibleBaseView
+from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 
 
 @pytest.fixture
@@ -53,15 +53,15 @@ class DummyView(APIView):
 def test_ansible_base_view_parent_view(caplog, setting, log_message, default_parent):
     with override_settings(ANSIBLE_BASE_CUSTOM_VIEW_PARENT=setting):
         with caplog.at_level(logging.ERROR):
-            import ansible_base.lib.utils.views
+            import ansible_base.lib.utils.views.django_app_api
 
-            importlib.reload(ansible_base.lib.utils.views)
-            from ansible_base.lib.utils.views import AnsibleBaseDjanoAppApiView, AnsibleBaseView  # noqa: F401
+            importlib.reload(ansible_base.lib.utils.views.django_app_api)
+            from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 
             if default_parent:
-                assert issubclass(AnsibleBaseDjanoAppApiView, AnsibleBaseView)
+                assert issubclass(AnsibleBaseDjangoAppApiView, AnsibleBaseView)
             else:
-                assert issubclass(AnsibleBaseDjanoAppApiView, DummyView)
+                assert issubclass(AnsibleBaseDjangoAppApiView, DummyView)
             assert log_message in caplog.text
 
 
@@ -69,12 +69,12 @@ def test_ansible_base_view_parent_view_exception(caplog):
     with override_settings(ANSIBLE_BASE_CUSTOM_VIEW_PARENT='does.not.exist'):
         with caplog.at_level(logging.ERROR):
             with mock.patch('importlib.import_module', side_effect=ImportError("Test Exception")):
-                import ansible_base.lib.utils.views
+                import ansible_base.lib.utils.views.django_app_api
 
-                importlib.reload(ansible_base.lib.utils.views)
-                from ansible_base.lib.utils.views import AnsibleBaseDjanoAppApiView, AnsibleBaseView  # noqa: F401
+                importlib.reload(ansible_base.lib.utils.views.django_app_api)
+                from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 
-                assert issubclass(AnsibleBaseDjanoAppApiView, AnsibleBaseView)
+                assert issubclass(AnsibleBaseDjangoAppApiView, AnsibleBaseView)
                 assert 'Failed to import' in caplog.text
 
 

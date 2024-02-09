@@ -97,6 +97,6 @@ app_name = <app class>.label
 
 ## Views in apps
 
-All views in a django app should inherit by default, from `ansible_base.lib.utils.views.AnsibleBaseDjanoAppApiView`. 
+All views in a django app should inherit by default, from `ansible_base.lib.utils.views.AnsibleBaseDjangoAppApiView`. 
 This view adds additional headers to all requests.
 See lib/views.md for more details.
