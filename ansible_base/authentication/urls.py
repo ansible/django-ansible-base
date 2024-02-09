@@ -1,5 +1,6 @@
 import importlib
 import logging
+from types import ModuleType
 
 from django.conf import settings
 from django.urls import include, path
@@ -28,13 +29,15 @@ for plugin_name in get_authenticator_plugins():
 
 
 authenticator_related_views = {
-    'authenticator_maps': (views.AuthenticatorMapViewSet, 'authenticator_map'),
+    'authenticator_maps': (views.AuthenticatorMapViewSet, 'authenticator_maps'),
 }
 try:
     user_viewset_name = settings.ANSIBLE_BASE_USER_VIEWSET
     module_name, junk, class_name = user_viewset_name.rpartition('.')
     module = importlib.import_module(module_name, package=class_name)
     user_viewset_view = getattr(module, class_name)
+    if isinstance(user_viewset_view, ModuleType):
+        raise Exception("ANSIBLE_BASE_USER_VIEWSET was not an APIView")
     authenticator_related_views['users'] = (user_viewset_view, 'users')
 except Exception:
     pass
