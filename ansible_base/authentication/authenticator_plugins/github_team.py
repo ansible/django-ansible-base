@@ -5,7 +5,7 @@ from social_core.backends.github import GithubTeamOAuth2
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.social_auth import SocialAuthMixin, SocialAuthValidateCallbackMixin
-from ansible_base.lib.serializers.fields import CharField, SocialOrganizationMapField, SocialTeamMapField, URLField
+from ansible_base.lib.serializers.fields import CharField, SocialOrganizationMapField, SocialTeamMapField, URLField, ListField
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.github_team')
 
@@ -13,7 +13,7 @@ logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.gi
 class GithubTeamConfiguration(BaseAuthenticatorConfiguration):
     documenation_url = "https://python-social-auth.readthedocs.io/en/latest/backends/github.html"
 
-    TEAM_CALLBACK_URL = URLField(
+    CALLBACK_URL = URLField(
         help_text=_(
             'Provide this URL as the callback URL for your application as part of your registration process. Refer to the documentation for more detail.'
         ),
@@ -21,31 +21,39 @@ class GithubTeamConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('Callback URL'),
     )
 
-    TEAM_KEY = CharField(
+    KEY = CharField(
         help_text=_('The OAuth2 key (Client ID) from your GitHub developer application.'),
         allow_null=False,
         ui_field_label=_('GitHub OAuth2 Key'),
     )
 
-    TEAM_SECRET = CharField(
+    SECRET = CharField(
         help_text=_('The OAuth2 secret (Client Secret) from your GitHub developer application.'),
         allow_null=False,
         ui_field_label=_('GitHub OAuth2 Secret'),
     )
 
-    TEAM_ID = CharField(
+    # SOCIAL_AUTH_GITHUB_SCOPE = ['read:org']
+    SCOPE = ListField(
+        help_text=_('The OAuth2 secret (Client Secret) from your GitHub developer application.'),
+        allow_null=False,
+        ui_field_label=_('GitHub OAuth2 Secret'),
+        default=['read:org']
+    )
+
+    ID = CharField(
         help_text=_('The github team ID.'),
         allow_null=False,
         ui_field_label=_('GitHub OAuth2 Key'),
     )
 
-    TEAM_ORGANIZATION_MAP = SocialOrganizationMapField(
+    ORGANIZATION_MAP = SocialOrganizationMapField(
         help_text=_('The github team ID.'),
         allow_null=False,
         ui_field_label=_('GitHub team organization map'),
     )
 
-    TEAM_TEAM_MAP = SocialTeamMapField(
+    TEAM_MAP = SocialTeamMapField(
         help_text=_('The github team ID.'),
         allow_null=False,
         ui_field_label=_('GitHub team organization map'),
