@@ -20,31 +20,31 @@ class GithubOrganizationConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('Callback URL'),
     )
 
-    ORG_KEY = CharField(
+    KEY = CharField(
         help_text=_('The OAuth2 key (Client ID) from your GitHub developer application.'),
         allow_null=False,
         ui_field_label=_('GitHub OAuth2 Key'),
     )
 
-    ORG_SECRET = CharField(
+    SECRET = CharField(
         help_text=_('The OAuth2 secret (Client Secret) from your GitHub developer application.'),
         allow_null=False,
         ui_field_label=_('GitHub OAuth2 Secret'),
     )
 
-    ORG_NAME = CharField(
+    NAME = CharField(
         help_text=_('The organization name.'),
         allow_null=False,
         ui_field_label=_('GitHub org name'),
     )
 
-    ORG_ORGANIZATION_MAP = SocialOrganizationMapField(
+    ORGANIZATION_MAP = SocialOrganizationMapField(
         help_text=_('The organization map.'),
         allow_null=False,
         ui_field_label=_('GitHub org map'),
     )
 
-    ORG_ORGANIZATION_TEAM_MAP = SocialTeamMapField(
+    ORGANIZATION_TEAM_MAP = SocialTeamMapField(
         help_text=_('The organization team map.'),
         allow_null=False,
         ui_field_label=_('GitHub org team map'),
