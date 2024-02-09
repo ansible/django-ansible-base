@@ -1,10 +1,13 @@
+import importlib
 import logging
 
-from django.urls import include, path, re_path
+from django.conf import settings
+from django.urls import include, path
 
 from ansible_base.authentication import views
 from ansible_base.authentication.apps import AuthenticationConfig
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugins, get_authenticator_urls
+from ansible_base.lib.routers import AssociationResourceRouter
 
 logger = logging.getLogger('ansible_base.authentication.urls')
 
@@ -23,19 +26,33 @@ for plugin_name in get_authenticator_plugins():
         api_version_urls.extend(plugin_urls)
         logger.debug(f"Loaded URLS from {plugin_name}")
 
+
+authenticator_related_views = {
+    'authenticator_maps': (views.AuthenticatorMapViewSet, 'authenticator_map'),
+}
+try:
+    user_viewset_name = settings.ANSIBLE_BASE_USER_VIEWSET
+    module_name, junk, class_name = user_viewset_name.rpartition('.')
+    module = importlib.import_module(module_name, package=class_name)
+    user_viewset_view = getattr(module, class_name)
+    authenticator_related_views['users'] = (user_viewset_view, 'users')
+except Exception:
+    pass
+
+router = AssociationResourceRouter()
+router.register('authenticators', views.AuthenticatorViewSet, related_views=authenticator_related_views)
+router.register(
+    'authenticator_maps',
+    views.AuthenticatorMapViewSet,
+    related_views={
+        'authenticators': (views.AuthenticatorViewSet, 'authenticators'),
+    },
+)
+
 api_version_urls.extend(
     [
         # Authenticators
-        path('authenticators/', views.AuthenticatorViewSet.as_view(list_actions), name='authenticator-list'),
-        re_path(r'authenticators/(?P<pk>[0-9]+)/$', views.AuthenticatorViewSet.as_view(detail_actions), name='authenticator-detail'),
-        re_path(
-            r'authenticators/(?P<pk>[0-9]+)/authenticator_maps/$',
-            views.AuthenticatorAuthenticatorMapViewSet.as_view(view_only_list),
-            name='authenticator-authenticator-map-list',
-        ),
-        # Maps
-        path('authenticator_maps/', views.AuthenticatorMapViewSet.as_view(list_actions), name='authenticator_map-list'),
-        re_path(r'authenticator_maps/(?P<pk>[0-9]+)/$', views.AuthenticatorMapViewSet.as_view(detail_actions), name='authenticator_map-detail'),
+        path('', include(router.urls)),
         # Plugin List
         path('authenticator_plugins/', views.AuthenticatorPluginView.as_view(), name='authenticator_plugin-view'),
         # Trigger definition

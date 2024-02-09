@@ -27,6 +27,7 @@ class AuthenticatorMap(NamedCommonModel):
         null=False,
         on_delete=models.CASCADE,
         help_text="The authenticator this mapping belongs to",
+        related_name="authenticator_map",
     )
     revoke = models.BooleanField(
         null=False,

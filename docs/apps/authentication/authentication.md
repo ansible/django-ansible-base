@@ -16,9 +16,16 @@ INSTALLED_APPS = [
 
 ### Additional Settings
 Additional settings are required to enable authentication on your rest endpoints.
-This will happen automatically if using [dynamic_settings](../../Installation.md)
+Most will happen automatically if using [dynamic_settings](../../Installation.md) with the following exceptions:
+
+If you want a related link from the authenticators to the users you must set:
+`ANSIBLE_BASE_USER_VIEWSET`
 
 To manually enable authentication without dynamic settings the following items need to be included in your settings:
+
+#### ANSIBLE_BASE_USER_VIEWSET
+
+django-ansible-base will add a related link from authenticators to user if this variable is set to a valid View for your users. Since django-ansible-base does not provide a default user if unset the related link will be removed.
 
 #### AUTHENTICATION_BACKENDS
 django-ansible-base will automatically set the AUTHENTICATION_BACKENDS as follows unless you explicitly have an `AUTHENTICATION_BACKENDS` in your settings.py:
