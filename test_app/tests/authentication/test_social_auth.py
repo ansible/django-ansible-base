@@ -1,9 +1,10 @@
 from unittest import mock
 
+import pytest
 from django.conf import settings
 from django.test import override_settings
 
-from ansible_base.authentication.social_auth import AuthenticatorStorage, AuthenticatorStrategy
+from ansible_base.authentication.social_auth import AuthenticatorStorage, AuthenticatorStrategy, SocialAuthValidateCallbackMixin
 
 
 @mock.patch("ansible_base.authentication.social_auth.logger")
@@ -37,3 +38,41 @@ class SubstringMatcher:
         return 'a string containing "%s"' % self.containing
 
     __repr__ = __unicode__
+
+
+@pytest.mark.parametrize(
+    "test_data,has_instance,has_slug,expected_result",
+    [
+        ({'foo': 'bar'}, True, True, {'foo': 'bar'}),
+        ({'configuration': {'CALLBACK_URL': '/foo/bar'}}, True, True, {'configuration': {'CALLBACK_URL': '/foo/bar'}}),
+        ({'configuration': {}}, True, True, {'configuration': {'CALLBACK_URL': '/foo/bar'}}),
+        ({'type': 'foo', 'name': 'bar', 'configuration': {}}, False, False, {'type': 'foo', 'name': 'bar', 'configuration': {'CALLBACK_URL': '/foo/bar'}}),
+    ],
+)
+@mock.patch("ansible_base.authentication.social_auth.reverse")
+@mock.patch("ansible_base.authentication.social_auth.generate_authenticator_slug")
+def test_social_auth_validate_callback_mixin(mocked_generate_slug, mocked_reverse, test_data, has_instance, has_slug, expected_result):
+
+    mocked_reverse.return_value = '/foo/bar'
+
+    Serializer = mock.Mock()
+    serializer = Serializer()
+    serializer.instance = None
+    serializer.context = {'request': None}
+    if has_instance:
+        SerializerInstance = mock.Mock()
+        serializer.instance = SerializerInstance()
+        if has_slug:
+            serializer.instace.slug = 'slug'
+
+    mixin = SocialAuthValidateCallbackMixin()
+    res = mixin.validate(serializer, test_data)
+    assert res == expected_result
+
+    # should generate a slug if the serializer has no instance
+    if not has_instance:
+        assert mocked_generate_slug.called
+
+    # should always call reverse if no callback url
+    if has_instance and 'configuration' in test_data and not test_data.get('configuration', {}).get('CALLBACK_URL'):
+        assert mocked_reverse.called

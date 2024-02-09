@@ -12,6 +12,32 @@ from ansible_base.lib.testing.fixtures import *  # noqa: F403, F401
 
 
 @pytest.fixture
+def github_configuration():
+    return {
+        "CALLBACK_URL": "https://localhost/api/gateway/callback/github_test/",
+        "KEY": "12345",
+        "SECRET": "abcdefg12345",
+    }
+
+
+@pytest.fixture
+def github_authenticator(github_configuration):
+    from ansible_base.authentication.models import Authenticator
+
+    authenticator = Authenticator.objects.create(
+        name="Test Github Authenticator",
+        enabled=True,
+        create_objects=True,
+        users_unique=False,
+        remove_users=True,
+        type="ansible_base.authentication.authenticator_plugins.github",
+        configuration=github_configuration,
+    )
+    yield authenticator
+    authenticator.delete()
+
+
+@pytest.fixture
 def ldap_configuration():
     return {
         "SERVER_URI": ["ldap://ldap06.example.com:389"],

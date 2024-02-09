@@ -1,9 +1,10 @@
 from functools import partial
+from unittest.mock import patch
 
 import pytest
 from django.test import override_settings
 
-from test_app.models import EncryptionModel, Organization
+from test_app.models import EncryptionModel, Organization, RelatedFieldsTestModel
 
 
 @pytest.mark.django_db
@@ -81,3 +82,23 @@ def test_save_attribution_created_by_set_manually_and_retained(django_user_model
     random_user.refresh_from_db()
     assert random_user.created_by == user
     assert random_user.modified_by == system_user
+
+
+@pytest.mark.django_db
+def test_related_fields_view_resolution(shut_up_logging):
+    model = RelatedFieldsTestModel.objects.create()
+
+    with patch('ansible_base.lib.abstract_models.common.reverse') as reverse:
+        model.related_fields(None)
+
+    # First off, we should never have 'teams_with_no_view' as an arg to reverse
+    for call in reverse.call_args_list:
+        assert 'teams_with_no_view' not in call[0][0]
+
+    # But it should have been called with related_fields_test_model-users-list
+    # (default since we don't override it for the 'users' field)
+    assert 'related_fields_test_model-users-list' in [call[0][0] for call in reverse.call_args_list]
+
+    # And it should have been called with related_fields_test_model-more_teams-list
+    # (overridden for the 'more_teams' field)
+    assert 'related_fields_test_model-more_teams-list' in [call[0][0] for call in reverse.call_args_list]

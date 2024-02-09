@@ -6,7 +6,26 @@ from ansible_base.lib.abstract_models.common import CommonModel, NamedCommonMode
 from ansible_base.lib.utils.models import user_summary_fields
 
 
+class Organization(AbstractOrganization):
+    reverse_foreign_key_fields = ['teams']
+
+
+class User(AbstractUser, CommonModel):
+    def summary_fields(self):
+        return user_summary_fields(self)
+
+
+class Team(AbstractTeam):
+    encryptioner = models.ForeignKey('test_app.EncryptionModel', on_delete=models.SET_NULL, null=True)
+
+
+class ResourceMigrationTestModel(models.Model):
+    name = models.CharField(max_length=255)
+
+
 class EncryptionModel(NamedCommonModel):
+    router_basename = 'encryption_test_model'
+
     class Meta:
         app_label = "test_app"
 
@@ -16,18 +35,10 @@ class EncryptionModel(NamedCommonModel):
     testing2 = models.CharField(max_length=1, null=True, default='b')
 
 
-class Organization(AbstractOrganization):
-    pass
+class RelatedFieldsTestModel(CommonModel):
+    users = models.ManyToManyField(User, related_name='related_fields_test_model_users')
 
+    teams_with_no_view = models.ManyToManyField(Team, related_name='related_fields_test_model_teams_with_no_view')
+    teams_with_no_view.related_view = None
 
-class User(AbstractUser, CommonModel):
-    def summary_fields(self):
-        return user_summary_fields(self)
-
-
-class Team(AbstractTeam):
-    pass
-
-
-class ResourceMigrationTestModel(models.Model):
-    name = models.CharField(max_length=255)
+    more_teams = models.ManyToManyField(Team, related_name='related_fields_test_model_more_teams')
