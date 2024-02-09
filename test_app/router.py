@@ -1,5 +1,6 @@
 from rest_framework.routers import SimpleRouter
 
+from ansible_base.lib.routers import AssociationResourceRouter
 from test_app import views
 
 router = SimpleRouter()
@@ -12,3 +13,14 @@ router.register(r'encrypted_models', views.EncryptionModelViewSet, basename='enc
 # this uses standard registration
 router.register(r'related_fields_test_models', views.RelatedFieldsTestModelViewSet)
 # intentionally not registering ResourceMigrationTestModel to test lack of URLs
+
+associative_router = AssociationResourceRouter()
+associative_router.register(
+    r'related_model',
+    views.RelatedFieldsTestModelViewSet,
+    related_views={
+        'teams': (views.TeamViewSet, 'more_teams'),
+        'user': (views.UserViewSet, 'users'),
+    },
+    basename='related_model',
+)
