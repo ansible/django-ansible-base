@@ -17,7 +17,7 @@ def test_github_org_auth_successful(authenticate, unauthenticated_api_client, gi
     """
     client = unauthenticated_api_client
     authenticate.return_value = user
-    lres = client.login()
+    client.login()
 
     url = reverse(authenticated_test_page)
     response = client.get(url)

@@ -5,7 +5,7 @@ from social_core.backends.github import GithubTeamOAuth2
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.social_auth import SocialAuthMixin, SocialAuthValidateCallbackMixin
-from ansible_base.lib.serializers.fields import CharField, SocialOrganizationMapField, SocialTeamMapField, URLField, ListField
+from ansible_base.lib.serializers.fields import CharField, ListField, SocialOrganizationMapField, SocialTeamMapField, URLField
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.github_team')
 
@@ -38,7 +38,7 @@ class GithubTeamConfiguration(BaseAuthenticatorConfiguration):
         help_text=_('The OAuth2 secret (Client Secret) from your GitHub developer application.'),
         allow_null=False,
         ui_field_label=_('GitHub OAuth2 Secret'),
-        default=['read:org']
+        default=['read:org'],
     )
 
     ID = CharField(

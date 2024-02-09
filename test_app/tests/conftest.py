@@ -28,7 +28,7 @@ def github_organization_configuration():
         "SECRET": "abcdefg12345",
         "NAME": "foo-org",
         "ORGANIZATION_MAP": {},
-        "ORGANIZATION_TEAM_MAP": {}
+        "ORGANIZATION_TEAM_MAP": {},
     }
 
 
@@ -40,7 +40,7 @@ def github_team_configuration():
         "SECRET": "abcdefg12345",
         "ID": "foo-team",
         "ORGANIZATION_MAP": {},
-        "TEAM_MAP": {}
+        "TEAM_MAP": {},
     }
 
 
