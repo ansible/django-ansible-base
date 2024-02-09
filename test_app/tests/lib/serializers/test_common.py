@@ -4,8 +4,8 @@ from crum import impersonate
 from ansible_base.authentication.models import AuthenticatorMap
 from ansible_base.lib.serializers.common import CommonModelSerializer
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
-from test_app.models import EncryptionModel
-from test_app.serializers import EncryptionTestSerializer
+from test_app.models import EncryptionModel, ResourceMigrationTestModel, Team
+from test_app.serializers import EncryptionTestSerializer, ResourceMigrationTestModelSerializer, TeamSerializer
 
 
 @pytest.mark.django_db
@@ -52,8 +52,8 @@ def test_related_of_model_with_no_related(ldap_authenticator):
 
 @pytest.mark.django_db
 def test_no_reverse_url_name():
-    model = EncryptionModel.objects.create()
-    serializer = EncryptionTestSerializer()
+    model = ResourceMigrationTestModel.objects.create()
+    serializer = ResourceMigrationTestModelSerializer()
     assert serializer.get_url(model) == ''
 
 
@@ -99,3 +99,15 @@ def test_summary_of_model_with_created_user(user, ldap_authenticator):
         'created_by': f'/api/v1/users/{user.pk}/',
         'modified_by': f'/api/v1/users/{user.pk}/',
     }
+
+
+@pytest.mark.django_db
+def test_summary_of_model_with_custom_reverse(user, organization):
+    team = Team.objects.create(
+        name='foo-team', encryptioner=EncryptionModel.objects.create(name='iamencrypted', testing1='foo', testing2='bar'), organization=organization
+    )
+    serializer = TeamSerializer()
+
+    assert serializer._get_summary_fields(team)['encryptioner'] == {'id': team.encryptioner_id, 'name': 'iamencrypted'}
+
+    assert serializer._get_related(team)['encryptioner'] == f'/api/v1/encrypted_models/{team.encryptioner_id}/'

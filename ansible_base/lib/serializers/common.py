@@ -3,8 +3,8 @@ import logging
 from django.db.models.fields import NOT_PROVIDED
 from rest_framework import serializers
 from rest_framework.fields import empty
-from rest_framework.reverse import reverse_lazy
 
+from ansible_base.lib.abstract_models.common import get_url_for_object
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 
 logger = logging.getLogger('ansible_base.lib.serializers.common')
@@ -33,9 +33,7 @@ class CommonModelSerializer(serializers.ModelSerializer):
         super().__init__(instance, data, **kwargs)
 
     def get_url(self, obj):
-        if self.reverse_url_name:
-            return reverse_lazy(self.reverse_url_name, kwargs={'pk': obj.pk})
-        return ''
+        return get_url_for_object(obj)
 
     def _get_related(self, obj):
         if obj is None:
