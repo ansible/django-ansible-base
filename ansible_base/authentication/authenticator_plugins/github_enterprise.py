@@ -13,7 +13,7 @@ logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.gi
 class GithubEnterpriseConfiguration(BaseAuthenticatorConfiguration):
     documenation_url = "https://python-social-auth.readthedocs.io/en/latest/backends/github.html"
 
-    ENTERPRISE_CALLBACK_URL = URLField(
+    CALLBACK_URL = URLField(
         help_text=_(
             'Provide this URL as the callback URL for your application as part of your registration process. Refer to the documentation for more detail.'
         ),
@@ -21,40 +21,28 @@ class GithubEnterpriseConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('Callback URL'),
     )
 
-    ENTERPRISE_URL = URLField(
+    URL = URLField(
         help_text=_('The base url for the GithHb enterprise instance.'),
         allow_null=False,
         ui_field_label=_('Base URL'),
     )
 
-    ENTERPRISE_API_URL = URLField(
+    API_URL = URLField(
         help_text=_('The base url for the GithHb enterprise instance.'),
         allow_null=False,
         ui_field_label=_('API URL'),
     )
 
-    ENTERPRISE_KEY = CharField(
+    KEY = CharField(
         help_text=_('The OAuth2 key (Client ID) from your GitHub developer application.'),
         allow_null=False,
         ui_field_label=_('GitHub OAuth2 Key'),
     )
 
-    ENTERPRISE_SECRET = CharField(
+    SECRET = CharField(
         help_text=_('The OAuth2 secret (Client Secret) from your GitHub developer application.'),
         allow_null=False,
         ui_field_label=_('GitHub OAuth2 Secret'),
-    )
-
-    ENTERPRISE_ORG_MAP = SocialOrganizationMapField(
-        help_text=_('The OAuth2 secret (Client Secret) from your GitHub developer application.'),
-        allow_null=False,
-        ui_field_label=_('GitHub enterprise org map'),
-    )
-
-    ENTERPRISE_TEAM_MAP = SocialTeamMapField(
-        help_text=_('The OAuth2 secret (Client Secret) from your GitHub developer application.'),
-        allow_null=False,
-        ui_field_label=_('GitHub enterprise org map'),
     )
 
 

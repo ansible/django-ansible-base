@@ -47,18 +47,6 @@ class GithubTeamConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('GitHub OAuth2 Key'),
     )
 
-    ORGANIZATION_MAP = SocialOrganizationMapField(
-        help_text=_('The github team ID.'),
-        allow_null=False,
-        ui_field_label=_('GitHub team organization map'),
-    )
-
-    TEAM_MAP = SocialTeamMapField(
-        help_text=_('The github team ID.'),
-        allow_null=False,
-        ui_field_label=_('GitHub team organization map'),
-    )
-
 
 class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, GithubTeamOAuth2, AbstractAuthenticatorPlugin):
     configuration_class = GithubTeamConfiguration

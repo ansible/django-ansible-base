@@ -39,8 +39,43 @@ def github_team_configuration():
         "KEY": "12345",
         "SECRET": "abcdefg12345",
         "ID": "foo-team",
+    }
+
+
+@pytest.fixture
+def github_enterprise_configuration():
+    return {
+        "CALLBACK_URL": "https://localhost/api/gateway/callback/github_enterprise_test/",
+        "KEY": "12345",
+        "SECRET": "abcdefg12345",
+        "URL": "https://foohub.com",
+        "API_URL": "https://api.foohub.com",
+    }
+
+
+@pytest.fixture
+def github_enterprise_organization_configuration():
+    return {
+        "CALLBACK_URL": "https://localhost/api/gateway/callback/github_enterprise_organization_test/",
+        "KEY": "12345",
+        "SECRET": "abcdefg12345",
+        "URL": "https://foohub.com",
+        "API_URL": "https://api.foohub.com",
+        "NAME": "foo-org",
         "ORGANIZATION_MAP": {},
-        "TEAM_MAP": {},
+        "ORGANIZATION_TEAM_MAP": {},
+    }
+
+
+@pytest.fixture
+def github_enterprise_team_configuration():
+    return {
+        "CALLBACK_URL": "https://localhost/api/gateway/callback/github_enterprise_team_test/",
+        "KEY": "12345",
+        "SECRET": "abcdefg12345",
+        "URL": "https://foohub.com",
+        "API_URL": "https://api.foohub.com",
+        "ID": "foo-team",
     }
 
 
@@ -90,6 +125,57 @@ def github_team_authenticator(github_team_configuration):
         remove_users=True,
         type="ansible_base.authentication.authenticator_plugins.github_team",
         configuration=github_team_configuration,
+    )
+    yield authenticator
+    authenticator.delete()
+
+
+@pytest.fixture
+def github_enterprise_authenticator(github_enterprise_configuration):
+    from ansible_base.authentication.models import Authenticator
+
+    authenticator = Authenticator.objects.create(
+        name="Test Github Enterprise Authenticator",
+        enabled=True,
+        create_objects=True,
+        users_unique=False,
+        remove_users=True,
+        type="ansible_base.authentication.authenticator_plugins.github_enterprise",
+        configuration=github_enterprise_configuration,
+    )
+    yield authenticator
+    authenticator.delete()
+
+
+@pytest.fixture
+def github_enterprise_organization_authenticator(github_enterprise_organization_configuration):
+    from ansible_base.authentication.models import Authenticator
+
+    authenticator = Authenticator.objects.create(
+        name="Test Github Enterprise Organization Authenticator",
+        enabled=True,
+        create_objects=True,
+        users_unique=False,
+        remove_users=True,
+        type="ansible_base.authentication.authenticator_plugins.github_enterprise_org",
+        configuration=github_enterprise_organization_configuration,
+    )
+    yield authenticator
+    authenticator.delete()
+
+
+@pytest.fixture
+def github_enterprise_team_authenticator(github_enterprise_team_configuration):
+    from ansible_base.authentication.models import Authenticator
+
+    authenticator = Authenticator.objects.create(
+        name="Test Github Enterprise Team Authenticator",
+        enabled=True,
+        create_objects=True,
+        users_unique=False,
+        remove_users=True,
+        type="ansible_base.authentication.authenticator_plugins.github_enterprise_team",
+        configuration=github_enterprise_team_configuration,
     )
     yield authenticator
     authenticator.delete()
