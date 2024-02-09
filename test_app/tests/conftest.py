@@ -24,11 +24,11 @@ def github_configuration():
 def github_organization_configuration():
     return {
         "CALLBACK_URL": "https://localhost/api/gateway/callback/github_org_test/",
-        "ORG_KEY": "12345",
-        "ORG_SECRET": "abcdefg12345",
-        "ORG_NAME": "foo-org",
-        "ORG_ORGANIZATION_MAP": {},
-        "ORG_ORGANIZATION_TEAM_MAP": {}
+        "KEY": "12345",
+        "SECRET": "abcdefg12345",
+        "NAME": "foo-org",
+        "ORGANIZATION_MAP": {},
+        "ORGANIZATION_TEAM_MAP": {}
     }
 
 
