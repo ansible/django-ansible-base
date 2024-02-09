@@ -33,6 +33,18 @@ def github_organization_configuration():
 
 
 @pytest.fixture
+def github_team_configuration():
+    return {
+        "CALLBACK_URL": "https://localhost/api/gateway/callback/github_org_test/",
+        "KEY": "12345",
+        "SECRET": "abcdefg12345",
+        "ID": "foo-org",
+        "ORGANIZATION_MAP": {},
+        "ORGANIZATION_TEAM_MAP": {}
+    }
+
+
+@pytest.fixture
 def github_authenticator(github_configuration):
     from ansible_base.authentication.models import Authenticator
 
@@ -60,6 +72,23 @@ def github_organization_authenticator(github_organization_configuration):
         users_unique=False,
         remove_users=True,
         type="ansible_base.authentication.authenticator_plugins.github_org",
+        configuration=github_organization_configuration,
+    )
+    yield authenticator
+    authenticator.delete()
+
+
+@pytest.fixture
+def github_team_authenticator(github_team_configuration):
+    from ansible_base.authentication.models import Authenticator
+
+    authenticator = Authenticator.objects.create(
+        name="Test Github Organization Authenticator",
+        enabled=True,
+        create_objects=True,
+        users_unique=False,
+        remove_users=True,
+        type="ansible_base.authentication.authenticator_plugins.github_team",
         configuration=github_organization_configuration,
     )
     yield authenticator
