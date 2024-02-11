@@ -3,9 +3,9 @@ from django.shortcuts import get_object_or_404, redirect
 from rest_framework import permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.views import APIView
 from rest_framework.viewsets import GenericViewSet, mixins
 
+from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.resource_registry.models import Resource, ResourceType, service_id
 from ansible_base.resource_registry.registry import get_registry
 from ansible_base.resource_registry.serializers import ResourceListSerializer, ResourceSerializer, ResourceTypeSerializer, get_resource_detail_view
@@ -18,6 +18,7 @@ class ResourceViewSet(
     mixins.DestroyModelMixin,
     mixins.ListModelMixin,
     GenericViewSet,
+    AnsibleBaseDjangoAppApiView,
 ):
     """
     Index of all the resources in the system.
@@ -60,6 +61,7 @@ class ResourceTypeViewSet(
     mixins.RetrieveModelMixin,
     mixins.ListModelMixin,
     GenericViewSet,
+    AnsibleBaseDjangoAppApiView,
 ):
     queryset = ResourceType.objects.all()
     serializer_class = ResourceTypeSerializer
@@ -68,7 +70,7 @@ class ResourceTypeViewSet(
     lookup_value_regex = "[^/]+"
 
 
-class ServiceMetadataView(APIView):
+class ServiceMetadataView(AnsibleBaseDjangoAppApiView):
     def get(self, request, **kwargs):
         registry = get_registry()
         return Response({"service_id": service_id(), "service_type": registry.api_config.service_type})
