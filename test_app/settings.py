@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     'ansible_base.resource_registry',
     'ansible_base.rest_pagination',
     'ansible_base.rbac',
+    'ansible_base.oauth2_provider',
     'test_app',
     'django_extensions',
     'debug_toolbar',
