@@ -1,0 +1,1 @@
+django-oauth-toolkit>=1.7.1 # This is pinned this way so that DAB is compatible with AWX
