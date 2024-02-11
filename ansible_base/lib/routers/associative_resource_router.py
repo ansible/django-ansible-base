@@ -88,6 +88,28 @@ class AssociateMixin:
         return child_queryset
 
 
+class ReverseViewMixin:
+    def get_serializer_class(self):
+        related_class = getattr(self, 'related_serializer', None)
+        if self.action in ('associate', 'disassociate'):
+            if related_class is None:
+                raise RuntimeError('You must set related_serializer on the viewset')
+            return related_class
+        return super().get_serializer_class()
+
+    def get_queryset(self):
+        parent_pk = self.kwargs['pk']
+        parent_model = self.backward_related_qs.model
+
+        try:
+            parent_instance = parent_model.objects.get(pk=parent_pk)
+        except parent_model.DoesNotExist:
+            return parent_model.objects.none()
+
+        child_queryset = getattr(parent_instance, self.related_fk).all()
+        return child_queryset
+
+
 class AssociationResourceRouter(routers.SimpleRouter):
     def get_method_map(self, viewset, method_map):
         is_associate_viewset = issubclass(viewset, AssociateMixin)
@@ -100,9 +122,35 @@ class AssociationResourceRouter(routers.SimpleRouter):
                 bound_methods[method] = action_str
         return bound_methods
 
-    def register(self, prefix, viewset, basename=None, related_views={}):
+    def register(self, prefix, viewset, basename=None, related_views={}, reverse_views={}):
         if basename is None:
             basename = self.get_default_basename(viewset)
+
+        for reverse_name, (reverse_view, fk) in reverse_views.items():
+
+            def related_serializer_factory(reverse_view=reverse_view):
+                class RelatedSerializer(serializers.Serializer):
+                    instances = serializers.PrimaryKeyRelatedField(
+                        queryset=reverse_view.queryset,
+                        many=True,
+                    )
+
+                return RelatedSerializer
+
+            modified_reverse_viewset = type(
+                f'Reverse{reverse_view.__name__}',
+                (ReverseViewMixin, reverse_view),
+                {
+                    'related_fk': fk,
+                    'backward_related_qs': viewset.queryset,
+                    'related_serializer': related_serializer_factory(),
+                    'lookup_field': fk,
+                },
+            )
+            # Force the view to be read only
+            modified_reverse_viewset.http_method_names = ['get', 'head', 'options']
+
+            self.registry.append((f"{prefix}/(?P<pk>[^/.]+)/{reverse_name}", modified_reverse_viewset, f'{basename}-{fk}'))
 
         for related_name, (related_view, fk) in related_views.items():
 

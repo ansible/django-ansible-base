@@ -37,13 +37,10 @@ def get_url_for_object(obj, request=None):
 
 
 class CommonModel(models.Model):
-    # These are fields that should be reversed lookup as related fields.
-    # For example, an environment has related organizations so environment might specify reverse_foreign_key_fields = ['organizations']
-    # This would end up with a view like environment/1/organizations
-    reverse_foreign_key_fields = []
-
     # Any field marked as encrypted will automatically be stored in an encrypted fashion
     encrypted_fields = []
+    # Any field set in here will not be used in the views
+    ignore_relations = []
 
     class Meta:
         abstract = True
@@ -148,8 +145,8 @@ class CommonModel(models.Model):
         return response
 
     def related_fields(self, request):
+        response = {}
         # See docs/lib/default_models.md
-        response = OrderedDict()
         # Automatically add all of the ForeignKeys for the model as related fields
         for field in self._meta.concrete_fields:
             # ignore relations on inherited django models
@@ -175,11 +172,22 @@ class CommonModel(models.Model):
                 logger.debug(f"Model {self.__class__.__name__} wanted to reverse view to {reverse_view} but said view is not defined")
 
         # Add any reverse relations required
-        for field_name in getattr(self, 'reverse_foreign_key_fields', []):
+        for relation in self._meta.related_objects:
+            field_name = relation.name
+            if field_name in self.ignore_relations:
+                continue
             reverse_view = f"{basename}-{field_name}-list"
-            response[field_name] = reverse(reverse_view, kwargs={'pk': self.pk})
+            try:
+                response[field_name] = reverse(reverse_view, kwargs={'pk': self.pk})
+            except NoReverseMatch:
+                logger.error(f"Wanted to add {reverse_view} for {self.__class__} but view was missing")
 
-        return response
+        sorted_response = OrderedDict()
+        sorted_keys = list(response.keys())
+        sorted_keys.sort()
+        for key in sorted_keys:
+            sorted_response[key] = response[key]
+        return sorted_response
 
     def summary_fields(self):
         response = {}

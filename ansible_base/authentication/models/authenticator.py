@@ -27,7 +27,7 @@ class Authenticator(UniqueNamedCommonModel):
     category = fields.CharField(max_length=30, default=None, help_text="The base type of this authenticator")
     users = ManyToManyField(
         settings.AUTH_USER_MODEL,
-        related_name='users',
+        related_name='authenticators',
         blank=True,
         help_text="The list of users who have authenticated from this authenticator",
     )
