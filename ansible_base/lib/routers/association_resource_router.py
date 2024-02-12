@@ -1,10 +1,31 @@
+import logging
+
 from django.utils.translation import gettext as _
 from rest_framework import routers, serializers, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+logger = logging.getLogger('ansible_base.lib.routers.association_resource_router')
 
-class AssociateMixin:
+
+class QuerySetMixinBase:
+    def get_queryset(self):
+        parent_pk = self.kwargs['pk']
+        parent_model = self.backward_related_qs.model
+
+        try:
+            parent_instance = parent_model.objects.get(pk=parent_pk)
+        except parent_model.DoesNotExist:
+            return parent_model.objects.none()
+
+        if issubclass(self.__class__, AssociateMixin):
+            child_queryset = getattr(parent_instance, self.association_fk).all()
+        elif issubclass(self.__class__, ReverseViewMixin):
+            child_queryset = getattr(parent_instance, self.related_fk).all()
+        return child_queryset
+
+
+class AssociateMixin(QuerySetMixinBase):
     @action(detail=False, methods=['post'])
     def associate(self, request, **kwargs):
         """
@@ -75,20 +96,8 @@ class AssociateMixin:
             return association_class
         return super().get_serializer_class()
 
-    def get_queryset(self):
-        parent_pk = self.kwargs['pk']
-        parent_model = self.backward_related_qs.model
 
-        try:
-            parent_instance = parent_model.objects.get(pk=parent_pk)
-        except parent_model.DoesNotExist:
-            return parent_model.objects.none()
-
-        child_queryset = getattr(parent_instance, self.association_fk).all()
-        return child_queryset
-
-
-class ReverseViewMixin:
+class ReverseViewMixin(QuerySetMixinBase):
     def get_serializer_class(self):
         related_class = getattr(self, 'related_serializer', None)
         if self.action in ('associate', 'disassociate'):
@@ -96,18 +105,6 @@ class ReverseViewMixin:
                 raise RuntimeError('You must set related_serializer on the viewset')
             return related_class
         return super().get_serializer_class()
-
-    def get_queryset(self):
-        parent_pk = self.kwargs['pk']
-        parent_model = self.backward_related_qs.model
-
-        try:
-            parent_instance = parent_model.objects.get(pk=parent_pk)
-        except parent_model.DoesNotExist:
-            return parent_model.objects.none()
-
-        child_queryset = getattr(parent_instance, self.related_fk).all()
-        return child_queryset
 
 
 class AssociationResourceRouter(routers.SimpleRouter):
@@ -122,7 +119,10 @@ class AssociationResourceRouter(routers.SimpleRouter):
                 bound_methods[method] = action_str
         return bound_methods
 
-    def register(self, prefix, viewset, basename=None, related_views={}, reverse_views={}):
+    def register(self, prefix, viewset, **kwargs):
+        basename = kwargs.get('basename', None)
+        related_views = kwargs.get('related_views', {})
+        reverse_views = kwargs.get('reverse_views', {})
         if basename is None:
             basename = self.get_default_basename(viewset)
 
@@ -136,6 +136,10 @@ class AssociationResourceRouter(routers.SimpleRouter):
                     )
 
                 return RelatedSerializer
+
+            if viewset.queryset is None:
+                logger.error(f"ViewSet {viewset} does not have an associated queryset. Unable to add reverse view {reverse_name}")
+                continue
 
             modified_reverse_viewset = type(
                 f'Reverse{reverse_view.__name__}',
@@ -162,6 +166,10 @@ class AssociationResourceRouter(routers.SimpleRouter):
                     )
 
                 return AssociationSerializer
+
+            if viewset.queryset is None:
+                logger.error(f"ViewSet {viewset.__class__} does not have an associated queryset. Unable to add related view {related_name}")
+                continue
 
             modified_related_viewset = type(
                 f'Related{related_view.__name__}',
