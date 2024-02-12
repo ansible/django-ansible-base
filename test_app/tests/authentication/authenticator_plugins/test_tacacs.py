@@ -45,6 +45,7 @@ def test_tacacs_auth_failure(authenticate, unauthenticated_api_client, tacacs_au
     response = client.get(url)
     assert response.status_code == 401
 
+
 @pytest.mark.django_db
 @mock.patch("ansible_base.authentication.authenticator_plugins.tacacs.logger")
 def test_AuthenticatorPlugin_authenticate_no_authenticator(logger):
@@ -55,6 +56,7 @@ def test_AuthenticatorPlugin_authenticate_no_authenticator(logger):
     request = MagicMock()
     assert backend.authenticate(request, username="foo", password="bar") is None
     logger.error.assert_called_with("AuthenticatorPlugin was missing an authenticator")
+
 
 # @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
 # @pytest.mark.parametrize(
