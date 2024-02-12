@@ -6,14 +6,15 @@ from urllib.parse import urlparse, urlunsplit
 from django.http import HttpResponse, HttpResponseNotFound
 from django.template import Context, Template
 from django.utils.translation import gettext_lazy as _
-from rest_framework import exceptions, permissions, views
+from rest_framework import exceptions, permissions
 
 from ansible_base.lib.utils.settings import get_setting
+from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 
 logger = logging.getLogger('ansible_base.jwt_consumer.views')
 
 
-class PlatformUIRedirectView(views.APIView):
+class PlatformUIRedirectView(AnsibleBaseDjangoAppApiView):
     authentication_classes = []
     permission_classes = (permissions.AllowAny,)
     metadata_class = None

@@ -2,16 +2,16 @@ import logging
 
 from rest_framework.response import Response
 from rest_framework.serializers import ValidationError
-from rest_framework.views import APIView
 
 from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.validation import validate_image_data, validate_url
+from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 
 logger = logging.getLogger('ansible_base.authentication.views.ui_auth')
 
 
-class UIAuth(APIView):
+class UIAuth(AnsibleBaseDjangoAppApiView):
     authentication_classes = []
     permission_classes = []
 
