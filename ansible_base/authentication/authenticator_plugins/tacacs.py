@@ -1,6 +1,6 @@
 import logging
 
-from aap_gateway_api.models import User
+from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
@@ -118,6 +118,7 @@ class AuthenticatorPlugin(SocialAuthMixin, AbstractAuthenticatorPlugin, ModelBac
 
             if reply.valid:
                 # At this point tacacs+ has validated our username and password, so we need to create the user and AuthenticatorUser object
+                User = get_user_model()
                 user, created = User.objects.get_or_create(username=username)
                 if created:
                     logger.info(f"TACAC+ created user {user.username}")

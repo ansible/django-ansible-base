@@ -43,9 +43,10 @@ def test_tacacs_auth_failure(authenticate, unauthenticated_api_client, tacacs_au
 
 
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
-def test_tacacsplus_settings(get, put, patch, admin):
+def test_tacacsplus_settings(authenticate, unauthenticated_api_client, tacacs_authenticator):
+    client = unauthenticated_api_client
     url = reverse('api:setting_singleton_detail', kwargs={'name': 'tacacsplus'})
-    response = get(url, user=admin, expect=200)
+    response = client.get(url, user=admin, expect=200)
     put(url, user=admin, data=response.data, expect=200)
     patch(url, user=admin, data={'SECRET': 'mysecret'}, expect=200)
     patch(url, user=admin, data={'SECRET': ''}, expect=200)

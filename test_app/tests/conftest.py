@@ -185,11 +185,11 @@ def tacacs_authenticator(db):
         type="ansible_base.authentication.authenticator_plugins.tacacs",
         configuration={
             "HOST": "asdf",
-            "PORT": "asdf",
-            "AUTH_PROTOCOL": "asdf",
-            "REM_ADDR": "asdf",
+            "PORT": 49,
+            "AUTH_PROTOCOL": "ascii",
+            "REM_ADDR": True,
             "SECRET": "asdf",
-            "SESSION_TIMEOUT": "asdf",
+            "SESSION_TIMEOUT": 5,
         },
     )
     yield authenticator
