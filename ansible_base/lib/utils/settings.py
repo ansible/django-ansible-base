@@ -12,7 +12,7 @@ class SettingNotSetException(Exception):
     pass
 
 
-def get_setting(name: str, default: Any = None) -> Any:
+def get_setting(name: str, default: Any = None, log_exception: bool = True) -> Any:
     try:
         the_function = get_function_from_setting('ANSIBLE_BASE_SETTINGS_FUNCTION')
         if the_function:
@@ -22,9 +22,13 @@ def get_setting(name: str, default: Any = None) -> Any:
         # If the setting was not set thats ok, we will fall through to trying to get it from the django setting or the default value
         pass
     except Exception:
-        logger.exception(
-            _('ANSIBLE_BASE_SETTINGS_FUNCTION was set but calling it as a function failed (see exception), ignoring error and attempting to load from settings')
-        )
+        if log_exception:
+            logger.exception(
+                _(
+                    'ANSIBLE_BASE_SETTINGS_FUNCTION was set but calling it as a function failed (see exception), '
+                    'ignoring error and attempting to load from settings'
+                )
+            )
 
     return getattr(settings, name, default)
 
