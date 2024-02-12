@@ -18,7 +18,7 @@ def test_eda_jwt_auth_scheme():
 
     scheme = EDAJWTAuthScheme(None)
     response = scheme.get_security_definition(None)
-    assert 'name' in response and response['name'] == 'JWT Authorization'
+    assert 'name' in response and response['name'] == 'X-DAB-JW-TOKEN'
 
 
 def filter_function(name):
