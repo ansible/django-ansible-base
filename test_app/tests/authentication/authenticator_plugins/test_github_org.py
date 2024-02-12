@@ -105,11 +105,13 @@ def test_github_org_mapping(admin_api_client, org_map, expected_status_code, shu
                     "admins": ["admin@example.com"],
                     "users": True,
                 },
-                "Org1": {
+                "Team1": {
+                    "organization": "b",
                     "admins": None,
                     "users": "/^[^@].*?@example\\.com$/",
                 },
-                "Org2": {
+                "Team2": {
+                    "organization": "c",
                     "admins": None,
                     "users": ["/^[^@].*?@example\\.com$/"],
                 },
@@ -145,7 +147,7 @@ def test_github_org_team_mapping(admin_api_client, team_map, expected_status_cod
         "configuration": {
             "KEY": "123456",
             "SECRET": "123456",
-            "NAME": "github org map test",
+            "NAME": "github org team map test",
             "ORGANIZATION_MAP": {},
             "ORGANIZATION_TEAM_MAP": team_map,
         },
