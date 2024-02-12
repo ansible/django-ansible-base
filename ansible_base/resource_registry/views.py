@@ -8,7 +8,7 @@ from rest_framework.viewsets import GenericViewSet, mixins
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.resource_registry.models import Resource, ResourceType, service_id
 from ansible_base.resource_registry.registry import get_registry
-from ansible_base.resource_registry.serializers import ResourceListSerializer, ResourceSerializer, ResourceTypeSerializer, get_resource_detail_view
+from ansible_base.resource_registry.serializers import ResourceListSerializer, ResourceManifestSerializer, ResourceSerializer, ResourceTypeSerializer, get_resource_detail_view
 
 
 class ResourceViewSet(
@@ -68,6 +68,14 @@ class ResourceTypeViewSet(
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = "name"
     lookup_value_regex = "[^/]+"
+
+    @action(detail=True, methods=['get'])
+    def manifest(self, request, name, *args, **kwargs):
+        """Returns the map of resource_id:hash for a given resource type."""
+        resources = Resource.objects.filter(content_type__resource_type__name=name)
+        if not resources:
+            return HttpResponseNotFound()
+        return Response(ResourceManifestSerializer(resources, context={"name": name}).data)
 
 
 class ServiceMetadataView(AnsibleBaseDjangoAppApiView):

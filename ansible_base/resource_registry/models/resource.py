@@ -6,6 +6,8 @@ from django.db import models, transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import ValidationError
 
+from ansible_base.lib.utils.hashing import hash_serializer_data
+
 from .service_id import service_id
 
 
@@ -37,7 +39,25 @@ class ResourceType(models.Model):
         return self.resource_registry.get_config_for_model(model=self.content_type.model_class())
 
 
+class ResourceManager(models.Manager):
+    """
+    Call computation of resource_hash because bulk operations doesn't trigger 
+    signals or customizations made on .save
+    """
+    def bulk_create(self, objs, *args, **kwargs):
+        for obj in objs:
+            obj.set_resource_hash()
+        return super().bulk_create(objs, *args, **kwargs)
+    
+    def bulk_update(self, objs, *args, **kwargs):
+        for obj in objs:
+            obj.set_resource_hash()
+        return super().bulk_update(objs, *args, **kwargs)
+
+
 class Resource(models.Model):
+    objects = ResourceManager()
+
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, related_name="resources")
 
     # this has to accommodate integer and UUID object IDs
@@ -52,6 +72,10 @@ class Resource(models.Model):
 
     # human readable name for the resource
     name = models.CharField(max_length=512, null=True)
+
+    # Sha256 Hash hexdigest of the value on resource_data serialized by ResourceSerializer
+    # This field is automatically computed on save, update and bulk_create
+    resource_hash = models.CharField(max_length=64, db_index=True, null=True)
 
     @property
     def ansible_id(self):
@@ -74,6 +98,21 @@ class Resource(models.Model):
         indexes = [
             models.Index(fields=["content_type", "object_id"]),
         ]
+
+    def save(self, *args, **kwargs):
+        self.set_resource_hash()
+        return super().save(*args, **kwargs)
+
+    def set_resource_hash(self):
+        """
+        Set resource hash based on ResourceSerializer data.
+        # note: this doesn't save the object, so it can be called on bulk operations
+        # and must be called before a .save()
+        """
+        # lazy import to avoid cyclic reference
+        from ansible_base.resource_registry.serializers import ResourceSerializer
+        resource_data = ResourceSerializer(self).data["resource_data"]
+        self.resource_hash = hash_serializer_data(resource_data)
 
     def update_from_content_object(self):
         """

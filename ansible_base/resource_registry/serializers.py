@@ -109,3 +109,12 @@ class ResourceTypeSerializer(serializers.ModelSerializer):
 
     def get_url(self, obj):
         return reverse_lazy('resourcetype-detail', kwargs={"name": obj.name})
+
+
+class ResourceManifestSerializer(serializers.Serializer):
+
+    def to_representation(self, queryset):
+        resource_type = self.context["name"]
+        return {
+            resource_type: {str(resource.resource_id): resource.resource_hash for resource in queryset}
+        }
