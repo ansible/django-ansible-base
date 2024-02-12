@@ -172,6 +172,30 @@ def keycloak_authenticator(db):
     authenticator.delete()
 
 
+@pytest.fixture
+def tacacs_authenticator(db):
+    from ansible_base.authentication.models import Authenticator
+
+    authenticator = Authenticator.objects.create(
+        name="Test TACACS Authenticator",
+        enabled=True,
+        create_objects=True,
+        users_unique=False,
+        remove_users=True,
+        type="ansible_base.authentication.authenticator_plugins.tacacs",
+        configuration={
+            "HOST": "asdf",
+            "PORT": "asdf",
+            "AUTH_PROTOCOL": "asdf",
+            "REM_ADDR": "asdf",
+            "SECRET": "asdf",
+            "SESSION_TIMEOUT": "asdf",
+        },
+    )
+    yield authenticator
+    authenticator.delete()
+
+
 @copy_fixture(copies=3)  # noqa: F405
 @pytest.fixture
 def local_authenticator_map(db, local_authenticator, user, randname):

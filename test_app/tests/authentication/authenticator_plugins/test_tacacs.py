@@ -40,3 +40,18 @@ def test_tacacs_auth_failure(authenticate, unauthenticated_api_client, tacacs_au
     url = reverse(authenticated_test_page)
     response = client.get(url)
     assert response.status_code == 401
+
+
+@mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
+def test_tacacsplus_settings(get, put, patch, admin):
+    url = reverse('api:setting_singleton_detail', kwargs={'name': 'tacacsplus'})
+    response = get(url, user=admin, expect=200)
+    put(url, user=admin, data=response.data, expect=200)
+    patch(url, user=admin, data={'SECRET': 'mysecret'}, expect=200)
+    patch(url, user=admin, data={'SECRET': ''}, expect=200)
+    patch(url, user=admin, data={'HOST': 'localhost'}, expect=400)
+    patch(url, user=admin, data={'SECRET': 'mysecret'}, expect=200)
+    patch(url, user=admin, data={'HOST': 'localhost'}, expect=200)
+    patch(url, user=admin, data={'HOST': '', 'SECRET': ''}, expect=200)
+    patch(url, user=admin, data={'HOST': 'localhost', 'SECRET': ''}, expect=400)
+    patch(url, user=admin, data={'HOST': 'localhost', 'SECRET': 'mysecret'}, expect=200)
