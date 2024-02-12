@@ -4,10 +4,6 @@ from ansible_base.lib.routers import AssociationResourceRouter
 from test_app import views
 
 router = SimpleRouter()
-
-router.register(r'organizations', views.UserViewSet, basename='organization')
-router.register(r'teams', views.TeamViewSet, basename='team')
-router.register(r'users', views.UserViewSet, basename='user')
 # using an intentionally unpredictable basename
 router.register(r'encrypted_models', views.EncryptionModelViewSet, basename='encryption_test_model')
 # this uses standard registration
@@ -22,5 +18,22 @@ associative_router.register(
         'teams': (views.TeamViewSet, 'more_teams'),
         'user': (views.UserViewSet, 'users'),
     },
-    basename='related_model',
+    basename='related_fields_test_model',
 )
+
+associative_router.register(
+    r'organizations',
+    views.OrganizationViewSet,
+    reverse_views={
+        'teams': (views.TeamViewSet, 'teams'),
+    },
+    basename='organization',
+)
+
+associative_router.register(
+    r'teams',
+    views.TeamViewSet,
+    basename='team',
+)
+
+associative_router.register(r'users', views.UserViewSet, basename='user')
