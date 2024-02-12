@@ -3,7 +3,7 @@ from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from test_app import serializers
-from test_app.models import EncryptionModel, RelatedFieldsTestModel, Team, User
+from test_app.models import EncryptionModel, Organization, RelatedFieldsTestModel, Team, User
 
 
 class TestAppViewSet(ModelViewSet, AnsibleBaseView):
@@ -14,6 +14,7 @@ class TestAppViewSet(ModelViewSet, AnsibleBaseView):
 
 
 class OrganizationViewSet(TestAppViewSet):
+    queryset = Organization.objects.all()
     serializer_class = serializers.OrganizationSerializer
 
 
