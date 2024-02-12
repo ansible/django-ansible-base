@@ -32,8 +32,6 @@ class Authenticator(UniqueNamedCommonModel):
         help_text="The list of users who have authenticated from this authenticator",
     )
 
-    reverse_foreign_key_fields = ['authenticator-map']
-
     def save(self, *args, **kwargs):
         from ansible_base.lib.utils.encryption import ansible_encryption
 

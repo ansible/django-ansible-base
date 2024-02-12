@@ -7,7 +7,7 @@ from ansible_base.lib.utils.models import user_summary_fields
 
 
 class Organization(AbstractOrganization):
-    reverse_foreign_key_fields = ['teams']
+    pass
 
 
 class User(AbstractUser, CommonModel):
