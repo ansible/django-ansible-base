@@ -1,7 +1,7 @@
 from django.utils.translation import gettext_lazy as _
 
 from ansible_base.authentication.authenticator_plugins.base import BaseAuthenticatorConfiguration
-from ansible_base.lib.serializers.fields import CharField, ListField, SocialOrganizationMapField, SocialTeamMapField, URLField
+from ansible_base.lib.serializers.fields import CharField, GithubOrganizationMapField, GithubOrganizationTeamMapField, ListField, URLField
 
 
 class GithubConfiguration(BaseAuthenticatorConfiguration):
@@ -45,13 +45,13 @@ class GithubOrganizationConfiguration(GithubConfiguration):
         ui_field_label=_('GitHub org name'),
     )
 
-    ORGANIZATION_MAP = SocialOrganizationMapField(
+    ORGANIZATION_MAP = GithubOrganizationMapField(
         help_text=_('The organization map.'),
         allow_null=False,
         ui_field_label=_('GitHub org map'),
     )
 
-    ORGANIZATION_TEAM_MAP = SocialTeamMapField(
+    ORGANIZATION_TEAM_MAP = GithubOrganizationTeamMapField(
         help_text=_('The organization team map.'),
         allow_null=False,
         ui_field_label=_('GitHub org team map'),
@@ -104,13 +104,13 @@ class GithubEnterpriseOrgConfiguration(GithubEnterpriseConfiguration):
         ui_field_label=_('GitHub enterprise org name'),
     )
 
-    ORGANIZATION_MAP = SocialOrganizationMapField(
+    ORGANIZATION_MAP = GithubOrganizationMapField(
         help_text=_('The OAuth2 key (Client ID) from your GitHub developer application.'),
         allow_null=False,
         ui_field_label=_('GitHub enterprise org org map'),
     )
 
-    ORGANIZATION_TEAM_MAP = SocialTeamMapField(
+    ORGANIZATION_TEAM_MAP = GithubOrganizationTeamMapField(
         help_text=_('The OAuth2 key (Client ID) from your GitHub developer application.'),
         allow_null=False,
         ui_field_label=_('GitHub enterprise org team map'),
