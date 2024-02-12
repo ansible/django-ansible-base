@@ -1,12 +1,9 @@
 from cryptography.hazmat.primitives import serialization
 from cryptography.x509 import load_pem_x509_certificate
 from django.contrib.auth import get_user_model
-from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 from rest_framework.fields import Field as DRField
-from rest_framework.fields import SkipField as DRFSkipField
-from rest_framework.fields import empty as DRFEmpty
 
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.lib.utils.validation import validate_url, validate_url_list
@@ -19,23 +16,6 @@ class UILabelMixIn:
 
 
 class Field(UILabelMixIn, DRField):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-
-class _Forbidden(Field):
-    default_error_messages = {'invalid': _('Invalid field.')}
-
-    def run_validation(self, value):
-        self.fail('invalid')
-
-
-class Empty(UILabelMixIn, DRFEmpty):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-
-class SkipField(UILabelMixIn, DRFSkipField):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -158,7 +138,8 @@ class PrivateKey(UILabelMixIn, serializers.CharField):
 ###############################################################################
 
 
-class GithubPolymorphicField(DRField):
+class GithubPolymorphicField(Field):
+
     def to_internal_value(self, data):
         # Validate None
         if data is None:
