@@ -39,6 +39,7 @@ class RelatedFieldsTestModel(CommonModel):
     users = models.ManyToManyField(User, related_name='related_fields_test_model_users')
 
     teams_with_no_view = models.ManyToManyField(Team, related_name='related_fields_test_model_teams_with_no_view')
-    teams_with_no_view.related_view = None
 
     more_teams = models.ManyToManyField(Team, related_name='related_fields_test_model_more_teams')
+
+    ignore_relations = ['teams_with_no_view']

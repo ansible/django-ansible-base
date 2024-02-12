@@ -159,20 +159,8 @@ class CommonModel(models.Model):
 
         basename = get_cls_view_basename(self.__class__)
 
-        for field in self._meta.many_to_many:
-            if getattr(field, 'related_view', False) is None:
-                # Give fields a chance to opt out of showing up here by forcing related_view to None
-                continue
-
-            reverse_view = f"{basename}-{field.name}-list"
-
-            try:
-                response[field.name] = reverse(reverse_view, kwargs={'pk': self.pk})
-            except NoReverseMatch:
-                logger.debug(f"Model {self.__class__.__name__} wanted to reverse view to {reverse_view} but said view is not defined")
-
         # Add any reverse relations required
-        for relation in self._meta.related_objects:
+        for relation in self._meta.related_objects + self._meta.many_to_many:
             field_name = relation.name
             if field_name in self.ignore_relations:
                 continue
