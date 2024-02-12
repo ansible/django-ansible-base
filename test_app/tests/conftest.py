@@ -27,8 +27,19 @@ def github_organization_configuration():
         "KEY": "12345",
         "SECRET": "abcdefg12345",
         "NAME": "foo-org",
-        "ORGANIZATION_MAP": {},
-        "ORGANIZATION_TEAM_MAP": {},
+        "ORGANIZATION_MAP": {
+            "Default": {
+                "admins": ["admin@example.com"],
+                "users": True,
+            }
+        },
+        "ORGANIZATION_TEAM_MAP": {
+            "TeamA": {
+                "organization": "Default",
+                "users": ["/^[^@]+?@test\\.example\\.com$/"],
+                "remove": False,
+            }
+        },
     }
 
 
@@ -62,8 +73,19 @@ def github_enterprise_organization_configuration():
         "URL": "https://foohub.com",
         "API_URL": "https://api.foohub.com",
         "NAME": "foo-org",
-        "ORGANIZATION_MAP": {},
-        "ORGANIZATION_TEAM_MAP": {},
+        "ORGANIZATION_MAP": {
+            "Default": {
+                "admins": ["admin@example.com"],
+                "users": True,
+            }
+        },
+        "ORGANIZATION_TEAM_MAP": {
+            "TeamA": {
+                "organization": "Default",
+                "users": ["/^[^@]+?@test\\.example\\.com$/"],
+                "remove": False,
+            }
+        },
     }
 
 
