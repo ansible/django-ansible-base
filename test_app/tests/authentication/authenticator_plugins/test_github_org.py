@@ -59,6 +59,18 @@ def test_github_org_auth_failed(authenticate, unauthenticated_api_client, github
             },
             201,
         ),
+        (
+            None,
+            400,
+        ),
+        (
+            {"foo": None},
+            400,
+        ),
+        (
+            {"foo": {"bar": None}},
+            400,
+        ),
     ],
 )
 def test_github_org_mapping(admin_api_client, org_map, expected_status_code, shut_up_logging):
@@ -75,6 +87,67 @@ def test_github_org_mapping(admin_api_client, org_map, expected_status_code, shu
             "NAME": "github org map test",
             "ORGANIZATION_MAP": org_map,
             "ORGANIZATION_TEAM_MAP": {},
+        },
+        "order": 1,
+        "enabled": True,
+        "type": "ansible_base.authentication.authenticator_plugins.github_org",
+    }
+    response = admin_api_client.post(url, data=data, format='json')
+    assert response.status_code == expected_status_code, response.json()
+
+
+@pytest.mark.parametrize(
+    "team_map, expected_status_code",
+    [
+        (
+            {
+                "Default": {
+                    "admins": ["admin@example.com"],
+                    "users": True,
+                },
+                "Org1": {
+                    "admins": None,
+                    "users": "/^[^@].*?@example\\.com$/",
+                },
+                "Org2": {
+                    "admins": None,
+                    "users": ["/^[^@].*?@example\\.com$/"],
+                },
+            },
+            201,
+        ),
+        (
+            None,
+            400,
+        ),
+        (
+            {"foo": None},
+            400,
+        ),
+        (
+            {"foo": {"bar": None}},
+            400,
+        ),
+        (
+            {"foo": {"remove": 42}},
+            400,
+        ),
+    ],
+)
+def test_github_org_team_mapping(admin_api_client, team_map, expected_status_code, shut_up_logging):
+    """
+    Attempt to create a local authenticator with invalid configuration and test
+    that it fails.
+    """
+    url = reverse("authenticator-list")
+    data = {
+        "name": "Test github org authenticator created via API",
+        "configuration": {
+            "KEY": "123456",
+            "SECRET": "123456",
+            "NAME": "github org map test",
+            "ORGANIZATION_MAP": {},
+            "ORGANIZATION_TEAM_MAP": team_map,
         },
         "order": 1,
         "enabled": True,
