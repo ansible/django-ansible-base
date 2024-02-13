@@ -70,18 +70,7 @@ class AssociateMixin(QuerySetMixinBase):
                 }
             )
 
-        try:
-            manager.remove(*related_instances)
-        except AttributeError:
-            # If the field is FK and non-nullable, .remove() won't exist.
-            # https://docs.djangoproject.com/en/dev/ref/models/relations/#django.db.models.fields.related.RelatedManager.remove
-            # "For ForeignKey objects, this method only exists if null=True."
-            # Return something stating that the operation is not supported.
-            raise serializers.ValidationError(
-                {
-                    'instances': _('Cannot disassociate these objects because there must be a related object'),
-                }
-            )
+        manager.remove(*related_instances)
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
