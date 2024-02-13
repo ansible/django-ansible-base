@@ -130,7 +130,7 @@ class AssociationResourceRouter(routers.SimpleRouter):
             # Determine if this is a related view or a reverse view
             is_reverse_view = False
             mixin_class = AssociateMixin
-            if child_model in [x.related_model for x in parent_model._meta.related_objects]:
+            if any(x.related_model == child_model for x in parent_model._meta.related_objects):
                 is_reverse_view = True
                 mixin_class = ReverseViewMixin
 
