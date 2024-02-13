@@ -2,8 +2,6 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.x509 import load_pem_x509_certificate
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
-from rest_framework.exceptions import ValidationError
-from rest_framework.fields import Field as DRField
 
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.lib.utils.validation import validate_url, validate_url_list
@@ -12,11 +10,6 @@ from ansible_base.lib.utils.validation import validate_url, validate_url_list
 class UILabelMixIn:
     def __init__(self, **kwargs):
         self.ui_field_label = kwargs.pop('ui_field_label', 'Undefined')
-        super().__init__(**kwargs)
-
-
-class Field(UILabelMixIn, DRField):
-    def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
 
@@ -131,99 +124,3 @@ class PrivateKey(UILabelMixIn, serializers.CharField):
                     raise serializers.ValidationError(f"Unable to load as PEM data {e}")
 
         self.validators.append(validator)
-
-
-###############################################################################
-#   SOCIAL
-###############################################################################
-
-
-class GithubPolymorphicField(Field):
-
-    def to_internal_value(self, data):
-        # Validate None
-        if data is None:
-            return data
-
-        # Validate True/False
-        if isinstance(data, bool):
-            return data
-
-        # Validate a single string (ensure it's non-empty if you require)
-        if isinstance(data, str) and data.strip():
-            return data
-
-        # Validate list or tuple of strings
-        if isinstance(data, (list, tuple)) and all(isinstance(item, str) and item.strip() for item in data):
-            return data
-
-        # If none of the above conditions are met, raise a validation error
-        raise ValidationError("Value must be None, a boolean, a non-empty string, or a list/tuple of non-empty strings.")
-
-    def to_representation(self, value):
-        # Convert the Python object back into a serializable format
-        return value
-
-
-class GithubOrganizationMapField(DictField):
-
-    def to_internal_value(self, data):
-        if not isinstance(data, dict):
-            raise ValidationError("Expected a dictionary of organizations.")
-
-        validated_data = {}
-        for org_name, org_data in data.items():
-            if not isinstance(org_data, dict) or not set(org_data.keys()).issubset({'users', 'admins'}):
-                raise ValidationError(f"{org_name} must contain only 'users' or 'admins' keys.")
-
-            validated_org_data = {}
-            # Validate 'users' field using custom UsersField
-            if 'users' in org_data:
-                users_field = GithubPolymorphicField()
-                validated_org_data['users'] = users_field.to_internal_value(org_data['users'])
-
-            # Validate 'admins' field using custom AdminsField
-            if 'admins' in org_data:
-                admins_field = GithubPolymorphicField()
-                validated_org_data['admins'] = admins_field.to_internal_value(org_data['admins'])
-
-            validated_data[org_name] = validated_org_data
-
-        return validated_data
-
-
-class GithubOrganizationTeamMapField(DictField):
-
-    def to_internal_value(self, data):
-        if not isinstance(data, dict):
-            raise ValidationError("Expected a dictionary of organizations.")
-
-        validated_data = {}
-        for org_name, org_data in data.items():
-            if not isinstance(org_data, dict) or not set(org_data.keys()).issubset({'organization', 'users', 'admins', 'remove'}):
-                raise ValidationError(f"{org_name} must contain only 'organization' or 'users' or 'admins' or 'remove' keys.")
-
-            validated_org_data = {}
-
-            if 'organization' in org_data:
-                org_field = CharField(required=True)
-                validated_org_data['organization'] = org_field.to_internal_value(org_data['organization'])
-
-            # Validate 'users' field using custom UsersField
-            if 'users' in org_data:
-                users_field = GithubPolymorphicField()
-                validated_org_data['users'] = users_field.to_internal_value(org_data['users'])
-
-            # Validate 'admins' field using custom AdminsField
-            if 'admins' in org_data:
-                admins_field = GithubPolymorphicField()
-                validated_org_data['admins'] = admins_field.to_internal_value(org_data['admins'])
-
-            # Validate 'admins' field using custom AdminsField
-            if 'remove' in org_data:
-                remove_field = BooleanField(default=True)
-                validated_org_data['admins'] = remove_field.to_internal_value(org_data['remove'])
-
-            validated_data[org_name] = validated_org_data
-
-        return validated_data
