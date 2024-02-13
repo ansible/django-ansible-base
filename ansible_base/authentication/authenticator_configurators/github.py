@@ -13,7 +13,7 @@ class GithubConfiguration(BaseAuthenticatorConfiguration):
             'Provide this URL as the callback URL for your application as part of your registration process. Refer to the documentation for more detail.'
         ),
         allow_null=False,
-        ui_field_label=_('Callback URL'),
+        ui_field_label=_('Github Oauth2 Callback URL'),
     )
 
     KEY = CharField(
@@ -31,35 +31,37 @@ class GithubConfiguration(BaseAuthenticatorConfiguration):
 
 class GithubOrganizationConfiguration(GithubConfiguration):
 
-    # SOCIAL_AUTH_GITHUB_SCOPE = ['read:org']
+    documentation_url = "https://python-social-auth.readthedocs.io/en/latest/backends/github.html#github-for-organizations"
+
     SCOPE = ListField(
-        help_text=_('The OAuth2 secret (Client Secret) from your GitHub developer application.'),
+        help_text=_('The authorization scope for users. Defaults to "read:org".'),
         allow_null=False,
-        ui_field_label=_('GitHub OAuth2 Secret'),
+        ui_field_label=_('GitHub OAuth2 Scope'),
         default=['read:org'],
     )
 
     NAME = CharField(
-        help_text=_('The organization name.'),
+        help_text=_('The OAuth2 organization name.'),
         allow_null=False,
-        ui_field_label=_('GitHub org name'),
+        ui_field_label=_('GitHub OAuth2 Organization Name'),
     )
 
 
 class GithubTeamConfiguration(GithubConfiguration):
 
-    # SOCIAL_AUTH_GITHUB_SCOPE = ['read:org']
+    documentation_url = "https://python-social-auth.readthedocs.io/en/latest/backends/github.html#github-for-teams"
+
     SCOPE = ListField(
-        help_text=_('The OAuth2 secret (Client Secret) from your GitHub developer application.'),
+        help_text=_('The authorization scope for users. Defaults to "read:org".'),
         allow_null=False,
         ui_field_label=_('GitHub OAuth2 Secret'),
         default=['read:org'],
     )
 
     ID = CharField(
-        help_text=_('The github team ID.'),
+        help_text=_('The OAuth2 team ID.'),
         allow_null=False,
-        ui_field_label=_('GitHub OAuth2 Key'),
+        ui_field_label=_('GitHub OAuth2 Team ID'),
     )
 
 
@@ -70,34 +72,38 @@ class GithubTeamConfiguration(GithubConfiguration):
 
 class GithubEnterpriseConfiguration(GithubConfiguration):
 
+    documentation_url = "https://python-social-auth.readthedocs.io/en/latest/backends/github_enterprise.html"
+
     URL = URLField(
-        help_text=_('The base url for the GithHb enterprise instance.'),
+        help_text=_('The base url for the GithHub enterprise instance.'),
         allow_null=False,
         ui_field_label=_('Base URL'),
     )
 
     API_URL = URLField(
-        help_text=_('The base url for the GithHb enterprise instance.'),
+        help_text=_('The base url for the GithHub enterprise instance.'),
         allow_null=False,
-        ui_field_label=_('API URL'),
+        ui_field_label=_('Github OAuth2 Enterprise API URL'),
     )
 
 
 class GithubEnterpriseOrgConfiguration(GithubEnterpriseConfiguration):
-    documenation_url = "https://python-social-auth.readthedocs.io/en/latest/backends/github.html"
+
+    documentation_url = "https://python-social-auth.readthedocs.io/en/latest/backends/github_enterprise.html#github-enterprise-for-organizations"
 
     NAME = CharField(
         help_text=_('The OAuth2 key (Client ID) from your GitHub developer application.'),
         allow_null=False,
-        ui_field_label=_('GitHub enterprise org name'),
+        ui_field_label=_('GitHub OAuth2 Enterprise Org Name'),
     )
 
 
 class GithubEnterpriseTeamConfiguration(GithubEnterpriseConfiguration):
-    documenation_url = "https://python-social-auth.readthedocs.io/en/latest/backends/github.html"
+
+    documentation_url = "https://python-social-auth.readthedocs.io/en/latest/backends/github_enterprise.html#github-enterprise-for-teams"
 
     ID = CharField(
         help_text=_('The OAuth2 key (Client ID) from your GitHub developer application.'),
         allow_null=False,
-        ui_field_label=_('GitHub OAuth2 Key'),
+        ui_field_label=_('GitHub OAuth2 team ID'),
     )
