@@ -100,9 +100,13 @@ class AssociationResourceRouter(routers.SimpleRouter):
         return bound_methods
 
     def association_serializer_factory(self, related_view):
+        qs = related_view.queryset
+        if qs is None:
+            qs = related_view.serializer_class.Meta.model.objects.all()
+
         class AssociationSerializer(serializers.Serializer):
             instances = serializers.PrimaryKeyRelatedField(
-                queryset=related_view.queryset,
+                queryset=qs,
                 many=True,
             )
 
