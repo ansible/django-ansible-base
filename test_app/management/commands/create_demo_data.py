@@ -1,3 +1,5 @@
+from os import environ
+
 from crum import impersonate
 from django.core.management.base import BaseCommand
 
@@ -17,7 +19,8 @@ class Command(BaseCommand):
         (admin, _) = User.objects.get_or_create(username='admin')
         admin.is_staff = True
         admin.is_superuser = True
-        admin.set_password('admin')
+        admin_password = environ.get('DJANGO_SUPERUSER_PASSWORD', 'admin')
+        admin.set_password(admin_password)
         admin.save()
 
         with impersonate(spud):
@@ -49,4 +52,4 @@ class Command(BaseCommand):
             Team.objects.get_or_create(name='community.general maintainers', defaults={'organization': galaxy})
 
         self.stdout.write('Finished creating demo data!')
-        self.stdout.write('Admin user password: admin')
+        self.stdout.write(f'Admin user password: {admin_password}')
