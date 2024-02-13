@@ -37,9 +37,6 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
 
     # load the maps
     maps = AuthenticatorMap.objects.filter(authenticator=authenticator.id).order_by("order")
-
-    raise Exception('just cause')
-
     for auth_map in maps:
         has_permission = None
         allowed_keys = TRIGGER_DEFINITION.keys()
