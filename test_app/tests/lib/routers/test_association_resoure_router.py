@@ -1,5 +1,3 @@
-from functools import partial
-
 import pytest
 from django.urls import reverse
 
@@ -191,21 +189,3 @@ def test_association_router_related_viewset_all_mapings(db):
         'my_test_basename-teams-list',
     ]
     validate_expected_url_pattern_names(router, expected_urls)
-
-
-def test_association_router_viewset_with_no_queryset(db, expected_log):
-    expected_log = partial(expected_log, "ansible_base.lib.routers.association_resource_router.logger")
-    from test_app.serializers import OrganizationSerializer
-    from test_app.views import TestAppViewSet
-
-    class BadOrganizationViewSet(TestAppViewSet):
-        serializer_class = OrganizationSerializer
-
-    with expected_log("error", 'Unable to add related view'):
-        router = AssociationResourceRouter()
-        kwargs = {'basename': 'test_view', 'related_views': {'teams': {views.TeamViewSet, 'teams'}}}
-        router.register(
-            'bad_viewset',
-            BadOrganizationViewSet,
-            **kwargs,
-        )
