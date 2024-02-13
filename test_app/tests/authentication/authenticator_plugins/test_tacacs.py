@@ -3,8 +3,9 @@ from unittest.mock import MagicMock
 
 import pytest
 from django.urls import reverse
+from django.core.exceptions import ValidationError
 
-from ansible_base.authentication.authenticator_plugins.tacacs import AuthenticatorPlugin
+from ansible_base.authentication.authenticator_plugins.tacacs import AuthenticatorPlugin, validate_tacacsplus_disallow_nonascii
 from ansible_base.authentication.models import Authenticator
 from ansible_base.authentication.session import SessionAuthentication
 
@@ -58,30 +59,60 @@ def test_AuthenticatorPlugin_authenticate_no_authenticator(logger):
     logger.error.assert_called_with("AuthenticatorPlugin was missing an authenticator")
 
 
+@pytest.mark.parametrize(
+    "value,raises",
+    [
+        ('Hi', False),
+        ('', False),
+        (None, True),
+        ('😀', True),
+    ],
+)
+def test_tacacs_validate_tacacsplus_disallow_nonascii(value, raises):
+    try:
+        validate_tacacsplus_disallow_nonascii(value)
+        if not raises:
+            assert True
+        else:
+            assert False
+    except ValidationError:
+        if raises:
+            assert True
+        else:
+            assert False
+
+
 # @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
 # @pytest.mark.parametrize(
-#     "setting_override, expected_errors, argvalues",
+#     "setting_override, expected_errors",
 #     [
 #         ({"HOST": False}, {"HOST": "Not a valid string."}),
 #         ({"PORT": "foobar"}, {"PORT": 'Expected an integer but got type "str".'}),
-#         ({"AUTH_PROTOCOL": "foobar"}, {"AUTH_PROTOCOL": 'Expected one of the following choices "'ascii', 'pap', 'chap'" but got the type "str".'}),
 #         ({"REM_ADDR": "foobar"}, {"REM_ADDR": 'Expected a boolean but got type "str".'}),
 #         ({"SECRET": "foobar"}, {"SECRET": 'Shared secret for authenticating to TACACS+ server.'}),
 #         ({"SESSION_TIMEOUT": "foobar    "}, {"SESSION_TIMEOUT": 'Expected an integer but got type "str".'}),
-#     ]
-
+#     ],
 # )
+# def test_tacacs_create_authenticator_error_handling(
+#     admin_api_client,
+#     tacacs_configuration,
+#     user,
+#     setting_override,
+#     expected_errors,
+#     shut_up_logging,
+# ):
+#     """
+#     Test normal login flow when authenticate() returns no user.
+#     """
+#     tacacs_authenticator.configuration.update(extra_settings)
+#     tacacs_authenticator.save()
+#     unauthenticated_api_client.login(username="foo", password="bar")
+#     url = reverse(authenticated_test_page)
+#     response = unauthenticated_api_client.get(url)
+#     assert response.status_code == 401
+#     logger.info.assert_any_call(f"User foo could not be authenticated by TACACS {tacacs_authenticator.name}")
+#     if expected_message:
+#         logger.info.assert_any_call(expected_message)
 
-# def test_tacacsplus_settings(authenticate, unauthenticated_api_client, tacacs_authenticator):
-#     client = unauthenticated_api_client
-#     url = reverse('api:setting_singleton_detail', kwargs={'name': 'tacacsplus'})
-#     response = client.get(url, user=admin, expect=200)
-#     put(url, user=admin, data=response.data, expect=200)
-#     patch(url, user=admin, data={'SECRET': 'mysecret'}, expect=200)
-#     patch(url, user=admin, data={'SECRET': ''}, expect=200)
-#     patch(url, user=admin, data={'HOST': 'localhost'}, expect=400)
-#     patch(url, user=admin, data={'SECRET': 'mysecret'}, expect=200)
-#     patch(url, user=admin, data={'HOST': 'localhost'}, expect=200)
-#     patch(url, user=admin, data={'HOST': '', 'SECRET': ''}, expect=200)
-#     patch(url, user=admin, data={'HOST': 'localhost', 'SECRET': ''}, expect=400)
-#     patch(url, user=admin, data={'HOST': 'localhost', 'SECRET': 'mysecret'}, expect=200)
+
+#  ({"AUTH_PROTOCOL": "foobar"}, {"AUTH_PROTOCOL": 'Expected one of the following choices "'ascii', 'pap', 'chap'" but got the type "str".'})

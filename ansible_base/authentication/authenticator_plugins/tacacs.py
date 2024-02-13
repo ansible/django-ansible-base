@@ -26,7 +26,7 @@ logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.ta
 def validate_tacacsplus_disallow_nonascii(value):
     try:
         value.encode('ascii')
-    except (UnicodeEncodeError, UnicodeDecodeError):
+    except (UnicodeEncodeError, UnicodeDecodeError, AttributeError):
         raise ValidationError(_('TACACS+ secret does not allow non-ascii characters'))
 
 
