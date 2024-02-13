@@ -7,7 +7,7 @@ from ansible_base.lib.utils.models import user_summary_fields
 
 
 class Organization(AbstractOrganization):
-    reverse_foreign_key_fields = ['teams']
+    pass
 
 
 class User(AbstractUser, CommonModel):
@@ -39,6 +39,7 @@ class RelatedFieldsTestModel(CommonModel):
     users = models.ManyToManyField(User, related_name='related_fields_test_model_users')
 
     teams_with_no_view = models.ManyToManyField(Team, related_name='related_fields_test_model_teams_with_no_view')
-    teams_with_no_view.related_view = None
 
     more_teams = models.ManyToManyField(Team, related_name='related_fields_test_model_more_teams')
+
+    ignore_relations = ['teams_with_no_view']

@@ -27,12 +27,10 @@ class Authenticator(UniqueNamedCommonModel):
     category = fields.CharField(max_length=30, default=None, help_text="The base type of this authenticator")
     users = ManyToManyField(
         settings.AUTH_USER_MODEL,
-        related_name='users',
+        related_name='authenticators',
         blank=True,
         help_text="The list of users who have authenticated from this authenticator",
     )
-
-    reverse_foreign_key_fields = ['authenticator-map']
 
     def save(self, *args, **kwargs):
         from ansible_base.lib.utils.encryption import ansible_encryption
