@@ -17,7 +17,7 @@ def validate_expected_url_pattern_names(router, expected_url_pattern_names):
     assert url_pattern_names == expected_url_pattern_names
 
 
-def test_associative_router_basic_viewset():
+def test_association_router_basic_viewset():
     router = AssociationResourceRouter()
     router.register(
         r'user',
@@ -27,7 +27,7 @@ def test_associative_router_basic_viewset():
     validate_expected_url_pattern_names(router, ['user-list', 'user-detail'])
 
 
-def test_associative_router_basic_viewset_no_basename():
+def test_association_router_basic_viewset_no_basename():
     router = AssociationResourceRouter()
     router.register(
         r'user',
@@ -36,7 +36,7 @@ def test_associative_router_basic_viewset_no_basename():
     validate_expected_url_pattern_names(router, ['user-list', 'user-detail'])
 
 
-def test_associative_router_associate_viewset_all_mapings():
+def test_association_router_associate_viewset_all_mapings():
     router = AssociationResourceRouter()
     router.register(
         r'related_model',
@@ -60,7 +60,7 @@ def test_associative_router_associate_viewset_all_mapings():
     validate_expected_url_pattern_names(router, expected_urls)
 
 
-def test_associative_router_good_associate(db, admin_api_client, randname, organization):
+def test_association_router_good_associate(db, admin_api_client, randname, organization):
     from test_app.models import RelatedFieldsTestModel, Team
 
     related_model = RelatedFieldsTestModel.objects.create()
@@ -89,7 +89,7 @@ def test_associative_router_good_associate(db, admin_api_client, randname, organ
         ({'not_an_instances': [1]}, ['This field is required.']),
     ],
 )
-def test_associative_router_associate_bad_data(db, admin_api_client, data, response_instances):
+def test_association_router_associate_bad_data(db, admin_api_client, data, response_instances):
     from test_app.models import RelatedFieldsTestModel
 
     related_model = RelatedFieldsTestModel.objects.create()
@@ -101,7 +101,7 @@ def test_associative_router_associate_bad_data(db, admin_api_client, data, respo
     assert response.json().get('instances') == response_instances
 
 
-def test_associative_router_associate_existing_item(db, admin_api_client, random_user):
+def test_association_router_associate_existing_item(db, admin_api_client, random_user):
     from test_app.models import RelatedFieldsTestModel
 
     related_model = RelatedFieldsTestModel.objects.create()
@@ -117,7 +117,7 @@ def test_associative_router_associate_existing_item(db, admin_api_client, random
     assert response.status_code == 204
 
 
-def test_associative_router_disassociate(db, admin_api_client, randname, organization):
+def test_association_router_disassociate(db, admin_api_client, randname, organization):
     from test_app.models import RelatedFieldsTestModel, Team
 
     team = Team.objects.create(name=randname('team'), organization=organization)
@@ -147,7 +147,7 @@ def test_associative_router_disassociate(db, admin_api_client, randname, organiz
         ({'not_an_instances': [1]}, ['This field is required.']),
     ],
 )
-def test_associative_router_disassociate_bad_data(db, admin_api_client, data, response_instances):
+def test_association_router_disassociate_bad_data(db, admin_api_client, data, response_instances):
     from test_app.models import RelatedFieldsTestModel
 
     related_model = RelatedFieldsTestModel.objects.create()
@@ -159,7 +159,7 @@ def test_associative_router_disassociate_bad_data(db, admin_api_client, data, re
     assert response.json().get('instances') == response_instances
 
 
-def test_associative_router_disassociate_something_not_associated(db, admin_api_client, organization):
+def test_association_router_disassociate_something_not_associated(db, admin_api_client, organization):
     from test_app.models import RelatedFieldsTestModel, Team
 
     related_model = RelatedFieldsTestModel.objects.create()
@@ -174,12 +174,12 @@ def test_associative_router_disassociate_something_not_associated(db, admin_api_
     assert response.json().get('instances') == 'Cannot disassociate these objects because they are not all related to this object: 2, 3'
 
 
-def test_associative_router_related_viewset_all_mapings(db):
+def test_association_router_related_viewset_all_mapings(db):
     router = AssociationResourceRouter()
     router.register(
         r'organization',
         views.OrganizationViewSet,
-        reverse_views={
+        related_views={
             'teams': (views.TeamViewSet, 'teams'),
         },
         basename='my_test_basename',
@@ -193,14 +193,7 @@ def test_associative_router_related_viewset_all_mapings(db):
     validate_expected_url_pattern_names(router, expected_urls)
 
 
-@pytest.mark.parametrize(
-    "relation_type",
-    [
-        ('related'),
-        ('reverse'),
-    ],
-)
-def test_associative_router_viewset_with_no_queryset(db, expected_log, relation_type):
+def test_association_router_viewset_with_no_queryset(db, expected_log):
     expected_log = partial(expected_log, "ansible_base.lib.routers.association_resource_router.logger")
     from test_app.serializers import OrganizationSerializer
     from test_app.views import TestAppViewSet
@@ -208,9 +201,9 @@ def test_associative_router_viewset_with_no_queryset(db, expected_log, relation_
     class BadOrganizationViewSet(TestAppViewSet):
         serializer_class = OrganizationSerializer
 
-    with expected_log("error", f'Unable to add {relation_type} view'):
+    with expected_log("error", 'Unable to add related view'):
         router = AssociationResourceRouter()
-        kwargs = {'basename': 'test_view', f'{relation_type}_views': {'teams': {views.TeamViewSet, 'teams'}}}
+        kwargs = {'basename': 'test_view', 'related_views': {'teams': {views.TeamViewSet, 'teams'}}}
         router.register(
             'bad_viewset',
             BadOrganizationViewSet,

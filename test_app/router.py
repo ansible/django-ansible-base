@@ -24,7 +24,7 @@ associative_router.register(
 associative_router.register(
     r'organizations',
     views.OrganizationViewSet,
-    reverse_views={
+    related_views={
         'teams': (views.TeamViewSet, 'teams'),
     },
     basename='organization',

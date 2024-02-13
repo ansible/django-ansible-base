@@ -20,9 +20,9 @@ urlpatterns = [
 
 This would create an endpoint called `users` in your application with all of the post/patch/put/delete/get endpoints as defined by the UserViewSet.
 
-# Many-to-Many fields.
+# Related fields
 
-The AssociationResourceRouter can also handle many to many fields by adding a `related_views` field to the register function. For example, consider this register command:
+The AssociationResourceRouter can also handle many-to-many or reverse foreign key (one-to_many) fields by adding a `related_views` field to the register function. For example, consider this register command:
 ```
 router.register(
     r'users',
@@ -34,12 +34,7 @@ router.register(
 )
 ```
 
-This would create an endpoint called users with `related` objects teams and organizations. You would also end up with associate/disassociate urls off the related endpoints like:
-  * `/api/service/v1/users/:id/teams/associate`
-  * `/api/service/v1/users/:id/teams/disassociate`
-  * `/api/service/v1/users/:id/organizations/associate`
-  * `/api/service/v1/users/:id/organizations/disassociate`
-
+The router interrogates model of the queryset from the parent view along with the model of the query set from the related view and determines if the relation is a many-to-many or a reverse foreign key.
 
 Related views are expressed in the following format:
 
@@ -49,6 +44,28 @@ Related views are expressed in the following format:
 
 NOTE: Often times the `<entry in API related field>` will be the same as `<related field name>` but this is not always the case.
 
+
+## Many-to-Many
+
+If the two relations were many-to-many fields the following `related` items `team` and `organizations` for each users. For many-to-many relations you would also end up with associate/disassociate urls off the related endpoints like:
+  * `/api/service/v1/users/:id/teams/associate`
+  * `/api/service/v1/users/:id/teams/disassociate`
+  * `/api/service/v1/users/:id/organizations/associate`
+  * `/api/service/v1/users/:id/organizations/disassociate`
+
+
+## Reverse Foreign Key
+
+If the related views in our example were reverse foreign keys we would end up with the following read only related endpoints:
+  * `/api/service/v1/users/:id/teams/`
+  * `/api/service/v1/users/:id/organizations/`
+
+The only way to change these fields are via a PATCH or PUT to the main user endpoint `/api/service/v1/users/` to change the value from teams or organizations.
+
+Note: This example is not the best because an org/team wouldn't be related to a single user. But hopefully you get the idea.
+
+
+## Default Related Names
 
 If a model does not specify a related field name one will automatically be created by django in the format `<model._meta.model_name>_set`.
 See: https://docs.djangoproject.com/en/dev/topics/db/queries/#backwards-related-objects
@@ -77,33 +94,6 @@ If we added a related name like:
 ```
 
 Than the field we need to specify in the third parameter of the router is `some_relation`.
-
-# One-to-Many, reverse ForeignKey
-
-Sublists for reverse ForeignKey fields are like `/api/v1/organizations/1/teams/` where a PATCH or PUT to `/api/v1/teams/4/` could change the `organization` field on the team directly.
-These sublists should be read-only, because PATCH/PUT to the related model is the preferred way of changing the link.
-
-You can add a reverse ForeignKey filed during the register process like:
-```
-associative_router.register(
-    r'organizations',
-    views.OrganizationViewSet,
-    reverse_views={
-        'teams': (views.TeamViewSet, 'teams'),
-    },
-    basename='organization',
-)
-```
-
-Reverse views are expressed in the following format:
-
-```
-    '<entry in API related field>': (<ViewSet for relation>, '<related field name>')
-```
-
-NOTE: Often times the `<entry in API related field>` will be the same as `<related field name>` but this is not always the case.
-
-Note, that the Team model would have the ForeignKey field to the organization model but we specify on the team relation on the registration of the organization.
 
 
 # Ignoring Relations

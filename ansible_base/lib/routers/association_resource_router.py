@@ -8,6 +8,10 @@ from rest_framework.response import Response
 logger = logging.getLogger('ansible_base.lib.routers.association_resource_router')
 
 
+class MissingQuerySetException(Exception):
+    pass
+
+
 class QuerySetMixinBase:
     def get_queryset(self):
         parent_pk = self.kwargs['pk']
@@ -18,10 +22,7 @@ class QuerySetMixinBase:
         except parent_model.DoesNotExist:
             return parent_model.objects.none()
 
-        if issubclass(self.__class__, AssociateMixin):
-            child_queryset = getattr(parent_instance, self.association_fk).all()
-        elif issubclass(self.__class__, ReverseViewMixin):
-            child_queryset = getattr(parent_instance, self.related_fk).all()
+        child_queryset = getattr(parent_instance, self.association_fk).all()
         return child_queryset
 
 
@@ -98,13 +99,7 @@ class AssociateMixin(QuerySetMixinBase):
 
 
 class ReverseViewMixin(QuerySetMixinBase):
-    def get_serializer_class(self):
-        related_class = getattr(self, 'related_serializer', None)
-        if self.action in ('associate', 'disassociate'):
-            if related_class is None:
-                raise RuntimeError('You must set related_serializer on the viewset')
-            return related_class
-        return super().get_serializer_class()
+    pass
 
 
 class AssociationResourceRouter(routers.SimpleRouter):
@@ -119,68 +114,49 @@ class AssociationResourceRouter(routers.SimpleRouter):
                 bound_methods[method] = action_str
         return bound_methods
 
-    def register(self, prefix, viewset, **kwargs):
-        basename = kwargs.get('basename', None)
-        related_views = kwargs.get('related_views', {})
-        reverse_views = kwargs.get('reverse_views', {})
+    def association_serializer_factory(self, related_view):
+        class AssociationSerializer(serializers.Serializer):
+            instances = serializers.PrimaryKeyRelatedField(
+                queryset=related_view.queryset,
+                many=True,
+            )
+
+        return AssociationSerializer
+
+    def register(self, prefix, viewset, related_views={}, basename=None):
         if basename is None:
             basename = self.get_default_basename(viewset)
 
-        for reverse_name, (reverse_view, fk) in reverse_views.items():
-
-            def related_serializer_factory(reverse_view=reverse_view):
-                class RelatedSerializer(serializers.Serializer):
-                    instances = serializers.PrimaryKeyRelatedField(
-                        queryset=reverse_view.queryset,
-                        many=True,
-                    )
-
-                return RelatedSerializer
-
-            if viewset.queryset is None:
-                logger.error(f"ViewSet {viewset} does not have an associated queryset. Unable to add reverse view {reverse_name}")
-                continue
-
-            modified_reverse_viewset = type(
-                f'Reverse{reverse_view.__name__}',
-                (ReverseViewMixin, reverse_view),
-                {
-                    'related_fk': fk,
-                    'backward_related_qs': viewset.queryset,
-                    'related_serializer': related_serializer_factory(),
-                    'lookup_field': fk,
-                },
-            )
-            # Force the view to be read only
-            modified_reverse_viewset.http_method_names = ['get', 'head', 'options']
-
-            self.registry.append((f"{prefix}/(?P<pk>[^/.]+)/{reverse_name}", modified_reverse_viewset, f'{basename}-{fk}'))
-
         for related_name, (related_view, fk) in related_views.items():
-
-            def association_serializer_factory(related_view=related_view):
-                class AssociationSerializer(serializers.Serializer):
-                    instances = serializers.PrimaryKeyRelatedField(
-                        queryset=related_view.queryset,
-                        many=True,
-                    )
-
-                return AssociationSerializer
-
-            if viewset.queryset is None:
-                logger.error(f"ViewSet {viewset.__class__} does not have an associated queryset. Unable to add related view {related_name}")
+            try:
+                for view in [viewset, related_view]:
+                    if getattr(view, 'queryset', None) is None:
+                        logger.error(f"ViewSet {view.__class__} does not have an associated queryset. Unable to add related view {related_name}")
+                        raise MissingQuerySetException()
+            except MissingQuerySetException:
                 continue
+
+            is_reverse_view = False
+            mixin_class = AssociateMixin
+            for field in viewset.queryset.model._meta.related_objects:
+                if field.related_model == related_view.queryset.model:
+                    is_reverse_view = True
+                    mixin_class = ReverseViewMixin
 
             modified_related_viewset = type(
                 f'Related{related_view.__name__}',
-                (AssociateMixin, related_view),
+                (mixin_class, related_view),
                 {
                     'association_fk': fk,
                     'backward_related_qs': viewset.queryset,
-                    'association_serializer': association_serializer_factory(),
+                    'association_serializer': self.association_serializer_factory(related_view),
                     'lookup_field': fk,
                 },
             )
+
+            if is_reverse_view:
+                # Force the view to be read only
+                modified_related_viewset.http_method_names = ['get', 'head', 'options']
 
             self.registry.append((f"{prefix}/(?P<pk>[^/.]+)/{related_name}", modified_related_viewset, f'{basename}-{fk}'))
 
