@@ -81,7 +81,25 @@ def test_tacacs_validate_tacacsplus_disallow_nonascii(value, raises):
         else:
             assert False
 
-
+@pytest.mark.parametrize(
+    "value,raises",
+    [
+        ('request', False),
+        ('hasattr', False),
+        (None, True),
+    ],
+)
+def test_get_client_ip(_get_client_ip,value, raises):
+    try:
+        if not raises:
+            assert True
+        else:
+            assert False
+    except ValidationError:
+        if raises:
+            assert True
+        else:
+            assert False
 # @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
 # @pytest.mark.parametrize(
 #     "setting_override, expected_errors",
