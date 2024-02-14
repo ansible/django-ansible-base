@@ -3,7 +3,7 @@ from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from test_app import serializers
-from test_app.models import EncryptionModel, Organization, RelatedFieldsTestModel, Team, User
+from test_app.models import RelatedFieldsTestModel
 
 
 class TestAppViewSet(ModelViewSet, AnsibleBaseView):
