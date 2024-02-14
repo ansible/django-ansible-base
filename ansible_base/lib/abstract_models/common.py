@@ -11,6 +11,7 @@ from django.utils import timezone
 from inflection import underscore
 from rest_framework.reverse import reverse
 
+from ansible_base.lib.utils.encryption import ENCRYPTED_STRING, ansible_encryption
 from ansible_base.lib.utils.settings import get_setting
 
 logger = logging.getLogger('ansible_base.lib.abstract_models.common')
@@ -147,8 +148,6 @@ class CommonModel(models.Model):
             update_fields.append('modified_by')
 
         # Encrypt any fields
-        from ansible_base.lib.utils.encryption import ansible_encryption
-
         for field in self.encrypted_fields:
             field_value = getattr(self, field, None)
             if field_value:
@@ -159,8 +158,6 @@ class CommonModel(models.Model):
     @classmethod
     def from_db(self, db, field_names, values):
         instance = super().from_db(db, field_names, values)
-
-        from ansible_base.lib.utils.encryption import ENCRYPTED_STRING, ansible_encryption
 
         for field in self.encrypted_fields:
             field_value = getattr(instance, field, None)
