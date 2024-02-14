@@ -3,6 +3,7 @@ from django.urls import reverse
 
 from ansible_base.lib.routers import AssociationResourceRouter
 from test_app import views
+from test_app.models import User
 
 
 def validate_expected_url_pattern_names(router, expected_url_pattern_names):
@@ -26,11 +27,11 @@ def test_association_router_basic_viewset():
 
 
 def test_association_router_basic_viewset_no_basename():
+    class UserViewSetWithQueryset(views.UserViewSet):
+        queryset = User.objects.all()
+
     router = AssociationResourceRouter()
-    router.register(
-        r'user',
-        views.UserViewSet,
-    )
+    router.register(r'user', UserViewSetWithQueryset)
     validate_expected_url_pattern_names(router, ['user-list', 'user-detail'])
 
 

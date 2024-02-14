@@ -3,7 +3,6 @@ from django.urls import include, path, re_path
 
 from ansible_base.lib.dynamic_config.dynamic_urls import api_urls, api_version_urls, root_urls
 from ansible_base.resource_registry.urls import urlpatterns as resource_api_urls
-from test_app.router import associative_router
 from test_app.router import router as test_app_router
 
 urlpatterns = [
@@ -15,5 +14,4 @@ urlpatterns = [
     # Admin application
     re_path(r"^admin/", admin.site.urls, name="admin"),
     path('api/v1/', include(resource_api_urls)),
-    path('api/v1/', include(associative_router.urls)),
 ]
