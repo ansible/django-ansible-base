@@ -33,9 +33,4 @@ class EDAJWTAuthScheme(OpenApiAuthenticationExtension):
     name = "EDAJWTAuthentication"
 
     def get_security_definition(self, auto_schema):
-        return {
-            "type": "token",
-            "in": "header",
-            "name": "JWT Authorization",
-            "description": "Token-based authentication",
-        }
+        return {"type": "apiKey", "name": "X-DAB-JW-TOKEN", "in": "header"}

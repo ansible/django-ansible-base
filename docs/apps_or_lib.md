@@ -80,6 +80,8 @@ You can remove `tests.py` as we don't put tests in ansible_base. Additionally, y
 
 If you have views you can add them to `views.py` or, like models, remove `views.py` and create a `views` folder. If you don't plan to have views `views.py` can be deleted.
 
+NOTE: Any view should extend our built in view set `lib/views.py` for details.
+
 Finally, if your application will add endpoints to the API be sure to add `urls.py`. You can define three different types of urls in this file:
  * `api_version_urls`: These are intended to be on an endpoint like /api/<some name>/v1/. Most URLs should be added here.
  * `api_urls`: These are intended to be on an endpoint like /api/<some name>. An example of this its swaggers docs endpoint or social-auths social.
@@ -93,3 +95,8 @@ from ansible_base.<app_name>.apps import <app class>
 app_name = <app class>.label
 ```
 
+## Views in apps
+
+All views in a django app should inherit by default, from `ansible_base.lib.utils.views.AnsibleBaseDjangoAppApiView`. 
+This view adds additional headers to all requests.
+See lib/views.md for more details.

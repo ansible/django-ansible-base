@@ -14,14 +14,19 @@ def test_unset_setting():
 
 
 @mock.patch("ansible_base.lib.utils.settings.logger")
-@override_settings(ANSIBLE_BASE_SETTINGS_FUNCTION='junk')
-def test_invalid_settings_function(logger):
+@override_settings(ANSIBLE_BASE_SETTINGS_FUNCTION='test_app.tests.lib.utils.test_views.version_function_issue')
+@pytest.mark.parametrize('log_exception_flag', [False, True])
+def test_invalid_settings_function(logger, log_exception_flag):
     default_value = 'default_value'
-    value = get_setting('UNDEFINED_SETTING', default_value)
+    value = get_setting('UNDEFINED_SETTING', default_value, log_exception_flag)
     assert value == default_value
-    logger.exception.assert_called_once_with(
-        "ANSIBLE_BASE_SETTINGS_FUNCTION was set but calling it as a function failed (see exception), ignoring error and attempting to load from settings"
-    )
+
+    if log_exception_flag:
+        logger.exception.assert_called_once_with(
+            "ANSIBLE_BASE_SETTINGS_FUNCTION was set but calling it as a function failed (see exception), ignoring error and attempting to load from settings"
+        )
+    else:
+        logger.exception.assert_not_called()
 
 
 def setting_getter_function(setting_name):

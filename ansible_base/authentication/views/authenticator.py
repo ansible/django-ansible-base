@@ -4,13 +4,14 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
-from ansible_base.authentication.models import Authenticator, AuthenticatorMap, AuthenticatorUser
-from ansible_base.authentication.serializers import AuthenticatorMapSerializer, AuthenticatorSerializer
+from ansible_base.authentication.models import Authenticator, AuthenticatorUser
+from ansible_base.authentication.serializers import AuthenticatorSerializer
+from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 
 logger = logging.getLogger('ansible_base.authentication.views.authenticator')
 
 
-class AuthenticatorViewSet(ModelViewSet):
+class AuthenticatorViewSet(ModelViewSet, AnsibleBaseDjangoAppApiView):
     """
     API endpoint that allows authenticators to be viewed or edited.
     """
@@ -30,10 +31,3 @@ class AuthenticatorViewSet(ModelViewSet):
         else:
             logger.info(f"Deleting authenticator with ID={instance.id}")
             return super().destroy(request, *args, **kwargs)
-
-
-class AuthenticatorAuthenticatorMapViewSet(ModelViewSet):
-    serializer_class = AuthenticatorMapSerializer
-
-    def get_queryset(self):
-        return AuthenticatorMap.objects.filter(authenticator=self.kwargs['pk']).order_by("order")

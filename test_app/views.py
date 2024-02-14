@@ -1,11 +1,12 @@
 from rest_framework import permissions
 from rest_framework.viewsets import ModelViewSet
 
+from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from test_app import serializers
 from test_app.models import RelatedFieldsTestModel
 
 
-class TestAppViewSet(ModelViewSet):
+class TestAppViewSet(ModelViewSet, AnsibleBaseView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
@@ -29,5 +30,5 @@ class EncryptionModelViewSet(TestAppViewSet):
 
 
 class RelatedFieldsTestModelViewSet(TestAppViewSet):
-    queryset = RelatedFieldsTestModel.objects.all()  # needed to automatic basename from router
+    queryset = RelatedFieldsTestModel.objects.all()  # needed for automatic basename from router
     serializer_class = serializers.RelatedFieldsTestModelSerializer
