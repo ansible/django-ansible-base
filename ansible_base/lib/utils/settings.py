@@ -39,7 +39,7 @@ def get_function_from_setting(setting_name: str) -> Any:
         return None
 
     try:
-        module_name, _, function_name = setting.rpartition('.')
+        module_name, _junk, function_name = setting.rpartition('.')
         the_function = getattr(importlib.import_module(module_name), function_name)
         return the_function
     except Exception:
