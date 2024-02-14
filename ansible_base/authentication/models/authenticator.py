@@ -7,6 +7,7 @@ from ansible_base.lib.utils.models import prevent_search
 
 
 class Authenticator(UniqueNamedCommonModel):
+    ignore_relations = ['authenticator_user']
     enabled = fields.BooleanField(default=False, help_text="Should this authenticator be enabled")
     create_objects = fields.BooleanField(default=True, help_text="Allow authenticator to create objects (users, teams, organizations)")
     # TODO: Implement unique users, remove user, etc with team and org mapping feature.
