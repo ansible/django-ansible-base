@@ -1,5 +1,6 @@
 import datetime
 import os
+import random
 import re
 from collections import defaultdict
 from unittest import mock
@@ -559,7 +560,21 @@ def system_user(db, settings, no_log_messages):
 def organization(db, randname):
     return models.Organization.objects.create(name=randname("Test Organization"))
 
-
 @pytest.fixture
-def team(organization):
-    return models.Team.objects.create(name='foo-team', organization=organization)
+def team(organization, randname):
+    return models.Team.objects.create(name=randname("Test Team"), organization=organization)
+
+
+@copy_fixture(copies=3)  # noqa: F405
+@pytest.fixture
+def multiple_fields_model(db, randname):
+    from test_app.models import MultipleFieldsModel
+
+    multiple_fields_model = MultipleFieldsModel.objects.create(
+        char_field1=randname("Test Char Field 1"),
+        char_field2=randname("Test Char Field 2"),
+        int_field=1,
+        bool_field=random.choice([True, False]),
+    )
+    yield multiple_fields_model
+    multiple_fields_model.delete()
