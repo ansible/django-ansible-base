@@ -6,6 +6,8 @@ import pytest
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from django.core.exceptions import ObjectDoesNotExist
+from django.db.utils import IntegrityError
 from django.test.client import RequestFactory
 
 from ansible_base.lib.testing.fixtures import *  # noqa: F403, F401
@@ -281,28 +283,24 @@ def mocked_http(test_encryption_public_key, jwt_token):
 
 
 @pytest.fixture
-def system_user_without_self_reference(db, settings, no_log_messages):
-    settings.SYSTEM_USERNAME = '_system'
+def system_user(db, settings, no_log_messages):
     from test_app.models import User
 
     with no_log_messages():
-        user_obj = User.objects.create_user(settings.SYSTEM_USERNAME)
-    assert user_obj.created_by is None
-    assert user_obj.modified_by is None
+        # Get the _system user from the database
+        try:
+            user_obj = User.objects.get(username=settings.SYSTEM_USERNAME)
+        except ObjectDoesNotExist:
+            # Just in case the user object gets trashed we will catch a DNE error and attempt to create it
+            try:
+                # Why don't we use get_or_create? Because we can't pass non_existent_user_fatal=False into get_or_create
+                user_obj = User()
+                user_obj.username = settings.SYSTEM_USERNAME
+                user_obj.save(non_existent_user_fatal=False)
+            except IntegrityError as e:
+                # If for some reason we fail again just let it go
+                raise e
     yield user_obj
-    user_obj.delete()
-
-
-@pytest.fixture
-def system_user(system_user_without_self_reference):
-    sys_user = system_user_without_self_reference
-    sys_user.created_by = sys_user
-    sys_user.save()
-    sys_user.refresh_from_db()
-    assert sys_user.created_by == sys_user
-    assert sys_user.modified_by == sys_user
-    yield sys_user
-    # system_user_without_self_reference cleans up after itself
 
 
 @pytest.fixture
