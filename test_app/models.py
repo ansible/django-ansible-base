@@ -14,7 +14,7 @@ class Organization(AbstractOrganization):
     resource = AnsibleResourceField(primary_key_field="id")
 
 
-class User(AbstractUser, CommonModel):
+class User(AbstractUser, CommonModel, AuditableModel):
     resource = AnsibleResourceField(primary_key_field="id")
 
     def summary_fields(self):
@@ -200,3 +200,28 @@ permission_registry.register(InstanceGroup, ImmutableTask, parent_field_name=Non
 
 permission_registry.track_relationship(Team, 'tracked_users', 'team-member')
 permission_registry.track_relationship(Team, 'team_parents', 'team-member')
+
+
+class MultipleFieldsModel(NamedCommonModel):
+    class Meta:
+        app_label = "test_app"
+
+    char_field1 = models.CharField(max_length=1, null=True, default='a')
+    char_field2 = models.CharField(max_length=1, null=True, default='b')
+    int_field = models.PositiveIntegerField(null=True, default=1)
+    bool_field = models.BooleanField(default=True)
+
+
+class Animal(NamedCommonModel, AuditableModel):
+    class Meta:
+        app_label = "test_app"
+
+    ANIMAL_KINDS = (
+        ('dog', 'Dog'),
+        ('cat', 'Cat'),
+        ('fish', 'Fish'),
+    )
+
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, null=True)
+    kind = models.CharField(max_length=4, choices=ANIMAL_KINDS, default='dog')
+    age = models.PositiveIntegerField(null=True, default=1)

@@ -7,11 +7,12 @@ from django.utils.translation import gettext_lazy as _
 from inflection import underscore
 
 from ansible_base.lib.utils.settings import get_setting
+from ansible_base.lib.utils.string import make_json_safe
 
 logger = logging.getLogger('ansible_base.lib.utils.models')
 
 
-def get_all_field_names(model):
+def get_all_field_names(model, concrete_only=False):
     # Implements compatibility with _meta.get_all_field_names
     # See: https://docs.djangoproject.com/en/1.11/ref/models/meta/#migrating-from-the-old-api
     return list(
@@ -22,6 +23,7 @@ def get_all_field_names(model):
                 # For complete backwards compatibility, you may want to exclude
                 # GenericForeignKey from the results.
                 if not (field.many_to_one and field.related_model is None)
+                and not (concrete_only and not field.concrete)
             )
         )
     )
@@ -97,3 +99,94 @@ def current_user_or_system_user():
     if user is None or user.is_anonymous:
         user = get_system_user()
     return user
+
+
+def diff(old, new, require_type_match=True, json_safe=True, exclude_fields=[], limit_fields=[]):
+    """
+    Diff two instances of models (which do not have to be the same type of model
+    if given require_type_match=False).
+
+    This function is used in particular by the activitystream application where
+    the changes returned by this function are stored as models change.
+
+    :param old: The old instance for comparison
+    :param new: The new instance for comparison
+    :param require_type_match: If True, old and new must be of the same type of
+        model. (default: True)
+    :param json_safe: If True, the diff will be made JSON-safe by converting
+        all non-JSON-safe values to strings using Django's smart_str function.
+        (default: True)
+    :param exclude_fields: A list of field names to exclude from the diff.
+        (default: [])
+    :param limit_fields: A list of field names to limit the diff to. This can be
+        useful, for example, when update_fields is passed to a model's save
+        method and you only want to diff the fields that were updated.
+        (default: [])
+    :return: A dictionary with the following
+        - added_fields: A dictionary of fields that were added between old and
+          new. Importantly, if old and new are the same type of model, this
+          should always be empty. An "added field" does not mean that the field
+          became non-empty, it means that the field was completely absent from
+          the old type of model and is now present in the new type of model. If
+          this entry is non-empty, it has the form: {"field_name": value} where
+          value is the new value of the field.
+        - removed_fields: A dictionary of fields that were removed between old
+          and new. Similar to added_fields, if old and new are the same type of
+          model, this should always be empty. It has the same structure as
+          added_fields except the value is the old value of the field.
+        - changed_fields: A dictionary of fields that were changed between old
+          and new. The key of each entry is the field name, and the value is a
+          tuple of the old value and the new value.
+    """
+    def skip_field(field):
+        return field in exclude_fields or (limit_fields and field not in limit_fields)
+
+    from django.db.models import Model
+
+    diff_dict = {"added_fields": {}, "removed_fields": {}, "changed_fields": {}}
+
+    if old is None and new is None:
+        return diff_dict
+
+    if (old is not None and not isinstance(old, Model)) or (new is not None and not isinstance(new, Model)):
+        raise TypeError('old and new must be a Model instance or None')
+
+    if old is None:
+        for field in get_all_field_names(new, concrete_only=True):
+            if skip_field(field):
+                continue
+            diff_dict["added_fields"][field] = make_json_safe(getattr(new, field)) if json_safe else getattr(new, field)
+        return diff_dict
+    elif new is None:
+        for field in get_all_field_names(old, concrete_only=True):
+            if skip_field(field):
+                continue
+            diff_dict["removed_fields"][field] = make_json_safe(getattr(old, field)) if json_safe else getattr(old, field)
+        return diff_dict
+    elif require_type_match and type(old) != type(new):  # noqa: E721
+        raise TypeError('old and new must be of the same type')
+
+    for field in get_all_field_names(old, concrete_only=True):
+        if skip_field(field):
+            continue
+
+        old_value = getattr(old, field)
+
+        if not hasattr(new, field):
+            diff_dict["removed_fields"][field] = make_json_safe(old_value) if json_safe else old_value
+            continue
+
+        new_value = getattr(new, field)
+        if old_value != new_value:
+            diff_dict["changed_fields"][field] = (
+                make_json_safe(old_value) if json_safe else old_value,
+                make_json_safe(new_value) if json_safe else new_value,
+            )
+
+    for field in get_all_field_names(new, concrete_only=True):
+        if skip_field(field):
+            continue
+        if not hasattr(old, field):
+            diff_dict["added_fields"][field] = make_json_safe(getattr(new, field)) if json_safe else getattr(new, field)
+
+    return diff_dict
