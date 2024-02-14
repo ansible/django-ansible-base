@@ -14,7 +14,7 @@ def test_unset_setting():
 
 
 @mock.patch("ansible_base.lib.utils.settings.logger")
-@override_settings(ANSIBLE_BASE_SETTINGS_FUNCTION='junk')
+@override_settings(ANSIBLE_BASE_SETTINGS_FUNCTION='test_app.tests.lib.utils.test_views.version_function_issue')
 @pytest.mark.parametrize('log_exception_flag', [False, True])
 def test_invalid_settings_function(logger, log_exception_flag):
     default_value = 'default_value'
