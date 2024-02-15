@@ -5,12 +5,13 @@ from rest_framework import serializers
 from rest_framework.fields import empty
 
 from ansible_base.lib.abstract_models.common import get_url_for_object
+from ansible_base.lib.serializers.validation import ValidationSerializerMixin
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 
 logger = logging.getLogger('ansible_base.lib.serializers.common')
 
 
-class CommonModelSerializer(serializers.ModelSerializer):
+class CommonModelSerializer(ValidationSerializerMixin, serializers.ModelSerializer):
     url = serializers.SerializerMethodField()
     related = serializers.SerializerMethodField('_get_related')
     summary_fields = serializers.SerializerMethodField('_get_summary_fields')
