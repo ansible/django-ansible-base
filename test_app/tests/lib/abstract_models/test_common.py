@@ -26,8 +26,7 @@ def test_name_in_summary_fields():
 @override_settings(SYSTEM_USERNAME=None)
 @pytest.mark.django_db
 def test_save_attribution_no_system_username():
-    with pytest.raises(ValueError):
-        model = Organization.objects.create()
+    model = Organization.objects.create(name='foo-org')
 
     model = Organization()
     model.save(non_existent_user_fatal=False)

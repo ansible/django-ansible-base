@@ -108,7 +108,7 @@ class CommonModel(models.Model):
 
     def _check_user(self, user, non_existent_user_fatal=True):
         # Its possible for _attributable_user to return None or anonymous user in which case we don't want to save
-        if (not user or user.is_anonymous) and non_existent_user_fatal:
+        if (not user or user.is_anonymous) and non_existent_user_fatal and get_setting('SYSTEM_USERNAME'):
             # TODO: See if there is a better way to figure out how to identify this object?
             # Maybe instead of trying to send a single identifier we try and dump the object?
             obj_id = getattr(self, 'pk', getattr(self, 'name', getattr(self, 'username', 'Unknown')))
