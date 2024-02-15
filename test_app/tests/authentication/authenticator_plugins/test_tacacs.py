@@ -6,6 +6,7 @@ from django.urls import reverse
 from django.core.exceptions import ValidationError
 
 from ansible_base.authentication.authenticator_plugins.tacacs import AuthenticatorPlugin, validate_tacacsplus_disallow_nonascii
+from ansible_base.authentication.authenticator_plugins.tacacs import AuthenticatorPlugin
 from ansible_base.authentication.models import Authenticator
 from ansible_base.authentication.session import SessionAuthentication
 
@@ -81,25 +82,17 @@ def test_tacacs_validate_tacacsplus_disallow_nonascii(value, raises):
         else:
             assert False
 
-@pytest.mark.parametrize(
-    "value,raises",
-    [
-        ('request', False),
-        ('hasattr', False),
-        (None, True),
-    ],
-)
-def test_get_client_ip(_get_client_ip,value, raises):
-    try:
-        if not raises:
-            assert True
-        else:
-            assert False
-    except ValidationError:
-        if raises:
-            assert True
-        else:
-            assert False
+
+@pytest.mark.parametrize("expected_output", [(hasattr, None), (None, True)])
+def test_get_client_ip(client, expected_output):
+    plugin = AuthenticatorPlugin()
+    response = AuthenticatorPlugin._get_client_ip(client, expected_output)
+
+    result = AuthenticatorPlugin._get_client_ip(client, expected_output)
+
+    assert result == expected_output
+
+
 # @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
 # @pytest.mark.parametrize(
 #     "setting_override, expected_errors",
