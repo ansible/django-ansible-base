@@ -2,11 +2,10 @@ from unittest import mock
 from unittest.mock import MagicMock
 
 import pytest
-from django.urls import reverse
 from django.core.exceptions import ValidationError
+from django.urls import reverse
 
 from ansible_base.authentication.authenticator_plugins.tacacs import AuthenticatorPlugin, validate_tacacsplus_disallow_nonascii
-from ansible_base.authentication.authenticator_plugins.tacacs import AuthenticatorPlugin
 from ansible_base.authentication.models import Authenticator
 from ansible_base.authentication.session import SessionAuthentication
 
