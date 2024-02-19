@@ -103,26 +103,10 @@ def test_get_client_ip(client, request):
     except:
         if 'REMOTE_ADDR':
             assert True
+        elif 'x_forwarded_for':
+            assert False
         else:
             assert False
-
-
-# @pytest.mark.parametrize("expected_output", [(not hasattr, None)])
-# def test_get_client_ip(client, expected_output):
-#     plugin = AuthenticatorPlugin()
-#     response = AuthenticatorPlugin._get_client_ip(client, expected_output)
-
-#     result = AuthenticatorPlugin._get_client_ip(client, expected_output)
-#     try:
-#         if None:
-#             assert True
-#         else:
-#             assert False
-#     except ValidationError:
-#         if True:
-#             assert True
-#         else:
-#             assert False
 
 
 # @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
