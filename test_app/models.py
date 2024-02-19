@@ -4,6 +4,7 @@ from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
+from ansible_base.activitystream.models import AuditableModel
 from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam, CommonModel, ImmutableCommonModel, ImmutableModel, NamedCommonModel
 from ansible_base.lib.utils.models import user_summary_fields
 from ansible_base.rbac import permission_registry
