@@ -212,3 +212,35 @@ This displays information about the service itself:
     "service_type": "aap"
 }
 ```
+
+### service-index/resource-types/{name}/manifest/
+
+This returns a manifest of the current state of resources on gateway, the manifest is presented as a streamed HTTP
+response with a CSV containing columns `resource_id` and `resource_hash`, `resource_hash` is the sha256 calculated
+from the Resource.resource_data serialized by the ResourceSerializer.
+
+This endpoint allows each service to check the state of gateway and perform comparations with its local resources to
+perform sync operations (create, update, delete).
+
+```csv
+resource_id,resource_hash
+863b5744-bc79-49fb-95cb-bb171a372c50,86f06a619dd768393c4969f725bae089a265168fb79f1fdcac2d4442e41ac529
+4c9ddcb4-080f-4d8c-a0d2-9dbffee1b3ce,6c78ee32d146a01bc22902a36dbced5af6ec0563c6d190491ad1262ef53dc6ed
+```
+
+> NOTE: Locally each service would use a call to `ansible_base.lib.utils.hashing.hash_serializer_data` passing the `instance`,
+> the `ResourceSerializer` and setting the `resource_data` field as the hashing source.
+
+```py
+>>> from ansible_base.lib.utils.hashing import hash_serializer_data
+>>> from ansible_base.resource_registry.serializers import ResourceSerializer
+>>> resource = Resource.objects.first()
+>>> resource_hash = hash_serializer_data(resource, ResourceSerializer, "resource_data")
+>>> print(resource.resource_id, resource_hash, sep=",")
+'4c9ddcb4-080f-4d8c-a0d2-9dbffee1b3ce,6c78ee32d146a01bc22902a36dbced5af6ec0563c6d190491ad1262ef53dc6ed'
+```
+
+Then the service compares each local pair with the pairs present in the gateway CSV response and:
+- If present on gateway but not found on local service, create it.
+- If hash is different, update it.
+- If exists in local service but not present on gateway manifest, delete it.
