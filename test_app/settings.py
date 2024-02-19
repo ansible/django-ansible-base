@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'test_app',
     'django_extensions',
     'debug_toolbar',
+    'ansible_base.activitystream',
 ]
 
 MIDDLEWARE = [
