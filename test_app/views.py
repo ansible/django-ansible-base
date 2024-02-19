@@ -99,3 +99,11 @@ def api_root(request, format=None):
         if '-list' in url.name and url.pattern._regex.count('/') == 1:
             list_endpoints[url.name.removesuffix('-list')] = reverse(url.name, request=request, format=format)
     return Response(list_endpoints)
+
+
+class MultipleFieldsViewSet(TestAppViewSet):
+    serializer_class = serializers.MultipleFieldsModelSerializer
+
+
+class AnimalViewSet(TestAppViewSet):
+    serializer_class = serializers.AnimalSerializer

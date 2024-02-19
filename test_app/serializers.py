@@ -44,6 +44,17 @@ class ResourceMigrationTestModelSerializer(CommonModelSerializer):
         fields = '__all__'
 
 
+class MultipleFieldsModelSerializer(NamedCommonModelSerializer):
+    class Meta:
+        model = models.MultipleFieldsModel
+        fields = '__all__'
+
+
+class AnimalSerializer(NamedCommonModelSerializer):
+    class Meta:
+        model = models.Animal
+
+
 class InventorySerializer(RelatedAccessMixin, ModelSerializer):
     class Meta:
         model = models.Inventory
