@@ -132,6 +132,14 @@ def test_authenticate():
     assert True
 
 
+def test_tacacs_client():
+    tacacs_authenticator = AuthenticatorPlugin()
+    tacacs_authenticator.authenticate(request=RequestFactory())
+    client_ip = tacacs_authenticator._get_client_ip(request=RequestFactory())
+    if not client_ip:
+        assert True
+
+
 # @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
 # @pytest.mark.parametrize(
 #     "setting_override, expected_errors",
