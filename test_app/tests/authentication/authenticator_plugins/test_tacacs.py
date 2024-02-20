@@ -3,10 +3,10 @@ from unittest.mock import MagicMock
 
 import pytest
 from django.core.exceptions import ValidationError
+from django.test.client import RequestFactory
 from django.urls import reverse
 
 from ansible_base.authentication.authenticator_plugins.tacacs import AuthenticatorPlugin, validate_tacacsplus_disallow_nonascii
-from ansible_base.authentication.models import Authenticator
 from ansible_base.authentication.session import SessionAuthentication
 
 authenticated_test_page = "authenticator-list"
@@ -90,23 +90,40 @@ def test_tacacs_validate_tacacsplus_disallow_nonascii(value, raises):
 # If the condition is false, it returns the value of the REMOTE_ADDR key in the META dictionary
 # The REMOTE_ADDR key contains the IP address of the client
 
-def test_get_client_ip(client, request):
-    plugin = AuthenticatorPlugin()
-    response = AuthenticatorPlugin._get_client_ip(client, request)
 
-    result = AuthenticatorPlugin._get_client_ip(client, request)
-    try:
-        if hasattr(client, "META"):
-            assert True
-        else:
-            assert False
-    except:
-        if 'REMOTE_ADDR':
-            assert True
-        elif 'x_forwarded_for':
-            assert False
-        else:
-            assert False
+@pytest.mark.parametrize(
+    'request_type, x_forwarded_for, remote_addr, expected',
+    [
+        (None, None, None, None),
+        ('mocked_http', None, None, None),
+        ('rf', None, None, None),
+        ('rf', '1.2.3.4,Whatever', None, '1.2.3.4'),
+        ('rf', '1.2.3.4', None, '1.2.3.4'),
+        ('rf', '1.2.3.4,Whatever,Else', None, '1.2.3.4'),
+        ('rf', '1.2.3.4,Whatever', '127.0.0.1', '1.2.3.4'),
+        ('rf', None, '4.3.2.1', '4.3.2.1'),
+    ],
+)
+def test_get_client_ip(request_type, x_forwarded_for, remote_addr, expected, mocked_http):
+    plugin = AuthenticatorPlugin()
+    request_object = None
+    if request_type == 'rf':
+        rf = RequestFactory()
+
+        headers = {}
+        if x_forwarded_for:
+            headers['X_FORWARDED_FOR'] = x_forwarded_for
+
+        request_object = rf.get('/hello/', REMOTE_ADDR=remote_addr, headers=headers)
+
+        if remote_addr is None:
+            del request_object.META['REMOTE_ADDR']
+
+    elif request_type == 'mocked_http':
+        request_object = mocked_http
+
+    result = plugin._get_client_ip(request_object)
+    assert result == expected
 
 
 # @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
