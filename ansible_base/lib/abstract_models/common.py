@@ -6,9 +6,9 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.db.models.fields.reverse_related import ManyToManyRel
 from django.urls.exceptions import NoReverseMatch
 from django.utils import timezone
-from django.db.models.fields.reverse_related import ManyToManyRel
 from inflection import underscore
 from rest_framework.reverse import reverse
 
