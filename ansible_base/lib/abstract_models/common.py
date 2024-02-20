@@ -8,6 +8,7 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.urls.exceptions import NoReverseMatch
 from django.utils import timezone
+from django.db.models.fields.reverse_related import ManyToManyRel
 from inflection import underscore
 from rest_framework.reverse import reverse
 
@@ -182,6 +183,8 @@ class CommonModel(models.Model):
         # See docs/lib/default_models.md
         # Automatically add all of the ForeignKeys for the model as related fields
         for field in self._meta.concrete_fields:
+            if field.name in self.ignore_relations:
+                continue
             # ignore relations on inherited django models
             if not isinstance(field, models.ForeignKey) or field.name.endswith("_ptr"):
                 continue
@@ -195,7 +198,9 @@ class CommonModel(models.Model):
         # Add any reverse relations required
         for relation in self._meta.related_objects + self._meta.many_to_many:
             field_name = relation.name
-            if field_name in self.ignore_relations:
+            # obey the model ignore list
+            # skip reverse m2m, we only want to manage associations via the forward
+            if field_name in self.ignore_relations or isinstance(relation, ManyToManyRel):
                 continue
             reverse_view = f"{basename}-{field_name}-list"
             try:
