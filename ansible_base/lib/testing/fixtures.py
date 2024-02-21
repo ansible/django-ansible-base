@@ -29,7 +29,7 @@ def unauthenticated_api_client(db):
 
 
 @pytest.fixture
-def admin_api_client(db, admin_user, unauthenticated_api_client, local_authenticator):
+def admin_api_client(db, admin_user, unauthenticated_api_client):
     client = unauthenticated_api_client
     client.login(username="admin", password="password")
     yield client
@@ -41,21 +41,21 @@ def admin_api_client(db, admin_user, unauthenticated_api_client, local_authentic
 
 
 @pytest.fixture
-def user(db, django_user_model, local_authenticator):
+def user(db, django_user_model):
     user = django_user_model.objects.create_user(username="user", password="password")
     yield user
     user.delete()
 
 
 @pytest.fixture
-def random_user(db, django_user_model, randname, local_authenticator):
+def random_user(db, django_user_model, randname):
     user = django_user_model.objects.create_user(username=randname("user"), password="password")
     yield user
     user.delete()
 
 
 @pytest.fixture
-def user_api_client(db, user, unauthenticated_api_client, local_authenticator):
+def user_api_client(db, user, unauthenticated_api_client):
     client = unauthenticated_api_client
     client.login(username="user", password="password")
     yield client
