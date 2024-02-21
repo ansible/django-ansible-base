@@ -19,7 +19,7 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('OIDC Provider URL'),
     )
 
-    OIDC_VERIFY_SSL = BooleanField(
+    VERIFY_SSL = BooleanField(
         help_text=_("Verify the OIDC provider ssl certificate."),
         default=True,
         allow_null=False,
