@@ -59,3 +59,14 @@ class AuditableModel(models.Model):
         post_save.connect(activitystream_create, sender=cls, dispatch_uid=f'dab_activitystream_{cls.__name__}_create')
         pre_save.connect(activitystream_update, sender=cls, dispatch_uid=f'dab_activitystream_{cls.__name__}_update')
         # pre_delete.connect(activitystream_delete, sender=cls, dispatch_uid=f'dab_activitystream_{cls.__name__}_delete')
+
+
+    @property
+    def activity_stream_entries(self):
+        """
+        A helper property that returns the activity stream entries for this object.
+        """
+        return Entry.objects.filter(
+            content_type=ContentType.objects.get_for_model(self),
+            object_id=self.pk
+        ).order_by('created_on')
