@@ -578,3 +578,12 @@ def multiple_fields_model(db, randname):
     )
     yield multiple_fields_model
     multiple_fields_model.delete()
+
+
+@pytest.fixture
+def animal(db, randname, user):
+    from test_app.models import Animal
+
+    animal = Animal.objects.create(name=randname("Test Animal"), owner=user)
+    yield animal
+    animal.delete()

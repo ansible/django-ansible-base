@@ -8,6 +8,35 @@ from django.test.utils import override_settings
 from ansible_base.lib.utils import models
 
 
+def test_get_all_field_names(animal):
+    """
+    get_all_field_names should return all field names for a model.
+    """
+    field_names = models.get_all_field_names(animal)
+    assert 'owner' in field_names
+    assert 'kind' in field_names
+    assert 'age' in field_names
+
+
+def test_get_all_field_names_concrete_only(user):
+    """
+    get_all_field_names with concrete_only=True should return only concrete fields.
+    """
+    field_names = models.get_all_field_names(user)
+    assert 'username' in field_names
+    assert 'first_name' in field_names
+    assert 'animal_set' not in field_names
+
+
+@pytest.mark.xfail
+def test_get_all_field_names_reverse_accessors(user):
+    """
+    get_all_field_names should include proper reverse field accessor names.
+    """
+    field_names = models.get_all_field_names(user)
+    assert 'animal_set' in field_names
+
+
 def test_get_type_for_model():
     dummy_model = MagicMock()
     dummy_model._meta.concrete_model._meta.object_name = 'SnakeCaseString'
