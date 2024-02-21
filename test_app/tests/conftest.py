@@ -255,7 +255,7 @@ def saml_authenticator(saml_configuration):
     authenticator.delete()
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def local_authenticator(db):
     from ansible_base.authentication.models import Authenticator
 
