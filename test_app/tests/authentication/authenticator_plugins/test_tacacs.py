@@ -128,49 +128,41 @@ def test_get_client_ip(request_type, x_forwarded_for, remote_addr, expected, moc
 
 def test_authenticate():
     tacacs_authenticator = AuthenticatorPlugin()
-    tacacs_authenticator.authenticate(request=RequestFactory(), username=None, password=None)
-    assert True
+    if tacacs_authenticator.authenticate(request=RequestFactory(), username=None, password=None):
+        assert None
+    if tacacs_authenticator.authenticate(request=RequestFactory(), username="foo", password="bar"):
+        assert True
 
 
 def test_tacacs_client():
     tacacs_authenticator = AuthenticatorPlugin()
     tacacs_authenticator.authenticate(request=RequestFactory())
     client_ip = tacacs_authenticator._get_client_ip(request=RequestFactory())
-    if not client_ip:
-        assert True
+    assert client_ip is None
 
 
-# @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
-# @pytest.mark.parametrize(
-#     "setting_override, expected_errors",
-#     [
-#         ({"HOST": False}, {"HOST": "Not a valid string."}),
-#         ({"PORT": "foobar"}, {"PORT": 'Expected an integer but got type "str".'}),
-#         ({"REM_ADDR": "foobar"}, {"REM_ADDR": 'Expected a boolean but got type "str".'}),
-#         ({"SECRET": "foobar"}, {"SECRET": 'Shared secret for authenticating to TACACS+ server.'}),
-#         ({"SESSION_TIMEOUT": "foobar    "}, {"SESSION_TIMEOUT": 'Expected an integer but got type "str".'}),
-#     ],
-# )
-# def test_tacacs_create_authenticator_error_handling(
-#     admin_api_client,
-#     tacacs_configuration,
-#     user,
-#     setting_override,
-#     expected_errors,
-#     shut_up_logging,
-# ):
-#     """
-#     Test normal login flow when authenticate() returns no user.
-#     """
-#     tacacs_authenticator.configuration.update(extra_settings)
-#     tacacs_authenticator.save()
-#     unauthenticated_api_client.login(username="foo", password="bar")
-#     url = reverse(authenticated_test_page)
-#     response = unauthenticated_api_client.get(url)
-#     assert response.status_code == 401
-#     logger.info.assert_any_call(f"User foo could not be authenticated by TACACS {tacacs_authenticator.name}")
-#     if expected_message:
-#         logger.info.assert_any_call(expected_message)
-
-
-#  ({"AUTH_PROTOCOL": "foobar"}, {"AUTH_PROTOCOL": 'Expected one of the following choices "'ascii', 'pap', 'chap'" but got the type "str".'})
+@mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
+@pytest.mark.parametrize(
+    "setting_override, expected_errors",
+    [
+        ({"HOST": False}, {"HOST": "Not a valid string."}),
+        ({"PORT": "foobar"}, {"PORT": 'Expected an integer but got type "str".'}),
+        ({"REM_ADDR": "foobar"}, {"REM_ADDR": 'Expected a boolean but got type "str".'}),
+        ({"SECRET": "foobar"}, {"SECRET": 'Shared secret for authenticating to TACACS+ server.'}),
+        ({"SESSION_TIMEOUT": "foobar    "}, {"SESSION_TIMEOUT": 'Expected an integer but got type "str".'}),
+        ({"AUTH_PROTOCOL": "foobar"}, {"AUTH_PROTOCOL": 'Expected one of the following choices ascii, pap, chap but got the type str.'}),
+    ],
+)
+def test_tacacs_create_authenticator_error_handling(unauthenticated_api_client, tacacs_authenticator, setting_override, expected_errors):
+    """
+    Test normal login flow when authenticate() returns no user.
+    """
+    tacacs_authenticator.configuration.update()
+    tacacs_authenticator.save()
+    unauthenticated_api_client.login(username="foo", password="bar")
+    url = reverse(authenticated_test_page)
+    response = unauthenticated_api_client.get(url)
+    assert response.status_code == 401
+    # logger.info.assert_any_call(f"User foo could not be authenticated by TACACS {tacacs_authenticator.name}")
+    # if expected_message:
+    #     logger.info.assert_any_call(expected_message)
