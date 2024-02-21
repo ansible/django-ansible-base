@@ -6,7 +6,7 @@ from ansible_base.lib.serializers.fields import CharField, ListField, URLField
 
 class GithubConfiguration(BaseAuthenticatorConfiguration):
 
-    documenation_url = "https://python-social-auth.readthedocs.io/en/latest/backends/github.html"
+    documentation_url = "https://python-social-auth.readthedocs.io/en/latest/backends/github.html"
 
     CALLBACK_URL = URLField(
         help_text=_(
