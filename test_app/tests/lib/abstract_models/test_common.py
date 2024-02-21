@@ -4,7 +4,7 @@ from unittest.mock import patch
 import pytest
 from django.test import override_settings
 
-from test_app.models import EncryptionModel, Organization, RelatedFieldsTestModel
+from test_app.models import EncryptionModel, Organization, RelatedFieldsTestModel, User
 
 
 @pytest.mark.django_db
@@ -23,10 +23,13 @@ def test_name_in_summary_fields():
     assert 'name' in model.summary_fields()
 
 
+@override_settings(SYSTEM_USERNAME=None)
 @pytest.mark.django_db
 def test_save_attribution_no_system_username():
-    model = Organization.objects.create()
-    model.save()
+    model = Organization.objects.create(name='foo-org')
+
+    model = Organization()
+    model.save(non_existent_user_fatal=False)
     assert model.created_by is None
     assert model.modified_by is None
 
@@ -36,26 +39,29 @@ def test_save_attribution_no_system_username():
 
 
 @pytest.mark.django_db
-@override_settings(SYSTEM_USERNAME='_system')
-@pytest.mark.parametrize(
-    'warn_nonexistent_system_user',
-    (True, False),
-)
-def test_save_attribution_with_system_username_set_but_nonexistent(organization, expected_log, warn_nonexistent_system_user):
+@override_settings(SYSTEM_USERNAME='_not_system')
+def test_save_attribution_with_system_username_set_but_nonexistent_as_false(system_user, organization, expected_log):
     expected_log = partial(expected_log, "ansible_base.lib.abstract_models.common.logger")
 
-    assert organization.created_by is None
-    assert organization.modified_by is None
+    with expected_log("warn", "no user with that username exists", assert_not_called=True):
+        organization.save(non_existent_user_fatal=False)
 
-    with expected_log("warn", "no user with that username exists", assert_not_called=not warn_nonexistent_system_user):
-        organization.save(warn_nonexistent_system_user=warn_nonexistent_system_user)
-
-    assert organization.created_by is None
+    assert organization.created_by == system_user
     assert organization.modified_by is None
 
     organization.refresh_from_db()
-    assert organization.created_by is None
+    assert organization.created_by == system_user
     assert organization.modified_by is None
+
+
+@pytest.mark.django_db
+@override_settings(SYSTEM_USERNAME='_not_system')
+def test_save_attribution_with_system_username_set_but_nonexistent_as_true(organization, expected_log):
+    expected_log = partial(expected_log, "ansible_base.lib.abstract_models.common.logger")
+
+    with pytest.raises(ValueError):
+        with expected_log("warn", "no user with that username exists"):
+            organization.save(non_existent_user_fatal=True)
 
 
 @pytest.mark.django_db
@@ -102,3 +108,42 @@ def test_related_fields_view_resolution(shut_up_logging):
     # And it should have been called with related_fields_test_model-more_teams-list
     # (overridden for the 'more_teams' field)
     assert 'related_fields_test_model-more_teams-list' in [call[0][0] for call in reverse.call_args_list]
+
+
+@pytest.mark.django_db
+def test_resave_of_model_with_no_created(expected_log, system_user):
+    # Create a random model and save it without warning and no system user
+    model = Organization()
+    with override_settings(SYSTEM_USERNAME='_not_system'):
+        model.save(non_existent_user_fatal=False)
+
+    assert model.created_by is None
+
+    model.save()
+    assert model.created_by is None
+
+    model.delete()
+
+
+def test_attributable_user_anonymous_non_user(system_user):
+    # If we are an AnonymousUser and we call _attributable_error we should get the system user back
+    from crum import impersonate
+    from django.contrib.auth.models import AnonymousUser
+
+    model = Organization()
+    with impersonate(AnonymousUser):
+        with pytest.raises(ValueError):
+            model.save()
+
+
+def test_attributable_user_anonymous_user(system_user):
+    # If we are an AnonymousUser and we call _attributable_error we should get the system user back
+    from crum import impersonate
+    from django.contrib.auth.models import AnonymousUser
+
+    model = User()
+    with impersonate(AnonymousUser):
+        model.save()
+
+    assert model.created_by == system_user
+    model.delete()

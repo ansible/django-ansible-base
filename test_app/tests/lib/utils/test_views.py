@@ -110,10 +110,11 @@ def version_function_issue():
     [
         (None, 'Unknown', ''),
         ('test_app.tests.lib.utils.test_views.version_function', version_function(), ''),
-        ('junk', 'Unknown', 'Failed to load function from'),
-        ('does.not.exist', 'Unknown', 'Failed to load function from'),
+        ('junk', 'Unknown', 'set but we were unable to import its reference as a function'),
+        ('does.not.exist', 'Unknown', 'set but we were unable to import its reference as a function'),
         ('test_app.tests.lib.utils.test_views.version_function_issue', 'Unknown', 'was set but calling it as a function'),
     ],
+    ids=['none', 'valid_function', 'invalid_import', 'invalid_module', 'function_exception'],
 )
 def test_ansible_base_view_version(view_with_headers, mock_request, admin_user, setting, value, log_message, caplog):
     mock_request.user = admin_user

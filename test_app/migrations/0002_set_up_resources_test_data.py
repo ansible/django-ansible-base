@@ -26,6 +26,7 @@ def create_test_data(apps, schema_editor):
 class Migration(migrations.Migration):
     dependencies = [
         ('test_app', '0001_initial'),
+        ('dab_resource_registry', '__first__'),
     ]
 
     operations = [

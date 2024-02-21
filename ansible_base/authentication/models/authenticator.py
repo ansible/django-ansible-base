@@ -7,6 +7,7 @@ from ansible_base.lib.utils.models import prevent_search
 
 
 class Authenticator(UniqueNamedCommonModel):
+    ignore_relations = ['authenticator_user']
     enabled = fields.BooleanField(default=False, help_text="Should this authenticator be enabled")
     create_objects = fields.BooleanField(default=True, help_text="Allow authenticator to create objects (users, teams, organizations)")
     # TODO: Implement unique users, remove user, etc with team and org mapping feature.
@@ -27,12 +28,10 @@ class Authenticator(UniqueNamedCommonModel):
     category = fields.CharField(max_length=30, default=None, help_text="The base type of this authenticator")
     users = ManyToManyField(
         settings.AUTH_USER_MODEL,
-        related_name='users',
+        related_name='authenticators',
         blank=True,
         help_text="The list of users who have authenticated from this authenticator",
     )
-
-    reverse_foreign_key_fields = ['authenticator-map']
 
     def save(self, *args, **kwargs):
         from ansible_base.lib.utils.encryption import ansible_encryption
