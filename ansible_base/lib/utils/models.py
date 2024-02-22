@@ -22,8 +22,7 @@ def get_all_field_names(model, concrete_only=False):
                 for field in model._meta.get_fields()
                 # For complete backwards compatibility, you may want to exclude
                 # GenericForeignKey from the results.
-                if not (field.many_to_one and field.related_model is None)
-                and not (concrete_only and not field.concrete)
+                if not (field.many_to_one and field.related_model is None) and not (concrete_only and not field.concrete)
             )
         )
     )
@@ -138,6 +137,7 @@ def diff(old, new, require_type_match=True, json_safe=True, exclude_fields=[], l
           and new. The key of each entry is the field name, and the value is a
           tuple of the old value and the new value.
     """
+
     def skip_field(field):
         return field in exclude_fields or (limit_fields and field not in limit_fields)
 
