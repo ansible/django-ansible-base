@@ -1,15 +1,11 @@
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
-from django.db.models.signals import post_save, pre_save, pre_delete
+from django.db.models.signals import post_save, pre_save
 from django.utils.translation import gettext_lazy as _
 
+from ansible_base.activitystream.signals import activitystream_create, activitystream_update  # activitystream_delete,
 from ansible_base.lib.abstract_models import CommonModel
-from ansible_base.activitystream.signals import (
-    activitystream_create,
-    activitystream_update,
-    # activitystream_delete,
-)
 
 
 class Entry(CommonModel):
@@ -19,6 +15,7 @@ class Entry(CommonModel):
     This is keyed on a generic object_id and content_type, which allows for
     a wide variety of objects to be used in the activity stream.
     """
+
     class Meta:
         verbose_name_plural = _('Entries')
 
@@ -60,13 +57,9 @@ class AuditableModel(models.Model):
         pre_save.connect(activitystream_update, sender=cls, dispatch_uid=f'dab_activitystream_{cls.__name__}_update')
         # pre_delete.connect(activitystream_delete, sender=cls, dispatch_uid=f'dab_activitystream_{cls.__name__}_delete')
 
-
     @property
     def activity_stream_entries(self):
         """
         A helper property that returns the activity stream entries for this object.
         """
-        return Entry.objects.filter(
-            content_type=ContentType.objects.get_for_model(self),
-            object_id=self.pk
-        ).order_by('created_on')
+        return Entry.objects.filter(content_type=ContentType.objects.get_for_model(self), object_id=self.pk).order_by('created_on')

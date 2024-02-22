@@ -11,6 +11,7 @@ class ActivitystreamConfig(AppConfig):
         # Iterate models and look for ones that inherit from AuditableModel.
         # If found, connect the signal to the model by calling its static connect_signals().
         from django.apps import apps
+
         from ansible_base.activitystream.models import AuditableModel
 
         for model in apps.get_models():

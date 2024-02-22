@@ -76,7 +76,11 @@ def test_diff_both_none():
     """
     Diffing two None means no fields are added, removed, or changed.
     """
-    assert models.diff(None, None) == {"added_fields": {}, "removed_fields": {}, "changed_fields": {},}
+    assert models.diff(None, None) == {
+        "added_fields": {},
+        "removed_fields": {},
+        "changed_fields": {},
+    }
 
 
 @pytest.mark.parametrize(

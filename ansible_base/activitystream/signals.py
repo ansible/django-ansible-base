@@ -1,7 +1,9 @@
 from ansible_base.lib.utils.models import diff
 
+
 def _store_activitystream_entry(old, new, operation):
     from ansible_base.activitystream.models import Entry
+
     delta = diff(old, new)
 
     if delta["added_fields"] == {} and delta["changed_fields"] == {} and delta["removed_fields"] == {}:
@@ -13,6 +15,7 @@ def _store_activitystream_entry(old, new, operation):
         operation=operation,
         changes=delta,
     )
+
 
 # post_save
 def activitystream_create(sender, instance, created, **kwargs):
