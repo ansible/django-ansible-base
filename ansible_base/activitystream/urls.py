@@ -9,4 +9,4 @@ router.register(
     views.EntryReadOnlyViewSet,
 )
 
-api_version_urls = [path('', include(router.urls))]
+api_version_urls = [path('', include((router.urls, 'dab_activitystream'), namespace='activitystream'))]
