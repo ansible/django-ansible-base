@@ -226,3 +226,4 @@ class Animal(NamedCommonModel, AuditableModel):
     owner = models.ForeignKey(User, on_delete=models.CASCADE, null=True)
     kind = models.CharField(max_length=4, choices=ANIMAL_KINDS, default='dog')
     age = models.PositiveIntegerField(null=True, default=1)
+    people_friends = models.ManyToManyField(User, related_name='animal_friends', blank=True)

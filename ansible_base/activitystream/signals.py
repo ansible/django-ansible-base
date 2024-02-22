@@ -1,8 +1,16 @@
+import logging
+
 from ansible_base.lib.utils.models import diff
 
 
-def _store_activitystream_entry(old, new, operation):
+logger = logging.getLogger('ansible_base.activitystream.signals')
+
+
+def _store_activitystream_entry(old, new, operation, m2m=False):
     from ansible_base.activitystream.models import Entry
+
+    if operation not in ('create', 'update', 'delete'):
+        raise ValueError("Invalid operation: {}".format(operation))
 
     delta = diff(old, new)
 
@@ -26,6 +34,24 @@ def _store_activitystream_entry(old, new, operation):
         operation=operation,
         changes=delta,
     )
+
+
+def _store_activitystream_m2m(given_instance, model, operation, pk_set, reverse):
+    from ansible_base.activitystream.models import Entry
+
+    if operation not in ('associate', 'disassociate'):
+        raise ValueError("Invalid operation: {}".format(operation))
+
+    instances = model.objects.filter(pk__in=pk_set)
+
+    for instance in instances:
+        # It would be nice if we could bulk insert, but we need .save()
+        # called to fill in the created_* fields.
+        x = Entry.objects.create(
+            content_object=instance if reverse else given_instance,
+            operation=operation,
+            related_content_object=given_instance if reverse else instance,
+        )
 
 
 # post_save
@@ -87,3 +113,36 @@ def activitystream_delete(sender, instance, using, origin, **kwargs):
         return
 
     _store_activitystream_entry(old, None, 'delete')
+
+
+# m2m_changed
+def activitystream_m2m_changed(sender, instance, action, reverse, model, pk_set, **kwargs):
+    """
+    This signal is registered via the activity stream AuditableModel abstract
+    model/class. It is called when a many-to-many relationship is changed
+    (added or removed) for any model that inherits from AuditableModel. (It is
+    registered as a m2m_changed signal.)
+    """
+    if action not in ('post_add', 'post_remove', 'pre_clear'):
+        return
+
+    operation = 'associate' if action == 'post_add' else 'disassociate'
+
+    if action == 'pre_clear':
+        if 'field_name' not in kwargs:
+            raise ValueError("Missing field_name in kwargs")
+        field_name = kwargs['field_name']
+        if reverse:
+            # Okay. We need to talk. Just you - the reader trying to understand this code - and I.
+            # Look. We want to always store the activity stream entry on the forward relation.
+            # Let's assume we have an Animal model with a 'people_friends' m2m. This is the forward relation.
+            # If we do: user.animal_friends.clear() - the reverse relation - we need to get the PKs of
+            # every animal that is being removed from the user's animal_friends.
+            # Note that in this case, model is the Animal model, and instance is the user.
+            pk_set = model.objects.filter(**{field_name: instance}).values_list('pk', flat=True)
+        else:
+            # If we're not reversing, then we're clearing the forward relation. So it's easy to get the PKs,
+            # given we have the field name and the instance.
+            pk_set = getattr(instance, field_name).all().values_list('pk', flat=True)
+
+    _store_activitystream_m2m(instance, model, operation, pk_set, reverse)
