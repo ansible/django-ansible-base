@@ -580,6 +580,7 @@ def multiple_fields_model(db, randname):
     multiple_fields_model.delete()
 
 
+@copy_fixture(copies=3)  # noqa: F405
 @pytest.fixture
 def animal(db, randname, user):
     from test_app.models import Animal

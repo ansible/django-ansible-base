@@ -1,10 +1,12 @@
+from functools import partial
+
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
-from django.db.models.signals import post_save, pre_delete, pre_save
+from django.db.models.signals import m2m_changed, post_save, pre_delete, pre_save
 from django.utils.translation import gettext_lazy as _
 
-from ansible_base.activitystream.signals import activitystream_create, activitystream_delete, activitystream_update
+from ansible_base.activitystream.signals import activitystream_create, activitystream_delete, activitystream_update, activitystream_m2m_changed
 from ansible_base.lib.abstract_models import CommonModel
 
 
@@ -33,6 +35,11 @@ class Entry(CommonModel):
     operation = models.CharField(max_length=12, choices=OPERATION_CHOICES)
     changes = models.JSONField(null=True, blank=True)
 
+    # This is used for m2m (dis)associations
+    related_content_type = models.ForeignKey(ContentType, on_delete=models.DO_NOTHING, null=True, blank=True, related_name='related_content_type')
+    related_object_id = models.TextField(null=True, blank=True)
+    related_content_object = GenericForeignKey('related_content_type', 'related_object_id')
+
     # TODO: AWX stores denormalized actor data to account for deleted users, we should do the same
 
     def __str__(self):
@@ -56,6 +63,15 @@ class AuditableModel(models.Model):
         post_save.connect(activitystream_create, sender=cls, dispatch_uid=f'dab_activitystream_{cls.__name__}_create')
         pre_save.connect(activitystream_update, sender=cls, dispatch_uid=f'dab_activitystream_{cls.__name__}_update')
         pre_delete.connect(activitystream_delete, sender=cls, dispatch_uid=f'dab_activitystream_{cls.__name__}_delete')
+
+        # Connect to m2m_changed signal for all m2m fields
+        for field in cls._meta.many_to_many:
+            if field.name in cls.activity_stream_excluded_field_names:
+                continue
+
+            # We need to use a partial here to pass the field name to the signal handler
+            fn = partial(activitystream_m2m_changed, field_name=field.name)
+            m2m_changed.connect(fn, sender=getattr(cls, field.name).through, dispatch_uid=f'dab_activitystream_{cls.__name__}_{field.name}_m2m_changed')
 
     @property
     def activity_stream_entries(self):

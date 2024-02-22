@@ -100,7 +100,7 @@ def current_user_or_system_user():
     return user
 
 
-def diff(old, new, require_type_match=True, json_safe=True, exclude_fields=[], limit_fields=[]):
+def diff(old, new, require_type_match=True, json_safe=True, include_m2m=False, exclude_fields=[], limit_fields=[]):
     """
     Diff two instances of models (which do not have to be the same type of model
     if given require_type_match=False).
@@ -121,6 +121,8 @@ def diff(old, new, require_type_match=True, json_safe=True, exclude_fields=[], l
         useful, for example, when update_fields is passed to a model's save
         method and you only want to diff the fields that were updated.
         (default: [])
+    :param include_m2m: If True, include many-to-many fields in the diff.
+        Otherwise, they are ignored. (default: False)
     :return: A dictionary with the following
         - added_fields: A dictionary of fields that were added between old and
           new. Importantly, if old and new are the same type of model, this
@@ -138,8 +140,14 @@ def diff(old, new, require_type_match=True, json_safe=True, exclude_fields=[], l
           tuple of the old value and the new value.
     """
 
-    def skip_field(field):
-        return field in exclude_fields or (limit_fields and field not in limit_fields)
+    def skip_field(source, field):
+        if field in exclude_fields:
+            return True
+        if limit_fields and field not in limit_fields:
+            return True
+        if not include_m2m and source._meta.get_field(field).many_to_many:
+            return True
+        return False
 
     from django.db.models import Model
 
@@ -153,13 +161,13 @@ def diff(old, new, require_type_match=True, json_safe=True, exclude_fields=[], l
 
     if old is None:
         for field in get_all_field_names(new, concrete_only=True):
-            if skip_field(field):
+            if skip_field(new, field):
                 continue
             diff_dict["added_fields"][field] = make_json_safe(getattr(new, field)) if json_safe else getattr(new, field)
         return diff_dict
     elif new is None:
         for field in get_all_field_names(old, concrete_only=True):
-            if skip_field(field):
+            if skip_field(old, field):
                 continue
             diff_dict["removed_fields"][field] = make_json_safe(getattr(old, field)) if json_safe else getattr(old, field)
         return diff_dict
@@ -167,7 +175,7 @@ def diff(old, new, require_type_match=True, json_safe=True, exclude_fields=[], l
         raise TypeError('old and new must be of the same type')
 
     for field in get_all_field_names(old, concrete_only=True):
-        if skip_field(field):
+        if skip_field(old, field):
             continue
 
         old_value = getattr(old, field)
@@ -184,7 +192,7 @@ def diff(old, new, require_type_match=True, json_safe=True, exclude_fields=[], l
             )
 
     for field in get_all_field_names(new, concrete_only=True):
-        if skip_field(field):
+        if skip_field(new, field):
             continue
         if not hasattr(old, field):
             diff_dict["added_fields"][field] = make_json_safe(getattr(new, field)) if json_safe else getattr(new, field)
