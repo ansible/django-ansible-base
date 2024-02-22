@@ -10,8 +10,19 @@ def _store_activitystream_entry(old, new, operation):
         # No changes to store
         return
 
+    content_object = new
+
+    # If only one of old or new is None, then use the existing one as content_object
+    if old is None and new is None:
+        # This doesn't make sense
+        raise ValueError("Both old and new objects are None")
+    elif old is None:
+        content_object = new
+    elif new is None:
+        content_object = old
+
     return Entry.objects.create(
-        content_object=new,
+        content_object=content_object,
         operation=operation,
         changes=delta,
     )
@@ -58,3 +69,21 @@ def activitystream_update(sender, instance, raw, using, update_fields, **kwargs)
         return
 
     _store_activitystream_entry(old, instance, 'update')
+
+
+# pre_delete
+def activitystream_delete(sender, instance, using, origin, **kwargs):
+    """
+    This signal is registered via the activity stream AuditableModel abstract
+    model/class. It is called before delete() of any model that inherits from
+    AuditableModel. (It is registered as a pre_delete signal.)
+    """
+    if instance.pk is None:
+        return
+
+    try:
+        old = sender.objects.get(pk=instance.pk)
+    except sender.DoesNotExist:
+        return
+
+    _store_activitystream_entry(old, None, 'delete')

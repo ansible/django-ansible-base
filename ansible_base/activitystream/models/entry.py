@@ -1,10 +1,10 @@
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
-from django.db.models.signals import post_save, pre_save
+from django.db.models.signals import post_save, pre_delete, pre_save
 from django.utils.translation import gettext_lazy as _
 
-from ansible_base.activitystream.signals import activitystream_create, activitystream_update  # activitystream_delete,
+from ansible_base.activitystream.signals import activitystream_create, activitystream_delete, activitystream_update
 from ansible_base.lib.abstract_models import CommonModel
 
 
@@ -27,8 +27,8 @@ class Entry(CommonModel):
         ('disassociate', _("Entity was disassociated with another entity")),
     ]
 
-    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
-    object_id = models.TextField(null=False)
+    content_type = models.ForeignKey(ContentType, on_delete=models.DO_NOTHING)
+    object_id = models.TextField(null=True, blank=True)
     content_object = GenericForeignKey('content_type', 'object_id')
     operation = models.CharField(max_length=12, choices=OPERATION_CHOICES)
     changes = models.JSONField(null=True, blank=True)
@@ -55,7 +55,7 @@ class AuditableModel(models.Model):
     def connect_signals(cls):
         post_save.connect(activitystream_create, sender=cls, dispatch_uid=f'dab_activitystream_{cls.__name__}_create')
         pre_save.connect(activitystream_update, sender=cls, dispatch_uid=f'dab_activitystream_{cls.__name__}_update')
-        # pre_delete.connect(activitystream_delete, sender=cls, dispatch_uid=f'dab_activitystream_{cls.__name__}_delete')
+        pre_delete.connect(activitystream_delete, sender=cls, dispatch_uid=f'dab_activitystream_{cls.__name__}_delete')
 
     @property
     def activity_stream_entries(self):

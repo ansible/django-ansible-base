@@ -586,4 +586,8 @@ def animal(db, randname, user):
 
     animal = Animal.objects.create(name=randname("Test Animal"), owner=user)
     yield animal
-    animal.delete()
+    try:
+        animal.delete()
+    except ValueError:
+        # It might have already been deleted
+        pass

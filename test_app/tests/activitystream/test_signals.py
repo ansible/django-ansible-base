@@ -38,3 +38,21 @@ def test_activitystream_update(system_user, animal):
     assert entry.changes['removed_fields'] == {}
     assert len(entry.changes['changed_fields']) == 2  # name and modified_on
     assert entry.changes['changed_fields']['name'] == [original_name, 'Rocky']
+
+
+def test_activitystream_delete(system_user, animal):
+    """
+    Ensure that an activity stream entry is created when an object is deleted.
+    """
+    # Kind of a hack/trick, grab a reference to the queryset before the delete
+    entries = animal.activity_stream_entries
+    animal.delete()
+    entry = entries.last()
+    assert entry.created_by == system_user
+    assert entry.operation == 'delete'
+    assert entry.changes['added_fields'] == {}
+    assert entry.changes['changed_fields'] == {}
+    assert 'name' in entry.changes['removed_fields']
+    assert entry.changes['removed_fields']['name'] == animal.name
+    assert 'owner' in entry.changes['removed_fields']
+    assert entry.changes['removed_fields']['owner'] == animal.owner.username
