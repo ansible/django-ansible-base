@@ -36,5 +36,8 @@ jobs:
         with:
           python-version: ${{ matrix.tests.python-version }}
 
+      - name: Install deps
+        run: pip install -r requirements/requirements_all.txt
+
       - name: Run tests
         run: DJANGO_SETTINGS_MODULE=test_app.settings_pg py.test test_app/tests
