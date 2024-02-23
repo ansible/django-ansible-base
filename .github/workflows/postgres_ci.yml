@@ -4,7 +4,7 @@ on:
   pull_request:
   push:
 jobs:
-  tox:
+  pg_test:
     name: django-ansible-base - postgres
     runs-on: ubuntu-latest
     permissions:
@@ -14,10 +14,10 @@ jobs:
       postgres:
         image: postgres
         env:
-          POSTGRESQL_USER: dab
-          POSTGRESQL_PASSWORD: dabing
-          POSTGRESQL_ADMIN_PASSWORD: dabing
-          POSTGRESQL_DATABASE: dab
+          POSTGRES_USER: dab
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_ADMIN_PASSWORD: dabing
+          POSTGRES_DATABASE: dab
           POSTGRES_HOST_AUTH_METHOD: trust
         # options: >-
         #   --health-cmd pg_isready
