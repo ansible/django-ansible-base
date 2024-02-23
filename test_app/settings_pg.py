@@ -11,6 +11,6 @@ DATABASES = {
         "PORT": os.getenv("DB_PORT", 5432),
         "USER": os.getenv("DB_USER", "dab"),
         "PASSWORD": os.getenv("DB_PASSWORD", "dabing"),
-        "NAME": os.getenv("DB_NAME", "dab"),
+        "NAME": os.getenv("DB_NAME", "dab_db"),
     }
 }

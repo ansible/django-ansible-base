@@ -15,9 +15,9 @@ jobs:
         image: postgres
         env:
           POSTGRES_USER: dab
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_PASSWORD: dabing
           POSTGRES_ADMIN_PASSWORD: dabing
-          POSTGRES_DATABASE: dab
+          POSTGRES_DATABASE: dab_db
         ports:
           - '5432:5432'
     steps:
