@@ -37,7 +37,7 @@ jobs:
           python-version: ${{ matrix.tests.python-version }}
 
       - name: Install deps
-        run: pip install -r requirements/requirements_all.txt
+        run: pip install -r requirements/requirements_all.txt -r requirements/requirements_dev.txt
 
       - name: Install psycopg
         run: pip install psycopg
