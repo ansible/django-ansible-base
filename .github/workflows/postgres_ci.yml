@@ -1,0 +1,40 @@
+---
+name: Postgres CI
+on:
+  pull_request:
+  push:
+jobs:
+  tox:
+    name: django-ansible-base - postgres
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    services:
+      postgres:
+        image: 'quay.io/sclorg/postgresql-13-c9s:latest'
+        env:
+          POSTGRESQL_USER: ansibull
+          POSTGRESQL_PASSWORD: dabing
+          POSTGRESQL_ADMIN_PASSWORD: dabing
+          POSTGRESQL_DATABASE: dab
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - '5432:5432'
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install build requirements
+        run: sudo apt-get update && sudo apt-get install -y libsasl2-dev libldap2-dev libssl-dev libxmlsec1-dev
+
+      - name: Install python ${{ matrix.tests.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.tests.python-version }}
+
+      - name: Run tests
+        run: py.test test_app/tests
