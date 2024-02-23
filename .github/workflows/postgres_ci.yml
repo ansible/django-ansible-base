@@ -14,7 +14,7 @@ jobs:
       postgres:
         image: 'quay.io/sclorg/postgresql-13-c9s:latest'
         env:
-          POSTGRESQL_USER: ansibull
+          POSTGRESQL_USER: dab
           POSTGRESQL_PASSWORD: dabing
           POSTGRESQL_ADMIN_PASSWORD: dabing
           POSTGRESQL_DATABASE: dab
