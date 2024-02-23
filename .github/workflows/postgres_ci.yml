@@ -12,7 +12,7 @@ jobs:
       contents: read
     services:
       postgres:
-        image: 'quay.io/sclorg/postgresql-13-c9s:latest'
+        image: postgres
         env:
           POSTGRESQL_USER: dab
           POSTGRESQL_PASSWORD: dabing
