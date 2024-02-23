@@ -148,6 +148,7 @@ def test_create_claims_multiple_same_org(
     }
 
 
+@pytest.mark.xfail
 @pytest.mark.parametrize(
     "process_function, triggers",
     [

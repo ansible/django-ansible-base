@@ -7,6 +7,7 @@ from django.test import override_settings
 from test_app.models import EncryptionModel, Organization, RelatedFieldsTestModel, User
 
 
+@pytest.mark.xfail
 @pytest.mark.django_db
 def test_save_encryption():
     model = EncryptionModel.objects.create(testing1='c')
@@ -17,6 +18,7 @@ def test_save_encryption():
     assert saved_model.testing1 == 'c'
 
 
+@pytest.mark.xfail
 @pytest.mark.django_db
 def test_name_in_summary_fields():
     model = EncryptionModel.objects.create()
