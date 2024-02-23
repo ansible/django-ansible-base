@@ -18,6 +18,8 @@ class Entry(CommonModel):
     a wide variety of objects to be used in the activity stream.
     """
 
+    allow_anonymous_user_save = True
+
     class Meta:
         verbose_name_plural = _('Entries')
 
