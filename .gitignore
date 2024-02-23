@@ -16,7 +16,7 @@ __pycache__
 /*.egg-info
 *.py[c,o]
 /.eggs
-.coverage
+.coverage*
 coverage.xml
 coverage.json
 htmlcov
