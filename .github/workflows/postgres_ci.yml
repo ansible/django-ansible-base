@@ -37,4 +37,4 @@ jobs:
           python-version: ${{ matrix.tests.python-version }}
 
       - name: Run tests
-        run: py.test test_app/tests
+        run: DJANGO_SETTINGS_MODULE=test_app.settings_pg py.test test_app/tests
