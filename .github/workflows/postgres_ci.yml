@@ -39,5 +39,8 @@ jobs:
       - name: Install deps
         run: pip install -r requirements/requirements_all.txt
 
+      - name: Install psycopg
+        run: pip install psycopg
+
       - name: Run tests
         run: DJANGO_SETTINGS_MODULE=test_app.settings_pg py.test test_app/tests
