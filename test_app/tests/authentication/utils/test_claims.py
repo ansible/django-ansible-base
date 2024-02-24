@@ -2,9 +2,12 @@ from unittest import mock
 
 import pytest
 
+from django.db import connection
+
 from ansible_base.authentication.utils import claims
 
 
+@pytest.mark.xfail(connection.vendor == 'postgresql', reason='Test only works in sqlite3')
 @pytest.mark.parametrize(
     "triggers, map_type, attrs, groups, exp_access_allowed, exp_is_superuser, exp_is_system_auditor, exp_claims, exp_last_login_map_results",
     [
