@@ -31,8 +31,8 @@ class EncryptionModel(NamedCommonModel):
 
     encrypted_fields = ['testing1', 'testing2']
 
-    testing1 = models.CharField(max_length=1, null=True, default='a')
-    testing2 = models.CharField(max_length=1, null=True, default='b')
+    testing1 = models.CharField(max_length=200, null=True, default='a')
+    testing2 = models.CharField(max_length=200, null=True, default='b')
 
 
 class RelatedFieldsTestModel(CommonModel):

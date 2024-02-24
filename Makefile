@@ -51,6 +51,10 @@ check_flake8:
 check_isort:
 	tox -e isort -- --check $(CHECK_SYNTAX_FILES)
 
+## works the same as .github actions checks
+postgres:
+	docker run -itd --rm --name dab_postgres --net=host -e POSTGRES_USER=dab -e POSTGRES_PASSWORD=dabing -e POSTGRES_ADMIN_PASSWORD=dabing -e POSTGRES_DATABASE=dab_db postgres:13
+
 
 # Build targets
 # --------------------------------------
