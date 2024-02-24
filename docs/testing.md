@@ -1,8 +1,8 @@
 # django-ansible-base tests
 
-We try to maintain at least an 80% test coverage of django-ansible-base. This is enforced through GitHub actions on PR creation. The GitHub actions use SonarCloud to scan the code for issus one of which is code coverage. 
+We try to maintain at least an 80% test coverage of django-ansible-base. This is enforced through GitHub actions on PR creation. The GitHub actions use SonarCloud to scan the code for issus one of which is code coverage.
 
-All tests for django-ansible-base are located in `test_app/tests`. The directory structure in that folder mimics that of ansible_base so you can easily tell which test files cover which files in ansible_base. 
+All tests for django-ansible-base are located in `test_app/tests`. The directory structure in that folder mimics that of ansible_base so you can easily tell which test files cover which files in ansible_base.
 
 ## Running tests
 
@@ -10,6 +10,29 @@ To run the test suite locally you can use tox. By default, with no arguments, to
 ```
 tox -e 311
 ```
+
+### Test database
+
+By default, tests will run with a sqlite3 database.
+You can read more about managing the server versus sqlite3 database in `test_app/README.md`.
+
+You can also runs tests with postgres as a 2-step manual process.
+First, you need to create the postgres container (named "dab_postgres") detached, with this command.
+
+```
+make postgres
+```
+
+Now you can run tests against it, but only using the postgres-specific settings.
+
+```
+DJANGO_SETTINGS_MODULE=test_app.settings_pg py.test test_app/tests
+```
+
+This may not work on an OS that runs docker in a VM.
+In that case, also use the `DOCKER_HOST` env var to point to wherever the VM is exposed.
+This should allow you to reproduce the results reported in the postgres database check.
+Stopping the container with `docker stop dab_postgres` will also remove the container.
 
 ## Checking code coverage locally
 

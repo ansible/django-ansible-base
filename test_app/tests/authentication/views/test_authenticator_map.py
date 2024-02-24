@@ -59,9 +59,7 @@ def test_authenticator_map_create(admin_api_client, local_authenticator, trigger
         'team': 'foobar-team',
         'order': 1,
     }
-
     response = admin_api_client.post(url, data=data, format='json')
-
     assert response.status_code == 201, response.data
     assert response.data['authenticator'] == local_authenticator.id
     assert response.data['triggers'] == triggers
