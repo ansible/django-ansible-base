@@ -2,7 +2,6 @@ import os
 
 from test_app.settings import *  # noqa
 
-
 # noqa: F405
 DATABASES = {
     "default": {
