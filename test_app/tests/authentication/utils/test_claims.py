@@ -1,7 +1,6 @@
 from unittest import mock
 
 import pytest
-
 from django.db import connection
 
 from ansible_base.authentication.utils import claims
