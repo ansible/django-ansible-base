@@ -3,10 +3,12 @@ from django.shortcuts import get_object_or_404, redirect
 from rest_framework import permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.schemas.generators import EndpointEnumerator
 from rest_framework.viewsets import GenericViewSet, mixins
 
 from ansible_base.lib.utils.hashing import hash_serializer_data
 from ansible_base.lib.utils.response import CSVStreamResponse
+from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.resource_registry.models import Resource, ResourceType, service_id
 from ansible_base.resource_registry.registry import get_registry
@@ -97,3 +99,15 @@ class ServiceMetadataView(AnsibleBaseDjangoAppApiView):
     def get(self, request, **kwargs):
         registry = get_registry()
         return Response({"service_id": service_id(), "service_type": registry.api_config.service_type})
+
+
+class ServiceRootView(AnsibleBaseView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, format=None):
+        data = {}
+        endpoints = EndpointEnumerator(urlconf="ansible_base.resource_registry.urls").get_api_endpoints()
+        for endpoint, method, function in endpoints[1:]:
+            if "{" not in endpoint:
+                data[endpoint] = f"/api/gateway/v1{endpoint}"
+        return Response(data)
