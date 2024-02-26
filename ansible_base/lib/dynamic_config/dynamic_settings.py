@@ -62,6 +62,9 @@ if 'ansible_base.rest_filters' in INSTALLED_APPS:
 
 
 if 'ansible_base.authentication' in INSTALLED_APPS:
+    if 'social_django' not in INSTALLED_APPS:
+        INSTALLED_APPS.append('social_django')
+
     try:
         AUTHENTICATION_BACKENDS  # noqa: F821
     except NameError:
