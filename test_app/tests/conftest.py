@@ -200,7 +200,7 @@ def oidc_authenticator(oidc_configuration):
         users_unique=False,
         remove_users=True,
         type="ansible_base.authentication.authenticator_plugins.oidc",
-        configuration=github_organization_configuration,
+        configuration=oidc_configuration,
     )
     yield authenticator
     authenticator.delete()
