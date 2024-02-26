@@ -181,6 +181,7 @@ class AuthenticateReponse:
 @pytest.mark.django_db
 def test_tacacs_authenticate_with_authentcation(expected_log, tacacs_authenticator, username, password, valid, created, response):
     from django.contrib.auth import get_user_model
+
     from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
 
     expected_log = partial(expected_log, "ansible_base.authentication.authenticator_plugins.tacacs.logger")
@@ -219,7 +220,8 @@ def test_tacacs_authenticate_with_authentcation(expected_log, tacacs_authenticat
         ({"SESSION_TIMEOUT": "foobar    "}, {"SESSION_TIMEOUT": 'A valid integer is required.'}),
         ({"SESSION_TIMEOUT": -1}, {"SESSION_TIMEOUT": 'Ensure this value is greater than or equal to 0.'}),
         ({"AUTH_PROTOCOL": "foobar"}, {"AUTH_PROTOCOL": '"foobar" is not a valid choice.'}),
-        # According to https://www.cisco.com/en/US/docs/switches/datacenter/nexus1000/kvm/config_guide/security/b_Cisco_Nexus_1000V_for_KVM_Security_Configuration_Guide_521SK111_chapter_0100.html
+        # According to:
+        # https://www.cisco.com/en/US/docs/switches/datacenter/nexus1000/kvm/config_guide/security/b_Cisco_Nexus_1000V_for_KVM_Security_Configuration_Guide_521SK111_chapter_0100.html
         # there may be limitations on the password including things like no white space, no unicode and max 64 characters.
         # We already handle no unicode but don't enfore the length or whitespace issues.
     ],
