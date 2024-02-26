@@ -285,24 +285,6 @@ def saml_authenticator(saml_configuration):
 
 
 @pytest.fixture
-def local_authenticator(db):
-    from ansible_base.authentication.models import Authenticator
-
-    authenticator = Authenticator.objects.create(
-        name="Test Local Authenticator",
-        enabled=True,
-        create_objects=True,
-        users_unique=False,
-        remove_users=True,
-        type="ansible_base.authentication.authenticator_plugins.local",
-        configuration={},
-    )
-    yield authenticator
-    authenticator.authenticator_user.all().delete()
-    authenticator.delete()
-
-
-@pytest.fixture
 def custom_authenticator(db):
     from ansible_base.authentication.models import Authenticator
 
