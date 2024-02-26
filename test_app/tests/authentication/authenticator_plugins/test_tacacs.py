@@ -1,3 +1,4 @@
+from functools import partial
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -49,7 +50,7 @@ def test_tacacs_auth_failure(authenticate, unauthenticated_api_client, tacacs_au
 
 @pytest.mark.django_db
 @mock.patch("ansible_base.authentication.authenticator_plugins.tacacs.logger")
-def test_AuthenticatorPlugin_authenticate_no_authenticator(logger):
+def test_tacacs_AuthenticatorPlugin_authenticate_no_authenticator(logger):
     """
     Test how AuthenticatorPlugin.authenticate handles no authenticator.
     """
@@ -104,7 +105,7 @@ def test_tacacs_validate_tacacsplus_disallow_nonascii(value, raises):
         ('rf', None, '4.3.2.1', '4.3.2.1'),
     ],
 )
-def test_get_client_ip(request_type, x_forwarded_for, remote_addr, expected, mocked_http):
+def test_tacacs_get_client_ip(request_type, x_forwarded_for, remote_addr, expected, mocked_http):
     plugin = AuthenticatorPlugin()
     request_object = None
     if request_type == 'rf':
@@ -126,19 +127,80 @@ def test_get_client_ip(request_type, x_forwarded_for, remote_addr, expected, moc
     assert result == expected
 
 
-def test_authenticate():
-    tacacs_authenticator = AuthenticatorPlugin()
-    if tacacs_authenticator.authenticate(request=RequestFactory(), username=None, password=None):
-        assert None
-    if tacacs_authenticator.authenticate(request=RequestFactory(), username="foo", password="bar"):
-        assert True
+@pytest.mark.parametrize(
+    "username,password,result",
+    [
+        (None, None, None),
+        ("username", None, None),
+        (None, "password", None),
+    ],
+)
+@pytest.mark.django_db
+def test_tacacs_authenticate_no_user_pass_combos(username, password, result):
+    tacacs_authenticator_plugin = AuthenticatorPlugin()
+    assert tacacs_authenticator_plugin.authenticate(request=RequestFactory(), username=username, password=password) is result
 
 
-def test_tacacs_client():
-    tacacs_authenticator = AuthenticatorPlugin()
-    tacacs_authenticator.authenticate(request=RequestFactory())
-    client_ip = tacacs_authenticator._get_client_ip(request=RequestFactory())
-    assert client_ip is None
+def test_tacacs_authenticate_no_database_instance(expected_log):
+    expected_log = partial(expected_log, "ansible_base.authentication.authenticator_plugins.tacacs.logger")
+    tacacs_authenticator_plugin = AuthenticatorPlugin()
+
+    with expected_log("error", "AuthenticatorPlugin was missing an authenticator"):
+        assert tacacs_authenticator_plugin.authenticate(request=RequestFactory(), username='jane', password='doe') is None
+
+
+@pytest.mark.django_db
+def test_tacacs_authenticate_with_exception(expected_log, tacacs_authenticator):
+    from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
+
+    expected_log = partial(expected_log, "ansible_base.authentication.authenticator_plugins.tacacs.logger")
+
+    with mock.patch('tacacs_plus.client.TACACSClient.authenticate', side_effect=Exception("Failing on purpose")):
+        authenticator_object = get_authenticator_plugin(tacacs_authenticator.type)
+        authenticator_object.update_if_needed(tacacs_authenticator)
+        with expected_log("exception", "TACACS+ Authentication Error"):
+            assert authenticator_object.authenticate(request=RequestFactory(), username='jane', password='doe') is None
+
+
+class AuthenticateReponse:
+    def __init__(self, valid):
+        self.valid = valid
+
+    def valid(self):
+        return self.valid
+
+
+@pytest.mark.parametrize(
+    "username,password,valid,created,response",
+    [
+        ("jane", "doe", False, False, None),
+        ("jane", "doe", True, True, True),
+        ("jane", "doe", True, False, True),
+    ],
+)
+@pytest.mark.django_db
+def test_tacacs_authenticate_with_authentcation(expected_log, tacacs_authenticator, username, password, valid, created, response):
+    from django.contrib.auth import get_user_model
+    from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
+
+    expected_log = partial(expected_log, "ansible_base.authentication.authenticator_plugins.tacacs.logger")
+
+    response_object = AuthenticateReponse(valid)
+    with mock.patch('tacacs_plus.client.TACACSClient.authenticate', return_value=response_object):
+        authenticator_object = get_authenticator_plugin(tacacs_authenticator.type)
+        authenticator_object.update_if_needed(tacacs_authenticator)
+        not_called = False
+        if not created:
+            User = get_user_model()
+            User.objects.get_or_create(username=username)
+            not_called = True
+        with expected_log('info', 'TACAC+ created user', assert_not_called=not_called):
+            authentication_response = authenticator_object.authenticate(request=RequestFactory(), username=username, password=password)
+
+        if response is None:
+            assert authentication_response is response
+        else:
+            assert authentication_response.username == username
 
 
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
@@ -146,24 +208,33 @@ def test_tacacs_client():
     "setting_override, expected_errors",
     [
         ({"HOST": False}, {"HOST": "Not a valid string."}),
-        ({"PORT": "foobar"}, {"PORT": 'Expected an integer but got type "str".'}),
-        ({"REM_ADDR": "foobar"}, {"REM_ADDR": 'Expected a boolean but got type "str".'}),
-        ({"SECRET": "foobar"}, {"SECRET": 'Shared secret for authenticating to TACACS+ server.'}),
-        ({"SESSION_TIMEOUT": "foobar    "}, {"SESSION_TIMEOUT": 'Expected an integer but got type "str".'}),
-        ({"AUTH_PROTOCOL": "foobar"}, {"AUTH_PROTOCOL": 'Expected one of the following choices ascii, pap, chap but got the type str.'}),
+        ({"-HOST": False}, {"HOST": "This field is required."}),
+        ({"PORT": "foobar"}, {"PORT": 'A valid integer is required.'}),
+        ({"PORT": -1}, {"PORT": 'Ensure this value is greater than or equal to 1.'}),
+        ({"PORT": 65536}, {"PORT": 'Ensure this value is less than or equal to 65535.'}),
+        ({"-PORT": 65536}, {}),
+        ({"REM_ADDR": "foobar"}, {"REM_ADDR": 'Must be a valid boolean.'}),
+        ({"SECRET": False}, {"SECRET": 'Not a valid string.'}),
+        ({"SECRET": "😀"}, {"SECRET": 'TACACS+ secret does not allow non-ascii characters'}),
+        ({"SESSION_TIMEOUT": "foobar    "}, {"SESSION_TIMEOUT": 'A valid integer is required.'}),
+        ({"SESSION_TIMEOUT": -1}, {"SESSION_TIMEOUT": 'Ensure this value is greater than or equal to 0.'}),
+        ({"AUTH_PROTOCOL": "foobar"}, {"AUTH_PROTOCOL": '"foobar" is not a valid choice.'}),
+        # According to https://www.cisco.com/en/US/docs/switches/datacenter/nexus1000/kvm/config_guide/security/b_Cisco_Nexus_1000V_for_KVM_Security_Configuration_Guide_521SK111_chapter_0100.html
+        # there may be limitations on the password including things like no white space, no unicode and max 64 characters.
+        # We already handle no unicode but don't enfore the length or whitespace issues.
     ],
 )
-def test_tacacs_create_authenticator_error_handling(
-    admin_api_client, unauthenticated_api_client, tacacs_authenticator, tacacs_configuration, setting_override, expected_errors
-):
+def test_tacacs_create_authenticator_error_handling(admin_api_client, tacacs_configuration, setting_override, expected_errors):
     """
     Test normal login flow when authenticate() returns no user.
     """
-    tacacs_authenticator.configuration.update()
-    tacacs_authenticator.save()
-    unauthenticated_api_client.login(username="foo", password="bar")
-    url = reverse(authenticated_test_page)
-    response = unauthenticated_api_client.get(url)
+    for key, value in setting_override.items():
+        if key.startswith("-"):
+            del tacacs_configuration[key[1:]]
+        else:
+            tacacs_configuration[key] = value
+
+    url = reverse("authenticator-list")
     data = {
         "name": "TACACS authenticator (should not get created)",
         "enabled": True,
@@ -173,10 +244,16 @@ def test_tacacs_create_authenticator_error_handling(
         "configuration": tacacs_configuration,
         "type": "ansible_base.authentication.authenticator_plugins.tacacs",
     }
+
     response = admin_api_client.post(url, data=data, format="json")
-    # assert response.status_code == 400
-    assert response.status_code == 201
-    # assert"REMOTE_ADDR" == "client_ip"
-    # # logger.info.assert_any_call(f"User foo could not be authenticated by TACACS {tacacs_authenticator.name}")
-    # if expected_message:
-    #     logger.info.assert_any_call(expected_message)
+    assert response.status_code == 400 if expected_errors else 201, f"Expected a {400 if expected_errors else 201} but got {response.status_code}"
+    if expected_errors:
+        for key, value in expected_errors.items():
+            assert key in response.data
+            if type(response.data[key]) is dict:
+                for sub_key in response.data[key]:
+                    assert value[sub_key] in response.data[key][sub_key]
+            elif type(response.data[key]) is list:
+                assert any(value in item for item in response.data[key]), f"Expected error '{value}' in {response.data[key]}"
+            else:
+                assert value in response.data[key]

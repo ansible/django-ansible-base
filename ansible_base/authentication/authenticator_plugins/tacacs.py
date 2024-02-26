@@ -33,10 +33,8 @@ def validate_tacacsplus_disallow_nonascii(value):
 class TacacsConfiguration(BaseAuthenticatorConfiguration):
     documentation_url = "https://github.com/ansible/tacacs_plus"
     HOST = CharField(
-        allow_blank=True,
-        default='',
         label="TACACS+ Server",
-        required=False,
+        required=True,
         help_text="Hostname of TACACS+ server.",
         ui_field_label=_('Hostname of TACACS+ Server'),
     )
@@ -62,12 +60,11 @@ class TacacsConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('TACACS+ client address sending enabled'),
     )
     SECRET = CharField(
-        allow_blank=True,
-        default='',
         validators=[validate_tacacsplus_disallow_nonascii],
         label=_('TACACS+ Secret'),
         help_text=_('Shared secret for authenticating to TACACS+ server.'),
         ui_field_label=_('Shared secret for authenticating to TACACS+ server.'),
+        required=True,
     )
     SESSION_TIMEOUT = IntegerField(
         min_value=0,
@@ -104,10 +101,9 @@ class AuthenticatorPlugin(SocialAuthMixin, AbstractAuthenticatorPlugin, ModelBac
                 timeout=self.database_instance.configuration["SESSION_TIMEOUT"],
             )
             rem_addr = TAC_PLUS_VIRTUAL_REM_ADDR
-            if self.database_instance.configuration['AUTH_PROTOCOL']:
-                client_ip = self._get_client_ip(request)
-                if client_ip:
-                    rem_addr = client_ip
+            client_ip = self._get_client_ip(request)
+            if client_ip:
+                rem_addr = client_ip
 
             reply = tacacs_client.authenticate(
                 username,

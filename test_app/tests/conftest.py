@@ -239,6 +239,7 @@ def tacacs_authenticator(tacacs_configuration):
         configuration=tacacs_configuration,
     )
     yield authenticator
+    authenticator.authenticator_user.all().delete()
     authenticator.delete()
 
 
