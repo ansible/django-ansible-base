@@ -199,7 +199,7 @@ def oidc_authenticator(oidc_configuration):
         create_objects=True,
         users_unique=False,
         remove_users=True,
-        type="ansible_base.authentication.authenticator_plugins.github_org",
+        type="ansible_base.authentication.authenticator_plugins.oidc",
         configuration=github_organization_configuration,
     )
     yield authenticator
