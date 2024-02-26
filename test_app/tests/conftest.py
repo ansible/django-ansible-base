@@ -179,6 +179,7 @@ def github_enterprise_team_authenticator(github_enterprise_team_configuration):
     authenticator.delete()
 
 
+@pytest.fixture
 def oidc_configuration():
     return {
         "OIDC_ENDPOINT": "https://localhost/api/gateway/callback/github_test/",
