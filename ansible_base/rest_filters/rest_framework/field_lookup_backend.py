@@ -22,7 +22,7 @@ class FieldLookupBackend(BaseFilterBackend):
     Filter using field lookups provided via query string parameters.
     """
 
-    RESERVED_NAMES = ('page', 'page_size', 'format', 'order', 'order_by', 'search', 'type', 'host_filter', 'count_disabled', 'no_truncate', 'limit')
+    RESERVED_NAMES = ('page', 'page_size', 'format', 'order', 'order_by', 'search', 'type', 'host_filter', 'count_disabled', 'no_truncate', 'limit', 'validate')
 
     SUPPORTED_LOOKUPS = (
         'exact',
