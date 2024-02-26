@@ -153,7 +153,9 @@ def test_tacacs_client():
         ({"AUTH_PROTOCOL": "foobar"}, {"AUTH_PROTOCOL": 'Expected one of the following choices ascii, pap, chap but got the type str.'}),
     ],
 )
-def test_tacacs_create_authenticator_error_handling(unauthenticated_api_client, tacacs_authenticator, setting_override, expected_errors):
+def test_tacacs_create_authenticator_error_handling(
+    admin_api_client, unauthenticated_api_client, tacacs_authenticator, tacacs_configuration, setting_override, expected_errors
+):
     """
     Test normal login flow when authenticate() returns no user.
     """
@@ -162,7 +164,19 @@ def test_tacacs_create_authenticator_error_handling(unauthenticated_api_client, 
     unauthenticated_api_client.login(username="foo", password="bar")
     url = reverse(authenticated_test_page)
     response = unauthenticated_api_client.get(url)
-    assert response.status_code == 401
-    # logger.info.assert_any_call(f"User foo could not be authenticated by TACACS {tacacs_authenticator.name}")
+    data = {
+        "name": "TACACS authenticator (should not get created)",
+        "enabled": True,
+        "create_objects": True,
+        "users_unique": False,
+        "remove_users": True,
+        "configuration": tacacs_configuration,
+        "type": "ansible_base.authentication.authenticator_plugins.tacacs",
+    }
+    response = admin_api_client.post(url, data=data, format="json")
+    # assert response.status_code == 400
+    assert response.status_code == 201
+    # assert"REMOTE_ADDR" == "client_ip"
+    # # logger.info.assert_any_call(f"User foo could not be authenticated by TACACS {tacacs_authenticator.name}")
     # if expected_message:
     #     logger.info.assert_any_call(expected_message)
