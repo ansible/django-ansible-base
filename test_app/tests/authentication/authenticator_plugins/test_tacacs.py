@@ -83,15 +83,6 @@ def test_tacacs_validate_tacacsplus_disallow_nonascii(value, raises):
             assert False
 
 
-# What is _get_client_ip doing?
-# Takes a request param (HTTP reuest object)
-# First condition checks if the request object is falsy(or None) or if it doesn't have attribute `META`
-# Meta is a dictionary object in Django that contains all available HTTP headers
-# If the condition is true( rquest object is None or doesn't have META), it returns None(Couldn't get client IP)
-# If the condition is false, it returns the value of the REMOTE_ADDR key in the META dictionary
-# The REMOTE_ADDR key contains the IP address of the client
-
-
 @pytest.mark.parametrize(
     'request_type, x_forwarded_for, remote_addr, expected',
     [
