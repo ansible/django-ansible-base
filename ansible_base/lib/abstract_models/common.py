@@ -89,9 +89,17 @@ class CommonModel(models.Model):
         # We might be AnonymousUser but there could be conditions where something might need to save even if we are Anonymous.
         convert_anonymous_user_to_system = False
         if user and user.is_anonymous:
-            # There is a special case where, when creating an user from an authenticator we will be anonymous user until the user is actually created
-            if not self.pk and isinstance(self, AbstractUser):
-                convert_anonymous_user_to_system = True
+            # If we are an AbstractUser model we might be trying to save a user during a login process
+            if isinstance(self, AbstractUser):
+                # Check the stack to see if we are being called from the authenticate method
+                import inspect
+
+                for frame in inspect.stack():
+                    if frame.function == 'authenticate':
+                        # There is a special case where, when creating an user or logging in
+                        # from an authenticator we will be anonymous user until the user is actually saved
+                        convert_anonymous_user_to_system = True
+                        break
 
         if user is None or convert_anonymous_user_to_system:
             # If no user is logged in, we try attributing the action to the system user
