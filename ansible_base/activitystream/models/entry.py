@@ -42,10 +42,17 @@ class Entry(CommonModel):
     related_object_id = models.TextField(null=True, blank=True)
     related_content_object = GenericForeignKey('related_content_type', 'related_object_id')
 
-    # TODO: AWX stores denormalized actor data to account for deleted users, we should do the same
+    # The model is immutable, so we don't need to track who modified it
+    modified_by = None
+    modified_on = None
 
     def __str__(self):
         return f'[{self.created_on}] {self.get_operation_display()} by {self.created_by}: {self.content_type} {self.object_id}'
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise RuntimeError("Activity stream entries are immutable")
+        super().save(*args, **kwargs)
 
 
 class AuditableModel(models.Model):
