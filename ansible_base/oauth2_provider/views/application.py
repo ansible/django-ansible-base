@@ -6,7 +6,7 @@ from ansible_base.oauth2_provider.models import OAuth2Application
 from ansible_base.oauth2_provider.serializers import OAuth2ApplicationSerializer
 
 
-class OAuth2ApplicationViewSet(ModelViewSet, AnsibleBaseDjangoAppApiView):
+class OAuth2ApplicationViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
     queryset = OAuth2Application.objects.all()
     serializer_class = OAuth2ApplicationSerializer
     permission_classes = [permissions.IsAuthenticated]

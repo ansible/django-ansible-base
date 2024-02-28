@@ -3,15 +3,15 @@ from oauth2_provider import views as oauth_views
 
 from ansible_base.lib.routers import AssociationResourceRouter
 from ansible_base.oauth2_provider import views as oauth2_providers_views
+from ansible_base.oauth2_provider.apps import Oauth2ProviderConfig
+
+app_name = Oauth2ProviderConfig.label
 
 router = AssociationResourceRouter()
 
-router.register(
-    r'applications',
-    oauth2_providers_views.OAuth2ApplicationViewSet,
-)
+router.register(r'applications', oauth2_providers_views.OAuth2ApplicationViewSet, basename='application')
 
-router.register(r'tokens', oauth2_providers_views.OAuth2TokenViewSet)
+router.register(r'tokens', oauth2_providers_views.OAuth2TokenViewSet, basename='token')
 
 api_version_urls = [
     path('', include(router.urls)),
