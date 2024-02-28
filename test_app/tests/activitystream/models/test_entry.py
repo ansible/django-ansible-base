@@ -1,6 +1,5 @@
 import pytest
 
-from ansible_base.activitystream.models import Entry
 
 def test_activitystream_entry_immutable(system_user, animal):
     """
