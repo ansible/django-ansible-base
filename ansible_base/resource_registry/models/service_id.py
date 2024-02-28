@@ -11,7 +11,7 @@ class ServiceID(models.Model):
     id = models.UUIDField(default=uuid.uuid4, primary_key=True, null=False, editable=False)
 
     def save(self, *args, **kwargs):
-        if self.objects.exists():
+        if ServiceID.objects.exists():
             raise RuntimeError("This service already has a ServiceID")
 
         return super().save()
