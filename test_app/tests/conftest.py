@@ -182,7 +182,7 @@ def github_enterprise_team_authenticator(github_enterprise_team_configuration):
 @pytest.fixture
 def oidc_configuration():
     return {
-        "OIDC_ENDPOINT": "https://localhost/api/gateway/callback/github_test/",
+        "OIDC_ENDPOINT": "https://localhost/api/gateway/callback/oidc_test/",
         "OIDC_VERIFY_SSL": True,
         "KEY": "12345",
         "SECRET": "abcdefg12345",
