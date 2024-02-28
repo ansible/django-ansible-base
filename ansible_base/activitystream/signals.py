@@ -2,7 +2,6 @@ import logging
 
 from ansible_base.lib.utils.models import diff
 
-
 logger = logging.getLogger('ansible_base.activitystream.signals')
 
 
@@ -47,7 +46,7 @@ def _store_activitystream_m2m(given_instance, model, operation, pk_set, reverse)
     for instance in instances:
         # It would be nice if we could bulk insert, but we need .save()
         # called to fill in the created_* fields.
-        x = Entry.objects.create(
+        Entry.objects.create(
             content_object=instance if reverse else given_instance,
             operation=operation,
             related_content_object=given_instance if reverse else instance,

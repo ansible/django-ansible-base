@@ -6,7 +6,7 @@ from django.db import models
 from django.db.models.signals import m2m_changed, post_save, pre_delete, pre_save
 from django.utils.translation import gettext_lazy as _
 
-from ansible_base.activitystream.signals import activitystream_create, activitystream_delete, activitystream_update, activitystream_m2m_changed
+from ansible_base.activitystream.signals import activitystream_create, activitystream_delete, activitystream_m2m_changed, activitystream_update
 from ansible_base.lib.abstract_models import CommonModel
 
 
