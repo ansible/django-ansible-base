@@ -1,10 +1,12 @@
 import logging
 from collections import OrderedDict
 
+from crum import impersonate
 from django.contrib.auth.backends import ModelBackend
 
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
 from ansible_base.authentication.models import Authenticator
+from ansible_base.lib.utils.models import get_system_user
 
 logger = logging.getLogger('ansible_base.authentication.backend')
 
@@ -14,6 +16,9 @@ authentication_backends = OrderedDict()
 class AnsibleBaseAuth(ModelBackend):
     def authenticate(self, request, *args, **kwargs):
         logger.debug("Starting AnsibleBaseAuth authentication")
+        system_user = get_system_user()
+        if not system_user:
+            logger.warning("System user is not available, attempting to login but failures could happen")
 
         for database_authenticator in Authenticator.objects.filter(enabled=True):
             # Either get the existing object out of the backends or get a new one for us
@@ -32,7 +37,8 @@ class AnsibleBaseAuth(ModelBackend):
                         continue
             authenticator_object = authentication_backends[database_authenticator.id]
             authenticator_object.update_if_needed(database_authenticator)
-            user = authenticator_object.authenticate(request, *args, **kwargs)
+            with impersonate(system_user):
+                user = authenticator_object.authenticate(request, *args, **kwargs)
             if user:
                 # The local authenticator handles this but we want to check this for other authentication types
                 if not getattr(user, 'is_active', True):

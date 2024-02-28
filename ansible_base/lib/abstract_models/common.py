@@ -3,8 +3,6 @@ from collections import OrderedDict
 
 from crum import get_current_user
 from django.conf import settings
-from django.contrib.auth import get_user_model
-from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.db.models.fields.reverse_related import ManyToManyRel
 from django.urls.exceptions import NoReverseMatch
@@ -13,7 +11,7 @@ from inflection import underscore
 from rest_framework.reverse import reverse
 
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING, ansible_encryption
-from ansible_base.lib.utils.settings import get_setting
+from ansible_base.lib.utils.models import get_system_user
 
 logger = logging.getLogger('ansible_base.lib.abstract_models.common')
 
@@ -77,47 +75,13 @@ class CommonModel(models.Model):
         help_text="The user who last modified this resource",
     )
 
-    def _attributable_user(self, non_existent_user_fatal=True):
-        # returns:
-        #    The logged in user object
-        #    The system user object
-        #    None if there is no user and the system user is not defined
-        #    AnonymousUser if an anonymous request came in
-
-        user = get_current_user()
-
-        # We might be AnonymousUser but there could be conditions where something might need to save even if we are Anonymous.
-        convert_anonymous_user_to_system = False
-        if user and user.is_anonymous:
-            # If we are an AbstractUser model we might be trying to save a user during a login process
-            if isinstance(self, AbstractUser):
-                # Check the stack to see if we are being called from the authenticate method
-                import inspect
-
-                for frame in inspect.stack():
-                    if frame.function == 'authenticate':
-                        # There is a special case where, when creating an user or logging in
-                        # from an authenticator we will be anonymous user until the user is actually saved
-                        convert_anonymous_user_to_system = True
-                        break
-
-        if user is None or convert_anonymous_user_to_system:
-            # If no user is logged in, we try attributing the action to the system user
-            # If there is no system username defined, we just leave the user as None
-            system_username = get_setting('SYSTEM_USERNAME')
-            if system_username is not None:
-                try:
-                    user = get_user_model().objects.get(username=system_username)
-                except get_user_model().DoesNotExist:
-                    if non_existent_user_fatal:
-                        logger.warning(f"SYSTEM_USERNAME is set to {system_username} but no user with that username exists.")
-                    user = None
-
-        return user
-
     def _check_user(self, user, non_existent_user_fatal=True):
-        # Its possible for _attributable_user to return None or anonymous user in which case we don't want to save
-        if (not user or user.is_anonymous) and non_existent_user_fatal and get_setting('SYSTEM_USERNAME'):
+        # user might be:
+        #     The logged in user object; save is allowed
+        #     The system user object; save is allowed
+        #     None; Do not allow save (unless non_existent_user_fatal is False)
+        #     AnonymousUser if an anonymous request came in; Do not allow save (unless non_existent_user_fatal)
+        if (not user or user.is_anonymous) and non_existent_user_fatal:
             # TODO: See if there is a better way to figure out how to identify this object?
             # Maybe instead of trying to send a single identifier we try and dump the object?
             obj_id = getattr(self, 'pk', getattr(self, 'name', getattr(self, 'username', 'Unknown')))
@@ -135,7 +99,7 @@ class CommonModel(models.Model):
 
         # Manually perform auto_now_add and auto_now logic.
         now = timezone.now()
-        user = self._attributable_user(non_existent_user_fatal)
+        user = get_current_user() or get_system_user()
 
         if not self.pk:
             if self.created_by is None:

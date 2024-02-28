@@ -7,7 +7,7 @@ from inflection import underscore
 
 from ansible_base.lib.utils.settings import get_setting
 
-logger = logging.getLogger('ansible_base.lib.utils.models.py')
+logger = logging.getLogger('ansible_base.lib.utils.models')
 
 
 def get_all_field_names(model):
