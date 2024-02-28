@@ -125,6 +125,19 @@ class CommonModel(models.Model):
         '''
         update_fields = list(kwargs.get('update_fields', []))
 
+        # Encrypt any fields
+        from ansible_base.lib.utils.encryption import ansible_encryption
+
+        for field in self.encrypted_fields:
+            field_value = getattr(self, field, None)
+            if field_value:
+                setattr(self, field, ansible_encryption.encrypt_string(field_value))
+
+        # If the updating fields lists matches the objects `not_user_modified_fields` then we can just save and return
+        if update_fields == getattr(self, 'not_user_modified_fields', []):
+            logger.debug("Skipping modified field update because update_fields only contain not user modified fields")
+            return super().save(*args, **kwargs)
+
         # Manually perform auto_now_add and auto_now logic.
         now = timezone.now()
         user = self._attributable_user(non_existent_user_fatal)
@@ -147,12 +160,6 @@ class CommonModel(models.Model):
             self._check_user(user, non_existent_user_fatal)
             self.modified_by = user
             update_fields.append('modified_by')
-
-        # Encrypt any fields
-        for field in self.encrypted_fields:
-            field_value = getattr(self, field, None)
-            if field_value:
-                setattr(self, field, ansible_encryption.encrypt_string(field_value))
 
         return super().save(*args, **kwargs)
 

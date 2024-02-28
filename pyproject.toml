@@ -41,6 +41,7 @@ optional-dependencies.all = { file = [
     "requirements/requirements_channels.in",
     "requirements/requirements_jwt_consumer.in",
     "requirements/requirements_testing.in",
+    "requirements/requirements_oauth2_provider.in",
 ] }
 optional-dependencies.authentication = { file = [ "requirements/requirements_authentication.in" ] }
 optional-dependencies.api_documentation = { file = [ "requirements/requirements_api_documentation.in" ] }
@@ -48,6 +49,7 @@ optional-dependencies.rest_filters = { file = [ "requirements/requirements_rest_
 optional-dependencies.channel_auth = { file = [ "requirements/requirements_channels.in" ] }
 optional-dependencies.jwt_consumer = { file = [ "requirements/requirements_jwt_consumer.in" ] }
 optional-dependencies.testing = { file = [ "requirements/requirements_testing.in" ] }
+optional-dependencies.oauth2_provider = { file = [ "requirements/requirements_oauth2_provider.in" ] }
 
 [build-system]
 requires = ["setuptools>=64", "setuptools_scm>=8"]
@@ -67,13 +69,13 @@ force-exclude = '''
 [tool.isort]
 profile = "black"
 line_length = 160
-extend_skip = [ "ansible_base/authentication/migrations", "test_app/migrations" ]
+extend_skip = [ "ansible_base/authentication/migrations", "test_app/migrations", "ansible_base/oauth2_provider/migrations" ]
 
 
 [tool.flake8]
 max-line-length = 160
 extend-ignore = [ "E203" ]
-exclude = [ 'ansible_base/authentication/migrations/*', 'test_app/migrations/*', '.tox', 'build']
+exclude = [ 'ansible_base/authentication/migrations/*', 'test_app/migrations/*', 'ansible_base/oauth2_provider/migrations/*', '.tox', 'build']
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "test_app.settings"
