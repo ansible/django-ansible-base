@@ -180,6 +180,34 @@ def github_enterprise_team_authenticator(github_enterprise_team_configuration):
 
 
 @pytest.fixture
+def oidc_configuration():
+    return {
+        "OIDC_ENDPOINT": "https://localhost/api/gateway/callback/oidc_test/",
+        "OIDC_VERIFY_SSL": True,
+        "KEY": "12345",
+        "SECRET": "abcdefg12345",
+    }
+
+
+@pytest.fixture
+def oidc_authenticator(oidc_configuration):
+    from ansible_base.authentication.models import Authenticator
+
+    authenticator = Authenticator.objects.create(
+        name="Test OIDC Authenticator",
+        enabled=True,
+        create_objects=True,
+        users_unique=False,
+        remove_users=True,
+        type="ansible_base.authentication.authenticator_plugins.oidc",
+        configuration=oidc_configuration,
+    )
+    yield authenticator
+    authenticator.authenticator_user.all().delete()
+    authenticator.delete()
+
+
+@pytest.fixture
 def ldap_configuration():
     return {
         "SERVER_URI": ["ldap://ldap06.example.com:389"],
