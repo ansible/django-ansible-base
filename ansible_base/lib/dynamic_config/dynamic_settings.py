@@ -110,3 +110,46 @@ if 'ansible_base.authentication' in INSTALLED_APPS:
     SOCIAL_AUTH_STORAGE = "ansible_base.authentication.social_auth.AuthenticatorStorage"
     SOCIAL_AUTH_STRATEGY = "ansible_base.authentication.social_auth.AuthenticatorStrategy"
     SOCIAL_AUTH_LOGIN_REDIRECT_URL = "/"
+
+
+# Load settings from any .py files in the global conf.d directory specified in
+# the environment, defaulting to /etc/ansible_base/gcconf.d/.
+import os
+from split_settings.tools import optional, include
+
+settings_dir = os.environ.get('ANSIBLE_BASE_SETTINGS_DIR', '/etc/ansible_base/conf.d/')
+settings_files = os.path.join(settings_dir, '*.py')
+
+# Load remaining settings from the global settings file specified in the
+# environment, defaulting to /etc/ansible_base/gcsettings.py.
+settings_file = os.environ.get('ANSIBLE_BASE_SETTINGS_FILE', '/etc/ansible_base/settings.py')
+
+# Attempt to load settings from /etc/ansible_base/settings.py first, followed by
+# /etc/ansible_base/conf.d/*.py.
+try:
+    include(settings_file, optional(settings_files), scope=locals())
+except ImportError:
+    traceback.print_exc()
+    sys.exit(1)
+except IOError:
+    from django.core.exceptions import ImproperlyConfigured
+
+    included_file = locals().get('__included_file__', '')
+    if not included_file or included_file == settings_file:
+        # The import doesn't always give permission denied, so try to open the
+        # settings file directly.
+        try:
+            e = None
+            open(settings_file)
+        except IOError:
+            pass
+        if e and e.errno == errno.EACCES:
+            SECRET_KEY = 'permission-denied'
+            LOGGING = {}
+        else:
+            msg = 'No Configuration found at %s.' % settings_file
+            msg += '\nDefine the ANSIBLE_BASE_SETTINGS_FILE environment variable to '
+            msg += 'specify an alternate path.'
+            raise ImproperlyConfigured(msg)
+    else:
+        raise
