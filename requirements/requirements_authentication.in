@@ -1,7 +1,7 @@
 social-auth-app-django
 tabulate
 
-# These should eventually be split out when the authentications move into their own repo 
+# These should eventually be split out when the authentications move into their own repo
 
 # LDAP Authenticator Plugins
 django-auth-ldap
@@ -9,3 +9,4 @@ python-ldap
 
 # Social Authenticator Plugins
 python3-saml
+tacacs_plus
