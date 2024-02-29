@@ -67,6 +67,20 @@ def initialize_resources(sender, **kwargs):
             r_type.save()
 
 
+def connect_resource_signals(sender, **kwargs):
+    from ansible_base.resource_registry.signals import handlers
+
+    signals.post_save.connect(handlers.update_resource)
+    signals.post_delete.connect(handlers.remove_resource)
+
+
+def disconnect_resource_signals(sender, **kwargs):
+    from ansible_base.resource_registry.signals import handlers
+
+    signals.post_save.disconnect(handlers.update_resource)
+    signals.post_delete.disconnect(handlers.remove_resource)
+
+
 class ResourceRegistryConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'ansible_base.resource_registry'
@@ -74,8 +88,8 @@ class ResourceRegistryConfig(AppConfig):
     verbose_name = 'Service resources API'
 
     def ready(self):
-        from ansible_base.resource_registry.signals import handlers
-
-        signals.post_save.connect(handlers.update_resource)
-        signals.post_delete.connect(handlers.remove_resource)
+        connect_resource_signals(sender=None)
+        signals.pre_migrate.connect(disconnect_resource_signals, sender=self)
         signals.post_migrate.connect(initialize_resources, sender=self)
+        # We need to re-connect signals for tests, because migrations are executed in the same process.
+        signals.post_migrate.connect(connect_resource_signals, sender=self)
