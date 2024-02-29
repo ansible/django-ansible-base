@@ -48,6 +48,11 @@ def unauthenticated_api_client(db):
 
 @pytest.fixture
 def admin_api_client(db, admin_user, unauthenticated_api_client, local_authenticator):
+    # We don't use the is_staff flag anywhere. Instead we use is_superuser. This can
+    # cause some permission checks to unexpectedly break in production where this flag
+    # never gets set to true.
+    admin_user.is_staff = False
+    admin_user.save()
     client = unauthenticated_api_client
     client.login(username="admin", password="password")
     yield client
