@@ -70,15 +70,17 @@ def initialize_resources(sender, **kwargs):
 def connect_resource_signals(sender, **kwargs):
     from ansible_base.resource_registry.signals import handlers
 
-    signals.post_save.connect(handlers.update_resource)
-    signals.post_delete.connect(handlers.remove_resource)
+    for model in handlers.get_resource_models():
+        signals.post_save.connect(handlers.update_resource, sender=model)
+        signals.post_delete.connect(handlers.remove_resource, sender=model)
 
 
 def disconnect_resource_signals(sender, **kwargs):
     from ansible_base.resource_registry.signals import handlers
 
-    signals.post_save.disconnect(handlers.update_resource)
-    signals.post_delete.disconnect(handlers.remove_resource)
+    for model in handlers.get_resource_models():
+        signals.post_save.disconnect(handlers.update_resource, sender=model)
+        signals.post_delete.disconnect(handlers.remove_resource, sender=model)
 
 
 class ResourceRegistryConfig(AppConfig):
