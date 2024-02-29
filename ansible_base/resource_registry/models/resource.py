@@ -113,6 +113,7 @@ class Resource(models.Model):
 
         with transaction.atomic():
             content_object = c_type.model_class().objects.create(**resource_data)
+            content_object.save()
 
             resource = cls.objects.get(object_id=content_object.pk, content_type=c_type)
 

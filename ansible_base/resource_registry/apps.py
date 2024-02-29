@@ -1,7 +1,7 @@
 import logging
 
 from django.apps import AppConfig
-from django.db.models import signals
+from django.db.models.signals import post_migrate
 
 import ansible_base.lib.checks  # noqa: F401 - register checks
 
@@ -67,6 +67,15 @@ def initialize_resources(sender, **kwargs):
             r_type.save()
 
 
+def connect_signals(*args, **kwargs):
+    from django.db.models.signals import post_delete, post_save
+
+    from ansible_base.resource_registry.signals import handlers
+
+    post_save.connect(handlers.update_resource)
+    post_delete.connect(handlers.remove_resource)
+
+
 class ResourceRegistryConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'ansible_base.resource_registry'
@@ -74,8 +83,5 @@ class ResourceRegistryConfig(AppConfig):
     verbose_name = 'Service resources API'
 
     def ready(self):
-        from ansible_base.resource_registry.signals import handlers
-
-        signals.post_save.connect(handlers.update_resource)
-        signals.post_delete.connect(handlers.remove_resource)
-        signals.post_migrate.connect(initialize_resources, sender=self)
+        post_migrate.connect(connect_signals, sender=self)
+        post_migrate.connect(initialize_resources, sender=self)
