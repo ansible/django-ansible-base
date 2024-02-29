@@ -33,6 +33,7 @@ def validate_url_list(urls: list, schemes: list = ['https'], allow_plain_hostnam
 
 
 def validate_url(url: str, schemes: list = ['https'], allow_plain_hostname: bool = False) -> None:
+
     if type(url) is not str:
         raise ValidationError(VALID_STRING)
     if allow_plain_hostname:
@@ -51,8 +52,18 @@ def validate_url(url: str, schemes: list = ['https'], allow_plain_hostname: bool
         if user_info:
             user_info = f"{user_info}@"
 
+        # Check for a valid port number
+        try:
+            url_parts.port
+        except ValueError as e:
+            raise ValidationError(str(e)) from e
+
         if url_parts.hostname and '.' not in url_parts.hostname:
-            hostname = f'{url_parts.hostname}.localhost'
+            if '[' in url:
+                # https://www.rfc-editor.org/rfc/rfc2732
+                hostname = f'[{url_parts.hostname}]'
+            else:
+                hostname = f'{url_parts.hostname}.localhost'
             port = f':{url_parts.port}' if url_parts.port else ''
             netloc = f"{user_info}{hostname}{port}"
             # Reconstruct and override the URL with a valid hostname
