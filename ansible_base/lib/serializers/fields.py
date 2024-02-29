@@ -43,6 +43,11 @@ class JSONField(UILabelMixIn, serializers.JSONField):
         super().__init__(**kwargs)
 
 
+class IntegerField(UILabelMixIn, serializers.IntegerField):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+
 class URLField(UILabelMixIn, serializers.CharField):
     def __init__(self, **kwargs):
         self.schemes = kwargs.pop('schemes', ['https', 'http'])
