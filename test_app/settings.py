@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'ansible_base.jwt_consumer',
     'ansible_base.resource_registry',
     'test_app',
+    'django_extensions',
 ]
 
 MIDDLEWARE = [
