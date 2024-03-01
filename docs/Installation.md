@@ -8,14 +8,9 @@ pip install git+https://github.com/ansible/django-ansible-base.git[all]
 ```
 
 This will install django-ansible-base as well as all its optional dependencies.
-These can be found in `requirements/requirements_all.in`
+A resolved version of these (with dependencies) can be found in `requirements/requirements_all.txt`
 
 If there are features you are not going to use you can tell pip to only install required packages for the features you will use.
-As of this writing there are three django application features:
-  * api_documentation
-  * authentication
-  * rest_filters
-  * resource_registry
 
 So if you only wanted api_docs and filtering you could install the library like:
 ```
@@ -36,7 +31,7 @@ INSTALLED_APPS = [
 
 The final component of the import path (what is listed in INSTALLED_APPS) is not the
 same as the app label which is what is sometimes referenced programmatically
-using `from django.apps import apps`.
+using `from django.apps import apps` and `apps.get_app_config('dab_authentication')`.
 
 The pip optional dependencies as the same as the app label without "dab_".
 See the following table for a mapping.
@@ -47,6 +42,7 @@ See the following table for a mapping.
 | ansible_base.api_documentation | dab_api_documentation | api_documentation       |
 | ansible_base.rest_filters      | dab_rest_filters      | rest_filters            |
 | ansible_base.resource_registry | dab_resource_registry | resource_registry       |
+| ansible_base.jwt_consumer      | dab_jwt_consumer      | jwt_consumer            |
 
 ## settings.py
 
