@@ -13,6 +13,15 @@ from ansible_base.resource_registry.registry import get_registry
 from ansible_base.resource_registry.serializers import ResourceListSerializer, ResourceSerializer, ResourceTypeSerializer, get_resource_detail_view
 
 
+class IsSuperUser(permissions.BasePermission):
+    """
+    Allows access only to admin users.
+    """
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_superuser)
+
+
 class ResourceViewSet(
     mixins.CreateModelMixin,
     mixins.RetrieveModelMixin,
@@ -28,7 +37,7 @@ class ResourceViewSet(
 
     queryset = Resource.objects.select_related("content_type__resource_type").all()
     serializer_class = ResourceSerializer
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [IsSuperUser]
     lookup_field = "ansible_id"
 
     def get_serializer_class(self):
@@ -94,6 +103,8 @@ class ResourceTypeViewSet(
 
 
 class ServiceMetadataView(AnsibleBaseDjangoAppApiView):
+    permission_classes = [permissions.IsAuthenticated]
+
     def get(self, request, **kwargs):
         registry = get_registry()
         return Response({"service_id": service_id(), "service_type": registry.api_config.service_type})
