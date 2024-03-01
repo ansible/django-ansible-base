@@ -4,10 +4,11 @@ from django.db import models
 from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam
 from ansible_base.lib.abstract_models.common import CommonModel, NamedCommonModel
 from ansible_base.lib.utils.models import user_summary_fields
+from ansible_base.resource_registry.fields import AnsibleResourceField
 
 
 class Organization(AbstractOrganization):
-    pass
+    resource = AnsibleResourceField(primary_key_field="id")
 
 
 class User(AbstractUser, CommonModel):
