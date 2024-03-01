@@ -65,7 +65,7 @@ class AbstractAuthenticatorPlugin:
         else:
             self.logger = logger
 
-    def validate_configuration(self, data: dict, instance: object) -> None:
+    def validate_configuration(self, data: dict, instance: object) -> dict:
         if not issubclass(self.configuration_class, BaseAuthenticatorConfiguration):
             raise TypeError("self.configuration_class must subclass BaseAuthenticatorConfiguration.")
 
