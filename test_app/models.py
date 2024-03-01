@@ -12,11 +12,14 @@ class Organization(AbstractOrganization):
 
 
 class User(AbstractUser, CommonModel):
+    resource = AnsibleResourceField(primary_key_field="id")
+
     def summary_fields(self):
         return user_summary_fields(self)
 
 
 class Team(AbstractTeam):
+    resource = AnsibleResourceField(primary_key_field="id")
     encryptioner = models.ForeignKey('test_app.EncryptionModel', on_delete=models.SET_NULL, null=True)
 
 
