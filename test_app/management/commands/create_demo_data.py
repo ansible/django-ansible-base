@@ -22,7 +22,8 @@ class Command(BaseCommand):
         admin_password = environ.get('DJANGO_SUPERUSER_PASSWORD', 'admin')
         admin.set_password(admin_password)
         admin.save()
-
+        spud.set_password('password')
+        spud.save()
         with impersonate(spud):
             Team.objects.get_or_create(name='awx_docs', defaults={'organization': awx})
             Team.objects.get_or_create(name='awx_devs', defaults={'organization': awx})
