@@ -19,6 +19,16 @@ def test_resources_list(admin_api_client):
     assert resp.data['results'][0]["resource_type"] == "aap.resourcemigrationtestmodel"
 
 
+def test_resource_list_all_types(organization, user, team, admin_api_client):
+    resp = admin_api_client.get(reverse("resource-list"))
+    assert resp.status_code == 200, resp.data
+
+    # lazy way of checking that objects are in the output
+    for obj in (organization, team):
+        assert obj.name in str(resp.data)
+    assert user.username in str(resp.data)
+
+
 def test_resources_delete(django_user_model):
     """Test that the Resource object gets cleaned up when a model instance is deleted."""
     user = django_user_model.objects.create(username="foo")

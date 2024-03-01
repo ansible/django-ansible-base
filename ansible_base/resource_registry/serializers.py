@@ -19,7 +19,14 @@ def get_resource_detail_view(resource: Resource):
     # nested API views). This may be solvable by providing a reverse_url_name when
     # resources are registered.
     if detail := actions.get("retrieve"):
-        return detail[0][1].format(pk=resource.object_id, name=resource.name)
+        for http_method, url_template in detail:
+            if http_method != 'GET':
+                continue
+            try:
+                return url_template.format(pk=resource.object_id, name=resource.name)
+            except KeyError:
+                pass
+        logger.warning(f'Failed to obtain resource URL from options {detail}')
 
     return None
 
