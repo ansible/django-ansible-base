@@ -11,6 +11,7 @@ from django.db.utils import IntegrityError
 from django.test.client import RequestFactory
 
 from ansible_base.lib.testing.fixtures import *  # noqa: F403, F401
+from test_app import models
 
 
 @pytest.fixture
@@ -464,17 +465,15 @@ def mocked_http(test_encryption_public_key, jwt_token):
 
 @pytest.fixture
 def system_user(db, settings, no_log_messages):
-    from test_app.models import User
-
     with no_log_messages():
         # Get the _system user from the database
         try:
-            user_obj = User.objects.get(username=settings.SYSTEM_USERNAME)
+            user_obj = models.User.objects.get(username=settings.SYSTEM_USERNAME)
         except ObjectDoesNotExist:
             # Just in case the user object gets trashed we will catch a DNE error and attempt to create it
             try:
                 # Why don't we use get_or_create? Because we can't pass non_existent_user_fatal=False into get_or_create
-                user_obj = User()
+                user_obj = models.User()
                 user_obj.username = settings.SYSTEM_USERNAME
                 user_obj.save(non_existent_user_fatal=False)
             except IntegrityError as e:
@@ -485,8 +484,11 @@ def system_user(db, settings, no_log_messages):
 
 @pytest.fixture
 def organization(db, randname):
-    from test_app.models import Organization
-
-    organization = Organization.objects.create(name=randname("Test Organization"))
+    organization = models.Organization.objects.create(name=randname("Test Organization"))
     yield organization
     organization.delete()
+
+
+@pytest.fixture
+def team(organization):
+    return models.Team.objects.create(name='foo-team', organization=organization)
