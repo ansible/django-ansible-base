@@ -19,9 +19,8 @@ def get_resource_detail_view(resource: Resource):
     # nested API views). This may be solvable by providing a reverse_url_name when
     # resources are registered.
     if detail := actions.get("retrieve"):
-        for http_method, url_template in detail:
-            if http_method != 'GET':
-                continue
+        # Try the shortest URL first because it is most likely to be the detail and correct view
+        for http_method, url_template in sorted(detail, key=lambda item: len(item[-1])):
             try:
                 return url_template.format(pk=resource.object_id, name=resource.name)
             except KeyError:
