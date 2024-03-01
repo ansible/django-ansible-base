@@ -8,7 +8,6 @@ import pytest
 import requests
 from django.test.utils import override_settings
 from rest_framework.exceptions import AuthenticationFailed
-from typeguard import suppress_type_checks
 
 from ansible_base.jwt_consumer.common.auth import JWTAuthentication, JWTCommonAuth, default_mapped_user_fields
 
@@ -151,7 +150,6 @@ class TestJWTCommonAuth:
                 assert False, f"Got unexpected exception {e}"
             assert cert == test_encryption_public_key
 
-    @suppress_type_checks
     @pytest.mark.parametrize(
         'user_fields,token,should_save',
         [
