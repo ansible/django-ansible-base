@@ -16,7 +16,15 @@ function cleanup {
 
 trap cleanup EXIT
 
-make postgres
+docker_running=$(docker ps -aq -f name=dab_postgres)
+
+if [[ -z "${docker_running// /}" ]]
+then
+    echo "creating new postgres container"
+    make postgres
+else
+    echo "dab_postgres container is already running, will use that container"
+fi
 
 MAX_ATTEMPTS=10
 
@@ -31,12 +39,12 @@ for i in $(seq 1 $MAX_ATTEMPTS); do
     sleep 1
 done
 
-python3 manage.py migrate
-
-DJANGO_SUPERUSER_PASSWORD=password DJANGO_SUPERUSER_USERNAME=admin DJANGO_SUPERUSER_EMAIL=admin@stuff.invalid python3 manage.py createsuperuser --noinput
-
-python3 manage.py authenticators --initialize
-
-python3 manage.py create_demo_data
+if [ -z "$docker_running" ]
+then
+    python3 manage.py migrate
+    DJANGO_SUPERUSER_PASSWORD=password DJANGO_SUPERUSER_USERNAME=admin DJANGO_SUPERUSER_EMAIL=admin@stuff.invalid python3 manage.py createsuperuser --noinput
+    python3 manage.py authenticators --initialize
+    python3 manage.py create_demo_data
+fi
 
 python3 manage.py runserver
