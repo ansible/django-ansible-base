@@ -1,4 +1,7 @@
 import datetime
+import os
+import re
+from collections import defaultdict
 from unittest import mock
 
 import jwt
@@ -6,11 +9,44 @@ import pytest
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from django.apps import apps
+from django.core.exceptions import ObjectDoesNotExist
+from django.db.migrations.recorder import MigrationRecorder
+from django.db.models.signals import post_migrate
+from django.db.utils import IntegrityError
 from django.test.client import RequestFactory
 
 from ansible_base.lib.testing.fixtures import *  # noqa: F403, F401
 from ansible_base.lib.testing.util import copy_fixture
 from test_app import models
+
+
+def test_migrations_okay(*args, **kwargs):
+    """This test is not about the code, but for verifying your own state.
+
+    If you are not migrated to the correct state, this may hopefully alert you.
+    This is targeted toward situations like switching branches.
+    """
+    disk_steps = defaultdict(set)
+    app_exceptions = {'default': 'auth', 'social_auth': 'social_django'}
+    for app in MigrationRecorder.Migration.objects.values_list('app', flat=True).distinct():
+        if app in app_exceptions:
+            continue
+        app_config = apps.get_app_config(app)
+        for path in os.listdir(os.path.join(app_config.path, 'migrations')):
+            if re.match(r'^\d{4}_.*.py$', path):
+                disk_steps[app].add(path.rsplit('.')[0])
+    db_steps = defaultdict(set)
+    for record in MigrationRecorder.Migration.objects.only('app', 'name'):
+        if record.app in app_exceptions:
+            continue
+        app_name = app_exceptions.get(record.app, record.app)
+        db_steps[app_name].add(record.name)
+    for app in disk_steps:
+        assert disk_steps[app] == db_steps[app], f'Migrations not expected for app {app}, perhaps you need --create-db?'
+
+
+post_migrate.connect(test_migrations_okay)
 
 
 @pytest.fixture
