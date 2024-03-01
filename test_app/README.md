@@ -16,14 +16,21 @@ pip install -r requirements/requirements_all.txt
 # Initialize the test app
 
 These initialization steps are also captured in a bootstrap script.
-Be aware that this will delete your existing sqlite3 database and populate a new one.
+
+The bootstrap script will also spawn a PostgreSQL server container automatically, as well as killing it when it exits.
+Note **that this container is ephemeral** and no data in it is expected to persist.
+**When the container dies, so does the data in the database.**
 
 ```
 ./test_app/scripts/bootstrap.sh
 ```
 
 ## Initialize the database
-test_app uses a sqllite database as its backend but we first need to initialize that database. From the root of your django-ansible-base checkout run the command:
+
+If not using the bootstrap script, you'll need to manually start the database container.
+You can do this with: `make postgres`
+
+Note that it might take a few seconds to create the database and be ready for connections, so it's ill-advised to sequence a command immediately after `make postgres`. The bootstrap script accounts for this, waiting for the database to be ready before continuing.
 
 ```
 python manage.py migrate
@@ -32,6 +39,7 @@ python manage.py migrate
 This will apply a handful of migrations to a sql lite database. The files behind the sqllite database are stored in `test_app/tests/sqllite_dbs`. If you ever want to reset your database or are having issues with the database you can remove these files and test_app will create a fresh database.
 
 ## Create an admin user
+
 Once our database is initialized we need to create an admin user for ourselves. To do this run the command:
 
 ```
@@ -53,6 +61,7 @@ Superuser created successfully.
 
 
 ## Create a local authenticator
+
 test_app uses django-ansible-base authentication in order to be able to authenticate so we first need to initialize a local authenticator. To do this run the command:
 
 ```

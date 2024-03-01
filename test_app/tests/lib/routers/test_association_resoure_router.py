@@ -170,7 +170,7 @@ def test_association_router_disassociate_something_not_associated(db, admin_api_
     url = reverse('related_fields_test_model-more_teams-disassociate', kwargs={'pk': related_model.pk})
     response = admin_api_client.post(url, data={'instances': [team1.pk, team2.pk, team3.pk]}, format='json')
     assert response.status_code == 400
-    assert response.json().get('instances') == 'Cannot disassociate these objects because they are not all related to this object: 2, 3'
+    assert response.json().get('instances') == f'Cannot disassociate these objects because they are not all related to this object: {team2.pk}, {team3.pk}'
 
 
 def test_association_router_related_viewset_all_mapings(db):

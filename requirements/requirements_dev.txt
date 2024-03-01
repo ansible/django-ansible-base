@@ -8,3 +8,4 @@ pytest-xdist
 pytest-cov
 pytest-django
 setuptools-scm
+psycopg[binary]

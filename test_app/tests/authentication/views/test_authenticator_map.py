@@ -61,7 +61,7 @@ def test_authenticator_map_create(admin_api_client, local_authenticator, trigger
     }
     response = admin_api_client.post(url, data=data, format='json')
     assert response.status_code == 201, response.data
-    assert response.data['id'] == local_authenticator.id
+    assert response.data['authenticator'] == local_authenticator.id
     assert response.data['triggers'] == triggers
     assert response.data['map_type'] == 'is_superuser'
 

@@ -1,12 +1,42 @@
+#!/usr/bin/env bash
 
-rm -rf test_app/tests/sqllite_dbs/*.sqlite3
+set -e
 
-python manage.py migrate
+# Always make sure we kill the database when we exit
+function cleanup {
+    echo "***"
+    echo "This will delete all data in the test_app database (container)"
+    echo "Press:"
+    echo " - Ctrl-C to cancel and leave the database running (container: dab_postgres)"
+    echo " - Enter to continue shutdown and delete the database"
+    echo "***"
+    read
+    make stop-postgres
+}
 
-DJANGO_SUPERUSER_PASSWORD=password DJANGO_SUPERUSER_USERNAME=admin DJANGO_SUPERUSER_EMAIL=admin@stuff.invalid python manage.py createsuperuser --noinput
+trap cleanup EXIT
 
-python manage.py authenticators --initialize
+make postgres
 
-python manage.py create_demo_data
+MAX_ATTEMPTS=10
 
-python manage.py runserver
+for i in $(seq 1 $MAX_ATTEMPTS); do
+    echo "Waiting for database to come up ($i/$MAX_ATTEMPTS)"
+    if python3 manage.py shell -c 'import django; django.db.connection.ensure_connection()' > /dev/null 2>&1; then
+        break
+    elif [ $i -eq $MAX_ATTEMPTS ]; then
+        echo "Database never came up"
+        exit 1
+    fi
+    sleep 1
+done
+
+python3 manage.py migrate
+
+DJANGO_SUPERUSER_PASSWORD=password DJANGO_SUPERUSER_USERNAME=admin DJANGO_SUPERUSER_EMAIL=admin@stuff.invalid python3 manage.py createsuperuser --noinput
+
+python3 manage.py authenticators --initialize
+
+python3 manage.py create_demo_data
+
+python3 manage.py runserver

@@ -1,8 +1,8 @@
 # django-ansible-base tests
 
-We try to maintain at least an 80% test coverage of django-ansible-base. This is enforced through GitHub actions on PR creation. The GitHub actions use SonarCloud to scan the code for issus one of which is code coverage. 
+We try to maintain at least an 80% test coverage of django-ansible-base. This is enforced through GitHub actions on PR creation. The GitHub actions use SonarCloud to scan the code for issus one of which is code coverage.
 
-All tests for django-ansible-base are located in `test_app/tests`. The directory structure in that folder mimics that of ansible_base so you can easily tell which test files cover which files in ansible_base. 
+All tests for django-ansible-base are located in `test_app/tests`. The directory structure in that folder mimics that of ansible_base so you can easily tell which test files cover which files in ansible_base.
 
 ## Running tests
 
@@ -10,6 +10,15 @@ To run the test suite locally you can use tox. By default, with no arguments, to
 ```
 tox -e 311
 ```
+
+### Test database
+
+Tests require PostgreSQL running in order to pass.
+Running PostgreSQL can be done by running `make postgres` in the root of your django-ansible-base clone.
+This will create a detached/daemonized PostgreSQL container called `dab_postgres`.
+
+If all goes according to plan, tox should automatically kill the container after the tests run.
+However, if you stop tox early or otherwise need to manually kill the container, you can run `make stop-postgres`.
 
 ## Checking code coverage locally
 
