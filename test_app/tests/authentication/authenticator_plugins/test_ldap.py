@@ -390,7 +390,7 @@ def test_ldap_validate_ldap_filter(ldap_configuration, ldap_settings):
     """
     invalid_filter = "(&(cn=%(user)s)(objectClass=posixAccount)(invalid))"
     with pytest.raises(ValidationError) as e:
-        validate_ldap_filter(invalid_filter, 'foo')
+        validate_ldap_filter(invalid_filter, True)
     assert e.value.args[0] == 'Invalid filter: (invalid)'
 
 
