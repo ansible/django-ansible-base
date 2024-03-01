@@ -1,7 +1,6 @@
 import base64
 import binascii
 import re
-import uuid
 from urllib.parse import urlparse, urlunsplit
 
 from cryptography.exceptions import InvalidSignature
@@ -143,21 +142,3 @@ def to_python_boolean(value, allow_none=False):
         return None
     else:
         raise ValueError(_(u'Unable to convert "%s" to boolean') % value)
-
-
-def ansible_id_validator(val):
-    matches = re.match("^[0-9a-f]{8}:(.*)$", val, re.IGNORECASE)
-    try:
-        if not matches:
-            raise ValueError
-        id = matches.groups(1)[0]
-        if str(uuid.UUID(id, version=4)) != id:
-            raise ValueError
-    except (AttributeError, ValueError):
-        raise ValidationError(
-            _(
-                "Ansible ID must in the format of <service_id>:<resource_id>, "
-                "where service_id is the first 8 characters of the service's ID "
-                "and resource_id is a valid UUID 4."
-            )
-        )

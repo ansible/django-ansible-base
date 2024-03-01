@@ -36,7 +36,7 @@ def test_resource_type_manifest(admin_api_client):
     response_data = list(response.streaming_content)
     data = StringIO("".join(item.decode() for item in response_data))
     for row in csv.DictReader(data):
-        assert "resource_id" in row
+        assert "ansible_id" in row
         assert "resource_hash" in row
 
 

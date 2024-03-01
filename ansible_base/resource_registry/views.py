@@ -46,14 +46,6 @@ class ResourceViewSet(
 
         return super().get_serializer_class()
 
-    def get_object(self):
-        resource_id = self.kwargs[self.lookup_field]
-
-        if ":" in resource_id:
-            resource_id = resource_id.split(":")[1]
-
-        return get_object_or_404(self.queryset, resource_id=resource_id)
-
     @action(detail=True, methods=['get'])
     def resource_detail(self, *args, **kwargs):
         obj = self.get_object()
@@ -82,10 +74,10 @@ class ResourceTypeViewSet(
 
     def serialize_resources_hashes(self, resources_qs):
         """A generator that yields str sequences for csv stream response"""
-        yield ("resource_id", "resource_hash")
+        yield ("ansible_id", "resource_hash")
         for resource in resources_qs:
             resource_hash = hash_serializer_data(resource, ResourceSerializer, "resource_data")
-            yield (resource.resource_id, resource_hash)
+            yield (resource.ansible_id, resource_hash)
 
     @action(detail=True, methods=["get"])
     def manifest(self, request, name, *args, **kwargs):
@@ -95,7 +87,7 @@ class ResourceTypeViewSet(
         resource_type = get_object_or_404(ResourceType, name=name)
         if not resource_type.serializer_class:  # pragma: no cover
             return HttpResponseNotFound()
-        resources = Resource.objects.filter(content_type__resource_type=resource_type)
+        resources = Resource.objects.filter(content_type__resource_type=resource_type).prefetch_related("content_object")
         if not resources:
             return HttpResponseNotFound()
 

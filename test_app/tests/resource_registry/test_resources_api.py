@@ -88,7 +88,8 @@ def test_resource_update(
     data = {"resource_type": "shared.user", "resource_data": {"username": user.username}}
 
     data["resource_data"]["username"] = "new_username"
-    admin_api_client.put(url, data, format="json")
+    resp = admin_api_client.put(url, data, format="json")
+    assert resp.status_code == 200
 
     data = admin_api_client.get(url).data
 
@@ -108,7 +109,7 @@ def test_resource_update_ansible_id(admin_api_client, user):
     """Test that the ansible ID of a resource can be updated."""
     c_type = ContentType.objects.get_for_model(user)
     ansible_id = Resource.objects.get(object_id=user.pk, content_type=c_type.pk).ansible_id
-    new_ansible_id = "12345678" + ":" + str(uuid.uuid4())
+    new_ansible_id = str(uuid.uuid4())
 
     url = reverse("resource-detail", kwargs={"ansible_id": ansible_id})
 
@@ -123,6 +124,20 @@ def test_resource_update_ansible_id(admin_api_client, user):
 
     assert resp.status_code == 200
     assert resp.data["ansible_id"] == new_ansible_id
+
+
+def test_resource_update_service_id(admin_api_client, user):
+    """Test that the service ID of a resource can be updated."""
+    c_type = ContentType.objects.get_for_model(user)
+    ansible_id = Resource.objects.get(object_id=user.pk, content_type=c_type.pk).ansible_id
+    new_service_id = str(uuid.uuid4())
+
+    url = reverse("resource-detail", kwargs={"ansible_id": ansible_id})
+
+    data = {"service_id": new_service_id}
+    resp = admin_api_client.patch(url, data, format="json")
+    assert resp.status_code == 200
+    assert resp.data["service_id"] == new_service_id
 
 
 def test_resource_partial_update(admin_api_client, user):
@@ -155,15 +170,21 @@ def test_resource_partial_update(admin_api_client, user):
 @pytest.mark.parametrize(
     'resource',
     [
-        {"ansible_id": "0433e6b7:a0057c59-776d-48f8-97f1-8f8033e68d93", "resource_type": "shared.organization", "resource_data": {"name": "foo"}},
+        {"ansible_id": "a0057c59-776d-48f8-97f1-8f8033e68d93", "resource_type": "shared.organization", "resource_data": {"name": "foo"}},
         {"resource_type": "shared.organization", "resource_data": {"name": "my super cool org"}},
-        {"ansible_id": "0433e6b7:a0057c59-776d-48f8-97f1-8f8033e68d93", "resource_type": "shared.user", "resource_data": {"username": "foo"}},
+        {"ansible_id": "a0057c59-776d-48f8-97f1-8f8033e68d93", "resource_type": "shared.user", "resource_data": {"username": "foo"}},
         {
-            "ansible_id": "0433e6b7:a0057c59-776d-48f8-97f1-8f8033e68d93",
+            "ansible_id": "a0057c59-776d-48f8-97f1-8f8033e68d93",
+            "service_id": "ae417fc0-885c-49cb-b052-62cfc8e178b4",
             "resource_type": "shared.user",
             "resource_data": {"username": "MrFoo", "first_name": "Mr", "last_name": "Foo", "email": "mrfoo@redhat.com", "is_superuser": True},
         },
         {
+            "resource_type": "shared.user",
+            "resource_data": {"username": "Bobby", "last_name": "Bobberton", "email": "bobby@redhat.com", "is_superuser": False},
+        },
+        {
+            "service_id": "79f8c69e-a974-4bab-8e0f-e9d4bd4efe81",
             "resource_type": "shared.user",
             "resource_data": {"username": "Bobby", "last_name": "Bobberton", "email": "bobby@redhat.com", "is_superuser": False},
         },
@@ -178,6 +199,9 @@ def test_resources_api_crd(admin_api_client, resource):
 
     if "ansible_id" in resource:
         assert response.data["ansible_id"] == resource["ansible_id"]
+
+    if "service_id" in resource:
+        assert response.data["service_id"] == resource["service_id"]
 
     assert response.data["resource_type"] == resource["resource_type"]
 
@@ -203,16 +227,30 @@ def test_resources_api_crd(admin_api_client, resource):
     [
         {"data": {"ansible_id": "bogus", "resource_type": "shared.user", "resource_data": {"name": "foo"}}, "field_name": "ansible_id"},
         {
-            "data": {"ansible_id": "a0057c59-776d-48f8-97f1-8f8033e68d91", "resource_type": "shared.team", "resource_data": {"name": "foo"}},
+            "data": {
+                "ansible_id": "a0057c59-776d-48f8-97f1-8f8033e68d91",
+                "service_id": "bogus",
+                "resource_type": "shared.user",
+                "resource_data": {"name": "foo"},
+            },
+            "field_name": "service_id",
+        },
+        {
+            "data": {
+                "ansible_id": "bogus",
+                "service_id": "a0057c59-776d-48f8-97f1-8f8033e68d91",
+                "resource_type": "shared.user",
+                "resource_data": {"name": "foo"},
+            },
             "field_name": "ansible_id",
         },
-        {"data": {"ansible_id": "0433e6b7:null", "resource_type": "shared.team", "resource_data": {"name": "foo"}}, "field_name": "ansible_id"},
+        {"data": {"ansible_id": "null", "resource_type": "shared.team", "resource_data": {"name": "foo"}}, "field_name": "ansible_id"},
         {
-            "data": {"ansible_id": "123:a0057c59-776d-48f8-97f1-8f8033e68d91", "resource_type": "shared.team", "resource_data": {"name": "foo"}},
+            "data": {"ansible_id": "123-a0057c59-776d-48f8-97f1-8f8033e68d91", "resource_type": "shared.team", "resource_data": {"name": "foo"}},
             "field_name": "ansible_id",
         },
         {
-            "data": {"ansible_id": "????????:a0057c59-776d-48f8-97f1-8f8033e68d91", "resource_type": "shared.team", "resource_data": {"name": "foo"}},
+            "data": {"ansible_id": "a0057c59033e68d91", "resource_type": "shared.team", "resource_data": {"name": "foo"}},
             "field_name": "ansible_id",
         },
         {"data": {"resource_type": "shared.team", "resource_data": {"name": "foo"}}, "field_name": "resource_type"},

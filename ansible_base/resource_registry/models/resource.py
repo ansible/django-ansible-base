@@ -9,10 +9,6 @@ from rest_framework.serializers import ValidationError
 from .service_id import service_id
 
 
-def short_service_id():
-    return service_id().split('-')[0]
-
-
 class ResourceType(models.Model):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -44,26 +40,14 @@ class Resource(models.Model):
     object_id = models.TextField(null=False)
     content_object = GenericForeignKey('content_type', 'object_id')
 
-    service_id = models.CharField(default=short_service_id, max_length=8)
+    service_id = models.UUIDField(null=False, default=service_id)
 
     # we're not using this as the primary key because the ansible_id can change if the object is
     # externally managed.
-    resource_id = models.UUIDField(default=uuid.uuid4, db_index=True, unique=True)
+    ansible_id = models.UUIDField(default=uuid.uuid4, db_index=True, unique=True)
 
     # human readable name for the resource
     name = models.CharField(max_length=512, null=True)
-
-    @property
-    def ansible_id(self):
-        return self.service_id + ":" + str(self.resource_id)
-
-    @ansible_id.setter
-    def ansible_id(self, val):
-        s_id, r_id = val.split(":")
-        if not service_id().startswith(s_id):
-            self.service_id = s_id
-
-        self.resource_id = r_id
 
     @property
     def resource_type(self):
@@ -103,7 +87,7 @@ class Resource(models.Model):
             self.delete()
 
     @classmethod
-    def create_resource(cls, resource_type: ResourceType, resource_data: dict, ansible_id: str = None):
+    def create_resource(cls, resource_type: ResourceType, resource_data: dict, ansible_id: str = None, service_id: str = None):
         if not resource_type.can_be_managed:
             raise ValidationError({"resource_type": _(f"Resource type: {resource_type.name} cannot be managed by Resources.")})
         c_type = resource_type.content_type
@@ -113,16 +97,17 @@ class Resource(models.Model):
 
         with transaction.atomic():
             content_object = c_type.model_class().objects.create(**resource_data)
-
             resource = cls.objects.get(object_id=content_object.pk, content_type=c_type)
 
             if ansible_id:
                 resource.ansible_id = ansible_id
-                resource.save()
+            if service_id:
+                resource.service_id = service_id
+            resource.save()
 
             return resource
 
-    def update_resource(self, resource_data: dict, ansible_id=None, partial=False):
+    def update_resource(self, resource_data: dict, ansible_id=None, partial=False, service_id: str = None):
         resource_type = self.content_type.resource_type
 
         if not resource_type.can_be_managed:
@@ -133,13 +118,15 @@ class Resource(models.Model):
         resource_data = serializer.validated_data
 
         with transaction.atomic():
+            if ansible_id:
+                self.ansible_id = ansible_id
+            if service_id:
+                self.service_id = service_id
+            self.save()
+
             for k, val in resource_data.items():
                 setattr(self.content_object, k, val)
                 self.content_object.save()
-
-            if ansible_id:
-                self.ansible_id = ansible_id
-                self.save()
 
 
 # This is a separate function so that it can work with models from apps in the
