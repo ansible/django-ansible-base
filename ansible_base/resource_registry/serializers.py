@@ -20,9 +20,11 @@ def get_resource_detail_view(resource: Resource):
     # resources are registered.
     if detail := actions.get("retrieve"):
         # Try the shortest URL first because it is most likely to be the detail and correct view
+        resource_pk_field = resource.content_type.resource_type.get_resource_config().model._meta.pk.name
+        format_data = {"pk": resource.object_id, "name": resource.name, resource_pk_field: resource.object_id}
         for http_method, url_template in sorted(detail, key=lambda item: len(item[-1])):
             try:
-                return url_template.format(pk=resource.object_id, name=resource.name)
+                return url_template.format(**format_data)
             except KeyError:
                 pass
         logger.warning(f'Failed to obtain resource URL from options {detail}')
