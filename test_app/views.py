@@ -40,10 +40,13 @@ class RelatedFieldsTestModelViewSet(TestAppViewSet):
 # create api root view from the router
 @api_view(['GET'])
 def api_root(request, format=None):
-    return Response(
-        {
-            'organizations': reverse('organization-list', request=request, format=format),
-            'teams': reverse('team-list', request=request, format=format),
-            'users': reverse('user-list', request=request, format=format),
-        }
-    )
+    from test_app.router import router
+
+    list_endpoints = {}
+    for url in router.urls:
+        # only want "root" list views, for example:
+        # want '^users/$' [name='user-list']
+        # do not want '^users/(?P<pk>[^/.]+)/organizations/$' [name='user-organizations-list'],
+        if '-list' in url.name and url.pattern._regex.count('/') == 1:
+            list_endpoints[url.name.removesuffix('-list')] = reverse(url.name, request=request, format=format)
+    return Response(list_endpoints)
