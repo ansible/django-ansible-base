@@ -16,4 +16,5 @@ service = [path('metadata/', views.ServiceMetadataView.as_view(), name="service-
 
 urlpatterns = [
     path('service-index/', include(service)),
+    path('service-index/', views.ServiceIndexRootView.as_view(), name='service-index-root'),
 ]
