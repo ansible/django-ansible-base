@@ -4,7 +4,6 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from rest_framework.reverse import reverse_lazy
 
-from ansible_base.lib.utils.validation import ansible_id_validator
 from ansible_base.resource_registry.models import Resource, ResourceType
 
 logger = logging.getLogger('ansible_base.serializers')
@@ -53,7 +52,6 @@ class ResourceSerializer(serializers.ModelSerializer):
     resource_data = ResourceDataField(source="*")
     detail_url = serializers.SerializerMethodField()
     url = serializers.SerializerMethodField()
-    ansible_id = serializers.CharField(validators=[ansible_id_validator], required=False)
     resource_type = serializers.CharField()
 
     class Meta:
@@ -66,6 +64,7 @@ class ResourceSerializer(serializers.ModelSerializer):
             "object_id",
             "name",
             "ansible_id",
+            "service_id",
             "resource_type",
             "has_serializer",
             "resource_data",
@@ -84,14 +83,21 @@ class ResourceSerializer(serializers.ModelSerializer):
 
     # update ansible ID
     def update(self, instance, validated_data):
-        instance.update_resource(validated_data.get("resource_data", {}), ansible_id=validated_data.get("ansible_id"), partial=self.partial)
+        instance.update_resource(
+            validated_data.get("resource_data", {}),
+            ansible_id=validated_data.get("ansible_id"),
+            service_id=validated_data.get("service_id"),
+            partial=self.partial,
+        )
         return instance
 
     # allow setting ansible ID at create time
     def create(self, validated_data):
         try:
             r_type = ResourceType.objects.get(name=validated_data["resource_type"])
-            return Resource.create_resource(r_type, validated_data["resource_data"], ansible_id=validated_data.get("ansible_id"))
+            return Resource.create_resource(
+                r_type, validated_data["resource_data"], ansible_id=validated_data.get("ansible_id"), service_id=validated_data.get("service_id")
+            )
 
         except ResourceType.DoesNotExist:
             raise serializers.ValidationError({"resource_type": _(f"Resource type: {validated_data['resource_type']} does not exist.")})

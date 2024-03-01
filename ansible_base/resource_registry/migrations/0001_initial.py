@@ -5,8 +5,6 @@ import uuid
 import django.db.models.deletion
 from django.db import migrations, models
 
-import ansible_base.resource_registry.models.resource
-
 
 def create_service_id(apps, schema_editor):
     ServiceID = apps.get_model("dab_resource_registry", "ServiceID")
@@ -49,7 +47,7 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('object_id', models.TextField()),
-                ('service_id', models.CharField(default=ansible_base.resource_registry.models.resource.short_service_id, max_length=8)),
+                ('service_id', models.CharField(default="00000000", max_length=8)),
                 ('resource_id', models.UUIDField(db_index=True, default=uuid.uuid4, unique=True)),
                 ('name', models.CharField(max_length=512, null=True)),
                 ('content_type', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='resources', to='contenttypes.contenttype')),
