@@ -14,7 +14,8 @@ class CustomForwardOneToOneDescriptor(ForwardOneToOneDescriptor):
         return self.field.remote_field.model._base_manager.db_manager(hints=hints).filter(content_type=ContentType.objects.get_for_model(self.field.model))
 
     def get_prefetch_queryset(self, instances, queryset=None):
-        queryset = self.get_queryset()
+        if not queryset:
+            queryset = self.get_queryset()
         queryset._add_hints(instance=instances[0])
 
         query = models.Q.create(
