@@ -17,4 +17,5 @@ urlpatterns = [
     path('api/v1/', include(resource_api_urls)),
     path('api/v1/', views.api_root),
     path('login/', include('rest_framework.urls')),
+    path("__debug__/", include("debug_toolbar.urls")),
 ]
