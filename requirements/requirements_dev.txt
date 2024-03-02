@@ -4,6 +4,7 @@ django-extensions
 ipython
 tox
 beartype
+pytest-beartype
 pytest
 pytest-asyncio
 pytest-xdist

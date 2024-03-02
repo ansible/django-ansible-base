@@ -1,7 +1,7 @@
 import pytest
 from rest_framework.exceptions import ValidationError
-# from beartype import beartype
-# from typing import no_type_check
+from beartype import beartype
+from typing import no_type_check
 
 from ansible_base.lib.utils.validation import to_python_boolean, validate_cert_with_key, validate_image_data, validate_url
 

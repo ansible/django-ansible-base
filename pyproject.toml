@@ -78,7 +78,7 @@ exclude = [ 'ansible_base/authentication/migrations/*', 'test_app/migrations/*',
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "test_app.settings"
 addopts = "--strict-markers --reuse-db --create-db --migrations -s -vvv"
-beartype_packages = '{ansible_base}'
+beartype_packages = 'ansible_base'
 
 [tool.tox]
 legacy_tox_ini = """
