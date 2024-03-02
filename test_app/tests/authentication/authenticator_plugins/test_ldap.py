@@ -6,6 +6,7 @@ import ldap
 import pytest
 from django.urls import reverse
 from rest_framework.serializers import ValidationError
+
 # from beartype import beartype
 # from typing import no_type_check
 
