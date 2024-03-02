@@ -6,15 +6,43 @@ from test_app.models import Organization
 
 
 @pytest.mark.django_db
-def test_resource_field_select_related():
+def test_resource_field_select_related(organization, organization_1, organization_2):
     org_ctype = ContentType.objects.get_for_model(Organization)
-
-    for org in ["org1", "org2", "org3", "org4"]:
-        Organization.objects.create(name=org)
 
     org_qs = Organization.objects.select_related("resource").all()
     resource_qs = Resource.objects.filter(content_type=org_ctype)
 
+    assert len(org_qs) > 1
+    assert len(org_qs) == len(resource_qs)
+
+    org_names = set([org.name for org in org_qs])
+    org_resource_names = set([org.resource.name for org in org_qs])
+    org_pks = set([str(org.pk) for org in org_qs])
+    org_ansible_ids = set([org.resource.ansible_id for org in org_qs])
+
+    resource_names = set([resource.name for resource in resource_qs])
+    resource_object_ids = set([resource.object_id for resource in resource_qs])
+    resource_ansible_ids = set([resource.ansible_id for resource in resource_qs])
+
+    assert org_names == resource_names
+    assert org_names == org_resource_names
+    assert org_pks == resource_object_ids
+    assert org_ansible_ids == resource_ansible_ids
+
+    for org in org_qs:
+        assert org.resource.pk == Resource.objects.get(object_id=org.pk, content_type=org_ctype).pk
+
+
+@pytest.mark.django_db
+def test_resource_field_prefetch_related(organization, organization_1, organization_2):
+    org_ctype = ContentType.objects.get_for_model(Organization)
+
+    assert "dab_resource_registry_resource" not in str(Organization.objects.prefetch_related("resource").all().query)
+
+    org_qs = list(Organization.objects.prefetch_related("resource").all())
+    resource_qs = Resource.objects.filter(content_type=org_ctype)
+
+    assert len(org_qs) > 1
     assert len(org_qs) == len(resource_qs)
 
     org_names = set([org.name for org in org_qs])

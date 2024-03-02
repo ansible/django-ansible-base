@@ -9,6 +9,44 @@ from django.db.models.sql.where import WhereNode
 from ansible_base.resource_registry.models import Resource
 
 
+class CustomForwardOneToOneDescriptor(ForwardOneToOneDescriptor):
+    def get_queryset(self, **hints):
+        return self.field.remote_field.model._base_manager.db_manager(hints=hints).filter(content_type=ContentType.objects.get_for_model(self.field.model))
+
+    def get_prefetch_queryset(self, instances, queryset=None):
+        queryset = self.get_queryset()
+        queryset._add_hints(instance=instances[0])
+
+        query = models.Q.create(
+            [
+                ("object_id__in", {str(obj.pk) for obj in instances}),
+            ]
+        )
+
+        queryset = queryset.filter(query)
+
+        # I can't find documentation for this anywhere, but this is the best I can come
+        # up with for what this tuple is returning:
+        # [0]: queryset for the related table
+        # [1]: function that returns the value for the related table that needs to match the
+        #      current table
+        # [2]: function that returns the value for the current table that needs to match the
+        #      related table
+        # [3]: unknown... but this breaks when set to False.
+        # [4]: name of the field that we're joining on the current table
+        # [5]: unknown...
+        # I think that the queryset is merged on the prefetched queryset based on whether the
+        # results of the functions in [1] and [2] match.
+        return (
+            queryset,
+            lambda relobj: relobj.object_id,
+            lambda obj: str(obj.pk),
+            True,
+            self.field.attname,
+            False,
+        )
+
+
 class AnsibleResourceField(models.ForeignObject):
     """
     This field creates a reverse one to one relationship to the Resource model
@@ -18,7 +56,7 @@ class AnsibleResourceField(models.ForeignObject):
     """
 
     related_accessor_class = ReverseOneToOneDescriptor
-    forward_related_accessor_class = ForwardOneToOneDescriptor
+    forward_related_accessor_class = CustomForwardOneToOneDescriptor
 
     def __init__(self, primary_key_field, **kwargs):
         model = Resource
