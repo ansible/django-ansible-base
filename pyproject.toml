@@ -98,7 +98,7 @@ legacy_tox_ini = """
         -r{toxinidir}/requirements/requirements_all.txt
         -r{toxinidir}/requirements/requirements_dev.txt
     allowlist_externals = sh
-    commands = sh -c 'make postgres && pytest -n auto --cov=. --cov-report=xml:coverage.xml --cov-report=html --cov-report=json --cov-branch {env:ANSIBLE_BASE_TEST_DIRS:test_app/tests} {posargs}; make stop-postgres'
+    commands = sh -c 'make postgres && pytest -n auto --cov=. --cov-report=xml:coverage.xml --cov-report=html --cov-report=json --cov-branch {env:ANSIBLE_BASE_TEST_DIRS:test_app/tests} {posargs}'
 
     [testenv:check]
     deps =
