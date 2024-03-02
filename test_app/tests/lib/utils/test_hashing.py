@@ -1,10 +1,11 @@
 import uuid
 
 from rest_framework.serializers import CharField, IntegerField, Serializer, UUIDField
-# from beartype import beartype
-# from typing import no_type_check
+from beartype import beartype, BeartypeConf, BeartypeStrategy
 
 from ansible_base.lib.utils.hashing import hash_serializer_data
+
+nobeartype = beartype(conf=BeartypeConf(strategy=BeartypeStrategy.O0))
 
 DATA = {"name": "foo", "id": 1234, "uuid": uuid.uuid4()}
 
@@ -15,19 +16,19 @@ class DataSerializer(Serializer):
     uuid = UUIDField()
 
 
-# @no_type_check
+@nobeartype
 def test_hash_serializer_data_idempotency():
     """Test hashing same data gives same output"""
     assert hash_serializer_data(DATA, DataSerializer) == hash_serializer_data(DATA, DataSerializer)
 
 
-# @no_type_check
+@nobeartype
 def test_hash_serializer_data_difference():
     """Test hashing different data changes the hash"""
     assert hash_serializer_data(DATA, DataSerializer) != hash_serializer_data({**DATA, **{"id": 4567}}, DataSerializer)
 
 
-# @no_type_check
+@nobeartype
 def test_hash_serializer_with_nested_field():
     """Test hashing can be performed on nested data"""
     NESTED_DATA = {"field": {"name": "foo", "id": 1234}}
