@@ -1,7 +1,7 @@
 import uuid
 
+from beartype import BeartypeConf, BeartypeStrategy, beartype
 from rest_framework.serializers import CharField, IntegerField, Serializer, UUIDField
-from beartype import beartype, BeartypeConf, BeartypeStrategy
 
 from ansible_base.lib.utils.hashing import hash_serializer_data
 

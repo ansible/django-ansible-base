@@ -7,13 +7,14 @@ import pytest
 from django.urls import reverse
 from rest_framework.serializers import ValidationError
 
-# from beartype import beartype
-# from typing import no_type_check
-
 from ansible_base.authentication.authenticator_plugins.ldap import AuthenticatorPlugin, LDAPSettings, validate_ldap_filter
 from ansible_base.authentication.models import Authenticator
 from ansible_base.authentication.session import SessionAuthentication
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
+
+# from beartype import beartype
+# from typing import no_type_check
+
 
 authenticated_test_page = "authenticator-list"
 
