@@ -3,7 +3,7 @@ build
 django-extensions
 ipython
 tox
-typeguard
+beartype
 pytest
 pytest-asyncio
 pytest-xdist

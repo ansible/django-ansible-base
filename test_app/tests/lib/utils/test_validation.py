@@ -1,11 +1,12 @@
 import pytest
 from rest_framework.exceptions import ValidationError
-from typeguard import suppress_type_checks
+# from beartype import beartype
+# from typing import no_type_check
 
 from ansible_base.lib.utils.validation import to_python_boolean, validate_cert_with_key, validate_image_data, validate_url
 
 
-@suppress_type_checks
+@no_type_check
 @pytest.mark.parametrize(
     "valid,url,schemes,allow_plain_hostname",
     [
