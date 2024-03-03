@@ -1,5 +1,7 @@
 from collections import namedtuple
 from typing import List
+from ansible_base.resource_registry.serializers import UserAuthenticationSerializer, ValidateLocalUserSerializer
+from django.contrib.auth import get_user_model, authenticate
 
 ParentResource = namedtuple("ParentResource", ["model", "field_name"])
 SharedResource = namedtuple("SharedResource", ["serializer", "is_provider"])
@@ -19,6 +21,24 @@ class ServiceAPIConfig:
     """
 
     service_type = None
+
+    @staticmethod
+    def authenticate_local_user(username: str, password: str):
+        """
+        Return User instance or None
+        """
+        return authenticate(username, password)
+
+    @staticmethod
+    def authenticate_sso_user(sso_identifier: str, sso_provider_url: str):
+        """
+        Return User instance or None
+        """
+        pass
+
+    @staticmethod
+    def get_local_user_details(user) -> ValidateLocalUserSerializer:
+        pass
 
 
 class ResourceConfig:

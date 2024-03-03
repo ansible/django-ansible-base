@@ -7,6 +7,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.reverse import reverse
 from rest_framework.viewsets import GenericViewSet, mixins
+from django.utils.translation import gettext_lazy as _
 
 from ansible_base.lib.utils.hashing import hash_serializer_data
 from ansible_base.lib.utils.response import CSVStreamResponse
@@ -107,3 +108,19 @@ class ServiceIndexRootView(AnsibleBaseView):
         data['resources'] = reverse('resource-list')
         data['resource-types'] = reverse('resourcetype-list')
         return Response(data)
+
+
+class ValidateLocalUserView(AnsibleBaseDjangoAppApiView):
+    def post(self, request, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        api_config = get_registry().api_config
+        user = api_config.authenticate_local_user(serializer.validated_data["username"], serializer.validated_data["password"])
+
+        if not user:
+            return Response(status=401)
+
+        user_details = api_config.get_local_user_details(user)
+
+        return Response(data=user_details.data)
