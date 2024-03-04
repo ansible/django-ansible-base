@@ -83,7 +83,7 @@ def test_resource_field_filtering(organization):
     """
     resource = Resource.objects.get(object_id=organization.pk, content_type=ContentType.objects.get_for_model(organization))
 
-    org = Organization.objects.get(resource__resource_id=resource.resource_id)
+    org = Organization.objects.get(resource__ansible_id=resource.resource_id)
     assert org.resource.pk == resource.pk
 
     org = Organization.objects.get(resource__name=organization.name)
