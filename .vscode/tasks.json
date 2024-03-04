@@ -1,0 +1,13 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run vscodebootstrap.sh",
+      "type": "shell",
+      "command": "sh",
+      "args": [
+        "${workspaceFolder}/.vscode/vscodebootstrap.sh"
+      ],
+    }
+  ]
+}
