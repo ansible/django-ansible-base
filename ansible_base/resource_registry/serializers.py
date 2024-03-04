@@ -52,7 +52,7 @@ class ResourceSerializer(serializers.ModelSerializer):
     resource_data = ResourceDataField(source="*")
     detail_url = serializers.SerializerMethodField()
     url = serializers.SerializerMethodField()
-    resource_type = serializers.CharField()
+    resource_type = serializers.CharField(required=False)
 
     class Meta:
         model = Resource
@@ -89,11 +89,15 @@ class ResourceSerializer(serializers.ModelSerializer):
             service_id=validated_data.get("service_id"),
             partial=self.partial,
         )
+        instance.refresh_from_db()
         return instance
 
     # allow setting ansible ID at create time
     def create(self, validated_data):
         try:
+            if not validated_data["resource_type"]:
+                raise serializers.ValidationError({"resource_type": _("This field is required for resource creation.")})
+
             r_type = ResourceType.objects.get(name=validated_data["resource_type"])
             return Resource.create_resource(
                 r_type, validated_data["resource_data"], ansible_id=validated_data.get("ansible_id"), service_id=validated_data.get("service_id")
