@@ -19,7 +19,7 @@ class ResourceAPIClient:
 
     ResourceRequestBody = ResourceRequestBody
 
-    def __init__(self, service_url: str, service_path: str, requests_auth_kwargs: dict):
+    def __init__(self, service_url: str, service_path: str, requests_auth_kwargs: dict, verify_https=True):
         """
         service_url: fully qualified hostname for the service that the client
             is connecting to (http://www.example.com:123).
@@ -31,12 +31,13 @@ class ResourceAPIClient:
 
         self.base_url = f"{service_url}/{service_path.strip('/')}/"
         self.requests_auth_kwargs = requests_auth_kwargs
+        self.verify_https = verify_https
 
     def _make_request(self, method: str, path: str, data: dict = None) -> requests.Response:
         url = self.base_url + path.lstrip("/")
         logger.info(f"Making {method} request to {url}.")
 
-        kwargs = {**self.requests_auth_kwargs, "method": method, "url": url, "verify": False}
+        kwargs = {**self.requests_auth_kwargs, "method": method, "url": url, "verify": self.verify_https}
 
         if data:
             kwargs["json"] = data
