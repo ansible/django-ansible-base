@@ -28,9 +28,15 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
     )
 
     KEY = CharField(
-        help_text=_("The OIDC key (Client ID) from your IDP."),
+        help_text=_("The OIDC key (Client ID) from your IDP. Will also be used as the 'audience' for JWT decoding."),
         allow_null=False,
         ui_field_label=_('OIDC Key'),
+    )
+
+    PUBLIC_KEY = CharField(
+        help_text=_("The public key from your IDP. Only necessary if using keycloak for OIDC."),
+        allow_null=True,
+        ui_field_label=_('OIDC Public Key'),
     )
 
     SECRET = CharField(
@@ -47,11 +53,33 @@ class AuthenticatorPlugin(SocialAuthMixin, OpenIdConnectAuth, AbstractAuthentica
     category = "sso"
     configuration_encrypted_fields = ['SECRET']
 
+    def audience(self):
+        return self.setting("KEY")
+
+    def algorithm(self):
+        return self.setting("ALGORITHM", default="RS256")
+
+    def public_key(self):
+        return "\n".join(
+            [
+                "-----BEGIN PUBLIC KEY-----",
+                self.setting("PUBLIC_KEY"),
+                "-----END PUBLIC KEY-----",
+            ]
+        )
+
     def get_json(self, url, *args, **kwargs):
+
         rr = self.request(url, *args, **kwargs)
 
         # keycloak OIDC returns a JWT encoded JSON blob for the user detail endpoint
         if rr.headers.get('Content-Type') == 'application/jwt':
-            return jwt.decode(rr.text, options={"verify_signature": False})
+            return jwt.decode(
+				rr.text,
+				self.public_key(),
+				algorithms=self.algorithm(),
+				audience=self.audience(),
+				options={"verify_signature": True}
+			)
 
         return rr.json()
