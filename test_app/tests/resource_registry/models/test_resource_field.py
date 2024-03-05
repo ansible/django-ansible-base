@@ -6,17 +6,23 @@ from test_app.models import Organization
 
 
 @pytest.mark.django_db
-def test_resource_field_select_related(organization, organization_1, organization_2):
+def test_resource_field_select_related(organization, organization_1, organization_2, django_assert_num_queries):
     org_ctype = ContentType.objects.get_for_model(Organization)
 
-    org_qs = Organization.objects.select_related("resource").all()
+    with django_assert_num_queries(1) as captured:
+        org_qs = Organization.objects.select_related("resource").all()
+        org_names = set([org.name for org in org_qs])
+
+    assert "dab_resource_registry_resource" in captured[0]["sql"]
+
     resource_qs = Resource.objects.filter(content_type=org_ctype)
 
-    assert len(org_qs) > 1
+    assert len(org_qs) > 2
     assert len(org_qs) == len(resource_qs)
 
-    org_names = set([org.name for org in org_qs])
-    org_resource_names = set([org.resource.name for org in org_qs])
+    with django_assert_num_queries(0):
+        org_resource_names = set([org.resource.name for org in org_qs])
+
     org_pks = set([str(org.pk) for org in org_qs])
     org_ansible_ids = set([org.resource.ansible_id for org in org_qs])
 
@@ -34,19 +40,25 @@ def test_resource_field_select_related(organization, organization_1, organizatio
 
 
 @pytest.mark.django_db
-def test_resource_field_prefetch_related(organization, organization_1, organization_2):
+def test_resource_field_prefetch_related(organization, organization_1, organization_2, django_assert_num_queries):
     org_ctype = ContentType.objects.get_for_model(Organization)
 
-    assert "dab_resource_registry_resource" not in str(Organization.objects.prefetch_related("resource").all().query)
+    with django_assert_num_queries(2) as captured:
+        org_qs = list(Organization.objects.prefetch_related("resource").all())
 
-    org_qs = list(Organization.objects.prefetch_related("resource").all())
+    assert "dab_resource_registry_resource" not in captured[0]["sql"]
+    assert "dab_resource_registry_resource" in captured[1]["sql"]
+
     resource_qs = Resource.objects.filter(content_type=org_ctype)
 
-    assert len(org_qs) > 1
+    assert len(org_qs) > 2
     assert len(org_qs) == len(resource_qs)
 
+    # check that calling org.resource doesn't incur any further queries
+    with django_assert_num_queries(0):
+        org_resource_names = set([org.resource.name for org in org_qs])
+
     org_names = set([org.name for org in org_qs])
-    org_resource_names = set([org.resource.name for org in org_qs])
     org_pks = set([str(org.pk) for org in org_qs])
     org_ansible_ids = set([org.resource.ansible_id for org in org_qs])
 
@@ -83,7 +95,7 @@ def test_resource_field_filtering(organization):
     """
     resource = Resource.objects.get(object_id=organization.pk, content_type=ContentType.objects.get_for_model(organization))
 
-    org = Organization.objects.get(resource__ansible_id=resource.resource_id)
+    org = Organization.objects.get(resource__ansible_id=resource.ansible_id)
     assert org.resource.pk == resource.pk
 
     org = Organization.objects.get(resource__name=organization.name)
