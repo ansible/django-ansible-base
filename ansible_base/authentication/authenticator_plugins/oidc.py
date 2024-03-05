@@ -1,6 +1,6 @@
 import logging
-import jwt
 
+import jwt
 from django.utils.translation import gettext_lazy as _
 from social_core.backends.open_id_connect import OpenIdConnectAuth
 
@@ -74,12 +74,6 @@ class AuthenticatorPlugin(SocialAuthMixin, OpenIdConnectAuth, AbstractAuthentica
 
         # keycloak OIDC returns a JWT encoded JSON blob for the user detail endpoint
         if rr.headers.get('Content-Type') == 'application/jwt':
-            return jwt.decode(
-				rr.text,
-				self.public_key(),
-				algorithms=self.algorithm(),
-				audience=self.audience(),
-				options={"verify_signature": True}
-			)
+            return jwt.decode(rr.text, self.public_key(), algorithms=self.algorithm(), audience=self.audience(), options={"verify_signature": True})
 
         return rr.json()
