@@ -50,9 +50,9 @@ class RelatedFieldsTestModelViewSet(TestAppViewSet):
 # create api root view from the router
 @api_view(['GET'])
 def api_root(request, format=None):
-    from test_app.router import router
     from ansible_base.authentication.urls import router as auth_router
     from ansible_base.resource_registry.urls import service_router
+    from test_app.router import router
 
     list_endpoints = {}
     for url in router.urls + auth_router.urls + service_router.urls:
