@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Test App Server",
+            "consoleTitle": "Test App Server",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/manage.py",
+            "env": {
+                "DJANGO_SETTINGS_MODULE": "test_app.sqlite3settings"
+            },
+            "preLaunchTask": "Run vscodebootstrap.sh",
+            "args": [
+                "runserver"
+            ],
+            "django": true,
+            "autoStartBrowser": false
+        }
+    ]
+}
