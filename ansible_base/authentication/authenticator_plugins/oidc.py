@@ -49,19 +49,14 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('OIDC Public Key'),
     )
 
-    ID_TOKEN_MAX_AGE  = IntegerField(
+    ID_TOKEN_MAX_AGE = IntegerField(
         help_text=_(""),
         default=600,
         allow_null=True,
         ui_field_label=_('OIDC token max age'),
     )
 
-    REDIRECT_STATE = BooleanField(
-        help_text=_(""),
-        default=False,
-        allow_null=True,
-        ui_field_label=_("redirect state")
-    )
+    REDIRECT_STATE = BooleanField(help_text=_(""), default=False, allow_null=True, ui_field_label=_("redirect state"))
 
     ACCESS_TOKEN_METHOD = CharField(
         help_text=_(""),
