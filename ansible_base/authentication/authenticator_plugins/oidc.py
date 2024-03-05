@@ -6,7 +6,27 @@ from social_core.backends.open_id_connect import OpenIdConnectAuth
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.social_auth import SocialAuthMixin
-from ansible_base.lib.serializers.fields import BooleanField, CharField, IntegerField, URLField
+from ansible_base.lib.serializers.fields import BooleanField, CharField, IntegerField, ListField, URLField
+
+# DELETEME ...
+import base64
+import datetime
+import json
+from calendar import timegm
+
+import jwt
+from jwt import (
+    ExpiredSignatureError,
+    InvalidAudienceError,
+    InvalidTokenError,
+    PyJWTError,
+)
+from jwt.utils import base64url_decode
+
+from social_core.backends.oauth import BaseOAuth2
+from social_core.exceptions import AuthTokenError
+from social_core.utils import cache
+# END DELETEME ...
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.oidc')
 
@@ -46,6 +66,13 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
     #################################
     # Additional params
     #################################
+
+    SCOPE = ListField(
+        help_text=_('The authorization scope for users. Defaults to "read:org".'),
+        allow_null=False,
+        ui_field_label=_('GitHub OAuth2 Scope'),
+        default=["openid", "profile", "email"],
+    )
 
     PUBLIC_KEY = CharField(
         help_text=_("The public key from your IDP. Only necessary if using keycloak for OIDC."),
@@ -152,6 +179,13 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_("Token Endpoint Auth Method"),
     )
 
+    RESPONSE_TYPE = CharField(
+        help_text=_("The authentication method to use at the token endpoint. Common values are 'client_secret_post', 'client_secret_basic'."),
+        default="code",
+        allow_null=True,
+        ui_field_label=_("Token Endpoint Auth Method"),
+    )
+
 
 class AuthenticatorPlugin(SocialAuthMixin, OpenIdConnectAuth, AbstractAuthenticatorPlugin):
     configuration_class = OpenIdConnectConfiguration
@@ -159,28 +193,3 @@ class AuthenticatorPlugin(SocialAuthMixin, OpenIdConnectAuth, AbstractAuthentica
     logger = logger
     category = "sso"
     configuration_encrypted_fields = ['SECRET']
-
-    def audience(self):
-        return self.setting("KEY")
-
-    def algorithm(self):
-        return self.setting("ALGORITHM", default="RS256")
-
-    def public_key(self):
-        return "\n".join(
-            [
-                "-----BEGIN PUBLIC KEY-----",
-                self.setting("PUBLIC_KEY"),
-                "-----END PUBLIC KEY-----",
-            ]
-        )
-
-    def get_json(self, url, *args, **kwargs):
-
-        rr = self.request(url, *args, **kwargs)
-
-        # keycloak OIDC returns a JWT encoded JSON blob for the user detail endpoint
-        if rr.headers.get('Content-Type') == 'application/jwt':
-            return jwt.decode(rr.text, self.public_key(), algorithms=self.algorithm(), audience=self.audience(), options={"verify_signature": True})
-
-        return rr.json()
