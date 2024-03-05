@@ -12,7 +12,7 @@ from .service_id import service_id
 
 @lru_cache(maxsize=None)
 def resource_type_cache(content_type_id):
-    return ContentType.objects.get(pk=content_type_id).resource_type
+    return ContentType.objects.get_for_id(content_type_id).resource_type
 
 
 class ResourceType(models.Model):
@@ -36,7 +36,7 @@ class ResourceType(models.Model):
         return self.externally_managed and self.serializer_class
 
     def get_resource_config(self):
-        return self.resource_registry.get_config_for_model(model=self.content_type.model_class())
+        return self.resource_registry.get_config_for_model(model=ContentType.objects.get_for_id(self.content_type_id).model_class())
 
 
 class Resource(models.Model):
