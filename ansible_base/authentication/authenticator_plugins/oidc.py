@@ -52,8 +52,6 @@ class AuthenticatorPlugin(SocialAuthMixin, OpenIdConnectAuth, AbstractAuthentica
 
         # keycloak OIDC returns a JWT encoded JSON blob for the user detail endpoint
         if rr.headers.get('Content-Type') == 'application/jwt':
-            ds = jwt.decode(rr.text, options={"verify_signature": False})
-        else:
-            ds = rr.json()
+            return jwt.decode(rr.text, options={"verify_signature": False})
 
-        return ds
+        return rr.json()
