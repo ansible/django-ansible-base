@@ -19,7 +19,10 @@ class TeamSerializer(NamedCommonModelSerializer):
 class UserSerializer(ModelSerializer):
     class Meta:
         model = models.User
-        fields = '__all__'
+        exclude = (
+            'user_permissions',
+            'groups',
+        )
 
 
 class EncryptionTestSerializer(NamedCommonModelSerializer):
