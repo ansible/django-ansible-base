@@ -71,6 +71,11 @@ class AnsibleResourceField(models.ForeignObject):
             to_fields=to_fields,
             null=True,
             blank=True,
+            editable=False,
+            # This informs DRF to exclude the field from serialization by default.
+            # It can still be serialized, but the user will have to explicitly
+            # declare a serializer to use.
+            serialize=False,
             **kwargs,
         )
 
