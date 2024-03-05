@@ -8,6 +8,14 @@ from ansible_base.resource_registry.models import Resource
 from test_app.models import EncryptionModel, Organization, Team
 
 
+def test_service_index_root(user_api_client):
+    resp = user_api_client.get(reverse('service-index-root'))
+    assert resp.status_code == 200
+    assert 'metadata' in resp.data
+    assert 'resources' in resp.data
+    assert 'resource-types' in resp.data
+
+
 def test_resources_list(admin_api_client):
     """Test that the resource list is working."""
     url = reverse("resource-list")
