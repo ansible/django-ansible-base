@@ -75,20 +75,7 @@ class CommonModel(models.Model):
         help_text="The user who last modified this resource",
     )
 
-    def _check_user(self, user, non_existent_user_fatal=True):
-        # user might be:
-        #     The logged in user object; save is allowed
-        #     The system user object; save is allowed
-        #     None; Do not allow save (unless non_existent_user_fatal is False)
-        #     AnonymousUser if an anonymous request came in; Do not allow save (unless non_existent_user_fatal)
-        if (not user or user.is_anonymous) and non_existent_user_fatal:
-            # TODO: See if there is a better way to figure out how to identify this object?
-            # Maybe instead of trying to send a single identifier we try and dump the object?
-            obj_id = getattr(self, 'pk', getattr(self, 'name', getattr(self, 'username', 'Unknown')))
-            logger.error(f"Request to save a {self.__class__} object, id {obj_id} without a user making the request!")
-            raise ValueError("Unable to save model without user!")
-
-    def save(self, *args, non_existent_user_fatal=True, **kwargs):
+    def save(self, *args, **kwargs):
         '''
         This save function will provide several features automatically.
           * It will automatically encrypt any fields in the classes `encrypt_fields` property
@@ -99,11 +86,12 @@ class CommonModel(models.Model):
 
         # Manually perform auto_now_add and auto_now logic.
         now = timezone.now()
-        user = get_current_user() or get_system_user()
+        user = get_current_user()
+        if user is None or not user.is_authenticated():
+            user = get_system_user()
 
         if not self.pk:
             if self.created_by is None:
-                self._check_user(user, non_existent_user_fatal)
                 self.created_by = user
                 update_fields.append('created_by')
 
@@ -116,7 +104,6 @@ class CommonModel(models.Model):
             update_fields.append('modified_on')
 
         if 'modified_by' not in update_fields:
-            self._check_user(user, non_existent_user_fatal)
             self.modified_by = user
             update_fields.append('modified_by')
 
