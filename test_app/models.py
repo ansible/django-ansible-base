@@ -4,18 +4,22 @@ from django.db import models
 from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam
 from ansible_base.lib.abstract_models.common import CommonModel, NamedCommonModel
 from ansible_base.lib.utils.models import user_summary_fields
+from ansible_base.resource_registry.fields import AnsibleResourceField
 
 
 class Organization(AbstractOrganization):
-    pass
+    resource = AnsibleResourceField(primary_key_field="id")
 
 
 class User(AbstractUser, CommonModel):
+    resource = AnsibleResourceField(primary_key_field="id")
+
     def summary_fields(self):
         return user_summary_fields(self)
 
 
 class Team(AbstractTeam):
+    resource = AnsibleResourceField(primary_key_field="id")
     encryptioner = models.ForeignKey('test_app.EncryptionModel', on_delete=models.SET_NULL, null=True)
 
 

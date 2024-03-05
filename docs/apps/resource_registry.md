@@ -73,6 +73,47 @@ This will add the following paths:
 - `service-index/resource-types/`: list of available resource types.
 - `service-index/metadata/`: service metadata (service type and ID)
 
+## Fields
+
+### AnsibleResourceField
+
+This allows developers to add a reverse one to one relation from a model to the Resources table. This field acts like any other foreign key or one to one field, but does not create new migrations or add any new columns to the table.
+
+Usage:
+
+```
+from ansible_base.resource_registry.fields import AnsibleResourceField
+
+class Organization(AbstractOrganization):
+    resource = AnsibleResourceField(primary_key_field="id")
+```
+
+Once the field is declared, you can interact with it like any other foreign key or one to one field:
+
+Reference the `.resource` property:
+```
+In [2]: Organization.objects.first().resource
+Out[2]: <Resource: Resource object (3)>
+
+In [3]: Organization.objects.first().resource.ansible_id
+Out[3]: '0cdae8c9:1e25c31c-6002-478a-bc8f-7d982288cf5d'
+```
+
+Use `.select_related` to join tables:
+```
+In [7]: for org in Organization.objects.select_related("resource").all():
+   ...:     print(org.resource.ansible_id)
+
+0cdae8c9:1e25c31c-6002-478a-bc8f-7d982288cf5d
+0cdae8c9:bb6b4aec-2215-4694-9a9e-fcee886977e2
+```
+
+Filter on `resource`:
+```
+In [9]: Organization.objects.get(resource__resource_id="bb6b4aec-2215-4694-9a9e-fcee886977e2").name
+Out[9]: 'test2'
+```
+
 ## Models
 
 ### ServiceID
