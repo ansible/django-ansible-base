@@ -39,6 +39,13 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('OIDC Public Key'),
     )
 
+    ALGORITHM = CharField(
+        help_text=_("The algorithm for decoding JWT responses from the IDP.."),
+        default='RS256',
+        allow_null=True,
+        ui_field_label=_('OIDC JWT Algorithm'),
+    )
+
     SECRET = CharField(
         help_text=_("'The OIDC secret (Client Secret) from your IDP."),
         allow_null=True,
