@@ -51,9 +51,11 @@ class RelatedFieldsTestModelViewSet(TestAppViewSet):
 @api_view(['GET'])
 def api_root(request, format=None):
     from test_app.router import router
+    from ansible_base.authentication.urls import router as auth_router
+    from ansible_base.resource_registry.urls import service_router
 
     list_endpoints = {}
-    for url in router.urls:
+    for url in router.urls + auth_router.urls + service_router.urls:
         # only want "root" list views, for example:
         # want '^users/$' [name='user-list']
         # do not want '^users/(?P<pk>[^/.]+)/organizations/$' [name='user-organizations-list'],
