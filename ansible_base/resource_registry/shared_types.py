@@ -58,4 +58,4 @@ class TeamType(serializers.Serializer):
     RESOURCE_TYPE = "team"
 
     name = serializers.CharField()
-    organization = AnsibleResourceForeignKeyField("shared.organization", required=False)
+    organization = AnsibleResourceForeignKeyField("shared.organization", required=False, allow_null=True)
