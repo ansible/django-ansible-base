@@ -6,8 +6,6 @@ import pytest
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from django.core.exceptions import ObjectDoesNotExist
-from django.db.utils import IntegrityError
 from django.test.client import RequestFactory
 
 from ansible_base.lib.testing.fixtures import *  # noqa: F403, F401
@@ -455,19 +453,7 @@ def mocked_http(test_encryption_public_key, jwt_token):
 @pytest.fixture
 def system_user(db, settings, no_log_messages):
     with no_log_messages():
-        # Get the _system user from the database
-        try:
-            user_obj = models.User.objects.get(username=settings.SYSTEM_USERNAME)
-        except ObjectDoesNotExist:
-            # Just in case the user object gets trashed we will catch a DNE error and attempt to create it
-            try:
-                # Why don't we use get_or_create? Because we can't pass non_existent_user_fatal=False into get_or_create
-                user_obj = models.User()
-                user_obj.username = settings.SYSTEM_USERNAME
-                user_obj.save(non_existent_user_fatal=False)
-            except IntegrityError as e:
-                # If for some reason we fail again just let it go
-                raise e
+        user_obj, _created = models.User.objects.get_or_create(username=settings.SYSTEM_USERNAME)
     yield user_obj
 
 

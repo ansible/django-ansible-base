@@ -87,7 +87,7 @@ class CommonModel(models.Model):
         # Manually perform auto_now_add and auto_now logic.
         now = timezone.now()
         user = get_current_user()
-        if user is None or not user.is_authenticated():
+        if user is None or user.is_anonymous:
             user = get_system_user()
 
         if not self.pk:
