@@ -12,9 +12,12 @@ service_router = routers.SimpleRouter()
 service_router.register(r'resources', views.ResourceViewSet)
 service_router.register(r'resource-types', views.ResourceTypeViewSet)
 
-service = [path('metadata/', views.ServiceMetadataView.as_view(), name="service-metadata"), path('', include(service_router.urls))]
+service = [
+    path('metadata/', views.ServiceMetadataView.as_view(), name="service-metadata"),
+    path('', include(service_router.urls)),
+    path('', views.ServiceIndexRootView.as_view(), name='service-index-root')
+]
 
 urlpatterns = [
     path('service-index/', include(service)),
-    path('service-index/', views.ServiceIndexRootView.as_view(), name='service-index-root'),
 ]
