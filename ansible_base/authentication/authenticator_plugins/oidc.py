@@ -49,6 +49,7 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
 
     PUBLIC_KEY = CharField(
         help_text=_("The public key from your IDP. Only necessary if using keycloak for OIDC."),
+        default="",
         allow_null=True,
         ui_field_label=_('OIDC Public Key'),
     )
