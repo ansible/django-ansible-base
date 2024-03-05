@@ -1,5 +1,6 @@
 import logging
 from collections import namedtuple
+from urllib.parse import urlencode
 
 import requests
 import urllib3
@@ -16,8 +17,6 @@ class ResourceAPIClient:
     """
     Client for Ansible services to interact with the service-index/ api
     """
-
-    ResourceRequestBody = ResourceRequestBody
 
     def __init__(self, service_url: str, service_path: str, requests_auth_kwargs: dict, verify_https=True):
         """
@@ -47,12 +46,7 @@ class ResourceAPIClient:
     def _get_filter_query_params(self, filters: dict):
         if filters is None:
             return ""
-
-        query_string = []
-        for k, v in filters.items():
-            query_string.append(f"{k}={v}")
-
-        return f"?{'&'.join(query_string)}"
+        return "?" + urlencode(filters)
 
     def _get_request_dict(self, data: ResourceRequestBody):
         raw_dict = data._asdict()

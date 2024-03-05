@@ -1,27 +1,9 @@
 import uuid
 
 import pytest
-from crum import impersonate
-from django.conf import settings
-from django.contrib.auth import get_user_model
 
 from ansible_base.resource_registry.models import Resource, service_id
-from ansible_base.resource_registry.rest_client import ResourceAPIClient
-
-
-@pytest.fixture
-def system_user():
-    """
-    Generate the system user so that CommonModel.save() doesn't cry.
-    """
-    UserModel = get_user_model()
-    if UserModel.objects.filter(username=settings.SYSTEM_USERNAME).exists():
-        yield UserModel.objects.get(username=settings.SYSTEM_USERNAME)
-    else:
-        with impersonate(None):
-            user = UserModel(username=settings.SYSTEM_USERNAME)
-            user.save(non_existent_user_fatal=False)
-            yield user
+from ansible_base.resource_registry.rest_client import ResourceAPIClient, ResourceRequestBody
 
 
 @pytest.fixture
@@ -58,7 +40,7 @@ def test_service_metadata(resource_client):
 
 @pytest.mark.django_db
 def test_create_resource(resource_client):
-    data = resource_client.ResourceRequestBody(resource_type="shared.user", resource_data={"username": "mr_dab"})
+    data = ResourceRequestBody(resource_type="shared.user", resource_data={"username": "mr_dab"})
     resp = resource_client.create_resource(data)
 
     assert resp.status_code == 201
@@ -67,9 +49,7 @@ def test_create_resource(resource_client):
     new_service_id = str(uuid.uuid4())
     new_ansible_id = str(uuid.uuid4())
 
-    data = resource_client.ResourceRequestBody(
-        ansible_id=new_ansible_id, service_id=new_service_id, resource_type="shared.user", resource_data={"username": "mrs_dab"}
-    )
+    data = ResourceRequestBody(ansible_id=new_ansible_id, service_id=new_service_id, resource_type="shared.user", resource_data={"username": "mrs_dab"})
     resp = resource_client.create_resource(data)
 
     assert resp.status_code == 201
@@ -90,13 +70,13 @@ def test_get_resource(resource_client, organization):
 @pytest.mark.django_db
 def test_update_resource(resource_client, organization):
     ansible_id = str(Resource.get_resource_for_object(organization).ansible_id)
-    data = resource_client.ResourceRequestBody(resource_data={"name": "my_new_org"})
+    data = ResourceRequestBody(resource_data={"name": "my_new_org"})
     resp = resource_client.update_resource(ansible_id, data)
 
     assert resp.status_code == 200
     assert resp.json()["name"] == "my_new_org"
 
-    data = resource_client.ResourceRequestBody(resource_data={"name": "my_new_org2"})
+    data = ResourceRequestBody(resource_data={"name": "my_new_org2"})
     resp = resource_client.update_resource(ansible_id, data, partial=True)
 
     assert resp.status_code == 200
@@ -105,7 +85,7 @@ def test_update_resource(resource_client, organization):
     new_service_id = str(uuid.uuid4())
     new_ansible_id = str(uuid.uuid4())
 
-    data = resource_client.ResourceRequestBody(ansible_id=new_ansible_id, service_id=new_service_id)
+    data = ResourceRequestBody(ansible_id=new_ansible_id, service_id=new_service_id)
     resp = resource_client.update_resource(ansible_id, data, partial=True)
 
     assert resp.status_code == 200
