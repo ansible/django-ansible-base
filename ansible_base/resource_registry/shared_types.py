@@ -26,9 +26,12 @@ class AnsibleResourceForeignKeyField(serializers.UUIDField):
         return resource.content_object
 
     def get_attribute(self, instance):
-        self.field_name
-        obj_pk = getattr(instance, self.field_name).pk
-        resource = Resource.objects.get(content_type__resource_type__name=self.resource_type, object_id=obj_pk)
+        # If the model doesn't have an attribute with the given field name, return None. This is
+        # mostly here to keep Hub from breaking, which doesn't have organizations yet.
+        obj = getattr(instance, self.field_name, None)
+        if obj is None:
+            return None
+        resource = Resource.objects.get(content_type__resource_type__name=self.resource_type, object_id=obj.pk)
 
         return resource.ansible_id
 
@@ -55,4 +58,4 @@ class TeamType(serializers.Serializer):
     RESOURCE_TYPE = "team"
 
     name = serializers.CharField()
-    organization = AnsibleResourceForeignKeyField("shared.organization")
+    organization = AnsibleResourceForeignKeyField("shared.organization", required=False)
