@@ -169,8 +169,8 @@ class CommonModel(models.Model):
 
     def get_summary_fields(self):
         response = {}
-        for field in self._meta.concrete_fields:
-            if isinstance(field, models.ForeignKey) and getattr(self, field.name):
+        for field in self._meta.fields:
+            if isinstance(field, models.ForeignObject) and getattr(self, field.name):
                 # ignore relations on inherited django models
                 if field.name.endswith("_ptr"):
                     continue

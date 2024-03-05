@@ -11,6 +11,7 @@ from django.db.utils import IntegrityError
 from django.test.client import RequestFactory
 
 from ansible_base.lib.testing.fixtures import *  # noqa: F403, F401
+from ansible_base.lib.testing.util import copy_fixture
 from test_app import models
 
 
@@ -91,8 +92,7 @@ def github_authenticator(github_configuration):
         type="ansible_base.authentication.authenticator_plugins.github",
         configuration=github_configuration,
     )
-    yield authenticator
-    authenticator.delete()
+    return authenticator
 
 
 @pytest.fixture
@@ -108,8 +108,7 @@ def github_organization_authenticator(github_organization_configuration):
         type="ansible_base.authentication.authenticator_plugins.github_org",
         configuration=github_organization_configuration,
     )
-    yield authenticator
-    authenticator.delete()
+    return authenticator
 
 
 @pytest.fixture
@@ -125,8 +124,7 @@ def github_team_authenticator(github_team_configuration):
         type="ansible_base.authentication.authenticator_plugins.github_team",
         configuration=github_team_configuration,
     )
-    yield authenticator
-    authenticator.delete()
+    return authenticator
 
 
 @pytest.fixture
@@ -142,8 +140,7 @@ def github_enterprise_authenticator(github_enterprise_configuration):
         type="ansible_base.authentication.authenticator_plugins.github_enterprise",
         configuration=github_enterprise_configuration,
     )
-    yield authenticator
-    authenticator.delete()
+    return authenticator
 
 
 @pytest.fixture
@@ -159,8 +156,7 @@ def github_enterprise_organization_authenticator(github_enterprise_organization_
         type="ansible_base.authentication.authenticator_plugins.github_enterprise_org",
         configuration=github_enterprise_organization_configuration,
     )
-    yield authenticator
-    authenticator.delete()
+    return authenticator
 
 
 @pytest.fixture
@@ -176,8 +172,7 @@ def github_enterprise_team_authenticator(github_enterprise_team_configuration):
         type="ansible_base.authentication.authenticator_plugins.github_enterprise_team",
         configuration=github_enterprise_team_configuration,
     )
-    yield authenticator
-    authenticator.delete()
+    return authenticator
 
 
 @pytest.fixture
@@ -238,8 +233,7 @@ def ldap_authenticator(ldap_configuration):
         type="ansible_base.authentication.authenticator_plugins.ldap",
         configuration=ldap_configuration,
     )
-    yield authenticator
-    authenticator.delete()
+    return authenticator
 
 
 @pytest.fixture
@@ -310,8 +304,7 @@ def saml_authenticator(saml_configuration):
         type="ansible_base.authentication.authenticator_plugins.saml",
         configuration=saml_configuration,
     )
-    yield authenticator
-    authenticator.delete()
+    return authenticator
 
 
 @pytest.fixture
@@ -327,9 +320,7 @@ def custom_authenticator(db):
         type="test_app.tests.fixtures.authenticator_plugins.custom",
         configuration={},
     )
-    yield authenticator
-    authenticator.authenticator_user.all().delete()
-    authenticator.delete()
+    return authenticator
 
 
 @pytest.fixture
@@ -351,8 +342,7 @@ def keycloak_authenticator(db):
             "SECRET": "asdf",
         },
     )
-    yield authenticator
-    authenticator.delete()
+    return authenticator
 
 
 @copy_fixture(copies=3)  # noqa: F405
@@ -368,8 +358,7 @@ def local_authenticator_map(db, local_authenticator, user, randname):
         organization="testorg",
         team="testteam",
     )
-    yield authenticator_map
-    authenticator_map.delete()
+    return authenticator_map
 
 
 # Generate public and private keys for testing
@@ -482,11 +471,10 @@ def system_user(db, settings, no_log_messages):
     yield user_obj
 
 
+@copy_fixture(copies=3)
 @pytest.fixture
 def organization(db, randname):
-    organization = models.Organization.objects.create(name=randname("Test Organization"))
-    yield organization
-    organization.delete()
+    return models.Organization.objects.create(name=randname("Test Organization"))
 
 
 @pytest.fixture

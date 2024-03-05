@@ -277,3 +277,21 @@ def test_resources_create_invalid(admin_api_client, resource):
     response = admin_api_client.post(url, resource["data"], format="json")
     assert response.status_code == 400
     assert resource["field_name"] in response.data
+
+
+def test_resource_summary_fields(
+    admin_api_client,
+    organization,
+):
+    resource = Resource.get_resource_for_object(organization)
+
+    url = reverse("organization-detail", kwargs={"pk": organization.pk})
+
+    resp = admin_api_client.get(url)
+    assert resp.status_code == 200
+
+    data = resp.data
+
+    assert "resource" in data["summary_fields"]
+    assert data["summary_fields"]["resource"]["ansible_id"] == resource.ansible_id
+    assert data["summary_fields"]["resource"]["resource_type"] == "shared.organization"
