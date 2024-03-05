@@ -11,6 +11,7 @@ from django.db.utils import IntegrityError
 from django.test.client import RequestFactory
 
 from ansible_base.lib.testing.fixtures import *  # noqa: F403, F401
+from ansible_base.lib.testing.util import copy_fixture
 from test_app import models
 
 
@@ -470,6 +471,7 @@ def system_user(db, settings, no_log_messages):
     yield user_obj
 
 
+@copy_fixture(copies=3)
 @pytest.fixture
 def organization(db, randname):
     return models.Organization.objects.create(name=randname("Test Organization"))

@@ -25,17 +25,19 @@ class TestAppViewSet(ModelViewSet, AnsibleBaseView):
 
 class OrganizationViewSet(TestAppViewSet):
     serializer_class = serializers.OrganizationSerializer
-    prefetch_related = ('created_by', 'modified_by')
+    prefetch_related = ('created_by', 'modified_by', 'resource', 'resource__content_type')
 
 
 class TeamViewSet(TestAppViewSet):
     serializer_class = serializers.TeamSerializer
     prefetch_related = ('created_by', 'modified_by', 'organization')
+    # for demonstration purposes, this uses a select_related for the resource relationship
+    select_related = ('resource__content_type',)
 
 
 class UserViewSet(TestAppViewSet):
     serializer_class = serializers.UserSerializer
-    prefetch_related = ('created_by', 'modified_by')
+    prefetch_related = ('created_by', 'modified_by', 'resource', 'resource__content_type')
 
 
 class EncryptionModelViewSet(TestAppViewSet):

@@ -1,4 +1,5 @@
 import uuid
+from functools import lru_cache
 
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
@@ -7,6 +8,11 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import ValidationError
 
 from .service_id import service_id
+
+
+@lru_cache(maxsize=None)
+def resource_type_cache(content_type_id):
+    return ContentType.objects.get_for_id(content_type_id).resource_type
 
 
 class ResourceType(models.Model):
@@ -30,14 +36,14 @@ class ResourceType(models.Model):
         return self.externally_managed and self.serializer_class
 
     def get_resource_config(self):
-        return self.resource_registry.get_config_for_model(model=self.content_type.model_class())
+        return self.resource_registry.get_config_for_model(model=ContentType.objects.get_for_id(self.content_type_id).model_class())
 
 
 class Resource(models.Model):
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, related_name="resources")
 
     # this has to accommodate integer and UUID object IDs
-    object_id = models.TextField(null=False)
+    object_id = models.TextField(null=False, db_index=True)
     content_object = GenericForeignKey('content_type', 'object_id')
 
     service_id = models.UUIDField(null=False, default=service_id)
@@ -49,9 +55,12 @@ class Resource(models.Model):
     # human readable name for the resource
     name = models.CharField(max_length=512, null=True)
 
+    def summary_fields(self):
+        return {"ansible_id": self.ansible_id, "resource_type": self.resource_type}
+
     @property
     def resource_type(self):
-        return self.content_type.resource_type.name
+        return resource_type_cache(self.content_type.pk).name
 
     class Meta:
         unique_together = ('content_type', 'object_id')
