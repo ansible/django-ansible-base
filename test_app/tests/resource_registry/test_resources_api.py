@@ -8,6 +8,14 @@ from ansible_base.resource_registry.models import Resource
 from test_app.models import EncryptionModel, Organization, Team
 
 
+def test_service_index_root(user_api_client):
+    resp = user_api_client.get(reverse('service-index-root'))
+    assert resp.status_code == 200
+    assert 'metadata' in resp.data
+    assert 'resources' in resp.data
+    assert 'resource-types' in resp.data
+
+
 def test_resources_list(admin_api_client):
     """Test that the resource list is working."""
     url = reverse("resource-list")
@@ -269,3 +277,21 @@ def test_resources_create_invalid(admin_api_client, resource):
     response = admin_api_client.post(url, resource["data"], format="json")
     assert response.status_code == 400
     assert resource["field_name"] in response.data
+
+
+def test_resource_summary_fields(
+    admin_api_client,
+    organization,
+):
+    resource = Resource.get_resource_for_object(organization)
+
+    url = reverse("organization-detail", kwargs={"pk": organization.pk})
+
+    resp = admin_api_client.get(url)
+    assert resp.status_code == 200
+
+    data = resp.data
+
+    assert "resource" in data["summary_fields"]
+    assert data["summary_fields"]["resource"]["ansible_id"] == resource.ansible_id
+    assert data["summary_fields"]["resource"]["resource_type"] == "shared.organization"

@@ -1,6 +1,7 @@
 ansible  # Used in build process to generate some configs
 build
 django-extensions
+django-debug-toolbar
 ipython
 tox
 pytest

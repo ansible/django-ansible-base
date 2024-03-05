@@ -26,6 +26,12 @@ Note **that this container is ephemeral** and no data in it is expected to persi
 ./test_app/scripts/bootstrap.sh
 ```
 
+With the `LARGE=true` environment variable, the script will pre-load certain tables with data.
+
+```
+LARGE=true ./test_app/scripts/bootstrap.sh
+```
+
 ## Initialize the database
 
 If not using the bootstrap script, you'll need to manually start the database container.
