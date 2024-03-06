@@ -315,20 +315,41 @@ will produce nothing for the superuser if they have not been assigned any roles.
 ### Global Roles
 
 Global roles have very important implementation differences compared to object roles.
-They must be enabled using these settings for users and/or teams.
-
-```
-ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES = True
-ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES = True
-```
-
-With this, you can use the `give_global_permission` methods to assign a role globally.
+A role definition must have `content_type` set to `None` in order to be assigned globally.
+You can use the `RoleDefinition.give_global_permission` methods to assign a role globally.
 This means the user or team receiving this permission will have the role's permissions
-for all objects in the system.
+regardless of the particular object involved.
+
+This could give permission to do an action (like view) to all objects of a certain
+type (like inventory) in the system.
+It can also give permission in cases where no object is involved.
+For instance, if a model `Instance` is not associated with an organization because
+they are considered global, then an `add_instance` permission could allow someone
+to add an inventory. No parent object is involved.
+This applies to organizations, where `add_organization` can be used to give
+non-superusers the ability to create an organization.
 
 Global roles are not cached in the `RoleEvaluation` table.
 This means that if you're creating a display of users who have access to an object,
 global roles require special consideration.
+
+### Enablement of Features
+
+There are a number of settings following the naming `ANSIBLE_BASE_ALLOW_*`.
+These will enable or disable a certain thing. Suffixes are listed below:
+
+ - TEAM_PARENTS - whether to allow giving roles to teams that give membership to other teams
+ - TEAM_ORG_PERMS - whether to allow giving teams Organization-wide permissions
+ - TEAM_ORG_ADMIN - whether to allow giving teams Organization-wide permissions which include memberships to other teams
+ - CUSTOM_ROLES - whether to allow creation of custom roles at all
+ - CUSTOM_TEAM_ROLES - whether to allow creation of custom roles that apply to teams (which could be confusing)
+ - SINGLETON_USER_ROLES - whether to allow giving system-wide roles to users, incurs 1 additional query for evaluations
+ - SINGLETON_TEAM_ROLES - whether to allow giving system-wide roles to teams, incurs 1 additional query for evaluations
+ - SINGLETON_ROLES_API - whether to allow creating system-wide roles via the API
+
+If you create (in code) a role definition that sets `managed` to True, then these
+rules will be disregarded for that particular role definition. Managed role
+definitions can not be created through the API, but can be created in code like migration scripts.
 
 ### Tracked Relationships
 

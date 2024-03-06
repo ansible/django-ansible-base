@@ -10,7 +10,10 @@ from ansible_base.rbac.permission_registry import permission_registry
 
 
 def system_roles_enabled():
-    return bool(settings.ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES or settings.ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES)
+    return bool(
+        settings.ANSIBLE_BASE_ALLOW_SINGLETON_ROLES_API
+        and (settings.ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES or settings.ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES)
+    )
 
 
 def codenames_for_cls(cls) -> set[str]:
@@ -56,19 +59,39 @@ def combine_values(data: dict[Model, str]) -> set[str]:
     return ret
 
 
-def validate_permissions_for_model(permissions, content_type) -> None:
+def validate_role_definition_enabled(permissions, content_type) -> None:
+    """Called by API and managers, raises exception if settings allow this role type
+
+    Like the similar method for assignments, this policies the ANSIBLE_BASE_ALLOW_ settings
+    """
+    if not settings.ANSIBLE_BASE_ALLOW_CUSTOM_ROLES:
+        raise ValidationError('Creating custom roles is disabled')
+
+    if content_type is None and (not system_roles_enabled()):
+        raise ValidationError({'content_type': 'System-wide roles are not enabled'})
+
+    if not settings.ANSIBLE_BASE_ALLOW_CUSTOM_TEAM_ROLES and content_type:
+        if content_type.id == permission_registry.team_ct_id:
+            raise ValidationError('Creating custom roles for teams is disabled')
+        for perm in permissions:
+            if perm.content_type_id == permission_registry.team_ct_id:
+                raise ValidationError('Creating custom roles that include team permissions is disabled')
+
+
+def validate_permissions_for_model(permissions, content_type, managed=False) -> None:
     """Validation for creating a RoleDefinition
 
     This is called by the RoleDefinitionSerializer so clients will get these errors.
     It is also called by manager helper methods like RoleDefinition.objects.create_from_permissions
     which is done as an aid to tests and other apps integrating this library.
     """
+    if not managed:
+        validate_role_definition_enabled(permissions, content_type)
+
     codename_list = set(perm.codename for perm in permissions)
-    if content_type is None:
-        if not system_roles_enabled():
-            raise ValidationError({'content_type': 'System-wide roles are not enabled'})
-        if permission_registry.team_permission in codename_list:
-            raise ValidationError({'permissions': f'The {permission_registry.team_permission} permission can not be used in global roles'})
+    if content_type is None and permission_registry.team_permission in codename_list:
+        # Special validation case, global team permissions are not allowed in any scenario
+        raise ValidationError({'permissions': f'The {permission_registry.team_permission} permission can not be used in global roles'})
 
     role_model = None
     if content_type:
@@ -127,9 +150,9 @@ def validate_assignment_enabled(actor, content_type, has_team_perm=False):
     Raises error if a setting disables the kind of permission being given.
     This mostly deals with team permissions.
     """
-    team_team_allowed = settings.ANSIBLE_BASE_TEAM_TEAM_ALLOWED
-    team_org_allowed = settings.ANSIBLE_BASE_TEAM_ORG_ALLOWED
-    team_org_team_allowed = settings.ANSIBLE_BASE_TEAM_ORG_TEAM_ALLOWED
+    team_team_allowed = settings.ANSIBLE_BASE_ALLOW_TEAM_PARENTS
+    team_org_allowed = settings.ANSIBLE_BASE_ALLOW_TEAM_ORG_PERMS
+    team_org_team_allowed = settings.ANSIBLE_BASE_ALLOW_TEAM_ORG_ADMIN
 
     if all([team_team_allowed, team_org_allowed, team_org_team_allowed]):
         return  # Everything is allowed
@@ -145,7 +168,7 @@ def validate_assignment_enabled(actor, content_type, has_team_perm=False):
         raise ValidationError(f'Assigning {team_parent_model_name} permissions to teams is not allowed')
 
     if not team_org_team_allowed and content_type.model == team_parent_model_name and has_team_perm:
-        raise ValidationError(f'Assigning {team_parent_model_name} permissions to teams is not allowed')
+        raise ValidationError(f'Assigning {team_parent_model_name} permissions that manage other teams is not allowed')
 
 
 def validate_assignment(rd, actor, obj) -> None:

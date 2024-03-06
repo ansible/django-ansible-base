@@ -86,7 +86,9 @@ class Command(BaseCommand):
         # NOTE: managed role definitions are turned off, you could turn them on and get rid of these
         org_perms = combine_values(permissions_allowed_for_role(Organization))
         org_admin, _ = RoleDefinition.objects.get_or_create(
-            name='Organization admin permissions', permissions=org_perms, defaults={'content_type': ContentType.objects.get_for_model(Organization)}
+            name='Organization admin permissions',
+            permissions=org_perms,
+            defaults={'content_type': ContentType.objects.get_for_model(Organization), 'managed': True},
         )
         ig_admin, _ = RoleDefinition.objects.get_or_create(
             name='AWX InstanceGroup admin',
@@ -94,7 +96,9 @@ class Command(BaseCommand):
             defaults={'content_type': ContentType.objects.get_for_model(InstanceGroup)},
         )
         team_member, _ = RoleDefinition.objects.get_or_create(
-            name='Special Team member role', permissions=['view_team', 'member_team'], defaults={'content_type': ContentType.objects.get_for_model(Team)}
+            name='Special Team member role',
+            permissions=['view_team', 'member_team'],
+            defaults={'content_type': ContentType.objects.get_for_model(Team), 'managed': True},
         )
 
         org_admin_user, _ = User.objects.get_or_create(username='org_admin')

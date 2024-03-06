@@ -71,3 +71,15 @@ def test_make_org_api_assignment(admin_api_client, org_pn_rd, organization, pn_o
 
     assert user.has_obj_perm(pn_obj, 'change')
     assert set(ParentName.access_qs(user)) == set([pn_obj])
+
+
+@pytest.mark.django_db
+def test_change_parent_field_parent_name_model(team, rando, pn_obj, org_pn_rd, member_rd):
+    member_rd.give_permission(rando, team)
+    org_pn_rd.give_permission(team, pn_obj.my_organization)
+    assert rando.has_obj_perm(pn_obj, 'change')
+
+    pn_obj.my_organization = Organization.objects.create(name='new-org')
+    pn_obj.save()
+
+    assert not rando.has_obj_perm(pn_obj, 'change')
