@@ -312,8 +312,14 @@ def test_team_organization_field(admin_api_client, organization, organization_1,
     team.refresh_from_db()
     assert team.organization == organization_1
 
+
+def test_team_organization_field_does_not_exist(admin_api_client, team):
     # Test invalid organization ID
     bad_id = str(uuid.uuid4())
+    team_id = str(team.resource.ansible_id)
+
+    url = reverse("resource-detail", kwargs={"ansible_id": team_id})
+
     data = {"resource_data": {"organization": bad_id}}
     resp = admin_api_client.patch(url, data, format="json")
     assert resp.status_code == 400
