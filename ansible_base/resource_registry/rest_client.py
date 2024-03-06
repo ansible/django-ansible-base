@@ -83,11 +83,11 @@ class ResourceAPIClient:
     def delete_resource(self, ansible_id):
         return self._make_request("delete", f"resources/{ansible_id}/")
 
-    def list_resources(self, filters: dict = None):
+    def list_resources(self, filters: Optional[dict] = None):
         return self._make_request("get", "resources/", params=filters)
 
     def get_resource_type(self, name):
         return self._make_request("get", f"resource-types/{name}/")
 
-    def list_resource_types(self, filters: dict = None):
+    def list_resource_types(self, filters: Optional[dict] = None):
         return self._make_request("get", "resource-types/", params=filters)
