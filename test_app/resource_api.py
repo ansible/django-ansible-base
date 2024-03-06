@@ -12,11 +12,9 @@ class APIConfig(ServiceAPIConfig):
 
 RESOURCE_LIST = (
     ResourceConfig(get_user_model(), shared_resource=SharedResource(serializer=UserType, is_provider=False), name_field="username"),
-    # Setting is_provider=True so that we can test that editing is disabled when the service is the resource
-    # source of truth.
     ResourceConfig(
         Team,
-        shared_resource=SharedResource(serializer=TeamType, is_provider=True),
+        shared_resource=SharedResource(serializer=TeamType, is_provider=False),
     ),
     ResourceConfig(
         Organization,
