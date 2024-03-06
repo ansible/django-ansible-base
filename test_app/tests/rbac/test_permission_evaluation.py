@@ -8,7 +8,7 @@ from test_app.models import Inventory, Organization
 
 
 @pytest.mark.django_db
-def test_org_inv_permissions(rando, inventory, org_inv_rd):
+def test_org_inv_permissions_user(rando, inventory, org_inv_rd):
     assert not rando.has_obj_perm(inventory, 'view_inventory')
     assert not rando.has_obj_perm(inventory, 'change_inventory')
     assert list(Inventory.access_qs(rando)) == []
@@ -26,6 +26,22 @@ def test_org_inv_permissions(rando, inventory, org_inv_rd):
 
     assert set(RoleEvaluation.get_permissions(rando, inventory)) == set(['change_inventory', 'view_inventory'])
     assert list(Inventory.access_qs(rando)) == [inventory]
+
+
+@pytest.mark.django_db
+def test_org_inv_permissions_team(team, inventory, org_inv_rd):
+    "We support using team as actor in model methods like MyModel.access_qs(team) but do not attach has_obj_perm"
+    assert list(Inventory.access_qs(team)) == []
+    assert list(Inventory.access_ids_qs(team)) == []
+
+    org_inv_rd.give_permission(team, inventory.organization)
+
+    assert set(Organization.access_qs(team, 'change_organization')) == set([inventory.organization])
+    assert set(Inventory.access_qs(team, 'view')) == set([inventory])
+
+    assert set(RoleEvaluation.get_permissions(team, inventory)) == set(['change_inventory', 'view_inventory'])
+    assert list(Inventory.access_qs(team)) == [inventory]
+    assert list(Inventory.access_ids_qs(team)) == [(inventory.id,)]
 
 
 @pytest.mark.django_db

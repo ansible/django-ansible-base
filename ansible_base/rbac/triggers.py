@@ -170,8 +170,8 @@ def rbac_pre_save_identify_changes(instance, *args, **kwargs):
         return
 
     # If we HAVE to do a query to find out if the parent field has changed then we will here
-    if not hasattr(instance, '__rbac_original_parent_id'):
-        instance.__rbac_original_parent_id = getattr(type(instance).objects.only('id').get(pk=instance.pk), f'{parent_field_name}_id')
+    if not hasattr(instance, '__rbac_original_parent_id') and instance.pk:
+        instance.__rbac_original_parent_id = getattr(type(instance).objects.only('pk').get(pk=instance.pk), f'{parent_field_name}_id')
 
 
 def rbac_post_save_update_evaluations(instance, created, *args, **kwargs):
