@@ -1,6 +1,5 @@
 import importlib
 import logging
-import sys
 from unittest import mock
 
 import pytest
@@ -66,7 +65,6 @@ def test_ansible_base_view_parent_view(caplog, setting, log_message, default_par
             assert log_message in caplog.text
 
 
-@pytest.mark.xfail(reason='Type checking calls import_module', condition=lambda: sys.version.startswith('3.11'))
 def test_ansible_base_view_parent_view_exception(caplog):
     with override_settings(ANSIBLE_BASE_CUSTOM_VIEW_PARENT='does.not.exist'):
         with caplog.at_level(logging.ERROR):
