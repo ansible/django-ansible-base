@@ -5,7 +5,15 @@ from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 
 from ansible_base.resource_registry.models import Resource
-from test_app.models import EncryptionModel, Organization, Team
+from test_app.models import EncryptionModel
+
+
+def test_service_index_root(user_api_client):
+    resp = user_api_client.get(reverse('service-index-root'))
+    assert resp.status_code == 200
+    assert 'metadata' in resp.data
+    assert 'resources' in resp.data
+    assert 'resource-types' in resp.data
 
 
 def test_resources_list(admin_api_client):
@@ -53,16 +61,11 @@ def test_resources_delete_api(admin_api_client, django_user_model):
     assert not django_user_model.objects.filter(pk=user.pk).exists()
 
 
-def test_resources_api_invalid_delete(admin_api_client):
+def test_resources_api_invalid_delete(admin_api_client, local_authenticator):
     """Test that resources can be correctly deleted via the API."""
 
-    # Since groups are not set to be managed externally, we can't delete them with this API
-    org = Organization.objects.create(name="my org")
-    group = Team.objects.create(name="super group", organization=org)
-    c_type = ContentType.objects.get_for_model(group)
-    assert Resource.objects.filter(object_id=group.pk, content_type=c_type.pk).exists()
-
-    ansible_id = Resource.objects.get(object_id=group.pk, content_type=c_type.pk).ansible_id
+    # Authenticator is not allowed to be managed by the resources api
+    ansible_id = Resource.get_resource_for_object(local_authenticator).ansible_id
     resp = admin_api_client.delete(reverse("resource-detail", kwargs={"ansible_id": ansible_id}))
 
     assert resp.status_code == 400
@@ -253,7 +256,6 @@ def test_resources_api_crd(admin_api_client, resource):
             "data": {"ansible_id": "a0057c59033e68d91", "resource_type": "shared.team", "resource_data": {"name": "foo"}},
             "field_name": "ansible_id",
         },
-        {"data": {"resource_type": "shared.team", "resource_data": {"name": "foo"}}, "field_name": "resource_type"},
         {"data": {"resource_type": "shared.user", "resource_data": {}}, "field_name": "username"},
         {"data": {"resource_type": "aap.authenticator", "resource_data": {}}, "field_name": "resource_type"},
         {"data": {"resource_type": "fake.fake", "resource_data": {}}, "field_name": "resource_type"},
@@ -287,3 +289,38 @@ def test_resource_summary_fields(
     assert "resource" in data["summary_fields"]
     assert data["summary_fields"]["resource"]["ansible_id"] == resource.ansible_id
     assert data["summary_fields"]["resource"]["resource_type"] == "shared.organization"
+
+
+def test_team_organization_field(admin_api_client, organization, organization_1, team):
+    team_id = str(team.resource.ansible_id)
+    org0_id = str(organization.resource.ansible_id)
+    org1_id = str(organization_1.resource.ansible_id)
+
+    url = reverse("resource-detail", kwargs={"ansible_id": team_id})
+
+    # Test that organization field exists
+    resp = admin_api_client.get(url)
+    assert resp.status_code == 200
+    assert resp.data["resource_data"]["organization"] == org0_id
+
+    # Test updating the organization field
+    data = {"resource_data": {"organization": org1_id}}
+    resp = admin_api_client.patch(url, data, format="json")
+    assert resp.status_code == 200
+    assert resp.data["resource_data"]["organization"] == org1_id
+
+    team.refresh_from_db()
+    assert team.organization == organization_1
+
+
+def test_team_organization_field_does_not_exist(admin_api_client, team):
+    # Test invalid organization ID
+    bad_id = str(uuid.uuid4())
+    team_id = str(team.resource.ansible_id)
+
+    url = reverse("resource-detail", kwargs={"ansible_id": team_id})
+
+    data = {"resource_data": {"organization": bad_id}}
+    resp = admin_api_client.patch(url, data, format="json")
+    assert resp.status_code == 400
+    assert bad_id in resp.data["organization"][0]

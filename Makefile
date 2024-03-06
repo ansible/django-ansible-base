@@ -51,9 +51,9 @@ check_flake8:
 check_isort:
 	tox -e isort -- --check $(CHECK_SYNTAX_FILES)
 
-## Starts a postgres container in the background
+## Starts a postgres container in the background if one is not running
 postgres:
-	docker run -d --rm --name dab_postgres -p 55432:5432 -e POSTGRES_USER=dab -e POSTGRES_PASSWORD=dabing -e POSTGRES_DB=dab_db postgres:13
+	docker start dab_postgres || docker run -d --rm --name dab_postgres -p 55432:5432 -e POSTGRES_USER=dab -e POSTGRES_PASSWORD=dabing -e POSTGRES_DB=dab_db postgres:13
 
 ## Stops the postgres container started with 'make postgres'
 stop-postgres:

@@ -1,6 +1,13 @@
+import logging
 from itertools import chain
 
+from django.contrib.auth import get_user_model
+from django.utils.translation import gettext_lazy as _
 from inflection import underscore
+
+from ansible_base.lib.utils.settings import get_setting
+
+logger = logging.getLogger('ansible_base.lib.utils.models')
 
 
 def get_all_field_names(model):
@@ -49,3 +56,19 @@ def user_summary_fields(user):
     for field_name in ('id', 'username', 'first_name', 'last_name'):
         sf[field_name] = getattr(user, field_name)
     return sf
+
+
+def get_system_user():
+    system_user = None
+    setting_name = 'SYSTEM_USERNAME'
+    system_username = get_setting(setting_name)
+    system_user = get_user_model().objects.filter(username=system_username).first()
+    if system_username is not None and system_user is None:
+        logger.error(
+            _(
+                "{setting_name} is set to {system_username} but no user with that username exists.".format(
+                    setting_name=setting_name, system_username=system_username
+                )
+            )
+        )
+    return system_user
