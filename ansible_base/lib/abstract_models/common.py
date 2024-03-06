@@ -205,3 +205,22 @@ class UniqueNamedCommonModel(CommonModel):
 
     def __str__(self):
         return self.name
+
+
+class ImmutableModel:
+    # In case the model is extending CommonModel.
+    modified_on = None
+    modified_by = None
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+        # MRO dictates that we must be first.
+        if cls.__bases__[0] is not ImmutableModel:
+            raise ValueError(f"ImmutableModel must be the first base class for {cls.__name__}")
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValueError(f"{self.__class__.__name__} is immutable and cannot be modified.")
+
+        return super().save(*args, **kwargs)

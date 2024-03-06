@@ -8,7 +8,7 @@ from django.db import connection
 from django.test import override_settings
 from rest_framework.reverse import reverse
 
-from test_app.models import EncryptionModel, Organization, RelatedFieldsTestModel, User
+from test_app.models import EncryptionModel, ImmutableLogEntry, Organization, RelatedFieldsTestModel, User
 
 
 @pytest.mark.django_db
@@ -143,3 +143,13 @@ def test_cascade_behavior_for_created_by(user, user_api_client):
     org.refresh_from_db()
     assert org.created_by_id == user_id
     connection.check_constraints()
+
+
+@pytest.mark.django_db
+def test_immutable_model_is_immutable():
+    log_entry = ImmutableLogEntry(message="Oh no! An important message!")
+    log_entry.save()  # We can save it once
+
+    with pytest.raises(ValueError) as excinfo:
+        log_entry.save()
+    assert excinfo.value.args[0] == "ImmutableLogEntry is immutable and cannot be modified."

@@ -4,8 +4,7 @@ from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
-from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam
-from ansible_base.lib.abstract_models.common import CommonModel, NamedCommonModel
+from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam, CommonModel, ImmutableModel, NamedCommonModel
 from ansible_base.lib.utils.models import user_summary_fields
 from ansible_base.rbac import permission_registry
 from ansible_base.resource_registry.fields import AnsibleResourceField
@@ -61,6 +60,10 @@ class RelatedFieldsTestModel(CommonModel):
     more_teams = models.ManyToManyField(Team, related_name='related_fields_test_model_more_teams')
 
     ignore_relations = ['teams_with_no_view']
+
+
+class ImmutableLogEntry(ImmutableModel, CommonModel):
+    message = models.CharField(max_length=400)
 
 
 class Inventory(models.Model):
