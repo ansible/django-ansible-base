@@ -62,19 +62,19 @@ class BaseEvaluationDescriptor:
 
 
 class AccessibleObjectsDescriptor(BaseEvaluationDescriptor):
-    def __call__(self, user, codename='view', **kwargs):
+    def __call__(self, actor, codename='view', **kwargs):
         full_codename = validate_codename_for_model(codename, self.cls)
-        if has_super_permission(user, full_codename):
+        if actor._meta.model_name == 'user' and has_super_permission(actor, full_codename):
             return self.cls.objects.all()
-        return get_evaluation_model(self.cls).accessible_objects(self.cls, user, full_codename, **kwargs)
+        return get_evaluation_model(self.cls).accessible_objects(self.cls, actor, full_codename, **kwargs)
 
 
 class AccessibleIdsDescriptor(BaseEvaluationDescriptor):
-    def __call__(self, user, codename, **kwargs):
+    def __call__(self, actor, codename='view', **kwargs):
         full_codename = validate_codename_for_model(codename, self.cls)
-        if has_super_permission(user, full_codename):
+        if actor._meta.model_name == 'user' and has_super_permission(actor, full_codename):
             return self.cls.objects.values_list('id', flat=True)
-        return get_evaluation_model(self.cls).accessible_ids(self.cls, user, full_codename, **kwargs)
+        return get_evaluation_model(self.cls).accessible_ids(self.cls, actor, full_codename, **kwargs)
 
 
 def bound_has_obj_perm(self, obj, codename) -> bool:

@@ -64,3 +64,11 @@ def test_creator_permissions_for_parent(rando, organization, namespace, collecti
     assert rando.has_obj_perm(namespace, 'change_namespace')  # would be the same without nesting
     assert rando.has_obj_perm(namespace, 'add_collectionimport')
     assert rando.has_obj_perm(collection, 'change_collectionimport')
+
+
+@pytest.mark.django_db
+def test_later_create_child_obj(namespace):
+    "Very synthetic test, but makes sure that __init__ surprises do not throw errors"
+    collection = CollectionImport(name='bar', namespace=namespace)
+    delattr(collection, '__rbac_original_parent_id')
+    collection.save()
