@@ -135,7 +135,7 @@ class Resource(models.Model):
 
             for k, val in resource_data.items():
                 setattr(self.content_object, k, val)
-                self.content_object.save()
+            self.content_object.save()
 
 
 # This is a separate function so that it can work with models from apps in the
