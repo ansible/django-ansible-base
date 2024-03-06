@@ -1,5 +1,6 @@
 import logging
 from collections import namedtuple
+from typing import Optional
 
 import requests
 import urllib3
@@ -32,7 +33,7 @@ class ResourceAPIClient:
         self.verify_https = verify_https
         self.raise_if_bad_request = raise_if_bad_request
 
-    def _make_request(self, method: str, path: str, data: dict = None, params: dict = None) -> requests.Response:
+    def _make_request(self, method: str, path: str, data: Optional[dict] = None, params: Optional[dict] = None) -> requests.Response:
         url = self.base_url + path.lstrip("/")
         logger.info(f"Making {method} request to {url}.")
 
