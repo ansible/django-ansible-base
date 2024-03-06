@@ -7,10 +7,10 @@ from django.db.models.signals import m2m_changed, post_save, pre_delete, pre_sav
 from django.utils.translation import gettext_lazy as _
 
 from ansible_base.activitystream.signals import activitystream_create, activitystream_delete, activitystream_m2m_changed, activitystream_update
-from ansible_base.lib.abstract_models import CommonModel
+from ansible_base.lib.abstract_models import CommonModel, ImmutableModel
 
 
-class Entry(CommonModel):
+class Entry(ImmutableModel, CommonModel):
     """
     An activity stream entry.
 
@@ -42,17 +42,8 @@ class Entry(CommonModel):
     related_object_id = models.TextField(null=True, blank=True)
     related_content_object = GenericForeignKey('related_content_type', 'related_object_id')
 
-    # The model is immutable, so we don't need to track who modified it
-    modified_by = None
-    modified_on = None
-
     def __str__(self):
         return f'[{self.created_on}] {self.get_operation_display()} by {self.created_by}: {self.content_type} {self.object_id}'
-
-    def save(self, *args, **kwargs):
-        if self.pk:
-            raise RuntimeError("Activity stream entries are immutable")
-        super().save(*args, **kwargs)
 
 
 class AuditableModel(models.Model):
