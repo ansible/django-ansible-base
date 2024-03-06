@@ -62,7 +62,7 @@ def test_no_reverse_url_name():
 def test_encrypted_model_reverse_url_name():
     model = EncryptionModel.objects.create()
     serializer = EncryptionModelSerializer()
-    assert serializer.get_url(model) == '/api/v1/encrypted_models/1/'
+    assert serializer.get_url(model) == f'/api/v1/encrypted_models/{model.pk}/'
 
 
 def test_summary_of_none():

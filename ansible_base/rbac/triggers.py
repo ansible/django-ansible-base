@@ -3,13 +3,12 @@ from contextlib import contextmanager
 
 from django.apps import apps
 from django.conf import settings
-from django.contrib.contenttypes.models import ContentType
 from django.db.models.signals import m2m_changed, post_delete, post_init, post_save, pre_delete, pre_save
 from django.db.utils import ProgrammingError
 
 from ansible_base.rbac.caching import compute_object_role_permissions, compute_team_member_roles
 from ansible_base.rbac.migrations._managed_definitions import setup_managed_role_definitions
-from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation
+from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation, get_evaluation_model
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.validators import validate_assignment_enabled
 
@@ -134,7 +133,9 @@ def rbac_post_init_set_original_parent(sender, instance, **kwargs):
 def post_save_update_obj_permissions(instance):
     "Utility method shared by multiple signals"
     to_update = set()
-    parent_ct = ContentType.objects.get_for_model(permission_registry.get_parent_model(instance))
+    parent_ct = permission_registry.content_type_model.objects.get_for_model(
+        permission_registry.get_parent_model(instance)
+    )
     parent_field_name = permission_registry.get_parent_fd_name(instance)
 
     # Account for organization roles, new and old
@@ -223,8 +224,13 @@ def rbac_post_delete_remove_object_roles(instance, *args, **kwargs):
         # Similar to user deletion, clean up any orphaned object roles
         ObjectRole.objects.filter(users__isnull=True, teams__isnull=True).delete()
 
-    ct = ContentType.objects.get_for_model(instance)
+    ct = permission_registry.content_type_model.objects.get_for_model(instance)
     ObjectRole.objects.filter(content_type=ct, object_id=instance.id).delete()
+
+    parent_field_name = permission_registry.get_parent_fd_name(instance)
+    if parent_field_name:
+        # Delete all evaluations from inherited permissions
+        get_evaluation_model(instance).objects.filter(content_type_id=ct.id, object_id=instance.id).delete()
 
 
 def rbac_post_user_delete(instance, *args, **kwargs):
@@ -308,7 +314,7 @@ class TrackedRelationship:
         if action in ('post_add', 'post_remove'):
             actor_set = pk_set
         elif action == 'post_clear':
-            ct = ContentType.objects.get_for_model(instance)
+            ct = permission_registry.content_type_model.objects.get_for_model(instance)
             role = ObjectRole.objects.get(object_id=instance.id, content_type=ct, role_definition=rd)
             if actor_model._meta.model_name == 'team':
                 actor_set = set(role.teams.values_list('id', flat=True))
