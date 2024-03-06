@@ -133,9 +133,7 @@ def rbac_post_init_set_original_parent(sender, instance, **kwargs):
 def post_save_update_obj_permissions(instance):
     "Utility method shared by multiple signals"
     to_update = set()
-    parent_ct = permission_registry.content_type_model.objects.get_for_model(
-        permission_registry.get_parent_model(instance)
-    )
+    parent_ct = permission_registry.content_type_model.objects.get_for_model(permission_registry.get_parent_model(instance))
     parent_field_name = permission_registry.get_parent_fd_name(instance)
 
     # Account for organization roles, new and old
