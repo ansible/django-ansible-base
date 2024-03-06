@@ -29,7 +29,7 @@ def test_save_attribution_no_system_username():
     model = Organization.objects.create(name='foo-org')
 
     model = Organization()
-    model.save(non_existent_user_fatal=False)
+    model.save()
     assert model.created_by is None
     assert model.modified_by is None
 
@@ -44,7 +44,7 @@ def test_save_attribution_with_system_username_set_but_nonexistent_as_false(syst
     expected_log = partial(expected_log, "ansible_base.lib.abstract_models.common.logger")
 
     with expected_log("warn", "no user with that username exists", assert_not_called=True):
-        organization.save(non_existent_user_fatal=False)
+        organization.save()
 
     assert organization.created_by == system_user
     assert organization.modified_by is None
@@ -52,16 +52,6 @@ def test_save_attribution_with_system_username_set_but_nonexistent_as_false(syst
     organization.refresh_from_db()
     assert organization.created_by == system_user
     assert organization.modified_by is None
-
-
-@pytest.mark.django_db
-@override_settings(SYSTEM_USERNAME='_not_system')
-def test_save_attribution_with_system_username_set_but_nonexistent_as_true(organization, expected_log):
-    expected_log = partial(expected_log, "ansible_base.lib.abstract_models.common.logger")
-
-    with pytest.raises(ValueError):
-        with expected_log("warn", "no user with that username exists"):
-            organization.save(non_existent_user_fatal=True)
 
 
 @pytest.mark.django_db
@@ -115,7 +105,7 @@ def test_resave_of_model_with_no_created(expected_log, system_user):
     # Create a random model and save it without warning and no system user
     model = Organization()
     with override_settings(SYSTEM_USERNAME='_not_system'):
-        model.save(non_existent_user_fatal=False)
+        model.save()
 
     assert model.created_by is None
 
@@ -123,17 +113,6 @@ def test_resave_of_model_with_no_created(expected_log, system_user):
     assert model.created_by is None
 
     model.delete()
-
-
-def test_attributable_user_anonymous_non_user(system_user):
-    # If we are an AnonymousUser and we call _attributable_error we should get the system user back
-    from crum import impersonate
-    from django.contrib.auth.models import AnonymousUser
-
-    model = Organization()
-    with impersonate(AnonymousUser):
-        with pytest.raises(ValueError):
-            model.save()
 
 
 def test_attributable_user_anonymous_user(system_user):
