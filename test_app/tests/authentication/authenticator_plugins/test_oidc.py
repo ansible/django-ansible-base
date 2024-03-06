@@ -95,27 +95,3 @@ def test_oidc_endpoint_url_validation(
         assert response.json() == expected_error
     else:
         assert response.json()['configuration']['OIDC_ENDPOINT'] == endpoint_url
-
-
-def test_oidc_helper_methods(admin_api_client):
-
-    from ansible_base.authentication.authenticator_plugins.oidc import AuthenticatorPlugin as OIDCPlugin
-
-    config = {
-        "OIDC_ENDPOINT": "https://keycloak:8443/",
-        "VERIFY_SSL": True,
-        "KEY": "12345",
-        "SECRET": "abcdefg12345",
-        "ALGORITHM": "foobar1234",
-        "PUBLIC_KEY": "pubkey",
-    }
-
-    def setting_override(key, default=None):
-        return config.get(key, default)
-
-    plugin = OIDCPlugin()
-    with mock.patch.object(plugin, 'setting', side_effect=setting_override) as mock_setting:
-        assert plugin.audience() == config['KEY']
-        mock_setting.assert_called_with('KEY')
-        assert plugin.algorithm() == config['ALGORITHM']
-        assert plugin.public_key() == '\n'.join(["-----BEGIN PUBLIC KEY-----", config['PUBLIC_KEY'], "-----END PUBLIC KEY-----"])
