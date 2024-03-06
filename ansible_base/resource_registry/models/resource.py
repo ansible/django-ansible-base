@@ -97,8 +97,6 @@ class Resource(models.Model):
 
     @classmethod
     def create_resource(cls, resource_type: ResourceType, resource_data: dict, ansible_id: str = None, service_id: str = None):
-        if not resource_type.can_be_managed:
-            raise ValidationError({"resource_type": _(f"Resource type: {resource_type.name} cannot be managed by Resources.")})
         c_type = resource_type.content_type
         serializer = resource_type.serializer_class(data=resource_data)
         serializer.is_valid(raise_exception=True)
@@ -118,9 +116,6 @@ class Resource(models.Model):
 
     def update_resource(self, resource_data: dict, ansible_id=None, partial=False, service_id: str = None):
         resource_type = self.content_type.resource_type
-
-        if not resource_type.can_be_managed:
-            raise ValidationError({"resource_type": _(f"Resource type: {resource_type.name} cannot be managed by Resources.")})
 
         serializer = resource_type.serializer_class(data=resource_data, partial=partial)
         serializer.is_valid(raise_exception=True)
