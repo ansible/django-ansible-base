@@ -12,6 +12,9 @@ from django.db.models.functions import Cast
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
+# Django-rest-framework
+from rest_framework.exceptions import ValidationError
+
 # ansible_base lib functions
 from ansible_base.lib.abstract_models.common import CommonModel
 
@@ -50,9 +53,14 @@ class RoleDefinitionManager(models.Manager):
         has_permissions = set(RoleEvaluation.get_permissions(user, obj))
         has_permissions.update(user.singleton_permissions())
         if set(needed_perms) - set(has_permissions):
-            rd, _ = self.get_or_create(
-                permissions=needed_perms, name=f'{obj._meta.model_name}-creator-permission', defaults={'content_type': ContentType.objects.get_for_model(obj)}
-            )
+            kwargs = {'permissions': needed_perms, 'name': f'{obj._meta.model_name}-creator-permission'}
+            defaults = {'content_type': ContentType.objects.get_for_model(obj)}
+            try:
+                rd, _ = self.get_or_create(defaults=defaults, **kwargs)
+            except ValidationError:
+                logger.warning(f'Creating role definition {kwargs["name"]} as manged role because this is not allow as a custom role')
+                defaults['managed'] = True
+                rd, _ = self.get_or_create(defaults=defaults, **kwargs)
 
             rd.give_permission(user, obj)
 
@@ -78,7 +86,7 @@ class RoleDefinitionManager(models.Manager):
         if kwargs.get('content_type_id', None):
             ct = ContentType.objects.get(id=kwargs['content_type_id'])
 
-        validate_permissions_for_model(perm_list, ct)
+        validate_permissions_for_model(perm_list, ct, managed=kwargs.get('managed', False))
 
         rd = self.create(**kwargs)
         rd.permissions.add(*perm_list)
@@ -126,12 +134,12 @@ class RoleDefinition(CommonModel):
 
         if actor._meta.model_name == 'user':
             if not settings.ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES:
-                raise RuntimeError('Singleton roles not enabled for users')
+                raise ValidationError('Global roles are not enabled for users')
             kwargs = dict(object_role=None, user=actor, role_definition=self)
             cls = RoleUserAssignment
         elif isinstance(actor, permission_registry.team_model):
             if not settings.ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES:
-                raise RuntimeError('Singleton roles not enabled for teams')
+                raise ValidationError('Global roles are not enabled for teams')
             kwargs = dict(object_role=None, team=actor, role_definition=self)
             cls = RoleTeamAssignment
         else:

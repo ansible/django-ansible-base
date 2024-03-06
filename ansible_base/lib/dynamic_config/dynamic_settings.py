@@ -129,19 +129,23 @@ if 'ansible_base.rbac' in INSTALLED_APPS:
     ANSIBLE_BASE_CREATOR_DEFAULTS = ['add', 'change', 'delete', 'view']
 
     # Specific feature enablement bits
-    ANSIBLE_BASE_TEAM_TEAM_ALLOWED = True
-    ANSIBLE_BASE_TEAM_ORG_ALLOWED = True
-    ANSIBLE_BASE_TEAM_ORG_TEAM_ALLOWED = True
+    # For assignments
+    ANSIBLE_BASE_ALLOW_TEAM_PARENTS = True
+    ANSIBLE_BASE_ALLOW_TEAM_ORG_PERMS = True
+    ANSIBLE_BASE_ALLOW_TEAM_ORG_ADMIN = True
+    # For role definitions
+    ANSIBLE_BASE_ALLOW_CUSTOM_ROLES = True
+    ANSIBLE_BASE_ALLOW_CUSTOM_TEAM_ROLES = False
+    # Allows managing singleton permissions
+    ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES = False
+    ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES = False
+    ANSIBLE_BASE_ALLOW_SINGLETON_ROLES_API = True
 
     # User flags that can grant permission before consulting roles
     ANSIBLE_BASE_BYPASS_SUPERUSER_FLAGS = ['is_superuser']
     ANSIBLE_BASE_BYPASS_ACTION_FLAGS = {}
 
-    # Allow using a custom permission model
+    # Specify a custom permission model
     ANSIBLE_BASE_PERMISSION_MODEL = 'auth.Permission'
-
-    # Allows managing singleton permissions
-    ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES = False
-    ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES = False
 
     ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS = False

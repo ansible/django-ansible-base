@@ -1,6 +1,5 @@
 import pytest
 from crum import impersonate
-from django.test.utils import override_settings
 from rest_framework.exceptions import ValidationError
 
 from ansible_base.rbac.models import RoleDefinition, RoleEvaluation, RoleUserAssignment
@@ -251,6 +250,7 @@ class TestOrgTeamMemberAssignment:
             permissions=team_perms + ['view_organization', 'view_inventory'],
             name='org-multi-permission',
             content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
+            managed=True,
         )
         assignment = org_inv_team_rd.give_permission(team, organization)
         assert list(assignment.object_role.provides_teams.all()) == [team]
@@ -261,31 +261,3 @@ class TestOrgTeamMemberAssignment:
         member_rd.remove_permission(rando, team)
         assert set(RoleEvaluation.accessible_objects(Organization, rando, 'view_organization')) == set([])
         assert set(RoleEvaluation.accessible_objects(Inventory, rando, 'view_inventory')) == set([])
-
-
-@pytest.mark.django_db
-class TestProhibitedAssignments:
-    @override_settings(ANSIBLE_BASE_TEAM_TEAM_ALLOWED=False)
-    def test_team_team_assignment(self, member_rd, organization):
-        teamA = permission_registry.team_model.objects.create(name='teamA', organization=organization)
-        teamB = permission_registry.team_model.objects.create(name='teamB', organization=organization)
-        with pytest.raises(ValidationError) as exc:
-            member_rd.give_permission(teamA, teamB)
-        assert 'Assigning team permissions to other teams is not allowed' in str(exc)
-
-    @override_settings(ANSIBLE_BASE_TEAM_ORG_ALLOWED=False)
-    def test_team_org_assignment(self, organization):
-        team = permission_registry.team_model.objects.create(name='example-team', organization=organization)
-        view_rd = RoleDefinition.objects.create_from_permissions(
-            permissions=['view_organization'], name='view-org', content_type=permission_registry.content_type_model.objects.get_for_model(Organization)
-        )
-        with pytest.raises(ValidationError) as exc:
-            view_rd.give_permission(team, organization)
-        assert 'Assigning organization permissions to teams is not allowed' in str(exc)
-
-    @override_settings(ANSIBLE_BASE_TEAM_ORG_TEAM_ALLOWED=False)
-    def test_team_org_member_assignment(self, org_member_rd, organization):
-        team = permission_registry.team_model.objects.create(name='example-team', organization=organization)
-        with pytest.raises(ValidationError) as exc:
-            org_member_rd.give_permission(team, organization)
-        assert 'Assigning organization permissions to teams is not allowed' in str(exc)
