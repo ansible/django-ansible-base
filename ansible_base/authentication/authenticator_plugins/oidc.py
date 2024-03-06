@@ -1,32 +1,11 @@
 import logging
 
-import jwt
 from django.utils.translation import gettext_lazy as _
 from social_core.backends.open_id_connect import OpenIdConnectAuth
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.social_auth import SocialAuthMixin
 from ansible_base.lib.serializers.fields import BooleanField, CharField, IntegerField, ListField, URLField
-
-# DELETEME ...
-import base64
-import datetime
-import json
-from calendar import timegm
-
-import jwt
-from jwt import (
-    ExpiredSignatureError,
-    InvalidAudienceError,
-    InvalidTokenError,
-    PyJWTError,
-)
-from jwt.utils import base64url_decode
-
-from social_core.backends.oauth import BaseOAuth2
-from social_core.exceptions import AuthTokenError
-from social_core.utils import cache
-# END DELETEME ...
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.oidc')
 
