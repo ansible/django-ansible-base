@@ -214,21 +214,6 @@ def oidc_configuration():
         "OIDC_VERIFY_SSL": True,
         "KEY": "12345",
         "SECRET": "abcdefg12345",
-        # extra
-        "ALGORITHM": "RS256",
-        "ID_TOKEN_MAX_AGE": 600,
-        "REDIRECT_STATE": False,
-        "ACCESS_TOKEN_METHOD": "POST",
-        "REVOKE_TOKEN_METHOD": "GET",
-        "ID_KEY": "sub",
-        "USERNAME_KEY": "preferred_username",
-        "ID_TOKEN_ISSUER": None,
-        "ACCESS_TOKEN_URL": None,
-        "AUTHORIZATION_URL": None,
-        "REVOKE_TOKEN_URL": None,
-        "USERINFO_URL": None,
-        "JWKS_URI": None,
-        "TOKEN_ENDPOINT_AUTH_METHOD": None,
     }
 
 
