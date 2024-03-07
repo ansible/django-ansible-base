@@ -44,7 +44,7 @@ class ServiceAPIConfig:
         """
         Return User instance or None
         """
-        return authenticate(username, password)
+        return authenticate(username=username, password=password)
 
     @classmethod
     def get_processor(cls, resource_type):
