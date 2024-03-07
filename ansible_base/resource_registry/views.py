@@ -14,7 +14,28 @@ from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiV
 from ansible_base.resource_registry.models import Resource, ResourceType, service_id
 from ansible_base.resource_registry.models.resource import resource_type_cache
 from ansible_base.resource_registry.registry import get_registry
-from ansible_base.resource_registry.serializers import ResourceListSerializer, ResourceSerializer, ResourceTypeSerializer
+from ansible_base.resource_registry.serializers import (
+    ResourceListSerializer,
+    ResourceSerializer,
+    ResourceTypeSerializer,
+    UserAuthenticationSerializer,
+)
+
+
+class HasResourceRegistryPermissions(permissions.BasePermission):
+    def has_permission(self, request, view):
+        user = request.user
+
+        if user.is_superuser:
+            return True
+
+        if allowed_actions := getattr(user, "resource_api_actions", None):
+            if allowed_actions == "*":
+                return True
+            else:
+                return view.action in allowed_actions
+
+        return False
 
 
 class IsSuperUser(permissions.BasePermission):
@@ -41,7 +62,9 @@ class ResourceViewSet(
 
     queryset = Resource.objects.select_related("content_type__resource_type").all()
     serializer_class = ResourceSerializer
-    permission_classes = [IsSuperUser]
+    permission_classes = [
+        HasResourceRegistryPermissions,
+    ]
     lookup_field = "ansible_id"
 
     def get_serializer_class(self):
@@ -72,7 +95,9 @@ class ResourceTypeViewSet(
 ):
     queryset = ResourceType.objects.all()
     serializer_class = ResourceTypeSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [
+        HasResourceRegistryPermissions,
+    ]
     lookup_field = "name"
     lookup_value_regex = "[^/]+"
 
@@ -99,7 +124,11 @@ class ResourceTypeViewSet(
 
 
 class ServiceMetadataView(AnsibleBaseDjangoAppApiView):
-    permission_classes = [permissions.IsAuthenticated]
+    action = "service-metadata"
+
+    permission_classes = [
+        HasResourceRegistryPermissions,
+    ]
 
     def get(self, request, **kwargs):
         registry = get_registry()
@@ -107,7 +136,9 @@ class ServiceMetadataView(AnsibleBaseDjangoAppApiView):
 
 
 class ServiceIndexRootView(AnsibleBaseView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
 
     def get(self, request, format=None):
         '''Link other resource registry endpoints'''
@@ -120,8 +151,13 @@ class ServiceIndexRootView(AnsibleBaseView):
 
 
 class ValidateLocalUserView(AnsibleBaseDjangoAppApiView):
+    action = "validate-local-user"
+    permission_classes = [
+        HasResourceRegistryPermissions,
+    ]
+
     def post(self, request, **kwargs):
-        serializer = self.get_serializer(data=request.data)
+        serializer = UserAuthenticationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         api_config = get_registry().api_config

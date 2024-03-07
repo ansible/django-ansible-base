@@ -55,7 +55,7 @@ class JWTCommonAuth:
                 "is_superuser": validated_body["is_superuser"],
             },
         )
-
+        setattr(user, "resource_api_actions", validated_body["resource_api_actions"])
         if created:
             logger.warn(f"New user {user.username} created from JWT auth")
         else:
