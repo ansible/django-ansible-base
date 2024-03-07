@@ -120,3 +120,8 @@ For example, if you needed to make migrations for the test_app itself you could 
 ```
 python manage.py makemigrations test_app
 ```
+
+
+# Debug with VSCode
+
+see [vscode.md](../docs/vscode.md)
