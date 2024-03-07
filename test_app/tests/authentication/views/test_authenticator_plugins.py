@@ -1,5 +1,7 @@
 from django.urls import reverse
 
+from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugins
+
 
 def test_plugin_authenticator_view(admin_api_client):
     """
@@ -26,6 +28,8 @@ def test_plugin_authenticator_view_import_error(admin_api_client, shut_up_loggin
         "ansible_base.authentication.authenticator_plugins",
         fixture_module,
     ]
+
+    get_authenticator_plugins.cache_clear()
 
     url = reverse("authenticator_plugin-view")
     response = admin_api_client.get(url)

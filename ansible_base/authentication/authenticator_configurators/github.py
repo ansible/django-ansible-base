@@ -5,7 +5,6 @@ from ansible_base.lib.serializers.fields import CharField, ListField, URLField
 
 
 class GithubConfiguration(BaseAuthenticatorConfiguration):
-
     documentation_url = "https://python-social-auth.readthedocs.io/en/latest/backends/github.html"
 
     CALLBACK_URL = URLField(
@@ -30,7 +29,6 @@ class GithubConfiguration(BaseAuthenticatorConfiguration):
 
 
 class GithubOrganizationConfiguration(GithubConfiguration):
-
     documentation_url = "https://python-social-auth.readthedocs.io/en/latest/backends/github.html#github-for-organizations"
 
     SCOPE = ListField(
@@ -48,7 +46,6 @@ class GithubOrganizationConfiguration(GithubConfiguration):
 
 
 class GithubTeamConfiguration(GithubConfiguration):
-
     documentation_url = "https://python-social-auth.readthedocs.io/en/latest/backends/github.html#github-for-teams"
 
     SCOPE = ListField(
@@ -71,7 +68,6 @@ class GithubTeamConfiguration(GithubConfiguration):
 
 
 class GithubEnterpriseConfiguration(GithubConfiguration):
-
     documentation_url = "https://python-social-auth.readthedocs.io/en/latest/backends/github_enterprise.html"
 
     URL = URLField(
@@ -88,7 +84,6 @@ class GithubEnterpriseConfiguration(GithubConfiguration):
 
 
 class GithubEnterpriseOrgConfiguration(GithubEnterpriseConfiguration):
-
     documentation_url = "https://python-social-auth.readthedocs.io/en/latest/backends/github_enterprise.html#github-enterprise-for-organizations"
 
     NAME = CharField(
@@ -99,7 +94,6 @@ class GithubEnterpriseOrgConfiguration(GithubEnterpriseConfiguration):
 
 
 class GithubEnterpriseTeamConfiguration(GithubEnterpriseConfiguration):
-
     documentation_url = "https://python-social-auth.readthedocs.io/en/latest/backends/github_enterprise.html#github-enterprise-for-teams"
 
     ID = CharField(
