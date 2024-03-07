@@ -30,15 +30,17 @@ class AnsibleBaseAuth(ModelBackend):
         logger.debug("Starting AnsibleBaseAuth authentication")
         last_modified = Authenticator.objects.values("modified_on").order_by("-modified_on").first()["modified_on"]
 
-        for k, authenticator_object in get_authentication_backends(last_modified).items():
+        for authenticator_id, authenticator_object in get_authentication_backends(last_modified).items():
             user = authenticator_object.authenticate(request, *args, **kwargs)
             if user:
                 # The local authenticator handles this but we want to check this for other authentication types
                 if not getattr(user, 'is_active', True):
-                    logger.warning(f'User {user.username} attempted to login from authenticator with ID "{k}" their user is inactive, denying permission')
+                    logger.warning(
+                        f'User {user.username} attempted to login from authenticator with ID "{authenticator_id}" their user is inactive, denying permission'
+                    )
                     return None
 
-                logger.info(f'User {user.username} logged in from authenticator with ID "{k}"')
+                logger.info(f'User {user.username} logged in from authenticator with ID "{authenticator_id}"')
                 authenticator_object.database_instance.users.add(user)
                 return user
 
