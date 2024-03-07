@@ -10,10 +10,8 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from django.apps import apps
-from django.core.exceptions import ObjectDoesNotExist
 from django.db.migrations.recorder import MigrationRecorder
 from django.db.models.signals import post_migrate
-from django.db.utils import IntegrityError
 from django.test.client import RequestFactory
 
 from ansible_base.lib.testing.fixtures import *  # noqa: F403, F401
