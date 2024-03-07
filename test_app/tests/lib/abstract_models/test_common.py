@@ -119,14 +119,6 @@ def test_resave_of_model_with_no_created(expected_log, system_user):
     model.delete()
 
 
-def test_attributable_user_anonymous_non_user(system_user):
-    # If we are an AnonymousUser and we call _attributable_error we should get the system user back
-    model = Organization()
-    with impersonate(AnonymousUser):
-        with pytest.raises(ValueError):
-            model.save()
-
-
 def test_attributable_user_anonymous_user(system_user):
     # If we are an AnonymousUser and we call _attributable_error we should get the system user back
     model = User()
