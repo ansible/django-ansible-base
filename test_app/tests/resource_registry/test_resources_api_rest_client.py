@@ -1,6 +1,7 @@
 import uuid
 
 import pytest
+from requests.exceptions import HTTPError
 
 from ansible_base.resource_registry.models import Resource, service_id
 from ansible_base.resource_registry.rest_client import ResourceAPIClient, ResourceRequestBody
@@ -136,3 +137,12 @@ def test_list_resource_types(resource_client):
     assert resp.status_code == 200
     assert resp.json()["count"] == 1
     assert resp.json()["results"][0]["name"] == "shared.organization"
+
+
+@pytest.mark.django_db
+def test_get_resource_404(resource_client):
+    resource_client.raise_if_bad_request = True
+
+    with pytest.raises(HTTPError):
+        resp = resource_client.get_resource(str(uuid.uuid4))
+        assert resp.status_code == 404

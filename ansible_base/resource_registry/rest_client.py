@@ -17,7 +17,7 @@ class ResourceAPIClient:
     Client for Ansible services to interact with the service-index/ api
     """
 
-    def __init__(self, service_url: str, service_path: str, requests_auth_kwargs: dict, verify_https=True):
+    def __init__(self, service_url: str, service_path: str, requests_auth_kwargs: dict, verify_https=True, raise_if_bad_request: bool = False):
         """
         service_url: fully qualified hostname for the service that the client
             is connecting to (http://www.example.com:123).
@@ -30,6 +30,7 @@ class ResourceAPIClient:
         self.base_url = f"{service_url}/{service_path.strip('/')}/"
         self.requests_auth_kwargs = requests_auth_kwargs
         self.verify_https = verify_https
+        self.raise_if_bad_request = raise_if_bad_request
 
     def _make_request(self, method: str, path: str, data: dict = None, params: dict = None) -> requests.Response:
         url = self.base_url + path.lstrip("/")
@@ -42,7 +43,10 @@ class ResourceAPIClient:
         if params:
             kwargs["params"] = params
 
-        return requests.request(**kwargs)
+        resp = requests.request(**kwargs)
+        if self.raise_if_bad_request:
+            resp.raise_for_status()
+        return resp
 
     def _get_request_dict(self, data: ResourceRequestBody):
         raw_dict = data._asdict()
