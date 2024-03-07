@@ -48,6 +48,7 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
 
     SCOPE = ListField(
         help_text=_('The authorization scope for users. Defaults to "read:org".'),
+        required=False,
         allow_null=False,
         ui_field_label=_('GitHub OAuth2 Scope'),
         default=["openid", "profile", "email"],
@@ -55,6 +56,7 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
 
     PUBLIC_KEY = CharField(
         help_text=_("The public key from your IDP. Only necessary if using keycloak for OIDC."),
+        required=False,
         allow_null=True,
         ui_field_label=_('OIDC Public Key'),
     )
@@ -110,42 +112,49 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
 
     ID_TOKEN_ISSUER = CharField(
         help_text=_("Expected issuer ('iss') of the ID token. If set, it will be used to validate the issuer of the ID token."),
+        required=False,
         allow_null=True,
         ui_field_label=_("ID Token Issuer"),
     )
 
     ACCESS_TOKEN_URL = URLField(
         help_text=_("The URL to obtain an access token from the OIDC provider."),
+        required=False,
         allow_null=True,
         ui_field_label=_("Access Token URL"),
     )
 
     AUTHORIZATION_URL = URLField(
         help_text=_("The URL to redirect the user for OIDC provider authorization."),
+        required=False,
         allow_null=True,
         ui_field_label=_("Authorization URL"),
     )
 
     REVOKE_TOKEN_URL = URLField(
         help_text=_("The URL to revoke tokens. Used in the token revocation flow."),
+        required=False,
         allow_null=True,
         ui_field_label=_("Revoke Token URL"),
     )
 
     USERINFO_URL = URLField(
         help_text=_("The URL to retrieve user information from the OIDC provider."),
+        required=False,
         allow_null=True,
         ui_field_label=_("Userinfo URL"),
     )
 
     JWKS_URI = URLField(
         help_text=_("The URL to retrieve the provider's public keys for verifying JWT signatures."),
+        required=False,
         allow_null=True,
         ui_field_label=_("JWKS URI"),
     )
 
     TOKEN_ENDPOINT_AUTH_METHOD = CharField(
         help_text=_("The authentication method to use at the token endpoint. Common values are 'client_secret_post', 'client_secret_basic'."),
+        required=False,
         allow_null=True,
         ui_field_label=_("Token Endpoint Auth Method"),
     )
