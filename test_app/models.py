@@ -36,6 +36,20 @@ class Team(AbstractTeam):
         ordering = ('organization__name', 'name')
         permissions = [('member_team', 'Has all roles assigned to this team')]
 
+    users = models.ManyToManyField(
+        User,
+        related_name='teams',
+        blank=True,
+        help_text="The list of users on this team",
+    )
+
+    admins = models.ManyToManyField(
+        User,
+        related_name='teams_administered',
+        blank=True,
+        help_text="The list of admins for this team",
+    )
+
 
 class ResourceMigrationTestModel(models.Model):
     name = models.CharField(max_length=255)

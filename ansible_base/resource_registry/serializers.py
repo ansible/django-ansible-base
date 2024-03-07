@@ -112,16 +112,3 @@ class ResourceTypeSerializer(serializers.ModelSerializer):
 class UserAuthenticationSerializer(serializers.Serializer):
     username = serializers.CharField()
     password = serializers.CharField()
-
-
-class UserMembershipSerializer(serializers.Serializer):
-    ansible_id = serializers.UUIDField()
-    membership_type = serializers.CharField()
-
-
-class ValidateLocalUserSerializer(serializers.Serializer):
-    username = serializers.CharField()
-    service_id = serializers.UUIDField()
-    ansible_id = serializers.UUIDField()
-    organizations = UserMembershipSerializer(many=True)
-    teams = UserMembershipSerializer(many=True)

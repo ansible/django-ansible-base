@@ -100,9 +100,11 @@ class Resource(models.Model):
         serializer = resource_type.serializer_class(data=resource_data)
         serializer.is_valid(raise_exception=True)
         resource_data = serializer.validated_data
+        processor = serializer.get_processor()
 
         with transaction.atomic():
-            content_object = c_type.model_class().objects.create(**resource_data)
+            ObjModel = c_type.model_class()
+            content_object = processor(ObjModel()).save(resource_data, is_new=True)
             resource = cls.objects.get(object_id=content_object.pk, content_type=c_type)
 
             if ansible_id:
@@ -120,6 +122,8 @@ class Resource(models.Model):
         serializer.is_valid(raise_exception=True)
         resource_data = serializer.validated_data
 
+        processor = serializer.get_processor()
+
         with transaction.atomic():
             if ansible_id:
                 self.ansible_id = ansible_id
@@ -127,9 +131,7 @@ class Resource(models.Model):
                 self.service_id = service_id
             self.save()
 
-            for k, val in resource_data.items():
-                setattr(self.content_object, k, val)
-            self.content_object.save()
+            processor(self.content_object).save(resource_data)
 
 
 # This is a separate function so that it can work with models from apps in the

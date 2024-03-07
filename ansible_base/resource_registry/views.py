@@ -7,13 +7,12 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.reverse import reverse
 from rest_framework.viewsets import GenericViewSet, mixins
-from django.utils.translation import gettext_lazy as _
 
-from ansible_base.lib.utils.hashing import hash_serializer_data
 from ansible_base.lib.utils.response import CSVStreamResponse
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.resource_registry.models import Resource, ResourceType, service_id
+from ansible_base.resource_registry.models.resource import resource_type_cache
 from ansible_base.resource_registry.registry import get_registry
 from ansible_base.resource_registry.serializers import ResourceListSerializer, ResourceSerializer, ResourceTypeSerializer
 
@@ -51,6 +50,16 @@ class ResourceViewSet(
 
         return super().get_serializer_class()
 
+    @action(detail=True, methods=['get'])
+    def additional_data(self, *args, **kwargs):
+        obj = self.get_object()
+        if serializer := resource_type_cache(obj.content_type.pk).serializer_class:
+            data = serializer.get_additional_data(obj.content_object)
+            if data is not None:
+                return Response(data.data)
+
+        return HttpResponseNotFound()
+
     def perform_destroy(self, instance):
         instance.delete_resource()
 
@@ -67,12 +76,11 @@ class ResourceTypeViewSet(
     lookup_field = "name"
     lookup_value_regex = "[^/]+"
 
-    def serialize_resources_hashes(self, resources_qs):
+    def serialize_resources_hashes(self, resources_qs, serializer_class):
         """A generator that yields str sequences for csv stream response"""
         yield ("ansible_id", "resource_hash")
         for resource in resources_qs:
-            resource_hash = hash_serializer_data(resource, ResourceSerializer, "resource_data")
-            yield (resource.ansible_id, resource_hash)
+            yield (resource.ansible_id, serializer_class(resource.content_object).get_hash())
 
     @action(detail=True, methods=["get"])
     def manifest(self, request, name, *args, **kwargs):
@@ -82,11 +90,12 @@ class ResourceTypeViewSet(
         resource_type = get_object_or_404(ResourceType, name=name)
         if not resource_type.serializer_class:  # pragma: no cover
             return HttpResponseNotFound()
+
         resources = Resource.objects.filter(content_type__resource_type=resource_type).prefetch_related("content_object")
         if not resources:
             return HttpResponseNotFound()
 
-        return CSVStreamResponse(self.serialize_resources_hashes(resources)).stream()
+        return CSVStreamResponse(self.serialize_resources_hashes(resources, resource_type.serializer_class)).stream()
 
 
 class ServiceMetadataView(AnsibleBaseDjangoAppApiView):
@@ -121,6 +130,5 @@ class ValidateLocalUserView(AnsibleBaseDjangoAppApiView):
         if not user:
             return Response(status=401)
 
-        user_details = api_config.get_local_user_details(user)
-
-        return Response(data=user_details.data)
+        # TODO: need a real response here.
+        return Response(data={"ansible_id": Resource.get_resource_for_object(user).ansible_id})

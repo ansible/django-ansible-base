@@ -4,6 +4,18 @@ from ansible_base.authentication.models import Authenticator
 from ansible_base.resource_registry.registry import ResourceConfig, ServiceAPIConfig, SharedResource
 from ansible_base.resource_registry.shared_types import OrganizationType, TeamType, UserType
 from test_app.models import Organization, Original1, Proxy2, ResourceMigrationTestModel, Team
+from ansible_base.resource_registry.utils.resource_type_processor import ResourceTypeProcessor
+
+
+class UserProcessor(ResourceTypeProcessor):
+    def pre_serialize_additional(self):
+        # These fields aren't supported in TestApp, so we'll set them to blank
+        setattr(self.instance, "external_auth_provider", None)
+        setattr(self.instance, "external_auth_uid", None)
+        setattr(self.instance, "organizations", [])
+        setattr(self.instance, "organizations_administered", [])
+
+        return self.instance
 
 
 class APIConfig(ServiceAPIConfig):

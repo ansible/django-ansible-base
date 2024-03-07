@@ -1,43 +1,37 @@
-from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
-from ansible_base.resource_registry.models import Resource
+from ansible_base.resource_registry.utils.resource_type_serializers import (
+    AnsibleResourceForeignKeyField,
+    AnsibleResourceManyRelated,
+    SharedResourceTypeSerializer,
+)
 
 
-class AnsibleResourceForeignKeyField(serializers.UUIDField):
-    default_error_messages = {
-        'invalid': _('Must be a valid UUID.'),
-        'does_not_exist': _('Invalid ansible id "{ansible_id}" - resource does not exist.'),
-    }
+class UserAdditionalDataSerializer(serializers.Serializer):
+    """
+    Additional data serializer for UserType
+    """
 
-    def __init__(self, resource_type, **kwargs):
-        self.resource_type = resource_type
-        super().__init__(**kwargs)
+    username = serializers.CharField()
+    email = serializers.EmailField(required=False, allow_blank=True)
+    first_name = serializers.CharField(required=False, allow_blank=True)
+    last_name = serializers.CharField(required=False, allow_blank=True)
+    is_superuser = serializers.BooleanField(default=False)
 
-    # Convert ansible ID to internal object ID
-    def to_internal_value(self, data):
-        ansible_id = super().to_internal_value(data)
+    # If this user is an SSO user, provide
+    external_auth_provider = serializers.CharField(required=False, allow_blank=True)
+    external_auth_uid = serializers.CharField(required=False, allow_blank=True)
 
-        try:
-            resource = Resource.objects.get(content_type__resource_type__name=self.resource_type, ansible_id=ansible_id)
-        except Resource.DoesNotExist:
-            self.fail('does_not_exist', ansible_id=data)
+    organizations = AnsibleResourceManyRelated("shared.organization")
+    organizations_administered = AnsibleResourceManyRelated("shared.organization")
 
-        return resource.content_object
-
-    def get_attribute(self, instance):
-        # If the model doesn't have an attribute with the given field name, return None. This is
-        # mostly here to keep Hub from breaking, which doesn't have organizations yet.
-        obj = getattr(instance, self.field_name, None)
-        if obj is None:
-            return None
-        resource = Resource.objects.get(content_type__resource_type__name=self.resource_type, object_id=obj.pk)
-
-        return resource.ansible_id
+    teams = AnsibleResourceManyRelated("shared.team")
+    teams_administered = AnsibleResourceManyRelated("shared.team")
 
 
-class UserType(serializers.Serializer):
+class UserType(SharedResourceTypeSerializer):
     RESOURCE_TYPE = "user"
+    ADDITIONAL_DATA_SERIALIZER = UserAdditionalDataSerializer
 
     username = serializers.CharField()
     email = serializers.EmailField(required=False, allow_blank=True)
@@ -48,13 +42,13 @@ class UserType(serializers.Serializer):
     # is_system_auditor = serializers.BooleanField()
 
 
-class OrganizationType(serializers.Serializer):
+class OrganizationType(SharedResourceTypeSerializer):
     RESOURCE_TYPE = "organization"
 
     name = serializers.CharField()
 
 
-class TeamType(serializers.Serializer):
+class TeamType(SharedResourceTypeSerializer):
     RESOURCE_TYPE = "team"
 
     name = serializers.CharField()
