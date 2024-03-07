@@ -83,6 +83,10 @@ class ResourceSerializer(serializers.ModelSerializer):
 
     # update ansible ID
     def update(self, instance, validated_data):
+        resource_type = instance.content_type.resource_type
+        if not resource_type.can_be_managed:
+            raise serializers.ValidationError({"resource_type": _(f"Resource type: {resource_type.name} cannot be managed by Resources.")})
+
         instance.update_resource(
             validated_data.get("resource_data", {}),
             ansible_id=validated_data.get("ansible_id"),
@@ -98,9 +102,12 @@ class ResourceSerializer(serializers.ModelSerializer):
             if not validated_data["resource_type"]:
                 raise serializers.ValidationError({"resource_type": _("This field is required for resource creation.")})
 
-            r_type = ResourceType.objects.get(name=validated_data["resource_type"])
+            resource_type = ResourceType.objects.get(name=validated_data["resource_type"])
+            if not resource_type.can_be_managed:
+                raise serializers.ValidationError({"resource_type": _(f"Resource type: {resource_type.name} cannot be managed by Resources.")})
+
             return Resource.create_resource(
-                r_type, validated_data["resource_data"], ansible_id=validated_data.get("ansible_id"), service_id=validated_data.get("service_id")
+                resource_type, validated_data["resource_data"], ansible_id=validated_data.get("ansible_id"), service_id=validated_data.get("service_id")
             )
 
         except ResourceType.DoesNotExist:
