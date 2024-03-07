@@ -98,7 +98,7 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
     )
 
     JWT_DECODE_OPTIONS = DictField(
-        help_text=_(),
+        help_text=_("OIDC JWT decoding options for token validation and processing"),
         default=None,
         allow_null=True,
         ui_field_label=_('OIDC JWT Decode Options.'),
