@@ -22,6 +22,12 @@ from ansible_base.resource_registry.serializers import (
     UserAuthenticationSerializer,
 )
 
+from ansible_base.rest_filters.rest_framework.field_lookup_backend import FieldLookupBackend
+from ansible_base.rest_filters.rest_framework.type_filter_backend import TypeFilterBackend
+from ansible_base.rest_filters.rest_framework.order_backend import OrderByBackend
+
+FILTERS = [FieldLookupBackend, TypeFilterBackend, OrderByBackend]
+
 
 class HasResourceRegistryPermissions(permissions.BasePermission):
     def has_permission(self, request, view):
@@ -61,6 +67,7 @@ class ResourceViewSet(
     Index of all the resources in the system.
     """
 
+    filter_backends = FILTERS
     queryset = Resource.objects.select_related("content_type__resource_type").all()
     serializer_class = ResourceSerializer
     permission_classes = [
@@ -104,6 +111,8 @@ class ResourceTypeViewSet(
     GenericViewSet,
     AnsibleBaseDjangoAppApiView,
 ):
+    filter_backends = FILTERS
+
     queryset = ResourceType.objects.all()
     serializer_class = ResourceTypeSerializer
     permission_classes = [
