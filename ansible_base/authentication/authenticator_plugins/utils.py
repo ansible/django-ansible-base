@@ -1,4 +1,5 @@
 import logging
+from functools import lru_cache
 from glob import glob
 from os.path import basename, isfile, join
 
@@ -9,6 +10,7 @@ logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.ut
 setting = 'ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES'
 
 
+@lru_cache
 def get_authenticator_plugins() -> list:
     class_prefixes = getattr(settings, setting, [])
     plugins = []
