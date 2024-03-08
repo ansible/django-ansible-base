@@ -2,7 +2,11 @@ from functools import partial
 from unittest.mock import patch
 
 import pytest
+from crum import impersonate
+from django.contrib.auth.models import AnonymousUser
+from django.db import connection
 from django.test import override_settings
+from rest_framework.reverse import reverse
 
 from test_app.models import EncryptionModel, Organization, RelatedFieldsTestModel, User
 
@@ -117,12 +121,25 @@ def test_resave_of_model_with_no_created(expected_log, system_user):
 
 def test_attributable_user_anonymous_user(system_user):
     # If we are an AnonymousUser and we call _attributable_error we should get the system user back
-    from crum import impersonate
-    from django.contrib.auth.models import AnonymousUser
-
     model = User()
     with impersonate(AnonymousUser):
         model.save()
 
     assert model.created_by == system_user
     model.delete()
+
+
+@pytest.mark.django_db
+@pytest.mark.xfail(reason="https://github.com/ansible/django-ansible-base/issues/198")
+def test_cascade_behavior_for_created_by(user, user_api_client):
+    url = reverse('organization-list')
+    r = user_api_client.post(url, data={'name': 'foo'})
+    assert r.status_code == 201
+    org = Organization.objects.get(id=r.data['id'])
+    assert org.created_by == user
+    user_id = user.id
+    connection.check_constraints()  # issue replication - show constraint violation introduced
+    user.delete()
+    org.refresh_from_db()
+    assert org.created_by_id == user_id
+    connection.check_constraints()

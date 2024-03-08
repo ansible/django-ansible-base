@@ -7,15 +7,24 @@
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/manage.py",
-            "env": {
-                "DJANGO_SETTINGS_MODULE": "test_app.sqlite3settings"
-            },
             "preLaunchTask": "Run vscodebootstrap.sh",
             "args": [
                 "runserver"
             ],
             "django": true,
             "autoStartBrowser": false
-        }
+        },
+        {
+            "name": "Test App Shell Plus",
+            "consoleTitle": "Test App Shell Plus",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/manage.py",
+            "args": [
+                "shell_plus"
+            ],
+            "django": true,
+            "autoStartBrowser": false
+        },
     ]
 }
