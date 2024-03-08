@@ -18,13 +18,24 @@ DEFAULT_ALGORITHMS = get_default_algorithms()
 
 class JWTAlgorithmListFieldValidator:
 
-    def __init__(self, allowed_values):
-        self.allowed_values = allowed_values
+    allowed_values = list(DEFAULT_ALGORITHMS.keys())
 
     def __call__(self, value):
         if not all(item in self.allowed_values for item in value):
             raise ValidationError(
                 _('%(value)s contains items not in the allowed list: %(allowed_values)s'),
+                params={'value': value, 'allowed_values': self.allowed_values},
+            )
+
+
+class HTTPVerbFieldValidator:
+
+    allowed_values = ['GET', 'PUT', 'POST', 'PATCH', 'DELETE']
+
+    def __call__(self, value):
+        if value not in self.allowed_values:
+            raise ValidationError(
+                _('%(value)s is not in the allowed list: %(allowed_values)s'),
                 params={'value': value, 'allowed_values': self.allowed_values},
             )
 
@@ -77,6 +88,7 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
         default="POST",
         allow_null=True,
         required=False,
+        validators=[HTTPVerbFieldValidator()],
         ui_field_label=_("Access Token Method"),
     )
 
@@ -114,7 +126,7 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
         help_text=_("The algorithm(s) for decoding JWT responses from the IDP."),
         default=None,
         allow_null=True,
-        validators=[JWTAlgorithmListFieldValidator(list(DEFAULT_ALGORITHMS.keys()))],
+        validators=[JWTAlgorithmListFieldValidator()],
         ui_field_label=_('OIDC JWT Algorithm(s)'),
     )
 
@@ -150,6 +162,7 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
         help_text=_("The HTTP method to be used when revoking an access token. Typically 'POST' or 'GET'."),
         default="GET",
         allow_null=True,
+        validators=[HTTPVerbFieldValidator()],
         ui_field_label=_("Revoke Token Method"),
     )
 
