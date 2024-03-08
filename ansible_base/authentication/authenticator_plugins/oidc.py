@@ -8,7 +8,7 @@ from social_core.backends.open_id_connect import OpenIdConnectAuth
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.social_auth import SocialAuthMixin
-from ansible_base.lib.serializers.fields import BooleanField, CharField, DictField, IntegerField, ListField, URLField
+from ansible_base.lib.serializers.fields import BooleanField, CharField, ChoiceField, DictField, IntegerField, ListField, URLField
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.oidc')
 
@@ -24,18 +24,6 @@ class JWTAlgorithmListFieldValidator:
         if not all(item in self.allowed_values for item in value):
             raise ValidationError(
                 _('%(value)s contains items not in the allowed list: %(allowed_values)s'),
-                params={'value': value, 'allowed_values': self.allowed_values},
-            )
-
-
-class HTTPVerbFieldValidator:
-
-    allowed_values = ['GET', 'PUT', 'POST', 'PATCH', 'DELETE']
-
-    def __call__(self, value):
-        if value not in self.allowed_values:
-            raise ValidationError(
-                _('%(value)s is not in the allowed list: %(allowed_values)s'),
                 params={'value': value, 'allowed_values': self.allowed_values},
             )
 
@@ -83,12 +71,12 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_("Access Token URL"),
     )
 
-    ACCESS_TOKEN_METHOD = CharField(
+    ACCESS_TOKEN_METHOD = ChoiceField(
         help_text=_("The HTTP method to be used when requesting an access token. Typically 'POST' or 'GET'."),
         default="POST",
         allow_null=True,
         required=False,
-        validators=[HTTPVerbFieldValidator()],
+        choices=['GET', 'PUT', 'POST', 'PATCH', 'DELETE'],
         ui_field_label=_("Access Token Method"),
     )
 
@@ -158,11 +146,11 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_("Redirect State"),
     )
 
-    REVOKE_TOKEN_METHOD = CharField(
+    REVOKE_TOKEN_METHOD = ChoiceField(
         help_text=_("The HTTP method to be used when revoking an access token. Typically 'POST' or 'GET'."),
         default="GET",
         allow_null=True,
-        validators=[HTTPVerbFieldValidator()],
+        choices=['GET', 'PUT', 'POST', 'PATCH', 'DELETE'],
         ui_field_label=_("Revoke Token Method"),
     )
 
