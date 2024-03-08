@@ -1,7 +1,9 @@
 import logging
 
+from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.utils.translation import gettext_lazy as _
+from jwt.algorithms import get_default_algorithms
 from social_core.backends.open_id_connect import OpenIdConnectAuth
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
@@ -9,6 +11,22 @@ from ansible_base.authentication.social_auth import SocialAuthMixin
 from ansible_base.lib.serializers.fields import BooleanField, CharField, DictField, IntegerField, ListField, URLField
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.oidc')
+
+
+DEFAULT_ALGORITHMS = get_default_algorithms()
+
+
+class JWTAlgorithmListFieldValidator:
+
+    def __init__(self, allowed_values):
+        self.allowed_values = allowed_values
+
+    def __call__(self, value):
+        if not all(item in self.allowed_values for item in value):
+            raise ValidationError(
+                _('%(value)s contains items not in the allowed list: %(allowed_values)s'),
+                params={'value': value, 'allowed_values': self.allowed_values},
+            )
 
 
 class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
@@ -96,6 +114,7 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
         help_text=_("The algorithm(s) for decoding JWT responses from the IDP."),
         default=None,
         allow_null=True,
+        validators=[JWTAlgorithmListFieldValidator(list(DEFAULT_ALGORITHMS.keys()))],
         ui_field_label=_('OIDC JWT Algorithm(s)'),
     )
 
