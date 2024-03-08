@@ -1,5 +1,6 @@
 import logging
 
+from django.core.validators import MinValueValidator
 from django.utils.translation import gettext_lazy as _
 from social_core.backends.open_id_connect import OpenIdConnectAuth
 
@@ -87,6 +88,7 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
         help_text=_("The maximum allowed age (in seconds) of the ID token. Tokens older than this will be rejected."),
         default=600,
         allow_null=True,
+        validators=[MinValueValidator(0)],
         ui_field_label=_('OIDC Token Max Age'),
     )
 
