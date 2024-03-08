@@ -15,6 +15,9 @@ class SessionStore(CachedDBSessionStore):
     def get_session_cookie_age(self):
         timeout = get_setting('SESSION_COOKIE_AGE', DEFAULT_SESSION_TIMEOUT)
         if not isinstance(timeout, int):
-            logger.error(_('SESSION_COOKIE_AGE was set to {} which is an invalid int, defaulting to {}'.format(timeout, DEFAULT_SESSION_TIMEOUT)))
+            logger.error(
+                _('SESSION_COOKIE_AGE was set to %(timeout)s which is an invalid int, defaulting to %(default)s')
+                % {'timeout': timeout, 'default': DEFAULT_SESSION_TIMEOUT}
+            )
             timeout = DEFAULT_SESSION_TIMEOUT
         return timeout
