@@ -6,6 +6,12 @@ from django.utils.translation import gettext_lazy as _
 
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 
+from ansible_base.rest_filters.rest_framework.type_filter_backend import TypeFilterBackend
+from ansible_base.rest_filters.rest_framework.field_lookup_backend import FieldLookupBackend
+from rest_framework.filters import SearchFilter
+from ansible_base.rest_filters.rest_framework.order_backend import OrderByBackend
+
+
 logger = logging.getLogger('ansible_base.lib.utils.views.django_app_api')
 
 
@@ -29,4 +35,6 @@ if parent_view:
 
 
 class AnsibleBaseDjangoAppApiView(parent_view_class):
-    pass
+    # In case an app is using features like authentication, resources, or RBAC
+    # but not using rest_filters app, we need to specify the same filter backends
+    filter_backends = (TypeFilterBackend, FieldLookupBackend, SearchFilter, OrderByBackend)
