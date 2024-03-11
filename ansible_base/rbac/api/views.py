@@ -15,7 +15,7 @@ from ansible_base.rbac.evaluations import has_super_permission
 from ansible_base.rbac.models import RoleDefinition
 
 
-class RoleDefinitionViewSet(ModelViewSet, AnsibleBaseDjangoAppApiView):
+class RoleDefinitionViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
     """
     Role Definitions (roles) contain a list of permissions and can be used to
     assign those permissions to a user or team through the respective
@@ -51,7 +51,7 @@ class RoleDefinitionViewSet(ModelViewSet, AnsibleBaseDjangoAppApiView):
 assignment_prefetch_base = ('content_object', 'content_type', 'role_definition', 'created_by', 'object_role')
 
 
-class BaseAssignmentViewSet(ModelViewSet, AnsibleBaseDjangoAppApiView):
+class BaseAssignmentViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     # PUT and PATCH are not allowed because these are immutable
     http_method_names = ['get', 'post', 'head', 'options', 'delete']
