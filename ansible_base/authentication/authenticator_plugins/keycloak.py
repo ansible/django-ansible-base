@@ -47,3 +47,4 @@ class AuthenticatorPlugin(SocialAuthMixin, KeycloakOAuth2, AbstractAuthenticator
     type = "keycloak"
     logger = logger
     category = "sso"
+    configuration_encrypted_fields = ['SECRET']
