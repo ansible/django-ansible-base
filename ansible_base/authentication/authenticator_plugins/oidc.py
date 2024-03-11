@@ -169,10 +169,10 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
     )
 
     SCOPE = ListField(
-        help_text=_('The authorization scope for users. Defaults to "read:org".'),
+        help_text=_('The authorization scope for users. Defaults to ["openid", "profile", "email"].'),
         required=False,
         allow_null=False,
-        ui_field_label=_('GitHub OAuth2 Scope'),
+        ui_field_label=_('List of OAuth2 Scope(s)'),
         default=["openid", "profile", "email"],
     )
 
