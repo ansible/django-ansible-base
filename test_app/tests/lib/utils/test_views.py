@@ -3,12 +3,14 @@ import logging
 from unittest import mock
 
 import pytest
+from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.http.response import HttpResponseBase
 from django.test import override_settings
 from django.test.client import RequestFactory
 from rest_framework.views import APIView
 
+from ansible_base.authentication.views.authenticator import AuthenticatorViewSet
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 
 
@@ -124,3 +126,8 @@ def test_ansible_base_view_version(view_with_headers, mock_request, admin_user, 
             response = view_with_headers.finalize_response(mock_request, initial_response)
             assert 'X-API-Product-Version' in response and response['X-API-Product-Version'] == value
             assert log_message in caplog.text
+
+
+def test_ansible_base_view_filter_backends():
+    "Since test_app uses the rest_filters app, we should expect views to have those filter_backends"
+    assert len(AuthenticatorViewSet.filter_backends) == len(settings.REST_FRAMEWORK['DEFAULT_FILTER_BACKENDS'])

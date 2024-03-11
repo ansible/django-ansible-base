@@ -26,6 +26,21 @@ except NameError:
     REST_FRAMEWORK = {}
 
 
+# Explanation - these are the filters for views provided by DAB like /authenticators/
+# we want them to be enabled by default _even if_ the rest_filters app is not used
+# so that clients have consistency, but if an app wants to turn them off, they can
+# these will be combined with the actual DRF defaults in our base view
+try:
+    ANSIBLE_BASE_CUSTOM_VIEW_FILTERS
+except NameError:
+    ANSIBLE_BASE_CUSTOM_VIEW_FILTERS = (
+        'ansible_base.rest_filters.rest_framework.type_filter_backend.TypeFilterBackend',
+        'ansible_base.rest_filters.rest_framework.field_lookup_backend.FieldLookupBackend',
+        'rest_framework.filters.SearchFilter',
+        'ansible_base.rest_filters.rest_framework.order_backend.OrderByBackend',
+    )
+
+
 if 'ansible_base.api_documentation' in INSTALLED_APPS:
     if 'drf_spectacular' not in INSTALLED_APPS:
         INSTALLED_APPS.append('drf_spectacular')
