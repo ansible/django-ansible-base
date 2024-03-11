@@ -20,7 +20,6 @@ class TestAppViewSet(ModelViewSet, AnsibleBaseView):
             qs = qs.prefetch_related(*self.prefetch_related)
         if self.select_related:
             qs = qs.select_related(*self.select_related)
-        qs = qs.order_by('created_on')
         return qs
 
 
