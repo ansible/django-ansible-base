@@ -208,6 +208,30 @@ def github_enterprise_team_authenticator(github_enterprise_team_configuration):
 
 
 @pytest.fixture
+def google_oauth2_configuration():
+    return {
+        "KEY": "12345",
+        "SECRET": "abcdefg12345",
+    }
+
+
+@pytest.fixture
+def google_oauth2_authenticator(google_oauth2_configuration):
+    from ansible_base.authentication.models import Authenticator
+
+    authenticator = Authenticator.objects.create(
+        name="Test Google OAuth2 Authenticator",
+        enabled=True,
+        create_objects=True,
+        users_unique=False,
+        remove_users=True,
+        type="ansible_base.authentication.authenticator_plugins.google_oauth2",
+        configuration=google_oauth2_configuration,
+    )
+    return authenticator
+
+
+@pytest.fixture
 def oidc_configuration():
     return {
         "OIDC_ENDPOINT": "https://localhost/api/gateway/callback/oidc_test/",
