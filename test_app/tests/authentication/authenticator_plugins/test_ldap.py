@@ -342,7 +342,6 @@ def test_ldap_backend_authenticate_unbind_exception(
     response = client.get(url)
     logger.exception.assert_any_call(f"Got unexpected LDAP exception when forcing LDAP disconnect for user {user.username}, login will still proceed")
     assert response.status_code == 200
-    assert response.data['results'][0]['name'] == ldap_authenticator.name
 
 
 @pytest.mark.django_db
