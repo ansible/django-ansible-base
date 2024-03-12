@@ -48,6 +48,31 @@ post_migrate.connect(test_migrations_okay)
 
 
 @pytest.fixture
+def azuread_configuration():
+    return {
+        "CALLBACK_URL": "https://localhost/api/gateway/callback/github_test/",
+        "KEY": "12345",
+        "SECRET": "abcdefg12345",
+    }
+
+
+@pytest.fixture
+def azuread_authenticator(azuread_configuration):
+    from ansible_base.authentication.models import Authenticator
+
+    authenticator = Authenticator.objects.create(
+        name="Test AzureAD Authenticator",
+        enabled=True,
+        create_objects=True,
+        users_unique=False,
+        remove_users=True,
+        type="ansible_base.authentication.authenticator_plugins.azuread",
+        configuration=azuread_configuration,
+    )
+    return authenticator
+
+
+@pytest.fixture
 def github_configuration():
     return {
         "CALLBACK_URL": "https://localhost/api/gateway/callback/github_test/",
