@@ -64,13 +64,18 @@ class BaseAssignmentViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
         return model.visible_items(self.request.user).prefetch_related(*self.prefetch_related, *assignment_prefetch_base)
 
     def perform_destroy(self, instance):
-        if not self.request.user.has_obj_perm(instance, 'change'):
-            raise PermissionDenied
-
-        rd = instance.object_role.role_definition
-        obj = instance.object_role.content_object
-        with transaction.atomic():
-            rd.remove_permission(instance.actor, obj)
+        obj = instance.content_object
+        if obj:
+            if not self.request.user.has_obj_perm(obj, 'change'):
+                raise PermissionDenied
+            with transaction.atomic():
+                instance.role_definition.remove_permission(instance.actor, obj)
+        else:
+            for permission in instance.role_definition.permissions.all():
+                if not has_super_permission(self.request.user, permission.codename):
+                    raise PermissionDenied
+            with transaction.atomic():
+                instance.role_definition.remove_global_permission(instance.actor)
 
 
 class RoleTeamAssignmentViewSet(BaseAssignmentViewSet):

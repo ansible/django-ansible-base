@@ -78,6 +78,8 @@ class AccessibleIdsDescriptor(BaseEvaluationDescriptor):
 
 
 def bound_has_obj_perm(self, obj, codename) -> bool:
+    if not permission_registry.is_registered(obj):
+        raise RuntimeError(f'Object of {obj._meta.model_name} type is not registered with DAB RBAC')
     full_codename = validate_codename_for_model(codename, obj)
     if has_super_permission(self, full_codename):
         return True

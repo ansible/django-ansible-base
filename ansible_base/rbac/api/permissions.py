@@ -75,6 +75,11 @@ class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
 
         queryset = self._queryset(view)
         model_cls = queryset.model
+        if not permission_registry.is_registered(model_cls):
+            if request.user.is_superuser:
+                return True
+            logger.warning(f'User {request.user.pk} denied {request.method} to {obj._meta.model_name}, not in DAB RBAC permission registry')
+            raise Http404
 
         perms = self.get_required_object_permissions(request.method, model_cls, view=view)
 

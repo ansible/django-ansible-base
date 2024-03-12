@@ -27,9 +27,8 @@ def required_related_permission(field: Field) -> str:
 
 
 def related_permission_fields(cls):
-    model_names = {cls._meta.model_name for cls in permission_registry.all_registered_models}
     for field in cls._meta.concrete_fields:
-        if isinstance(field, ForeignKey) and field.related_model._meta.model_name in model_names:
+        if isinstance(field, ForeignKey) and permission_registry.is_registered(field.related_model):
             yield field
 
 
