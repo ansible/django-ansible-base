@@ -42,17 +42,12 @@ def create_custom_permissions(app_config, verbosity=2, interactive=True, using=D
     if not router.allow_migrate_model(using, Permission):
         return
 
-    permission_models = [
-        cls._meta.model_name
-        for cls in permission_registry.all_registered_models
-    ]
-
     # This will hold the permissions we're looking for as (content_type, (codename, name))
     searched_perms = []
     # The codenames and ctypes that should exist.
     ctypes = set()
     for klass in app_config.get_models():
-        if klass._meta.model_name not in permission_models:
+        if not permission_registry.is_registered(klass):
             continue
         # Force looking up the content types in the current database
         # before creating foreign keys to them.

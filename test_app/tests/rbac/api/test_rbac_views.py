@@ -89,20 +89,56 @@ def test_make_global_user_assignment(admin_api_client, rando, inventory):
 
 
 @pytest.mark.django_db
-def test_remove_user_assignment(admin_api_client, inv_rd, rando, inventory):
+def test_remove_user_assignment(user_api_client, user, inv_rd, rando, inventory):
     assignment = inv_rd.give_permission(rando, inventory)
     url = reverse('roleuserassignment-detail', kwargs={'pk': assignment.pk})
-    response = admin_api_client.delete(url)
+    response = user_api_client.delete(url)
+    assert response.status_code == 404, response.data
+
+    inv_rd.give_permission(user, inventory)
+    response = user_api_client.delete(url)
     assert response.status_code == 204, response.data
 
     assert not type(assignment).objects.filter(pk=assignment.pk).exists()
 
 
 @pytest.mark.django_db
-def test_remove_team_assignment(admin_api_client, inv_rd, team, inventory):
+def test_remove_team_assignment(user_api_client, user, inv_rd, team, inventory):
     assignment = inv_rd.give_permission(team, inventory)
     url = reverse('roleteamassignment-detail', kwargs={'pk': assignment.pk})
-    response = admin_api_client.delete(url)
+    response = user_api_client.delete(url)
+    assert response.status_code == 404, response.data
+
+    inv_rd.give_permission(user, inventory)
+    response = user_api_client.delete(url)
+    assert response.status_code == 204, response.data
+
+    assert not type(assignment).objects.filter(pk=assignment.pk).exists()
+
+
+@pytest.mark.django_db
+def test_remove_user_assignment_with_global_role(user_api_client, user, inv_rd, global_inv_rd, rando, inventory):
+    assignment = inv_rd.give_permission(rando, inventory)
+    url = reverse('roleuserassignment-detail', kwargs={'pk': assignment.pk})
+    response = user_api_client.delete(url)
+    assert response.status_code == 404, response.data
+
+    global_inv_rd.give_global_permission(user)
+    response = user_api_client.delete(url)
+    assert response.status_code == 204, response.data
+
+    assert not type(assignment).objects.filter(pk=assignment.pk).exists()
+
+
+@pytest.mark.django_db
+def test_remove_global_role_assignment(user_api_client, user, inv_rd, global_inv_rd, rando, inventory):
+    assignment = global_inv_rd.give_global_permission(rando)
+    url = reverse('roleuserassignment-detail', kwargs={'pk': assignment.pk})
+    response = user_api_client.delete(url)
+    assert response.status_code == 404, response.data
+
+    global_inv_rd.give_global_permission(user)
+    response = user_api_client.delete(url)
     assert response.status_code == 204, response.data
 
     assert not type(assignment).objects.filter(pk=assignment.pk).exists()

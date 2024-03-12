@@ -37,7 +37,7 @@ class TeamViewSet(TestAppViewSet):
 
 
 class UserViewSet(ModelViewSet):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [AnsibleBaseObjectPermissions]
     serializer_class = serializers.UserSerializer
     prefetch_related = ('created_by', 'modified_by', 'resource', 'resource__content_type')
 

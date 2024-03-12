@@ -157,5 +157,8 @@ class PermissionRegistry:
     def all_registered_models(self):
         return [cls for cls in self._registry]
 
+    def is_registered(self, obj: Model) -> bool:
+        return any(obj._meta.model_name == cls._meta.model_name for cls in self._registry)
+
 
 permission_registry = PermissionRegistry()
