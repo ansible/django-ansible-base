@@ -173,7 +173,7 @@ def github_team_authenticator(github_team_configuration):
     from ansible_base.authentication.models import Authenticator
 
     authenticator = Authenticator.objects.create(
-        name="Test Github Organization Authenticator",
+        name="Test Github Team Authenticator",
         enabled=True,
         create_objects=True,
         users_unique=False,
