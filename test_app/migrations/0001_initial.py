@@ -142,7 +142,7 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('name', models.CharField(max_length=512)),
-                ('organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.ANSIBLE_BASE_ORGANIZATION_MODEL)),
+                ('organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.ANSIBLE_BASE_ORGANIZATION_MODEL, null=True)),
             ],
             options={
                 'permissions': [('update_inventory', 'Do inventory updates')],

@@ -67,7 +67,7 @@ class RelatedFieldsTestModel(CommonModel):
 class Inventory(models.Model):
     "Simple example of a child object, it has a link to its parent organization"
     name = models.CharField(max_length=512)
-    organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, null=True)
 
     class Meta:
         app_label = 'test_app'

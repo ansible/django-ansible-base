@@ -152,7 +152,56 @@ last migration of _your_ app at the time you integrate this.
 The philosophy of dab_rbac is "outside looking in", and the main link is a loose
 link via generic foreign key.
 Your permission model is needed to respect your existing permissions setup,
-and it needs relational links to your "actor" models (user/team) .
+and it needs relational links to your "actor" models (user/team).
+
+### Using in an REST API
+
+Instead of calling methods from DAB RBAC directly, you can connect your
+own serializers and views to use Django Rest Framework utilities shipped in DAB.
+Permission checking is split into 2 places
+ - permission checks for a HTTP verb and endpoint are done in the permission class
+ - permission checks for related objects are done in a serializer mixin
+
+To clarify exactly what checks are handled by what, see this table.
+
+ | Action                     | Permission class checks                                  | View/serializer checks                                                                     |
+ |----------------------------|----------------------------------------------------------|--------------------------------------------------------------------------------------------|
+ | POST / create              | Checking add permission for models with no parent object | Permission to the parent object (like organization)<br>Permission to other related objects |
+ | POST for special action    | Checks custom permission to obj                          | nothing                                                                                    |
+ | GET detail view            | Checks view permission to object                         | nothing                                                                                    |
+ | PUT / PATCH<br>Detail view | Checks edit permission to object                         | Permission to related objects                                                              |
+ | DELETE<br>Detail view      | Checks delete permission to object                       | nothing                                                                                    |
+
+Combining these functions, a hypothetical app setup might look like:
+
+```python
+from my_app.models import MyModel
+
+from rest_framework import viewsets
+from rest_framework import serializers
+
+from ansible_base.rbac.api.related import RelatedAccessMixin
+from ansible_base.rbac.api.permissions import AnsibleBaseObjectPermissions
+
+
+class MyModelSerializer(RelatedAccessMixin, serializers.ModelSerializer):  # (1)
+    class Meta:
+        model = MyModel
+        fields = '__all__'
+
+
+class MyModelViewSet(viewsets.ModelViewSet):
+    permission_classes = [AnsibleBaseObjectPermissions]  # (2)
+    serializer_class = MyModelSerializer
+
+    def get_queryset(self):
+        return MyModel.access_qs(self.request.user)  # (3)
+```
+
+This marks 3 different integration points.
+1. `RelatedAccessMixin` - checks access to related objects and gives access to users who create new objects
+2. `AnsibleBaseObjectPermissions` - checks object permission for detail views and global "add" permission
+3. `MyModel.access_qs` - filters the queryset to only objects the request user has permission to view
 
 ### Creating a New Role Definition
 
