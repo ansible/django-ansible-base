@@ -95,18 +95,6 @@ class GoogleOAuth2Configuration(BaseAuthenticatorConfiguration):
         default=["openid", "email", "profile"],
     )
 
-    EXTRA_DATA = ListField(
-        help_text=_(
-            'Extra arguments for Google OAuth2 login. You can restrict it to'
-            ' only allow a single domain to authenticate, even if the user is'
-            ' logged in with multple Google accounts. Refer to the'
-            ' documentation for more detail.'
-        ),
-        required=False,
-        allow_null=False,
-        ui_field_label=_('Google OAuth2 Extra Arguments'),
-    )
-
 
 class AuthenticatorPlugin(SocialAuthMixin, GoogleOAuth2, AbstractAuthenticatorPlugin):
     configuration_class = GoogleOAuth2Configuration
