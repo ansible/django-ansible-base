@@ -31,8 +31,8 @@ class AnsibleBaseAuth(ModelBackend):
 
         # Query the database for the most recently last modified timestamp.
         # This will be used as a cache key for the cached function get_authentication_backends below
-        last_modified_item = Authenticator.objects.values("modified_on").order_by("-modified_on").first()
-        last_modified = None if last_modified_item is None else last_modified_item.get('modified_on')
+        last_modified_item = Authenticator.objects.values("modified").order_by("-modified").first()
+        last_modified = None if last_modified_item is None else last_modified_item.get('modified')
 
         for authenticator_id, authenticator_object in get_authentication_backends(last_modified).items():
             user = authenticator_object.authenticate(request, *args, **kwargs)

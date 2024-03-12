@@ -20,7 +20,7 @@ def test_authenticator_backends_import_error(ldap_authenticator):
 
 @pytest.mark.django_db
 def test_authenticator_backends_cache(ldap_authenticator):
-    last_modified = Authenticator.objects.values("modified_on").order_by("-modified_on").first()["modified_on"]
+    last_modified = Authenticator.objects.values("modified").order_by("-modified").first()["modified"]
 
     # Load one item
     assert len(backend.get_authentication_backends(last_modified)) == 1
@@ -29,7 +29,7 @@ def test_authenticator_backends_cache(ldap_authenticator):
     ldap_authenticator.name = "new_name"
     ldap_authenticator.save()
 
-    last_modified = Authenticator.objects.values("modified_on").order_by("-modified_on").first()["modified_on"]
+    last_modified = Authenticator.objects.values("modified").order_by("-modified").first()["modified"]
     authenticator = backend.get_authentication_backends(last_modified)[ldap_authenticator.pk]
     assert authenticator.database_instance.name == "new_name"
 

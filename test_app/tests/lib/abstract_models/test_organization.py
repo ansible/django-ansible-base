@@ -12,9 +12,9 @@ def test_organization_model(system_user):
 
     assert org.name == "acme"
     assert org.description == "ACME Corp."
-    assert isinstance(org.created_on, datetime)
+    assert isinstance(org.created, datetime)
     assert org.created_by == system_user
-    assert isinstance(org.modified_on, datetime)
+    assert isinstance(org.modified, datetime)
     assert org.modified_by == system_user
 
     # I'm not sure why I have to add a delete in here.

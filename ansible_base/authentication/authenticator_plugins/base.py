@@ -94,7 +94,7 @@ class AbstractAuthenticatorPlugin:
         self.settings = database_authenticator.configuration
 
     def update_if_needed(self, database_authenticator: Authenticator) -> None:
-        if not self.database_instance or self.database_instance.modified_on != database_authenticator.modified_on:
+        if not self.database_instance or self.database_instance.modified != database_authenticator.modified:
             if self.database_instance:
                 self.logger.info(f"Updating {self.type} adapter {database_authenticator.name}")
             else:

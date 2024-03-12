@@ -17,7 +17,7 @@ class CommonModelSerializer(ValidationSerializerMixin, serializers.ModelSerializ
     summary_fields = serializers.SerializerMethodField('_get_summary_fields')
 
     class Meta:
-        fields = ['id', 'url', 'created_on', 'created_by', 'modified_on', 'modified_by', 'related', 'summary_fields']
+        fields = ['id', 'url', 'created', 'created_by', 'modified', 'modified_by', 'related', 'summary_fields']
 
     def __init__(self, instance=None, data=empty, **kwargs):
         # pre-populate the form with the defaults from the model

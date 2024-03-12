@@ -6,7 +6,6 @@ from django.conf import settings
 from django.db import models
 from django.db.models.fields.reverse_related import ManyToManyRel
 from django.urls.exceptions import NoReverseMatch
-from django.utils import timezone
 from inflection import underscore
 from rest_framework.reverse import reverse
 
@@ -46,10 +45,10 @@ class CommonModel(models.Model):
     class Meta:
         abstract = True
 
-    created_on = models.DateTimeField(
-        default=None,
+    created = models.DateTimeField(
         editable=False,
         help_text="The date/time this resource was created",
+        auto_now_add=True,
     )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -60,10 +59,10 @@ class CommonModel(models.Model):
         on_delete=models.DO_NOTHING,
         help_text="The user who created this resource",
     )
-    modified_on = models.DateTimeField(
-        default=None,
+    modified = models.DateTimeField(
         editable=False,
         help_text="The date/time this resource was created",
+        auto_now=True,
     )
     modified_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -79,13 +78,12 @@ class CommonModel(models.Model):
         '''
         This save function will provide several features automatically.
           * It will automatically encrypt any fields in the classes `encrypt_fields` property
-          * It will automatically add a created_by/created_on fields for new items
-          * It will automatically add the modified_on/modified_by fields for changing items
+          * It will automatically add a created_by fields for new items
+          * It will automatically add the modified fields for changing items
         '''
         update_fields = list(kwargs.get('update_fields', []))
 
         # Manually perform auto_now_add and auto_now logic.
-        now = timezone.now()
         user = get_current_user()
         if user is None or user.is_anonymous:
             user = get_system_user()
@@ -94,14 +92,6 @@ class CommonModel(models.Model):
             if self.created_by is None:
                 self.created_by = user
                 update_fields.append('created_by')
-
-            if self.created_on is None:
-                self.created_on = now
-                update_fields.append('created_on')
-
-        if 'modified_on' not in update_fields:
-            self.modified_on = now
-            update_fields.append('modified_on')
 
         if 'modified_by' not in update_fields:
             self.modified_by = user
