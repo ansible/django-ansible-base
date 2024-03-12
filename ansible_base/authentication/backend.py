@@ -15,7 +15,7 @@ def get_authentication_backends(last_updated):
     # last_updated is primarily here as a cache busting mechanism
     authentication_backends = OrderedDict()
 
-    for database_authenticator in Authenticator.objects.filter(enabled=True):
+    for database_authenticator in Authenticator.objects.filter(enabled=True).order_by('order'):
         try:
             authentication_backends[database_authenticator.id] = get_authenticator_plugin(database_authenticator.type)
         except ImportError:

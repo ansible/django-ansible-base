@@ -30,7 +30,10 @@ def test_migrations_okay(*args, **kwargs):
     for app in MigrationRecorder.Migration.objects.values_list('app', flat=True).distinct():
         if app in app_exceptions:
             continue
-        app_config = apps.get_app_config(app)
+        try:
+            app_config = apps.get_app_config(app)
+        except LookupError:
+            raise RuntimeError(f'App {app} is present in the recorded migrations but not installed, perhaps you need --create-db?')
         for path in os.listdir(os.path.join(app_config.path, 'migrations')):
             if re.match(r'^\d{4}_.*.py$', path):
                 disk_steps[app].add(path.rsplit('.')[0])
@@ -173,7 +176,7 @@ def github_team_authenticator(github_team_configuration):
     from ansible_base.authentication.models import Authenticator
 
     authenticator = Authenticator.objects.create(
-        name="Test Github Organization Authenticator",
+        name="Test Github Team Authenticator",
         enabled=True,
         create_objects=True,
         users_unique=False,
