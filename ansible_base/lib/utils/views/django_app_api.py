@@ -3,14 +3,12 @@ import logging
 
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
+from rest_framework.filters import SearchFilter
 
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
-
-from ansible_base.rest_filters.rest_framework.type_filter_backend import TypeFilterBackend
 from ansible_base.rest_filters.rest_framework.field_lookup_backend import FieldLookupBackend
-from rest_framework.filters import SearchFilter
 from ansible_base.rest_filters.rest_framework.order_backend import OrderByBackend
-
+from ansible_base.rest_filters.rest_framework.type_filter_backend import TypeFilterBackend
 
 logger = logging.getLogger('ansible_base.lib.utils.views.django_app_api')
 

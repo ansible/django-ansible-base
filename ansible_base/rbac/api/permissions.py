@@ -50,23 +50,12 @@ class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
 
         # Following is DAB RBAC specific, handle add permission checking
         if request.method == 'POST' and view.action == 'create':
-            # Identify cloned requests used by API browser
-            # the renderer class calls show_form_for_method which checks POST permissions
-            # on a GET request about whether to show the POST form
-            # philosophy is that all users have the abstract ability to post
-            # and the object permissions (data) tells whether it is possible
-            if request.method != request._request.method and (not request.data):
-                return True
-
             model_cls = self._queryset(view).model
             full_codename = f'add_{model_cls._meta.model_name}'
             parent_field_name = permission_registry.get_parent_fd_name(model_cls)
-            if parent_field_name is None or parent_field_name not in request.data:
+            if parent_field_name is None:
+                logger.warning(f'User {request.user.pk} lacks global {full_codename} permission to create {model_cls._meta.model_name}')
                 return has_super_permission(request.user, full_codename)
-
-            parent_model = permission_registry.get_parent_model(model_cls)
-            parent_obj = parent_model.objects.get(pk=request.data[parent_field_name])
-            return request.user.has_obj_perm(parent_obj, full_codename)
 
         # We are not checking many things here, a GET to list views can return 0 objects
         return True
@@ -86,14 +75,14 @@ class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
 
         queryset = self._queryset(view)
         model_cls = queryset.model
-        user = request.user
 
         perms = self.get_required_object_permissions(request.method, model_cls, view=view)
 
-        if not all(user.has_obj_perm(obj, perm) for perm in perms):
+        if not all(request.user.has_obj_perm(obj, perm) for perm in perms):
             # If the user does not have permissions we need to determine if
             # they have read permissions to see 403, or not, and simply see
             # a 404 response.
+            logger.warning(f'User {request.user.pk} lacks {perms} permission to obj {obj._meta.model_name}-{obj.pk}')
 
             if request.method in SAFE_METHODS:
                 # Read permissions already checked and failed, no need
@@ -101,7 +90,7 @@ class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
                 raise Http404
 
             read_perms = self.get_required_object_permissions('GET', model_cls)
-            if not all(user.has_obj_perm(obj, perm) for perm in read_perms):
+            if not all(request.user.has_obj_perm(obj, perm) for perm in read_perms):
                 raise Http404
 
             # Has read permissions.

@@ -1,16 +1,17 @@
 from rest_framework.serializers import ModelSerializer
 
 from ansible_base.lib.serializers.common import CommonModelSerializer, NamedCommonModelSerializer
+from ansible_base.rbac.api.related import RelatedAccessMixin
 from test_app import models
 
 
-class OrganizationSerializer(NamedCommonModelSerializer):
+class OrganizationSerializer(RelatedAccessMixin, NamedCommonModelSerializer):
     class Meta:
         model = models.Organization
         fields = '__all__'
 
 
-class TeamSerializer(NamedCommonModelSerializer):
+class TeamSerializer(RelatedAccessMixin, NamedCommonModelSerializer):
     class Meta:
         model = models.Team
         fields = '__all__'
@@ -43,25 +44,25 @@ class ResourceMigrationTestModelSerializer(CommonModelSerializer):
         fields = '__all__'
 
 
-class InventorySerializer(ModelSerializer):
+class InventorySerializer(RelatedAccessMixin, ModelSerializer):
     class Meta:
         model = models.Inventory
         fields = '__all__'
 
 
-class InstanceGroupSerializer(ModelSerializer):
+class InstanceGroupSerializer(RelatedAccessMixin, ModelSerializer):
     class Meta:
         model = models.InstanceGroup
         fields = '__all__'
 
 
-class CowSerializer(ModelSerializer):
+class CowSerializer(RelatedAccessMixin, ModelSerializer):
     class Meta:
         model = models.Cow
         fields = '__all__'
 
 
-class UUIDModelSerializer(ModelSerializer):
+class UUIDModelSerializer(RelatedAccessMixin, ModelSerializer):
     class Meta:
         model = models.UUIDModel
         fields = '__all__'
