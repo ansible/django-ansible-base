@@ -18,7 +18,7 @@ def system_roles_enabled():
 
 def codenames_for_cls(cls) -> set[str]:
     "Helper method that gives the Django permission codenames for a given class"
-    return set([t[0] for t in cls._meta.permissions]) | set(f'{act}_{cls._meta.model_name}' for act in cls._meta.default_permissions)
+    return {t[0] for t in cls._meta.permissions} | {f'{act}_{cls._meta.model_name}' for act in cls._meta.default_permissions}
 
 
 def permissions_allowed_for_system_role() -> dict[Model, set[str]]:
@@ -42,7 +42,7 @@ def permissions_allowed_for_role(cls) -> dict[Model, set[str]]:
 
     # Include direct model permissions (except for add permission)
     permissions_by_model = defaultdict(set)
-    permissions_by_model[cls] = set(codename for codename in codenames_for_cls(cls) if not is_add_perm(codename))
+    permissions_by_model[cls] = {codename for codename in codenames_for_cls(cls) if not is_add_perm(codename)}
 
     # Include model permissions for all child models, including the add permission
     for rel, child_cls in permission_registry.get_child_models(cls):
@@ -88,7 +88,7 @@ def validate_permissions_for_model(permissions, content_type, managed=False) -> 
     if not managed:
         validate_role_definition_enabled(permissions, content_type)
 
-    codename_list = set(perm.codename for perm in permissions)
+    codename_list = {perm.codename for perm in permissions}
     if content_type is None and permission_registry.team_permission in codename_list:
         # Special validation case, global team permissions are not allowed in any scenario
         raise ValidationError({'permissions': f'The {permission_registry.team_permission} permission can not be used in global roles'})
@@ -98,7 +98,7 @@ def validate_permissions_for_model(permissions, content_type, managed=False) -> 
         role_model = content_type.model_class()
     permissions_by_model = permissions_allowed_for_role(role_model)
 
-    invalid_codenames = set(codename_list) - combine_values(permissions_by_model)
+    invalid_codenames = codename_list - combine_values(permissions_by_model)
     if invalid_codenames:
         print_codenames = ', '.join(f'"{codename}"' for codename in invalid_codenames)
         print_model = role_model._meta.model_name if role_model else 'global roles'
@@ -107,7 +107,7 @@ def validate_permissions_for_model(permissions, content_type, managed=False) -> 
     # Check that view permission is given for every model that has update/delete/special actions listed
     for cls, valid_model_permissions in permissions_by_model.items():
         model_permissions = valid_model_permissions & codename_list
-        non_add_model_permissions = set(codename for codename in model_permissions if not is_add_perm(codename))
+        non_add_model_permissions = {codename for codename in model_permissions if not is_add_perm(codename)}
         if non_add_model_permissions and not any('view' in codename for codename in non_add_model_permissions):
             display_perms = ', '.join(non_add_model_permissions)
             raise ValidationError({'permissions': f'Permissions for model {role_model._meta.verbose_name} needs to include view, got: {display_perms}'})
