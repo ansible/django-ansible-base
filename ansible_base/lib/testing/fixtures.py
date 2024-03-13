@@ -9,6 +9,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
+from rest_framework.test import APIClient
 
 from ansible_base.lib.testing.util import copy_fixture
 
@@ -39,19 +40,17 @@ def local_authenticator(db):
 
 @pytest.fixture
 def unauthenticated_api_client(db):
-    from rest_framework.test import APIClient
-
     return APIClient()
 
 
 @pytest.fixture
-def admin_api_client(db, admin_user, unauthenticated_api_client, local_authenticator):
+def admin_api_client(db, admin_user, local_authenticator):
     # We don't use the is_staff flag anywhere. Instead we use is_superuser. This can
     # cause some permission checks to unexpectedly break in production where this flag
     # never gets set to true.
     admin_user.is_staff = False
     admin_user.save()
-    client = unauthenticated_api_client
+    client = APIClient()
     client.login(username="admin", password="password")
     yield client
     try:
@@ -72,8 +71,8 @@ def random_user(db, django_user_model, randname, local_authenticator):
 
 
 @pytest.fixture
-def user_api_client(db, user, unauthenticated_api_client, local_authenticator):
-    client = unauthenticated_api_client
+def user_api_client(db, user, local_authenticator):
+    client = APIClient()
     client.login(username="user", password="password")
     yield client
     try:
