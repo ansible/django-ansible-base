@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'ansible_base.rest_filters',
     'ansible_base.jwt_consumer',
     'ansible_base.resource_registry',
+    'ansible_base.rest_pagination',
     'test_app',
     'django_extensions',
     'debug_toolbar',
@@ -64,8 +65,6 @@ MIDDLEWARE = [
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': ['test_app.authentication.logged_basic_auth.LoggedBasicAuthentication'],
     'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.IsAuthenticated'],
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 50,
 }
 
 DATABASES = {
