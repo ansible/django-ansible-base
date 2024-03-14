@@ -48,16 +48,14 @@ class ChoiceLikeMixin(serializers.ChoiceField):
         self._choices = flatten_choices_dict(self._grouped_choices)
         self.choice_strings_to_values = {str(k): k for k in self._choices}
 
-    @property
+    @cached_property
     def grouped_choices(self):
-        if not hasattr(self, '_grouped_choices'):
-            self._initialize_choices()
+        self._initialize_choices()
         return self._grouped_choices
 
     @cached_property
     def choices(self):
-        if not hasattr(self, '_choices'):
-            self._initialize_choices()
+        self._initialize_choices()
         return self._choices
 
     def to_internal_value(self, data):

@@ -82,8 +82,8 @@ class Migration(migrations.Migration):
             name='EncryptionModel',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('created_on', models.DateTimeField(default=None, editable=False, help_text='The date/time this resource was created')),
-                ('modified_on', models.DateTimeField(default=None, editable=False, help_text='The date/time this resource was created')),
+                ('created', models.DateTimeField(auto_now_add=True, help_text='The date/time this resource was created')),
+                ('modified', models.DateTimeField(auto_now=True, help_text='The date/time this resource was created')),
                 ('name', models.CharField(help_text='The name of this resource', max_length=512)),
                 ('created_by', models.ForeignKey(default=None, editable=False, help_text='The user who created this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_created+', to=settings.AUTH_USER_MODEL)),
                 ('modified_by', models.ForeignKey(default=None, editable=False, help_text='The user who last modified this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_modified+', to=settings.AUTH_USER_MODEL)),
@@ -189,19 +189,6 @@ class Migration(migrations.Migration):
                 'abstract': False,
             },
         ),
-        migrations.CreateModel(
-            name='EncryptionModel',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('created', models.DateTimeField(auto_now_add=True, help_text='The date/time this resource was created')),
-                ('modified', models.DateTimeField(auto_now=True, help_text='The date/time this resource was created')),
-                ('name', models.CharField(help_text='The name of this resource', max_length=512)),
-                ('testing1', models.CharField(default='a', max_length=400, null=True)),
-                ('testing2', models.CharField(default='b', max_length=400, null=True)),
-                ('created_by', models.ForeignKey(default=None, editable=False, help_text='The user who created this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_created+', to=settings.AUTH_USER_MODEL)),
-                ('modified_by', models.ForeignKey(default=None, editable=False, help_text='The user who last modified this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_modified+', to=settings.AUTH_USER_MODEL)),
-            ],
-        ),
         migrations.AddField(
             model_name='team',
             name='encryptioner',
@@ -253,4 +240,5 @@ class Migration(migrations.Migration):
                 'default_permissions': ('add', 'view', 'delete'),
             },
         ),
+        migrations.RunPython(create_system_user),
     ]

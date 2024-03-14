@@ -1,7 +1,6 @@
 import logging
 
 from django.conf import settings
-from django.utils import timezone
 
 from ansible_base.rbac.permission_registry import permission_registry
 
@@ -9,10 +8,9 @@ logger = logging.getLogger('ansible_base.rbac.migrations._managed_definitions')
 
 
 def get_or_create_managed(name, description, ct, permissions, RoleDefinition):
-    now = timezone.now()
     role_definition, created = RoleDefinition.objects.get_or_create(
         name=name,
-        defaults={'managed': True, 'description': description, 'created_on': now, 'modified_on': now, 'content_type': ct}
+        defaults={'managed': True, 'description': description, 'content_type': ct}
     )
     role_definition.permissions.set(list(permissions))
 

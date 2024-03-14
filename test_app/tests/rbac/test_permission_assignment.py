@@ -29,7 +29,7 @@ def test_child_object_permission(rando, organization, inventory, org_inv_rd, adm
 
     # Test that user assignment records the date of the assignment
     assignment = RoleUserAssignment.objects.get(object_role=assignment.object_role, user=rando)
-    assert assignment.created_on
+    assert assignment.created
     assert assignment.created_by == admin_user
 
 

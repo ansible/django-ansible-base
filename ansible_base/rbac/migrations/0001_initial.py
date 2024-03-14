@@ -54,7 +54,7 @@ class Migration(migrations.Migration):
                     related_name='%(app_label)s_%(class)s_created+',
                     to=settings.AUTH_USER_MODEL
                 )),
-                ('created_on', models.DateTimeField(default=None, editable=False, help_text='The date/time this resource was created'),),
+                ('created', models.DateTimeField(auto_now_add=True, help_text='The date/time this resource was created')),
                 ('modified_by', models.ForeignKey(
                     default=None,
                     editable=False,
@@ -64,7 +64,7 @@ class Migration(migrations.Migration):
                     related_name='%(app_label)s_%(class)s_modified+',
                     to=settings.AUTH_USER_MODEL
                 )),
-                ('modified_on', models.DateTimeField(default=None, editable=False, help_text='The date/time this resource was created'),),
+                ('modified', models.DateTimeField(auto_now=True, help_text='The date/time this resource was created')),
             ],
             options={
                 'verbose_name_plural': 'role_definition',
@@ -74,7 +74,7 @@ class Migration(migrations.Migration):
             name='RoleTeamAssignment',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('created_on', models.DateTimeField(default=django.utils.timezone.now, editable=False, help_text='The date/time this resource was created')),
+                ('created', models.DateTimeField(auto_now_add=True, help_text='The date/time this resource was created')),
                 ('content_type', models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, to='contenttypes.contenttype')),
                 ('object_id', models.TextField(
                     blank=True,
@@ -110,7 +110,7 @@ class Migration(migrations.Migration):
             name='RoleUserAssignment',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('created_on', models.DateTimeField(default=django.utils.timezone.now, editable=False, help_text='The date/time this resource was created')),
+                ('created', models.DateTimeField(auto_now_add=True, help_text='The date/time this resource was created')),
                 ('content_type', models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, to='contenttypes.contenttype')),
                 ('object_id', models.TextField(
                     blank=True,
