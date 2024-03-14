@@ -1,7 +1,9 @@
 import pytest
 from rest_framework.reverse import reverse
 
+from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
+from test_app.models import ImmutableTask
 
 
 @pytest.mark.django_db
@@ -96,6 +98,36 @@ def test_remove_user_assignment(user_api_client, user, inv_rd, rando, inventory)
     assert response.status_code == 404, response.data
 
     inv_rd.give_permission(user, inventory)
+    response = user_api_client.delete(url)
+    assert response.status_code == 204, response.data
+
+    assert not type(assignment).objects.filter(pk=assignment.pk).exists()
+
+
+@pytest.mark.django_db
+def test_remove_user_assignment_immutable(user_api_client, user, rando):
+    task = ImmutableTask.objects.create()
+    rd = RoleDefinition.objects.create_from_permissions(
+        permissions=['view_immutabletask', 'delete_immutabletask', 'cancel_immutabletask'],
+        name='Task Admin',
+        content_type=permission_registry.content_type_model.objects.get_for_model(ImmutableTask),
+    )
+    assignment = rd.give_permission(rando, task)
+
+    url = reverse('roleuserassignment-detail', kwargs={'pk': assignment.pk})
+    response = user_api_client.delete(url)
+    assert response.status_code == 404, response.data
+
+    rd_view = RoleDefinition.objects.create_from_permissions(
+        permissions=['view_immutabletask'],
+        name='Task Viewer',
+        content_type=permission_registry.content_type_model.objects.get_for_model(ImmutableTask),
+    )
+    rd_view.give_permission(user, task)
+    response = user_api_client.delete(url)
+    assert response.status_code == 403, response.data
+
+    rd.give_permission(user, task)
     response = user_api_client.delete(url)
     assert response.status_code == 204, response.data
 

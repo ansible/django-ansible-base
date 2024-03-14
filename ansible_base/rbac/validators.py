@@ -37,7 +37,7 @@ def permissions_allowed_for_role(cls) -> dict[Model, set[str]]:
     if cls is None:
         return permissions_allowed_for_system_role()
 
-    if cls not in permission_registry._registry:
+    if not permission_registry.is_registered(cls):
         raise ValidationError(f'Django-ansible-base RBAC does not track permissions for model {cls._meta.model_name}')
 
     # Include direct model permissions (except for add permission)
