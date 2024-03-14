@@ -3,6 +3,7 @@ from collections import OrderedDict
 
 from crum import get_current_user
 from django.conf import settings
+from django.core.exceptions import FieldDoesNotExist
 from django.db import models
 from django.db.models.fields.reverse_related import ManyToManyRel
 from django.urls.exceptions import NoReverseMatch
@@ -224,3 +225,11 @@ class ImmutableModel:
             raise ValueError(f"{self.__class__.__name__} is immutable and cannot be modified.")
 
         return super().save(*args, **kwargs)
+
+    def __getattribute__(self, name):
+        # This is a bit of a hack, there is no good way to remove these fields, because they exist up the chain
+        # if the model inherits from CommonModel.
+        if name in ('modified_on', 'modified_by'):
+            raise FieldDoesNotExist(f"{self.__class__.__name__} has no attribute {name}")
+
+        return super().__getattribute__(name)
