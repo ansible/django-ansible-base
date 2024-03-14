@@ -255,4 +255,14 @@ class Migration(migrations.Migration):
                 ('my_organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='test_app.organization')),
             ],
         ),
+        migrations.CreateModel(
+            name='ImmutableTask',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+            ],
+            options={
+                'permissions': [('cancel_immutabletask', 'Stop this task from running')],
+                'default_permissions': ('add', 'view', 'delete'),
+            },
+        ),
     ]

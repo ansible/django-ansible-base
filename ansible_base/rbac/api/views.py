@@ -13,6 +13,7 @@ from ansible_base.rbac.api.serializers import (
 )
 from ansible_base.rbac.evaluations import has_super_permission
 from ansible_base.rbac.models import RoleDefinition
+from ansible_base.rbac.validators import permissions_allowed_for_role
 
 
 class RoleDefinitionViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
@@ -66,8 +67,15 @@ class BaseAssignmentViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
     def perform_destroy(self, instance):
         obj = instance.content_object
         if obj:
-            if not self.request.user.has_obj_perm(obj, 'change'):
-                raise PermissionDenied
+            # User must have all permissions for the applicable model
+            if 'change' in obj._meta.default_permissions:
+                if not self.request.user.has_obj_perm(obj, 'change'):
+                    raise PermissionDenied
+            else:
+                cls = type(obj)
+                for codename in permissions_allowed_for_role(cls)[cls]:
+                    if not self.request.user.has_obj_perm(obj, codename):
+                        raise PermissionDenied({'detail': f'You do not have {codename} permission the object'})
             with transaction.atomic():
                 instance.role_definition.remove_permission(instance.actor, obj)
         else:

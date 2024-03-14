@@ -114,6 +114,14 @@ class UUIDModel(models.Model):
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
 
 
+class ImmutableTask(models.Model):
+    "Hypothetical immutable task-like thing, can be created and canceled but not edited"
+
+    class Meta:
+        default_permissions = ('add', 'view', 'delete')
+        permissions = [('cancel_immutabletask', 'Stop this task from running')]
+
+
 class ParentName(models.Model):
     "Tests that system works with a parent field name different from parent model name"
     my_organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
@@ -161,7 +169,7 @@ class ProxyInventory(Inventory):
 permission_registry.register(Organization, Inventory, Namespace, Team, Cow, UUIDModel, PositionModel, WeirdPerm)
 permission_registry.register(ParentName, parent_field_name='my_organization')
 permission_registry.register(CollectionImport, parent_field_name='namespace')
-permission_registry.register(InstanceGroup, parent_field_name=None)
+permission_registry.register(InstanceGroup, ImmutableTask, parent_field_name=None)
 
 permission_registry.track_relationship(Team, 'tracked_users', 'team-member')
 permission_registry.track_relationship(Team, 'team_parents', 'team-member')
