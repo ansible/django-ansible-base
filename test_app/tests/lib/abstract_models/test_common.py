@@ -187,7 +187,7 @@ def test_immutable_model_modified_fields_gone_after_save():
     instance.save()
 
     with pytest.raises(FieldDoesNotExist):
-        instance.modified_on
+        instance.modified
 
     with pytest.raises(FieldDoesNotExist):
         instance.modified_by
