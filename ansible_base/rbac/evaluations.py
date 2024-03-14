@@ -1,7 +1,7 @@
 from django.conf import settings
 
 from ansible_base.rbac import permission_registry
-from ansible_base.rbac.models import RoleDefinition, get_evaluation_model
+from ansible_base.rbac.models import DABPermission, RoleDefinition, get_evaluation_model
 from ansible_base.rbac.validators import validate_codename_for_model
 
 """
@@ -41,7 +41,7 @@ def bound_singleton_permissions(self):
     "Method attached to User model as singleton_permissions"
     if not hasattr(self, '_singleton_permissions') or bound_singleton_permissions._team_clear_signal:
         # values_list will make the return type set[str]
-        permission_qs = permission_registry.permission_model.objects.values_list('codename', flat=True)
+        permission_qs = DABPermission.objects.values_list('codename', flat=True)
         self._singleton_permissions = RoleDefinition.user_global_permissions(self, permission_qs=permission_qs)
         bound_singleton_permissions._team_clear_signal = False
     return self._singleton_permissions

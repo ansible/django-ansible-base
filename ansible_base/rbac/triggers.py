@@ -241,19 +241,14 @@ def rbac_post_user_delete(instance, *args, **kwargs):
 
 
 def post_migration_rbac_setup(*args, **kwargs):
-    """
-    Return if running django or py.test unit tests.
-    Logic is taken from AWX is_testing, it could be cut down on
-    """
-    if not settings.ANSIBLE_BASE_ROLE_PRECREATE:
-        return
-
     try:
         RoleDefinition.objects.first()
     except ProgrammingError:
         return  # this happens when migrating backwards, tables do not exist at prior states
 
-    setup_managed_role_definitions(apps, None)
+    if settings.ANSIBLE_BASE_ROLE_PRECREATE:
+        setup_managed_role_definitions(apps, None)
+
     compute_team_member_roles()
     compute_object_role_permissions()
 

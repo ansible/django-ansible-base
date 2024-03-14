@@ -82,6 +82,7 @@ class PermissionRegistry:
     def call_when_apps_ready(self, apps, app_config):
         from ansible_base.rbac import triggers
         from ansible_base.rbac.evaluations import bound_has_obj_perm, bound_singleton_permissions, connect_rbac_methods
+        from ansible_base.rbac.management import create_dab_permissions
 
         self.apps = apps
         self.apps_ready = True
@@ -89,7 +90,17 @@ class PermissionRegistry:
         if self.team_model not in self._registry:
             self._registry.add(self.team_model)
 
-        post_migrate.connect(triggers.post_migration_rbac_setup, sender=app_config)
+        # Do no specify sender for create_dab_permissions, because that is passed as app_config
+        # and we want to create permissions for external apps, not the dab_rbac app
+        post_migrate.connect(
+            create_dab_permissions,
+            dispatch_uid="ansible_base.rbac.management.create_dab_permissions",
+        )
+        post_migrate.connect(
+            triggers.post_migration_rbac_setup,
+            sender=app_config,
+            dispatch_uid="ansible_base.rbac.triggers.post_migration_rbac_setup",
+        )
 
         self.user_model.add_to_class('has_obj_perm', bound_has_obj_perm)
         self.user_model.add_to_class('singleton_permissions', bound_singleton_permissions)
@@ -140,14 +151,16 @@ class PermissionRegistry:
         return self.content_type_model.objects.get_for_model(team_parent_model).id
 
     @property
-    def permission_model(self):
-        return self.apps.get_model(settings.ANSIBLE_BASE_PERMISSION_MODEL)
-
-    @property
     def permission_qs(self):
-        "Return a queryset of the permission model restricted to the RBAC-tracked models"
+        """Return a queryset of the permission model restricted to the RBAC-tracked models
+
+        Note that this should not be necessary, since the post_migrate signal for DABPermission
+        will only create entries for registered models.
+        However, removing permission entries after a model definition changes is still unsolved
+        and this is already problematic for auth.Permission.
+        """
         all_cts = self.content_type_model.objects.get_for_models(*self.all_registered_models)
-        return self.permission_model.objects.filter(content_type__in=all_cts.values())
+        return self.apps.get_model('dab_rbac.DABPermission').objects.filter(content_type__in=all_cts.values())
 
     @property
     def team_permission(self):

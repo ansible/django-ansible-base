@@ -3,7 +3,7 @@ from django.contrib.contenttypes.models import ContentType
 from rest_framework.exceptions import ValidationError
 
 from ansible_base.rbac import permission_registry
-from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation
+from ansible_base.rbac.models import DABPermission, ObjectRole, RoleDefinition, RoleEvaluation
 from ansible_base.rbac.validators import validate_permissions_for_model
 from test_app.models import ExampleEvent, Organization
 
@@ -39,12 +39,11 @@ def test_missing_view_permission():
 
 @pytest.mark.django_db
 def test_permission_for_unregistered_model():
-    with pytest.raises(ValidationError) as exc:
+    with pytest.raises(DABPermission.DoesNotExist):
         validate_permissions_for_model(
-            permissions=[permission_registry.permission_model.objects.get(codename='view_exampleevent')],
+            permissions=[DABPermission.objects.get(codename='view_exampleevent')],
             content_type=ContentType.objects.get_for_model(ExampleEvent),
         )
-    assert 'RBAC does not track permissions for model exampleevent' in str(exc)
 
 
 @pytest.mark.django_db

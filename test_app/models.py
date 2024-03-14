@@ -2,7 +2,6 @@ import uuid
 
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
-from django.contrib.contenttypes.models import ContentType
 from django.db import models
 
 from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam
@@ -140,17 +139,6 @@ class WeirdPerm(models.Model):
     class Meta:
         app_label = 'test_app'
         permissions = [("I'm a lovely coconut", "You can be a lovely coconut with this object"), ("crack", "Can crack open this coconut")]
-
-
-class CustomPermission(models.Model):
-    "Used for testing using a custom permission, only used in special cases"
-    name = models.CharField("name", max_length=255)
-    content_type = models.ForeignKey(ContentType, models.CASCADE, verbose_name="content type")
-    codename = models.CharField("codename", max_length=100)
-
-    class Meta:
-        app_label = 'test_app'
-        unique_together = [["content_type", "codename"]]
 
 
 class ProxyInventory(Inventory):

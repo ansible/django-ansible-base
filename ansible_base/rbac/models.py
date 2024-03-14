@@ -27,6 +27,23 @@ from ansible_base.rbac.validators import validate_assignment, validate_permissio
 logger = logging.getLogger('ansible_base.rbac.models')
 
 
+class DABPermission(models.Model):
+    "This is a minimal copy of auth.Permission for internal use"
+
+    name = models.CharField("name", max_length=255)
+    content_type = models.ForeignKey(ContentType, models.CASCADE, verbose_name="content type")
+    codename = models.CharField("codename", max_length=100)
+
+    class Meta:
+        verbose_name = "permission"
+        verbose_name_plural = "permissions"
+        unique_together = [["content_type", "codename"]]
+        ordering = ["content_type__model", "codename"]
+
+    def __str__(self):
+        return f"<{self.__class__.__name__}: {self.codename}>"
+
+
 class RoleDefinitionManager(models.Manager):
     def give_creator_permissions(self, user, obj):
         # If the user is a superuser, no need to bother giving the creator permissions
@@ -42,7 +59,7 @@ class RoleDefinitionManager(models.Manager):
         cts = ContentType.objects.get_for_models(*model_and_children).values()
 
         needed_perms = set()
-        for perm in permission_registry.permission_model.objects.filter(content_type__in=cts).prefetch_related('content_type'):
+        for perm in DABPermission.objects.filter(content_type__in=cts).prefetch_related('content_type'):
             action = perm.codename.split('_', 1)[0]
             if action in needed_actions:
                 # do not save add permission on the object level, which does not make sense
@@ -103,7 +120,7 @@ class RoleDefinition(CommonModel):
     name = models.TextField(db_index=True, unique=True)
     description = models.TextField(blank=True)
     managed = models.BooleanField(default=False, editable=False)  # pulp definition of Role uses locked
-    permissions = models.ManyToManyField(settings.ANSIBLE_BASE_PERMISSION_MODEL, related_name='role_definitions')
+    permissions = models.ManyToManyField('dab_rbac.DABPermission', related_name='role_definitions')
     content_type = models.ForeignKey(
         ContentType,
         help_text=_('Type of resource this can apply to, only used for validation and user assistance'),
@@ -228,7 +245,7 @@ class RoleDefinition(CommonModel):
         if permission_qs is None:
             # Allowing caller to replace the base permission set allows changing the type of thing returned
             # this is used in the assignment querysets, but these cases must call the method directly
-            permission_qs = permission_registry.permission_model.objects.all()
+            permission_qs = DABPermission.objects.all()
 
         perm_set = set()
         if settings.ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES:
