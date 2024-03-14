@@ -9,7 +9,6 @@ from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import connection, models
 from django.db.models.functions import Cast
-from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 # Django-rest-framework
@@ -320,12 +319,7 @@ class AssignmentBase(CommonModel, ObjectRoleFields):
         null=True, blank=True, help_text=_('Primary key of the object this assignment applies to, null value indicates system-wide assignment')
     )
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, null=True)
-    modified_on = None
-    created_on = models.DateTimeField(
-        default=timezone.now,  # Needed to work in migrations as a through field, which CommonModel can not do
-        editable=False,
-        help_text="The date/time this resource was created",
-    )
+    modified = None
     modified_by = None
 
     class Meta:
@@ -352,7 +346,7 @@ class AssignmentBase(CommonModel, ObjectRoleFields):
     def save(self, *args, **kwargs):
         if self.id:
             raise RuntimeError(f'{self._meta.verbose_name.title()} model is immutable, use RoleDefinition.give_permission method')
-        # skip over CommonModel save because it would error due to missing modified_by and created_on
+        # skip over CommonModel save because it would error due to missing modified_by and created
         return super(CommonModel, self).save(*args, **kwargs)
 
 
