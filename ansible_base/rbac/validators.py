@@ -3,7 +3,7 @@ from collections import defaultdict
 
 from django.conf import settings
 from django.db.models import Model
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from ansible_base.lib.utils.models import is_add_perm
 from ansible_base.rbac.permission_registry import permission_registry
@@ -184,3 +184,21 @@ def validate_assignment(rd, actor, obj) -> None:
     if obj_ct.id != rd.content_type_id:
         rd_model = getattr(rd.content_type, "model", "global")
         raise ValidationError(f'Role type {rd_model} does not match object {obj_ct.model}')
+
+
+def check_content_obj_permission(user, obj) -> None:
+    """Permission policy rules for giving or removing obj permission
+
+    Right now we are not supporting a separate permission to manage permission
+    on objects, so we firstly look to a simple matter of having change permission
+    If that is not available, then we check all object-level permissions.
+    """
+    # User must have all permissions for the applicable model
+    if 'change' in obj._meta.default_permissions:
+        if not user.has_obj_perm(obj, 'change'):
+            raise PermissionDenied
+    else:
+        cls = type(obj)
+        for codename in permissions_allowed_for_role(cls)[cls]:
+            if not user.has_obj_perm(obj, codename):
+                raise PermissionDenied({'detail': f'You do not have {codename} permission the object'})
