@@ -41,6 +41,7 @@ class Entry(ImmutableModel, CommonModel):
     related_content_type = models.ForeignKey(ContentType, on_delete=models.DO_NOTHING, null=True, blank=True, related_name='related_content_type')
     related_object_id = models.TextField(null=True, blank=True)
     related_content_object = GenericForeignKey('related_content_type', 'related_object_id')
+    related_field_name = models.CharField(max_length=64, null=True, blank=True)
 
     def __str__(self):
         return f'[{self.created_on}] {self.get_operation_display()} by {self.created_by}: {self.content_type} {self.object_id}'
@@ -69,7 +70,6 @@ class AuditableModel(models.Model):
             if field.name in cls.activity_stream_excluded_field_names:
                 continue
 
-            # We need to use a partial here to pass the field name to the signal handler
             fn = partial(activitystream_m2m_changed, field_name=field.name)
             m2m_changed.connect(fn, sender=getattr(cls, field.name).through, dispatch_uid=f'dab_activitystream_{cls.__name__}_{field.name}_m2m_changed')
 
