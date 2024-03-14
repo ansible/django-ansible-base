@@ -153,10 +153,15 @@ def test_immutable_model_is_immutable():
     """
     log_entry = ImmutableLogEntry(message="Oh no! An important message!")
     log_entry.save()  # We can save it once
+    log_entry.message = "Oh no! An even more important message!"
 
     with pytest.raises(ValueError) as excinfo:
         log_entry.save()
     assert excinfo.value.args[0] == "ImmutableLogEntry is immutable and cannot be modified."
+
+    # Ensure that nothing got updated before the exception was raised
+    log_entry.refresh_from_db()
+    assert log_entry.message == "Oh no! An important message!"
 
 
 @pytest.mark.django_db
