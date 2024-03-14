@@ -8,6 +8,7 @@ from django.db import connection
 from django.test import override_settings
 from rest_framework.reverse import reverse
 
+from ansible_base.lib.abstract_models.common import CommonModel, ImmutableModel
 from test_app.models import EncryptionModel, ImmutableLogEntry, Organization, RelatedFieldsTestModel, User
 
 
@@ -147,9 +148,25 @@ def test_cascade_behavior_for_created_by(user, user_api_client):
 
 @pytest.mark.django_db
 def test_immutable_model_is_immutable():
+    """
+    ImmutableModel prevents saves from happening after the first save.
+    """
     log_entry = ImmutableLogEntry(message="Oh no! An important message!")
     log_entry.save()  # We can save it once
 
     with pytest.raises(ValueError) as excinfo:
         log_entry.save()
     assert excinfo.value.args[0] == "ImmutableLogEntry is immutable and cannot be modified."
+
+
+@pytest.mark.django_db
+def test_immutable_model_mixin_must_be_first():
+    """
+    We raise an error if the ImmutableModel mixin is used improperly and doesn't come first.
+    """
+    with pytest.raises(ValueError) as excinfo:
+
+        class FooModel(CommonModel, ImmutableModel):
+            pass
+
+    assert excinfo.value.args[0] == "ImmutableModel must be the first base class for FooModel"
