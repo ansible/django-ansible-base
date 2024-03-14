@@ -9,7 +9,6 @@ except ImportError:
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
-from django.utils.timezone import now
 
 from ansible_base.authentication.models import Authenticator, AuthenticatorUser
 
@@ -73,9 +72,7 @@ class Command(BaseCommand):
                 create_objects=True,
                 configuration={},
                 created_by=admin_user,
-                created_on=now(),
                 modified_by=admin_user,
-                modified_on=now(),
                 remove_users=False,
                 type='ansible_base.authentication.authenticator_plugins.local',
             )
