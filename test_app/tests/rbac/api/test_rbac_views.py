@@ -104,15 +104,33 @@ def test_remove_user_assignment(user_api_client, user, inv_rd, rando, inventory)
     assert not type(assignment).objects.filter(pk=assignment.pk).exists()
 
 
-@pytest.mark.django_db
-def test_remove_user_assignment_immutable(user_api_client, user, rando):
-    task = ImmutableTask.objects.create()
-    rd = RoleDefinition.objects.create_from_permissions(
+@pytest.fixture
+def task_admin_rd():
+    return RoleDefinition.objects.create_from_permissions(
         permissions=['view_immutabletask', 'delete_immutabletask', 'cancel_immutabletask'],
         name='Task Admin',
         content_type=permission_registry.content_type_model.objects.get_for_model(ImmutableTask),
     )
-    assignment = rd.give_permission(rando, task)
+
+
+@pytest.mark.django_db
+def test_create_user_assignment_immutable(user_api_client, user, rando, task_admin_rd):
+    task = ImmutableTask.objects.create()
+
+    url = reverse('roleuserassignment-list')
+    request_data = {"user": rando.pk, "role_definition": task_admin_rd.pk, "object_id": task.pk}
+    response = user_api_client.post(url, data=request_data)
+    assert response.status_code == 403, response.data
+
+    task_admin_rd.give_permission(user, task)
+    response = user_api_client.post(url, data=request_data)
+    assert response.status_code == 201, response.data
+
+
+@pytest.mark.django_db
+def test_remove_user_assignment_immutable(user_api_client, user, rando, task_admin_rd):
+    task = ImmutableTask.objects.create()
+    assignment = task_admin_rd.give_permission(rando, task)
 
     url = reverse('roleuserassignment-detail', kwargs={'pk': assignment.pk})
     response = user_api_client.delete(url)
@@ -127,7 +145,7 @@ def test_remove_user_assignment_immutable(user_api_client, user, rando):
     response = user_api_client.delete(url)
     assert response.status_code == 403, response.data
 
-    rd.give_permission(user, task)
+    task_admin_rd.give_permission(user, task)
     response = user_api_client.delete(url)
     assert response.status_code == 204, response.data
 

@@ -13,7 +13,7 @@ from ansible_base.rbac.api.serializers import (
 )
 from ansible_base.rbac.evaluations import has_super_permission
 from ansible_base.rbac.models import RoleDefinition
-from ansible_base.rbac.validators import permissions_allowed_for_role
+from ansible_base.rbac.validators import check_content_obj_permission
 
 
 class RoleDefinitionViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
@@ -64,18 +64,13 @@ class BaseAssignmentViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
             return model.objects.all()
         return model.visible_items(self.request.user).prefetch_related(*self.prefetch_related, *assignment_prefetch_base)
 
+    def perform_create(self, serializer):
+        return super().perform_create(serializer)
+
     def perform_destroy(self, instance):
         obj = instance.content_object
         if obj:
-            # User must have all permissions for the applicable model
-            if 'change' in obj._meta.default_permissions:
-                if not self.request.user.has_obj_perm(obj, 'change'):
-                    raise PermissionDenied
-            else:
-                cls = type(obj)
-                for codename in permissions_allowed_for_role(cls)[cls]:
-                    if not self.request.user.has_obj_perm(obj, codename):
-                        raise PermissionDenied({'detail': f'You do not have {codename} permission the object'})
+            check_content_obj_permission(self.request.user, obj)
             with transaction.atomic():
                 instance.role_definition.remove_permission(instance.actor, obj)
         else:
