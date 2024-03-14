@@ -11,11 +11,25 @@ class Migration(migrations.Migration):
         ('contenttypes', '0002_remove_content_type_name'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
         migrations.swappable_dependency(settings.ANSIBLE_BASE_TEAM_MODEL),
-        migrations.swappable_dependency(settings.ANSIBLE_BASE_PERMISSION_MODEL),
         ('auth', '0012_alter_user_first_name_max_length'),
     ]
 
     operations = [
+        migrations.CreateModel(
+            name='DABPermission',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('name', models.CharField(max_length=255, verbose_name='name')),
+                ('codename', models.CharField(max_length=100, verbose_name='codename')),
+                ('content_type', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='contenttypes.contenttype', verbose_name='content type')),
+            ],
+            options={
+                'verbose_name': 'permission',
+                'verbose_name_plural': 'permissions',
+                'ordering': ['content_type__model', 'codename'],
+                'unique_together': {('content_type', 'codename')},
+            },
+        ),
         migrations.CreateModel(
             name='RoleDefinition',
             fields=[
@@ -23,7 +37,7 @@ class Migration(migrations.Migration):
                 ('name', models.TextField(db_index=True, unique=True)),
                 ('description', models.TextField(blank=True)),
                 ('managed', models.BooleanField(default=False, editable=False)),
-                ('permissions', models.ManyToManyField(related_name='role_definitions', to=settings.ANSIBLE_BASE_PERMISSION_MODEL)),
+                ('permissions', models.ManyToManyField(related_name='role_definitions', to='dab_rbac.DABPermission')),
                 ('content_type', models.ForeignKey(
                     default=None,
                     help_text='Type of resource this can apply to, only used for validation and user assistance',

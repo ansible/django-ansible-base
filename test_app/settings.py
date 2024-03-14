@@ -114,7 +114,6 @@ DEMO_DATA_COUNTS = {'organization': 150, 'user': 379, 'team': 43}
 
 ANSIBLE_BASE_TEAM_MODEL = 'test_app.Team'
 ANSIBLE_BASE_ORGANIZATION_MODEL = 'test_app.Organization'
-ANSIBLE_BASE_PERMISSION_MODEL = 'auth.Permission'
 
 STATIC_URL = '/static/'
 

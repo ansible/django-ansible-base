@@ -33,7 +33,7 @@ def setup_managed_role_definitions(apps, schema_editor):
     to_create = settings.ANSIBLE_BASE_ROLE_PRECREATE
 
     ContentType = apps.get_model('contenttypes', 'ContentType')
-    Permission = apps.get_model(settings.ANSIBLE_BASE_PERMISSION_MODEL)
+    Permission = apps.get_model('dab_rbac', 'DABPermission')
     RoleDefinition = apps.get_model('dab_rbac', 'RoleDefinition')
     Organization = apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL)
     org_ct = ContentType.objects.get_for_model(Organization)

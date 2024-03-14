@@ -324,7 +324,6 @@ CAUTION: these settings will be used in _migrations_ and changing them later on 
 ```
 ANSIBLE_BASE_TEAM_MODEL = 'auth.Group'
 ANSIBLE_BASE_ORGANIZATION_MODEL = 'main.Organization'
-ANSIBLE_BASE_PERMISSION_MODEL = 'auth.Permission'
 ```
 
 The organization model is only used for pre-created role definitions.

@@ -145,7 +145,4 @@ if 'ansible_base.rbac' in INSTALLED_APPS:
     ANSIBLE_BASE_BYPASS_SUPERUSER_FLAGS = ['is_superuser']
     ANSIBLE_BASE_BYPASS_ACTION_FLAGS = {}
 
-    # Specify a custom permission model
-    ANSIBLE_BASE_PERMISSION_MODEL = 'auth.Permission'
-
     ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS = False

@@ -146,7 +146,7 @@ class ManyRelatedListField(serializers.ListField):
 
 class RoleDefinitionSerializer(CommonModelSerializer):
     # Relational versions - we may switch to these if custom permission and type models are exposed but out of scope here
-    # permissions = serializers.SlugRelatedField(many=True, slug_field='codename', queryset=permission_registry.permission_model.objects.all())
+    # permissions = serializers.SlugRelatedField(many=True, slug_field='codename', queryset=DABPermission.objects.all())
     # content_type = ContentTypeField(slug_field='model', queryset=permission_registry.content_type_model.objects.all(), allow_null=True, default=None)
     permissions = ManyRelatedListField(child=PermissionField())
     content_type = ContentTypeField(allow_null=True, default=None)
