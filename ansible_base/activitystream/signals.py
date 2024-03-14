@@ -35,7 +35,7 @@ def _store_activitystream_entry(old, new, operation, m2m=False):
     )
 
 
-def _store_activitystream_m2m(given_instance, model, operation, pk_set, reverse):
+def _store_activitystream_m2m(given_instance, model, operation, pk_set, reverse, field_name):
     from ansible_base.activitystream.models import Entry
 
     if operation not in ('associate', 'disassociate'):
@@ -44,12 +44,12 @@ def _store_activitystream_m2m(given_instance, model, operation, pk_set, reverse)
     instances = model.objects.filter(pk__in=pk_set)
 
     for instance in instances:
-        # It would be nice if we could bulk insert, but we need .save()
-        # called to fill in the created_* fields.
+        # TODO: bulk_create
         Entry.objects.create(
             content_object=instance if reverse else given_instance,
             operation=operation,
             related_content_object=given_instance if reverse else instance,
+            related_field_name=field_name,
         )
 
 
@@ -125,12 +125,13 @@ def activitystream_m2m_changed(sender, instance, action, reverse, model, pk_set,
     if action not in ('post_add', 'post_remove', 'pre_clear'):
         return
 
+    if 'field_name' not in kwargs:
+        raise ValueError("Missing field_name in kwargs")
+
+    field_name = kwargs['field_name']
     operation = 'associate' if action == 'post_add' else 'disassociate'
 
     if action == 'pre_clear':
-        if 'field_name' not in kwargs:
-            raise ValueError("Missing field_name in kwargs")
-        field_name = kwargs['field_name']
         if reverse:
             # Okay. We need to talk. Just you - the reader trying to understand this code - and I.
             # Look. We want to always store the activity stream entry on the forward relation.
@@ -144,4 +145,4 @@ def activitystream_m2m_changed(sender, instance, action, reverse, model, pk_set,
             # given we have the field name and the instance.
             pk_set = getattr(instance, field_name).all().values_list('pk', flat=True)
 
-    _store_activitystream_m2m(instance, model, operation, pk_set, reverse)
+    _store_activitystream_m2m(instance, model, operation, pk_set, reverse, field_name)
