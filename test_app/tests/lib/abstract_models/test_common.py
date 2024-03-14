@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pytest
 from crum import impersonate
 from django.contrib.auth.models import AnonymousUser
+from django.core.exceptions import FieldDoesNotExist
 from django.db import connection
 from django.test import override_settings
 from rest_framework.reverse import reverse
@@ -164,7 +165,6 @@ def test_immutable_model_is_immutable():
     assert log_entry.message == "Oh no! An important message!"
 
 
-@pytest.mark.django_db
 def test_immutable_model_mixin_must_be_first():
     """
     We raise an error if the ImmutableModel mixin is used improperly and doesn't come first.
@@ -175,3 +175,19 @@ def test_immutable_model_mixin_must_be_first():
             pass
 
     assert excinfo.value.args[0] == "ImmutableModel must be the first base class for FooModel"
+
+
+@pytest.mark.django_db
+def test_immutable_model_modified_fields_gone_after_save():
+    """
+    After save(), ImmutableModels have no modified_on/modified_by fields.
+    """
+    instance = ImmutableLogEntry(message="Oh no! An important message!")
+
+    instance.save()
+
+    with pytest.raises(FieldDoesNotExist):
+        instance.modified_on
+
+    with pytest.raises(FieldDoesNotExist):
+        instance.modified_by
