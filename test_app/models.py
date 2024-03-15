@@ -63,6 +63,18 @@ class RelatedFieldsTestModel(CommonModel):
 
 
 class ImmutableLogEntry(ImmutableModel, CommonModel):
+    """
+    Testing ImmutableModel with CommonModel
+    """
+
+    message = models.CharField(max_length=400)
+
+
+class ImmutableLogEntryNotCommon(ImmutableModel, models.Model):
+    """
+    Testing ImmutableModel without CommonModel
+    """
+
     message = models.CharField(max_length=400)
 
 
