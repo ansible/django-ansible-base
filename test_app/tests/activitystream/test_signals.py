@@ -36,7 +36,7 @@ def test_activitystream_update(system_user, animal):
     assert entry.operation == 'update'
     assert entry.changes['added_fields'] == {}
     assert entry.changes['removed_fields'] == {}
-    assert len(entry.changes['changed_fields']) == 2  # name and modified_on
+    assert len(entry.changes['changed_fields']) == 2  # name and modified
     assert entry.changes['changed_fields']['name'] == [original_name, 'Rocky']
 
 

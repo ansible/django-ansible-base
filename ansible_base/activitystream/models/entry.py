@@ -44,7 +44,7 @@ class Entry(ImmutableModel, CommonModel):
     related_field_name = models.CharField(max_length=64, null=True, blank=True)
 
     def __str__(self):
-        return f'[{self.created_on}] {self.get_operation_display()} by {self.created_by}: {self.content_type} {self.object_id}'
+        return f'[{self.created}] {self.get_operation_display()} by {self.created_by}: {self.content_type} {self.object_id}'
 
 
 class AuditableModel(models.Model):
@@ -78,4 +78,4 @@ class AuditableModel(models.Model):
         """
         A helper property that returns the activity stream entries for this object.
         """
-        return Entry.objects.filter(content_type=ContentType.objects.get_for_model(self), object_id=self.pk).order_by('created_on')
+        return Entry.objects.filter(content_type=ContentType.objects.get_for_model(self), object_id=self.pk).order_by('created')
