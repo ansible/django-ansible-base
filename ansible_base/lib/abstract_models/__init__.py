@@ -1,4 +1,5 @@
-from .common import CommonModel, ImmutableModel, NamedCommonModel, UniqueNamedCommonModel
+from .common import CommonModel, NamedCommonModel, UniqueNamedCommonModel
+from .immutable import ImmutableModel
 from .organization import AbstractOrganization
 from .team import AbstractTeam
 
