@@ -2,7 +2,6 @@ import logging
 from collections import OrderedDict
 
 from django.conf import settings
-from django.core.exceptions import FieldDoesNotExist
 from django.db import models
 from django.db.models.fields.reverse_related import ManyToManyRel
 from django.urls.exceptions import NoReverseMatch

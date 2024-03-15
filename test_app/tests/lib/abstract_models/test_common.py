@@ -4,13 +4,12 @@ from unittest.mock import patch
 import pytest
 from crum import impersonate
 from django.contrib.auth.models import AnonymousUser
-from django.core.exceptions import FieldDoesNotExist
 from django.db import connection
 from django.test import override_settings
 from rest_framework.reverse import reverse
 
 from ansible_base.lib.abstract_models.common import CommonModel, ImmutableModel
-from test_app.models import EncryptionModel, ImmutableLogEntry, Organization, RelatedFieldsTestModel, User
+from test_app.models import EncryptionModel, ImmutableLogEntry, ImmutableLogEntryNotCommon, Organization, RelatedFieldsTestModel, User
 
 
 @pytest.mark.django_db
@@ -148,17 +147,18 @@ def test_cascade_behavior_for_created_by(user, user_api_client):
 
 
 @pytest.mark.django_db
-def test_immutable_model_is_immutable():
+@pytest.mark.parametrize('model', [ImmutableLogEntry, ImmutableLogEntryNotCommon])
+def test_immutable_model_is_immutable(model):
     """
     ImmutableModel prevents saves from happening after the first save.
     """
-    log_entry = ImmutableLogEntry(message="Oh no! An important message!")
+    log_entry = model(message="Oh no! An important message!")
     log_entry.save()  # We can save it once
     log_entry.message = "Oh no! An even more important message!"
 
     with pytest.raises(ValueError) as excinfo:
         log_entry.save()
-    assert excinfo.value.args[0] == "ImmutableLogEntry is immutable and cannot be modified."
+    assert excinfo.value.args[0] == f"{model.__name__} is immutable and cannot be modified."
 
     # Ensure that nothing got updated before the exception was raised
     log_entry.refresh_from_db()
@@ -186,8 +186,8 @@ def test_immutable_model_modified_fields_gone_after_save():
 
     instance.save()
 
-    with pytest.raises(FieldDoesNotExist):
+    with pytest.raises(AttributeError):
         instance.modified
 
-    with pytest.raises(FieldDoesNotExist):
+    with pytest.raises(AttributeError):
         instance.modified_by
