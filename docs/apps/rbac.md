@@ -35,7 +35,7 @@ A POST to this endpoint will create a new role definition, example data:
 }
 ```
 
-Name can be anything string that's not blank. Description can be any string.
+Name can be any string that's not blank. Description can be any string.
 
 ### Assigning a User a Role to an Object
 
@@ -116,19 +116,6 @@ permission to all inventories inside of an organization.
 The difference in the above steps are that
 - when creating a custom role definition the `content_type` would be "shared.organization"
 - when creating the assignment, the `object_id` would be the id of an organization
-
-### Displaying Access
-
-To give a complete picture of access, consider that there are 3 "layers" of access.
- - Direct object role assignment - for users and teams
- - Parent object role assignment - for users and teams
- - Superuser or super-auditor user flags
-
-For a single app using this system at the org-level, these 5 distinct pieces
-of information would give a complete summary of who has access.
-By itself, this does not expand the users who are members of teams.
-Assuming that teams-in-teams are enabled, this would not just be the direct
-members of the teams, but a listing of all users who have indirect membership to the team.
 
 
 ## Using in a Django Project
@@ -214,7 +201,7 @@ NOTE: At various times a "role definition" may be referred to as just a "role".
 Roles are expected to be user-defined in many apps. Example of creating a custom role definition:
 
 ```
-from awx.ansible_base.models.rbac import RoleDefinition
+from ansible_base.rbac.models import RoleDefinition
 
 rd = RoleDefinition.objects.get_or_create(name='JT-execute', permissions=['execute_jobtemplate', 'view_jobtemplate'])
 ```
@@ -239,7 +226,7 @@ Any Django Model (except your user model) can
 be made into a resource in the RBAC system by registering that resource in the registry.
 
 ```
-from awx.ansible_base.utils.permission_registry import permission_registry
+from ansible_base.rbac.permission_registry import permission_registry
 
 permission_registry.register(MyModel, parent_field_name='organization')
 ```
