@@ -560,6 +560,7 @@ def system_user(db, settings, no_log_messages):
 def organization(db, randname):
     return models.Organization.objects.create(name=randname("Test Organization"))
 
+
 @pytest.fixture
 def team(organization, randname):
     return models.Team.objects.create(name=randname("Test Team"), organization=organization)
