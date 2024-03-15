@@ -207,8 +207,8 @@ class MultipleFieldsModel(NamedCommonModel):
     class Meta:
         app_label = "test_app"
 
-    char_field1 = models.CharField(max_length=1, null=True, default='a')
-    char_field2 = models.CharField(max_length=1, null=True, default='b')
+    char_field1 = models.CharField(max_length=100, null=True, default='a')
+    char_field2 = models.CharField(max_length=100, null=True, default='b')
     int_field = models.PositiveIntegerField(null=True, default=1)
     bool_field = models.BooleanField(default=True)
 
