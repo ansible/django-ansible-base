@@ -67,12 +67,22 @@ def initialize_resources(sender, **kwargs):
             r_type.save()
 
 
+def proxies_of_model(cls):
+    "Return models that are a proxy of cls"
+    for sub_cls in cls.__subclasses__():
+        if sub_cls._meta.concrete_model is cls:
+            yield sub_cls
+
+
 def connect_resource_signals(sender, **kwargs):
     from ansible_base.resource_registry.signals import handlers
 
     for model in handlers.get_resource_models():
         signals.post_save.connect(handlers.update_resource, sender=model)
         signals.post_delete.connect(handlers.remove_resource, sender=model)
+        for sub_cls in proxies_of_model(model):
+            signals.post_save.connect(handlers.update_resource, sender=sub_cls)
+            signals.post_delete.connect(handlers.remove_resource, sender=sub_cls)
 
 
 def disconnect_resource_signals(sender, **kwargs):
@@ -81,6 +91,9 @@ def disconnect_resource_signals(sender, **kwargs):
     for model in handlers.get_resource_models():
         signals.post_save.disconnect(handlers.update_resource, sender=model)
         signals.post_delete.disconnect(handlers.remove_resource, sender=model)
+        for sub_cls in proxies_of_model(model):
+            signals.post_save.disconnect(handlers.update_resource, sender=sub_cls)
+            signals.post_delete.disconnect(handlers.remove_resource, sender=sub_cls)
 
 
 class ResourceRegistryConfig(AppConfig):

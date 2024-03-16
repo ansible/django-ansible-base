@@ -169,6 +169,30 @@ class ProxyInventory(Inventory):
         ]
 
 
+class Original1(NamedCommonModel):
+    "Registered with the Resource Registry"
+    pass
+
+
+class Proxy1(Original1):
+    "Not registered"
+
+    class Meta:
+        proxy = True
+
+
+class Original2(NamedCommonModel):
+    "Not registered"
+    pass
+
+
+class Proxy2(Original2):
+    "Registered with the Resource Registry"
+
+    class Meta:
+        proxy = True
+
+
 permission_registry.register(Organization, Inventory, Namespace, Team, Cow, UUIDModel, PositionModel, WeirdPerm)
 permission_registry.register(ParentName, parent_field_name='my_organization')
 permission_registry.register(CollectionImport, parent_field_name='namespace')

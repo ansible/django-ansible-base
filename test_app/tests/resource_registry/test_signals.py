@@ -2,38 +2,39 @@ from unittest import mock
 
 import pytest
 
-from test_app.models import EncryptionModel, Organization
+from ansible_base.resource_registry.models import Resource
+from ansible_base.resource_registry.signals import handlers
+from test_app.models import EncryptionModel, Organization, Original1, Original2, Proxy1, Proxy2
 
 
 @pytest.mark.django_db
-def test_unregistered_model_triggers_no_save_signals():
-    obj = EncryptionModel.objects.create()
+def test_unregistered_model_triggers_no_signals():
+    with mock.patch('ansible_base.resource_registry.models.resource.init_resource_from_object') as mck:
+        obj = EncryptionModel.objects.create()
+    mck.assert_not_called()
+
     with mock.patch('ansible_base.resource_registry.models.Resource.update_from_content_object') as mck:
         obj.a = 'foobar'
         obj.save()
     mck.assert_not_called()
 
-
-@pytest.mark.django_db
-def test_unregistered_model_triggers_no_delete_signals():
-    obj = EncryptionModel.objects.create()
     with mock.patch('ansible_base.resource_registry.models.Resource.delete') as mck:
         obj.delete()
     mck.assert_not_called()
 
 
 @pytest.mark.django_db
-def test_registered_model_triggers_save_signals():
-    obj = Organization.objects.create(name='foo')
+@pytest.mark.parametrize('model', [Organization, Original1, Original2, Proxy1, Proxy2])
+def test_registered_model_triggers_signals(model):
+    with mock.patch('ansible_base.resource_registry.signals.handlers.init_resource_from_object', wraps=handlers.init_resource_from_object) as mck:
+        obj = model.objects.create(name='foo')
+    mck.assert_called_once_with(obj)
+
     with mock.patch('ansible_base.resource_registry.models.Resource.update_from_content_object') as mck:
         obj.description = 'foobar'
         obj.save()
     mck.assert_called_once_with()
 
-
-@pytest.mark.django_db
-def test_registered_model_triggers_delete_signals():
-    obj = Organization.objects.create(name='foo')
     with mock.patch('ansible_base.resource_registry.models.Resource.delete') as mck:
         obj.delete()
     mck.assert_called_once_with()
