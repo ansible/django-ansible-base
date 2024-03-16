@@ -2,7 +2,6 @@ from unittest import mock
 
 import pytest
 
-from ansible_base.resource_registry.models import Resource
 from ansible_base.resource_registry.signals import handlers
 from test_app.models import EncryptionModel, Organization, Original1, Original2, Proxy1, Proxy2
 
