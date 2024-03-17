@@ -1,6 +1,5 @@
 import pytest
 
-from ansible_base.lib.abstract_models import CommonModel, ImmutableModel
 from test_app.models import ImmutableLogEntry, ImmutableLogEntryNotCommon
 
 
@@ -23,22 +22,10 @@ def test_immutable_model_is_immutable(model):
     assert log_entry.message == "Oh no! An important message!"
 
 
-def test_immutable_model_mixin_must_be_first():
-    """
-    We raise an error if the ImmutableModel mixin is used improperly and doesn't come first.
-    """
-    with pytest.raises(ValueError) as excinfo:
-
-        class FooModel(CommonModel, ImmutableModel):
-            pass
-
-    assert excinfo.value.args[0] == "ImmutableModel must be the first base class for FooModel"
-
-
 @pytest.mark.django_db
-def test_immutable_model_modified_fields_gone_after_save():
+def test_immutable_model_has_no_modified_fields():
     """
-    After save(), ImmutableModels have no modified_on/modified_by fields.
+    After ImmutableCommonModel should never have a modified/modified_by field.
     """
     instance = ImmutableLogEntry(message="Oh no! An important message!")
 
