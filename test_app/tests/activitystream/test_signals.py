@@ -36,7 +36,9 @@ def test_activitystream_update(system_user, animal):
     assert entry.operation == 'update'
     assert entry.changes['added_fields'] == {}
     assert entry.changes['removed_fields'] == {}
-    assert len(entry.changes['changed_fields']) == 2  # name and modified
+    # just name was changed. modified/modified_by doesn't show up because they
+    # are set in save, and we're using pre_save, so we won't see the new values yet.
+    assert len(entry.changes['changed_fields']) == 1
     assert entry.changes['changed_fields']['name'] == [original_name, 'Rocky']
 
 

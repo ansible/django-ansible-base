@@ -7,7 +7,7 @@ def test_activitystream_entry_immutable(system_user, animal):
     """
     entry = animal.activity_stream_entries.first()
     entry.operation = "delete"
-    with pytest.raises(RuntimeError) as excinfo:
+    with pytest.raises(ValueError) as excinfo:
         entry.save()
 
-    assert "Activity stream entries are immutable" in str(excinfo.value)
+    assert "Entry is immutable" in str(excinfo.value)

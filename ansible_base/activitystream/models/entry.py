@@ -7,10 +7,10 @@ from django.db.models.signals import m2m_changed, post_save, pre_delete, pre_sav
 from django.utils.translation import gettext_lazy as _
 
 from ansible_base.activitystream.signals import activitystream_create, activitystream_delete, activitystream_m2m_changed, activitystream_update
-from ansible_base.lib.abstract_models import CommonModel, ImmutableModel
+from ansible_base.lib.abstract_models import ImmutableCommonModel
 
 
-class Entry(ImmutableModel, CommonModel):
+class Entry(ImmutableCommonModel):
     """
     An activity stream entry.
 

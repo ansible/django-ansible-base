@@ -584,12 +584,4 @@ def multiple_fields_model(db, randname):
 @copy_fixture(copies=3)  # noqa: F405
 @pytest.fixture
 def animal(db, randname, user):
-    from test_app.models import Animal
-
-    animal = Animal.objects.create(name=randname("Test Animal"), owner=user)
-    yield animal
-    try:
-        animal.delete()
-    except ValueError:
-        # It might have already been deleted
-        pass
+    return models.Animal.objects.create(name=randname("Test Animal"), owner=user)
