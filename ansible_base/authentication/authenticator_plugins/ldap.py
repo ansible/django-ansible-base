@@ -30,7 +30,7 @@ def validate_ldap_dn(value: str, with_user: bool = False, required: bool = True)
     dn_value = value
     if with_user:
         if user_search_string not in value:
-            raise ValidationError(_('DN must include "users" placeholder for username: {}').format(value))
+            raise ValidationError(_('DN must include "{}" placeholder for username: {}').format(user_search_string, value))
 
         dn_value = value.replace(user_search_string, 'USER')
 
