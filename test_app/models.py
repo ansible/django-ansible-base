@@ -5,6 +5,7 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 
 from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam, CommonModel, ImmutableCommonModel, NamedCommonModel
+from ansible_base.lib.abstract_models.immutable import ImmutableModel
 from ansible_base.lib.utils.models import user_summary_fields
 from ansible_base.rbac import permission_registry
 from ansible_base.resource_registry.fields import AnsibleResourceField
@@ -64,15 +65,15 @@ class RelatedFieldsTestModel(CommonModel):
 
 class ImmutableLogEntry(ImmutableCommonModel):
     """
-    Testing ImmutableModel with CommonModel
+    Testing ImmutableCommonModel
     """
 
     message = models.CharField(max_length=400)
 
 
-class ImmutableLogEntryNotCommon(ImmutableCommonModel):
+class ImmutableLogEntryNotCommon(ImmutableModel):
     """
-    Testing ImmutableModel without CommonModel
+    Testing the more generic ImmutableModel
     """
 
     message = models.CharField(max_length=400)
