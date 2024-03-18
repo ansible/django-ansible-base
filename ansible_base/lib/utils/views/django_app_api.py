@@ -33,7 +33,7 @@ if parent_view:
 # but not using rest_filters app, we need to specify the same filter backends
 dab_filter_backends = list(api_settings.DEFAULT_FILTER_BACKENDS)
 
-for backend_name in settings.ANSIBLE_BASE_CUSTOM_VIEW_FILTERS:
+for backend_name in getattr(settings, 'ANSIBLE_BASE_CUSTOM_VIEW_FILTERS', ()):
     backend = import_from_string(backend_name, 'ANSIBLE_BASE_CUSTOM_VIEW_FILTERS')
     if backend not in dab_filter_backends:
         dab_filter_backends.append(backend)
