@@ -1,7 +1,5 @@
 from django.db import models
 
-from ansible_base.lib.abstract_models.common import AbstractCommonModel, CreatableModel
-
 
 class ImmutableModel(models.Model):
     """
@@ -16,14 +14,3 @@ class ImmutableModel(models.Model):
             raise ValueError(f"{self.__class__.__name__} is immutable and cannot be modified.")
 
         return super().save(*args, **kwargs)
-
-
-class ImmutableCommonModel(ImmutableModel, AbstractCommonModel, CreatableModel):
-    """
-    A save-once (immutable) base model.
-    Functionally similar to CommonModel, but does not allow modification of the object after creation
-    and does not include the modified/modifed_by fields.
-    """
-
-    class Meta:
-        abstract = True

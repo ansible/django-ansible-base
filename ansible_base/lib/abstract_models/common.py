@@ -9,6 +9,7 @@ from django.urls.exceptions import NoReverseMatch
 from inflection import underscore
 from rest_framework.reverse import reverse
 
+from ansible_base.lib.abstract_models.immutable import ImmutableModel
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING, ansible_encryption
 from ansible_base.lib.utils.models import get_system_user
 
@@ -243,3 +244,14 @@ class UniqueNamedCommonModel(CommonModel):
 
     def __str__(self):
         return self.name
+
+
+class ImmutableCommonModel(ImmutableModel, AbstractCommonModel, CreatableModel):
+    """
+    A save-once (immutable) base model.
+    Functionally similar to CommonModel, but does not allow modification of the object after creation
+    and does not include the modified/modifed_by fields.
+    """
+
+    class Meta:
+        abstract = True
