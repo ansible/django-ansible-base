@@ -4,8 +4,8 @@ from crum import impersonate
 from ansible_base.authentication.models import AuthenticatorMap
 from ansible_base.lib.serializers.common import CommonModelSerializer
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
-from test_app.models import EncryptionModel, ResourceMigrationTestModel, Team
-from test_app.serializers import EncryptionModelSerializer, ResourceMigrationTestModelSerializer, TeamSerializer
+from test_app.models import EncryptionModel, ImmutableLogEntry, ResourceMigrationTestModel, Team
+from test_app.serializers import EncryptionModelSerializer, ImmutableLogEntrySerializer, ResourceMigrationTestModelSerializer, TeamSerializer, UserSerializer
 
 
 @pytest.mark.django_db
@@ -159,3 +159,42 @@ def test_common_create_serializer(openapi_schema):
         rd_schema = openapi_schema['components']['schemas'][serializer_name]
 
         assert 'summary_fields' not in rd_schema['required']
+
+
+def test_common_model_serializer_has_common_model_fields(user):
+    """
+    Ensure that CommonModelSerializer has fields that CommonModel provides.
+    We use the user fixture to test, since it is a CommonModel.
+    UserSerializer extends CommonModelSerializer.
+    """
+    serializer = UserSerializer()
+    serialized = serializer.to_representation(user)
+    for field in ('id', 'url', 'related', 'summary_fields', 'created', 'created_by', 'modified', 'modified_by'):
+        assert field in serialized, f'{field} not found in serialized data'
+
+
+def test_immutable_common_model_serializer_has_immutable_common_model_fields():
+    """
+    Ensure that ImmutableCommonModelSerializer has fields that ImmutableCommonModel provides.
+    In particular, it should have no modified_by/modified fields, but should still have created_by/created fields.
+    """
+    log_entry = ImmutableLogEntry(message='test')
+    serializer = ImmutableLogEntrySerializer()
+    serialized = serializer.to_representation(log_entry)
+    for field in ('id', 'url', 'related', 'summary_fields', 'created', 'created_by'):
+        assert field in serialized, f'{field} not found in serialized data'
+
+    for field in ('modified', 'modified_by'):
+        assert field not in serialized, f'{field} found in serialized data, but should not be present'
+
+
+def test_named_common_model_serializer_has_named_common_model_fields():
+    """
+    Ensure that NamedCommonModelSerializer has fields that NamedCommonModel provides.
+    It should have all the CommonModel fields and a 'name' field.
+    """
+    instance = EncryptionModel(name='test')
+    serializer = EncryptionModelSerializer()
+    serialized = serializer.to_representation(instance)
+    for field in ('id', 'url', 'related', 'summary_fields', 'created', 'created_by', 'modified', 'modified_by', 'name'):
+        assert field in serialized, f'{field} not found in serialized data'
