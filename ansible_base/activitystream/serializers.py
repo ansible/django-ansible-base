@@ -1,8 +1,8 @@
 from ansible_base.activitystream.models import Entry
-from ansible_base.lib.serializers.common import CommonModelSerializer
+from ansible_base.lib.serializers.common import ImmutableCommonModelSerializer
 
 
-class EntrySerializer(CommonModelSerializer):
+class EntrySerializer(ImmutableCommonModelSerializer):
     class Meta:
         model = Entry
-        fields = CommonModelSerializer.Meta.fields + ['operation', 'changes']
+        fields = ImmutableCommonModelSerializer.Meta.fields + ['operation', 'changes']
