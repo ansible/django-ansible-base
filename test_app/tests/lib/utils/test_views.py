@@ -131,3 +131,9 @@ def test_ansible_base_view_version(view_with_headers, mock_request, admin_user, 
 def test_ansible_base_view_filter_backends():
     "Since test_app uses the rest_filters app, we should expect views to have those filter_backends"
     assert len(AuthenticatorViewSet.filter_backends) == len(settings.REST_FRAMEWORK['DEFAULT_FILTER_BACKENDS'])
+
+
+@override_settings(ANSIBLE_BASE_CUSTOM_VIEW_FILTERS=settings.ANSIBLE_BASE_ALL_REST_FILTERS)
+def test_ansible_base_view_filter_backends():
+    "Test the alternative non-test_app configuration"
+    assert len(AuthenticatorViewSet.filter_backends) == len(settings.REST_FRAMEWORK['DEFAULT_FILTER_BACKENDS'])
