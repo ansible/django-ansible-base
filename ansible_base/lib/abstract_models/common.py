@@ -1,7 +1,6 @@
 import logging
 from collections import OrderedDict
 
-from crum import get_current_user
 from django.conf import settings
 from django.db import models
 from django.db.models.fields.reverse_related import ManyToManyRel
@@ -11,7 +10,7 @@ from rest_framework.reverse import reverse
 
 from ansible_base.lib.abstract_models.immutable import ImmutableModel
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING, ansible_encryption
-from ansible_base.lib.utils.models import get_system_user
+from ansible_base.lib.utils.models import current_user_or_system_user
 
 logger = logging.getLogger('ansible_base.lib.abstract_models.common')
 
@@ -63,12 +62,8 @@ class ModifiableModel(models.Model):
         '''
         update_fields = list(kwargs.get('update_fields', []))
 
-        user = get_current_user()
-        if user is None or user.is_anonymous:
-            user = get_system_user()
-
         if 'modified_by' not in update_fields:
-            self.modified_by = user
+            self.modified_by = current_user_or_system_user()
             update_fields.append('modified_by')
 
         return super().save(*args, **kwargs)
@@ -100,13 +95,9 @@ class CreatableModel(models.Model):
         '''
         update_fields = list(kwargs.get('update_fields', []))
 
-        user = get_current_user()
-        if user is None or user.is_anonymous:
-            user = get_system_user()
-
         if not self.pk:
             if self.created_by is None:
-                self.created_by = user
+                self.created_by = current_user_or_system_user()
                 update_fields.append('created_by')
 
         return super().save(*args, **kwargs)
