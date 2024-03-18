@@ -1,6 +1,7 @@
 import logging
 from itertools import chain
 
+from crum import get_current_user
 from django.contrib.auth import get_user_model
 from django.utils.translation import gettext_lazy as _
 from inflection import underscore
@@ -85,3 +86,14 @@ def get_system_user():
             )
         )
     return system_user
+
+
+def current_user_or_system_user():
+    """
+    Attempt to get the current user. If there is none or it is anonymous,
+    try to return the system user instead.
+    """
+    user = get_current_user()
+    if user is None or user.is_anonymous:
+        user = get_system_user()
+    return user

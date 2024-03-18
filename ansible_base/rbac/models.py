@@ -1,8 +1,5 @@
 import logging
 
-# CRUM for getting the requesting user
-from crum import get_current_user
-
 # Django
 from django.conf import settings
 from django.contrib.contenttypes.fields import GenericForeignKey
@@ -15,7 +12,7 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
 
 # ansible_base lib functions
-from ansible_base.lib.abstract_models.common import CommonModel
+from ansible_base.lib.abstract_models.common import CommonModel, ImmutableCommonModel
 
 # ansible_base RBAC logic imports
 from ansible_base.lib.utils.models import is_add_perm
@@ -306,7 +303,7 @@ class ObjectRoleFields(models.Model):
         return RoleEvaluation._meta.get_field('object_id').to_python(self.object_id)
 
 
-class AssignmentBase(CommonModel, ObjectRoleFields):
+class AssignmentBase(ImmutableCommonModel, ObjectRoleFields):
     """
     This uses some parts of CommonModel to save metadata like documenting
     the user who assigned the permission and timestamp when it happened.
@@ -327,27 +324,13 @@ class AssignmentBase(CommonModel, ObjectRoleFields):
         abstract = True
 
     def __init__(self, *args, **kwargs):
-        """
-        Because through models are created via a bulk_create, the save method is usually not called
-        to get around this, we populate the user model after initialization
-        """
         super().__init__(*args, **kwargs)
-        if not self.id:
-            user = get_current_user()
-            if user:
-                # Hazard: user can be a SimpleLazyObject, so use id
-                self.created_by_id = user.id
+
         # Cache fields from the associated object_role
         if self.object_role_id and not self.object_id:
             self.object_id = self.object_role.object_id
             self.content_type_id = self.object_role.content_type_id
             self.role_definition_id = self.object_role.role_definition_id
-
-    def save(self, *args, **kwargs):
-        if self.id:
-            raise RuntimeError(f'{self._meta.verbose_name.title()} model is immutable, use RoleDefinition.give_permission method')
-        # skip over CommonModel save because it would error due to missing modified_by and created
-        return super(CommonModel, self).save(*args, **kwargs)
 
 
 class RoleUserAssignment(AssignmentBase):
