@@ -113,7 +113,8 @@ def validate_ldap_filter(value: Any, with_user: bool = False) -> bool:
     dn_value = value
     if with_user:
         if user_search_string not in value:
-            raise ValidationError(_(f'DN must include "{user_search_string}" placeholder for username: "{value}"'))
+            #raise ValidationError(_(f'DN must include "{user_search_string}" placeholder for username: "{value}"'))
+            raise ValidationError(_(f'DN must include "users" placeholder for username: "{value}"'))
         dn_value = value.replace(user_search_string, 'USER')
 
     if re.match(r'^\([A-Za-z0-9-]+?=[^()]+?\)$', dn_value):
@@ -123,7 +124,7 @@ def validate_ldap_filter(value: Any, with_user: bool = False) -> bool:
             # We only need to check with_user at the top of the recursion stack
             validate_ldap_filter(f'({sub_filter})', with_user=False)
         return
-    raise ValidationError(_('Invalid filter: %s' % value))
+    raise ValidationError(_('Invalid filter: %s') % value)
 
 
 def get_all_sub_classes(cls):
