@@ -123,7 +123,7 @@ def validate_ldap_filter(value: Any, with_user: bool = False) -> bool:
             # We only need to check with_user at the top of the recursion stack
             validate_ldap_filter(f'({sub_filter})', with_user=False)
         return
-    raise ValidationError(_('Invalid filter: %s') % value)
+    raise ValidationError(_('Invalid filter: %s' % value))
 
 
 def get_all_sub_classes(cls):
