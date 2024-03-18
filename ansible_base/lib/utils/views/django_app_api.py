@@ -6,9 +6,6 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework.settings import api_settings, import_from_string
 
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
-from ansible_base.rest_filters.rest_framework.field_lookup_backend import FieldLookupBackend
-from ansible_base.rest_filters.rest_framework.order_backend import OrderByBackend
-from ansible_base.rest_filters.rest_framework.type_filter_backend import TypeFilterBackend
 
 logger = logging.getLogger('ansible_base.lib.utils.views.django_app_api')
 
