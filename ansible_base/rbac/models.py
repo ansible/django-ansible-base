@@ -15,7 +15,7 @@ from rest_framework.exceptions import ValidationError
 from ansible_base.lib.abstract_models.common import CommonModel, ImmutableCommonModel
 
 # ansible_base RBAC logic imports
-from ansible_base.lib.utils.models import current_user_or_system_user, is_add_perm
+from ansible_base.lib.utils.models import is_add_perm
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.prefetch import TypesPrefetch
 from ansible_base.rbac.validators import validate_assignment, validate_permissions_for_model
@@ -324,16 +324,8 @@ class AssignmentBase(ImmutableCommonModel, ObjectRoleFields):
         abstract = True
 
     def __init__(self, *args, **kwargs):
-        """
-        Because through models are created via a bulk_create, the save method is usually not called
-        to get around this, we populate the user model after initialization
-        """
         super().__init__(*args, **kwargs)
-        if not self.id:
-            user = current_user_or_system_user()
-            if user:
-                # Hazard: user can be a SimpleLazyObject, so use id
-                self.created_by_id = user.id
+
         # Cache fields from the associated object_role
         if self.object_role_id and not self.object_id:
             self.object_id = self.object_role.object_id
