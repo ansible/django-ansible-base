@@ -133,7 +133,11 @@ def test_ansible_base_view_filter_backends():
     assert len(AuthenticatorViewSet.filter_backends) == len(settings.REST_FRAMEWORK['DEFAULT_FILTER_BACKENDS'])
 
 
-@override_settings(ANSIBLE_BASE_CUSTOM_VIEW_FILTERS=settings.ANSIBLE_BASE_ALL_REST_FILTERS)
 def test_ansible_base_view_filter_backends_custom_settings():
     "Test the alternative non-test_app configuration"
-    assert len(AuthenticatorViewSet.filter_backends) == len(settings.REST_FRAMEWORK['DEFAULT_FILTER_BACKENDS'])
+    import ansible_base.lib.utils.views.django_app_api
+
+    with override_settings(ANSIBLE_BASE_CUSTOM_VIEW_FILTERS=settings.ANSIBLE_BASE_ALL_REST_FILTERS):
+        importlib.reload(ansible_base.lib.utils.views.django_app_api)
+        assert len(AuthenticatorViewSet.filter_backends) == len(settings.REST_FRAMEWORK['DEFAULT_FILTER_BACKENDS'])
+    override_settings(ANSIBLE_BASE_CUSTOM_VIEW_FILTERS=settings.ANSIBLE_BASE_ALL_REST_FILTERS)
