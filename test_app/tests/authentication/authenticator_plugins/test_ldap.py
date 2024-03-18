@@ -135,7 +135,7 @@ def test_ldap_search_exception(
         ({"BIND_DN": False}, None),
         ({"USER_DN_TEMPLATE": ""}, None),
         ({"USER_DN_TEMPLATE": False}, {"USER_DN_TEMPLATE": "Not a valid string."}),
-        ({"USER_DN_TEMPLATE": "cn=invalid,ou=users,dc=example,dc=org"}, {"USER_DN_TEMPLATE": 'DN must include "%(user)s"'}),
+        ({"USER_DN_TEMPLATE": "cn=invalid,ou=users,dc=example,dc=org"}, {"USER_DN_TEMPLATE": 'DN must include "users"'}),
     ],
 )
 def test_ldap_create_authenticator_error_handling(
