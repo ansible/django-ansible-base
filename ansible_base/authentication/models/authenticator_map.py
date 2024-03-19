@@ -6,7 +6,7 @@ from .authenticator import Authenticator
 
 
 class AuthenticatorMap(NamedCommonModel):
-    router_basename = 'authenticator_map'
+    router_basename = 'authenticatormap'
 
     class Meta:
         # If the map type is a team then we must have an org/team
