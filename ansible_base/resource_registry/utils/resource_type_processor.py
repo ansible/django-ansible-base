@@ -39,10 +39,3 @@ class ResourceTypeProcessor:
 
         self.instance.save()
         return self.instance
-
-    def save_additional(self, validated_data: dict, is_new=False):
-        """
-        Same as save, but is called before ADDITIONAL_DATA_SERIALIZER
-        is instantiated.
-        """
-        raise NotImplementedError("Additional data is not supported by default.")

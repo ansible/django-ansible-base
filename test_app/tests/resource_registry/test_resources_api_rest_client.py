@@ -146,3 +146,48 @@ def test_get_resource_404(resource_client):
     with pytest.raises(HTTPError):
         resp = resource_client.get_resource(str(uuid.uuid4))
         assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_additional_data(resource_client, team, django_user_model):
+    team_member = django_user_model.objects.create(username="usul")
+    team_admin = django_user_model.objects.create(username="muad_dib")
+    team_all = django_user_model.objects.create(username="lisan_al_gaib")
+
+    team.users.set([team_member, team_all])
+    team.admins.set([team_admin, team_all])
+
+    for user in [team_member, team_admin, team_all]:
+        data = resource_client.get_additional_resource_data(str(user.resource.ansible_id)).json()
+
+        assert data["external_auth_provider"] is None
+        assert data["external_auth_uid"] is None
+        assert data["organizations"] == []
+        assert data["organizations_administered"] == []
+        assert data["username"] == user.username
+
+    teams = set([str(team.resource.ansible_id)])
+
+    member = resource_client.get_additional_resource_data(str(team_member.resource.ansible_id)).json()
+    assert set(member["teams"]) == teams
+    assert set(member["teams_administered"]) == set([])
+
+    admin = resource_client.get_additional_resource_data(str(team_admin.resource.ansible_id)).json()
+    assert set(admin["teams"]) == set([])
+    assert set(admin["teams_administered"]) == teams
+
+    user_all = resource_client.get_additional_resource_data(str(team_all.resource.ansible_id)).json()
+    assert set(user_all["teams"]) == teams
+    assert set(user_all["teams_administered"]) == teams
+
+
+@pytest.mark.django_db
+def test_validate_local_user(resource_client, admin_user):
+    resp = resource_client.validate_local_user(username=admin_user.username, password="password")
+
+    assert resp.status_code == 200
+    assert resp.json()["ansible_id"] == str(admin_user.resource.ansible_id)
+
+    resp = resource_client.validate_local_user(username=admin_user.username, password="fake password")
+
+    assert resp.status_code == 401

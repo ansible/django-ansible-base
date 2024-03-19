@@ -19,6 +19,7 @@ class UserProcessor(ResourceTypeProcessor):
 
 
 class APIConfig(ServiceAPIConfig):
+    custom_resource_processors = {"shared.user": UserProcessor}
     service_type = "aap"
 
 

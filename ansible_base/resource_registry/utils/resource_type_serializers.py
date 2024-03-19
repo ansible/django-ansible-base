@@ -65,12 +65,12 @@ class SharedResourceTypeSerializer(serializers.Serializer):
     for keeping resources in sync between services.
     """
 
-    def __init__(self, *args, **kwargs):
-        if instance := kwargs.get("instance"):
+    def __init__(self, instance=None, **kwargs):
+        if instance:
             processor = self.get_processor()
-            kwargs["instance"] = processor(instance).pre_serialize()
+            instance = processor(instance).pre_serialize()
 
-        super().__init__(*args, **kwargs)
+        super().__init__(instance, **kwargs)
 
     # Required. This field defines the shared type and will include `shared.` prefix in the
     # ResourceType definition model. This field must be unique and cannot be changed.
