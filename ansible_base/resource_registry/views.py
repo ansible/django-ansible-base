@@ -4,6 +4,7 @@ from django.http import HttpResponseNotFound
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions
 from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.reverse import reverse
 from rest_framework.viewsets import GenericViewSet, mixins
@@ -19,13 +20,11 @@ from ansible_base.resource_registry.serializers import (
     ResourceSerializer,
     ResourceTypeSerializer,
     UserAuthenticationSerializer,
+    get_resource_detail_view,
 )
-
 from ansible_base.rest_filters.rest_framework.field_lookup_backend import FieldLookupBackend
-from ansible_base.rest_filters.rest_framework.type_filter_backend import TypeFilterBackend
 from ansible_base.rest_filters.rest_framework.order_backend import OrderByBackend
-
-FILTERS = [FieldLookupBackend, TypeFilterBackend, OrderByBackend]
+from ansible_base.rest_filters.rest_framework.type_filter_backend import TypeFilterBackend
 
 
 class HasResourceRegistryPermissions(permissions.BasePermission):
@@ -44,13 +43,25 @@ class HasResourceRegistryPermissions(permissions.BasePermission):
         return False
 
 
-class IsSuperUser(permissions.BasePermission):
+class ResourceAPIMixin:
     """
-    Allows access only to admin users.
+    The resource API is not intended to be consistent with the REST API on the service
+    that it is hosted on. It is only intended to be consistent with itself. The point
+    of the resource API is to provide the exact same interface on every single AAP service.
+    To that end, we are not using any of the default DRF configurations for these views,
+    rather we overriding all of them in order to provide the same experience everywhere.
+    Regardless of where the ResourceAPI is served from it must:
+
+    - Use DAB filters
+    - Validate user access based on the AAP JWT token
+    - Use Page/Number pagination
     """
 
-    def has_permission(self, request, view):
-        return bool(request.user and request.user.is_superuser)
+    filter_backends = (FieldLookupBackend, TypeFilterBackend, OrderByBackend)
+    permission_classes = [
+        HasResourceRegistryPermissions,
+    ]
+    pagination_class = PageNumberPagination
 
 
 class ResourceViewSet(
@@ -61,17 +72,14 @@ class ResourceViewSet(
     mixins.ListModelMixin,
     GenericViewSet,
     AnsibleBaseDjangoAppApiView,
+    ResourceAPIMixin,
 ):
     """
     Index of all the resources in the system.
     """
 
-    filter_backends = FILTERS
     queryset = Resource.objects.select_related("content_type__resource_type").all()
     serializer_class = ResourceSerializer
-    permission_classes = [
-        HasResourceRegistryPermissions,
-    ]
     lookup_field = "ansible_id"
 
     def get_serializer_class(self):
@@ -99,14 +107,11 @@ class ResourceTypeViewSet(
     mixins.ListModelMixin,
     GenericViewSet,
     AnsibleBaseDjangoAppApiView,
+    ResourceAPIMixin,
 ):
-    filter_backends = FILTERS
 
     queryset = ResourceType.objects.all()
     serializer_class = ResourceTypeSerializer
-    permission_classes = [
-        HasResourceRegistryPermissions,
-    ]
     lookup_field = "name"
     lookup_value_regex = "[^/]+"
 
@@ -132,7 +137,9 @@ class ResourceTypeViewSet(
         return CSVStreamResponse(self.serialize_resources_hashes(resources, resource_type.serializer_class)).stream()
 
 
-class ServiceMetadataView(AnsibleBaseDjangoAppApiView):
+class ServiceMetadataView(
+    AnsibleBaseDjangoAppApiView,
+):
     action = "service-metadata"
 
     permission_classes = [
