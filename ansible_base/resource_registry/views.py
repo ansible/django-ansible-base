@@ -20,7 +20,6 @@ from ansible_base.resource_registry.serializers import (
     ResourceSerializer,
     ResourceTypeSerializer,
     UserAuthenticationSerializer,
-    get_resource_detail_view,
 )
 from ansible_base.rest_filters.rest_framework.field_lookup_backend import FieldLookupBackend
 from ansible_base.rest_filters.rest_framework.order_backend import OrderByBackend
@@ -65,6 +64,7 @@ class ResourceAPIMixin:
 
 
 class ResourceViewSet(
+    ResourceAPIMixin,
     mixins.CreateModelMixin,
     mixins.RetrieveModelMixin,
     mixins.UpdateModelMixin,
@@ -72,7 +72,6 @@ class ResourceViewSet(
     mixins.ListModelMixin,
     GenericViewSet,
     AnsibleBaseDjangoAppApiView,
-    ResourceAPIMixin,
 ):
     """
     Index of all the resources in the system.
@@ -103,11 +102,11 @@ class ResourceViewSet(
 
 
 class ResourceTypeViewSet(
+    ResourceAPIMixin,
     mixins.RetrieveModelMixin,
     mixins.ListModelMixin,
     GenericViewSet,
     AnsibleBaseDjangoAppApiView,
-    ResourceAPIMixin,
 ):
 
     queryset = ResourceType.objects.all()
