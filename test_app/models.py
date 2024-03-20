@@ -217,6 +217,8 @@ class Animal(NamedCommonModel, AuditableModel):
     class Meta:
         app_label = "test_app"
 
+    activity_stream_excluded_field_names = ['age']
+
     ANIMAL_KINDS = (
         ('dog', 'Dog'),
         ('cat', 'Cat'),
@@ -227,3 +229,13 @@ class Animal(NamedCommonModel, AuditableModel):
     kind = models.CharField(max_length=4, choices=ANIMAL_KINDS, default='dog')
     age = models.PositiveIntegerField(null=True, default=1)
     people_friends = models.ManyToManyField(User, related_name='animal_friends', blank=True)
+
+
+class City(NamedCommonModel, AuditableModel):
+    class Meta:
+        app_label = "test_app"
+
+    activity_stream_limit_field_names = ['country']
+
+    country = models.CharField(max_length=100, null=True, default='USA')
+    population = models.PositiveIntegerField(null=True, default=1000)

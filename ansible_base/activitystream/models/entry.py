@@ -53,7 +53,11 @@ class AuditableModel(models.Model):
     class Meta:
         abstract = True
 
+    # Adding field names to this list will exclude them from the activity stream changes dictionaries
     activity_stream_excluded_field_names = []
+
+    # Adding field names to this list will limit the activity stream changes dictionaries to only include these fields
+    activity_stream_limit_field_names = []
 
     @property
     def activity_stream_entries(self):
