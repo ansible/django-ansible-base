@@ -65,6 +65,7 @@ class ResourceAPIMixin:
 
 
 class ResourceViewSet(
+    ResourceAPIMixin,
     mixins.CreateModelMixin,
     mixins.RetrieveModelMixin,
     mixins.UpdateModelMixin,
@@ -72,7 +73,6 @@ class ResourceViewSet(
     mixins.ListModelMixin,
     GenericViewSet,
     AnsibleBaseDjangoAppApiView,
-    ResourceAPIMixin,
 ):
     """
     Index of all the resources in the system.
@@ -113,11 +113,11 @@ class ResourceViewSet(
 
 
 class ResourceTypeViewSet(
+    ResourceAPIMixin,
     mixins.RetrieveModelMixin,
     mixins.ListModelMixin,
     GenericViewSet,
     AnsibleBaseDjangoAppApiView,
-    ResourceAPIMixin,
 ):
 
     queryset = ResourceType.objects.all()
