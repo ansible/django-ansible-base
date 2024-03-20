@@ -2,14 +2,13 @@ from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.models import AuthenticatorMap
 from ansible_base.authentication.utils.trigger_definition import TRIGGER_DEFINITION
-from ansible_base.lib.serializers.common import NamedCommonModelSerializer, COMMON_FIELDS
+from ansible_base.lib.serializers.common import COMMON_FIELDS, NamedCommonModelSerializer
 
 
 class AuthenticatorMapSerializer(NamedCommonModelSerializer):
     class Meta:
         model = AuthenticatorMap
-        read_only_fields = COMMON_FIELDS
-        fields = ['name', 'authenticator', 'order', 'organization', 'revoke', 'team', 'triggers', 'map_type']
+        fields = NamedCommonModelSerializer.Meta.fields + ['authenticator', 'order', 'organization', 'revoke', 'team', 'triggers', 'map_type']
 
     def validate(self, data) -> dict:
         errors = {}

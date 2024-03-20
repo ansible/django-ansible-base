@@ -158,7 +158,7 @@ class RoleDefinitionSerializer(CommonModelSerializer):
         return super().validate(validated_data)
 
 
-class RoleDefinitionDetailSeraizler(RoleDefinitionSerializer):
+class RoleDefinitionDetailSerializer(RoleDefinitionSerializer):
     content_type = ContentTypeField(read_only=True)
 
 

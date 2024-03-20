@@ -15,12 +15,12 @@ COMMON_FIELDS = ('id', 'url', 'created', 'created_by', 'modified', 'modified_by'
 
 
 class CommonModelSerializer(ValidationSerializerMixin, serializers.ModelSerializer):
-    url = serializers.SerializerMethodField()
-    related = serializers.SerializerMethodField('_get_related')
-    summary_fields = serializers.SerializerMethodField('_get_summary_fields')
+    url = serializers.SerializerMethodField(read_only=True)
+    related = serializers.SerializerMethodField('_get_related', read_only=True)
+    summary_fields = serializers.SerializerMethodField('_get_summary_fields', read_only=True)
 
     class Meta:
-        read_only_fields = COMMON_FIELDS
+        fields = COMMON_FIELDS
 
     def __init__(self, instance=None, data=empty, **kwargs):
         # pre-populate the form with the defaults from the model
@@ -76,5 +76,4 @@ class CommonModelSerializer(ValidationSerializerMixin, serializers.ModelSerializ
 
 class NamedCommonModelSerializer(CommonModelSerializer):
     class Meta(CommonModelSerializer.Meta):
-        read_only_fields = COMMON_FIELDS
-        fields = ['name']
+        fields = ['name'] + list(COMMON_FIELDS)
