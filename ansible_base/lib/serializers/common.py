@@ -36,10 +36,11 @@ class CommonModelSerializer(ValidationSerializerMixin, serializers.ModelSerializ
             setattr(self.Meta, 'extra_kwargs', extra_kwargs)
         super().__init__(instance, data, **kwargs)
 
-    def get_url(self, obj):
+    def get_url(self, obj) -> str:
         return get_url_for_object(obj)
 
-    def _get_related(self, obj):
+    # Type hints are used by OpenAPI
+    def _get_related(self, obj) -> dict:
         if obj is None:
             return {}
         if not hasattr(obj, 'related_fields'):
@@ -47,7 +48,7 @@ class CommonModelSerializer(ValidationSerializerMixin, serializers.ModelSerializ
             return {}
         return obj.related_fields(self.context.get('request'))
 
-    def _get_summary_fields(self, obj):
+    def _get_summary_fields(self, obj) -> dict:
         if obj is None:
             return {}
         if not hasattr(obj, 'get_summary_fields'):

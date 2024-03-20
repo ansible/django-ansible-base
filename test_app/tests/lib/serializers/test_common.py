@@ -134,5 +134,8 @@ def test_common_serializer_schema():
 
     generator = SchemaGenerator()
 
-    rd_req = generator.get_schema(request=drf_request)['components']['schemas']['RoleDefinitionDetail']['required']
-    assert 'summary_fields' not in rd_req
+    rd_schema = generator.get_schema(request=drf_request)['components']['schemas']['RoleDefinitionDetail']
+    print(rd_schema)
+    for field_name in ('related', 'summary_fields'):
+        assert rd_schema['properties'][field_name]['type'] == 'object'
+    assert 'summary_fields' not in rd_schema['required']
