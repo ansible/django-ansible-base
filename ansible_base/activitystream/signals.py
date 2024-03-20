@@ -109,12 +109,7 @@ def activitystream_delete(sender, instance, using, origin, **kwargs):
     if instance.pk is None:
         return
 
-    try:
-        old = sender.objects.get(pk=instance.pk)
-    except sender.DoesNotExist:
-        return
-
-    _store_activitystream_entry(old, None, 'delete')
+    _store_activitystream_entry(instance, None, 'delete')
 
 
 # m2m_changed
