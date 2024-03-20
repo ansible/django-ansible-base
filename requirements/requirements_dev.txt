@@ -12,5 +12,4 @@ pytest-cov
 pytest-django
 setuptools-scm
 psycopg[binary]
-drf-spectacular
 sdb
