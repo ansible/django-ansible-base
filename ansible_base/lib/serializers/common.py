@@ -76,4 +76,5 @@ class CommonModelSerializer(ValidationSerializerMixin, serializers.ModelSerializ
 
 class NamedCommonModelSerializer(CommonModelSerializer):
     class Meta(CommonModelSerializer.Meta):
-        fields = ['name',] + COMMON_FIELDS
+        read_only_fields = COMMON_FIELDS
+        fields = ['name']
