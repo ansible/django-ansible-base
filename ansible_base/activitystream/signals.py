@@ -5,7 +5,7 @@ from ansible_base.lib.utils.models import current_user_or_system_user, diff
 logger = logging.getLogger('ansible_base.activitystream.signals')
 
 
-def _store_activitystream_entry(old, new, operation, m2m=False):
+def _store_activitystream_entry(old, new, operation):
     from ansible_base.activitystream.models import Entry
 
     if operation not in ('create', 'update', 'delete'):
