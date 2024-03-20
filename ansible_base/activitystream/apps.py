@@ -17,7 +17,12 @@ def connect_activitystream_signals(cls):
             continue
 
         fn = partial(activitystream_m2m_changed, field_name=field.name)
-        m2m_changed.connect(fn, sender=getattr(cls, field.name).through, dispatch_uid=f'dab_activitystream_{cls.__name__}_{field.name}_m2m_changed')
+        m2m_changed.connect(
+            fn,
+            sender=getattr(cls, field.name).through,
+            dispatch_uid=f'dab_activitystream_{cls.__name__}_{field.name}_m2m_changed',
+            weak=False,
+        )
 
 
 class ActivitystreamConfig(AppConfig):
