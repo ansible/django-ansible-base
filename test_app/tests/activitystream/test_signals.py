@@ -1,4 +1,5 @@
 from ansible_base.activitystream.models import Entry
+from test_app.models import Animal
 
 
 def test_activitystream_create(system_user, animal):
@@ -112,6 +113,84 @@ def test_activitystream_m2m_clear(system_user, animal, user, random_user):
     animal.people_friends.clear()
     entries_count += 2
     assert entries_qs.count() == entries_count
+
+
+def test_activitystream_m2m_forward_bulk(django_assert_max_num_queries, django_user_model, animal):
+    """
+    Ensure that m2m activity stream entries in forward direction are created in bulk.
+    """
+    # Create a bunch of users
+    user_objs = [django_user_model(username=str(i)) for i in range(100)]
+    users = django_user_model.objects.bulk_create(user_objs)
+
+    # Setting this to 20 in case some real queries are added in the future.
+    # Really as long as it's less than 100 it means we're doing the right thing.
+    # In practice it's closer to 5.
+    with django_assert_max_num_queries(20) as captured:
+        animal.people_friends.add(*users)
+
+    inserts = len([q for q in captured.connection.queries if q['sql'].startswith('INSERT')])
+    assert inserts == 2  # 1 for the assocations, 1 for the activity stream entries
+
+    entries = animal.activity_stream_entries.all()
+    assert len(entries) == 101  # create + 100 associates
+
+    # The first entry is the create, so start at 1
+    assert entries[1].operation == 'associate'
+    assert entries[1].related_content_object == users[0]
+
+    assert entries.last().operation == 'associate'
+    assert entries.last().related_content_object == users[-1]
+
+    with django_assert_max_num_queries(20) as captured:
+        animal.people_friends.remove(*users)
+
+    disassoc_inserts = len([q for q in captured.connection.queries if q['sql'].startswith('INSERT')])
+    # Only one insert (for activity stream entries)
+    # Even though django_assert_max_num_queries is a context manager the earlier inserts still seem to count
+    assert disassoc_inserts == inserts + 1
+
+
+def test_activitystream_m2m_reverse_bulk(django_assert_max_num_queries, django_user_model, user):
+    """
+    Ensure that m2m activity stream entries in reverse direction are created in bulk.
+    """
+    # Create a bunch of animals
+    animal_objs = [Animal(name=str(i)) for i in range(100)]
+    animals = Animal.objects.bulk_create(animal_objs)
+
+    # Setting this to 20 in case some real queries are added in the future.
+    # Really as long as it's less than 100 it means we're doing the right thing.
+    # In practice it's closer to 5.
+    with django_assert_max_num_queries(20) as captured:
+        user.animal_friends.add(*animals)
+
+    inserts = len([q for q in captured.connection.queries if q['sql'].startswith('INSERT')])
+    assert inserts == 2  # 1 for the assocations, 1 for the activity stream entries
+
+    user_entries = user.activity_stream_entries.all()
+    assert len(user_entries) == 1  # The entries are always on the forward relation, so the user only has their creation entry
+
+    # But we can check the animals
+    for animal in animals:
+        entries = animal.activity_stream_entries.all()
+        assert len(entries) == 1  # associate (no create because the animals were bulk created)
+        assert entries[0].operation == 'associate'
+        assert entries[0].related_content_object == user
+        assert entries.last().operation == 'associate'
+        assert entries.last().related_content_object == user
+
+    with django_assert_max_num_queries(20) as captured:
+        user.animal_friends.remove(*animals)
+
+    disassoc_inserts = len([q for q in captured.connection.queries if q['sql'].startswith('INSERT')])
+    # Only one insert (for activity stream entries)
+    # Even though django_assert_max_num_queries is a context manager the earlier inserts still seem to count
+    assert disassoc_inserts == inserts + 1
+    for animal in animals:
+        entries = animal.activity_stream_entries.all()
+        assert len(entries) == 2  # associate, disassociate
+        assert entries.last().operation == 'disassociate'
 
 
 def test_activitystream_delete(system_user, animal):

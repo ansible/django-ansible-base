@@ -1,6 +1,6 @@
 import logging
 
-from ansible_base.lib.utils.models import diff
+from ansible_base.lib.utils.models import current_user_or_system_user, diff
 
 logger = logging.getLogger('ansible_base.activitystream.signals')
 
@@ -42,15 +42,20 @@ def _store_activitystream_m2m(given_instance, model, operation, pk_set, reverse,
         raise ValueError("Invalid operation: {}".format(operation))
 
     instances = model.objects.filter(pk__in=pk_set)
+    user = current_user_or_system_user()
+    entries = []
 
     for instance in instances:
-        # TODO: bulk_create
-        Entry.objects.create(
+        entry = Entry(
             content_object=instance if reverse else given_instance,
             operation=operation,
             related_content_object=given_instance if reverse else instance,
             related_field_name=field_name,
+            created_by=user,
         )
+        entries.append(entry)
+
+    Entry.objects.bulk_create(entries)
 
 
 # post_save
