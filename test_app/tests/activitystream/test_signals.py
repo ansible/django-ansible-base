@@ -2,7 +2,7 @@ import pytest
 
 import ansible_base.activitystream.signals as signals
 from ansible_base.activitystream.models import Entry
-from test_app.models import Animal
+from test_app.models import Animal, City
 
 
 def test_activitystream_create(system_user, animal):
@@ -230,3 +230,26 @@ def test_activitystream__store_activitystream_m2m_invalid_operation():
         signals._store_activitystream_m2m(None, None, 'invalid', [], False, 'field')
 
     assert 'Invalid operation: invalid' in str(excinfo.value)
+
+
+@pytest.mark.django_db
+def test_activitystream_excluded_fields():
+    """
+    Ensure that limit fields (specified by the model's activity_stream_limit_field_names) are the only ones included in the activity stream entry.
+    """
+    city = City.objects.create(name='New York', country='USA')
+    entry = city.activity_stream_entries.last()
+    assert entry.operation == 'create'  # sanity check
+    assert 'country' in entry.changes['added_fields']
+    assert len(entry.changes['added_fields']) == 1
+    assert entry.changes['changed_fields'] == {}
+    assert entry.changes['removed_fields'] == {}
+
+    city.country = 'Canada'
+    city.save()
+    entry = city.activity_stream_entries.last()
+    assert entry.operation == 'update'  # sanity check
+    assert 'country' in entry.changes['changed_fields']
+    assert len(entry.changes['changed_fields']) == 1
+    assert entry.changes['added_fields'] == {}
+    assert entry.changes['removed_fields'] == {}
