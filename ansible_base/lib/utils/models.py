@@ -3,6 +3,7 @@ from itertools import chain
 
 from crum import get_current_user
 from django.contrib.auth import get_user_model
+from django.db.models import Model
 from django.utils.translation import gettext_lazy as _
 from inflection import underscore
 
@@ -148,8 +149,6 @@ def diff(old, new, require_type_match=True, json_safe=True, include_m2m=False, e
         if not include_m2m and source._meta.get_field(field).many_to_many:
             return True
         return False
-
-    from django.db.models import Model
 
     diff_dict = {"added_fields": {}, "removed_fields": {}, "changed_fields": {}}
 
