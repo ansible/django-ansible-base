@@ -1,10 +1,14 @@
 import pytest
 from crum import impersonate
+from django.test.client import RequestFactory
+from drf_spectacular.generators import SchemaGenerator
+from rest_framework.request import Request
+from rest_framework.test import force_authenticate
 
 from ansible_base.authentication.models import AuthenticatorMap
 from ansible_base.lib.serializers.common import CommonModelSerializer
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
-from test_app.models import EncryptionModel, ResourceMigrationTestModel, Team
+from test_app.models import EncryptionModel, ResourceMigrationTestModel, Team, User
 from test_app.serializers import EncryptionModelSerializer, ResourceMigrationTestModelSerializer, TeamSerializer
 
 
@@ -120,3 +124,15 @@ def test_summary_of_model_with_custom_reverse(user, organization):
     assert serializer._get_summary_fields(team)['encryptioner'] == {'id': team.encryptioner_id, 'name': 'iamencrypted'}
 
     assert serializer._get_related(team)['encryptioner'] == f'/api/v1/encrypted_models/{team.encryptioner_id}/'
+
+
+@pytest.mark.django_db
+def test_common_serializer_schema():
+    request = RequestFactory().get('/hello/')
+    force_authenticate(request, user=User.objects.create(username='alan', is_superuser=True))
+    drf_request = Request(request)
+
+    generator = SchemaGenerator()
+
+    rd_req = generator.get_schema(request=drf_request)['components']['schemas']['RoleDefinitionDetail']['required']
+    assert 'summary_fields' not in rd_req

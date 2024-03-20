@@ -151,6 +151,7 @@ class RoleDefinitionSerializer(CommonModelSerializer):
 
     class Meta:
         model = RoleDefinition
+        read_only_fields = ('id', 'summary_fields')
         fields = '__all__'
 
     def validate(self, validated_data):
