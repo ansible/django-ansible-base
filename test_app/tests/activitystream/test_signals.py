@@ -1,3 +1,6 @@
+import pytest
+
+import ansible_base.activitystream.signals as signals
 from ansible_base.activitystream.models import Entry
 from test_app.models import Animal
 
@@ -209,3 +212,21 @@ def test_activitystream_delete(system_user, animal):
     assert entry.changes['removed_fields']['name'] == animal.name
     assert 'owner' in entry.changes['removed_fields']
     assert entry.changes['removed_fields']['owner'] == animal.owner.username
+
+
+def test_activitystream__store_activitystream_entry_invalid_operation():
+    with pytest.raises(ValueError) as excinfo:
+        signals._store_activitystream_entry(None, None, 'invalid')
+
+    assert 'Invalid operation: invalid' in str(excinfo.value)
+
+
+def test_activitystream__store_activitystream_entry_both_none():
+    assert signals._store_activitystream_entry(None, None, 'create') is None
+
+
+def test_activitystream__store_activitystream_m2m_invalid_operation():
+    with pytest.raises(ValueError) as excinfo:
+        signals._store_activitystream_m2m(None, None, 'invalid', [], False, 'field')
+
+    assert 'Invalid operation: invalid' in str(excinfo.value)

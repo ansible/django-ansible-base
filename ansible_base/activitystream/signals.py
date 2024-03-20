@@ -20,10 +20,8 @@ def _store_activitystream_entry(old, new, operation):
     content_object = new
 
     # If only one of old or new is None, then use the existing one as content_object
-    if old is None and new is None:
-        # This doesn't make sense
-        raise ValueError("Both old and new objects are None")
-    elif old is None:
+    # The case where both are None is handled above (no changes to store)
+    if old is None:
         content_object = new
     elif new is None:
         content_object = old
