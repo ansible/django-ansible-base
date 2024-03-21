@@ -2,13 +2,10 @@ import logging
 
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
-from rest_framework.filters import SearchFilter
+from rest_framework.settings import api_settings, import_from_string
 
 from ansible_base.lib.utils.settings import get_from_import
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
-from ansible_base.rest_filters.rest_framework.field_lookup_backend import FieldLookupBackend
-from ansible_base.rest_filters.rest_framework.order_backend import OrderByBackend
-from ansible_base.rest_filters.rest_framework.type_filter_backend import TypeFilterBackend
 
 logger = logging.getLogger('ansible_base.lib.utils.views.django_app_api')
 
@@ -31,7 +28,15 @@ if parent_view:
         logger.exception(_("Failed to import {parent_view}, defaulting to AnsibleBaseView".format(parent_view=parent_view)))
 
 
+# In case an app is using features like authentication, resources, or RBAC
+# but not using rest_filters app, we need to specify the same filter backends
+dab_filter_backends = list(api_settings.DEFAULT_FILTER_BACKENDS)
+
+for backend_name in getattr(settings, 'ANSIBLE_BASE_CUSTOM_VIEW_FILTERS', ()):
+    backend = import_from_string(backend_name, 'ANSIBLE_BASE_CUSTOM_VIEW_FILTERS')
+    if backend not in dab_filter_backends:
+        dab_filter_backends.append(backend)
+
+
 class AnsibleBaseDjangoAppApiView(parent_view_class):
-    # In case an app is using features like authentication, resources, or RBAC
-    # but not using rest_filters app, we need to specify the same filter backends
-    filter_backends = (TypeFilterBackend, FieldLookupBackend, SearchFilter, OrderByBackend)
+    filter_backends = dab_filter_backends

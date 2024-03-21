@@ -6,7 +6,7 @@ from ansible_base.authentication.serializers import AuthenticatorMapSerializer
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 
 
-class AuthenticatorMapViewSet(ModelViewSet, AnsibleBaseDjangoAppApiView):
+class AuthenticatorMapViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
     """
     API endpoint that allows authenticator maps to be viewed or edited.
     """

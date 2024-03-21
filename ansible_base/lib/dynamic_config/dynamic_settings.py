@@ -48,17 +48,23 @@ if 'ansible_base.api_documentation' in INSTALLED_APPS:
         REST_FRAMEWORK['DEFAULT_SCHEMA_CLASS'] = 'drf_spectacular.openapi.AutoSchema'
 
 
+# General, factual, constant of all filters that ansible_base.rest_filters ships
+ANSIBLE_BASE_ALL_REST_FILTERS = (
+    'ansible_base.rest_filters.rest_framework.type_filter_backend.TypeFilterBackend',
+    'ansible_base.rest_filters.rest_framework.field_lookup_backend.FieldLookupBackend',
+    'rest_framework.filters.SearchFilter',
+    'ansible_base.rest_filters.rest_framework.order_backend.OrderByBackend',
+)
+
+
 if 'ansible_base.rest_filters' in INSTALLED_APPS:
-    REST_FRAMEWORK.update(
-        {
-            'DEFAULT_FILTER_BACKENDS': (
-                'ansible_base.rest_filters.rest_framework.type_filter_backend.TypeFilterBackend',
-                'ansible_base.rest_filters.rest_framework.field_lookup_backend.FieldLookupBackend',
-                'rest_framework.filters.SearchFilter',
-                'ansible_base.rest_filters.rest_framework.order_backend.OrderByBackend',
-            )
-        }
-    )
+    REST_FRAMEWORK.update({'DEFAULT_FILTER_BACKENDS': ANSIBLE_BASE_ALL_REST_FILTERS})
+else:
+    # Explanation - these are the filters for views provided by DAB like /authenticators/
+    # we want them to be enabled by default _even if_ the rest_filters app is not used
+    # so that clients have consistency, but if an app wants to turn them off, they can.
+    # these will be combined with the actual DRF defaults in our base view
+    ANSIBLE_BASE_CUSTOM_VIEW_FILTERS = ANSIBLE_BASE_ALL_REST_FILTERS
 
 
 if 'ansible_base.authentication' in INSTALLED_APPS:
