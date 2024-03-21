@@ -15,9 +15,9 @@ COMMON_FIELDS = ('id', 'url', 'created', 'created_by', 'modified', 'modified_by'
 
 
 class CommonModelSerializer(ValidationSerializerMixin, serializers.ModelSerializer):
-    url = serializers.SerializerMethodField(read_only=True)
-    related = serializers.SerializerMethodField('_get_related', read_only=True)
-    summary_fields = serializers.SerializerMethodField('_get_summary_fields', read_only=True)
+    url = serializers.SerializerMethodField()
+    related = serializers.SerializerMethodField('_get_related')
+    summary_fields = serializers.SerializerMethodField('_get_summary_fields')
 
     class Meta:
         fields = COMMON_FIELDS
@@ -40,7 +40,7 @@ class CommonModelSerializer(ValidationSerializerMixin, serializers.ModelSerializ
         return get_url_for_object(obj)
 
     # Type hints are used by OpenAPI
-    def _get_related(self, obj) -> dict:
+    def _get_related(self, obj) -> dict[str, str]:
         if obj is None:
             return {}
         if not hasattr(obj, 'related_fields'):
@@ -48,7 +48,7 @@ class CommonModelSerializer(ValidationSerializerMixin, serializers.ModelSerializ
             return {}
         return obj.related_fields(self.context.get('request'))
 
-    def _get_summary_fields(self, obj) -> dict:
+    def _get_summary_fields(self, obj) -> dict[str, dict]:
         if obj is None:
             return {}
         if not hasattr(obj, 'get_summary_fields'):

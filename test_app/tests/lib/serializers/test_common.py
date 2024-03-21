@@ -125,7 +125,14 @@ def test_summary_of_model_with_custom_reverse(user, organization):
 @pytest.mark.django_db
 def test_common_serializer_schema(openapi_schema):
     rd_schema = openapi_schema['components']['schemas']['RoleDefinitionDetail']
-    print(rd_schema)
     for field_name in ('related', 'summary_fields'):
         assert rd_schema['properties'][field_name]['type'] == 'object'
-    assert 'summary_fields' not in rd_schema['required']
+        assert rd_schema['properties'][field_name]['readOnly'] == True
+
+    for field_name in ('url', 'created'):
+        assert rd_schema['properties'][field_name]['type'] == 'string'
+        assert rd_schema['properties'][field_name]['readOnly'] == True
+    assert rd_schema['properties']['created']['format'] == 'date-time'
+
+    assert rd_schema['properties']['id']['type'] == 'integer'
+    assert rd_schema['properties']['id']['readOnly'] == True
