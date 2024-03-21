@@ -6,7 +6,7 @@ from rest_framework.viewsets import ModelViewSet
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.rbac.api.permissions import AuthenticatedReadAdminChange
 from ansible_base.rbac.api.serializers import (
-    RoleDefinitionDetailSeraizler,
+    RoleDefinitionDetailSerializer,
     RoleDefinitionSerializer,
     RoleTeamAssignmentSerializer,
     RoleUserAssignmentSerializer,
@@ -33,7 +33,7 @@ class RoleDefinitionViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
 
     def get_serializer_class(self):
         if self.action == 'update':
-            return RoleDefinitionDetailSeraizler
+            return RoleDefinitionDetailSerializer
         return super().get_serializer_class()
 
     def _error_if_managed(self, instance):

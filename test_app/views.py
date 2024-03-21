@@ -4,6 +4,7 @@ from rest_framework.reverse import reverse
 from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
+from ansible_base.rbac import permission_registry
 from ansible_base.rbac.api.permissions import AnsibleBaseObjectPermissions
 from test_app import serializers
 from test_app.models import RelatedFieldsTestModel, User
@@ -15,7 +16,11 @@ class TestAppViewSet(ModelViewSet, AnsibleBaseView):
     select_related = ()
 
     def get_queryset(self):
-        qs = self.serializer_class.Meta.model.access_qs(self.request.user)
+        cls = self.serializer_class.Meta.model
+        if permission_registry.is_registered(cls):
+            qs = cls.access_qs(self.request.user)
+        else:
+            qs = cls.objects.all()
         if self.prefetch_related:
             qs = qs.prefetch_related(*self.prefetch_related)
         if self.select_related:

@@ -120,3 +120,19 @@ def test_summary_of_model_with_custom_reverse(user, organization):
     assert serializer._get_summary_fields(team)['encryptioner'] == {'id': team.encryptioner_id, 'name': 'iamencrypted'}
 
     assert serializer._get_related(team)['encryptioner'] == f'/api/v1/encrypted_models/{team.encryptioner_id}/'
+
+
+@pytest.mark.django_db
+def test_common_serializer_schema(openapi_schema):
+    rd_schema = openapi_schema['components']['schemas']['RoleDefinitionDetail']
+    for field_name in ('related', 'summary_fields'):
+        assert rd_schema['properties'][field_name]['type'] == 'object'
+        assert rd_schema['properties'][field_name]['readOnly'] is True
+
+    for field_name in ('url', 'created'):
+        assert rd_schema['properties'][field_name]['type'] == 'string'
+        assert rd_schema['properties'][field_name]['readOnly'] is True
+    assert rd_schema['properties']['created']['format'] == 'date-time'
+
+    assert rd_schema['properties']['id']['type'] == 'integer'
+    assert rd_schema['properties']['id']['readOnly'] is True
