@@ -42,6 +42,7 @@ optional-dependencies.all = { file = [
     "requirements/requirements_channels.in",
     "requirements/requirements_jwt_consumer.in",
     "requirements/requirements_testing.in",
+    "requirements/requirements_redis_client.in",
 ] }
 optional-dependencies.activitystream = { file = [ "requirements/requirements_activitystream.in" ] }
 optional-dependencies.authentication = { file = [ "requirements/requirements_authentication.in" ] }
@@ -51,6 +52,7 @@ optional-dependencies.rbac = { file = [ "requirements/requirements_rbac.in" ] }
 optional-dependencies.channel_auth = { file = [ "requirements/requirements_channels.in" ] }
 optional-dependencies.jwt_consumer = { file = [ "requirements/requirements_jwt_consumer.in" ] }
 optional-dependencies.testing = { file = [ "requirements/requirements_testing.in" ] }
+optional-dependencies.redis_client = { file = [ "requirements/requirements_redis_client.in" ] }
 
 [build-system]
 requires = ["setuptools>=64", "setuptools_scm>=8"]
