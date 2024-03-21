@@ -78,7 +78,7 @@ def connect_resource_signals(sender, **kwargs):
     from ansible_base.resource_registry.signals import handlers
 
     for model in handlers.get_resource_models():
-        for cls in [model] + list(proxies_of_model(model)):
+        for cls in [model, *proxies_of_model(model)]:
             # On registration, resource registry registers the concrete model
             # so we connect signals for proxies of that model, and not the other way around
             signals.post_save.connect(handlers.update_resource, sender=cls)
@@ -89,7 +89,7 @@ def disconnect_resource_signals(sender, **kwargs):
     from ansible_base.resource_registry.signals import handlers
 
     for model in handlers.get_resource_models():
-        for cls in [model] + list(proxies_of_model(model)):
+        for cls in [model, *proxies_of_model(model)]:
             signals.post_save.disconnect(handlers.update_resource, sender=cls)
             signals.post_delete.disconnect(handlers.remove_resource, sender=cls)
 
