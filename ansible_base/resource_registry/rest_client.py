@@ -64,9 +64,6 @@ class ResourceAPIClient:
     def validate_local_user(self, username: str, password: str):
         return self._make_request("post", "validate-local-account/", {"username": username, "password": password})
 
-    def validate_sso_user(self):
-        pass
-
     def get_service_metadata(self):
         return self._make_request("get", "metadata/")
 
@@ -75,6 +72,9 @@ class ResourceAPIClient:
 
     def get_resource(self, ansible_id):
         return self._make_request("get", f"resources/{ansible_id}/")
+
+    def get_additional_resource_data(self, ansible_id):
+        return self._make_request("get", f"resources/{ansible_id}/additional_data/")
 
     def update_resource(self, ansible_id, data: ResourceRequestBody, partial=False):
         action = "patch" if partial else "put"

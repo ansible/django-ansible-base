@@ -134,3 +134,8 @@ class ResourceTypeSerializer(serializers.ModelSerializer):
 
     def get_url(self, obj):
         return reverse_lazy('resourcetype-detail', kwargs={"name": obj.name})
+
+
+class UserAuthenticationSerializer(serializers.Serializer):
+    username = serializers.CharField()
+    password = serializers.CharField()
