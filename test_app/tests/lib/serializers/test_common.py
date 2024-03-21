@@ -127,12 +127,12 @@ def test_common_serializer_schema(openapi_schema):
     rd_schema = openapi_schema['components']['schemas']['RoleDefinitionDetail']
     for field_name in ('related', 'summary_fields'):
         assert rd_schema['properties'][field_name]['type'] == 'object'
-        assert rd_schema['properties'][field_name]['readOnly'] == True
+        assert rd_schema['properties'][field_name]['readOnly'] is True
 
     for field_name in ('url', 'created'):
         assert rd_schema['properties'][field_name]['type'] == 'string'
-        assert rd_schema['properties'][field_name]['readOnly'] == True
+        assert rd_schema['properties'][field_name]['readOnly'] is True
     assert rd_schema['properties']['created']['format'] == 'date-time'
 
     assert rd_schema['properties']['id']['type'] == 'integer'
-    assert rd_schema['properties']['id']['readOnly'] == True
+    assert rd_schema['properties']['id']['readOnly'] is True
