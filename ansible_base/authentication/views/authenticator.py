@@ -11,7 +11,7 @@ from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiV
 logger = logging.getLogger('ansible_base.authentication.views.authenticator')
 
 
-class AuthenticatorViewSet(ModelViewSet, AnsibleBaseDjangoAppApiView):
+class AuthenticatorViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
     """
     API endpoint that allows authenticators to be viewed or edited.
     """
