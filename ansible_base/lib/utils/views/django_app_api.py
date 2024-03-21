@@ -1,10 +1,10 @@
-import importlib
 import logging
 
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from rest_framework.filters import SearchFilter
 
+from ansible_base.lib.utils.settings import get_from_import
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from ansible_base.rest_filters.rest_framework.field_lookup_backend import FieldLookupBackend
 from ansible_base.rest_filters.rest_framework.order_backend import OrderByBackend
@@ -24,8 +24,7 @@ if parent_view:
         if not module_name or not class_name:
             logger.error(_("ANSIBLE_BASE_CUSTOM_VIEW_PARENT must be in the format package.subpackage.view, defaulting to AnsibleBaseView"))
         else:
-            module = importlib.import_module(module_name, package=class_name)
-            parent_view_class = getattr(module, class_name)
+            parent_view_class = get_from_import(module_name, class_name)
     except ModuleNotFoundError:
         logger.error(_("Failed to find parent view class {parent_view}, defaulting to AnsibleBaseView".format(parent_view=parent_view)))
     except ImportError:

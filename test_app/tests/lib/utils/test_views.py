@@ -68,7 +68,8 @@ def test_ansible_base_view_parent_view(caplog, setting, log_message, default_par
 def test_ansible_base_view_parent_view_exception(caplog):
     with override_settings(ANSIBLE_BASE_CUSTOM_VIEW_PARENT='does.not.exist'):
         with caplog.at_level(logging.ERROR):
-            with mock.patch('importlib.import_module', side_effect=ImportError("Test Exception")):
+            with mock.patch('ansible_base.lib.utils.settings.get_from_import', side_effect=ImportError("Test Exception")):
+
                 import ansible_base.lib.utils.views.django_app_api
 
                 importlib.reload(ansible_base.lib.utils.views.django_app_api)

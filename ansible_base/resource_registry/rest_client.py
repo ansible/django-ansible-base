@@ -1,5 +1,6 @@
 import logging
 from collections import namedtuple
+from typing import Optional
 
 import requests
 import urllib3
@@ -32,7 +33,7 @@ class ResourceAPIClient:
         self.verify_https = verify_https
         self.raise_if_bad_request = raise_if_bad_request
 
-    def _make_request(self, method: str, path: str, data: dict = None, params: dict = None) -> requests.Response:
+    def _make_request(self, method: str, path: str, data: Optional[dict] = None, params: Optional[dict] = None) -> requests.Response:
         url = self.base_url + path.lstrip("/")
         logger.info(f"Making {method} request to {url}.")
 
@@ -82,11 +83,11 @@ class ResourceAPIClient:
     def delete_resource(self, ansible_id):
         return self._make_request("delete", f"resources/{ansible_id}/")
 
-    def list_resources(self, filters: dict = None):
+    def list_resources(self, filters: Optional[dict] = None):
         return self._make_request("get", "resources/", params=filters)
 
     def get_resource_type(self, name):
         return self._make_request("get", f"resource-types/{name}/")
 
-    def list_resource_types(self, filters: dict = None):
+    def list_resource_types(self, filters: Optional[dict] = None):
         return self._make_request("get", "resource-types/", params=filters)
