@@ -195,20 +195,13 @@ class Migration(migrations.Migration):
             field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, to='test_app.encryptionmodel'),
         ),
         migrations.CreateModel(
-            name='PositionModel',
-            fields=[
-                ('position', models.BigIntegerField(primary_key=True, serialize=False)),
-                ('organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='test_app.organization')),
-            ],
-        ),
-        migrations.CreateModel(
-            name='WeirdPerm',
+            name='ImmutableTask',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='test_app.organization')),
             ],
             options={
-                'permissions': [("I'm a lovely coconut", 'You can be a lovely coconut with this object'), ('crack', 'Can crack open this coconut')],
+                'permissions': [('cancel_immutabletask', 'Stop this task from running')],
+                'default_permissions': ('add', 'view', 'delete'),
             },
         ),
         migrations.CreateModel(
@@ -224,6 +217,23 @@ class Migration(migrations.Migration):
             bases=('test_app.inventory',),
         ),
         migrations.CreateModel(
+            name='WeirdPerm',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='test_app.organization')),
+            ],
+            options={
+                'permissions': [("I'm a lovely coconut", 'You can be a lovely coconut with this object'), ('crack', 'Can crack open this coconut')],
+            },
+        ),
+        migrations.CreateModel(
+            name='PositionModel',
+            fields=[
+                ('position', models.BigIntegerField(primary_key=True, serialize=False)),
+                ('organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='test_app.organization')),
+            ],
+        ),
+        migrations.CreateModel(
             name='ParentName',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
@@ -231,14 +241,54 @@ class Migration(migrations.Migration):
             ],
         ),
         migrations.CreateModel(
-            name='ImmutableTask',
+            name='Original2',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('created', models.DateTimeField(auto_now_add=True, help_text='The date/time this resource was created')),
+                ('modified', models.DateTimeField(auto_now=True, help_text='The date/time this resource was created')),
+                ('name', models.CharField(help_text='The name of this resource', max_length=512)),
+                ('created_by', models.ForeignKey(default=None, editable=False, help_text='The user who created this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_created+', to=settings.AUTH_USER_MODEL)),
+                ('modified_by', models.ForeignKey(default=None, editable=False, help_text='The user who last modified this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_modified+', to=settings.AUTH_USER_MODEL)),
             ],
             options={
-                'permissions': [('cancel_immutabletask', 'Stop this task from running')],
-                'default_permissions': ('add', 'view', 'delete'),
+                'abstract': False,
             },
+        ),
+        migrations.CreateModel(
+            name='Original1',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('created', models.DateTimeField(auto_now_add=True, help_text='The date/time this resource was created')),
+                ('modified', models.DateTimeField(auto_now=True, help_text='The date/time this resource was created')),
+                ('name', models.CharField(help_text='The name of this resource', max_length=512)),
+                ('created_by', models.ForeignKey(default=None, editable=False, help_text='The user who created this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_created+', to=settings.AUTH_USER_MODEL)),
+                ('modified_by', models.ForeignKey(default=None, editable=False, help_text='The user who last modified this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_modified+', to=settings.AUTH_USER_MODEL)),
+            ],
+            options={
+                'abstract': False,
+            },
+        ),
+        migrations.CreateModel(
+            name='Proxy1',
+            fields=[
+            ],
+            options={
+                'proxy': True,
+                'indexes': [],
+                'constraints': [],
+            },
+            bases=('test_app.original1',),
+        ),
+        migrations.CreateModel(
+            name='Proxy2',
+            fields=[
+            ],
+            options={
+                'proxy': True,
+                'indexes': [],
+                'constraints': [],
+            },
+            bases=('test_app.original2',),
         ),
         migrations.RunPython(create_system_user),
     ]
