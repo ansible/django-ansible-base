@@ -1,6 +1,7 @@
 import logging
 import time
 
+from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from rest_framework.views import APIView
 
@@ -9,7 +10,34 @@ from ansible_base.lib.utils.settings import get_function_from_setting, get_setti
 logger = logging.getLogger('ansible_base.lib.utils.views.ansible_base')
 
 
+def convert_to_create_serializer(cls):
+    """Given a DRF serializer class, return a modified version that only lists read-only fields
+
+    This is done for eda-server which auto-generates a client library from
+    https://github.com/OpenAPITools/openapi-generator
+    For fields required in responses, but not used in requests, OpenAPI readOnly is insufficient,
+    this recommends two different schemas when _really_ needed for _generated_ code
+    https://github.com/OpenAPITools/openapi-generator/issues/14280#issuecomment-1435960939
+    """
+    create_field_list = []
+    for field_name, field in cls().fields.items():
+        if not field.read_only:
+            create_field_list.append(field_name)
+
+    class Meta(cls.Meta):
+        fields = create_field_list
+
+    create_serializer_name = cls.__name__.replace("Serializer", "") + "CreateSerializer"
+    return type(create_serializer_name, (cls,), {"Meta": Meta})
+
+
 class AnsibleBaseView(APIView):
+    def get_serializer_class(self):
+        serializer_cls = super().get_serializer_class()
+        if settings.ANSIBLE_BASE_AUTO_CREATE_SERIALIZER and self.action == "create":
+            return convert_to_create_serializer(serializer_cls)
+        return serializer_cls
+
     def initialize_request(self, request, *args, **kwargs):
         """
         Store the Django REST Framework Request object as an attribute on the

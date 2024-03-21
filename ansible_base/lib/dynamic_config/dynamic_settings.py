@@ -26,6 +26,14 @@ except NameError:
     REST_FRAMEWORK = {}
 
 
+# Tells the base serializer to auto-create a creation-only serializer
+# with the read-only fields excluded, for OpenAPI / openapi-generator / generated client
+try:
+    ANSIBLE_BASE_AUTO_CREATE_SERIALIZER
+except NameError:
+    ANSIBLE_BASE_AUTO_CREATE_SERIALIZER = False
+
+
 if 'ansible_base.api_documentation' in INSTALLED_APPS:
     if 'drf_spectacular' not in INSTALLED_APPS:
         INSTALLED_APPS.append('drf_spectacular')
