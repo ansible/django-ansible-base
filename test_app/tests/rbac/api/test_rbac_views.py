@@ -102,7 +102,7 @@ def test_make_global_user_assignment(admin_api_client, rando, inventory):
     response = admin_api_client.post(url, data=data, format="json")
     assert response.status_code == 201, response.data
     assert response.data['user'] == rando.pk
-    assert response.data['object_id'] == None
+    assert response.data['object_id'] is None
     assert response.data['role_definition'] == rd.pk
 
     assert rando.has_obj_perm(inventory, 'change')
