@@ -45,3 +45,9 @@ def get_function_from_setting(setting_name: str) -> Any:
     except Exception:
         logger.exception(_('{setting_name} was set but we were unable to import its reference as a function.').format(setting_name=setting_name))
         return None
+
+
+def get_from_import(module_name, attr):
+    "Thin wrapper around importlib.import_module, mostly exists so that we can safely mock this in tests"
+    module = importlib.import_module(module_name, package=attr)
+    return getattr(module, attr)

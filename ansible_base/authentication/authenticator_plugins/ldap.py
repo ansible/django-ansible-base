@@ -104,7 +104,7 @@ class LDAPSearchField(ListField):
         self.validators.append(validator)
 
 
-def validate_ldap_filter(value: Any, with_user: bool = False) -> bool:
+def validate_ldap_filter(value: Any, with_user: bool = False) -> None:
     if type(value) is not str:
         raise ValidationError(VALID_STRING)
 

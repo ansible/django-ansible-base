@@ -1,7 +1,6 @@
 import logging
 from collections import OrderedDict
 
-from crum import get_current_user
 from django.conf import settings
 from django.db import models
 from django.db.models.fields.reverse_related import ManyToManyRel
@@ -9,8 +8,9 @@ from django.urls.exceptions import NoReverseMatch
 from inflection import underscore
 from rest_framework.reverse import reverse
 
+from ansible_base.lib.abstract_models.immutable import ImmutableModel
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING, ansible_encryption
-from ansible_base.lib.utils.models import get_system_user
+from ansible_base.lib.utils.models import current_user_or_system_user
 
 logger = logging.getLogger('ansible_base.lib.abstract_models.common')
 
@@ -36,29 +36,10 @@ def get_url_for_object(obj, request=None):
         return ''
 
 
-class CommonModel(models.Model):
-    # Any field marked as encrypted will automatically be stored in an encrypted fashion
-    encrypted_fields = []
-    # Any field set in here will not be used in the views
-    ignore_relations = []
-
+class ModifiableModel(models.Model):
     class Meta:
         abstract = True
 
-    created = models.DateTimeField(
-        editable=False,
-        help_text="The date/time this resource was created",
-        auto_now_add=True,
-    )
-    created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        related_name='%(app_label)s_%(class)s_created+',
-        default=None,
-        null=True,
-        editable=False,
-        on_delete=models.DO_NOTHING,
-        help_text="The user who created this resource",
-    )
     modified = models.DateTimeField(
         editable=False,
         help_text="The date/time this resource was created",
@@ -76,27 +57,66 @@ class CommonModel(models.Model):
 
     def save(self, *args, **kwargs):
         '''
-        This save function will provide several features automatically.
-          * It will automatically encrypt any fields in the classes `encrypt_fields` property
-          * It will automatically add a created_by fields for new items
+        This save function will provide the following features automatically.
           * It will automatically add the modified fields for changing items
         '''
         update_fields = list(kwargs.get('update_fields', []))
 
-        # Manually perform auto_now_add and auto_now logic.
-        user = get_current_user()
-        if user is None or user.is_anonymous:
-            user = get_system_user()
+        if 'modified_by' not in update_fields:
+            self.modified_by = current_user_or_system_user()
+            update_fields.append('modified_by')
+
+        return super().save(*args, **kwargs)
+
+
+class CreatableModel(models.Model):
+    class Meta:
+        abstract = True
+
+    created = models.DateTimeField(
+        editable=False,
+        help_text="The date/time this resource was created",
+        auto_now_add=True,
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='%(app_label)s_%(class)s_created+',
+        default=None,
+        null=True,
+        editable=False,
+        on_delete=models.DO_NOTHING,
+        help_text="The user who created this resource",
+    )
+
+    def save(self, *args, **kwargs):
+        '''
+        This save function will provide the following features automatically.
+          * It will automatically add a created_by fields for new items
+        '''
+        update_fields = list(kwargs.get('update_fields', []))
 
         if not self.pk:
             if self.created_by is None:
-                self.created_by = user
+                self.created_by = current_user_or_system_user()
                 update_fields.append('created_by')
 
-        if 'modified_by' not in update_fields:
-            self.modified_by = user
-            update_fields.append('modified_by')
+        return super().save(*args, **kwargs)
 
+
+class AbstractCommonModel(models.Model):
+    # Any field marked as encrypted will automatically be stored in an encrypted fashion
+    encrypted_fields = []
+    # Any field set in here will not be used in the views
+    ignore_relations = []
+
+    class Meta:
+        abstract = True
+
+    def save(self, *args, **kwargs):
+        '''
+        This save function will provide the following features automatically.
+          * It will automatically encrypt any fields in the classes `encrypt_fields` property
+        '''
         # Encrypt any fields
         for field in self.encrypted_fields:
             field_value = getattr(self, field, None)
@@ -170,6 +190,16 @@ class CommonModel(models.Model):
         return response
 
 
+class CommonModel(AbstractCommonModel, CreatableModel, ModifiableModel):
+    """
+    A base model for most django-ansible-base apps to extend from.
+    Includes fields for tracking creation and last-modification metadata.
+    """
+
+    class Meta:
+        abstract = True
+
+
 class NamedCommonModel(CommonModel):
     class Meta:
         abstract = True
@@ -205,3 +235,14 @@ class UniqueNamedCommonModel(CommonModel):
 
     def __str__(self):
         return self.name
+
+
+class ImmutableCommonModel(ImmutableModel, AbstractCommonModel, CreatableModel):
+    """
+    A save-once (immutable) base model.
+    Functionally similar to CommonModel, but does not allow modification of the object after creation
+    and does not include the modified/modifed_by fields.
+    """
+
+    class Meta:
+        abstract = True

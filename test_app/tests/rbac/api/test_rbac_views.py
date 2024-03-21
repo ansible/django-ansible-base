@@ -1,4 +1,5 @@
 import pytest
+from django.test.utils import override_settings
 from rest_framework.reverse import reverse
 
 from ansible_base.rbac import permission_registry
@@ -44,18 +45,27 @@ def test_delete_role_definition(admin_api_client, inv_rd):
 
 
 @pytest.mark.django_db
-def test_get_user_assignment(admin_api_client, inv_rd, rando, inventory):
+def test_get_user_assignment(system_user, admin_api_client, inv_rd, rando, inventory):
     assignment = inv_rd.give_permission(rando, inventory)
     url = reverse('roleuserassignment-detail', kwargs={'pk': assignment.pk})
     response = admin_api_client.get(url)
     assert response.data['content_type'] == 'aap.inventory'
     assert int(response.data['object_id']) == inventory.id
     assert response.data['role_definition'] == inv_rd.id
-    assert not response.data['created_by']  # created by code, not by view
+    assert response.data['created_by'] == system_user.id  # created by code, not by view
 
     summary_fields = response.data['summary_fields']
     assert 'content_object' in summary_fields
     assert summary_fields['content_object'] == {'id': inventory.id, 'name': inventory.name}
+
+
+@pytest.mark.django_db
+def test_get_user_assignment_no_system_user(admin_api_client, inv_rd, rando, inventory):
+    with override_settings(SYSTEM_USERNAME=None):
+        assignment = inv_rd.give_permission(rando, inventory)
+    url = reverse('roleuserassignment-detail', kwargs={'pk': assignment.pk})
+    response = admin_api_client.get(url)
+    assert response.data['created_by'] is None
 
 
 @pytest.mark.django_db
