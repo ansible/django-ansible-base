@@ -11,7 +11,7 @@ from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 logger = logging.getLogger('ansible_base.lib.serializers.common')
 
 
-COMMON_FIELDS = ('id', 'url', 'created', 'created_by', 'modified', 'modified_by', 'related', 'summary_fields')
+COMMON_FIELDS = ['id', 'url', 'created', 'created_by', 'modified', 'modified_by', 'related', 'summary_fields']
 
 
 class CommonModelSerializer(ValidationSerializerMixin, serializers.ModelSerializer):
