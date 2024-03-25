@@ -202,3 +202,13 @@ def test_remove_global_role_assignment(user_api_client, user, inv_rd, global_inv
     assert response.status_code == 204, response.data
 
     assert not type(assignment).objects.filter(pk=assignment.pk).exists()
+
+
+@pytest.mark.django_db
+def test_role_metadata_view(user_api_client):
+    response = user_api_client.get(reverse('role-metadata'))
+    assert response.status_code == 200
+    child_models = response.data['child_models']
+    assert child_models['shared.organization']['aap.namespace']['aap.collectionimport'] == {}
+    role_permissions = response.data['role_permissions']
+    assert 'aap.change_collectionimport' in role_permissions['aap.namespace']

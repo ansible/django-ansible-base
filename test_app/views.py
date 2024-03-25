@@ -89,13 +89,16 @@ class UUIDModelViewSet(TestAppViewSet):
 def api_root(request, format=None):
     from ansible_base.authentication.urls import router as auth_router
     from ansible_base.resource_registry.urls import service_router
-    from test_app.router import router
+    from ansible_base.rbac.urls import router as rbac_router
+    from test_app.router import router as test_app_router
 
     list_endpoints = {}
-    for url in router.urls + auth_router.urls + service_router.urls:
+    for url in test_app_router.urls + auth_router.urls + service_router.urls + rbac_router.urls:
         # only want "root" list views, for example:
         # want '^users/$' [name='user-list']
         # do not want '^users/(?P<pk>[^/.]+)/organizations/$' [name='user-organizations-list'],
         if '-list' in url.name and url.pattern._regex.count('/') == 1:
             list_endpoints[url.name.removesuffix('-list')] = reverse(url.name, request=request, format=format)
+    list_endpoints['service-index'] = reverse('service-index-root', request=request, format=format)
+    list_endpoints['role-metadata'] = reverse('role-metadata', request=request, format=format)
     return Response(list_endpoints)
