@@ -152,9 +152,7 @@ class ServiceMetadataView(
 
 
 class ServiceIndexRootView(AnsibleBaseDjangoAppApiView):
-    permission_classes = [
-        permissions.IsAuthenticated,
-    ]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, format=None):
         '''Link other resource registry endpoints'''

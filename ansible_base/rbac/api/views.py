@@ -1,7 +1,11 @@
+from collections import OrderedDict
+
 from django.db import transaction
+from django.db.models import Model
 from django.utils.translation import gettext_lazy as _
 from rest_framework import permissions
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
@@ -14,7 +18,83 @@ from ansible_base.rbac.api.serializers import (
 )
 from ansible_base.rbac.evaluations import has_super_permission
 from ansible_base.rbac.models import RoleDefinition
-from ansible_base.rbac.policies import check_content_obj_permission
+from ansible_base.rbac.permission_registry import permission_registry
+from ansible_base.rbac.validators import check_content_obj_permission, permissions_allowed_for_role, system_roles_enabled
+
+
+def list_combine_values(data: dict[Model, list[str]]) -> list[str]:
+    "Utility method to merge everything in .values() into a single list"
+    ret = []
+    for this_list in data.values():
+        ret += this_list
+    return ret
+
+
+class RoleMetadataView(AnsibleBaseDjangoAppApiView):
+    """General data about models and permissions tracked by django-ansible-base RBAC
+
+    Information from this endpoint should be static given a server version.
+    This reflects model definitions, registrations with the permission registry,
+    and enablement of RBAC features in settings.
+
+    child_models: Mappings that indicate what resource roles can confer permission to child resources
+    role_permissions: Valid permissions for a role of a given type
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def resource_tree(self, parent_model, seen: set) -> dict[str, dict]:
+        tree = OrderedDict()
+        parent_model_name = parent_model._meta.model_name
+
+        for model_name in sorted(permission_registry._parent_fields.keys()):
+            parent_field_name = permission_registry._parent_fields[model_name]
+            if parent_field_name is None:
+                continue
+            child_model = permission_registry._name_to_model[model_name]
+            this_parent_name = child_model._meta.get_field(parent_field_name).related_model._meta.model_name
+            if this_parent_name == parent_model_name:
+                if model_name in seen:
+                    continue
+                seen.add(model_name)
+
+                child_repr = f"{permission_registry.get_resource_prefix(child_model)}.{model_name}"
+                tree[child_repr] = self.resource_tree(child_model, seen=seen)
+
+        return tree
+
+    def get(self, request, format=None):
+        data = OrderedDict()
+        tree = OrderedDict()
+        role_permissions = OrderedDict()
+
+        all_models = sorted(permission_registry.all_registered_models, key=lambda cls: cls._meta.model_name)
+
+        for cls in all_models:
+            if permission_registry.get_parent_fd_name(cls):
+                continue  # only list root models in parent dictionary
+            cls_repr = f"{permission_registry.get_resource_prefix(cls)}.{cls._meta.model_name}"
+            tree[cls_repr] = self.resource_tree(cls, seen=set())
+
+        role_model_types = list(all_models)
+        if system_roles_enabled():
+            role_model_types += [None]
+        for cls in role_model_types:
+            if cls is None:
+                cls_repr = 'system'
+            else:
+                cls_repr = f"{permission_registry.get_resource_prefix(cls)}.{cls._meta.model_name}"
+            role_permissions[cls_repr] = []
+            for codename in list_combine_values(permissions_allowed_for_role(cls)):
+                perm = permission_registry.permission_qs.get(codename=codename)
+                ct = permission_registry.content_type_model.objects.get_for_id(perm.content_type_id)
+                perm_repr = f"{permission_registry.get_resource_prefix(ct.model_class())}.{codename}"
+                role_permissions[cls_repr].append(perm_repr)
+
+        data['child_models'] = tree
+        data['role_permissions'] = role_permissions
+
+        return Response(data)
 
 
 class RoleDefinitionViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):

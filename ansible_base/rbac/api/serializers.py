@@ -1,5 +1,4 @@
 from django.apps import apps
-from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.db.utils import IntegrityError
@@ -67,14 +66,6 @@ class ChoiceLikeMixin(serializers.ChoiceField):
         except (TypeError, ValueError):
             self.fail('incorrect_type', data_type=type(data).__name__)
 
-    def get_resource_registry(self):
-        if 'ansible_base.resource_registry' not in settings.INSTALLED_APPS:
-            return None
-
-        from ansible_base.resource_registry.registry import get_registry
-
-        return get_registry()
-
 
 class ContentTypeField(ChoiceLikeMixin):
 
@@ -83,19 +74,7 @@ class ContentTypeField(ChoiceLikeMixin):
         super().__init__(**kwargs)
 
     def get_resource_type_name(self, cls) -> str:
-        if registry := self.get_resource_registry():
-            # duplicates logic in ansible_base/resource_registry/apps.py
-            try:
-                resource_config = registry.get_config_for_model(cls)
-                if serializer := resource_config.managed_serializer:
-                    return f"shared.{serializer.RESOURCE_TYPE}"  # shared model
-            except KeyError:
-                pass  # unregistered model
-
-            # Fallback for unregistered and non-shared models
-            return f"{registry.api_config.service_type}.{cls._meta.model_name}"
-        else:
-            return f'aap.{cls._meta.model_name}'
+        return f"{permission_registry.get_resource_prefix(cls)}.{cls._meta.model_name}"
 
     def get_dynamic_choices(self):
         return list(sorted((self.get_resource_type_name(cls), cls._meta.verbose_name.title()) for cls in permission_registry.all_registered_models))
@@ -113,7 +92,7 @@ class ContentTypeField(ChoiceLikeMixin):
 class PermissionField(ChoiceLikeMixin):
     @property
     def service_prefix(self):
-        if registry := self.get_resource_registry():
+        if registry := permission_registry.get_resource_registry():
             return registry.api_config.service_type
         return 'local'
 
@@ -122,9 +101,9 @@ class PermissionField(ChoiceLikeMixin):
         for cls in permission_registry.all_registered_models:
             cls_name = cls._meta.model_name
             for action in cls._meta.default_permissions:
-                perms.append(f'{self.service_prefix}.{action}_{cls_name}')
+                perms.append(f'{permission_registry.get_resource_prefix(cls)}.{action}_{cls_name}')
             for perm_name, description in cls._meta.permissions:
-                perms.append(f'{self.service_prefix}.{perm_name}')
+                perms.append(f'{permission_registry.get_resource_prefix(cls)}.{perm_name}')
         return list(sorted(perms))
 
     def get_dynamic_object(self, data):
@@ -134,7 +113,8 @@ class PermissionField(ChoiceLikeMixin):
     def to_representation(self, value):
         if isinstance(value, str):
             return value  # slight hack to work to AWX schema tests
-        return f'{self.service_prefix}.{value.codename}'
+        ct = permission_registry.content_type_model.objects.get_for_id(value.content_type_id)  # optimization
+        return f'{permission_registry.get_resource_prefix(ct.model_class())}.{value.codename}'
 
 
 class ManyRelatedListField(serializers.ListField):
