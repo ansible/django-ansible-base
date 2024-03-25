@@ -26,8 +26,7 @@ except NameError:
     REST_FRAMEWORK = {}
 
 
-# Tells the base serializer to auto-create a creation-only serializer
-# with the read-only fields excluded, for OpenAPI / openapi-generator / generated client
+# See docs/lib/views.md
 try:
     ANSIBLE_BASE_AUTO_CREATE_SERIALIZER
 except NameError:
