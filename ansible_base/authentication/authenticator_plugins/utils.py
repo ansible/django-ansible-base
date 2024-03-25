@@ -21,7 +21,7 @@ def get_authenticator_plugins() -> list:
         for path in parent_class.__path__:
             for file in glob(join(path, "*.py")):
                 file_name = basename(file)
-                if isfile(file) and file_name not in ['__init__.py', 'utils.py', 'base.py']:
+                if isfile(file) and file_name not in ['__init__.py', 'utils.py', 'base.py'] and not file_name.startswith('_'):
                     plugins.append(f"{class_prefix}.{file_name.replace('.py', '')}")
     return plugins
 

@@ -329,6 +329,30 @@ def tacacs_authenticator(tacacs_configuration):
 
 
 @pytest.fixture
+def radius_configuration():
+    return {
+        "SERVER": "localhost",
+        "PORT": 1812,
+        "SECRET": "testingsecret",
+    }
+
+
+@pytest.fixture
+def radius_authenticator(db, radius_configuration):
+    from ansible_base.authentication.models import Authenticator
+
+    authenticator = Authenticator.objects.create(
+        name="Test RADIUS Authenticator",
+        enabled=True,
+        create_objects=True,
+        remove_users=True,
+        type="ansible_base.authentication.authenticator_plugins.radius",
+        configuration=radius_configuration.copy(),
+    )
+    return authenticator
+
+
+@pytest.fixture
 def saml_configuration(rsa_keypair_with_cert, rsa_keypair_with_cert_1):
     return {
         "CALLBACK_URL": "https://localhost/api/social/complete/ansible_base-authenticator_plugins-saml__test-saml-authenticator/",
