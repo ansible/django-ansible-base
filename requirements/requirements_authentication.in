@@ -10,3 +10,6 @@ python-ldap
 # Social Authenticator Plugins
 python3-saml
 tacacs_plus
+
+# RADIUS Authenticator Plugin
+pyrad
