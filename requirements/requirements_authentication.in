@@ -12,3 +12,6 @@ python3-saml
 tacacs_plus
 
 xmlsec==1.3.13 # Pin for https://github.com/xmlsec/python-xmlsec/issues/314
+
+# RADIUS Authenticator Plugin
+pyrad
