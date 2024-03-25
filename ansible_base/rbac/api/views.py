@@ -2,10 +2,10 @@ from collections import OrderedDict
 
 from django.db import transaction
 from django.db.models import Model
-from rest_framework.response import Response
 from rest_framework import permissions
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.viewsets import ModelViewSet, ViewSet
+from rest_framework.response import Response
+from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.rbac.api.permissions import AuthenticatedReadAdminChange
@@ -17,8 +17,8 @@ from ansible_base.rbac.api.serializers import (
 )
 from ansible_base.rbac.evaluations import has_super_permission
 from ansible_base.rbac.models import RoleDefinition
-from ansible_base.rbac.validators import check_content_obj_permission, permissions_allowed_for_role, system_roles_enabled
 from ansible_base.rbac.permission_registry import permission_registry
+from ansible_base.rbac.validators import check_content_obj_permission, permissions_allowed_for_role, system_roles_enabled
 
 
 def list_combine_values(data: dict[Model, list[str]]) -> list[str]:
@@ -39,12 +39,12 @@ class RoleMetadataView(AnsibleBaseDjangoAppApiView):
     child_models: Mappings that indicate what resource roles can confer permission to child resources
     role_permissions: Valid permissions for a role of a given type
     """
+
     permission_classes = [permissions.IsAuthenticated]
 
-    def resource_tree(self, parent_model, seen: set) -> dict[str,dict]:
+    def resource_tree(self, parent_model, seen: set) -> dict[str, dict]:
         tree = OrderedDict()
         parent_model_name = parent_model._meta.model_name
-        parent_repr = f"{permission_registry.get_resource_prefix(parent_model)}.{parent_model_name}"
 
         for model_name in sorted(permission_registry._parent_fields.keys()):
             parent_field_name = permission_registry._parent_fields[model_name]
@@ -93,8 +93,6 @@ class RoleMetadataView(AnsibleBaseDjangoAppApiView):
         data['child_models'] = tree
         data['role_permissions'] = role_permissions
 
-        # data['resources'] = reverse('resource-list')
-        # data['resource-types'] = reverse('resourcetype-list')
         return Response(data)
 
 

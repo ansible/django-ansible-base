@@ -106,7 +106,7 @@ def validate_permissions_for_model(permissions, content_type, managed=False) -> 
 
     # Check that view permission is given for every model that has update/delete/special actions listed
     for cls, valid_model_permissions in permissions_by_model.items():
-        model_permissions = valid_model_permissions & codename_list
+        model_permissions = set(valid_model_permissions) & codename_list
         non_add_model_permissions = {codename for codename in model_permissions if not is_add_perm(codename)}
         if non_add_model_permissions and not any('view' in codename for codename in non_add_model_permissions):
             display_perms = ', '.join(non_add_model_permissions)

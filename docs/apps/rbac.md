@@ -18,11 +18,12 @@ After logging in to test_app/, you can visit this endpoint to get the role defin
 
 http://127.0.0.1:8000/api/v1/role_definitions/
 
-Perform an OPTIONS request, and you will find this gives choices for
-fields `permissions` and `content_type`.
+Perform an OPTIONS request, and you will find this gives choices for `content_type`.
 Out of the choices a single `content_type` needs to be chosen for a role definition.
+
 Multiple permissions can be selected, and are accepted in the form of a list.
-Type-specific permissions validation is still TBD, these are specific to a model.
+To find out what permissions are valid for a role definition for a given `content_type`
+make a GET to `/api/v1/role_metadata/` and look up the type under "role_permissions".
 
 A POST to this endpoint will create a new role definition, example data:
 

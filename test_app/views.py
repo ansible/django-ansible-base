@@ -88,8 +88,8 @@ class UUIDModelViewSet(TestAppViewSet):
 @api_view(['GET'])
 def api_root(request, format=None):
     from ansible_base.authentication.urls import router as auth_router
-    from ansible_base.resource_registry.urls import service_router
     from ansible_base.rbac.urls import router as rbac_router
+    from ansible_base.resource_registry.urls import service_router
     from test_app.router import router as test_app_router
 
     list_endpoints = {}

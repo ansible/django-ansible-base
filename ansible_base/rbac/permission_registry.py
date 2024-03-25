@@ -88,7 +88,7 @@ class PermissionRegistry:
             # duplicates logic in ansible_base/resource_registry/apps.py
             try:
                 resource_config = registry.get_config_for_model(cls)
-                if serializer := resource_config.managed_serializer:
+                if resource_config.managed_serializer:
                     return "shared"  # shared model
             except KeyError:
                 pass  # unregistered model
