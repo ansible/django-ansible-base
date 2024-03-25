@@ -3,12 +3,14 @@ import logging
 from unittest import mock
 
 import pytest
+from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.http.response import HttpResponseBase
 from django.test import override_settings
 from django.test.client import RequestFactory
 from rest_framework.views import APIView
 
+from ansible_base.authentication.views.authenticator import AuthenticatorViewSet
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 
 
@@ -68,7 +70,8 @@ def test_ansible_base_view_parent_view(caplog, setting, log_message, default_par
 def test_ansible_base_view_parent_view_exception(caplog):
     with override_settings(ANSIBLE_BASE_CUSTOM_VIEW_PARENT='does.not.exist'):
         with caplog.at_level(logging.ERROR):
-            with mock.patch('importlib.import_module', side_effect=ImportError("Test Exception")):
+            with mock.patch('ansible_base.lib.utils.settings.get_from_import', side_effect=ImportError("Test Exception")):
+
                 import ansible_base.lib.utils.views.django_app_api
 
                 importlib.reload(ansible_base.lib.utils.views.django_app_api)
@@ -124,3 +127,18 @@ def test_ansible_base_view_version(view_with_headers, mock_request, admin_user, 
             response = view_with_headers.finalize_response(mock_request, initial_response)
             assert 'X-API-Product-Version' in response and response['X-API-Product-Version'] == value
             assert log_message in caplog.text
+
+
+def test_ansible_base_view_filter_backends():
+    "Since test_app uses the rest_filters app, we should expect views to have those filter_backends"
+    assert len(AuthenticatorViewSet.filter_backends) == len(settings.REST_FRAMEWORK['DEFAULT_FILTER_BACKENDS'])
+
+
+def test_ansible_base_view_filter_backends_custom_settings():
+    "Test the alternative non-test_app configuration"
+    import ansible_base.lib.utils.views.django_app_api
+
+    with override_settings(ANSIBLE_BASE_CUSTOM_VIEW_FILTERS=settings.ANSIBLE_BASE_ALL_REST_FILTERS):
+        importlib.reload(ansible_base.lib.utils.views.django_app_api)
+        assert len(AuthenticatorViewSet.filter_backends) == len(settings.REST_FRAMEWORK['DEFAULT_FILTER_BACKENDS'])
+    override_settings(ANSIBLE_BASE_CUSTOM_VIEW_FILTERS=settings.ANSIBLE_BASE_ALL_REST_FILTERS)

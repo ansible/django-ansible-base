@@ -4,6 +4,7 @@ django-extensions
 django-debug-toolbar
 ipython
 tox
+typeguard
 pytest
 pytest-asyncio
 pytest-xdist

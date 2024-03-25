@@ -6,6 +6,7 @@ import ldap
 import pytest
 from django.urls import reverse
 from rest_framework.serializers import ValidationError
+from typeguard import suppress_type_checks
 
 from ansible_base.authentication.authenticator_plugins.ldap import AuthenticatorPlugin, LDAPSettings, validate_ldap_filter
 from ansible_base.authentication.models import Authenticator
@@ -288,6 +289,7 @@ def test_ldap_backend_authenticate_empty_username_password(
     assert response.status_code == 401
 
 
+@suppress_type_checks
 @pytest.mark.django_db
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
 @mock.patch("ansible_base.authentication.authenticator_plugins.ldap.LDAPBackend.authenticate")
@@ -317,6 +319,7 @@ def test_ldap_backend_authenticate_valid_user(
     assert response.data['results'][0]['name'] == ldap_authenticator.name
 
 
+@suppress_type_checks
 @pytest.mark.django_db
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
 @mock.patch("ansible_base.authentication.authenticator_plugins.ldap.LDAPBackend.authenticate")
@@ -390,7 +393,7 @@ def test_ldap_validate_ldap_filter(ldap_configuration, ldap_settings):
     """
     invalid_filter = "(&(cn=%(user)s)(objectClass=posixAccount)(invalid))"
     with pytest.raises(ValidationError) as e:
-        validate_ldap_filter(invalid_filter, 'foo')
+        validate_ldap_filter(invalid_filter, True)
     assert e.value.args[0] == 'Invalid filter: (invalid)'
 
 

@@ -151,6 +151,7 @@ class RoleDefinitionSerializer(CommonModelSerializer):
 
     class Meta:
         model = RoleDefinition
+        read_only_fields = ('id', 'summary_fields')
         fields = '__all__'
 
     def validate(self, validated_data):
@@ -158,7 +159,7 @@ class RoleDefinitionSerializer(CommonModelSerializer):
         return super().validate(validated_data)
 
 
-class RoleDefinitionDetailSeraizler(RoleDefinitionSerializer):
+class RoleDefinitionDetailSerializer(RoleDefinitionSerializer):
     content_type = ContentTypeField(read_only=True)
 
 

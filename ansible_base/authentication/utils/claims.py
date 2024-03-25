@@ -1,5 +1,6 @@
 import logging
 import re
+from typing import Optional
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -94,7 +95,7 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
     }
 
 
-def process_groups(trigger_condition: dict, groups: list, authenticator_id: int) -> bool:
+def process_groups(trigger_condition: dict, groups: list, authenticator_id: int) -> Optional[bool]:
     '''
     Looks at a maps trigger for a group and users groups and determines if the trigger True or False
     '''
@@ -127,7 +128,7 @@ def process_groups(trigger_condition: dict, groups: list, authenticator_id: int)
     return has_access
 
 
-def has_access_with_join(current_access: bool, new_access: bool, condition: str = 'or') -> bool:
+def has_access_with_join(current_access: Optional[bool], new_access: bool, condition: str = 'or') -> Optional[bool]:
     '''
     Handle join of authenticator_maps
     '''
@@ -141,7 +142,7 @@ def has_access_with_join(current_access: bool, new_access: bool, condition: str 
         return current_access and new_access
 
 
-def process_user_attributes(trigger_condition: dict, attributes: dict, authenticator_id: int) -> bool:
+def process_user_attributes(trigger_condition: dict, attributes: dict, authenticator_id: int) -> Optional[bool]:
     '''
     Looks at a maps trigger for an attribute and the users attributes and determines if the trigger is True, False or None
     '''

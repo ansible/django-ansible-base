@@ -13,10 +13,22 @@ from django.apps import apps
 from django.db.migrations.recorder import MigrationRecorder
 from django.db.models.signals import post_migrate
 from django.test.client import RequestFactory
+from drf_spectacular.generators import SchemaGenerator
+from rest_framework.request import Request
+from rest_framework.test import force_authenticate
 
 from ansible_base.lib.testing.fixtures import *  # noqa: F403, F401
 from ansible_base.lib.testing.util import copy_fixture
 from test_app import models
+
+
+@pytest.fixture()
+def openapi_schema():
+    request = RequestFactory().get('/api/v1/')
+    force_authenticate(request, user=models.User.objects.create(username='new-superuser', is_superuser=True))
+    drf_request = Request(request)
+    generator = SchemaGenerator()
+    return generator.get_schema(request=drf_request)
 
 
 def test_migrations_okay(*args, **kwargs):

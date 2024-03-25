@@ -12,7 +12,7 @@ def test_resource_type_list(admin_api_client):
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert set([x["name"] for x in response.data['results']]) == set(
-        ["shared.user", "shared.team", "aap.authenticator", "shared.organization", "aap.resourcemigrationtestmodel"]
+        ["shared.user", "shared.team", "aap.authenticator", "aap.original1", "aap.original2", "shared.organization", "aap.resourcemigrationtestmodel"]
     )
 
 

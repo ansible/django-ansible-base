@@ -11,13 +11,16 @@ from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 logger = logging.getLogger('ansible_base.lib.serializers.common')
 
 
+COMMON_FIELDS = ['id', 'url', 'created', 'created_by', 'modified', 'modified_by', 'related', 'summary_fields']
+
+
 class CommonModelSerializer(ValidationSerializerMixin, serializers.ModelSerializer):
     url = serializers.SerializerMethodField()
     related = serializers.SerializerMethodField('_get_related')
     summary_fields = serializers.SerializerMethodField('_get_summary_fields')
 
     class Meta:
-        fields = ['id', 'url', 'created', 'created_by', 'modified', 'modified_by', 'related', 'summary_fields']
+        fields = COMMON_FIELDS
 
     def __init__(self, instance=None, data=empty, **kwargs):
         # pre-populate the form with the defaults from the model
@@ -33,10 +36,11 @@ class CommonModelSerializer(ValidationSerializerMixin, serializers.ModelSerializ
             setattr(self.Meta, 'extra_kwargs', extra_kwargs)
         super().__init__(instance, data, **kwargs)
 
-    def get_url(self, obj):
+    def get_url(self, obj) -> str:
         return get_url_for_object(obj)
 
-    def _get_related(self, obj):
+    # Type hints are used by OpenAPI
+    def _get_related(self, obj) -> dict[str, str]:
         if obj is None:
             return {}
         if not hasattr(obj, 'related_fields'):
@@ -44,7 +48,7 @@ class CommonModelSerializer(ValidationSerializerMixin, serializers.ModelSerializ
             return {}
         return obj.related_fields(self.context.get('request'))
 
-    def _get_summary_fields(self, obj):
+    def _get_summary_fields(self, obj) -> dict[str, dict]:
         if obj is None:
             return {}
         if not hasattr(obj, 'get_summary_fields'):
@@ -73,6 +77,4 @@ class CommonModelSerializer(ValidationSerializerMixin, serializers.ModelSerializ
 
 class NamedCommonModelSerializer(CommonModelSerializer):
     class Meta(CommonModelSerializer.Meta):
-        fields = [
-            'name',
-        ] + CommonModelSerializer.Meta.fields
+        fields = ['name'] + list(COMMON_FIELDS)
