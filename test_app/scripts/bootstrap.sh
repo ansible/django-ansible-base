@@ -17,6 +17,7 @@ function cleanup {
 trap cleanup EXIT
 
 docker_running=$(docker ps -aq -f name=dab_postgres)
+migrate_needed=1
 
 if [[ -z "${docker_running// /}" ]]
 then
@@ -24,6 +25,7 @@ then
     make postgres
 else
     echo "dab_postgres container is already running, will use that container"
+    python manage.py migrate --check; migrate_needed=$?
 fi
 
 MAX_ATTEMPTS=10
@@ -39,7 +41,7 @@ for i in $(seq 1 $MAX_ATTEMPTS); do
     sleep 1
 done
 
-if [ -z "$docker_running" ]
+if [ "${migrate_needed}" -ne 0 ]
 then
     python3 manage.py migrate
     DJANGO_SUPERUSER_PASSWORD=password DJANGO_SUPERUSER_USERNAME=admin DJANGO_SUPERUSER_EMAIL=admin@stuff.invalid python3 manage.py createsuperuser --noinput
