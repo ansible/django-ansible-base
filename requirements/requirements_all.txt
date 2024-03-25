@@ -1,4 +1,4 @@
-asgiref==3.7.2
+asgiref==3.8.1
     # via
     #   channels
     #   django
@@ -32,13 +32,13 @@ django==4.2.11
     #   djangorestframework
     #   drf-spectacular
     #   social-auth-app-django
-django-auth-ldap==4.6.0
+django-auth-ldap==4.7.0
     # via -r requirements/requirements_authentication.in
 django-crum==0.7.9
     # via -r requirements/requirements.in
 django-split-settings==1.3.0
     # via -r requirements/requirements.in
-djangorestframework==3.14.0
+djangorestframework==3.15.1
     # via
     #   -r requirements/requirements.in
     #   drf-spectacular
@@ -96,8 +96,6 @@ python3-openid==3.2.0
     # via social-auth-core
 python3-saml==1.16.0
     # via -r requirements/requirements_authentication.in
-pytz==2024.1
-    # via djangorestframework
 pyyaml==6.0.1
     # via drf-spectacular
 referencing==0.34.0
@@ -109,7 +107,7 @@ requests==2.31.0
     #   -r requirements/requirements_jwt_consumer.in
     #   requests-oauthlib
     #   social-auth-core
-requests-oauthlib==1.4.0
+requests-oauthlib==2.0.0
     # via social-auth-core
 rpds-py==0.18.0
     # via
