@@ -10,7 +10,6 @@ from rest_framework.viewsets import GenericViewSet, mixins
 
 from ansible_base.lib.utils.hashing import hash_serializer_data
 from ansible_base.lib.utils.response import CSVStreamResponse
-from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.resource_registry.models import Resource, ResourceType, service_id
 from ansible_base.resource_registry.registry import get_registry
@@ -106,7 +105,7 @@ class ServiceMetadataView(AnsibleBaseDjangoAppApiView):
         return Response({"service_id": service_id(), "service_type": registry.api_config.service_type})
 
 
-class ServiceIndexRootView(AnsibleBaseView):
+class ServiceIndexRootView(AnsibleBaseDjangoAppApiView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, format=None):
