@@ -145,10 +145,10 @@ def test_authenticator_map_invalid_map_type(admin_api_client, local_authenticato
         ),
         pytest.param(
             'is_superuser',
-            {'name': 'Rule 1', 'map_type': 'is_superuser', 'triggers': {'always': {}}},
+            {'name': 'Rule 1', 'map_type': 'is_superuser', 'order': -20, 'triggers': {'always': {}}},
             'order',
-            "Must be a valid integer",
-            id="map_type=is_superuser, missing order param",
+            "Ensure this value is greater than or equal to 0.",
+            id="map_type=is_superuser, invalid order param",
         ),
     ],
 )
