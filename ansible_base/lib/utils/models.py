@@ -141,59 +141,58 @@ def diff(old, new, require_type_match=True, json_safe=True, include_m2m=False, e
           tuple of the old value and the new value.
     """
 
-    def skip_field(source, field):
-        if field in exclude_fields:
-            return True
-        if limit_fields and field not in limit_fields:
-            return True
-        if not include_m2m and source._meta.get_field(field).many_to_many:
-            return True
-        return False
-
     diff_dict = {"added_fields": {}, "removed_fields": {}, "changed_fields": {}}
 
+    # Short circuit if both objects are None
     if old is None and new is None:
         return diff_dict
 
+    # Fail if we are not dealing with None or Model types
     if (old is not None and not isinstance(old, Model)) or (new is not None and not isinstance(new, Model)):
         raise TypeError('old and new must be a Model instance or None')
 
-    if old is None:
-        for field in get_all_field_names(new, concrete_only=True):
-            if skip_field(new, field):
-                continue
-            diff_dict["added_fields"][field] = make_json_safe(getattr(new, field)) if json_safe else getattr(new, field)
-        return diff_dict
-    elif new is None:
-        for field in get_all_field_names(old, concrete_only=True):
-            if skip_field(old, field):
-                continue
-            diff_dict["removed_fields"][field] = make_json_safe(getattr(old, field)) if json_safe else getattr(old, field)
-        return diff_dict
-    elif require_type_match and type(old) != type(new):  # noqa: E721
+    # If we have to have matching types and both objects are not None and their types don't match then fail
+    if require_type_match and (old is not None and new is not None) and type(old) is not type(new):  # noqa: E721
         raise TypeError('old and new must be of the same type')
 
-    for field in get_all_field_names(old, concrete_only=True):
-        if skip_field(old, field):
+    # Extract all of the fields and their values into a dict in the format of:
+    #  fields = {
+    #     'old': { <field>: <value>, [<field>: <value> ...]},
+    #     'new': { <field>: <value>, [<field>: <value> ...]},
+    #  }
+    fields = {}
+    for name, obj in (('old', old), ('new', new)):
+        fields[name] = {}
+        if obj is None:
             continue
 
-        old_value = getattr(old, field)
+        for field in get_all_field_names(obj, concrete_only=True):
+            # Skip the field if needed
+            if field in exclude_fields:
+                continue
+            if limit_fields and field not in limit_fields:
+                continue
+            if not include_m2m and obj._meta.get_field(field).many_to_many:
+                continue
 
-        if not hasattr(new, field):
-            diff_dict["removed_fields"][field] = make_json_safe(old_value) if json_safe else old_value
-            continue
+            fields[name][field] = make_json_safe(getattr(obj, field)) if json_safe else getattr(obj, field)
 
-        new_value = getattr(new, field)
-        if old_value != new_value:
-            diff_dict["changed_fields"][field] = (
-                make_json_safe(old_value) if json_safe else old_value,
-                make_json_safe(new_value) if json_safe else new_value,
-            )
+    old_fields_set = set(fields['old'].keys())
+    new_fields_set = set(fields['new'].keys())
 
-    for field in get_all_field_names(new, concrete_only=True):
-        if skip_field(new, field):
-            continue
-        if not hasattr(old, field):
-            diff_dict["added_fields"][field] = make_json_safe(getattr(new, field)) if json_safe else getattr(new, field)
+    # Get any remove fields from the old_fields - new_fields
+    for field in old_fields_set - new_fields_set:
+        diff_dict['removed_fields'][field] = fields['old'][field]
+
+    # Get any new fields from the new_fields - old_fields
+    for field in new_fields_set - old_fields_set:
+        diff_dict['added_fields'][field] = fields['new'][field]
+
+    # Find any modified fields from the union of the sets
+    for field in new_fields_set & old_fields_set:
+        diff_dict['changed_fields'][field] = (
+            fields['old'][field],
+            fields['new'][field],
+        )
 
     return diff_dict
