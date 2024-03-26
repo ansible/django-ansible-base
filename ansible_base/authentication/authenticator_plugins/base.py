@@ -85,7 +85,7 @@ class AbstractAuthenticatorPlugin:
 
     def to_representation(self, instance: object):
         if not issubclass(self.configuration_class, BaseAuthenticatorConfiguration):
-            raise TypeError("self.configuration_class must subclass BaseAuthenticatorConfiguration.")
+            raise TypeError(_("self.configuration_class must subclass BaseAuthenticatorConfiguration."))
         serializer = self.configuration_class(data=instance.configuration, instance=instance)
         response = serializer.to_representation(instance.configuration)
         return response
