@@ -190,9 +190,10 @@ def diff(old, new, require_type_match=True, json_safe=True, include_m2m=False, e
 
     # Find any modified fields from the union of the sets
     for field in new_fields_set & old_fields_set:
-        diff_dict['changed_fields'][field] = (
-            fields['old'][field],
-            fields['new'][field],
-        )
+        if fields['old'][field] != fields['new'][field]:
+            diff_dict['changed_fields'][field] = (
+                fields['old'][field],
+                fields['new'][field],
+            )
 
     return diff_dict
