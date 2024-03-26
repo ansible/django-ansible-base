@@ -2,6 +2,7 @@ import logging
 
 from django.contrib.auth.backends import ModelBackend
 from django.core.exceptions import ValidationError
+from django.utils.translation import gettext_lazy as _
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.utils.claims import get_or_create_authenticator_user
@@ -16,7 +17,7 @@ class LocalConfiguration(BaseAuthenticatorConfiguration):
 
     def validate(self, data):
         if data != {}:
-            raise ValidationError({"configuration": "Can only be {} for local authenticators"})
+            raise ValidationError(_({"configuration": "Can only be {} for local authenticators"}))
         return data
 
 
