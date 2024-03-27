@@ -11,14 +11,8 @@ def _store_activitystream_entry(old, new, operation):
     if operation not in ('create', 'update', 'delete'):
         raise ValueError("Invalid operation: {}".format(operation))
 
-    old_excluded = getattr(old, 'activity_stream_excluded_field_names', [])
-    new_excluded = getattr(new, 'activity_stream_excluded_field_names', [])
-    excluded = set(old_excluded + new_excluded)
-
-    old_limit = getattr(old, 'activity_stream_limit_field_names', [])
-    new_limit = getattr(new, 'activity_stream_limit_field_names', [])
-    limit = set(old_limit + new_limit)
-
+    excluded = getattr(new, 'activity_stream_excluded_field_names', [])
+    limit = getattr(new, 'activity_stream_limit_field_names', [])
     delta = diff(old, new, exclude_fields=excluded, limit_fields=limit)
 
     if delta["added_fields"] == {} and delta["changed_fields"] == {} and delta["removed_fields"] == {}:
