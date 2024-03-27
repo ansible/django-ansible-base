@@ -3,6 +3,7 @@ from contextlib import contextmanager
 
 from django.apps import apps
 from django.conf import settings
+from django.db.models import Q
 from django.db.models.signals import m2m_changed, post_delete, post_init, post_save, pre_delete, pre_save
 from django.db.utils import ProgrammingError
 
@@ -130,20 +131,45 @@ def rbac_post_init_set_original_parent(sender, instance, **kwargs):
     instance.__rbac_original_parent_id = getattr(instance, parent_id_name)
 
 
+def get_parent_ids(instance) -> list[tuple[int, int]]:
+    parent_field_name = permission_registry.get_parent_fd_name(instance)
+    if not parent_field_name:
+        return []
+    parent_cls = permission_registry.get_parent_model(instance)
+
+    if permission_registry.get_parent_fd_name(parent_cls):
+        # has another level of model
+        parent_obj = getattr(instance, parent_field_name)
+        if parent_obj:
+            parent_ct = permission_registry.content_type_model.objects.get_for_model(parent_cls)
+            return [(parent_ct, parent_obj.pk)] + get_parent_ids(parent_obj)
+    else:
+        parent_id = getattr(instance, f'{parent_field_name}_id')
+        if parent_id:
+            parent_ct = permission_registry.content_type_model.objects.get_for_model(parent_cls)
+            return [(parent_ct, parent_id)]
+    return []
+
+
 def post_save_update_obj_permissions(instance):
     "Utility method shared by multiple signals"
-    to_update = set()
-    parent_ct = permission_registry.content_type_model.objects.get_for_model(permission_registry.get_parent_model(instance))
-    parent_field_name = permission_registry.get_parent_fd_name(instance)
+    # Account for organization roles (and other parent objects), new and old
+    parent_gfks = get_parent_ids(instance)
 
-    # Account for organization roles, new and old
-    new_parent_id = getattr(instance, f'{parent_field_name}_id')
-    if new_parent_id:
-        to_update.update(set(ObjectRole.objects.filter(content_type=parent_ct, object_id=new_parent_id)))
     if hasattr(instance, '__rbac_original_parent_id'):
-        if instance.__rbac_original_parent_id:
-            to_update.update(set(ObjectRole.objects.filter(content_type=parent_ct, object_id=instance.__rbac_original_parent_id)))
+        parent_cls = permission_registry.get_parent_model(instance)
+        parent_obj = parent_cls(pk=instance.__rbac_original_parent_id)
+        parent_gfks += get_parent_ids(parent_obj)
         delattr(instance, '__rbac_original_parent_id')
+
+    if parent_gfks:
+        q_exprs = [Q(content_type=parent_ct, object_id=parent_id) for parent_ct, parent_id in parent_gfks]
+        q_filter = q_exprs[0]
+        for next_q in q_exprs[1:]:
+            q_filter |= next_q
+        to_update = set(ObjectRole.objects.filter(q_filter))
+    else:
+        to_update = set()
 
     # Account for parent team roles of those organization roles
     ancestors = set(ObjectRole.objects.filter(provides_teams__has_roles__in=to_update))
