@@ -158,8 +158,10 @@ def post_save_update_obj_permissions(instance):
 
     if hasattr(instance, '__rbac_original_parent_id'):
         parent_cls = permission_registry.get_parent_model(instance)
+        parent_ct = permission_registry.content_type_model.objects.get_for_model(parent_cls)
         parent_obj = parent_cls(pk=instance.__rbac_original_parent_id)
         parent_gfks += get_parent_ids(parent_obj)
+        parent_gfks.append((parent_ct, instance.__rbac_original_parent_id))
         delattr(instance, '__rbac_original_parent_id')
 
     if parent_gfks:
