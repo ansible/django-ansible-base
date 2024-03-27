@@ -181,8 +181,8 @@ class MyModelViewSet(viewsets.ModelViewSet):
     permission_classes = [AnsibleBaseObjectPermissions]  # (2)
     serializer_class = MyModelSerializer
 
-    def get_queryset(self):
-        return MyModel.access_qs(self.request.user)  # (3)
+    def filter_queryset(self, queryset):
+        return super().filter_queryset(MyModel.access_qs(self.request.user, queryset=queryset))  # (3)
 ```
 
 This marks 3 different integration points.
@@ -268,6 +268,7 @@ has a certain type of permission to (access control).
 Given a registered model, you can do these things.
 
 - obtain visible objects for a user with `MyModel.access_qs(user, 'view_mymodel')`
+- filter existing `queryset` to objects user can view `MyModel.access_qs(user, queryset)`
 - obtain objects user has permission to delete `MyModel.access_qs(user, 'delete_mymodel')`
 - determine if user can delete one specific object `user.has_obj_perm(obj, 'delete_mymodel')`
 - use only the action name for a queryset shortcut `MyModel.access_qs(user, 'view')`

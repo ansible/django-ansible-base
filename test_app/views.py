@@ -6,8 +6,7 @@ from rest_framework.viewsets import ModelViewSet
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.api.permissions import AnsibleBaseObjectPermissions
-from test_app import serializers
-from test_app.models import RelatedFieldsTestModel, User
+from test_app import models, serializers
 
 
 class TestAppViewSet(ModelViewSet, AnsibleBaseView):
@@ -15,26 +14,28 @@ class TestAppViewSet(ModelViewSet, AnsibleBaseView):
     prefetch_related = ()
     select_related = ()
 
-    def get_queryset(self):
+    def filter_queryset(self, qs):
         cls = self.serializer_class.Meta.model
         if permission_registry.is_registered(cls):
-            qs = cls.access_qs(self.request.user)
-        else:
-            qs = cls.objects.all()
+            qs = cls.access_qs(self.request.user, queryset=qs)
+
         if self.prefetch_related:
             qs = qs.prefetch_related(*self.prefetch_related)
         if self.select_related:
             qs = qs.select_related(*self.select_related)
-        return qs
+
+        return super().filter_queryset(qs)
 
 
 class OrganizationViewSet(TestAppViewSet):
     serializer_class = serializers.OrganizationSerializer
     prefetch_related = ('created_by', 'modified_by', 'resource', 'resource__content_type')
+    queryset = models.Organization.objects.all()
 
 
 class TeamViewSet(TestAppViewSet):
     serializer_class = serializers.TeamSerializer
+    queryset = models.Team.objects.all()
     prefetch_related = ('created_by', 'modified_by', 'organization')
     # for demonstration purposes, this uses a select_related for the resource relationship
     select_related = ('resource__content_type',)
@@ -43,35 +44,33 @@ class TeamViewSet(TestAppViewSet):
 class UserViewSet(ModelViewSet):
     permission_classes = [AnsibleBaseObjectPermissions]
     serializer_class = serializers.UserSerializer
+    queryset = models.User.objects.all()
     prefetch_related = ('created_by', 'modified_by', 'resource', 'resource__content_type')
-
-    def get_queryset(self):
-        return User.objects.all()
 
 
 class EncryptionModelViewSet(TestAppViewSet):
     serializer_class = serializers.EncryptionModelSerializer
+    queryset = models.EncryptionModel.objects.all()
 
 
 class RelatedFieldsTestModelViewSet(TestAppViewSet):
-    queryset = RelatedFieldsTestModel.objects.all()  # needed for automatic basename from router
+    queryset = models.RelatedFieldsTestModel.objects.all()  # needed for automatic basename from router
     serializer_class = serializers.RelatedFieldsTestModelSerializer
-
-
-class EncryptedModelViewSet(TestAppViewSet):
-    serializer_class = serializers.EncryptionModelSerializer
 
 
 class InventoryViewSet(TestAppViewSet):
     serializer_class = serializers.InventorySerializer
+    queryset = models.Inventory.objects.all()
 
 
 class InstanceGroupViewSet(TestAppViewSet):
     serializer_class = serializers.InstanceGroupSerializer
+    queryset = models.InstanceGroup.objects.all()
 
 
 class CowViewSet(TestAppViewSet):
     serializer_class = serializers.CowSerializer
+    queryset = models.Cow.objects.all()
     rbac_action = None
 
     @action(detail=True, rbac_action='say', methods=['post'])
@@ -82,6 +81,7 @@ class CowViewSet(TestAppViewSet):
 
 class UUIDModelViewSet(TestAppViewSet):
     serializer_class = serializers.UUIDModelSerializer
+    queryset = models.UUIDModel.objects.all()
 
 
 # create api root view from the router

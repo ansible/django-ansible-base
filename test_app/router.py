@@ -23,13 +23,11 @@ router.register(
     related_views={
         'teams': (views.TeamViewSet, 'teams'),
     },
-    basename='organization',
 )
 
 router.register(
     r'teams',
     views.TeamViewSet,
-    basename='team',
 )
 
 router.register(
@@ -39,9 +37,8 @@ router.register(
         'organizations': (views.OrganizationViewSet, 'organizations'),
         'teams': (views.TeamViewSet, 'teams'),
     },
-    basename='user',
 )
-router.register(r'inventories', views.InventoryViewSet, basename='inventory')
-router.register(r'instance_groups', views.InstanceGroupViewSet, basename='instancegroup')
-router.register(r'cows', views.CowViewSet, basename='cow')
-router.register(r'uuidmodels', views.UUIDModelViewSet, basename='uuidmodel')
+router.register(r'inventories', views.InventoryViewSet)
+router.register(r'instance_groups', views.InstanceGroupViewSet)
+router.register(r'cows', views.CowViewSet)
+router.register(r'uuidmodels', views.UUIDModelViewSet)

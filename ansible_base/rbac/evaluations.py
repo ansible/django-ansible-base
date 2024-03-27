@@ -1,4 +1,7 @@
+from typing import Optional
+
 from django.conf import settings
+from django.db.models.query import QuerySet
 
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import DABPermission, RoleDefinition, get_evaluation_model
@@ -62,19 +65,21 @@ class BaseEvaluationDescriptor:
 
 
 class AccessibleObjectsDescriptor(BaseEvaluationDescriptor):
-    def __call__(self, actor, codename='view', **kwargs):
+    def __call__(self, actor, codename: str = 'view', queryset: Optional[QuerySet] = None) -> QuerySet:
+        if queryset is None:
+            queryset = self.cls.objects.all()
         full_codename = validate_codename_for_model(codename, self.cls)
         if actor._meta.model_name == 'user' and has_super_permission(actor, full_codename):
-            return self.cls.objects.all()
-        return get_evaluation_model(self.cls).accessible_objects(self.cls, actor, full_codename, **kwargs)
+            return queryset
+        return get_evaluation_model(self.cls).accessible_objects(self.cls, actor, full_codename, queryset=queryset)
 
 
 class AccessibleIdsDescriptor(BaseEvaluationDescriptor):
-    def __call__(self, actor, codename='view', **kwargs):
+    def __call__(self, actor, codename: str = 'view', content_types=None) -> QuerySet:
         full_codename = validate_codename_for_model(codename, self.cls)
         if actor._meta.model_name == 'user' and has_super_permission(actor, full_codename):
             return self.cls.objects.values_list('id', flat=True)
-        return get_evaluation_model(self.cls).accessible_ids(self.cls, actor, full_codename, **kwargs)
+        return get_evaluation_model(self.cls).accessible_ids(self.cls, actor, full_codename, content_types=content_types)
 
 
 def bound_has_obj_perm(self, obj, codename) -> bool:
