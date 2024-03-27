@@ -11,7 +11,7 @@ description = "A Django app used by ansible services"
 readme = "README.md"
 requires-python = ">=3.9"
 keywords = ["ansible", "django"]
-license = {file = "LICENSE.md"}
+license = {text = "Apache-2.0"}
 classifiers = [
     "Framework :: Django",
     "Development Status :: 5 - Production/Stable",
