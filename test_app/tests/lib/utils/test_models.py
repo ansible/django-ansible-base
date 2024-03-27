@@ -76,11 +76,12 @@ def test_diff_both_none():
     """
     Diffing two None means no fields are added, removed, or changed.
     """
-    assert models.diff(None, None) == {
-        "added_fields": {},
-        "removed_fields": {},
-        "changed_fields": {},
-    }
+    empty_model_diff = models.ModelDiff(added_fields={}, removed_fields={}, changed_fields={})
+    delta = models.diff(None, None)
+
+    assert delta == empty_model_diff
+    assert not delta.has_changes
+    assert delta.dict() == {'added_fields': {}, 'removed_fields': {}, 'changed_fields': {}}
 
 
 @pytest.mark.parametrize(
@@ -94,11 +95,11 @@ def test_diff_old_none_means_all_fields_are_new(system_user, multiple_fields_mod
     """
     delta = models.diff(None, multiple_fields_model, require_type_match=require_type_match, json_safe=False)
     field_names = models.get_all_field_names(multiple_fields_model)
-    assert len(delta["added_fields"]) == len(field_names)
-    assert delta["removed_fields"] == {}
-    assert delta["changed_fields"] == {}
+    assert len(delta.added_fields) == len(field_names)
+    assert delta.removed_fields == {}
+    assert delta.changed_fields == {}
     for field in field_names:
-        assert delta["added_fields"][field] == getattr(multiple_fields_model, field)
+        assert delta.added_fields[field] == getattr(multiple_fields_model, field)
 
 
 @pytest.mark.parametrize(
@@ -112,11 +113,11 @@ def test_diff_new_none_means_all_fields_are_old(system_user, multiple_fields_mod
     """
     delta = models.diff(multiple_fields_model, None, require_type_match=require_type_match, json_safe=False)
     field_names = models.get_all_field_names(multiple_fields_model)
-    assert len(delta["removed_fields"]) == len(field_names)
-    assert delta["added_fields"] == {}
-    assert delta["changed_fields"] == {}
+    assert len(delta.removed_fields) == len(field_names)
+    assert delta.added_fields == {}
+    assert delta.changed_fields == {}
     for field in field_names:
-        assert delta["removed_fields"][field] == getattr(multiple_fields_model, field)
+        assert delta.removed_fields[field] == getattr(multiple_fields_model, field)
 
 
 def test_diff_require_type_match_true(system_user, multiple_fields_model):
@@ -141,16 +142,16 @@ def test_diff_require_type_match_false(system_user, user, multiple_fields_model)
     if require_type_match is False.
     """
     delta = models.diff(multiple_fields_model, system_user, require_type_match=False)
-    assert 'last_name' in delta['added_fields']
-    assert delta['added_fields']['last_name'] == system_user.last_name
-    assert 'last_name' not in delta['removed_fields']
-    assert 'last_name' not in delta['changed_fields']
+    assert 'last_name' in delta.added_fields
+    assert delta.added_fields['last_name'] == system_user.last_name
+    assert 'last_name' not in delta.removed_fields
+    assert 'last_name' not in delta.changed_fields
 
     delta = models.diff(system_user, multiple_fields_model, require_type_match=False)
-    assert 'last_name' in delta['removed_fields']
-    assert delta['removed_fields']['last_name'] == system_user.last_name
-    assert 'last_name' not in delta['added_fields']
-    assert 'last_name' not in delta['changed_fields']
+    assert 'last_name' in delta.removed_fields
+    assert delta.removed_fields['last_name'] == system_user.last_name
+    assert 'last_name' not in delta.added_fields
+    assert 'last_name' not in delta.changed_fields
 
 
 @pytest.mark.parametrize(
@@ -192,11 +193,11 @@ def test_diff(system_user, user):
     This is the normal case where the old and new models are of the same type.
     """
     delta = models.diff(system_user, user)
-    assert 'username' in delta['changed_fields']
-    assert delta['changed_fields']['username'] == (system_user.username, user.username)
-    assert 'email' not in delta['changed_fields']
-    assert delta['added_fields'] == {}
-    assert delta['removed_fields'] == {}
+    assert 'username' in delta.changed_fields
+    assert delta.changed_fields['username'] == (system_user.username, user.username)
+    assert 'email' not in delta.changed_fields
+    assert delta.added_fields == {}
+    assert delta.removed_fields == {}
 
 
 def test_diff_exclude_fields(system_user, user):
@@ -206,9 +207,9 @@ def test_diff_exclude_fields(system_user, user):
     user.first_name = 'newfirstname'
     user.save()
     delta = models.diff(system_user, user, exclude_fields=['username'])
-    assert 'username' not in delta['changed_fields']
-    assert 'first_name' in delta['changed_fields']
-    assert delta['changed_fields']['first_name'] == (system_user.first_name, user.first_name)
+    assert 'username' not in delta.changed_fields
+    assert 'first_name' in delta.changed_fields
+    assert delta.changed_fields['first_name'] == (system_user.first_name, user.first_name)
 
 
 def test_diff_limit_fields(system_user, user):
@@ -218,16 +219,16 @@ def test_diff_limit_fields(system_user, user):
     user.first_name = 'newfirstname'
     user.save()
     delta = models.diff(system_user, user, limit_fields=['username'])
-    assert 'username' in delta['changed_fields']
-    assert len(delta['changed_fields']) == 1
-    assert delta['added_fields'] == {}
-    assert delta['removed_fields'] == {}
+    assert 'username' in delta.changed_fields
+    assert len(delta.changed_fields) == 1
+    assert delta.added_fields == {}
+    assert delta.removed_fields == {}
 
     delta = models.diff(None, user, limit_fields=['username'])
-    assert 'username' in delta['added_fields']
-    assert len(delta['added_fields']) == 1
-    assert delta['removed_fields'] == {}
-    assert delta['changed_fields'] == {}
+    assert 'username' in delta.added_fields
+    assert len(delta.added_fields) == 1
+    assert delta.removed_fields == {}
+    assert delta.changed_fields == {}
 
 
 def test_diff_with_fk(system_user, user, multiple_fields_model_1, multiple_fields_model_2):
@@ -238,9 +239,9 @@ def test_diff_with_fk(system_user, user, multiple_fields_model_1, multiple_field
     multiple_fields_model_2.save()
 
     delta = models.diff(multiple_fields_model_1, multiple_fields_model_2, json_safe=False)
-    assert delta['changed_fields']['created_by'] == (multiple_fields_model_1.created_by, multiple_fields_model_2.created_by)
-    assert delta['changed_fields']['created_by_id'] == (multiple_fields_model_1.created_by.pk, multiple_fields_model_2.created_by.pk)
+    assert delta.changed_fields['created_by'] == (multiple_fields_model_1.created_by, multiple_fields_model_2.created_by)
+    assert delta.changed_fields['created_by_id'] == (multiple_fields_model_1.created_by.pk, multiple_fields_model_2.created_by.pk)
 
     delta = models.diff(multiple_fields_model_1, multiple_fields_model_2, json_safe=True)
-    assert delta['changed_fields']['created_by'] == (multiple_fields_model_1.created_by.username, multiple_fields_model_2.created_by.username)
-    assert delta['changed_fields']['created_by_id'] == (multiple_fields_model_1.created_by.pk, multiple_fields_model_2.created_by.pk)
+    assert delta.changed_fields['created_by'] == (multiple_fields_model_1.created_by.username, multiple_fields_model_2.created_by.username)
+    assert delta.changed_fields['created_by_id'] == (multiple_fields_model_1.created_by.pk, multiple_fields_model_2.created_by.pk)
