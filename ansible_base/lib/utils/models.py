@@ -1,17 +1,20 @@
 import logging
+from dataclasses import asdict, dataclass
 from itertools import chain
 
 from crum import get_current_user
 from django.contrib.auth import get_user_model
+from django.db.models import Model
 from django.utils.translation import gettext_lazy as _
 from inflection import underscore
 
 from ansible_base.lib.utils.settings import get_setting
+from ansible_base.lib.utils.string import make_json_safe
 
 logger = logging.getLogger('ansible_base.lib.utils.models')
 
 
-def get_all_field_names(model):
+def get_all_field_names(model, concrete_only=False):
     # Implements compatibility with _meta.get_all_field_names
     # See: https://docs.djangoproject.com/en/1.11/ref/models/meta/#migrating-from-the-old-api
     return list(
@@ -21,7 +24,7 @@ def get_all_field_names(model):
                 for field in model._meta.get_fields()
                 # For complete backwards compatibility, you may want to exclude
                 # GenericForeignKey from the results.
-                if not (field.many_to_one and field.related_model is None)
+                if not (field.many_to_one and field.related_model is None) and not (concrete_only and not field.concrete)
             )
         )
     )
@@ -97,3 +100,117 @@ def current_user_or_system_user():
     if user is None or user.is_anonymous:
         user = get_system_user()
     return user
+
+
+@dataclass
+class ModelDiff:
+    added_fields: dict
+    removed_fields: dict
+    changed_fields: dict
+
+    def __bool__(self):
+        return bool(self.added_fields or self.removed_fields or self.changed_fields)
+
+    @property
+    def has_changes(self):
+        return bool(self)
+
+    dict = asdict
+
+
+def diff(old, new, require_type_match=True, json_safe=True, include_m2m=False, exclude_fields=[], limit_fields=[]):
+    """
+    Diff two instances of models (which do not have to be the same type of model
+    if given require_type_match=False).
+
+    This function is used in particular by the activitystream application where
+    the changes returned by this function are stored as models change.
+
+    :param old: The old instance for comparison
+    :param new: The new instance for comparison
+    :param require_type_match: If True, old and new must be of the same type of
+        model. (default: True)
+    :param json_safe: If True, the diff will be made JSON-safe by converting
+        all non-JSON-safe values to strings using Django's smart_str function.
+        (default: True)
+    :param exclude_fields: A list of field names to exclude from the diff.
+        (default: [])
+    :param limit_fields: A list of field names to limit the diff to. This can be
+        useful, for example, when update_fields is passed to a model's save
+        method and you only want to diff the fields that were updated.
+        (default: [])
+    :param include_m2m: If True, include many-to-many fields in the diff.
+        Otherwise, they are ignored. (default: False)
+    :return: A dictionary with the following
+        - added_fields: A dictionary of fields that were added between old and
+          new. Importantly, if old and new are the same type of model, this
+          should always be empty. An "added field" does not mean that the field
+          became non-empty, it means that the field was completely absent from
+          the old type of model and is now present in the new type of model. If
+          this entry is non-empty, it has the form: {"field_name": value} where
+          value is the new value of the field.
+        - removed_fields: A dictionary of fields that were removed between old
+          and new. Similar to added_fields, if old and new are the same type of
+          model, this should always be empty. It has the same structure as
+          added_fields except the value is the old value of the field.
+        - changed_fields: A dictionary of fields that were changed between old
+          and new. The key of each entry is the field name, and the value is a
+          tuple of the old value and the new value.
+    """
+
+    model_diff = ModelDiff(added_fields={}, removed_fields={}, changed_fields={})
+
+    # Short circuit if both objects are None
+    if old is None and new is None:
+        return model_diff
+
+    # Fail if we are not dealing with None or Model types
+    if (old is not None and not isinstance(old, Model)) or (new is not None and not isinstance(new, Model)):
+        raise TypeError('old and new must be a Model instance or None')
+
+    # If we have to have matching types and both objects are not None and their types don't match then fail
+    if require_type_match and (old is not None and new is not None) and type(old) is not type(new):  # noqa: E721
+        raise TypeError('old and new must be of the same type')
+
+    # Extract all of the fields and their values into a dict in the format of:
+    #  fields = {
+    #     'old': { <field>: <value>, [<field>: <value> ...]},
+    #     'new': { <field>: <value>, [<field>: <value> ...]},
+    #  }
+    fields = {}
+    for name, obj in (('old', old), ('new', new)):
+        fields[name] = {}
+        if obj is None:
+            continue
+
+        for field in get_all_field_names(obj, concrete_only=True):
+            # Skip the field if needed
+            if field in exclude_fields:
+                continue
+            if limit_fields and field not in limit_fields:
+                continue
+            if not include_m2m and obj._meta.get_field(field).many_to_many:
+                continue
+
+            fields[name][field] = make_json_safe(getattr(obj, field)) if json_safe else getattr(obj, field)
+
+    old_fields_set = set(fields['old'].keys())
+    new_fields_set = set(fields['new'].keys())
+
+    # Get any remove fields from the old_fields - new_fields
+    for field in old_fields_set - new_fields_set:
+        model_diff.removed_fields[field] = fields['old'][field]
+
+    # Get any new fields from the new_fields - old_fields
+    for field in new_fields_set - old_fields_set:
+        model_diff.added_fields[field] = fields['new'][field]
+
+    # Find any modified fields from the union of the sets
+    for field in new_fields_set & old_fields_set:
+        if fields['old'][field] != fields['new'][field]:
+            model_diff.changed_fields[field] = (
+                fields['old'][field],
+                fields['new'][field],
+            )
+
+    return model_diff

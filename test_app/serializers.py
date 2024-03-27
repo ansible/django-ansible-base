@@ -1,6 +1,6 @@
 from rest_framework.serializers import ModelSerializer
 
-from ansible_base.lib.serializers.common import CommonModelSerializer, NamedCommonModelSerializer
+from ansible_base.lib.serializers.common import CommonModelSerializer, ImmutableCommonModelSerializer, NamedCommonModelSerializer
 from ansible_base.rbac.api.related import RelatedAccessMixin
 from test_app import models
 
@@ -17,7 +17,7 @@ class TeamSerializer(RelatedAccessMixin, NamedCommonModelSerializer):
         fields = '__all__'
 
 
-class UserSerializer(ModelSerializer):
+class UserSerializer(CommonModelSerializer):
     class Meta:
         model = models.User
         exclude = (
@@ -44,6 +44,17 @@ class ResourceMigrationTestModelSerializer(CommonModelSerializer):
         fields = '__all__'
 
 
+class MultipleFieldsModelSerializer(NamedCommonModelSerializer):
+    class Meta:
+        model = models.MultipleFieldsModel
+        fields = '__all__'
+
+
+class AnimalSerializer(NamedCommonModelSerializer):
+    class Meta:
+        model = models.Animal
+
+
 class InventorySerializer(RelatedAccessMixin, ModelSerializer):
     class Meta:
         model = models.Inventory
@@ -65,4 +76,10 @@ class CowSerializer(RelatedAccessMixin, ModelSerializer):
 class UUIDModelSerializer(RelatedAccessMixin, ModelSerializer):
     class Meta:
         model = models.UUIDModel
+        fields = '__all__'
+
+
+class ImmutableLogEntrySerializer(ImmutableCommonModelSerializer):
+    class Meta:
+        model = models.ImmutableLogEntry
         fields = '__all__'

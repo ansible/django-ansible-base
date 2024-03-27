@@ -14,7 +14,7 @@ LOGGING = {
     },
     'handlers': {
         'console': {
-            '()': 'logging.StreamHandler',
+            '()': 'logging.NullHandler',
             'level': 'DEBUG',
             'formatter': 'simple',
         },
@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'test_app',
     'django_extensions',
     'debug_toolbar',
+    'ansible_base.activitystream',
 ]
 
 MIDDLEWARE = [
