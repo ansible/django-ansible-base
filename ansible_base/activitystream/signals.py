@@ -15,7 +15,7 @@ def _store_activitystream_entry(old, new, operation):
     limit = getattr(new, 'activity_stream_limit_field_names', [])
     delta = diff(old, new, exclude_fields=excluded, limit_fields=limit)
 
-    if delta["added_fields"] == {} and delta["changed_fields"] == {} and delta["removed_fields"] == {}:
+    if not delta:
         # No changes to store
         return
 
@@ -31,7 +31,7 @@ def _store_activitystream_entry(old, new, operation):
     return Entry.objects.create(
         content_object=content_object,
         operation=operation,
-        changes=delta,
+        changes=delta.dict(),
     )
 
 

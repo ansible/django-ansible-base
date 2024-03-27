@@ -1,4 +1,5 @@
 import logging
+from dataclasses import asdict, dataclass
 from itertools import chain
 
 from crum import get_current_user
@@ -101,6 +102,22 @@ def current_user_or_system_user():
     return user
 
 
+@dataclass
+class ModelDiff:
+    added_fields: dict
+    removed_fields: dict
+    changed_fields: dict
+
+    def __bool__(self):
+        return bool(self.added_fields or self.removed_fields or self.changed_fields)
+
+    @property
+    def has_changes(self):
+        return bool(self)
+
+    dict = asdict
+
+
 def diff(old, new, require_type_match=True, json_safe=True, include_m2m=False, exclude_fields=[], limit_fields=[]):
     """
     Diff two instances of models (which do not have to be the same type of model
@@ -141,11 +158,11 @@ def diff(old, new, require_type_match=True, json_safe=True, include_m2m=False, e
           tuple of the old value and the new value.
     """
 
-    diff_dict = {"added_fields": {}, "removed_fields": {}, "changed_fields": {}}
+    model_diff = ModelDiff(added_fields={}, removed_fields={}, changed_fields={})
 
     # Short circuit if both objects are None
     if old is None and new is None:
-        return diff_dict
+        return model_diff
 
     # Fail if we are not dealing with None or Model types
     if (old is not None and not isinstance(old, Model)) or (new is not None and not isinstance(new, Model)):
@@ -182,18 +199,18 @@ def diff(old, new, require_type_match=True, json_safe=True, include_m2m=False, e
 
     # Get any remove fields from the old_fields - new_fields
     for field in old_fields_set - new_fields_set:
-        diff_dict['removed_fields'][field] = fields['old'][field]
+        model_diff.removed_fields[field] = fields['old'][field]
 
     # Get any new fields from the new_fields - old_fields
     for field in new_fields_set - old_fields_set:
-        diff_dict['added_fields'][field] = fields['new'][field]
+        model_diff.added_fields[field] = fields['new'][field]
 
     # Find any modified fields from the union of the sets
     for field in new_fields_set & old_fields_set:
         if fields['old'][field] != fields['new'][field]:
-            diff_dict['changed_fields'][field] = (
+            model_diff.changed_fields[field] = (
                 fields['old'][field],
                 fields['new'][field],
             )
 
-    return diff_dict
+    return model_diff
