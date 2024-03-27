@@ -36,7 +36,7 @@ class RedisClient(DefaultClient):
         self.clustered = connection_kwargs.get('clustered', False)
         self.clustered_hosts = connection_kwargs.get('clustered_hosts', '')
 
-    def connect(self, index: int = 0) -> Union[Redis | RedisCluster]:
+    def connect(self, index: int = 0) -> Union[Redis, RedisCluster]:
         """
         Given a connection index, returns a new raw redis client/connection
         instance. Index is used for replication setups and indicates that
