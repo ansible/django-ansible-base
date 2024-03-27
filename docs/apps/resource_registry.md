@@ -291,32 +291,268 @@ This displays information about the service itself:
 
 ### service-index/resource-types/{name}/manifest/
 
-This returns a manifest of the current state of resources on gateway, the manifest is presented as a streamed HTTP
+This returns a manifest of the current state of resources on RESOURCE_SERVER, the manifest is presented as a streamed HTTP
 response with a CSV containing columns `resource_id` and `resource_hash`, `resource_hash` is the sha256 calculated
 from the Resource.resource_data serialized by the ResourceSerializer.
 
-This endpoint allows each service to check the state of gateway and perform comparations with its local resources to
+This endpoint allows each service to check the state of RESOURCE_SERVER and perform comparisons with its local resources to
 perform sync operations (create, update, delete).
 
 ```csv
-resource_id,resource_hash
-863b5744-bc79-49fb-95cb-bb171a372c50,86f06a619dd768393c4969f725bae089a265168fb79f1fdcac2d4442e41ac529
-4c9ddcb4-080f-4d8c-a0d2-9dbffee1b3ce,6c78ee32d146a01bc22902a36dbced5af6ec0563c6d190491ad1262ef53dc6ed
+ansible_id,resource_hash,modified
+31daab14-cb67-4c62-8dcd-39f411c82242,6c78ee32d146a01bc22902a36dbced5af6ec0563c6d190491ad1262ef53dc6ed,2024-05-13 19:17:50.223497+00:00
+97447387-8596-404f-b0d0-6429b04c8d22,86f06a619dd768393c4969f725bae089a265168fb79f1fdcac2d4442e41ac529,2024-05-13 19:17:52.610575+00:00
+4d01427e-a11e-4d0e-9408-4ef7c2b478d6,7e1fcf1993a9f84865745ecd923b68b589448c6a34e91407d690f4868d132797,2024-05-15 17:38:35.882268+00:00
+53886798-29e7-426f-b9cb-f7f74b346072,9ed7b1707a3e2787ba1fde5e1b4bac98173befaf25f1e1210e66d18f00602330,2024-05-15 17:39:39.580444+00:00
+
 ```
 
-> NOTE: Locally each service would use a call to `ansible_base.lib.utils.hashing.hash_serializer_data` passing the `instance`,
-> the `ResourceSerializer` and setting the `resource_data` field as the hashing source.
+### Syncing local services with RESOURCE_SERVER Resources
 
-```py
->>> from ansible_base.lib.utils.hashing import hash_serializer_data
->>> from ansible_base.resource_registry.serializers import ResourceSerializer
->>> resource = Resource.objects.first()
->>> resource_hash = hash_serializer_data(resource, ResourceSerializer, "resource_data")
->>> print(resource.resource_id, resource_hash, sep=",")
-'4c9ddcb4-080f-4d8c-a0d2-9dbffee1b3ce,6c78ee32d146a01bc22902a36dbced5af6ec0563c6d190491ad1262ef53dc6ed'
+Each service connected to the RESOURCE_SERVER can schedule a sync process, this process can
+be done via the management command `resource_sync` or by wrapping the `tasks.sync.SyncExecutor().run()`
+in a main task and spawning any tasking system that the service uses.
+
+The sync will be performed only for resources managed by APP, those which `service_id`
+matched the RESOURCE_SERVER `service_id`, local managed resources will not be affected.
+
+> IMPORTANT: Syncs must happen after initial resource migration is performed.
+
+
+#### How Resource Sync works
+
+The sync process consists in:
+
+0. Fetch the remote manifest from APP
+0. Based on the remote manifest, cleanup orphaned managed resources from local service
+0. Iterate over resources organization, team, user
+    - Order matters, orgs must be created before team and so on.
+0. for each resource in manifest compare the remote hash with local hash
+    - If equal: No Operation, status NOOP
+    - If different: Update local with remote data, status UPDATED
+    - If not found locally, create: status CREATED
+    - If cannot create or update locally, status CONFLICT
+    - If remote resource data cannot be fetched, status UNAVAILABLE
+0. Resilience:
+    - If during the execution of sync the RESOURCE_SERVER server is offline or a resource
+      from the manifest cannot be found, then it is marked as UNAVAILABLE and
+      the caller can accumulate it for a retry strategy, the management
+      command `resource_sync` implements a retry default to 3 attempts.
+
+#### Configuration
+
+Resource Sync depends on a `ResourceAPIClient` that can be instantiated and passed
+to `SyncExecutor` or automatically created based on the configuration from
+the `django.conf.settings` that looks like.
+
+```python
+RESOURCE_SERVER = {
+    "URL": "https://localhost",
+    "SECRET_KEY": "<VERY-SECRET-KEY-HERE>",
+    "VALIDATE_HTTPS": False,
+}
+RESOURCE_JWT_USER_ID = "97447387-8596-404f-b0d0-6429b04c8d22"
+RESOURCE_SERVICE_PATH = "/api/server/v1/service-index/"
 ```
 
-Then the service compares each local pair with the pairs present in the gateway CSV response and:
-- If present on gateway but not found on local service, create it.
-- If hash is different, update it.
-- If exists in local service but not present on gateway manifest, delete it.
+> NOTE: Secret key must be generated on the resource server, e.g `generate_service_secret` management command.
+
+#### Running Resource Sync as a Command
+
+Resources can be synced via the management command `resource_sync`, this is useful
+for scheduling execution on a scheduler such as cron.
+
+> NOTE: The argument `--asyncio` enables asyncio executor, it is recommended when the system
+> has a large number os resources, for a system with small number of resources or to debug
+> the sync command this argument can be omitted.
+
+
+```console
+$ django-admin resource_sync --asyncio
+
+----- RESOURCE SYNC STARTED -----
+
+>>> shared.organization
+Deleting 1 orphaned resources
+Processing 2 resources with asyncio executor.
+CREATED 3e3cc6a4-72fa-43ec-9e17-76ae5a3846ca Acme
+NOOP 3e3cc6a4-72fa-43ec-9e17-76ae5a389999
+Processed 3 | Created 1 | Updated 0 | Conflict 0 | Unavailable 0 | Skipped 1 | Deleted 1
+
+>>> shared.team
+Processing 1 resources with asyncio executor.
+
+NOOP f43938cf-a618-4a73-bc90-922a6b217e4d
+CREATED f43938cf-a618-4a73-bc90-922a6b28888
+Processed 2 | Created 1 | Updated 0 | Conflict 0 | Unavailable 0 | Skipped 1 | Deleted 0
+
+>>> shared.user
+Processing 4 resources with asyncio executor.
+
+UPDATED 31daab14-cb67-4c62-8dcd-39f411c82242 joe
+NOOP 97447387-8596-404f-b0d0-6429b04c8d22
+NOOP 4d01427e-a11e-4d0e-9408-4ef7c2b478d6
+CONFLICT 53886798-29e7-426f-b9cb-f7f74b346072 mary
+Processed 4 | Created 0 | Updated 1 | Conflict 1 | Unavailable 0 | Skipped 2 | Deleted 0
+
+----- RESOURCE SYNC FINISHED -----
+```
+
+The output of the command is useful for when it is executed interactively,
+on a scheduled cronjob it is recommended to redirect the descriptors to a log file.
+
+```console
+# prints and errors to the log file
+$ django-admin resource_sync --asyncio &>> /path/to/resource_sync.log
+
+# or send just the stdout to the void
+$ django-admin resource_sync --asyncio > /dev/null
+```
+
+##### Statuses
+
+```console
+NOOP 193f1478-5f81-41f3-8355-47db5e8de889
+CONFLICT 518627b7-827d-47c3-813c-4b479c4855d0
+CONFLICT 4e31d6c4-823b-429d-bd44-b16aece348bb
+```
+
+As shown above, status will be printed before each resource ansible_id,
+the statuses are:
+
+- **NOOP**
+    - RESOURCE_SERVER remote resource is equal to local resource, nothing to do.
+- **CREATED**
+    - Resource does not exist locally, attempt to create it.
+- **UPDATED**
+    - Local resource differs from remote, update it with remote data.
+- **UNAVAILABLE**
+    - There were a failure trying to fetch resource_data from remote.
+    - This may happen when RESOURCE_SERVER api is temporarily unavailable or
+      resource was deleted from remote while sync was running.
+- **CONFLICT**
+    - An attempt to CREATE or UPDATE the resource locally ended on a conflict
+      commonly a unique constraint error when a local unmanaged resource has the
+     same name, username, email etc...
+
+##### Retrying
+
+All the attempts to sync that returns `UNAVAILABLE` are queued for retry,
+the default retry attempts are 3 and the interval are 30 seconds.
+
+to customize it pass `--retries` and `--retrysleep`.
+
+```console
+$ django-admin resource_sync --retries 3 --retrysleep 60
+
+----- RESOURCE SYNC STARTED -----
+...
+Processing shared.user
+3 items to process
+Deleting orphaned managed resources
+10 orphaned managed resources deleted
+Processing with asyncio executor
+UNAVAILABLE 193f1478-5f81-41f3-8355-47db5e8de889
+CONFLICT 518627b7-827d-47c3-813c-4b479c4855d0
+CONFLICT 4e31d6c4-823b-429d-bd44-b16aece348bb
+----- RESOURCE SYNC FINISHED -----
+Processed 3 | Created 0 | Updated 0 | Conflict 2 | Unavailable 1 | Skipped 0 | Deleted 10
+Retry attempt 0/3
+waiting 60 seconds
+UNAVAILABLE 193f1478-5f81-41f3-8355-47db5e8de889
+----- RESOURCE SYNC FINISHED -----
+Processed 1 | Created 0 | Updated 0 | Conflict 0 | Unavailable 1 | Skipped 0 | Deleted 0
+Retry attempt 1/3
+waiting 60 seconds
+UNAVAILABLE 193f1478-5f81-41f3-8355-47db5e8de889
+----- RESOURCE SYNC FINISHED -----
+Processed 1 | Created 0 | Updated 0 | Conflict 0 | Unavailable 1 | Skipped 0 | Deleted 0
+Retry attempt 2/3
+waiting 60 seconds
+UPDATED 193f1478-5f81-41f3-8355-47db5e8de889
+----- RESOURCE SYNC FINISHED -----
+Processed 1 | Created 0 | Updated 1 | Conflict 0 | Unavailable 0 | Skipped 0 | Deleted 0
+```
+
+##### Syncing a specific resource_type
+
+Command accepts optional positional arguments
+
+```console
+$ django-admin resource_sync shared.user # sync only user type
+$ django-admin resource_sync user  # prefix can be omited
+
+$ django-admin resource_sync organization user  # only org and user
+
+$ django-admin resource_sync organization team user  # every type
+# the above is the default if not passed.
+```
+
+> BEWARE: Orgs and teams must be synced before users.
+
+#### Implementing Resource Sync on a custom tasking system.
+
+Each service can opt to execute resource sync using its preferred way of task scheduling,
+the module `tasks/sync.py` provides a `SyncExecutor` class with a `run` method.
+
+Example:
+
+```python
+from celery import Celery
+from celery.schedules import crontab
+from ansible_base.resource_registry.tasks.sync import SyncExecutor
+
+# Initialize Celery app
+celery = Celery('your_app_name', broker='redis://localhost:6379/0')
+
+# Define Celery task
+@celery.task
+def execute_sync_executor():
+    SyncExecutor(
+        asyncio=False,
+        api_client=ResourceAPIClient(....),  # Omit to have a default client created
+        retries=3,
+        retrysleep=60,
+        retain_seconds=300,  # Avoid delete resources created in the latest 5 minutes
+        stdout=sys.stdout  # omit to silence it
+    ).run()
+
+# Schedule the task to run every 15 minutes
+celery.conf.beat_schedule = {
+    'execute-every-15-minutes': {
+        'task': 'your_module.execute_sync_executor',
+        'schedule': crontab(minute='*/15'),
+    },
+}
+
+# Optional configuration to store results
+celery.conf.result_backend = 'redis://localhost:6379/0'
+```
+
+#### Alternative sync executor
+
+Alternatively the functions on the `tasks/sync.py` can be composed to create a custom sync executor.
+
+Important details:
+
+- No transaction handling is performed, each implementation must take care of it,
+  beware that django atomic transactions doesn't work if using async runners.
+- No exception handling is performed, errors like HTTPError will bubble up.
+- No retrying is in place, the function just return the status of each resource
+  it is up to the implementation how the retry will be performed.
+
+Functions exposed on `tasks/sync.py`
+
+- `create_api_client() -> ResourceAPIClient`
+- `fetch_manifest(name, api_client) -> list[ManifestItem]` - Fetches and parses RESOURCE_SERVER resource manifest endpoint
+- `cleanup_deleted_managed_resources(name, manifest_list) -> int` - Deletes orphaned resources present on local system
+- `resource_sync(manifest_item, api_client) -> SyncResult` - Compare and Sync resource
+- `async_resource_sync` - Awaitable version of the above
+
+Objects and types:
+
+- `SyncStatus` enum with variantes for `CREATED,UPDATED,NOOP,UNAVAILABLE,CONFLICT`
+- `SyncResult` type containing status and item
+- `ManifestItem` - Serializer for resource manifest CSV containing ansible_id and resource_hash
+- `ResourceTypeName` - Iterable enum containing variants `shared.{organization,team,user}`
+- `ManifestNotFound` - Custom exception for when manifest is not served

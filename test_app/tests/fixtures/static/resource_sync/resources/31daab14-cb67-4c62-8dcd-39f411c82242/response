@@ -1,0 +1,16 @@
+{
+  "object_id": "1",
+  "name": "_system",
+  "ansible_id": "31daab14-cb67-4c62-8dcd-39f411c82242",
+  "service_id": "57592fbc-7ecb-405f-9f5f-ebad20932d38",
+  "resource_type": "shared.user",
+  "has_serializer": true,
+  "resource_data": {
+    "username": "_system",
+    "email": "",
+    "first_name": "",
+    "last_name": "",
+    "is_superuser": false
+  },
+  "url": "/api/server/v1/service-index/resources/31daab14-cb67-4c62-8dcd-39f411c82242/"
+}

@@ -119,9 +119,9 @@ class ResourceTypeViewSet(
 
     def serialize_resources_hashes(self, resources_qs, serializer_class):
         """A generator that yields str sequences for csv stream response"""
-        yield ("ansible_id", "resource_hash")
+        yield ("ansible_id", "resource_hash", "modified")
         for resource in resources_qs:
-            yield (resource.ansible_id, serializer_class(resource.content_object).get_hash())
+            yield (resource.ansible_id, serializer_class(resource.content_object).get_hash(), resource.modified)
 
     @action(detail=True, methods=["get"])
     def manifest(self, request, name, *args, **kwargs):
