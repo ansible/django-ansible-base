@@ -136,3 +136,26 @@ def test_common_serializer_schema(openapi_schema):
 
     assert rd_schema['properties']['id']['type'] == 'integer'
     assert rd_schema['properties']['id']['readOnly'] is True
+
+
+@pytest.mark.django_db
+def test_common_create_serializer(openapi_schema):
+    post_schema = openapi_schema['paths']['/api/v1/role_definitions/']['post']
+    serializer_ref = post_schema['requestBody']['content']['application/json']['schema']['$ref']
+    serializer_name = serializer_ref.rsplit('/', 1)[-1]
+    assert serializer_name == 'RoleDefinitionCreate'
+
+    rd_schema = openapi_schema['components']['schemas']['RoleDefinitionCreate']
+
+    assert 'summary_fields' not in rd_schema['required']
+
+    # Repeat for assignment models
+    for endpoint in ('role_user_assignments', 'role_team_assignments'):
+        post_schema = openapi_schema['paths'][f'/api/v1/{endpoint}/']['post']
+        serializer_ref = post_schema['requestBody']['content']['application/json']['schema']['$ref']
+        serializer_name = serializer_ref.rsplit('/', 1)[-1]
+        assert serializer_name.endswith('Create')
+
+        rd_schema = openapi_schema['components']['schemas'][serializer_name]
+
+        assert 'summary_fields' not in rd_schema['required']

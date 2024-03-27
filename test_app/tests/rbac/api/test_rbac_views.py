@@ -74,7 +74,11 @@ def test_make_user_assignment(admin_api_client, inv_rd, rando, inventory):
     data = dict(role_definition=inv_rd.id, user=rando.id, object_id=inventory.id)
     response = admin_api_client.post(url, data=data, format="json")
     assert response.status_code == 201, response.data
-    assert response.data['created_by']
+    assert response.data['user'] == rando.pk
+    assert int(response.data['object_id']) == inventory.pk
+    assert response.data['role_definition'] == inv_rd.pk
+
+    assert rando.has_obj_perm(inventory, 'change')
 
 
 @pytest.mark.django_db
@@ -97,7 +101,11 @@ def test_make_global_user_assignment(admin_api_client, rando, inventory):
     data = dict(role_definition=rd.id, user=rando.id, object_id=None)
     response = admin_api_client.post(url, data=data, format="json")
     assert response.status_code == 201, response.data
-    assert response.data['created_by']
+    assert response.data['user'] == rando.pk
+    assert response.data['object_id'] is None
+    assert response.data['role_definition'] == rd.pk
+
+    assert rando.has_obj_perm(inventory, 'change')
 
 
 @pytest.mark.django_db
@@ -202,3 +210,15 @@ def test_remove_global_role_assignment(user_api_client, user, inv_rd, global_inv
     assert response.status_code == 204, response.data
 
     assert not type(assignment).objects.filter(pk=assignment.pk).exists()
+
+
+@pytest.mark.django_db
+def test_filter_queryset(user_api_client, user, inventory, inv_rd):
+    "This tests that filter_queryset usage in test_app is effective"
+    url = reverse("inventory-list")
+    response = user_api_client.get(url, format="json")
+    assert response.data['count'] == 0
+
+    inv_rd.give_permission(user, inventory)
+    response = user_api_client.get(url, format="json")
+    assert response.data['count'] == 1
