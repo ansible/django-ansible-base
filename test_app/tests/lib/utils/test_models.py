@@ -194,6 +194,7 @@ def test_diff(system_user, user):
     delta = models.diff(system_user, user)
     assert 'username' in delta['changed_fields']
     assert delta['changed_fields']['username'] == (system_user.username, user.username)
+    assert 'email' not in delta['changed_fields']
     assert delta['added_fields'] == {}
     assert delta['removed_fields'] == {}
 
