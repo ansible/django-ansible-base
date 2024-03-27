@@ -21,10 +21,10 @@ def _store_activitystream_entry(old, new, operation):
 
     # If only one of old or new is None, then use the existing one as content_object
     # The case where both are None is handled above (no changes to store)
-    if old is None:
-        content_object = new
-    elif new is None:
+    if new is None:
         content_object = old
+    else:
+        content_object = new
 
     return Entry.objects.create(
         content_object=content_object,
