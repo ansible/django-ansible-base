@@ -19,8 +19,6 @@ def _store_activitystream_entry(old, new, operation):
         # No changes to store
         return
 
-    content_object = new
-
     # If only one of old or new is None, then use the existing one as content_object
     # The case where both are None is handled above (no changes to store)
     if old is None:
@@ -84,9 +82,8 @@ def activitystream_update(sender, instance, raw, using, update_fields, **kwargs)
     model/class. It is called before save() of any model that inherits from
     AuditableModel. (It is registered as a pre_save signal.)
 
-    This signal only handles creation of new objects (created=True). For
-    updates, use the activitystream_update signal, where we can compare the
-    old and new objects to determine what has changed.
+    This signal only handles updates of existing objects. For creation of
+    objects, see the above activitystream_create().
     """
     if instance.pk is None:
         # We only want to create an activity stream entry for existing objects
@@ -126,16 +123,22 @@ def activitystream_m2m_changed(sender, instance, action, reverse, model, pk_set,
         return
 
     if 'field_name' not in kwargs:
-        raise ValueError("Missing field_name in kwargs")
+        # Theory says we should never get here, the field name is established when the signal is connected.
+        raise ValueError(
+            f"Missing field_name in kwargs while trying to store activity stream {action} event for instance={instance}, model={model}, sender={sender}"
+        )
 
     field_name = kwargs['field_name']
     operation = 'associate' if action == 'post_add' else 'disassociate'
 
     if action == 'pre_clear':
+        # This is called if someone calls .clear() on a m2m field. But we need to handle the forward and reverse
+        # relations differently.
         if reverse:
             # Okay. We need to talk. Just you - the reader trying to understand this code - and I.
             # Look. We want to always store the activity stream entry on the forward relation.
-            # Let's assume we have an Animal model with a 'people_friends' m2m. This is the forward relation.
+            # Let's assume we have an Animal model with a 'people_friends' field which is a m2m pointing to User.
+            # This is the forward relation.
             # If we do: user.animal_friends.clear() - the reverse relation - we need to get the PKs of
             # every animal that is being removed from the user's animal_friends.
             # Note that in this case, model is the Animal model, and instance is the user.

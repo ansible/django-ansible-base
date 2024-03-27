@@ -35,6 +35,7 @@ include = ["ansible_base*"]
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements/requirements.in"]}
 optional-dependencies.all = { file = [
+    "requirements/requirements_activitystream.in",
     "requirements/requirements_authentication.in",
     "requirements/requirements_api_documentation.in",
     "requirements/requirements_rest_filters.in",
@@ -42,6 +43,7 @@ optional-dependencies.all = { file = [
     "requirements/requirements_jwt_consumer.in",
     "requirements/requirements_testing.in",
 ] }
+optional-dependencies.activitystream = { file = [ "requirements/requirements_activitystream.in" ] }
 optional-dependencies.authentication = { file = [ "requirements/requirements_authentication.in" ] }
 optional-dependencies.api_documentation = { file = [ "requirements/requirements_api_documentation.in" ] }
 optional-dependencies.rest_filters = { file = [ "requirements/requirements_rest_filters.in" ] }
