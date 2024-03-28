@@ -58,6 +58,23 @@ kinds of models, but in the context of the activity stream, that doesn't happen.
 2-tuples as values in the form (old_value, new_value).
 
 
+### URLs
+
+This feature includes URLs which you will get if you are using
+[dynamic urls](../Installation.md).
+
+If you want to manually add the URLs without dynamic urls, add the following to
+your `urls.py`:
+
+```
+from ansible_base.activitystream import urls as activity_stream_urls
+urlpatterns = [
+    ...
+    path('api/v1/', include(activity_stream_urls.api_version_urls)),
+    ...
+]
+```
+
 ## Dev Docs
 
 The way this works is by making use of Django signals. At a high level, when

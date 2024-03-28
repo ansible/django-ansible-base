@@ -115,7 +115,7 @@ def load_social_auth_settings():
 Any additional settings supplied by this function will be applied to out default SocialAuth strategy strategy(ansible_base.authentication.social_auth.AuthenticatorStrategy) and will thus be available to the social-core libraries at runtime.
 
 
-## URLS
+## URLs
 
 This feature includes URLs which you will get if you are using [dynamic urls](../../Installation.md)
 
