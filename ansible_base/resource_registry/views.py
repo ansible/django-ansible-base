@@ -1,7 +1,7 @@
 from collections import OrderedDict
 
 from django.http import HttpResponseNotFound
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404
 from rest_framework import permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -14,7 +14,7 @@ from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.resource_registry.models import Resource, ResourceType, service_id
 from ansible_base.resource_registry.registry import get_registry
-from ansible_base.resource_registry.serializers import ResourceListSerializer, ResourceSerializer, ResourceTypeSerializer, get_resource_detail_view
+from ansible_base.resource_registry.serializers import ResourceListSerializer, ResourceSerializer, ResourceTypeSerializer
 
 
 class IsSuperUser(permissions.BasePermission):
@@ -49,16 +49,6 @@ class ResourceViewSet(
             return ResourceListSerializer
 
         return super().get_serializer_class()
-
-    @action(detail=True, methods=['get'])
-    def resource_detail(self, *args, **kwargs):
-        obj = self.get_object()
-        url = get_resource_detail_view(obj)
-
-        if url:
-            return redirect(url, permanent=False)
-
-        return HttpResponseNotFound()
 
     def perform_destroy(self, instance):
         instance.delete_resource()
