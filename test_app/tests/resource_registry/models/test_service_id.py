@@ -1,6 +1,6 @@
 import pytest
 
-from ansible_base.resource_registry.models.service_id import ServiceID
+from ansible_base.resource_registry.models.service_identifier import ServiceID
 
 
 @pytest.mark.django_db

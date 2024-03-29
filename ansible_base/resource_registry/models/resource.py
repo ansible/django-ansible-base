@@ -7,7 +7,7 @@ from django.db import models, transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import ValidationError
 
-from .service_id import service_id
+from .service_identifier import service_id
 
 
 @lru_cache(maxsize=None)
