@@ -24,7 +24,6 @@ class ResourceType(models.Model):
 
     content_type = models.OneToOneField(ContentType, on_delete=models.CASCADE, related_name="resource_type", unique=True)
     externally_managed = models.BooleanField()
-    migrated = models.BooleanField(null=False, default=False)
     name = models.CharField(max_length=256, unique=True, db_index=True, editable=False, blank=False, null=False)
 
     @property

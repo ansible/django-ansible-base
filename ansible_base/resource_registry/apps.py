@@ -1,7 +1,8 @@
 import logging
 
 from django.apps import AppConfig
-from django.db.models import signals
+from django.db.models import TextField, signals
+from django.db.models.functions import Cast
 
 import ansible_base.lib.checks  # noqa: F401 - register checks
 
@@ -52,14 +53,18 @@ def initialize_resources(sender, **kwargs):
             ResourceType.objects.update_or_create(content_type=content, defaults=defaults)
 
         # Create resources
-        for r_type in ResourceType.objects.filter(migrated=False):
+        for r_type in ResourceType.objects.all():
             resource_model = apps.get_model(r_type.content_type.app_label, r_type.content_type.model)
             resource_config = registry.get_config_for_model(resource_model)
 
             logger.info(f"adding unmigrated resources for {r_type.name}")
 
+            missing_resources_qs = resource_model.objects.annotate(pk_text=Cast('pk', TextField())).exclude(
+                pk_text__in=Resource.objects.filter(content_type=r_type.content_type).values("object_id")
+            )
+
             data = []
-            for obj in resource_model.objects.all():
+            for obj in missing_resources_qs:
                 data.append(init_resource_from_object(obj, resource_model=Resource, resource_type=r_type, resource_config=resource_config))
 
             Resource.objects.bulk_create(data, ignore_conflicts=True)
