@@ -45,6 +45,15 @@ def test_org_inv_permissions_team(team, inventory, org_inv_rd):
 
 
 @pytest.mark.django_db
+def test_access_qs_with_parent_qs(inventory, rando, inv_rd):
+    assert list(Inventory.access_qs(rando)) == []
+    inv_rd.give_permission(rando, inventory)
+    assert list(Inventory.access_qs(rando)) == [inventory]
+    assert list(Inventory.access_qs(rando, queryset=Inventory.objects.all())) == [inventory]
+    assert list(Inventory.access_qs(rando, queryset=Inventory.objects.none())) == []
+
+
+@pytest.mark.django_db
 def test_resource_add_permission(rando, inventory):
     rd, _ = RoleDefinition.objects.get_or_create(
         permissions=['add_inventory', 'view_organization'],
