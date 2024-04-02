@@ -1,4 +1,6 @@
 import logging
+from collections.abc import Iterable
+from typing import Optional
 
 # Django
 from django.conf import settings
@@ -6,6 +8,7 @@ from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import connection, models
 from django.db.models.functions import Cast
+from django.db.models.query import QuerySet
 from django.utils.translation import gettext_lazy as _
 
 # Django-rest-framework
@@ -580,7 +583,7 @@ class RoleEvaluationFields(models.Model):
         return (self.codename, self.content_type_id, self.object_id)
 
     @classmethod
-    def accessible_ids(cls, model_cls, actor, codename, content_types=None):
+    def accessible_ids(cls, model_cls, actor, codename: str, content_types: Optional[Iterable[int]] = None) -> QuerySet:
         """
         Corresponds to AWX accessible_pk_qs
 
@@ -600,8 +603,10 @@ class RoleEvaluationFields(models.Model):
         return cls.objects.filter(**filter_kwargs).values_list('object_id').distinct()
 
     @classmethod
-    def accessible_objects(cls, model_cls, user, codename):
-        return model_cls.objects.filter(pk__in=cls.accessible_ids(model_cls, user, codename))
+    def accessible_objects(cls, model_cls, user, codename, queryset: Optional[QuerySet] = None) -> QuerySet:
+        if queryset is None:
+            queryset = model_cls.objects
+        return queryset.filter(pk__in=cls.accessible_ids(model_cls, user, codename))
 
     @classmethod
     def get_permissions(cls, user, obj):
