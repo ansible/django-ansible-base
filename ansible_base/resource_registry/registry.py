@@ -21,38 +21,6 @@ class ServiceAPIConfig:
     service_type = None
 
 
-class ResourceInspector:
-    def __init__(self, urlpatterns=None):
-        from rest_framework.schemas.generators import BaseSchemaGenerator
-
-        schema_generator = BaseSchemaGenerator()
-
-        schema_generator._initialise_endpoints()
-        self.model_map = {}
-
-        for path, method, callback in schema_generator.endpoints:
-            view = schema_generator.create_view(callback, method)
-
-            if hasattr(view, "get_serializer_class"):
-                try:
-                    serializer_class = view.get_serializer_class()
-                    if hasattr(serializer_class, "Meta"):
-                        model = get_concrete_model(serializer_class.Meta.model)
-                        label = model._meta.label
-                        if label not in self.model_map:
-                            self.model_map[label] = {}
-
-                        if hasattr(view, "action"):
-                            action = view.action
-                            if action == "partial_update":
-                                action = "update"
-                            if action not in self.model_map[label]:
-                                self.model_map[label][action] = []
-                            self.model_map[label][action].append((method, path))
-                except:  # noqa E722
-                    pass
-
-
 class ResourceConfig:
     model_label = None
     model = None
@@ -84,7 +52,6 @@ class ResourceConfig:
         self.externally_managed = externally_managed
         self.managed_serializer = managed_serializer
         self.parent_resources = parent_map
-        self.actions = ResourceInspector().model_map.get(self.model_label, {})
         self.name_field = name_field
 
 
