@@ -7,7 +7,7 @@ from django.db import models, transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import ValidationError
 
-from .service_id import service_id
+from .service_identifier import service_id
 
 
 @lru_cache(maxsize=None)
@@ -24,7 +24,6 @@ class ResourceType(models.Model):
 
     content_type = models.OneToOneField(ContentType, on_delete=models.CASCADE, related_name="resource_type", unique=True)
     externally_managed = models.BooleanField()
-    migrated = models.BooleanField(null=False, default=False)
     name = models.CharField(max_length=256, unique=True, db_index=True, editable=False, blank=False, null=False)
 
     @property

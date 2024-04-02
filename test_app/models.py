@@ -4,6 +4,7 @@ from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
+from ansible_base.activitystream.models import AuditableModel
 from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam, CommonModel, ImmutableCommonModel, ImmutableModel, NamedCommonModel
 from ansible_base.lib.utils.models import user_summary_fields
 from ansible_base.rbac import permission_registry
@@ -14,7 +15,7 @@ class Organization(AbstractOrganization):
     resource = AnsibleResourceField(primary_key_field="id")
 
 
-class User(AbstractUser, CommonModel):
+class User(AbstractUser, CommonModel, AuditableModel):
     resource = AnsibleResourceField(primary_key_field="id")
 
     def summary_fields(self):
@@ -200,3 +201,41 @@ permission_registry.register(InstanceGroup, ImmutableTask, parent_field_name=Non
 
 permission_registry.track_relationship(Team, 'tracked_users', 'team-member')
 permission_registry.track_relationship(Team, 'team_parents', 'team-member')
+
+
+class MultipleFieldsModel(NamedCommonModel):
+    class Meta:
+        app_label = "test_app"
+
+    char_field1 = models.CharField(max_length=100, null=True, default='a')
+    char_field2 = models.CharField(max_length=100, null=True, default='b')
+    int_field = models.PositiveIntegerField(null=True, default=1)
+    bool_field = models.BooleanField(default=True)
+
+
+class Animal(NamedCommonModel, AuditableModel):
+    class Meta:
+        app_label = "test_app"
+
+    activity_stream_excluded_field_names = ['age']
+
+    ANIMAL_KINDS = (
+        ('dog', 'Dog'),
+        ('cat', 'Cat'),
+        ('fish', 'Fish'),
+    )
+
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, null=True)
+    kind = models.CharField(max_length=4, choices=ANIMAL_KINDS, default='dog')
+    age = models.PositiveIntegerField(null=True, default=1)
+    people_friends = models.ManyToManyField(User, related_name='animal_friends', blank=True)
+
+
+class City(NamedCommonModel, AuditableModel):
+    class Meta:
+        app_label = "test_app"
+
+    activity_stream_limit_field_names = ['country']
+
+    country = models.CharField(max_length=100, null=True, default='USA')
+    population = models.PositiveIntegerField(null=True, default=1000)

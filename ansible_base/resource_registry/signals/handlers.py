@@ -24,9 +24,9 @@ def remove_resource(sender, instance, **kwargs):
 
 
 def update_resource(sender, instance, created, **kwargs):
-    if created:
-        resource = init_resource_from_object(instance)
-        resource.save()
-    else:
+    try:
         resource = Resource.get_resource_for_object(instance)
         resource.update_from_content_object()
+    except Resource.DoesNotExist:
+        resource = init_resource_from_object(instance)
+        resource.save()
