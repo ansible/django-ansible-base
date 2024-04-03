@@ -23,7 +23,7 @@ class DABRedisCluster(RedisCluster):
         except RedisClusterException as e:
             if 'MGET - all keys must map to the same key slot' in str(e):
                 return super().mget_nonatomic(*args, **kwargs)
-            raise e
+            raise
 
 
 class RedisClient(DefaultClient):
