@@ -78,7 +78,16 @@ extend_skip = [ "ansible_base/authentication/migrations", "ansible_base/activity
 [tool.flake8]
 max-line-length = 160
 extend-ignore = [ "E203" ]
-exclude = [ 'ansible_base/*/migrations/*', 'test_app/migrations/*', '.tox', 'build']
+exclude = [
+    'ansible_base/*/migrations/*',
+    'test_app/migrations/*',
+    '.tox',
+    'build',
+    'manage.py',
+]
+
+copyright-check = true
+copyright-min-file-size = 1
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "test_app.settings"
@@ -112,8 +121,7 @@ legacy_tox_ini = """
 
     [testenv:flake8]
     deps =
-        flake8
-        Flake8-pyproject
+        -r{toxinidir}/requirements/requirements_lint.txt
     commands = flake8 {posargs:.}
 
     [testenv:black]
