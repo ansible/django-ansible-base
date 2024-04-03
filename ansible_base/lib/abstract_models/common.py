@@ -136,7 +136,7 @@ class AbstractCommonModel(models.Model):
 
         return instance
 
-    def get_summary_fields(self):
+    def get_summary_fields(self, view=None):
         response = {}
         for field in self._meta.fields:
             if isinstance(field, models.ForeignObject) and getattr(self, field.name):

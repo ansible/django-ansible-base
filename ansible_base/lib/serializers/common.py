@@ -54,7 +54,7 @@ class CommonModelSerializer(ValidationSerializerMixin, serializers.ModelSerializ
         if not hasattr(obj, 'get_summary_fields'):
             logger.warning(f"Object {obj.__class__} has no get_summary_fields method")
             return {}
-        return obj.get_summary_fields()
+        return obj.get_summary_fields(self.context.get('view', None))
 
     def to_representation(self, obj):
         ret = super().to_representation(obj)
