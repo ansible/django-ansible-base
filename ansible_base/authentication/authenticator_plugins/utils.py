@@ -1,4 +1,5 @@
 import logging
+from types import ModuleType
 from functools import lru_cache
 from glob import glob
 from os.path import basename, isfile, join
@@ -44,7 +45,7 @@ def get_authenticator_plugin(authenticator_type: str):
     return AuthClass()
 
 
-def get_authenticator_urls(authenticator_type: str) -> Optional[list]:
+def get_authenticator_urls(authenticator_type: str) -> Optional[ModuleType]:
     try:
         urls = __import__(authenticator_type, globals(), locals(), ['urls'], 0)
         return urls
