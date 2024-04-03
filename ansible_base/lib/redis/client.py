@@ -58,13 +58,10 @@ class RedisClient(DefaultClient):
                 kwargs[arg_name] = attribute
 
         # Add the DB from the URL (if passed)
-        db = None
         try:
-            db = int(parsed_url.path.split('/')[1])
+            kwargs['db'] = int(parsed_url.path.split('/')[1])
         except (IndexError, ValueError):
             pass
-        if db:
-            kwargs['db'] = db
 
         # Connect to either a cluster or a standalone redis
         if self.clustered:
