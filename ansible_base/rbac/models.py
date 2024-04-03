@@ -44,11 +44,11 @@ class DABPermission(models.Model):
 
 
 class RoleDefinitionManager(models.Manager):
-    def give_creator_permissions(self, user, obj):
+    def give_creator_permissions(self, user, obj) -> Optional['RoleUserAssignment']:
         # If the user is a superuser, no need to bother giving the creator permissions
         for super_flag in settings.ANSIBLE_BASE_BYPASS_SUPERUSER_FLAGS:
             if getattr(user, super_flag):
-                return True
+                return
 
         needed_actions = settings.ANSIBLE_BASE_CREATOR_DEFAULTS
 
@@ -78,7 +78,7 @@ class RoleDefinitionManager(models.Manager):
                 defaults['managed'] = True
                 rd, _ = self.get_or_create(defaults=defaults, **kwargs)
 
-            rd.give_permission(user, obj)
+            return rd.give_permission(user, obj)
 
     def get_or_create(self, permissions=(), defaults=None, **kwargs):
         "Add extra feature on top of existing get_or_create to use permissions list"
