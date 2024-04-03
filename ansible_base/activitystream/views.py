@@ -14,3 +14,6 @@ class EntryReadOnlyViewSet(ReadOnlyModelViewSet, AnsibleBaseDjangoAppApiView):
     queryset = Entry.objects.all()
     serializer_class = EntrySerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_view_name(self):
+        return 'Activity Stream Entries'
