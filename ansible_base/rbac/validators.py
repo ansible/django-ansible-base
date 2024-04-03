@@ -32,7 +32,7 @@ def permissions_allowed_for_system_role() -> dict[Model, set[str]]:
     return permissions_by_model
 
 
-def permissions_allowed_for_role(cls) -> dict[Model, set[str]]:
+def permissions_allowed_for_role(cls) -> dict[type, set[str]]:
     "Permission codenames valid for a RoleDefinition of given class, organized by permission class"
     if cls is None:
         return permissions_allowed_for_system_role()
@@ -51,7 +51,7 @@ def permissions_allowed_for_role(cls) -> dict[Model, set[str]]:
     return permissions_by_model
 
 
-def combine_values(data: dict[Model, str]) -> set[str]:
+def combine_values(data: dict[type, set[str]]) -> set[str]:
     "Utility method to merge everything in .values() into a single set"
     ret = set()
     for this_set in data.values():
