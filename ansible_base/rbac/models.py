@@ -625,8 +625,10 @@ class RoleEvaluationFields(models.Model):
     @classmethod
     def accessible_objects(cls, model_cls, user, codename, queryset: Optional[QuerySet] = None) -> QuerySet:
         if queryset is None:
-            queryset = model_cls.objects
-        return queryset.filter(pk__in=cls.accessible_ids(model_cls, user, codename))
+            base_queryset = model_cls.objects
+        else:
+            base_queryset = queryset
+        return base_queryset.filter(pk__in=cls.accessible_ids(model_cls, user, codename))
 
     @classmethod
     def get_permissions(cls, user, obj):

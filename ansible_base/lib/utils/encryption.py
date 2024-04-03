@@ -65,9 +65,8 @@ class Fernet256(Fernet):
 
         # Finally decode the value
         encrypted = base64.b64decode(b64data)
-        value = self.decrypt(encrypted)
 
-        return smart_str(value)
+        return smart_str(self.decrypt(encrypted))
 
 
 ansible_encryption = SimpleLazyObject(func=lambda: Fernet256())

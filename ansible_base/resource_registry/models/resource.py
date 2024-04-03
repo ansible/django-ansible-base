@@ -96,7 +96,9 @@ class Resource(models.Model):
             self.delete()
 
     @classmethod
-    def create_resource(cls, resource_type: ResourceType, resource_data: dict, ansible_id: Union[str, uuid.UUID, None] = None, service_id: str = None):
+    def create_resource(
+        cls, resource_type: ResourceType, resource_data: dict, ansible_id: Union[str, uuid.UUID, None] = None, service_id: Union[str, uuid.UUID, None] = None
+    ):
         c_type = resource_type.content_type
         serializer = resource_type.serializer_class(data=resource_data)
         serializer.is_valid(raise_exception=True)
