@@ -1,3 +1,4 @@
+from django.utils.translation import gettext_lazy as _
 from rest_framework import permissions
 from rest_framework.viewsets import ReadOnlyModelViewSet
 
@@ -16,4 +17,4 @@ class EntryReadOnlyViewSet(ReadOnlyModelViewSet, AnsibleBaseDjangoAppApiView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_view_name(self):
-        return 'Activity Stream Entries'
+        return _('Activity Stream Entries')
