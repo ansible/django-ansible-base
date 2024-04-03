@@ -5,21 +5,30 @@ from contextlib import contextmanager
 from ansible_base.lib.utils.models import current_user_or_system_user, diff
 
 logger = logging.getLogger('ansible_base.activitystream.signals')
-thread_local = threading.local()
-thread_local.activitystream_enabled = True
+
+
+class ActivityStreamEnabled(threading.local):
+    def __init__(self):
+        self.enabled = True
+
+    def __bool__(self):
+        return self.enabled
+
+
+activitystream_enabled = ActivityStreamEnabled()
 
 
 @contextmanager
 def no_activity_stream():
-    thread_local.activitystream_enabled = False
+    activitystream_enabled.enabled = False
     try:
         yield
     finally:
-        thread_local.activitystream_enabled = True
+        activitystream_enabled.enabled = True
 
 
 def _store_activitystream_entry(old, new, operation):
-    if thread_local.activitystream_enabled is False:
+    if not activitystream_enabled:
         return
 
     from ansible_base.activitystream.models import Entry
@@ -50,7 +59,7 @@ def _store_activitystream_entry(old, new, operation):
 
 
 def _store_activitystream_m2m(given_instance, model, operation, pk_set, reverse, field_name):
-    if thread_local.activitystream_enabled is False:
+    if not activitystream_enabled:
         return
 
     from ansible_base.activitystream.models import Entry
