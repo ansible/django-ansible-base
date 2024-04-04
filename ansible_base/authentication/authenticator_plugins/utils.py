@@ -1,8 +1,8 @@
 import logging
-from types import ModuleType
 from functools import lru_cache
 from glob import glob
 from os.path import basename, isfile, join
+from types import ModuleType
 from typing import Optional
 
 from django.conf import settings
