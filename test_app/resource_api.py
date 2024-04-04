@@ -3,8 +3,8 @@ from django.contrib.auth import get_user_model
 from ansible_base.authentication.models import Authenticator
 from ansible_base.resource_registry.registry import ResourceConfig, ServiceAPIConfig, SharedResource
 from ansible_base.resource_registry.shared_types import OrganizationType, TeamType, UserType
-from test_app.models import Organization, Original1, Proxy2, ResourceMigrationTestModel, Team
 from ansible_base.resource_registry.utils.resource_type_processor import ResourceTypeProcessor
+from test_app.models import Organization, Original1, Proxy2, ResourceMigrationTestModel, Team
 
 
 class UserProcessor(ResourceTypeProcessor):

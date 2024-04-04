@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('test_app', '0002_set_up_resources_test_data'),
+        ('test_app', '0005_city'),
     ]
 
     operations = [

@@ -15,12 +15,7 @@ from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiV
 from ansible_base.resource_registry.models import Resource, ResourceType, service_id
 from ansible_base.resource_registry.models.resource import resource_type_cache
 from ansible_base.resource_registry.registry import get_registry
-from ansible_base.resource_registry.serializers import (
-    ResourceListSerializer,
-    ResourceSerializer,
-    ResourceTypeSerializer,
-    UserAuthenticationSerializer,
-)
+from ansible_base.resource_registry.serializers import ResourceListSerializer, ResourceSerializer, ResourceTypeSerializer, UserAuthenticationSerializer
 from ansible_base.rest_filters.rest_framework.field_lookup_backend import FieldLookupBackend
 from ansible_base.rest_filters.rest_framework.order_backend import OrderByBackend
 from ansible_base.rest_filters.rest_framework.type_filter_backend import TypeFilterBackend
@@ -42,6 +37,12 @@ class HasResourceRegistryPermissions(permissions.BasePermission):
         return False
 
 
+class ResourcesPagination(PageNumberPagination):
+    # PageNumberPagination by itself doesn't work in some apps because when api_settings.PAGE_SIZE
+    # isn't set, the default is no pagination.
+    page_size = 50
+
+
 class ResourceAPIMixin:
     """
     The resource API is not intended to be consistent with the REST API on the service
@@ -60,7 +61,7 @@ class ResourceAPIMixin:
     permission_classes = [
         HasResourceRegistryPermissions,
     ]
-    pagination_class = PageNumberPagination
+    pagination_class = ResourcesPagination
 
 
 class ResourceViewSet(
