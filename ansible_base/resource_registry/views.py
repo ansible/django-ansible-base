@@ -109,6 +109,9 @@ class ResourceTypeViewSet(
     GenericViewSet,
     AnsibleBaseDjangoAppApiView,
 ):
+    """
+    Index of the resource types that are configured in the system.
+    """
 
     queryset = ResourceType.objects.all()
     serializer_class = ResourceTypeSerializer
@@ -167,6 +170,10 @@ class ServiceIndexRootView(AnsibleBaseView):
 
 
 class ValidateLocalUserView(AnsibleBaseDjangoAppApiView):
+    """
+    Validate a user's username and password.
+    """
+
     action = "validate-local-user"
     permission_classes = [
         HasResourceRegistryPermissions,
@@ -182,5 +189,4 @@ class ValidateLocalUserView(AnsibleBaseDjangoAppApiView):
         if not user:
             return Response(status=401)
 
-        # TODO: need a real response here.
         return Response(data={"ansible_id": Resource.get_resource_for_object(user).ansible_id})
