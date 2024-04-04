@@ -3,19 +3,8 @@
 set -e
 set -x
 
-sed -i '/^\[crb\]$/,/^enabled=0$/ s/enabled=0/enabled=1/' /etc/yum.repos.d/centos.repo
-dnf -y install \
-    python3.11 python3.11-pip python3.11-devel gcc openldap-devel \
-    xmlsec1 xmlsec1-openssl xmlsec1-devel libtool-ltdl-devel libpq-devel libpq postgresql
-if [[ ! -d /venv ]]; then
-    python3.11 -m venv /venv
-fi
-
 PIP=/venv/bin/pip
 PYTHON=/venv/bin/python3
-
-$PIP install -r requirements/requirements_all.txt
-$PIP install -r requirements/requirements_dev.txt
 
 echo "settings.DATABASE ..."
 $PYTHON manage.py shell -c 'from django.conf import settings; print(settings.DATABASES)'
