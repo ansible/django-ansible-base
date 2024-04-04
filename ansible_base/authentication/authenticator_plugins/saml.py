@@ -206,10 +206,10 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
             security_settings = set(attrs.get('SECURITY_CONFIG').keys())
             invalid_security_settings = security_settings.difference(valid_security_settings)
         except Exception as e:
-            raise ValidationError(f"Failed to load config: {e}")
+            raise ValidationError(_(f"Failed to load config: {e}"))
 
         if invalid_security_settings:
-            raise ValidationError({'SECURITY_CONFIG': f"Invalid keys: {', '.join(invalid_security_settings)}"})
+            raise ValidationError(_({'SECURITY_CONFIG': f"Invalid keys: {', '.join(invalid_security_settings)}"}))
 
         response = super().validate(attrs)
         return response
