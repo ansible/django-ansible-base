@@ -1,3 +1,4 @@
+# Copyright 2024 Red Hat, Inc.
 # Copyright (c) 2015, Rob Golding. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -23,7 +24,10 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from builtins import object
+# NOTE(cutwater): Disabling linters to keep diff as little as possible.
+# fmt: off
+# isort: skip_file
+# flake8: noqa
 import logging
 from io import StringIO
 
@@ -31,7 +35,7 @@ from pyrad.packet import AccessRequest, AccessAccept, AccessReject
 from pyrad.client import Client, Timeout
 from pyrad.dictionary import Dictionary
 
-from django.conf import settings
+from django.conf import settings as global_settings
 #Handle custom user models
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -88,6 +92,11 @@ class RADIUSBackend(object):
     supports_anonymous_user = False
     supports_object_permissions = False
 
+    def __init__(self, settings=None):
+        if settings is None:
+            settings = global_settings
+        self.settings = settings
+
     def _get_dictionary(self):
         """
         Get the pyrad Dictionary object which will contain our RADIUS user's
@@ -104,7 +113,7 @@ class RADIUSBackend(object):
                                       User_Name=username)
         pkt["User-Password"] = pkt.PwCrypt(password)
         pkt["NAS-Identifier"] = 'django-radius'
-        for key, val in list(getattr(settings, 'RADIUS_ATTRIBUTES', {}).items()):
+        for key, val in list(getattr(self.settings, 'RADIUS_ATTRIBUTES', {}).items()):
             pkt[key] = val
         return pkt
 
@@ -125,9 +134,9 @@ class RADIUSBackend(object):
         Get the RADIUS server details from the settings file.
         """
         return (
-            settings.RADIUS_SERVER,
-            int(settings.RADIUS_PORT),
-            settings.RADIUS_SECRET.encode('utf-8'),
+            self.settings.RADIUS_SERVER,
+            int(self.settings.RADIUS_PORT),
+            self.settings.RADIUS_SECRET.encode('utf-8'),
         )
 
     def _perform_radius_auth(self, client, packet):
@@ -159,14 +168,14 @@ class RADIUSBackend(object):
         logging.info("RADIUS access granted for user '%s'" % (
             packet['User-Name']))
 
-        if not "Class" in reply.keys():
+        if "Class" not in reply.keys():
             return [], False, False
 
         groups = []
         is_staff = False
         is_superuser = False
 
-        app_class_prefix = getattr(settings, 'RADIUS_CLASS_APP_PREFIX', '')
+        app_class_prefix = getattr(self.settings, 'RADIUS_CLASS_APP_PREFIX', '')
         group_class_prefix = app_class_prefix + "group="
         role_class_prefix = app_class_prefix + "role="
 
@@ -193,7 +202,7 @@ class RADIUSBackend(object):
         packet = self._get_auth_packet(username, password, client)
         return self._perform_radius_auth(client, packet)
 
-    def get_django_user(self, username, password=None, groups=[], is_staff=False, is_superuser=False):
+    def get_django_user(self, username, password=None, groups=None, is_staff=False, is_superuser=False):
         """
         Get the Django user with the given username, or create one if it
         doesn't already exist. If `password` is given, then set the user's
@@ -206,10 +215,10 @@ class RADIUSBackend(object):
 
         # if RADIUS_REMOTE_ROLES is not set, configure it to the default value
         # of versions <= 1.4.0
-        if not hasattr(settings, "RADIUS_REMOTE_ROLES"):
-            settings.RADIUS_REMOTE_ROLES = True
+        if not hasattr(self.settings, "RADIUS_REMOTE_ROLES"):
+            self.settings.RADIUS_REMOTE_ROLES = True
 
-        if settings.RADIUS_REMOTE_ROLES:
+        if self.settings.RADIUS_REMOTE_ROLES:
             user.is_staff = is_staff
             user.is_superuser = is_superuser
         if password is not None:
