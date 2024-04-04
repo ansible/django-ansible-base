@@ -20,11 +20,12 @@ activitystream_enabled = ActivityStreamEnabled()
 
 @contextmanager
 def no_activity_stream():
+    previous_value = activitystream_enabled.enabled
     activitystream_enabled.enabled = False
     try:
         yield
     finally:
-        activitystream_enabled.enabled = True
+        activitystream_enabled.enabled = previous_value
 
 
 def _store_activitystream_entry(old, new, operation):

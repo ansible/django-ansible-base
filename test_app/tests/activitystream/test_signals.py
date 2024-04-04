@@ -277,3 +277,27 @@ def test_activitystream_context_manager():
         city.save()
 
     assert entries.count() == 1
+
+
+@pytest.mark.django_db
+def test_activitystream_nested_context_manager():
+    """
+    Ensure we properly skip adding activity stream entries in nested context managers
+    and properly restore state.
+    """
+    with no_activity_stream():
+        with no_activity_stream():
+            city = City.objects.create(name='New York', country='USA')
+
+    entries = city.activity_stream_entries
+    assert entries.count() == 0
+
+    city.country = 'Canada'
+    city.save()
+    assert entries.count() == 1
+
+    with no_activity_stream():
+        city.country = 'Germany'
+        city.save()
+
+    assert entries.count() == 1
