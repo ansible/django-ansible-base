@@ -36,6 +36,16 @@ class AuthenticatedReadAdminChange(IsSystemAdminOrAuditor):
         return has_super_permission(request.user)
 
 
+def is_cloned_request(request) -> bool:
+    """Tells whether this is a fake request
+
+    The DRF API browser and schema generators call permission methods
+    multiple times for form generation purposes.
+    In these cases, a request wrapps the original and the method will not match.
+    """
+    return bool(request.method != request._request.method)
+
+
 class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
 
     def has_permission(self, request, view):
@@ -54,7 +64,9 @@ class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
             full_codename = f'add_{model_cls._meta.model_name}'
             parent_field_name = permission_registry.get_parent_fd_name(model_cls)
             if parent_field_name is None:
-                logger.warning(f'User {request.user.pk} lacks global {full_codename} permission to create {model_cls._meta.model_name}')
+                if not is_cloned_request(request):
+                    logger.warning(f'User {request.user.pk} lacks global {full_codename} permission to create {model_cls._meta.model_name}')
+
                 return has_super_permission(request.user, full_codename)
 
         # We are not checking many things here, a GET to list views can return 0 objects
@@ -87,7 +99,8 @@ class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
             # If the user does not have permissions we need to determine if
             # they have read permissions to see 403, or not, and simply see
             # a 404 response.
-            logger.warning(f'User {request.user.pk} lacks {perms} permission to obj {obj._meta.model_name}-{obj.pk}')
+            if not is_cloned_request(request):
+                logger.warning(f'User {request.user.pk} lacks {perms} permission to obj {obj._meta.model_name}-{obj.pk}')
 
             if request.method in SAFE_METHODS:
                 # Read permissions already checked and failed, no need

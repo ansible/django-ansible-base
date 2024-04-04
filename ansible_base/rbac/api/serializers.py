@@ -11,7 +11,7 @@ from rest_framework.fields import flatten_choices_dict, to_choices_dict
 from rest_framework.serializers import ValidationError
 
 from ansible_base.lib.abstract_models.common import get_url_for_object
-from ansible_base.lib.serializers.common import CommonModelSerializer
+from ansible_base.lib.serializers.common import CommonModelSerializer, ImmutableCommonModelSerializer
 from ansible_base.rbac.models import RoleDefinition, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry  # careful for circular imports
 from ansible_base.rbac.validators import check_content_obj_permission, validate_permissions_for_model
@@ -273,6 +273,9 @@ class BaseAssignmentSerializer(CommonModelSerializer):
         return summary_fields
 
 
+ASSIGNMENT_FIELDS = ImmutableCommonModelSerializer.Meta.fields + ['content_type', 'object_id', 'role_definition']
+
+
 class RoleUserAssignmentSerializer(BaseAssignmentSerializer):
     actor_field = 'user'
     user_ansible_id = serializers.UUIDField(
@@ -282,7 +285,7 @@ class RoleUserAssignmentSerializer(BaseAssignmentSerializer):
 
     class Meta:
         model = RoleUserAssignment
-        fields = '__all__'
+        fields = ASSIGNMENT_FIELDS + ['user', 'user_ansible_id']
 
 
 class RoleTeamAssignmentSerializer(BaseAssignmentSerializer):
@@ -294,4 +297,4 @@ class RoleTeamAssignmentSerializer(BaseAssignmentSerializer):
 
     class Meta:
         model = RoleTeamAssignment
-        fields = '__all__'
+        fields = ASSIGNMENT_FIELDS + ['team', 'team_ansible_id']

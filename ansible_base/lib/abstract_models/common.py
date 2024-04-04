@@ -142,7 +142,7 @@ class AbstractCommonModel(models.Model):
         for field in self._meta.fields:
             if isinstance(field, models.ForeignObject) and getattr(self, field.name):
                 # ignore relations on inherited django models
-                if field.name.endswith("_ptr"):
+                if field.name.endswith("_ptr") or (field.name in self.ignore_relations):
                     continue
                 if hasattr(getattr(self, field.name), 'summary_fields'):
                     response[field.name] = getattr(self, field.name).summary_fields()
