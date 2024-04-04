@@ -58,6 +58,7 @@
                 document.getElementById('user-item').innerHTML = `<a class="nav-link" href="#">${username}</a>`;
                 document.getElementById('login-button').innerHTML = '<a class="nav-link" href="/login/logout/">Logout</a>';
             } else {
+                document.getElementById('user-item').innerHTML = `<a class="nav-link" href="#"></a>`;
                 document.getElementById('login-button').innerHTML = '<a class="nav-link" href="/login/login/">Login</a>';
             }
         }
