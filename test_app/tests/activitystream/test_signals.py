@@ -1,6 +1,7 @@
 import pytest
 
 import ansible_base.activitystream.signals as signals
+from ansible_base.activitystream import no_activity_stream
 from ansible_base.activitystream.models import Entry
 from test_app.models import Animal, City
 
@@ -253,3 +254,50 @@ def test_activitystream_excluded_fields():
     assert len(entry.changes['changed_fields']) == 1
     assert entry.changes['added_fields'] == {}
     assert entry.changes['removed_fields'] == {}
+
+
+@pytest.mark.django_db
+def test_activitystream_context_manager():
+    """
+    Ensure we have a way to skip adding activity stream entries.
+
+    Ensure we can state-change (disable entries sometimes and enable them other times).
+    """
+    with no_activity_stream():
+        city = City.objects.create(name='New York', country='USA')
+    entries = city.activity_stream_entries
+    assert entries.count() == 0
+
+    city.country = 'Canada'
+    city.save()
+    assert entries.count() == 1
+
+    with no_activity_stream():
+        city.country = 'Germany'
+        city.save()
+
+    assert entries.count() == 1
+
+
+@pytest.mark.django_db
+def test_activitystream_nested_context_manager():
+    """
+    Ensure we properly skip adding activity stream entries in nested context managers
+    and properly restore state.
+    """
+    with no_activity_stream():
+        with no_activity_stream():
+            city = City.objects.create(name='New York', country='USA')
+
+    entries = city.activity_stream_entries
+    assert entries.count() == 0
+
+    city.country = 'Canada'
+    city.save()
+    assert entries.count() == 1
+
+    with no_activity_stream():
+        city.country = 'Germany'
+        city.save()
+
+    assert entries.count() == 1

@@ -1,11 +1,37 @@
 import logging
+import threading
+from contextlib import contextmanager
 
 from ansible_base.lib.utils.models import current_user_or_system_user, diff
 
 logger = logging.getLogger('ansible_base.activitystream.signals')
 
 
+class ActivityStreamEnabled(threading.local):
+    def __init__(self):
+        self.enabled = True
+
+    def __bool__(self):
+        return self.enabled
+
+
+activitystream_enabled = ActivityStreamEnabled()
+
+
+@contextmanager
+def no_activity_stream():
+    previous_value = activitystream_enabled.enabled
+    activitystream_enabled.enabled = False
+    try:
+        yield
+    finally:
+        activitystream_enabled.enabled = previous_value
+
+
 def _store_activitystream_entry(old, new, operation):
+    if not activitystream_enabled:
+        return
+
     from ansible_base.activitystream.models import Entry
 
     if operation not in ('create', 'update', 'delete'):
@@ -34,6 +60,9 @@ def _store_activitystream_entry(old, new, operation):
 
 
 def _store_activitystream_m2m(given_instance, model, operation, pk_set, reverse, field_name):
+    if not activitystream_enabled:
+        return
+
     from ansible_base.activitystream.models import Entry
 
     if operation not in ('associate', 'disassociate'):
