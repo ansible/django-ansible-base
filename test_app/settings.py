@@ -84,10 +84,11 @@ AUTH_USER_MODEL = 'test_app.User'
 
 ROOT_URLCONF = 'test_app.urls'
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [os.path.join(BASE_DIR, 'test_app', 'templates')],
         "APP_DIRS": True,
         "OPTIONS": {
             'context_processors': [
