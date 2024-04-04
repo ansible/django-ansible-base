@@ -1,0 +1,22 @@
+---
+services:
+  postgres:
+    image: "postgres:latest"
+    environment:
+      POSTGRES_DB: dab_db
+      POSTGRES_USER: dab
+      POSTGRES_PASSWORD: dabing
+
+  test_app:
+    image: quay.io/centos/centos:stream9
+    working_dir: /src
+    command: 'test_app/scripts/entrypoint.sh'
+    volumes:
+      - '.:/src'
+    depends_on:
+      - postgres
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: dab
+      DB_PASSWORD: dabing
