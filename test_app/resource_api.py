@@ -3,10 +3,23 @@ from django.contrib.auth import get_user_model
 from ansible_base.authentication.models import Authenticator
 from ansible_base.resource_registry.registry import ResourceConfig, ServiceAPIConfig, SharedResource
 from ansible_base.resource_registry.shared_types import OrganizationType, TeamType, UserType
+from ansible_base.resource_registry.utils.resource_type_processor import ResourceTypeProcessor
 from test_app.models import Organization, Original1, Proxy2, ResourceMigrationTestModel, Team
 
 
+class UserProcessor(ResourceTypeProcessor):
+    def pre_serialize_additional(self):
+        # These fields aren't supported in TestApp, so we'll set them to blank
+        setattr(self.instance, "external_auth_provider", None)
+        setattr(self.instance, "external_auth_uid", None)
+        setattr(self.instance, "organizations", [])
+        setattr(self.instance, "organizations_administered", [])
+
+        return self.instance
+
+
 class APIConfig(ServiceAPIConfig):
+    custom_resource_processors = {"shared.user": UserProcessor}
     service_type = "aap"
 
 

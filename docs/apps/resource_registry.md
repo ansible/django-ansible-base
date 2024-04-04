@@ -56,6 +56,41 @@ and the following kwargs:
 
 Once this model is provided, register it in settings.py by setting `ANSIBLE_BASE_RESOURCE_CONFIG_MODULE`, ex: `ANSIBLE_BASE_RESOURCE_CONFIG_MODULE = "test_app.resource_api"`
 
+#### Customization
+
+The `APIConfig` additionally allows service maintainers to customize how specific resource types are serialized and saved. This can be helpful if the
+version of the resource that the application has locally doesn't have the same fields as a shared serializer.
+
+```python
+class UserProcessor(ResourceTypeProcessor):
+    def pre_serialize_additional(self):
+        # Set any non standardized attributes on the resource before serialization.
+        # This gets called before the additional data serializer serializes the instance.
+        setattr(self.instance, "external_auth_provider", None)
+        setattr(self.instance, "external_auth_uid", None)
+        setattr(self.instance, "organizations", [])
+        setattr(self.instance, "organizations_administered", [])
+
+        return self.instance
+
+    def pre_serialize(self):
+        # Set any non standardized attributes on the resource before serialization.
+        # This gets called before the resource type serializer serializes the instance.
+
+        setattr(self.instance, "is_system_auditor", self.instance.has_role("system_auditor"))
+        return self.instance
+
+    def pre_save(self, validated_data, is_new=False):
+        if validated_data["is_system_auditor"]:
+            self.instance.add_role("system_auditor")
+        super().save(validated_data, is_new=is_new)
+
+class APIConfig(ServiceAPIConfig):
+    # Set custom processors with this dictionary.
+    custom_resource_processors = {"shared.user": UserProcessor}
+    service_type = "aap"
+```
+
 ### Add the Resource API URLs
 
 ```python

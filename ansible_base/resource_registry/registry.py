@@ -1,6 +1,10 @@
 from collections import namedtuple
 from typing import List
 
+from django.contrib.auth import authenticate
+
+from ansible_base.resource_registry.utils.resource_type_processor import ResourceTypeProcessor
+
 ParentResource = namedtuple("ParentResource", ["model", "field_name"])
 SharedResource = namedtuple("SharedResource", ["serializer", "is_provider"])
 
@@ -13,12 +17,39 @@ def get_concrete_model(model):
     return _model
 
 
+class UserResourceTypeProcessor(ResourceTypeProcessor):
+    def pre_serialize_additional(self):
+        setattr(self.instance, "external_auth_provider", None)
+        setattr(self.instance, "external_auth_uid", None)
+        return self.instance
+
+
 class ServiceAPIConfig:
     """
     This will be the interface for configuring the resource registry for each service.
     """
 
+    _default_resource_processors = {
+        "shared.team": ResourceTypeProcessor,
+        "shared.organization": ResourceTypeProcessor,
+        "shared.user": UserResourceTypeProcessor,
+    }
+
+    custom_resource_processors = {}
+
     service_type = None
+
+    @staticmethod
+    def authenticate_local_user(username: str, password: str):
+        """
+        Return User instance or None
+        """
+        return authenticate(username=username, password=password)
+
+    @classmethod
+    def get_processor(cls, resource_type):
+        combined_processors = {**cls._default_resource_processors, **cls.custom_resource_processors}
+        return combined_processors[resource_type]
 
 
 class ResourceConfig:

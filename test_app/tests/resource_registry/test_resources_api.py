@@ -1,11 +1,14 @@
 import uuid
+from unittest.mock import patch
 
 import pytest
 from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 
 from ansible_base.resource_registry.models import Resource
-from test_app.models import EncryptionModel
+from ansible_base.resource_registry.utils.resource_type_processor import ResourceTypeProcessor
+from test_app.models import EncryptionModel, Organization
+from test_app.resource_api import APIConfig, UserProcessor
 
 
 def test_service_index_root(user_api_client):
@@ -324,3 +327,59 @@ def test_team_organization_field_does_not_exist(admin_api_client, team):
     resp = admin_api_client.patch(url, data, format="json")
     assert resp.status_code == 400
     assert bad_id in resp.data["organization"][0]
+
+
+def test_processor_pre_serialize(admin_api_client, organization):
+    class CustomProcessor(ResourceTypeProcessor):
+        def pre_serialize(self):
+            self.instance.name = "PRE SERIALIZED"
+            return self.instance
+
+    class PatchedConfig(APIConfig):
+        custom_resource_processors = {"shared.organization": CustomProcessor}
+
+    url = reverse("resource-detail", kwargs={"ansible_id": str(organization.resource.ansible_id)})
+
+    with patch("test_app.resource_api.APIConfig", PatchedConfig):
+        resp = admin_api_client.get(url)
+        assert resp.data["resource_data"]["name"] == "PRE SERIALIZED"
+
+
+def test_processor_pre_serialize_additional(admin_api_client, admin_user):
+    class CustomProcessor(UserProcessor):
+        def pre_serialize_additional(self):
+            self.instance.username = "PRE SERIALIZED"
+            return super().pre_serialize_additional()
+
+    class PatchedConfig(APIConfig):
+        custom_resource_processors = {"shared.user": CustomProcessor}
+
+    url = reverse("resource-additional-data", kwargs={"ansible_id": str(admin_user.resource.ansible_id)})
+
+    with patch("test_app.resource_api.APIConfig", PatchedConfig):
+        resp = admin_api_client.get(url)
+        assert resp.data["username"] == "PRE SERIALIZED"
+
+
+def test_processor_save(admin_api_client):
+    class CustomProcessor(ResourceTypeProcessor):
+        def save(self, validated_data, is_new=False):
+            self.instance.name = "HELLO " + validated_data["name"]
+            self.instance.save()
+            return self.instance
+
+    class PatchedConfig(APIConfig):
+        custom_resource_processors = {"shared.organization": CustomProcessor}
+
+    with patch("test_app.resource_api.APIConfig", PatchedConfig):
+        # Test creating an organization
+        url = reverse("resource-list")
+        resp = admin_api_client.post(url, {"resource_type": "shared.organization", "resource_data": {"name": "my_name"}}, format="json")
+        assert resp.data["name"] == "HELLO my_name"
+        assert Organization.objects.filter(name="HELLO my_name").exists()
+
+        # Test updating an organization
+        url = reverse("resource-detail", kwargs={"ansible_id": resp.data["ansible_id"]})
+        resp = admin_api_client.put(url, {"resource_data": {"name": "my_name2"}}, format="json")
+        assert resp.data["name"] == "HELLO my_name2"
+        assert Organization.objects.filter(name="HELLO my_name2").exists()
