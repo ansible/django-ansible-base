@@ -2,8 +2,6 @@ import logging
 from functools import lru_cache
 from glob import glob
 from os.path import basename, isfile, join
-from types import ModuleType
-from typing import Optional
 
 from django.conf import settings
 from django.utils.text import slugify
@@ -45,10 +43,10 @@ def get_authenticator_plugin(authenticator_type: str):
     return AuthClass()
 
 
-def get_authenticator_urls(authenticator_type: str) -> Optional[ModuleType]:
+def get_authenticator_urls(authenticator_type: str) -> list:
     try:
-        urls = __import__(authenticator_type, globals(), locals(), ['urls'], 0)
-        return urls
+        urls_module = __import__(authenticator_type, globals(), locals(), ['urls'], 0)
+        return getattr(urls_module, 'urls', [])
     except Exception as e:
         logger.error(f"Failed to load urls from {authenticator_type} {e}")
     return None
