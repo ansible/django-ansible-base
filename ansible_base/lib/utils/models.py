@@ -104,6 +104,9 @@ def current_user_or_system_user():
 
 
 def is_encrypted_field(model, field_name):
+    if model is None:
+        return False
+
     from django.contrib.auth.models import AbstractUser
 
     if issubclass(model, AbstractUser) and field_name == 'password':
@@ -220,21 +223,23 @@ def diff(
 
     old_fields_set = set(fields['old'].keys())
     new_fields_set = set(fields['new'].keys())
+    old_model = old.__class__ if old else None
+    new_model = new.__class__ if new else None
 
     # Get any removed fields from the old_fields - new_fields
     for field in old_fields_set - new_fields_set:
-        model_diff.removed_fields[field] = ENCRYPTED_STRING if is_encrypted_field(old, field) else fields['old'][field]
+        model_diff.removed_fields[field] = ENCRYPTED_STRING if is_encrypted_field(old_model, field) else fields['old'][field]
 
     # Get any new fields from the new_fields - old_fields
     for field in new_fields_set - old_fields_set:
-        model_diff.added_fields[field] = ENCRYPTED_STRING if is_encrypted_field(new, field) else fields['new'][field]
+        model_diff.added_fields[field] = ENCRYPTED_STRING if is_encrypted_field(new_model, field) else fields['new'][field]
 
     # Find any modified fields from the union of the sets
     for field in new_fields_set & old_fields_set:
         if fields['old'][field] != fields['new'][field]:
             model_diff.changed_fields[field] = (
-                ENCRYPTED_STRING if is_encrypted_field(old, field) else fields['old'][field],
-                ENCRYPTED_STRING if is_encrypted_field(new, field) else fields['new'][field],
+                ENCRYPTED_STRING if is_encrypted_field(old_model, field) else fields['old'][field],
+                ENCRYPTED_STRING if is_encrypted_field(new_model, field) else fields['new'][field],
             )
 
     return model_diff

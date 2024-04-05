@@ -84,6 +84,7 @@ def test_user_or_system_user(system_user, user):
         (test_app_models.EncryptionModel, 'testing2', True),
         (test_app_models.EncryptionModel, 'name', False),
         (test_app_models.City, 'country', True),
+        (None, 'foo', False),
     ],
 )
 def test_is_encrypted_field(model, field_name, expected):
