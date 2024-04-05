@@ -50,7 +50,7 @@ class Migration(migrations.Migration):
                     editable=False,
                     help_text='The user who created this resource',
                     null=True,
-                    on_delete=django.db.models.deletion.DO_NOTHING,
+                    on_delete=django.db.models.deletion.SET_NULL,
                     related_name='%(app_label)s_%(class)s_created+',
                     to=settings.AUTH_USER_MODEL
                 )),
@@ -60,7 +60,7 @@ class Migration(migrations.Migration):
                     editable=False,
                     help_text='The user who last modified this resource',
                     null=True,
-                    on_delete=django.db.models.deletion.DO_NOTHING,
+                    on_delete=django.db.models.deletion.SET_NULL,
                     related_name='%(app_label)s_%(class)s_modified+',
                     to=settings.AUTH_USER_MODEL
                 )),
@@ -96,7 +96,7 @@ class Migration(migrations.Migration):
                 editable=False,
                 help_text='The user who created this resource',
                 null=True,
-                on_delete=django.db.models.deletion.DO_NOTHING,
+                on_delete=django.db.models.deletion.SET_NULL,
                 related_name='%(app_label)s_%(class)s_created+',
                 to=settings.AUTH_USER_MODEL
             ),
@@ -132,7 +132,7 @@ class Migration(migrations.Migration):
                 editable=False,
                 help_text='The user who created this resource',
                 null=True,
-                on_delete=django.db.models.deletion.DO_NOTHING,
+                on_delete=django.db.models.deletion.SET_NULL,
                 related_name='%(app_label)s_%(class)s_created+',
                 to=settings.AUTH_USER_MODEL
             ),
