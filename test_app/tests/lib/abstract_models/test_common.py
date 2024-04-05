@@ -130,7 +130,6 @@ def test_attributable_user_anonymous_user(system_user):
 
 
 @pytest.mark.django_db
-@pytest.mark.xfail(reason="https://github.com/ansible/django-ansible-base/issues/198")
 def test_cascade_behavior_for_created_by(user, user_api_client):
     url = reverse('organization-list')
     r = user_api_client.post(url, data={'name': 'foo'})
