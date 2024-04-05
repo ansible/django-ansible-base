@@ -82,6 +82,16 @@ urlpatterns = [
 ]
 ```
 
+
+### Permissions
+
+The activity stream can rely on the RBAC app to control permissions pertaining
+to who can see activity stream entries via the API.
+
+If the RBAC app is **not** being used, then only superusers can access the
+stream.
+
+
 ## Dev Docs
 
 The way this works is by making use of Django signals. At a high level, when
