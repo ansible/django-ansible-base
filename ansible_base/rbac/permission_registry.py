@@ -4,7 +4,7 @@ from typing import Optional
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db.models import Model
-from django.db.models.signals import post_delete, post_migrate, pre_delete
+from django.db.models.signals import post_delete, post_migrate
 from django.utils.functional import cached_property
 
 """
@@ -105,17 +105,6 @@ class PermissionRegistry:
         self.user_model.add_to_class('has_obj_perm', bound_has_obj_perm)
         self.user_model.add_to_class('singleton_permissions', bound_singleton_permissions)
         post_delete.connect(triggers.rbac_post_user_delete, sender=self.user_model, dispatch_uid='permission-registry-user-delete')
-
-        # Temporary HACK until the created_by and modified_by cascade behavior is resolved
-        def clear_created_assignments(instance, *args, **kwargs):
-            from ansible_base.rbac.models import RoleTeamAssignment, RoleUserAssignment
-
-            RoleUserAssignment.objects.filter(created_by=instance).update(created_by=None)
-            RoleTeamAssignment.objects.filter(created_by=instance).update(created_by=None)
-
-        pre_delete.connect(clear_created_assignments, sender=self.user_model, dispatch_uid='permission-registry-clear-created-assignments')
-
-        # end HACK
 
         for cls in self._registry:
             triggers.connect_rbac_signals(cls)
