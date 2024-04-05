@@ -8,6 +8,8 @@ from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.serializers.fields import JSONField
+from ansible_base.lib.utils.settings import get_setting
+from ansible_base.lib.utils.translations import translatable_conditionally as _
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.base')
 
@@ -76,7 +78,7 @@ class AbstractAuthenticatorPlugin:
         errors = {}
         for k in data:
             if k not in allowed_fields:
-                errors[k] = _(f"{k} is not a supported configuration option.")
+                errors[k] = _(("%(k) is not a supported configuration option."), {"k": k})
 
         if errors:
             raise ValidationError(errors)
@@ -96,13 +98,24 @@ class AbstractAuthenticatorPlugin:
     def update_if_needed(self, database_authenticator: Authenticator) -> None:
         if not self.database_instance or self.database_instance.modified != database_authenticator.modified:
             if self.database_instance:
-                self.logger.info(f"Updating {self.type} adapter {database_authenticator.name}")
+                self.log_and_raise(
+                    _("Updating %(self.type) adapter %(database_authenticator.name)"),
+                    {"self.type": self.type},
+                    {"database_authenticator.name": database_authenticator.name},
+                )
+
             else:
-                self.logger.info(f"Creating an {self.type} adapter from {database_authenticator.name}")
+                self.log_and_raise(
+                    _("Creating an %(self.type) adapter from %(database_authenticator.name)"),
+                    {"self.type": self.type},
+                    {"database_authenticator.name": database_authenticator.name},
+                )
             self.database_instance = database_authenticator
             self.update_settings(database_authenticator)
         else:
-            self.logger.info(f"No updated needed for {self.type} adapter {database_authenticator.name}")
+            self.log_and_raise(
+                _("No updated needed for %(self.type) adapter %(database_authenticator.name)"), {"self.type": self.type}, {database_authenticator.name}
+            )
 
     def get_default_attributes(self):
         """
