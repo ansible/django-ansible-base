@@ -51,7 +51,7 @@ class ModifiableModel(models.Model):
         default=None,
         null=True,
         editable=False,
-        on_delete=models.DO_NOTHING,
+        on_delete=models.SET_NULL,
         help_text="The user who last modified this resource",
     )
 
@@ -84,7 +84,7 @@ class CreatableModel(models.Model):
         default=None,
         null=True,
         editable=False,
-        on_delete=models.DO_NOTHING,
+        on_delete=models.SET_NULL,
         help_text="The user who created this resource",
     )
 
