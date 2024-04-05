@@ -273,7 +273,7 @@ class BaseAssignmentSerializer(CommonModelSerializer):
         return summary_fields
 
 
-ASSIGNMENT_FIELDS = ImmutableCommonModelSerializer.Meta.fields + ['content_type', 'object_id', 'role_definition']
+ASSIGNMENT_FIELDS = ImmutableCommonModelSerializer.Meta.fields + ['content_type', 'object_id', 'object_ansible_id', 'role_definition']
 
 
 class RoleUserAssignmentSerializer(BaseAssignmentSerializer):
