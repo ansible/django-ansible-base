@@ -6,7 +6,7 @@ from django.db import models
 
 from ansible_base.activitystream.models import AuditableModel
 from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam, CommonModel, ImmutableCommonModel, ImmutableModel, NamedCommonModel
-from ansible_base.lib.utils.models import user_summary_fields
+from ansible_base.lib.utils.models import prevent_search, user_summary_fields
 from ansible_base.rbac import permission_registry
 from ansible_base.resource_registry.fields import AnsibleResourceField
 
@@ -251,5 +251,18 @@ class City(NamedCommonModel, AuditableModel):
 
     activity_stream_limit_field_names = ['country']
 
-    country = models.CharField(max_length=100, null=True, default='USA')
+    country = prevent_search(models.CharField(max_length=100, null=True, default='USA'))
     population = models.PositiveIntegerField(null=True, default=1000)
+
+
+class SecretColor(AuditableModel):
+    """
+    An AuditableModel that also has encrypted fields.
+    """
+
+    class Meta:
+        app_label = "test_app"
+
+    encrypted_fields = ['color']
+
+    color = models.CharField(max_length=20, null=True, default='blue')

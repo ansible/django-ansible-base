@@ -3,7 +3,8 @@ import pytest
 import ansible_base.activitystream.signals as signals
 from ansible_base.activitystream import no_activity_stream
 from ansible_base.activitystream.models import Entry
-from test_app.models import Animal, City
+from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
+from test_app.models import Animal, City, SecretColor
 
 
 def test_activitystream_create(system_user, animal):
@@ -301,3 +302,27 @@ def test_activitystream_nested_context_manager():
         city.save()
 
     assert entries.count() == 1
+
+
+@pytest.mark.django_db
+def test_activitystream_encrypted_fields_are_sanitized():
+    color = SecretColor.objects.create(color='red')
+    entries = color.activity_stream_entries
+    assert entries.last().changes['added_fields']['color'] == ENCRYPTED_STRING
+
+    color.color = 'orange'
+    color.save()
+    assert entries.last().changes['changed_fields']['color'] == [ENCRYPTED_STRING, ENCRYPTED_STRING]
+
+    color.delete()
+    assert entries.last().changes['removed_fields']['color'] == ENCRYPTED_STRING
+
+
+@pytest.mark.django_db
+def test_activitystream_user_password_sanitized(user):
+    entries = user.activity_stream_entries
+    assert entries.last().changes['added_fields']['password'] == ENCRYPTED_STRING
+
+    user.set_password('new_password')
+    user.save()
+    assert entries.last().changes['changed_fields']['password'] == [ENCRYPTED_STRING, ENCRYPTED_STRING]
