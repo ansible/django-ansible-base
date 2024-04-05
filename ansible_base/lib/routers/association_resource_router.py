@@ -1,5 +1,6 @@
 import logging
 
+from django.db.models.fields import IntegerField
 from django.utils.translation import gettext as _
 from rest_framework import routers, serializers, status
 from rest_framework.decorators import action
@@ -143,7 +144,12 @@ class AssociationResourceRouter(routers.SimpleRouter):
             if is_reverse_view:
                 modified_related_viewset.http_method_names = ['get', 'head', 'options']
 
+            if isinstance(child_model._meta.pk, IntegerField):
+                url_path = f"{prefix}/(?P<pk>[0-9]+)/{related_name}"
+            else:
+                url_path = f"{prefix}/(?P<pk>[^/.]+)/{related_name}"
+
             # Register the viewset
-            self.registry.append((f"{prefix}/(?P<pk>[^/.]+)/{related_name}", modified_related_viewset, f'{basename}-{fk}'))
+            self.registry.append((url_path, modified_related_viewset, f'{basename}-{fk}'))
 
         super().register(prefix, viewset, basename)
