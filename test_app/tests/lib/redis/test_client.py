@@ -42,8 +42,8 @@ def test_redis_client_confirm_connect_does_not_change_options():
     "url,host,port,username,password,db",
     [
         ('localhost', 'localhost', 6379, None, None, 0),
-        ('redis://my_mom:her_pass@example.com:1234/1', 'example.com', 1234, 'my_mom', 'her_pass', 1),
-        ('redis://my_mom:her_pass@example.com/1', 'example.com', 6379, 'my_mom', 'her_pass', 1),
+        ('redis://my_mom:her_pass@example.com:1234/1', 'example.com', 1234, 'my_mom', 'her_pass', 1),  # NOSONAR
+        ('redis://my_mom:her_pass@example.com/1', 'example.com', 6379, 'my_mom', 'her_pass', 1),  # NOSONAR
         ('redis://my_mom@example.com/', 'example.com', 6379, 'my_mom', None, 0),
         ('redis://:her_pass@example.com/', 'example.com', 6379, None, 'her_pass', 0),
         ('redis://example.com:1234/a', 'example.com', 1234, None, None, 0),
