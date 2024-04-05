@@ -106,7 +106,7 @@ def current_user_or_system_user():
 def is_encrypted_field(model, field_name):
     from django.contrib.auth.models import AbstractUser
 
-    if isinstance(model, AbstractUser) and field_name == 'password':
+    if issubclass(model, AbstractUser) and field_name == 'password':
         return True
 
     return field_name in getattr(model, 'encrypted_fields', [])
