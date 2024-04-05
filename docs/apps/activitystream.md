@@ -57,6 +57,13 @@ kinds of models, but in the context of the activity stream, that doesn't happen.
 `changed_fields`: This is a dictionary which has field names as keys and
 2-tuples as values in the form (old_value, new_value).
 
+**Note about encrypted fields**: The following fields are considered sensitive
+and their values (even hashed) are not saved in activity stream entries:
+
+- Fields listed in `encrypted_fields` of a `CommonModel` subclass
+- The `password` field of any `AbstractUser` subclass
+- Any model fields wrapped with `ansible_base.lib.utils.models.prevent_search()`
+
 
 ### URLs
 
@@ -74,6 +81,16 @@ urlpatterns = [
     ...
 ]
 ```
+
+
+### Permissions
+
+The activity stream can rely on the RBAC app to control permissions pertaining
+to who can see activity stream entries via the API.
+
+If the RBAC app is **not** being used, then only superusers can access the
+stream.
+
 
 ## Dev Docs
 

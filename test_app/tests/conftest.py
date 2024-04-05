@@ -585,3 +585,14 @@ def multiple_fields_model(db, randname):
 @pytest.fixture
 def animal(db, randname, user):
     return models.Animal.objects.create(name=randname("Test Animal"), owner=user)
+
+
+@pytest.fixture
+def disable_activity_stream():
+    """
+    Disable the activity stream for the duration of the test.
+    """
+    from ansible_base.activitystream import no_activity_stream
+
+    with no_activity_stream():
+        yield
