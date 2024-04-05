@@ -16,7 +16,7 @@ services:
     build:
       context: .
     working_dir: /src
-    command: 'test_app/scripts/entrypoint.sh'
+    command: 'test_app/scripts/container_startup.sh'
     volumes:
       - '.:/src'
     depends_on:
