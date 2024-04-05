@@ -139,7 +139,6 @@ def test_cascade_behavior_for_created_by(user, user_api_client):
     assert r.status_code == 201
     org = Organization.objects.get(id=r.data['id'])
     assert org.created_by == user
-    user_id = user.id
     connection.check_constraints()  # issue replication - show constraint violation introduced
     user.delete()
     org.refresh_from_db()
