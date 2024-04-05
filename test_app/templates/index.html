@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test App</title>
+
+	<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-md navbar-dark bg-primary">
+        <div class="container-fluid">
+            <a class="navbar-brand abs" href="/">Test App</a>
+            <div class="navbar-collapse collapse" id="collapseNavbar">
+                <ul class="navbar-nav ms-auto">
+
+                    <li id='user-item' class="nav-item">
+                        <a class="nav-link" href="#"></a>
+                    </li>
+
+                    <li id='login-button' class="nav-item">
+                        <a class="nav-link" href="/login/login/">Login</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Body -->
+	<div class="container">
+		<div>
+			<h2>Paths</h2>
+			<ul>
+				<li><a href="/admin">/admin/</a></li>
+				<li><a href="/api/v1/">/api/v1/</a></li>
+			</ul>
+		</div>
+
+		<div>
+			<h2>SSO Logins</h2>
+			<div id='authenticators'>None</div>
+		</div>
+
+	</div>
+
+    <!-- App -->
+    <script>
+
+        // django always passes in the user object for templating ...
+        var isLoggedIn = {{ user.is_authenticated|yesno:"true,false" }};
+        var username = "{{ user.username }}";
+
+        function toggleLogin() {
+            if (isLoggedIn) {
+                document.getElementById('user-item').innerHTML = `<a class="nav-link" href="#">${username}</a>`;
+                document.getElementById('login-button').innerHTML = '<a class="nav-link" href="/login/logout/">Logout</a>';
+            } else {
+                document.getElementById('user-item').innerHTML = `<a class="nav-link" href="#"></a>`;
+                document.getElementById('login-button').innerHTML = '<a class="nav-link" href="/login/login/">Login</a>';
+            }
+        }
+
+        function setAuthenticators() {
+            const authenticators_url = '/api/v1/ui_auth';
+            fetch(authenticators_url)
+                .then(response => response.json())
+                .then(data => {
+                    console.log(data);
+                    let newhtml = '<ul>';
+                    data.ssos.forEach((sso) => {
+                        newhtml += '<li><a href="' + sso.login_url + '">' + sso.name + '</a></li>';
+                    });
+                    newhtml += '</ul>';
+                    document.getElementById('authenticators').innerHTML = newhtml;
+                })
+                .catch(error => console.error('Error fetching data:', error));
+        }
+
+        toggleLogin()
+        setAuthenticators()
+    </script>
+
+</body>
+</html>

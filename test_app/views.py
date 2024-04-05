@@ -1,3 +1,4 @@
+from django.shortcuts import render
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework.reverse import reverse
@@ -107,3 +108,13 @@ class MultipleFieldsViewSet(TestAppViewSet):
 
 class AnimalViewSet(TestAppViewSet):
     serializer_class = serializers.AnimalSerializer
+
+
+################################################
+# FRONTEND
+################################################
+
+
+def index_view(request):
+    context = {}
+    return render(request, 'index.html', context)
