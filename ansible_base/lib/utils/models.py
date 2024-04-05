@@ -8,6 +8,7 @@ from django.db.models import Model
 from django.utils.translation import gettext_lazy as _
 from inflection import underscore
 
+from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.string import make_json_safe
 
@@ -102,6 +103,15 @@ def current_user_or_system_user():
     return user
 
 
+def is_encrypted_field(model, field_name):
+    from django.contrib.auth.models import AbstractUser
+
+    if isinstance(model, AbstractUser) and field_name == 'password':
+        return True
+
+    return field_name in getattr(model, 'encrypted_fields', [])
+
+
 @dataclass
 class ModelDiff:
     added_fields: dict
@@ -118,7 +128,16 @@ class ModelDiff:
     dict = asdict
 
 
-def diff(old, new, require_type_match=True, json_safe=True, include_m2m=False, exclude_fields=[], limit_fields=[]):
+def diff(
+    old,
+    new,
+    require_type_match=True,
+    json_safe=True,
+    include_m2m=False,
+    exclude_fields=[],
+    limit_fields=[],
+    sanitize_encrypted=True,
+):
     """
     Diff two instances of models (which do not have to be the same type of model
     if given require_type_match=False).
@@ -197,20 +216,20 @@ def diff(old, new, require_type_match=True, json_safe=True, include_m2m=False, e
     old_fields_set = set(fields['old'].keys())
     new_fields_set = set(fields['new'].keys())
 
-    # Get any remove fields from the old_fields - new_fields
+    # Get any removed fields from the old_fields - new_fields
     for field in old_fields_set - new_fields_set:
-        model_diff.removed_fields[field] = fields['old'][field]
+        model_diff.removed_fields[field] = ENCRYPTED_STRING if is_encrypted_field(old, field) else fields['old'][field]
 
     # Get any new fields from the new_fields - old_fields
     for field in new_fields_set - old_fields_set:
-        model_diff.added_fields[field] = fields['new'][field]
+        model_diff.added_fields[field] = ENCRYPTED_STRING if is_encrypted_field(new, field) else fields['new'][field]
 
     # Find any modified fields from the union of the sets
     for field in new_fields_set & old_fields_set:
         if fields['old'][field] != fields['new'][field]:
             model_diff.changed_fields[field] = (
-                fields['old'][field],
-                fields['new'][field],
+                ENCRYPTED_STRING if is_encrypted_field(old, field) else fields['old'][field],
+                ENCRYPTED_STRING if is_encrypted_field(new, field) else fields['new'][field],
             )
 
     return model_diff

@@ -3,9 +3,12 @@ from unittest.mock import MagicMock
 
 import pytest
 from crum import impersonate
+from django.contrib.auth.models import User as DjangoUser
 from django.test.utils import override_settings
 
 from ansible_base.lib.utils import models
+from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
+from test_app import models as test_app_models
 
 
 def test_get_all_field_names(animal):
@@ -70,6 +73,20 @@ def test_user_or_system_user(system_user, user):
         assert models.current_user_or_system_user() == user
 
     assert models.current_user_or_system_user() == system_user
+
+
+@pytest.mark.parametrize(
+    'model,field_name,expected',
+    [
+        (test_app_models.User, 'password', True),
+        (DjangoUser, 'password', True),
+        (test_app_models.EncryptionModel, 'testing1', True),
+        (test_app_models.EncryptionModel, 'testing2', True),
+        (test_app_models.EncryptionModel, 'name', False),
+    ],
+)
+def test_is_encrypted_field(model, field_name, expected):
+    assert models.is_encrypted_field(model, field_name) == expected
 
 
 def test_diff_both_none():
@@ -245,3 +262,48 @@ def test_diff_with_fk(system_user, user, multiple_fields_model_1, multiple_field
     delta = models.diff(multiple_fields_model_1, multiple_fields_model_2, json_safe=True)
     assert delta.changed_fields['created_by'] == (multiple_fields_model_1.created_by.username, multiple_fields_model_2.created_by.username)
     assert delta.changed_fields['created_by_id'] == (multiple_fields_model_1.created_by.pk, multiple_fields_model_2.created_by.pk)
+
+
+@pytest.mark.django_db
+def test_diff_sanitizes_encrypted_fields_changed(disable_activity_stream):
+    """
+    Encrypted fields should be sanitized in the diff when changed.
+    """
+    instance1 = test_app_models.EncryptionModel.objects.create(name='oldname', testing1='oldtesting1', testing2='oldtesting2')
+    instance2 = test_app_models.EncryptionModel.objects.get(pk=instance1.pk)
+    instance2.name = 'newname'
+    instance2.testing1 = 'newtesting1'
+
+    delta = models.diff(instance1, instance2)
+    assert delta.changed_fields['name'] == (instance1.name, instance2.name)
+    assert delta.changed_fields['testing1'] == (ENCRYPTED_STRING, ENCRYPTED_STRING)
+
+
+@pytest.mark.django_db
+def test_diff_sanitizes_encrypted_fields_added(disable_activity_stream):
+    """
+    Encrypted fields should be sanitized in the diff when added.
+    """
+    logentry = test_app_models.ImmutableLogEntry.objects.create(message='oldmessage')
+    encryptionmodel = test_app_models.EncryptionModel.objects.create(name='oldname', testing1='oldtesting1', testing2='oldtesting2')
+
+    delta = models.diff(logentry, encryptionmodel, require_type_match=False)
+    assert delta.added_fields['name'] == 'oldname'
+    assert delta.added_fields['testing1'] == ENCRYPTED_STRING
+    assert delta.added_fields['testing2'] == ENCRYPTED_STRING
+    assert 'message' not in delta.added_fields
+
+
+@pytest.mark.django_db
+def test_diff_sanitizes_encrypted_fields_removed(disable_activity_stream):
+    """
+    Encrypted fields should be sanitized in the diff when removed.
+    """
+    logentry = test_app_models.ImmutableLogEntry.objects.create(message='oldmessage')
+    encryptionmodel = test_app_models.EncryptionModel.objects.create(name='oldname', testing1='oldtesting1', testing2='oldtesting2')
+
+    delta = models.diff(encryptionmodel, logentry, require_type_match=False)
+    assert delta.removed_fields['name'] == 'oldname'
+    assert delta.removed_fields['testing1'] == ENCRYPTED_STRING
+    assert delta.removed_fields['testing2'] == ENCRYPTED_STRING
+    assert 'message' not in delta.removed_fields

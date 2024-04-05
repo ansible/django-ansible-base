@@ -253,3 +253,16 @@ class City(NamedCommonModel, AuditableModel):
 
     country = models.CharField(max_length=100, null=True, default='USA')
     population = models.PositiveIntegerField(null=True, default=1000)
+
+
+class SecretColor(AuditableModel):
+    """
+    An AuditableModel that also has encrypted fields.
+    """
+
+    class Meta:
+        app_label = "test_app"
+
+    encrypted_fields = ['color']
+
+    color = models.CharField(max_length=20, null=True, default='blue')
