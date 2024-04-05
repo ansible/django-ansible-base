@@ -4,10 +4,12 @@ services:
     image: "postgres:latest"
     environment:
       POSTGRES_DB: dab_db
+      PGUSER: dab
+      PGDB: dab_db
       POSTGRES_USER: dab
       POSTGRES_PASSWORD: dabing
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready", "-U", "dab"]
+      test: ["CMD", "pg_isready", "-U", "dab", "-d", "dab_db"]
       interval: 10s
       timeout: 5s
       retries: 5
