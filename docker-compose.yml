@@ -6,6 +6,11 @@ services:
       POSTGRES_DB: dab_db
       POSTGRES_USER: dab
       POSTGRES_PASSWORD: dabing
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   test_app:
     build:
@@ -15,7 +20,8 @@ services:
     volumes:
       - '.:/src'
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
