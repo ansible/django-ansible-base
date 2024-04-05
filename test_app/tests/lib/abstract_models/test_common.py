@@ -8,6 +8,7 @@ from django.db import connection
 from django.test import override_settings
 from rest_framework.reverse import reverse
 
+from ansible_base.rbac.models import RoleDefinition
 from test_app.models import EncryptionModel, Organization, RelatedFieldsTestModel, User
 
 
@@ -131,6 +132,8 @@ def test_attributable_user_anonymous_user(system_user):
 
 @pytest.mark.django_db
 def test_cascade_behavior_for_created_by(user, user_api_client):
+    rd = RoleDefinition.objects.create_from_permissions(name='global-add-org', permissions=['add_organization'], content_type=None)
+    rd.give_global_permission(user)
     url = reverse('organization-list')
     r = user_api_client.post(url, data={'name': 'foo'})
     assert r.status_code == 201
@@ -140,5 +143,5 @@ def test_cascade_behavior_for_created_by(user, user_api_client):
     connection.check_constraints()  # issue replication - show constraint violation introduced
     user.delete()
     org.refresh_from_db()
-    assert org.created_by_id == user_id
+    assert org.created_by is None  # the SET_NULL behavior now implemented
     connection.check_constraints()
