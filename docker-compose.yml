@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: dab
       POSTGRES_PASSWORD: dabing
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready"]
+      test: ["CMD-SHELL", "pg_isready", "-U", "dab"]
       interval: 10s
       timeout: 5s
       retries: 5
