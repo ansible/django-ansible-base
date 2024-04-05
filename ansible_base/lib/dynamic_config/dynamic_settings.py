@@ -159,3 +159,8 @@ if 'ansible_base.rbac' in INSTALLED_APPS:
     ANSIBLE_BASE_BYPASS_ACTION_FLAGS = {}
 
     ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS = False
+
+
+if 'ansible_base.activitystream':
+    # We can't user rest_framework.permissions.IsAdminUser, because it checks for is_staff, not is_superuser
+    ANSIBLE_BASE_ACTIVITYSTREAM_VIEW_PERMISSION_CLASSES = ['ansible_base.lib.utils.views.permissions.IsSuperuser']

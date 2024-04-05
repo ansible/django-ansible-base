@@ -82,6 +82,25 @@ urlpatterns = [
 ]
 ```
 
+
+### Permissions
+
+The setting `ANSIBLE_BASE_ACTIVITYSTREAM_VIEW_PERMISSION_CLASSES` can be used to
+specify who can access the viewset exposed by the activity stream app.
+
+The values in this list should be **strings** that are **dotted references to
+classes** and those classes must be subclasses of
+`rest_framework.permissions.BasePermission`. Django REST Framework bundles some
+of these already in `rest_framework.permissions`. View the
+[API Reference](https://www.django-rest-framework.org/api-guide/permissions/#api-reference)
+for the full list. Additionally, django-ansible-base provides
+`ansible_base.lib.utils.views.permissions.IsSuperuser`, and **this is the single
+default entry** in the `ANSIBLE_BASE_ACTIVITYSTREAM_VIEW_PERMISSION_CLASSES`
+list.
+
+NOTE: This setting cannot be changed at runtime, since it is used to define the
+`permission_classes` class variable for the viewset.
+
 ## Dev Docs
 
 The way this works is by making use of Django signals. At a high level, when
