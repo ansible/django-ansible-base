@@ -109,6 +109,11 @@ def is_encrypted_field(model, field_name):
     if issubclass(model, AbstractUser) and field_name == 'password':
         return True
 
+    # This throws FieldDoesNotExist if the field does not exist, which is reasonable here, so we don't catch it
+    field = model._meta.get_field(field_name)
+    if getattr(field, '__prevent_search__', False):
+        return True
+
     return field_name in getattr(model, 'encrypted_fields', [])
 
 
