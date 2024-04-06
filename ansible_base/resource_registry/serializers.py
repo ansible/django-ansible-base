@@ -1,6 +1,7 @@
 import logging
-from typing import Optional
+from typing import Optional, Union
 
+from django.utils.functional import Promise
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from rest_framework.reverse import reverse_lazy
@@ -49,7 +50,7 @@ class ResourceSerializer(serializers.ModelSerializer):
             "url",
         ]
 
-    def get_url(self, obj) -> str:
+    def get_url(self, obj) -> Union[str, Promise]:
         return reverse_lazy('resource-detail', kwargs={"ansible_id": obj.ansible_id})
 
     def get_has_serializer(self, obj) -> bool:
@@ -106,7 +107,7 @@ class ResourceTypeSerializer(serializers.ModelSerializer):
         else:
             return None
 
-    def get_url(self, obj) -> str:
+    def get_url(self, obj) -> Union[str, Promise]:
         return reverse_lazy('resourcetype-detail', kwargs={"name": obj.name})
 
 
