@@ -17,4 +17,4 @@ for app in getattr(settings, 'INSTALLED_APPS', []):
             for url_type in ['api_version_urls', 'root_urls', 'api_urls']:
                 globals()[url_type].extend(getattr(url_module, url_type, []))
         except ImportError:
-            logger.debug(f'Module {app} does not specify urls.py')
+            logger.exception(f'Module {app} does not specify urls.py')
