@@ -2,6 +2,7 @@ import logging
 import threading
 from contextlib import contextmanager
 
+from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.lib.utils.models import current_user_or_system_user, diff
 
 logger = logging.getLogger('ansible_base.activitystream.signals')
@@ -32,16 +33,16 @@ def _store_activitystream_entry(old, new, operation):
     if not activitystream_enabled:
         return
 
-    from ansible_base.activitystream.models import Entry
+    from ansible_base.activitystream.models import Entry, FieldChange
 
     if operation not in ('create', 'update', 'delete'):
         raise ValueError("Invalid operation: {}".format(operation))
 
     excluded = getattr(new, 'activity_stream_excluded_field_names', [])
     limit = getattr(new, 'activity_stream_limit_field_names', [])
-    delta = diff(old, new, exclude_fields=excluded, limit_fields=limit)
+    model_diff = diff(old, new, exclude_fields=excluded, limit_fields=limit)
 
-    if not delta:
+    if not model_diff:
         # No changes to store
         return
 
@@ -52,11 +53,51 @@ def _store_activitystream_entry(old, new, operation):
     else:
         content_object = new
 
-    return Entry.objects.create(
+    # TODO: Force this to be a single transaction with the FieldChange objects
+    entry = Entry.objects.create(
         content_object=content_object,
         operation=operation,
-        changes=delta.dict(),
     )
+
+    changes = []
+    for k, v in model_diff.added_fields.items():
+        field = content_object._meta.get_field(k)
+        new_value = ENCRYPTED_STRING if v == ENCRYPTED_STRING else field.value_to_string(new)
+        fc = FieldChange(
+            entry=entry,
+            field_name=k,
+            old_value=None,
+            new_value=new_value,
+            operation='added',
+        )
+        changes.append(fc)
+
+    for k, v in model_diff.removed_fields.items():
+        field = content_object._meta.get_field(k)
+        old_value = ENCRYPTED_STRING if v == ENCRYPTED_STRING else field.value_to_string(old)
+        fc = FieldChange(
+            entry=entry,
+            field_name=k,
+            old_value=old_value,
+            new_value=None,
+            operation='removed',
+        )
+        changes.append(fc)
+
+    for k, v in model_diff.changed_fields.items():
+        field = content_object._meta.get_field(k)
+        old_value = ENCRYPTED_STRING if v[0] == ENCRYPTED_STRING else field.value_to_string(old)
+        new_value = ENCRYPTED_STRING if v[1] == ENCRYPTED_STRING else field.value_to_string(new)
+        fc = FieldChange(
+            entry=entry,
+            field_name=k,
+            old_value=old_value,
+            new_value=new_value,
+            operation='changed',
+        )
+        changes.append(fc)
+
+    FieldChange.objects.bulk_create(changes)
 
 
 def _store_activitystream_m2m(given_instance, model, operation, pk_set, reverse, field_name):

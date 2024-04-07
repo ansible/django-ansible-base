@@ -18,7 +18,11 @@ def test_activitystream_api_read(admin_api_client, user):
     assert response.status_code == 200
     assert response.data["count"] == count + 1
     assert response.data["results"][-1]["operation"] == "update"
-    assert response.data["results"][-1]["changes"]["changed_fields"]["first_name"] == [original_name, user.first_name]
+    changes = response.data["results"][-1]["changes"]
+    for change in changes:
+        if change["field_name"] == "first_name":
+            assert change["old_value"] == original_name
+            assert change["new_value"] == user.first_name
 
 
 def test_activitystream_api_read_only(admin_api_client, user):

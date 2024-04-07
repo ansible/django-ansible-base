@@ -3,7 +3,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from ansible_base.lib.abstract_models import ImmutableCommonModel
+from ansible_base.lib.abstract_models import AbstractCommonModel, ImmutableCommonModel, ImmutableModel
 
 
 class Entry(ImmutableCommonModel):
@@ -31,7 +31,6 @@ class Entry(ImmutableCommonModel):
     object_id = models.TextField(null=True, blank=True)
     content_object = GenericForeignKey('content_type', 'object_id')
     operation = models.CharField(max_length=12, choices=OPERATION_CHOICES)
-    changes = models.JSONField(null=True, blank=True)
 
     # This is used for m2m (dis)associations
     related_content_type = models.ForeignKey(ContentType, on_delete=models.DO_NOTHING, null=True, blank=True, related_name='related_content_type')
@@ -41,6 +40,56 @@ class Entry(ImmutableCommonModel):
 
     def __str__(self):
         return f'[{self.created}] {self.get_operation_display()} by {self.created_by}: {self.content_type} {self.object_id}'
+
+
+class FieldChange(ImmutableModel, AbstractCommonModel):
+    """
+    Represents a singular change to a field in some model instance.
+    """
+
+    allow_anonymous_user_save = True
+
+    class Meta:
+        verbose_name_plural = _('Field changes')
+
+    OPERATION_CHOICES = [
+        ('added', _('Field added')),
+        ('changed', _('Field changed')),
+        ('removed', _('Field removed')),
+    ]
+
+    entry = models.ForeignKey(Entry, on_delete=models.CASCADE, related_name='changes')
+    field_name = models.CharField(max_length=255)
+    old_value = models.TextField(null=True, blank=True)
+    new_value = models.TextField(null=True, blank=True)
+    operation = models.CharField(max_length=7, choices=OPERATION_CHOICES)
+
+    def __str__(self):
+        return f'{self.entry.content_type}.{self.field_name}: {self.old_value} -> {self.new_value}'
+
+    @property
+    def new_value_as_python(self):
+        """
+        Return the new value as a Python object, relative to the field type.
+        """
+        if not self.new_value:
+            return self.new_value
+
+        model = self.entry.content_type.model_class()
+        field = model._meta.get_field(self.field_name)
+        return field.to_python(self.new_value)
+
+    @property
+    def old_value_as_python(self):
+        """
+        Return the old value as a Python object, relative to the field type.
+        """
+        if not self.old_value:
+            return self.old_value
+
+        model = self.entry.content_type.model_class()
+        field = model._meta.get_field(self.field_name)
+        return field.to_python(self.old_value)
 
 
 class AuditableModel(models.Model):

@@ -19,12 +19,10 @@ def test_activitystream_create(system_user, animal):
     assert entry == Entry.objects.last()
     assert entry.created_by == system_user
     assert entry.operation == 'create'
-    assert 'added_fields' in entry.changes
-    assert entry.changes['changed_fields'] == {}
-    assert entry.changes['removed_fields'] == {}
-    assert entry.changes['added_fields']['name'] == animal.name
-    assert entry.changes['added_fields']['owner'] == animal.owner.username
-    assert entry.changes['added_fields']['owner_id'] == animal.owner.id
+    assert entry.changes.filter(operation='removed').count() == 0
+    assert entry.changes.filter(operation='changed').count() == 0
+    assert entry.changes.get(operation='added', field_name='name').new_value == animal.name
+    assert entry.changes.get(operation='added', field_name='owner').new_value == str(animal.owner.pk)
 
 
 def test_activitystream_update(system_user, animal):
@@ -40,12 +38,13 @@ def test_activitystream_update(system_user, animal):
     entry = entries.last()
     assert entry.created_by == system_user
     assert entry.operation == 'update'
-    assert entry.changes['added_fields'] == {}
-    assert entry.changes['removed_fields'] == {}
+    assert entry.changes.filter(operation='added').count() == 0
+    assert entry.changes.filter(operation='removed').count() == 0
     # just name was changed. modified/modified_by doesn't show up because they
     # are set in save, and we're using pre_save, so we won't see the new values yet.
-    assert len(entry.changes['changed_fields']) == 1
-    assert entry.changes['changed_fields']['name'] == [original_name, 'Rocky']
+    assert entry.changes.filter(operation='changed').count() == 1
+    assert entry.changes.get(field_name='name').new_value == 'Rocky'
+    assert entry.changes.get(field_name='name').old_value == original_name
 
 
 def test_activitystream_m2m(system_user, animal, user, random_user):
@@ -208,12 +207,10 @@ def test_activitystream_delete(system_user, animal):
     entry = entries.last()
     assert entry.created_by == system_user
     assert entry.operation == 'delete'
-    assert entry.changes['added_fields'] == {}
-    assert entry.changes['changed_fields'] == {}
-    assert 'name' in entry.changes['removed_fields']
-    assert entry.changes['removed_fields']['name'] == animal.name
-    assert 'owner' in entry.changes['removed_fields']
-    assert entry.changes['removed_fields']['owner'] == animal.owner.username
+    assert entry.changes.filter(operation='added').count() == 0
+    assert entry.changes.filter(operation='changed').count() == 0
+    assert entry.changes.get(operation='removed', field_name='name').old_value == animal.name
+    assert entry.changes.get(operation='removed', field_name='owner').old_value == str(animal.owner.pk)
 
 
 def test_activitystream__store_activitystream_entry_invalid_operation():
@@ -242,19 +239,21 @@ def test_activitystream_excluded_fields():
     city = City.objects.create(name='New York', country='USA')
     entry = city.activity_stream_entries.last()
     assert entry.operation == 'create'  # sanity check
-    assert 'country' in entry.changes['added_fields']
-    assert len(entry.changes['added_fields']) == 1
-    assert entry.changes['changed_fields'] == {}
-    assert entry.changes['removed_fields'] == {}
+    qs = entry.changes.filter(operation='added')
+    assert qs.count() == 1
+    assert qs[0].field_name == 'country'
+    assert entry.changes.filter(operation='changed').count() == 0
+    assert entry.changes.filter(operation='removed').count() == 0
 
     city.country = 'Canada'
     city.save()
     entry = city.activity_stream_entries.last()
     assert entry.operation == 'update'  # sanity check
-    assert 'country' in entry.changes['changed_fields']
-    assert len(entry.changes['changed_fields']) == 1
-    assert entry.changes['added_fields'] == {}
-    assert entry.changes['removed_fields'] == {}
+    qs = entry.changes.filter(operation='changed')
+    assert qs.count() == 1
+    assert qs[0].field_name == 'country'
+    assert entry.changes.filter(operation='added').count() == 0
+    assert entry.changes.filter(operation='removed').count() == 0
 
 
 @pytest.mark.django_db
@@ -308,21 +307,23 @@ def test_activitystream_nested_context_manager():
 def test_activitystream_encrypted_fields_are_sanitized():
     color = SecretColor.objects.create(color='red')
     entries = color.activity_stream_entries
-    assert entries.last().changes['added_fields']['color'] == ENCRYPTED_STRING
+    assert entries.last().changes.get(operation='added', field_name='color').new_value == ENCRYPTED_STRING
 
     color.color = 'orange'
     color.save()
-    assert entries.last().changes['changed_fields']['color'] == [ENCRYPTED_STRING, ENCRYPTED_STRING]
+    assert entries.last().changes.get(operation='changed', field_name='color').old_value == ENCRYPTED_STRING
+    assert entries.last().changes.get(operation='changed', field_name='color').new_value == ENCRYPTED_STRING
 
     color.delete()
-    assert entries.last().changes['removed_fields']['color'] == ENCRYPTED_STRING
+    assert entries.last().changes.get(operation='removed', field_name='color').old_value == ENCRYPTED_STRING
 
 
 @pytest.mark.django_db
 def test_activitystream_user_password_sanitized(user):
     entries = user.activity_stream_entries
-    assert entries.last().changes['added_fields']['password'] == ENCRYPTED_STRING
+    assert entries.last().changes.get(operation='added', field_name='password').new_value == ENCRYPTED_STRING
 
     user.set_password('new_password')
     user.save()
-    assert entries.last().changes['changed_fields']['password'] == [ENCRYPTED_STRING, ENCRYPTED_STRING]
+    assert entries.last().changes.get(operation='changed', field_name='password').old_value == ENCRYPTED_STRING
+    assert entries.last().changes.get(operation='changed', field_name='password').new_value == ENCRYPTED_STRING

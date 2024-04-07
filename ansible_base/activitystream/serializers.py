@@ -1,7 +1,28 @@
 from rest_framework import serializers
 
-from ansible_base.activitystream.models import Entry
-from ansible_base.lib.serializers.common import ImmutableCommonModelSerializer
+from ansible_base.activitystream.models import Entry, FieldChange
+from ansible_base.lib.serializers.common import AbstractCommonModelSerializer, ImmutableCommonModelSerializer
+
+
+class FieldChangeSerializer(AbstractCommonModelSerializer):
+    class Meta:
+        model = FieldChange
+        fields = AbstractCommonModelSerializer.Meta.fields + [
+            'entry',
+            'field_name',
+            'old_value',
+            'new_value',
+            'operation',
+        ]
+
+    old_value = serializers.SerializerMethodField()
+    new_value = serializers.SerializerMethodField()
+
+    def get_old_value(self, obj):
+        return obj.old_value_as_python
+
+    def get_new_value(self, obj):
+        return obj.new_value_as_python
 
 
 class EntrySerializer(ImmutableCommonModelSerializer):
@@ -20,6 +41,7 @@ class EntrySerializer(ImmutableCommonModelSerializer):
 
     content_type_model = serializers.SerializerMethodField()
     related_content_type_model = serializers.SerializerMethodField()
+    changes = FieldChangeSerializer(many=True, read_only=True)
 
     def get_content_type_model(self, obj):
         if obj.content_type:
