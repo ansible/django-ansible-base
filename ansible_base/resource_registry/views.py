@@ -10,7 +10,6 @@ from rest_framework.reverse import reverse
 from rest_framework.viewsets import GenericViewSet, mixins
 
 from ansible_base.lib.utils.response import CSVStreamResponse
-from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.resource_registry.models import Resource, ResourceType, service_id
 from ansible_base.resource_registry.models.resource import resource_type_cache
@@ -154,7 +153,7 @@ class ServiceMetadataView(
         return Response({"service_id": service_id(), "service_type": registry.api_config.service_type})
 
 
-class ServiceIndexRootView(AnsibleBaseView):
+class ServiceIndexRootView(AnsibleBaseDjangoAppApiView):
     permission_classes = [
         permissions.IsAuthenticated,
     ]
