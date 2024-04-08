@@ -135,10 +135,7 @@ def expected_log(no_log_messages):
             with no_log_messages():
                 yield
 
-            call_count = 0
-            for call in logger.call_args_list:
-                if substr in call.args[0]:
-                    call_count = call_count + 1
+            call_count = sum(1 for call in logger.call_args_list if substr in call.args[0])
 
             if assert_not_called:
                 assert call_count == 0, f"Expected 0 calls but got {call_count}"

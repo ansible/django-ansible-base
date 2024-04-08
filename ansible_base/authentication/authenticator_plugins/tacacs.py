@@ -1,6 +1,5 @@
 import logging
 
-from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
@@ -8,8 +7,9 @@ from tacacs_plus.client import TACACSClient
 from tacacs_plus.flags import TAC_PLUS_AUTHEN_TYPES, TAC_PLUS_VIRTUAL_REM_ADDR
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
-from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.authentication.social_auth import SocialAuthMixin
+from ansible_base.authentication.utils.authentication import determine_username_from_uid, get_or_create_authenticator_user
+from ansible_base.authentication.utils.claims import update_user_claims
 from ansible_base.lib.serializers.fields import BooleanField, CharField, ChoiceField, IntegerField
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.tacacs')
@@ -93,6 +93,10 @@ class AuthenticatorPlugin(SocialAuthMixin, AbstractAuthenticatorPlugin, ModelBac
             logger.error("AuthenticatorPlugin was missing an authenticator")
             return None
 
+        if not self.database_instance.enabled:
+            logger.info(f"TACACS authenticator {self.database_instance.name} is disabled, skipping")
+            return None
+
         try:
             tacacs_client = TACACSClient(
                 self.database_instance.configuration["HOST"],
@@ -113,14 +117,15 @@ class AuthenticatorPlugin(SocialAuthMixin, AbstractAuthenticatorPlugin, ModelBac
             )
 
             if reply.valid:
-                # At this point tacacs+ has validated our username and password, so we need to create the user and AuthenticatorUser object
-                User = get_user_model()
-                user, created = User.objects.get_or_create(username=username)
-                if created:
-                    logger.info(f"TACAC+ created user {user.username}")
-                AuthenticatorUser.objects.get_or_create(uid=username, user=user, provider=self.database_instance)
+                new_username = determine_username_from_uid(username, self.database_instance)
+                user, _authenticator_user, _created = get_or_create_authenticator_user(
+                    new_username,
+                    self.database_instance,
+                    user_details={},
+                    extra_data={'username': username},
+                )
 
-                return user
+                return update_user_claims(user, self.database_instance, [])
         except Exception as e:
             logger.exception("TACACS+ Authentication Error: %s" % str(e))
 

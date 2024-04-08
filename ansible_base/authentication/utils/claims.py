@@ -3,20 +3,18 @@ import re
 from typing import Optional
 
 from django.conf import settings
-from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AbstractUser
 from django.utils.timezone import now
 from rest_framework.serializers import DateTimeField
-from social_core.pipeline.user import get_username
 
-from ansible_base.authentication.models import Authenticator, AuthenticatorMap, AuthenticatorUser
-from ansible_base.authentication.social_auth import AuthenticatorStorage, AuthenticatorStrategy
+from ansible_base.authentication.models import Authenticator, AuthenticatorMap
 
 from .trigger_definition import TRIGGER_DEFINITION
 
 logger = logging.getLogger('ansible_base.authentication.utils.claims')
 
 
-def create_claims(authenticator: Authenticator, username: str, attrs: dict, groups: list) -> (bool, bool, dict, list):
+def create_claims(authenticator: Authenticator, username: str, attrs: dict, groups: list[str]) -> dict:
     '''
     Given an authenticator and a username, attrs and groups determine what the user has access to
     '''
@@ -213,58 +211,22 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, authentic
     return has_access
 
 
-def get_local_username(user_details, authenticator):
+def update_user_claims(user: Optional[AbstractUser], database_authenticator: Authenticator, groups: list[str]) -> Optional[AbstractUser]:
     """
-    Converts the username provided by the backend to one that doesn't conflict with users
-    from other auth backends.
+    This method takes a user, an authenticator and a list of the users associated groups.
+    It will lookup the AuthenticatorUser (it must exist already) and update that User and their permissions in the system.
     """
-
-    class FakeBackend:
-        def setting(self, *args, **kwargs):
-            return ["username", "email"]
-
-    username = get_username(strategy=AuthenticatorStrategy(AuthenticatorStorage()), details=user_details, backend=FakeBackend())
-
-    if username:
-        return username["username"]
-    else:
-        return user_details["username"]
-
-
-def get_or_create_authenticator_user(user_id, user_details, authenticator, extra_data):
-    """
-    Create the user object in the database along with it's associated AuthenticatorUser class.
-    """
-
-    extra = {**extra_data, "auth_time": DateTimeField().to_representation(now())}
-
-    try:
-        auth_user = AuthenticatorUser.objects.get(uid=user_id, provider=authenticator)
-        auth_user.extra_data = extra
-        auth_user.save()
-        return (auth_user, False)
-    except AuthenticatorUser.DoesNotExist:
-        username = get_local_username(user_details, authenticator)
-
-        # ensure the authenticator isn't trying to pass along a cheeky is_superuser in user_details
-        allowed_keys = ["first_name", "last_name", "email"]
-        details = {k: user_details.get(k, "") for k in allowed_keys if k}
-
-        local_user, created = get_user_model().objects.get_or_create(username=username, defaults=details)
-
-        return (AuthenticatorUser.objects.create(user=local_user, uid=user_id, extra_data=extra, provider=authenticator), True)
-
-
-def update_user_claims(user, database_authenticator, groups):
     if not user:
         return None
 
-    needs_save = False
-    authenticator_user, _ = AuthenticatorUser.objects.get_or_create(provider=database_authenticator, user=user)
-    results = create_claims(database_authenticator, user.username, authenticator_user.extra_data, groups)
+    authenticator_user = user.authenticator_users.filter(provider=database_authenticator).first()
     # update the auth_time field to align with the general format used for other authenticators
     authenticator_user.extra_data = {**authenticator_user.extra_data, "auth_time": DateTimeField().to_representation(now())}
     authenticator_user.save(update_fields=["extra_data"])
+
+    results = create_claims(database_authenticator, user.username, authenticator_user.extra_data, groups)
+
+    needs_save = False
 
     for attribute, attr_value in results.items():
         if attr_value is None:
@@ -286,6 +248,9 @@ def update_user_claims(user, database_authenticator, groups):
     if needs_save:
         authenticator_user.save()
         user.save()
+    else:
+        # If we don't have to save because of a change we at least need to save the extra data with the login timestamp
+        authenticator_user.save(update_fields=["extra_data"])
 
     if results['access_allowed'] is not True:
         logger.warning(f"User {user.username} failed an allow map and was denied access")
