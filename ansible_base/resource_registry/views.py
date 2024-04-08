@@ -143,8 +143,6 @@ class ResourceTypeViewSet(
 class ServiceMetadataView(
     AnsibleBaseDjangoAppApiView,
 ):
-    action = "service-metadata"
-
     permission_classes = [
         HasResourceRegistryPermissions,
     ]
@@ -173,8 +171,6 @@ class ValidateLocalUserView(AnsibleBaseDjangoAppApiView):
     """
     Validate a user's username and password.
     """
-
-    action = "validate-local-user"
     permission_classes = [
         HasResourceRegistryPermissions,
     ]
