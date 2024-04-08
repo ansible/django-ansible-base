@@ -11,7 +11,6 @@ from ansible_base.authentication.authenticator_plugins.base import AbstractAuthe
 from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.authentication.social_auth import SocialAuthMixin
 from ansible_base.lib.serializers.fields import BooleanField, CharField, ChoiceField, IntegerField
-from ansible_base.lib.utils.translations import translatableConditionally as _
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.tacacs')
 

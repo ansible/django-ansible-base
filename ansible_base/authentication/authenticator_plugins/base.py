@@ -8,7 +8,6 @@ from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.serializers.fields import JSONField
-from ansible_base.lib.utils.translations import translatable_conditionally as _
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.base')
 
