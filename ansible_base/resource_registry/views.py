@@ -171,6 +171,7 @@ class ValidateLocalUserView(AnsibleBaseDjangoAppApiView):
     """
     Validate a user's username and password.
     """
+
     permission_classes = [
         HasResourceRegistryPermissions,
     ]
