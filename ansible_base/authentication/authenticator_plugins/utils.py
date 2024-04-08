@@ -49,7 +49,7 @@ def get_authenticator_urls(authenticator_type: str) -> list:
         return getattr(urls_module, 'urls', [])
     except Exception as e:
         logger.error(f"Failed to load urls from {authenticator_type} {e}")
-    return None
+    return []
 
 
 def generate_authenticator_slug(type: str, name: str) -> str:
