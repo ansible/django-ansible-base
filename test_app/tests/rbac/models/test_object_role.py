@@ -2,7 +2,6 @@ from unittest import mock
 
 import pytest
 
-from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import ObjectRole
 from test_app.models import User
 
