@@ -5,7 +5,7 @@ from functools import reduce
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.core.exceptions import FieldDoesNotExist, FieldError, ValidationError
 from django.db import models
-from django.db.models import BooleanField, CharField, IntegerField, JSONField, Q, TextField
+from django.db.models import BooleanField, CharField, IntegerField, Q, TextField
 from django.db.models.fields.related import ForeignKey, ForeignObjectRel, ManyToManyField
 from django.db.models.functions import Cast
 from django.utils.encoding import force_str
@@ -132,10 +132,10 @@ class FieldLookupBackend(BaseFilterBackend):
                 if rm_field.name in ('username', 'first_name', 'last_name', 'email', 'name', 'description', 'playbook'):
                     new_lookups.append('{}__{}__icontains'.format(new_lookup[:-8], rm_field.name))
             return value, new_lookups, needs_distinct
-        else:
-            if isinstance(field, JSONField):
-                new_lookup = new_lookup.replace(field.name, f'{field.name}_as_txt')
-            value = self.value_to_python_for_field(field, value)
+        # else:
+        #    if isinstance(field, JSONField):
+        #        new_lookup = new_lookup.replace(field.name, f'{field.name}_as_txt')
+        #    value = self.value_to_python_for_field(field, value)
         return value, new_lookup, needs_distinct
 
     def filter_queryset(self, request, queryset, view):

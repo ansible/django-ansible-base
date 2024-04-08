@@ -10,6 +10,9 @@ def test_activitystream_api_read(admin_api_client, user):
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert response.data["count"] > 0
+    assert response.data["results"][-1]["operation"] == "create"
+    # Ensure that even though we're storing a string here, the serializer is converting it back to the correct type.
+    assert response.data["results"][-1]["changes"]["added_fields"]["id"] == int(user.id)
     count = response.data["count"]
     original_name = user.first_name
     user.first_name = "Firstname"
