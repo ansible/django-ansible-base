@@ -72,7 +72,7 @@ def determine_username_from_uid(uid: str = None, authenticator: Authenticator = 
 
 
 def get_or_create_authenticator_user(
-    username: str, authenticator: Authenticator, user_details: dict, extra_data: dict
+    username: str, authenticator: Authenticator, user_details: dict = dict, extra_data: dict = dict
 ) -> Tuple[Optional[AbstractUser], Optional[AuthenticatorUser], Optional[bool]]:
     """
     Create the user object in the database along with it's associated AuthenticatorUser class.
