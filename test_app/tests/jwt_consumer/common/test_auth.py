@@ -1,6 +1,7 @@
 import logging
 import re
 from datetime import datetime, timedelta
+from functools import partial
 from unittest import mock
 from urllib.parse import urlparse
 
@@ -10,6 +11,7 @@ from django.test.utils import override_settings
 from rest_framework.exceptions import AuthenticationFailed
 
 from ansible_base.jwt_consumer.common.auth import JWTAuthentication, JWTCommonAuth, default_mapped_user_fields
+from ansible_base.lib.utils.translations import translatableConditionally as _
 
 
 class TestJWTCommonAuth:
@@ -49,11 +51,26 @@ class TestJWTCommonAuth:
             assert validated_body is None
             assert 'Failed to get the setting ANSIBLE_BASE_JWT_KEY' in caplog.text
 
-    def test_log_exception(self):
+    def test_log_exception_no_expansion(self, expected_log):
         common_auth = JWTCommonAuth()
         message = "This is a test"
-        with pytest.raises(AuthenticationFailed, match=message):
-            common_auth.log_and_raise(message)
+        translated_message = 'Translated text'
+        expected_log = partial(expected_log, "ansible_base.jwt_consumer.common.auth.logger")
+        with mock.patch('ansible_base.lib.utils.translations.translatableConditionally.translated', return_value=translated_message):
+            with expected_log("error", message):
+                with pytest.raises(AuthenticationFailed, match=translated_message):
+                    common_auth.log_and_raise(_(message))
+
+    def test_log_exception_with_expansion(self, expected_log):
+        common_auth = JWTCommonAuth()
+        message = "Please make sure this is %(expanded)s"
+        translated_message = 'Translated with %(expanded)s text'
+        expansion_values = {'expanded': 'whatever'}
+        expected_log = partial(expected_log, "ansible_base.jwt_consumer.common.auth.logger")
+        with mock.patch('ansible_base.lib.utils.translations.translatableConditionally.translated', return_value=translated_message):
+            with expected_log("error", message % expansion_values):
+                with pytest.raises(AuthenticationFailed, match=translated_message % expansion_values):
+                    common_auth.log_and_raise(_(message), expansion_values)
 
     def test_get_decryption_key_absolute_junk(self):
         common_auth = JWTCommonAuth()
