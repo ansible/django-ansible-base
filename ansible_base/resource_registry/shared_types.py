@@ -23,10 +23,22 @@ class UserAdditionalDataSerializer(serializers.Serializer):
     external_auth_uid = serializers.CharField(required=False, allow_blank=True)
 
     organizations = AnsibleResourceManyRelated("shared.organization")
-    organizations_administered = AnsibleResourceManyRelated("shared.organization")
+    organizations_administered = serializers.SerializerMethodField()
 
     teams = AnsibleResourceManyRelated("shared.team")
-    teams_administered = AnsibleResourceManyRelated("shared.team")
+    teams_administered = serializers.SerializerMethodField()
+
+    def get_organizations_administered(self, obj):
+        if not hasattr(obj, "organizations_administered"):
+            return []
+        ansible_resources_serializer = AnsibleResourceManyRelated("shared.organization")
+        return ansible_resources_serializer.to_representation(obj.organizations_administered)
+
+    def get_teams_administered(self, obj):
+        if not hasattr(obj, "teams_administered"):
+            return []
+        ansible_resources_serializer = AnsibleResourceManyRelated("shared.team")
+        return ansible_resources_serializer.to_representation(obj.organizations_administered)
 
 
 class UserType(SharedResourceTypeSerializer):
