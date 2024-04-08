@@ -29,7 +29,7 @@ class EntrySerializer(ImmutableCommonModelSerializer):
         if obj.related_content_type:
             return obj.related_content_type.model
 
-    def _get_summary_fields(self, obj):
+    def _get_summary_fields(self, obj) -> dict[str, dict]:
         summary_fields = super()._get_summary_fields(obj)
 
         content_obj = obj.content_object

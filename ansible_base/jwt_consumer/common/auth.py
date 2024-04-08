@@ -8,6 +8,7 @@ from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
 from ansible_base.lib.utils.settings import get_setting
+from ansible_base.lib.utils.translations import translatableConditionally as _
 
 logger = logging.getLogger("ansible_base.jwt_consumer.common.auth")
 
@@ -63,9 +64,9 @@ class JWTCommonAuth:
 
         return user, validated_body
 
-    def log_and_raise(self, details):
-        logger.error(details)
-        raise AuthenticationFailed(details)
+    def log_and_raise(self, conditional_translate_object, expand_values={}):
+        logger.error(conditional_translate_object.not_translated() % expand_values)
+        raise AuthenticationFailed(conditional_translate_object.translated() % expand_values)
 
     def get_decryption_key_from_url(self, url, timeout, validate_certs):
         # If the URL does not end with / the urljoin will wipe out the existing path
@@ -82,14 +83,14 @@ class JWTCommonAuth:
                 timeout=timeout,
             )
             if response.status_code != 200:
-                self.log_and_raise(f"Failed to get 200 response from the issuer: {response.status_code}")
+                self.log_and_raise(_("Failed to get 200 response from the issuer: %(status_code)s"), {"status_code": response.status_code})
             return response.text
         except requests.exceptions.ConnectionError as e:
-            self.log_and_raise(f"Failed to connect to {jwt_key_url}: {e}")
+            self.log_and_raise(_("Failed to connect to %(jwt_key_url)s: %(e)s"), {"jwt_key_url": jwt_key_url, "e": e})
         except requests.exceptions.Timeout:
-            self.log_and_raise(f"Timed out after {timeout} secs when connecting to {jwt_key_url}")
+            self.log_and_raise(_("Timed out after %(timeout)s secs when connecting to %(jwt_key_url)s"), {"timeout": timeout, "jwt_key_url": jwt_key_url})
         except requests.exceptions.RequestException as e:
-            self.log_and_raise(f"Failed to get JWT decryption key from JWT server: ({e.__class__.__name__}) {e}")
+            self.log_and_raise(_("Failed to get JWT decryption key from JWT server: (%(e_class_name)s) %(e)s"), {"e_class_name": e.__class__.__name__, "e": e})
 
     def get_decryption_key_from_file(self, file_path):
         logger.debug(f"Loading decryption key from file {file_path}")
@@ -99,13 +100,13 @@ class JWTCommonAuth:
                 cert = f.read()
             return cert
         except FileNotFoundError:
-            self.log_and_raise(f"The specified file {file_path} does not exist")
+            self.log_and_raise(_("The specified file %(file_path)s does not exist"), {"file_path": file_path})
         except IsADirectoryError:
-            self.log_and_raise(f"The specified file {file_path} is not a file")
+            self.log_and_raise(_("The specified file %(file_path)s is not a file"), {"file_path": file_path})
         except PermissionError:
-            self.log_and_raise(f"Permission error when reading {file_path}")
+            self.log_and_raise(_("Permission error when reading %(file_path)s"), {"file_path": file_path})
         except Exception as e:
-            self.log_and_raise(f"Failed reading {file_path}: {e}")
+            self.log_and_raise(_("Failed reading %(file_path)s: %(e)s"), {"file_path": file_path, "e": e})
 
     def get_decryption_key(self, url_or_string, **kwargs):
         timeout = kwargs.get('timeout', 30)
@@ -123,10 +124,10 @@ class JWTCommonAuth:
             key = url_or_string
 
         if key is None:
-            self.log_and_raise(f"Unable to determine how to handle {url_or_string} to get key")
+            self.log_and_raise(_("Unable to determine how to handle %(url_or_string)s to get key"), {"url_or_string": url_or_string})
         elif not key.startswith('-----BEGIN PUBLIC KEY-----') and not key.endswith('-----END PUBLIC KEY-----'):
             logger.debug(key)
-            self.log_and_raise("Returned key does not start and end with BEGIN/END PUBLIC KEY")
+            self.log_and_raise(_("Returned key does not start and end with BEGIN/END PUBLIC KEY"))
         logger.info("Decryption key appears valid")
         logger.debug(f"{key}")
         return key
@@ -166,17 +167,17 @@ class JWTCommonAuth:
                 algorithms=["RS256"],
             )
         except jwt.exceptions.DecodeError as e:
-            self.log_and_raise(f"JWT decoding failed: {e}, check your key and generated token")
+            self.log_and_raise(_("JWT decoding failed: %(e)s, check your key and generated token"), {"e": e})
         except jwt.exceptions.ExpiredSignatureError:
-            self.log_and_raise("JWT has expired")
+            self.log_and_raise(_("JWT has expired"))
         except jwt.exceptions.InvalidAudienceError:
-            self.log_and_raise("JWT did not come for the correct audience")
+            self.log_and_raise(_("JWT did not come for the correct audience"))
         except jwt.exceptions.InvalidIssuerError:
-            self.log_and_raise("JWT did not come from the correct issuer")
+            self.log_and_raise(_("JWT did not come from the correct issuer"))
         except jwt.exceptions.MissingRequiredClaimError as e:
-            self.log_and_raise(f"Failed to decrypt JWT: {e}")
+            self.log_and_raise(_("Failed to decrypt JWT: %(e)s"), {"e": e})
         except Exception as e:
-            self.log_and_raise(f"Unknown error occurred decrypting JWT ({e.__class__}) {e}")
+            self.log_and_raise(_("Unknown error occurred decrypting JWT (%(e_class)s) %(e)s"), {"e_class": e.__class__, "e": e})
 
         logger.debug(validated_body)
 

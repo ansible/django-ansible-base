@@ -81,7 +81,7 @@ class ContentTypeField(ChoiceLikeMixin):
         kwargs['help_text'] = _('The type of resource this applies to')
         super().__init__(**kwargs)
 
-    def get_resource_type_name(self, cls):
+    def get_resource_type_name(self, cls) -> str:
         if registry := self.get_resource_registry():
             # duplicates logic in ansible_base/resource_registry/apps.py
             try:
@@ -257,7 +257,7 @@ class BaseAssignmentSerializer(CommonModelSerializer):
 
         return assignment
 
-    def _get_related(self, obj):
+    def _get_related(self, obj) -> dict[str, str]:
         related = super()._get_related(obj)
         content_obj = obj.content_object
         if content_obj:
@@ -265,7 +265,7 @@ class BaseAssignmentSerializer(CommonModelSerializer):
                 related['content_object'] = related_url
         return related
 
-    def _get_summary_fields(self, obj):
+    def _get_summary_fields(self, obj) -> dict[str, dict]:
         summary_fields = super()._get_summary_fields(obj)
         content_obj = obj.content_object
         if content_obj and hasattr(content_obj, 'summary_fields'):
