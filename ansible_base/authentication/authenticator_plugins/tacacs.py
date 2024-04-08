@@ -11,6 +11,7 @@ from ansible_base.authentication.authenticator_plugins.base import AbstractAuthe
 from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.authentication.social_auth import SocialAuthMixin
 from ansible_base.lib.serializers.fields import BooleanField, CharField, ChoiceField, IntegerField
+from ansible_base.lib.utils.translations import translatableConditionally as _
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.tacacs')
 
@@ -117,7 +118,7 @@ class AuthenticatorPlugin(SocialAuthMixin, AbstractAuthenticatorPlugin, ModelBac
                 User = get_user_model()
                 user, created = User.objects.get_or_create(username=username)
                 if created:
-                    logger.info(f"TACAC+ created user {user.username}")
+                    self.log_and_raise(_("TACAC+ created user %(user.username)"), {"user.username": user.username})
                 AuthenticatorUser.objects.get_or_create(uid=username, user=user, provider=self.database_instance)
 
                 return user
