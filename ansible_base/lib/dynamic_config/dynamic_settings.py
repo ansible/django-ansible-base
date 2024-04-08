@@ -106,7 +106,7 @@ if 'ansible_base.authentication' in INSTALLED_APPS:
         'social_core.pipeline.social_auth.social_uid',
         'social_core.pipeline.social_auth.auth_allowed',
         'social_core.pipeline.social_auth.social_user',
-        'social_core.pipeline.user.get_username',
+        'ansible_base.authentication.utils.authentication.determine_username_from_uid_social',
         'social_core.pipeline.user.create_user',
         'social_core.pipeline.social_auth.associate_user',
         'social_core.pipeline.social_auth.load_extra_data',

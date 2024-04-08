@@ -5,7 +5,8 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
-from ansible_base.authentication.utils.claims import get_or_create_authenticator_user
+from ansible_base.authentication.utils.authentication import determine_username_from_uid, get_or_create_authenticator_user
+from ansible_base.authentication.utils.claims import update_user_claims
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.local')
 
@@ -33,26 +34,40 @@ class AuthenticatorPlugin(ModelBackend, AbstractAuthenticatorPlugin):
     def authenticate(self, request, username=None, password=None, **kwargs):
         if not username or not password:
             return None
+
+        if not self.database_instance:
+            return None
+
+        if not self.database_instance.enabled:
+            logger.info(f"Local authenticator {self.database_instance.name} is disabled, skipping")
+            return None
+
+        # Determine the user name for this authenticator, we have to call this so that we can "attach" to a pre-created user
+        new_username = determine_username_from_uid(username, self.database_instance)
+        # However we can't really accept a different username because we are the local authenticator imageine if:
+        #    User "a" is from another authenticator and has an AuthenticatorUser
+        #    User "a" tried to login from local authenticator
+        #    The above function will return a username of "a<hash>"
+        #    We then try to do local authentication with the database from a different username that will not exist in the database, so it would never work
+        if new_username != username:
+            return None
+
         user = super().authenticate(request, username, password, **kwargs)
 
-        # This auth class doesn't create any new local users, so we just need to make sure
+        # This auth class doesn't create any new local users, but we still need to make sure
         # it has an AuthenticatorUser associated with it.
         if user:
-            user_attrs = {
-                "username": username,
-                "first_name": user.first_name,
-                "last_name": user.last_name,
-                "email": user.email,
-                "is_superuser": user.is_superuser,
-            }
             get_or_create_authenticator_user(
-                user_id=username,
-                user_details={
-                    "username": username,
-                },
+                username,
                 authenticator=self.database_instance,
-                extra_data=user_attrs,
+                user_details={},
+                extra_data={
+                    "username": username,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "email": user.email,
+                    "is_superuser": user.is_superuser,
+                },
             )
 
-        # TODO, we will need to return attributes and claims eventually
-        return user
+        return update_user_claims(user, self.database_instance, [])

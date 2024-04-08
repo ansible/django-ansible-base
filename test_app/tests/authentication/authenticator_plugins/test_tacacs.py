@@ -141,6 +141,35 @@ def test_tacacs_authenticate_no_database_instance(expected_log):
 
 
 @pytest.mark.django_db
+def test_tacacs_authenticate_database_instance_disabled(expected_log, tacacs_authenticator):
+    from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
+
+    expected_log = partial(expected_log, "ansible_base.authentication.authenticator_plugins.tacacs.logger")
+    tacacs_authenticator.enabled = False
+    tacacs_authenticator.save()
+
+    authenticator_object = get_authenticator_plugin(tacacs_authenticator.type)
+    authenticator_object.update_if_needed(tacacs_authenticator)
+
+    with expected_log("info", "is disabled, skipping"):
+        assert authenticator_object.authenticate(request=RequestFactory(), username='jane', password='doe') is None
+
+
+@pytest.mark.django_db
+def test_tacacs_authenticate_with_client_ip(tacacs_authenticator):
+    from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
+
+    mocked_ip = '4.3.2.1'
+    with mock.patch('tacacs_plus.client.TACACSClient.authenticate') as mock_auth:
+        authenticator_object = get_authenticator_plugin(tacacs_authenticator.type)
+        authenticator_object.update_if_needed(tacacs_authenticator)
+        rf = RequestFactory()
+        request_object = rf.get('/hello/', REMOTE_ADDR=mocked_ip)
+        authenticator_object.authenticate(request=request_object, username='jane', password='doe')
+        mock_auth.assert_called_once_with('jane', 'doe', authen_type=1, rem_addr=mocked_ip)
+
+
+@pytest.mark.django_db
 def test_tacacs_authenticate_with_exception(expected_log, tacacs_authenticator):
     from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
 
@@ -153,7 +182,7 @@ def test_tacacs_authenticate_with_exception(expected_log, tacacs_authenticator):
             assert authenticator_object.authenticate(request=RequestFactory(), username='jane', password='doe') is None
 
 
-class AuthenticateReponse:
+class AuthenticateResponse:
     def __init__(self, valid):
         self.valid = valid
 
@@ -162,31 +191,43 @@ class AuthenticateReponse:
 
 
 @pytest.mark.parametrize(
-    "username,password,valid,created,response",
+    "password,user_is_valid,pre_create_user,response",
     [
-        ("jane", "doe", False, False, None),
-        ("jane", "doe", True, True, True),
-        ("jane", "doe", True, False, True),
+        ("doe", False, False, None),
+        ("doe", True, True, True),
+        ("doe", True, False, True),
     ],
 )
 @pytest.mark.django_db
-def test_tacacs_authenticate_with_authentcation(expected_log, tacacs_authenticator, username, password, valid, created, response):
+def test_tacacs_authenticate_with_authentication(expected_log, tacacs_authenticator, randname, password, user_is_valid, pre_create_user, response):
     from django.contrib.auth import get_user_model
 
     from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
 
-    expected_log = partial(expected_log, "ansible_base.authentication.authenticator_plugins.tacacs.logger")
+    expected_log = partial(expected_log, "ansible_base.authentication.utils.authentication.logger")
 
-    response_object = AuthenticateReponse(valid)
+    response_object = AuthenticateResponse(user_is_valid)
     with mock.patch('tacacs_plus.client.TACACSClient.authenticate', return_value=response_object):
         authenticator_object = get_authenticator_plugin(tacacs_authenticator.type)
         authenticator_object.update_if_needed(tacacs_authenticator)
-        not_called = False
-        if not created:
-            User = get_user_model()
-            User.objects.get_or_create(username=username)
-            not_called = True
-        with expected_log('info', 'TACAC+ created user', assert_not_called=not_called):
+        username = randname("test_user")
+        User = get_user_model()
+
+        # Ensure the user is not there
+        User.objects.filter(username=username).delete()
+
+        if not user_is_valid:
+            # If we don't have a valid user we will never create the user
+            logger_create_user_called = False
+        elif pre_create_user:
+            User.objects.create(username=username)
+            # Since we are pre-creating the user we won't get a log
+            logger_create_user_called = False
+        else:
+            # The authenticator will create the user
+            logger_create_user_called = True
+
+        with expected_log('info', f'Authenticator {tacacs_authenticator.name} created User', assert_not_called=(not logger_create_user_called)):
             authentication_response = authenticator_object.authenticate(request=RequestFactory(), username=username, password=password)
 
         if response is None:

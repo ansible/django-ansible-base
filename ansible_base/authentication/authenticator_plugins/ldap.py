@@ -13,7 +13,8 @@ from django_auth_ldap.config import LDAPGroupType
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, Authenticator, BaseAuthenticatorConfiguration
-from ansible_base.authentication.utils.claims import get_or_create_authenticator_user, update_user_claims
+from ansible_base.authentication.utils.authentication import get_or_create_authenticator_user
+from ansible_base.authentication.utils.claims import update_user_claims
 from ansible_base.lib.serializers.fields import BooleanField, CharField, ChoiceField, DictField, ListField, URLListField, UserAttrMap
 from ansible_base.lib.utils.validation import VALID_STRING
 
@@ -196,6 +197,7 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
     )
     GROUP_TYPE_PARAMS = DictField(
         help_text=_('Key value parameters to send the chosen group type init method.'),
+        # There is no default here because it depends on your GROUP_TYPE
         allow_null=False,
         required=True,
         ui_field_label=_('LDAP Group Type Parameters'),
@@ -399,7 +401,10 @@ class AuthenticatorPlugin(LDAPBackend, AbstractAuthenticatorPlugin):
                         )
 
             self.process_login_messages(user_from_ldap, username)
-
+            # In unit testing there were cases where the function we are in was being called before get_or_build_user.
+            # Its unclear if that was just a byproduct of mocking or a real scenario.
+            # Since this call is idempotent we are just going to call it again to ensure the AuthenticatorUser is created for update_user_claims
+            get_or_create_authenticator_user(username, self.database_instance, user_details={}, extra_data=user_from_ldap.ldap_user.attrs.data)
             return update_user_claims(user_from_ldap, self.database_instance, users_groups)
         except Exception:
             logger.exception(f"Encountered an error authenticating to LDAP {self.database_instance.name}")
