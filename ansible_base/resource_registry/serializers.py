@@ -1,7 +1,6 @@
 import logging
-from typing import Optional, Union
+from typing import Optional
 
-from django.utils.functional import Promise
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from rest_framework.reverse import reverse_lazy
@@ -50,8 +49,9 @@ class ResourceSerializer(serializers.ModelSerializer):
             "url",
         ]
 
-    def get_url(self, obj) -> Union[str, Promise]:
-        return reverse_lazy('resource-detail', kwargs={"ansible_id": obj.ansible_id})
+    def get_url(self, obj) -> str:
+        # conversion to string is done to satisfy type checking and OpenAPI schema generator
+        return str(reverse_lazy('resource-detail', kwargs={"ansible_id": obj.ansible_id}))
 
     def get_has_serializer(self, obj) -> bool:
         return bool(obj.content_type.resource_type.get_resource_config().managed_serializer)
@@ -107,8 +107,8 @@ class ResourceTypeSerializer(serializers.ModelSerializer):
         else:
             return None
 
-    def get_url(self, obj) -> Union[str, Promise]:
-        return reverse_lazy('resourcetype-detail', kwargs={"name": obj.name})
+    def get_url(self, obj) -> str:
+        return str(reverse_lazy('resourcetype-detail', kwargs={"name": obj.name}))
 
 
 class UserAuthenticationSerializer(serializers.Serializer):
