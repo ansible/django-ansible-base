@@ -38,7 +38,7 @@ class UserAdditionalDataSerializer(serializers.Serializer):
         if not hasattr(obj, "teams_administered"):
             return []
         ansible_resources_serializer = AnsibleResourceManyRelated("shared.team")
-        return ansible_resources_serializer.to_representation(obj.organizations_administered)
+        return ansible_resources_serializer.to_representation(obj.teams_administered)
 
 
 class UserType(SharedResourceTypeSerializer):
