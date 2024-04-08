@@ -96,14 +96,14 @@ class AbstractAuthenticatorPlugin:
     def update_if_needed(self, database_authenticator: Authenticator) -> None:
         if not self.database_instance or self.database_instance.modified != database_authenticator.modified:
             if self.database_instance:
-                self.log_and_raise(
+                logger.info(
                     _("Updating %(self.type) adapter %(database_authenticator.name)"),
                     {"self.type": self.type},
                     {"database_authenticator.name": database_authenticator.name},
                 )
 
             else:
-                self.log_and_raise(
+                self.logger.info(
                     _("Creating an %(self.type) adapter from %(database_authenticator.name)"),
                     {"self.type": self.type},
                     {"database_authenticator.name": database_authenticator.name},
@@ -111,9 +111,7 @@ class AbstractAuthenticatorPlugin:
             self.database_instance = database_authenticator
             self.update_settings(database_authenticator)
         else:
-            self.log_and_raise(
-                _("No updated needed for %(self.type) adapter %(database_authenticator.name)"), {"self.type": self.type}, {database_authenticator.name}
-            )
+            self.info(_("No updated needed for %(self.type) adapter %(database_authenticator.name)"), {"self.type": self.type}, {database_authenticator.name})
 
     def get_default_attributes(self):
         """
