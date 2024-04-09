@@ -117,7 +117,7 @@ class AuthenticatorPlugin(SocialAuthMixin, AbstractAuthenticatorPlugin, ModelBac
                 User = get_user_model()
                 user, created = User.objects.get_or_create(username=username)
                 if created:
-                    self.log_and_raise(_("TACAC+ created user %(user.username)"), {"user.username": user.username})
+                    logger.info(f"TACAC+ created user {user.username}")
                 AuthenticatorUser.objects.get_or_create(uid=username, user=user, provider=self.database_instance)
 
                 return user
