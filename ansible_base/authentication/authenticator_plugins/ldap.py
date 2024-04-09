@@ -264,7 +264,7 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
         group_type_class = getattr(config, attrs['GROUP_TYPE'], None)
         if group_type_class:
             group_type_params = attrs['GROUP_TYPE_PARAMS']
-            self.log_and_raise(_("Validating group type params for %(attrs['GROUP_TYPE'])"), {"attrs": attrs['GROUP_TYPE']})
+            logger.error(f"Validating group type params for {attrs['GROUP_TYPE']}")
             class_args = inspect.getfullargspec(group_type_class.__init__).args[1:]
             invalid_keys = set(group_type_params) - set(class_args)
             missing_keys = set(class_args) - set(group_type_params)
@@ -350,13 +350,11 @@ class AuthenticatorPlugin(LDAPBackend, AbstractAuthenticatorPlugin):
         users_groups = []
 
         if not self.database_instance:
-            self.log_and_raise(_("AuthenticatorPlugin was missing an authenticator"))
+            logger.error("AuthenticatorPlugin was missing an authenticator")
             return None
 
         if not self.database_instance.enabled:
-            self.log_and_raise(
-                _("LDAP authenticator %(self.database_instance.name) is disabled, skipping"), {"self.database_instance.name": self.database_instance.name}
-            )
+            logger.info(f"LDAP authenticator {self.database_instance.name} is disabled, skipping")
             return None
 
         # We don't have to check if settings is None because it can never happen, the parent object will always return something
@@ -379,7 +377,7 @@ class AuthenticatorPlugin(LDAPBackend, AbstractAuthenticatorPlugin):
                     search_object = config.LDAPSearch(data[0], getattr(ldap, data[1]), data[2])
                     setattr(self.settings, field, search_object)
                 except Exception as e:
-                    self.log_and_raise(_("Failed to instantiate LDAPSearch object: %(e)"), {"e": e})
+                    logger.error(f'Failed to instantiate LDAPSearch object: {e}')
                     return None
 
         try:
@@ -409,23 +407,17 @@ class AuthenticatorPlugin(LDAPBackend, AbstractAuthenticatorPlugin):
 
     def process_login_messages(self, ldap_user, username: str) -> None:
         if ldap_user is None:
-            self.log_and_raise(
-                _("User %(username) could not be authenticated by LDAP %(self.database_instance.name)"),
-                {"username": username, "self.database_instance.name": self.database_instance.name},
-            )
+            logger.info(f"User {username} could not be authenticated by LDAP {self.database_instance.name}")
 
             # If our login failed and we have REQUIRE or DENY group we can't tell that the user is in that but we want inform the admin via a log as a hint
             if self.settings.REQUIRE_GROUP and self.settings.DENY_GROUP:
-                logger.log_and_raise(_("Hint: is user missing required group or in deny group?"))
+                logger.info("Hint: is user missing required group or in deny group?")
             elif self.settings.REQUIRE_GROUP:
-                logger.log_and_raise(_("Hint: is user missing required group?"))
+                logger.info("Hint: is user missing required group?")
             elif self.settings.DENY_GROUP:
-                logger.log_and_raise(_("Hint: is user in deny group?"))
+                logger.info("Hint: is user in deny group?")
         else:
-            logger.log_and_raise(
-                _("User %(username) authenticated by LDAP %(self.database_instance.name)"),
-                {"username": username, "self.database_instance.name": self.database_instance.name},
-            )
+            logger.info(f"User {username} authenticated by LDAP {self.database_instance.name}")
 
     def update_settings(self, database_authenticator: Authenticator) -> None:
         self.settings = LDAPSettings(defaults=database_authenticator.configuration)
