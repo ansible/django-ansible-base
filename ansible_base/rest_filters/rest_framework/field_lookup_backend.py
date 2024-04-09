@@ -5,7 +5,7 @@ from functools import reduce
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.core.exceptions import FieldDoesNotExist, FieldError, ValidationError
 from django.db import models
-from django.db.models import BooleanField, CharField, IntegerField, Q, TextField
+from django.db.models import BooleanField, CharField, IntegerField, JSONField, Q, TextField
 from django.db.models.fields.related import ForeignKey, ForeignObjectRel, ManyToManyField
 from django.db.models.functions import Cast
 from django.utils.encoding import force_str
@@ -48,6 +48,10 @@ class FieldLookupBackend(BaseFilterBackend):
     # of introducing duplicates
     NO_DUPLICATES_ALLOW_LIST = (CharField, IntegerField, BooleanField, TextField)
 
+    # If True, JSONField will be treated as a text field for filtering purposes
+    # True by default to maintain backwards compatibility
+    TREAT_JSONFIELD_AS_TEXT = True
+
     def get_fields_from_lookup(self, model, lookup):
         if '__' in lookup and lookup.rsplit('__', 1)[-1] in self.SUPPORTED_LOOKUPS:
             path, suffix = lookup.rsplit('__', 1)
@@ -61,7 +65,7 @@ class FieldLookupBackend(BaseFilterBackend):
         # FIXME: Could build up a list of models used across relationships, use
         # those lookups combined with request.user.get_queryset(Model) to make
         # sure user cannot query using objects he could not view.
-        field_list, new_path = get_fields_from_path(model, path)
+        field_list, new_path = get_fields_from_path(model, path, treat_jsonfield_as_text=self.TREAT_JSONFIELD_AS_TEXT)
 
         new_lookup = new_path
         new_lookup = '__'.join([new_path, suffix])
@@ -121,7 +125,7 @@ class FieldLookupBackend(BaseFilterBackend):
             except re.error as e:
                 raise ValueError(e.args[0])
         elif new_lookup.endswith('__iexact'):
-            if not isinstance(field, (CharField, TextField)):
+            if not isinstance(field, (CharField, TextField)) and not (isinstance(field, JSONField) and not self.TREAT_JSONFIELD_AS_TEXT):
                 raise ValueError(f'{field.name} is not a text field and cannot be filtered by case-insensitive search')
         elif new_lookup.endswith('__search'):
             related_model = getattr(field, 'related_model', None)
@@ -132,10 +136,10 @@ class FieldLookupBackend(BaseFilterBackend):
                 if rm_field.name in ('username', 'first_name', 'last_name', 'email', 'name', 'description', 'playbook'):
                     new_lookups.append('{}__{}__icontains'.format(new_lookup[:-8], rm_field.name))
             return value, new_lookups, needs_distinct
-        # else:
-        #    if isinstance(field, JSONField):
-        #        new_lookup = new_lookup.replace(field.name, f'{field.name}_as_txt')
-        #    value = self.value_to_python_for_field(field, value)
+        else:
+            if self.TREAT_JSONFIELD_AS_TEXT and isinstance(field, JSONField):
+                new_lookup = new_lookup.replace(field.name, f'{field.name}_as_txt')
+            value = self.value_to_python_for_field(field, value)
         return value, new_lookup, needs_distinct
 
     def filter_queryset(self, request, queryset, view):

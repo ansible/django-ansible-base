@@ -1,5 +1,6 @@
 import pytest
 from django.urls import reverse
+from django.utils.http import urlencode
 
 
 def test_activitystream_api_read(admin_api_client, user):
@@ -73,3 +74,26 @@ def test_activitystream_api_permission_classes(admin_api_client, user_api_client
         assert response.status_code == 200
     else:
         assert response.status_code == 403
+
+
+def test_activitystream_api_filtering(admin_api_client, user):
+    url = reverse("activitystream-list")
+    query_params = {
+        'operation__exact': 'create',
+        'content_type__model__exact': 'user',
+        'changes__added_fields__id__exact': user.id,
+    }
+    response = admin_api_client.get(url + '?' + urlencode(query_params))
+    assert response.status_code == 200
+    assert response.data['count'] == 1
+    assert response.data['results'][0]['operation'] == 'create'
+    assert response.data['results'][0]['changes']['added_fields']['id'] == user.id  # Ensure types get restored
+
+    user.first_name = "Jane"
+    user.last_name = "Doe"
+    user.save()
+
+    query_params = {'changes__changed_fields__last_name__1__iexact': 'dOe'}
+    response = admin_api_client.get(url + '?' + urlencode(query_params))
+    assert response.status_code == 200
+    assert response.data['count'] == 1

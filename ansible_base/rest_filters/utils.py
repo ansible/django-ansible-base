@@ -6,7 +6,7 @@ from rest_framework.exceptions import ParseError, PermissionDenied
 from ansible_base.lib.utils.models import get_all_field_names
 
 
-def get_fields_from_path(model, path):
+def get_fields_from_path(model, path, treat_jsonfield_as_text=True):
     """
     Given a Django ORM lookup path (possibly over multiple models)
     Returns the fields in the line, and also the revised lookup path
@@ -58,7 +58,7 @@ def get_fields_from_path(model, path):
                 raise PermissionDenied(_('Filtering on %s is not allowed.' % name))
             elif getattr(field, '__prevent_search__', False):
                 raise PermissionDenied(_('Filtering on %s is not allowed.' % name))
-            elif isinstance(field, JSONField):
+            elif isinstance(field, JSONField) and not treat_jsonfield_as_text:
                 is_json_field = True
         if field in field_list:
             # Field traversed twice, could create infinite JOINs, DoS-ing the service
