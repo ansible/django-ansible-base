@@ -145,14 +145,6 @@ if 'ansible_base.rest_pagination' in INSTALLED_APPS:
 
 
 if 'ansible_base.rbac' in INSTALLED_APPS:
-    # Settings for the RBAC system, override as necessary in app
-    ANSIBLE_BASE_ROLE_PRECREATE = {
-        'object_admin': '{cls._meta.model_name}-admin',
-        'org_admin': 'organization-admin',
-        'org_children': 'organization-{cls._meta.model_name}-admin',
-        'special': '{cls._meta.model_name}-{action}',
-    }
-
     # Permissions a user will get when creating a new item
     ANSIBLE_BASE_CREATOR_DEFAULTS = ['add', 'change', 'delete', 'view']
     # Permissions API will check for related items, think PATCH/PUT

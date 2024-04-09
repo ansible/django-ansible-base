@@ -2,14 +2,11 @@ import logging
 from contextlib import contextmanager
 from typing import Optional
 
-from django.apps import apps
-from django.conf import settings
 from django.db.models import Model, Q
 from django.db.models.signals import m2m_changed, post_delete, post_init, post_save, pre_delete, pre_save
 from django.db.utils import ProgrammingError
 
 from ansible_base.rbac.caching import compute_object_role_permissions, compute_team_member_roles
-from ansible_base.rbac.migrations._managed_definitions import setup_managed_role_definitions
 from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation, get_evaluation_model
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.validators import validate_team_assignment_enabled
@@ -277,9 +274,6 @@ def post_migration_rbac_setup(*args, **kwargs):
         RoleDefinition.objects.first()
     except ProgrammingError:
         return  # this happens when migrating backwards, tables do not exist at prior states
-
-    if settings.ANSIBLE_BASE_ROLE_PRECREATE:
-        setup_managed_role_definitions(apps, None)
 
     compute_team_member_roles()
     compute_object_role_permissions()
