@@ -155,7 +155,16 @@ class RoleDefinitionSerializer(CommonModelSerializer):
         fields = '__all__'
 
     def validate(self, validated_data):
-        validate_permissions_for_model(validated_data.get('permissions', []), validated_data.get('content_type'))
+        # Obtain the resultant new values
+        if 'permissions' in validated_data:
+            permissions = validated_data['permissions']
+        else:
+            permissions = list(self.instance.permissions.all())
+        if 'content_type' in validated_data:
+            content_type = validated_data['content_type']
+        else:
+            content_type = self.instance.content_type
+        validate_permissions_for_model(permissions, content_type)
         return super().validate(validated_data)
 
 
