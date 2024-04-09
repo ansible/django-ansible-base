@@ -67,7 +67,7 @@ class AbstractAuthenticatorPlugin:
 
     def validate_configuration(self, data: dict, instance: object) -> dict:
         if not issubclass(self.configuration_class, BaseAuthenticatorConfiguration):
-            raise TypeError(_("self.configuration_class must subclass BaseAuthenticatorConfiguration."))
+            raise TypeError("self.configuration_class must subclass BaseAuthenticatorConfiguration.")
 
         serializer = self.configuration_class(data=data, instance=instance)
         serializer.is_valid(raise_exception=True)
@@ -76,7 +76,7 @@ class AbstractAuthenticatorPlugin:
         errors = {}
         for k in data:
             if k not in allowed_fields:
-                errors[k] = _(("%(k) is not a supported configuration option."), {"k": k})
+                errors[k] = _(f"{k} is not a supported configuration option.")
 
         if errors:
             raise ValidationError(errors)
@@ -96,22 +96,14 @@ class AbstractAuthenticatorPlugin:
     def update_if_needed(self, database_authenticator: Authenticator) -> None:
         if not self.database_instance or self.database_instance.modified != database_authenticator.modified:
             if self.database_instance:
-                logger.info(
-                    _("Updating %(self.type) adapter %(database_authenticator.name)"),
-                    {"self.type": self.type},
-                    {"database_authenticator.name": database_authenticator.name},
-                )
+                self.logger.info(f"Updating {self.type} adapter {database_authenticator.name}")
 
             else:
-                self.logger.info(
-                    _("Creating an %(self.type) adapter from %(database_authenticator.name)"),
-                    {"self.type": self.type},
-                    {"database_authenticator.name": database_authenticator.name},
-                )
+                self.logger.info(f"Creating an {self.type} adapter from {database_authenticator.name}")
             self.database_instance = database_authenticator
             self.update_settings(database_authenticator)
         else:
-            self.info(_("No updated needed for %(self.type) adapter %(database_authenticator.name)"), {"self.type": self.type}, {database_authenticator.name})
+            self.logger.info(f"No updated needed for {self.type} adapter {database_authenticator.name}")
 
     def get_default_attributes(self):
         """
