@@ -1,6 +1,5 @@
 import uuid
 
-from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
@@ -24,7 +23,6 @@ class User(AbstractUser, CommonModel, AuditableModel):
 
 class Team(AbstractTeam):
     resource = AnsibleResourceField(primary_key_field="id")
-    tracked_users = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='tracked_teams', blank=True)
     team_parents = models.ManyToManyField('Team', related_name='team_children', blank=True)
 
     encryptioner = models.ForeignKey('test_app.EncryptionModel', on_delete=models.SET_NULL, null=True)
@@ -213,7 +211,7 @@ permission_registry.register(ParentName, parent_field_name='my_organization')
 permission_registry.register(CollectionImport, parent_field_name='namespace')
 permission_registry.register(InstanceGroup, ImmutableTask, parent_field_name=None)
 
-permission_registry.track_relationship(Team, 'tracked_users', 'team-member')
+permission_registry.track_relationship(Team, 'users', 'team-member')
 permission_registry.track_relationship(Team, 'team_parents', 'team-member')
 
 
