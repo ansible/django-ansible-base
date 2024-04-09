@@ -326,3 +326,13 @@ def test_activitystream_user_password_sanitized(user):
     user.set_password('new_password')
     user.save()
     assert entries.last().changes['changed_fields']['password'] == [ENCRYPTED_STRING, ENCRYPTED_STRING]
+
+
+def test_activitystream_user_last_login_excluded(user, user_api_client):
+    user.refresh_from_db()
+    last_login = user.last_login
+    user_api_client.login(username=user.username, password='password')
+    user.refresh_from_db()
+    assert user.last_login != last_login  # sanity check
+    entries = user.activity_stream_entries
+    assert 'last_login' not in entries.last().changes['changed_fields']
