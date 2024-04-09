@@ -67,7 +67,7 @@ class AbstractAuthenticatorPlugin:
 
     def validate_configuration(self, data: dict, instance: object) -> dict:
         if not issubclass(self.configuration_class, BaseAuthenticatorConfiguration):
-            raise TypeError("self.configuration_class must subclass BaseAuthenticatorConfiguration.")
+            raise TypeError(_("self.configuration_class must subclass BaseAuthenticatorConfiguration."))
 
         serializer = self.configuration_class(data=data, instance=instance)
         serializer.is_valid(raise_exception=True)
@@ -97,7 +97,6 @@ class AbstractAuthenticatorPlugin:
         if not self.database_instance or self.database_instance.modified != database_authenticator.modified:
             if self.database_instance:
                 self.logger.info(f"Updating {self.type} adapter {database_authenticator.name}")
-
             else:
                 self.logger.info(f"Creating an {self.type} adapter from {database_authenticator.name}")
             self.database_instance = database_authenticator
