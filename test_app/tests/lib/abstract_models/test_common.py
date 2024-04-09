@@ -144,3 +144,23 @@ def test_cascade_behavior_for_created_by(user, user_api_client):
     org.refresh_from_db()
     assert org.created_by is None  # the SET_NULL behavior now implemented
     connection.check_constraints()
+
+
+@pytest.mark.xfail(reaason="https://github.com/ansible/django-ansible-base/issues/286")
+def test_do_not_update_modified_by_on_login(system_user, user, user_api_client):
+    user.refresh_from_db()
+    assert user.modified_by == system_user
+    with impersonate(user):
+        user_api_client.login(username=user.username, password='password')
+    user.refresh_from_db()
+    assert user.modified_by == system_user
+
+
+def test_modified_by_respects_given_value(system_user, random_user, user, animal):
+    animal.save()
+    assert animal.modified_by == system_user
+    with impersonate(user):
+        animal.modified_by = random_user
+        animal.save(update_fields=['modified_by'])
+    animal.refresh_from_db()
+    assert animal.modified_by == random_user
