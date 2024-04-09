@@ -12,7 +12,7 @@ def test_patch_system_role(admin_api_client, global_inv_rd):
     global_inv_rd.refresh_from_db()
     assert global_inv_rd.name == 'my new name'
     assert global_inv_rd.content_type is None
-    assert response.data['content_type'] == None
+    assert response.data['content_type'] is None
 
 
 @pytest.mark.django_db
