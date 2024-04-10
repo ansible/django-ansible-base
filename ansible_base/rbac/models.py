@@ -6,9 +6,10 @@ from typing import Optional
 from django.conf import settings
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
-from django.db import connection, models
+from django.db import connection, models, transaction
 from django.db.models.functions import Cast
 from django.db.models.query import QuerySet
+from django.db.utils import IntegrityError
 from django.utils.translation import gettext_lazy as _
 
 # Django-rest-framework
@@ -69,7 +70,7 @@ class RoleDefinitionManager(models.Manager):
         has_permissions = set(RoleEvaluation.get_permissions(user, obj))
         has_permissions.update(user.singleton_permissions())
         if set(needed_perms) - set(has_permissions):
-            kwargs = {'permissions': needed_perms, 'name': f'{obj._meta.model_name}-creator-permission'}
+            kwargs = {'permissions': needed_perms, 'name': settings.ANSIBLE_BASE_ROLE_CREATOR_NAME.format(obj=obj, cls=type(obj))}
             defaults = {'content_type': ContentType.objects.get_for_model(obj)}
             try:
                 rd, _ = self.get_or_create(defaults=defaults, **kwargs)
@@ -187,6 +188,26 @@ class RoleDefinition(CommonModel):
     def remove_permission(self, actor, content_object):
         return self.give_or_remove_permission(actor, content_object, giving=False)
 
+    def get_or_create_object_role(self, **kwargs):
+        """Transaction-safe method to create ObjectRole
+
+        The UI will assign many permissions concurrently.
+        These will be in transactions, but also mutually create the same ObjectRole
+        postgres constraints will still be violated by other active transactions
+        which gives us a way to gracefully handle this.
+        """
+        if transaction.get_connection().in_atomic_block:
+            try:
+                with transaction.atomic():
+                    object_role = ObjectRole.objects.create(**kwargs)
+                    return (object_role, True)
+            except IntegrityError:
+                object_role = ObjectRole.objects.get(**kwargs)
+                return (object_role, False)
+        else:
+            object_role = ObjectRole.objects.create(**kwargs)
+            return (object_role, True)
+
     def give_or_remove_permission(self, actor, content_object, giving=True, sync_action=False):
         "Shortcut method to do whatever needed to give user or team these permissions"
         validate_assignment(self, actor, content_object)
@@ -200,8 +221,7 @@ class RoleDefinition(CommonModel):
         if object_role is None:
             if not giving:
                 return  # nothing to do
-            object_role = ObjectRole.objects.create(**kwargs)
-            created = True
+            object_role, created = self.get_or_create_object_role(**kwargs)
 
         from ansible_base.rbac.triggers import needed_updates_on_assignment, update_after_assignment
 

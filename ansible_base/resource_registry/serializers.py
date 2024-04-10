@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
@@ -48,10 +49,11 @@ class ResourceSerializer(serializers.ModelSerializer):
             "url",
         ]
 
-    def get_url(self, obj):
-        return reverse_lazy('resource-detail', kwargs={"ansible_id": obj.ansible_id})
+    def get_url(self, obj) -> str:
+        # conversion to string is done to satisfy type checking and OpenAPI schema generator
+        return str(reverse_lazy('resource-detail', kwargs={"ansible_id": obj.ansible_id}))
 
-    def get_has_serializer(self, obj):
+    def get_has_serializer(self, obj) -> bool:
         return bool(obj.content_type.resource_type.get_resource_config().managed_serializer)
 
     # update ansible ID
@@ -99,14 +101,14 @@ class ResourceTypeSerializer(serializers.ModelSerializer):
         model = ResourceType
         fields = ["id", "name", "externally_managed", "shared_resource_type", "url"]
 
-    def get_shared_resource_type(self, obj):
+    def get_shared_resource_type(self, obj) -> Optional[str]:
         if serializer := obj.get_resource_config().managed_serializer:
             return serializer.RESOURCE_TYPE
         else:
             return None
 
-    def get_url(self, obj):
-        return reverse_lazy('resourcetype-detail', kwargs={"name": obj.name})
+    def get_url(self, obj) -> str:
+        return str(reverse_lazy('resourcetype-detail', kwargs={"name": obj.name}))
 
 
 class UserAuthenticationSerializer(serializers.Serializer):
