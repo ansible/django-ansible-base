@@ -99,7 +99,7 @@ class LDAPSearchField(ListField):
                 # Search fields should be LDAPSearch objects, so we need to convert them from [] to these objects
                 config.LDAPSearch(value[0], getattr(ldap, value[1]), value[2])
             except Exception as e:
-                raise ValidationError(_('Failed to instantiate LDAPSearch object: {e}').format(e=e))
+                raise ValidationError(_('Failed to instantiate LDAPSearch object: %(e)s') % {"e": e})
 
         self.validators.append(validator)
 

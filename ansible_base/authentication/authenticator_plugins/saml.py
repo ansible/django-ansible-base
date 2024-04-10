@@ -206,7 +206,7 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
             security_settings = set(attrs.get('SECURITY_CONFIG').keys())
             invalid_security_settings = security_settings.difference(valid_security_settings)
         except Exception as e:
-            raise ValidationError(_("Failed to load config: %(e)"), {"e": e})
+            raise ValidationError(_('Failed to load config: %(e)s'), % {"e": e})
 
         # TODO: Check to make sure this is formatted correctly for translation
         if invalid_security_settings:
