@@ -62,7 +62,7 @@ class ModifiableModel(models.Model):
         '''
         update_fields = list(kwargs.get('update_fields', []))
 
-        if self.pk and 'modified_by' not in update_fields:
+        if 'modified_by' not in update_fields:
             self.modified_by = current_user_or_system_user()
             update_fields.append('modified_by')
 
