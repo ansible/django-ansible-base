@@ -47,7 +47,7 @@ class PermissionRegistry:
     def track_relationship(self, cls, relationship, role_name):
         self._tracked_relationships.add((cls, relationship, role_name))
 
-    def get_parent_model(self, model) -> Union[type, None]:
+    def get_parent_model(self, model) -> Optional[type]:
         model = self._name_to_model[model._meta.model_name]
         parent_field_name = self.get_parent_fd_name(model)
         if parent_field_name is None:
