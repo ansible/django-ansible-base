@@ -9,8 +9,6 @@ class Authenticator(UniqueNamedCommonModel):
     ignore_relations = ['authenticator_user']
     enabled = fields.BooleanField(default=False, help_text="Should this authenticator be enabled")
     create_objects = fields.BooleanField(default=True, help_text="Allow authenticator to create objects (users, teams, organizations)")
-    # TODO: Implement unique users, remove user, etc with team and org mapping feature.
-    users_unique = fields.BooleanField(default=False, help_text="Are users from this source the same as users from another source with the same id")
     remove_users = fields.BooleanField(
         default=True, help_text="When a user authenticates from this source should they be removed from any other groups they were previously added to"
     )

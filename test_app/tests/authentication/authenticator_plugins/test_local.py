@@ -62,7 +62,6 @@ def test_local_auth_create_configuration_must_be_empty(admin_api_client, configu
         "configuration": configuration,
         "enabled": True,
         "create_objects": True,
-        "users_unique": False,
         "remove_users": True,
         "type": "ansible_base.authentication.authenticator_plugins.local",
     }
