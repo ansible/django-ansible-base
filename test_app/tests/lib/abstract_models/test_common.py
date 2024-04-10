@@ -166,7 +166,7 @@ def test_modified_by_respects_given_value(system_user, random_user, user, animal
     assert animal.modified_by == random_user
 
 
-def test_modified_by_gets_saved_even_if_not_in_update_fields(system_user, random_user, user, animal):
+def test_modified_by_gets_saved_even_if_not_in_update_fields(system_user, user, animal):
     animal.save()
     assert animal.modified_by == system_user
     animal.name = 'Bob The Fish'
