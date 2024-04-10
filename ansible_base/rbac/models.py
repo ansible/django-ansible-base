@@ -625,7 +625,7 @@ class RoleEvaluationFields(models.Model):
     @classmethod
     def accessible_objects(cls, model_cls, user, codename, queryset: Optional[QuerySet] = None) -> QuerySet:
         if queryset is None:
-            queryset = model_cls.objects
+            queryset = model_cls.objects.all()
         return queryset.filter(pk__in=cls.accessible_ids(model_cls, user, codename))
 
     @classmethod

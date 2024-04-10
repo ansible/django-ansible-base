@@ -1,5 +1,5 @@
 from collections import namedtuple
-from typing import List
+from typing import List, Optional
 
 from django.contrib.auth import authenticate
 
@@ -61,7 +61,9 @@ class ResourceConfig:
     actions = None
     name_field = None
 
-    def __init__(self, model, shared_resource: SharedResource = None, parent_resources: List[ParentResource] = None, name_field: str = None):
+    def __init__(
+        self, model, shared_resource: Optional[SharedResource] = None, parent_resources: Optional[List[ParentResource]] = None, name_field: Optional[str] = None
+    ):
         model = get_concrete_model(model)
         self.model_label = model._meta.label
 
