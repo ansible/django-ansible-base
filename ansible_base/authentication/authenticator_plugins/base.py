@@ -67,7 +67,7 @@ class AbstractAuthenticatorPlugin:
 
     def validate_configuration(self, data: dict, instance: object) -> dict:
         if not issubclass(self.configuration_class, BaseAuthenticatorConfiguration):
-            raise TypeError("self.configuration_class must subclass BaseAuthenticatorConfiguration.")
+            raise TypeError(_("self.configuration_class must subclass BaseAuthenticatorConfiguration."))
 
         serializer = self.configuration_class(data=data, instance=instance)
         serializer.is_valid(raise_exception=True)
