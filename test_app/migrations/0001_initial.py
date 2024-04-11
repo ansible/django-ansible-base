@@ -57,11 +57,7 @@ class Migration(migrations.Migration):
                 ('modified_by', models.ForeignKey(default=None, editable=False, help_text='The user who last modified this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_modified+', to=settings.AUTH_USER_MODEL)),
                 ('user_permissions', models.ManyToManyField(blank=True, help_text='Specific permissions for this user.', related_name='user_set', related_query_name='user', to='auth.permission', verbose_name='user permissions')),
             ],
-            options={
-                'verbose_name': 'user',
-                'verbose_name_plural': 'users',
-                'abstract': False,
-            },
+            options={'ordering': ['id'], 'verbose_name': 'user', 'verbose_name_plural': 'users'},
             managers=[
                 ('objects', django.contrib.auth.models.UserManager()),
             ],
@@ -77,6 +73,7 @@ class Migration(migrations.Migration):
                 ('created_by', models.ForeignKey(default=None, editable=False, help_text='The user who created this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_created+', to=settings.AUTH_USER_MODEL)),
                 ('modified_by', models.ForeignKey(default=None, editable=False, help_text='The user who last modified this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_modified+', to=settings.AUTH_USER_MODEL)),
             ],
+            options={'ordering': ['id']},
         ),
         migrations.CreateModel(
             name='EncryptionModel',
@@ -90,9 +87,7 @@ class Migration(migrations.Migration):
                 ('testing1', models.CharField(default='a', max_length=400, null=True)),
                 ('testing2', models.CharField(default='b', max_length=400, null=True)),
             ],
-            options={
-                'abstract': False,
-            },
+            options={'ordering': ['id']},
         ),
         migrations.CreateModel(
             name='Team',
@@ -134,7 +129,7 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('name', models.CharField(max_length=64, unique=True)),
-                ('organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.ANSIBLE_BASE_ORGANIZATION_MODEL)),
+                ('organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.ANSIBLE_BASE_ORGANIZATION_MODEL, related_name='namespaces')),
             ],
         ),
         migrations.CreateModel(
@@ -142,10 +137,11 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('name', models.CharField(max_length=512)),
-                ('organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.ANSIBLE_BASE_ORGANIZATION_MODEL, null=True)),
+                ('organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.ANSIBLE_BASE_ORGANIZATION_MODEL, null=True, related_name='inventories')),
             ],
             options={
                 'permissions': [('update_inventory', 'Do inventory updates')],
+                'ordering': ['id'],
             },
         ),
         migrations.CreateModel(
@@ -160,18 +156,16 @@ class Migration(migrations.Migration):
             name='UUIDModel',
             fields=[
                 ('id', models.UUIDField(default=uuid.uuid4, primary_key=True, serialize=False)),
-                ('organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='test_app.organization')),
+                ('organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='test_app.organization', related_name='uuidmodels')),
             ],
         ),
         migrations.CreateModel(
             name='Cow',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='test_app.organization')),
+                ('organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='test_app.organization', related_name='cows')),
             ],
-            options={
-                'permissions': [('say_cow', 'Make cow say some advice')],
-            },
+            options={'ordering': ['id'], 'permissions': [('say_cow', 'Make cow say some advice')]},
         ),
         migrations.CreateModel(
             name='RelatedFieldsTestModel',
@@ -202,6 +196,7 @@ class Migration(migrations.Migration):
             options={
                 'permissions': [('cancel_immutabletask', 'Stop this task from running')],
                 'default_permissions': ('add', 'view', 'delete'),
+                'ordering': ['id'],
             },
         ),
         migrations.CreateModel(
@@ -213,6 +208,7 @@ class Migration(migrations.Migration):
                 'proxy': True,
                 'indexes': [],
                 'constraints': [],
+                'ordering': ['id'],
             },
             bases=('test_app.inventory',),
         ),
@@ -220,24 +216,25 @@ class Migration(migrations.Migration):
             name='WeirdPerm',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='test_app.organization')),
+                ('organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='test_app.organization', related_name='weirdperms')),
             ],
             options={
                 'permissions': [("I'm a lovely coconut", 'You can be a lovely coconut with this object'), ('crack', 'Can crack open this coconut')],
+                'ordering': ['id'],
             },
         ),
         migrations.CreateModel(
             name='PositionModel',
             fields=[
                 ('position', models.BigIntegerField(primary_key=True, serialize=False)),
-                ('organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='test_app.organization')),
+                ('organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='test_app.organization', related_name='positionmodels')),
             ],
         ),
         migrations.CreateModel(
             name='ParentName',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('my_organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='test_app.organization')),
+                ('my_organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='test_app.organization', related_name='parentnames')),
             ],
         ),
         migrations.CreateModel(

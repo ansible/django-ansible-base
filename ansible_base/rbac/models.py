@@ -115,6 +115,7 @@ class RoleDefinition(CommonModel):
 
     class Meta:
         app_label = 'dab_rbac'
+        ordering = ['id']
         verbose_name_plural = _('role_definition')
 
     name = models.TextField(db_index=True, unique=True)
@@ -131,7 +132,7 @@ class RoleDefinition(CommonModel):
 
     objects = RoleDefinitionManager()
     router_basename = 'roledefinition'
-    ignore_relations = ['permissions', 'object_roles', 'teams', 'users']
+    ignore_relations = ['permissions', 'object_roles', 'content_type', 'teams', 'users']
 
     def __str__(self):
         managed_str = ''
@@ -339,8 +340,10 @@ class AssignmentBase(ImmutableCommonModel, ObjectRoleFields):
         null=True, blank=True, help_text=_('Primary key of the object this assignment applies to, null value indicates system-wide assignment')
     )
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, null=True)
-    modified = None
-    modified_by = None
+
+    # object_role is internal, and not shown in serializer
+    # content_type does not have a link, and ResourceType will be used in lieu sometime
+    ignore_relations = ['content_type', 'object_role']
 
     class Meta:
         app_label = 'dab_rbac'
@@ -363,11 +366,12 @@ class RoleUserAssignment(AssignmentBase):
         help_text=_("The role definition which defines permissions conveyed by this assignment"),
         related_name='user_assignments',
     )
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='role_assignments')
     router_basename = 'roleuserassignment'
 
     class Meta:
         app_label = 'dab_rbac'
+        ordering = ['id']
         unique_together = ('user', 'object_role')
 
     def __repr__(self):
@@ -386,11 +390,12 @@ class RoleTeamAssignment(AssignmentBase):
         help_text=_("The role definition which defines permissions conveyed by this assignment"),
         related_name='team_assignments',
     )
-    team = models.ForeignKey(settings.ANSIBLE_BASE_TEAM_MODEL, on_delete=models.CASCADE)
+    team = models.ForeignKey(settings.ANSIBLE_BASE_TEAM_MODEL, on_delete=models.CASCADE, related_name='role_assignments')
     router_basename = 'roleteamassignment'
 
     class Meta:
         app_label = 'dab_rbac'
+        ordering = ['id']
         unique_together = ('team', 'object_role')
 
     def __repr__(self):

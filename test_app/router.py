@@ -1,4 +1,5 @@
 from ansible_base.lib.routers import AssociationResourceRouter
+from ansible_base.rbac.api import views as rbac_views
 from test_app import views
 
 router = AssociationResourceRouter()
@@ -22,12 +23,24 @@ router.register(
     views.OrganizationViewSet,
     related_views={
         'teams': (views.TeamViewSet, 'teams'),
+        'inventories': (views.InventoryViewSet, 'inventories'),
+        'namespaces': (views.NamespaceViewSet, 'namespaces'),
+        'cows': (views.CowViewSet, 'cows'),
+        'uuidmodels': (views.UUIDModelViewSet, 'uuidmodels'),
+        'parentnames': (views.ParentNameViewSet, 'parentnames'),
+        'positionmodels': (views.PositionModelViewSet, 'positionmodels'),
+        'weirdperms': (views.WeirdPermViewSet, 'weirdperms'),
     },
 )
 
 router.register(
     r'teams',
     views.TeamViewSet,
+    related_views={
+        'tracked_users': (views.UserViewSet, 'tracked_users'),
+        'parents': (views.TeamViewSet, 'team_parents'),
+        'role_assignments': (rbac_views.RoleTeamAssignmentViewSet, 'role_assignments'),
+    },
 )
 
 router.register(

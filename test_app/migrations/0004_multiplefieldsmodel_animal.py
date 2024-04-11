@@ -26,6 +26,7 @@ class Migration(migrations.Migration):
                 ('created_by', models.ForeignKey(default=None, editable=False, help_text='The user who created this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_created+', to=settings.AUTH_USER_MODEL)),
                 ('modified_by', models.ForeignKey(default=None, editable=False, help_text='The user who last modified this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_modified+', to=settings.AUTH_USER_MODEL)),
             ],
+            options={'ordering': ['id']},
         ),
         migrations.CreateModel(
             name='Animal',
@@ -41,5 +42,6 @@ class Migration(migrations.Migration):
                 ('owner', models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),
                 ('people_friends', models.ManyToManyField(blank=True, related_name='animal_friends', to=settings.AUTH_USER_MODEL)),
             ],
+            options={'ordering': ['id']},
         ),
     ]
