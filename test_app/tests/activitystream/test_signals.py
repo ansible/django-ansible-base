@@ -23,8 +23,7 @@ def test_activitystream_create(system_user, animal):
     assert entry.changes['changed_fields'] == {}
     assert entry.changes['removed_fields'] == {}
     assert entry.changes['added_fields']['name'] == animal.name
-    assert entry.changes['added_fields']['owner'] == animal.owner.username
-    assert entry.changes['added_fields']['owner_id'] == animal.owner.id
+    assert entry.changes['added_fields']['owner'] == str(animal.owner.pk)
 
 
 def test_activitystream_update(system_user, animal):
@@ -213,7 +212,7 @@ def test_activitystream_delete(system_user, animal):
     assert 'name' in entry.changes['removed_fields']
     assert entry.changes['removed_fields']['name'] == animal.name
     assert 'owner' in entry.changes['removed_fields']
-    assert entry.changes['removed_fields']['owner'] == animal.owner.username
+    assert entry.changes['removed_fields']['owner'] == str(animal.owner.pk)
 
 
 def test_activitystream__store_activitystream_entry_invalid_operation():

@@ -111,6 +111,11 @@ class AnimalViewSet(TestAppViewSet):
     serializer_class = serializers.AnimalSerializer
 
 
+class CityViewSet(TestAppViewSet):
+    serializer_class = serializers.CitySerializer
+    queryset = models.City.objects.all()
+
+
 ################################################
 # FRONTEND
 ################################################

@@ -83,3 +83,9 @@ class ImmutableLogEntrySerializer(ImmutableCommonModelSerializer):
     class Meta:
         model = models.ImmutableLogEntry
         fields = '__all__'
+
+
+class CitySerializer(NamedCommonModelSerializer):
+    class Meta:
+        model = models.City
+        fields = '__all__'
