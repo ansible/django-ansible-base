@@ -62,13 +62,3 @@ def org_member_rd():
         content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
         managed=True,
     )
-
-
-@pytest.fixture
-def member_rd():
-    return RoleDefinition.objects.create_from_permissions(
-        permissions=[permission_registry.team_permission, f'view_{permission_registry.team_model._meta.model_name}'],
-        name='team-member',
-        content_type=permission_registry.content_type_model.objects.get_for_model(permission_registry.team_model),
-        managed=True,
-    )

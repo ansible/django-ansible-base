@@ -149,7 +149,7 @@ def test_get_resource_404(resource_client):
 
 
 @pytest.mark.django_db
-def test_additional_data(resource_client, team, django_user_model):
+def test_additional_data(resource_client, team, django_user_model, member_rd):
     team_member = django_user_model.objects.create(username="usul")
     team_admin = django_user_model.objects.create(username="muad_dib")
     team_all = django_user_model.objects.create(username="lisan_al_gaib")
@@ -182,7 +182,7 @@ def test_additional_data(resource_client, team, django_user_model):
 
 
 @pytest.mark.django_db
-def test_validate_local_user(resource_client, admin_user):
+def test_validate_local_user(resource_client, admin_user, member_rd):
     resp = resource_client.validate_local_user(username=admin_user.username, password="password")
 
     assert resp.status_code == 200

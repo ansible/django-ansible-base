@@ -396,15 +396,15 @@ This sub-feature will use signals to do bidirectional syncing of memberships of
 that relationship with memberships of their corresponding role.
 
 ```
-permission_registry.track_relationship(Team, 'tracked_users', 'team-member')
+permission_registry.track_relationship(Team, 'users', 'team-member')
 permission_registry.track_relationship(Team, 'team_parents', 'team-member')
 ```
 
 This only works with our 2 "actor" types of users and teams.
 Adding these lines will synchronize users and teams of team-object-roles with the "team-member"
-role definition (by name) to the `Team.tracked_users`
+role definition (by name) to the `Team.users`
 and `Team.tracked_parents` ManyToMany relationships, respectively.
-So if you have a team object, `team.tracked_users.add(user)` will also give that
+So if you have a team object, `team.users.add(user)` will also give that
 user _member permission_ to that team, where those permissions are defined by the
 role definition with the name "team-member".
 

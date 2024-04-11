@@ -20,6 +20,8 @@ from rest_framework.test import force_authenticate
 
 from ansible_base.lib.testing.fixtures import *  # noqa: F403, F401
 from ansible_base.lib.testing.util import copy_fixture
+from ansible_base.rbac import permission_registry
+from ansible_base.rbac.models import RoleDefinition
 from test_app import models
 
 
@@ -610,3 +612,14 @@ def disable_activity_stream():
 
     with no_activity_stream():
         yield
+
+
+@pytest.fixture
+def member_rd():
+    "Member role for a team, place in root conftest because it is needed for the team users tracked relationship"
+    return RoleDefinition.objects.create_from_permissions(
+        permissions=[permission_registry.team_permission, f'view_{permission_registry.team_model._meta.model_name}'],
+        name='team-member',
+        content_type=permission_registry.content_type_model.objects.get_for_model(permission_registry.team_model),
+        managed=True,
+    )
