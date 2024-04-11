@@ -21,11 +21,20 @@ ones that inherit from `AuditableModel` and call the
 `AuditableModel::connect_signals` class method which registers the appropriate
 signals.
 
+#### Excluding Fields
+
 You can exclude fields from being included in the changes logged by
 `activitystream` by setting the `activity_stream_excluded_field_names` class
 variable in your model.
 
-### What changes look like
+#### Limiting Fields
+
+You can specify a list of fields to include in activity stream entries for a
+model, if you don't want all fields to be included by default. In this way you
+can *limit* activity stream entries to the provided list of fields. Do this by
+setting the `activity_stream_limit_field_names` class variable in your model.
+
+### What activity stream entries look like
 
 The main activity stream model is
 `ansible_base.activitystream.models.entry.Entry`, and changes are stored in its
@@ -64,6 +73,13 @@ and their values (even hashed) are not saved in activity stream entries:
 - The `password` field of any `AbstractUser` subclass
 - Any model fields wrapped with `ansible_base.lib.utils.models.prevent_search()`
 
+**Note about types**: In order to provide filtering and searching, field values
+in the JSON blob are always coerced to a string. See the section about searching
+in the developer docs below for implementation details. In short: At
+serialization time, values are converted to the expected types based on the
+model field from which they originated. So we **present** the correct types, but
+**store** strings in the database.
+
 
 ### URLs
 
@@ -92,6 +108,79 @@ If the RBAC app is **not** being used, then only superusers can access the
 stream.
 
 
+### Filtering
+
+You can search/filter the activity stream using the normal DRF filtering
+technique of providing querystring parameters.
+
+For example, given the following:
+
+```json
+{
+    "id": 1,
+    "url": "",
+    "related": {
+        "created_by": "/api/v1/users/1/"
+    },
+    "summary_fields": {
+        "created_by": {
+            "id": 1,
+            "username": "_system",
+            "first_name": "",
+            "last_name": ""
+        },
+        "content_object": {
+            "id": 2,
+            "username": "admin",
+            "first_name": "",
+            "last_name": ""
+        }
+    },
+    "created": "2024-04-09T15:38:33.490777Z",
+    "created_by": 1,
+    "operation": "create",
+    "changes": {
+        "added_fields": {
+            "id": 2,
+            "email": "admin@stuff.invalid",
+            "created": "2024-04-09T15:38:33.480352Z",
+            "is_staff": true,
+            "modified": "2024-04-09T15:38:33.480341Z",
+            "password": "$encrypted$",
+            "username": "admin",
+            "is_active": true,
+            "last_name": "",
+            "created_by": 1,
+            "first_name": "",
+            "last_login": null,
+            "date_joined": "2024-04-09T15:38:33.356102Z",
+            "modified_by": 1,
+            "is_superuser": true,
+            "created_by_id": 1,
+            "modified_by_id": 1
+        },
+        "changed_fields": {},
+        "removed_fields": {}
+    },
+    "content_type": 17,
+    "object_id": "2",
+    "related_content_type": null,
+    "related_object_id": null,
+    "content_type_model": "user",
+    "related_content_type_model": null
+}
+```
+
+... you can filter from the `activitystream-list` URL by adding
+`?operation__exact=create&changes__added_fields__email=admin@stuff.invalid`
+to the URL.
+
+In the case of `changed_fields` where the values of the fields are size-2
+arrays, you can index into them using `__0__` and `__1__`. For example, to get
+all activity stream entries where the `weather` field was changed to `sunny`,
+you can use `?changes__changed_fields__weather__1__exact=sunny`.
+
+
 ## Dev Docs
 
 The way this works is by making use of Django signals. At a high level, when
@@ -103,6 +192,16 @@ Note that we make use of Django's
 [contenttypes](https://docs.djangoproject.com/en/5.0/ref/contrib/contenttypes/)
 framework and thus we store a generic foreign key to the instance of the model
 being acted on.
+
+The values of all fields (ie. the values of the dictionaries in `changes`) are
+coerced to strings before they are saved in the database. This is done by the
+`diff` utility function (as called by our signals with
+`all_values_as_strings=True`). The reason for this is to allow filtering
+(described above) to work. All filter parameters from the querystring come in as
+strings and trying to compare them against non-string values stored in the JSON
+blob doesn't work. Therefore, we store the values as strings, and then at
+serialization time we convert the values back to their expected types, based on
+the field the value came from, using `Field#to_python`.
 
 ### create
 

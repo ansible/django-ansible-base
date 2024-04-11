@@ -28,4 +28,4 @@ class AuthenticatorUser(AbstractUserSocialAuth):
     class Meta:
         """Meta data"""
 
-        unique_together = ("provider", "uid")
+        unique_together = ("provider", "uid", "user")

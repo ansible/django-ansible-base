@@ -3,6 +3,7 @@ import uuid
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.db.models import JSONField
 
 from ansible_base.activitystream.models import AuditableModel
 from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam, CommonModel, ImmutableCommonModel, ImmutableModel, NamedCommonModel
@@ -17,6 +18,7 @@ class Organization(AbstractOrganization):
 
 class User(AbstractUser, CommonModel, AuditableModel):
     resource = AnsibleResourceField(primary_key_field="id")
+    activity_stream_excluded_field_names = ['last_login']
 
     def summary_fields(self):
         return user_summary_fields(self)
@@ -253,6 +255,7 @@ class City(NamedCommonModel, AuditableModel):
 
     country = prevent_search(models.CharField(max_length=100, null=True, default='USA'))
     population = models.PositiveIntegerField(null=True, default=1000)
+    extra_data = JSONField(null=True, default=dict)
 
 
 class SecretColor(AuditableModel):

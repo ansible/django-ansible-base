@@ -70,7 +70,7 @@ class RoleDefinitionManager(models.Manager):
         has_permissions = set(RoleEvaluation.get_permissions(user, obj))
         has_permissions.update(user.singleton_permissions())
         if set(needed_perms) - set(has_permissions):
-            kwargs = {'permissions': needed_perms, 'name': f'{obj._meta.model_name}-creator-permission'}
+            kwargs = {'permissions': needed_perms, 'name': settings.ANSIBLE_BASE_ROLE_CREATOR_NAME.format(obj=obj, cls=type(obj))}
             defaults = {'content_type': ContentType.objects.get_for_model(obj)}
             try:
                 rd, _ = self.get_or_create(defaults=defaults, **kwargs)
@@ -625,7 +625,7 @@ class RoleEvaluationFields(models.Model):
     @classmethod
     def accessible_objects(cls, model_cls, user, codename, queryset: Optional[QuerySet] = None) -> QuerySet:
         if queryset is None:
-            queryset = model_cls.objects
+            queryset = model_cls.objects.all()
         return queryset.filter(pk__in=cls.accessible_ids(model_cls, user, codename))
 
     @classmethod

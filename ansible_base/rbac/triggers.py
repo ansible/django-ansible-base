@@ -3,7 +3,7 @@ from contextlib import contextmanager
 
 from django.apps import apps
 from django.conf import settings
-from django.db.models import Q
+from django.db.models import Model, Q
 from django.db.models.signals import m2m_changed, post_delete, post_init, post_save, pre_delete, pre_save
 from django.db.utils import ProgrammingError
 
@@ -131,7 +131,7 @@ def rbac_post_init_set_original_parent(sender, instance, **kwargs):
     instance.__rbac_original_parent_id = getattr(instance, parent_id_name)
 
 
-def get_parent_ids(instance) -> list[tuple[int, int]]:
+def get_parent_ids(instance) -> list[tuple[Model, int]]:
     parent_field_name = permission_registry.get_parent_fd_name(instance)
     if not parent_field_name:
         return []

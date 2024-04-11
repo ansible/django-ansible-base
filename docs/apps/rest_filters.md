@@ -1,6 +1,6 @@
 # Filtering and Sorting
 
-django-ansible-base has a built in mechanism for filtering and sorting query sets based on django-rest-framework Filters. 
+django-ansible-base has a built in mechanism for filtering and sorting query sets based on django-rest-framework Filters.
 
 ## Settings
 
@@ -72,4 +72,3 @@ class MyModel(CommonModel):
 ```
 
 In this example, the `inputs` field of MyModel would be excluded from being searched.
-
