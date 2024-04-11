@@ -2,11 +2,14 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 from django.core.exceptions import FieldDoesNotExist, FieldError, ValidationError
+from django.urls import reverse
+from django.utils.http import urlencode
 from rest_framework.exceptions import ParseError, PermissionDenied
 
 from ansible_base.authentication.models import Authenticator, AuthenticatorMap
 from ansible_base.authentication.views import AuthenticatorViewSet
 from ansible_base.rest_filters.rest_framework.field_lookup_backend import FieldLookupBackend
+from test_app import models
 
 
 def test_filters_related():
@@ -152,3 +155,21 @@ def test_filter_queryset(query):
     request.query_params.lists.return_value = iterator
 
     filter.filter_queryset(request, AuthenticatorMap.objects.all(), AuthenticatorViewSet)
+
+
+def test_filter_jsonfield_as_text(admin_api_client):
+    models.City.objects.create(name='city', extra_data={'mayor': 'John Doe', 'radius': 10, 'elevation': 1000, 'is_capital': True})
+    url = reverse('city-list')
+
+    # negative test, backwards compatibility doesn't allow this case
+    # JSONField isn't treated as structured data, but as a text blob
+    query_params = {'extra_data__mayor__icontains': 'John Doe'}
+    response = admin_api_client.get(url + '?' + urlencode(query_params))
+    assert response.status_code == 400
+    assert 'No related model for field mayor' in str(response.data['detail'])
+
+    # positive test, treating JSONField as a text blob
+    query_params = {'extra_data__icontains': '"mayor": "John Doe"'}
+    response = admin_api_client.get(url + '?' + urlencode(query_params))
+    assert response.status_code == 200
+    assert response.data['count'] == 1

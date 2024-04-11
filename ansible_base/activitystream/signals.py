@@ -39,7 +39,7 @@ def _store_activitystream_entry(old, new, operation):
 
     excluded = getattr(new, 'activity_stream_excluded_field_names', [])
     limit = getattr(new, 'activity_stream_limit_field_names', [])
-    delta = diff(old, new, exclude_fields=excluded, limit_fields=limit)
+    delta = diff(old, new, exclude_fields=excluded, limit_fields=limit, all_values_as_strings=True)
 
     if not delta:
         # No changes to store
