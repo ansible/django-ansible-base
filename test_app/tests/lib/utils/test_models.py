@@ -311,3 +311,43 @@ def test_diff_sanitizes_encrypted_fields_removed(disable_activity_stream):
     assert delta.removed_fields['testing1'] == ENCRYPTED_STRING
     assert delta.removed_fields['testing2'] == ENCRYPTED_STRING
     assert 'message' not in delta.removed_fields
+
+
+@pytest.mark.parametrize(
+    "username,expected_value",
+    [
+        (None, False),
+        ("system", True),
+        ("random", False),
+    ],
+)
+def test_is_system_user_system_user_setting_set(username, expected_value, system_user, random_user):
+    if username is None:
+        user = None
+    elif username == 'system':
+        user = system_user
+    else:
+        user = random_user
+
+    assert models.is_system_user(user) == expected_value
+
+
+@pytest.mark.parametrize(
+    "username",
+    [
+        None,
+        "system",
+        "random",
+    ],
+)
+def test_is_system_user_no_system_user_setting(username, system_user, random_user):
+    # If the system username is not set, no user should ever match it
+    if username is None:
+        user = None
+    elif username == "system":
+        user = system_user
+    else:
+        user = random_user
+
+    with override_settings(SYSTEM_USERNAME=None):
+        assert not models.is_system_user(user)

@@ -76,6 +76,17 @@ def user_summary_fields(user):
     return sf
 
 
+def is_system_user(user):
+    """
+    Takes a user objects and returns a boolean if that user's username is the same as the SYSTEM_USERNAME
+    """
+    setting_name = 'SYSTEM_USERNAME'
+    system_username = get_setting(setting_name)
+    if system_username is None or user is None:
+        return False
+    return user.username == system_username
+
+
 def get_system_user():
     system_user = None
     setting_name = 'SYSTEM_USERNAME'
