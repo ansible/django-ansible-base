@@ -161,14 +161,14 @@ def diff(
     :param json_safe: If True, the diff will be made JSON-safe by converting
         all non-JSON-safe values to strings using Django's smart_str function.
         (default: True)
+    :param include_m2m: If True, include many-to-many fields in the diff.
+        Otherwise, they are ignored. (default: False)
     :param exclude_fields: A list of field names to exclude from the diff.
         (default: [])
     :param limit_fields: A list of field names to limit the diff to. This can be
         useful, for example, when update_fields is passed to a model's save
         method and you only want to diff the fields that were updated.
         (default: [])
-    :param include_m2m: If True, include many-to-many fields in the diff.
-        Otherwise, they are ignored. (default: False)
     :param sanitize_encrypted: If True, encrypted fields will be replaced with
         a constant value (ENCRYPTED_STRING) in the diff. (default: True)
     :param all_values_as_strings: If True, all values will be converted to
