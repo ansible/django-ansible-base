@@ -7,20 +7,6 @@ from ansible_base.lib.utils.models import current_user_or_system_user, diff
 logger = logging.getLogger('ansible_base.activitystream.signals')
 
 
-def _always_exclude_fields():
-    """
-    Returns a list of 2-tuples of (model_or_base_class, 'field_name') that
-    should always be excluded from activity stream entries.
-    """
-
-    # The whole reason this is a function is to avoid circular imports.
-    from django.contrib.auth.models import AbstractUser
-
-    return [
-        (AbstractUser, 'last_login'),
-    ]
-
-
 class ActivityStreamEnabled(threading.local):
     def __init__(self):
         self.enabled = True
@@ -53,12 +39,6 @@ def _store_activitystream_entry(old, new, operation):
 
     excluded = getattr(new, 'activity_stream_excluded_field_names', [])
     limit = getattr(new, 'activity_stream_limit_field_names', [])
-
-    # Always exclude certain fields
-    for cls, field_name in _always_exclude_fields():
-        if isinstance(old, cls) or isinstance(new, cls):
-            excluded.append(field_name)
-
     delta = diff(old, new, exclude_fields=excluded, limit_fields=limit)
 
     if not delta:
