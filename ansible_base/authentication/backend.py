@@ -45,7 +45,6 @@ class AnsibleBaseAuth(ModelBackend):
                     return None
 
                 logger.info(f'User {user.username} logged in from authenticator with ID "{authenticator_id}"')
-                authenticator_object.database_instance.users.add(user)
                 return user
 
         return None

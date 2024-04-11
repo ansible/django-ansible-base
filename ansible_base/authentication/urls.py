@@ -1,13 +1,11 @@
-import importlib
 import logging
-from types import ModuleType
 
-from django.conf import settings
 from django.urls import include, path
 
 from ansible_base.authentication import views
 from ansible_base.authentication.apps import AuthenticationConfig
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugins, get_authenticator_urls
+from ansible_base.authentication.views.authenticator_users import get_authenticator_user_view
 from ansible_base.lib.routers import AssociationResourceRouter
 
 logger = logging.getLogger('ansible_base.authentication.urls')
@@ -31,17 +29,6 @@ for plugin_name in get_authenticator_plugins():
 authenticator_related_views = {
     'authenticator_maps': (views.AuthenticatorMapViewSet, 'authenticator_maps'),
 }
-try:
-    user_viewset_name = settings.ANSIBLE_BASE_USER_VIEWSET
-    module_name, junk, class_name = user_viewset_name.rpartition('.')
-    module = importlib.import_module(module_name, package=class_name)
-    user_viewset_view = getattr(module, class_name)
-    if isinstance(user_viewset_view, ModuleType):
-        raise Exception("ANSIBLE_BASE_USER_VIEWSET was not an APIView")
-    authenticator_related_views['users'] = (user_viewset_view, 'users')
-except Exception:
-    pass
-
 router = AssociationResourceRouter()
 router.register('authenticators', views.AuthenticatorViewSet, related_views=authenticator_related_views)
 router.register(
@@ -51,6 +38,11 @@ router.register(
         'authenticators': (views.AuthenticatorViewSet, 'authenticators'),
     },
 )
+
+# Add a custom related authenticator/X/users endpoint (not a standard FK relation on authenticators)
+auth_user_view = get_authenticator_user_view()
+if auth_user_view is not None:
+    router.register('authenticators/(?P<authenticator_id>[0-9]+)/users', auth_user_view, basename='authenticator-users')
 
 api_version_urls.extend(
     [
