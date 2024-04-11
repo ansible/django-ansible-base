@@ -23,7 +23,7 @@ class APIConfig(ServiceAPIConfig):
     service_type = "aap"
 
 
-RESOURCE_LIST = (
+RESOURCE_LIST = [
     ResourceConfig(
         get_user_model(),
         shared_resource=SharedResource(serializer=UserType, is_provider=False),
@@ -42,4 +42,4 @@ RESOURCE_LIST = (
     ResourceConfig(ResourceMigrationTestModel),
     ResourceConfig(Original1),
     ResourceConfig(Proxy2),
-)
+]

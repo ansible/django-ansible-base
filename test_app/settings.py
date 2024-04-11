@@ -1,8 +1,19 @@
 import os
+import sys
 
 from split_settings.tools import include
 
 DEBUG = True
+
+if "pytest" in sys.modules:
+    # https://github.com/agronholm/typeguard/issues/260
+    # Enable runtime type checking only for running tests
+    # must be done here because python hooks will not reliably call the
+    # typguard plugin setup before other plugins which setup Django, which loads settings.
+    # Lower in this settings file, the dynamic config imports ansible_base
+    from typeguard import install_import_hook
+
+    install_import_hook(packages=["ansible_base"])
 
 ALLOWED_HOSTS = ["*"]
 

@@ -1,9 +1,10 @@
 import logging
-from typing import Optional
+from typing import Optional, Union
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db.models import Model
+from django.db.models.base import ModelBase  # post_migrate may call with phony objects
 from django.db.models.signals import post_delete, post_migrate
 from django.utils.functional import cached_property
 
@@ -46,7 +47,7 @@ class PermissionRegistry:
     def track_relationship(self, cls, relationship, role_name):
         self._tracked_relationships.add((cls, relationship, role_name))
 
-    def get_parent_model(self, model) -> Optional[Model]:
+    def get_parent_model(self, model) -> Optional[type]:
         model = self._name_to_model[model._meta.model_name]
         parent_field_name = self.get_parent_fd_name(model)
         if parent_field_name is None:
@@ -159,7 +160,8 @@ class PermissionRegistry:
     def all_registered_models(self):
         return [cls for cls in self._registry]
 
-    def is_registered(self, obj: Model) -> bool:
+    def is_registered(self, obj: Union[ModelBase, Model]) -> bool:
+        """Tells if the given object or class is a type tracked by DAB RBAC"""
         return any(obj._meta.model_name == cls._meta.model_name for cls in self._registry)
 
 

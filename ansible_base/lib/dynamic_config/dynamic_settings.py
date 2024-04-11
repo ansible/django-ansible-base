@@ -140,6 +140,9 @@ if 'ansible_base.rbac' in INSTALLED_APPS:
 
     # Permissions a user will get when creating a new item
     ANSIBLE_BASE_CREATOR_DEFAULTS = ['add', 'change', 'delete', 'view']
+    # If a role does not already exist that can give those object permissions
+    # then the system must create one, this is used for naming the auto-created role
+    ANSIBLE_BASE_ROLE_CREATOR_NAME = '{obj._meta.model_name}-creator-permission'
 
     # Specific feature enablement bits
     # For assignments

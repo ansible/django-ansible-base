@@ -2,7 +2,6 @@ import re
 from collections import defaultdict
 
 from django.conf import settings
-from django.db.models import Model
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from ansible_base.lib.utils.models import is_add_perm
@@ -21,7 +20,7 @@ def codenames_for_cls(cls) -> set[str]:
     return {t[0] for t in cls._meta.permissions} | {f'{act}_{cls._meta.model_name}' for act in cls._meta.default_permissions}
 
 
-def permissions_allowed_for_system_role() -> dict[Model, set[str]]:
+def permissions_allowed_for_system_role() -> dict[type, set[str]]:
     "Permission codenames useable in system-wide roles, which have content_type set to None"
     permissions_by_model = defaultdict(set)
     for cls in permission_registry.all_registered_models:
@@ -32,7 +31,7 @@ def permissions_allowed_for_system_role() -> dict[Model, set[str]]:
     return permissions_by_model
 
 
-def permissions_allowed_for_role(cls) -> dict[Model, set[str]]:
+def permissions_allowed_for_role(cls) -> dict[type, set[str]]:
     "Permission codenames valid for a RoleDefinition of given class, organized by permission class"
     if cls is None:
         return permissions_allowed_for_system_role()
@@ -51,7 +50,7 @@ def permissions_allowed_for_role(cls) -> dict[Model, set[str]]:
     return permissions_by_model
 
 
-def combine_values(data: dict[Model, str]) -> set[str]:
+def combine_values(data: dict[type, set[str]]) -> set[str]:
     "Utility method to merge everything in .values() into a single set"
     ret = set()
     for this_set in data.values():

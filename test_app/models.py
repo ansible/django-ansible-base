@@ -17,6 +17,7 @@ class Organization(AbstractOrganization):
 
 class User(AbstractUser, CommonModel, AuditableModel):
     resource = AnsibleResourceField(primary_key_field="id")
+    activity_stream_excluded_field_names = ['last_login']
 
     def summary_fields(self):
         return user_summary_fields(self)
