@@ -64,6 +64,26 @@ class InventoryViewSet(TestAppViewSet):
     queryset = models.Inventory.objects.all()
 
 
+class NamespaceViewSet(TestAppViewSet):
+    serializer_class = serializers.NamespaceSerializer
+    queryset = models.Namespace.objects.all()
+
+
+class ParentNameViewSet(TestAppViewSet):
+    serializer_class = serializers.ParentNameSerializer
+    queryset = models.ParentName.objects.all()
+
+
+class PositionModelViewSet(TestAppViewSet):
+    serializer_class = serializers.PositionModelSerializer
+    queryset = models.PositionModel.objects.all()
+
+
+class WeirdPermViewSet(TestAppViewSet):
+    serializer_class = serializers.WeirdPermSerializer
+    queryset = models.WeirdPerm.objects.all()
+
+
 class InstanceGroupViewSet(TestAppViewSet):
     serializer_class = serializers.InstanceGroupSerializer
     queryset = models.InstanceGroup.objects.all()

@@ -67,6 +67,7 @@ class Migration(migrations.Migration):
                 ('modified', models.DateTimeField(auto_now=True, help_text='The date/time this resource was created')),
             ],
             options={
+                'ordering': ['id'],
                 'verbose_name_plural': 'role_definition',
             },
         ),
@@ -85,7 +86,7 @@ class Migration(migrations.Migration):
                     related_name='team_assignments', to='dab_rbac.roledefinition')),
             ],
             options={
-                'abstract': False,
+                'ordering': ['id'],
             },
         ),
         migrations.AddField(
@@ -104,7 +105,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='roleteamassignment',
             name='team',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.ANSIBLE_BASE_TEAM_MODEL),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.ANSIBLE_BASE_TEAM_MODEL, related_name='role_assignments'),
         ),
         migrations.CreateModel(
             name='RoleUserAssignment',
@@ -121,7 +122,7 @@ class Migration(migrations.Migration):
                     related_name='user_assignments', to='dab_rbac.roledefinition')),
             ],
             options={
-                'abstract': False,
+                'ordering': ['id'],
             },
         ),
         migrations.AddField(
@@ -140,7 +141,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='roleuserassignment',
             name='user',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL, related_name='role_assignments'),
         ),
         migrations.CreateModel(
             name='ObjectRole',
