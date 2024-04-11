@@ -5,7 +5,6 @@ authenticator_data = {
     "name": "Local Database Authenticator",
     "enabled": True,
     "create_objects": True,
-    "users_unique": False,
     "remove_users": False,
     "configuration": {},
     "type": "ansible_base.authentication.authenticator_plugins.local",

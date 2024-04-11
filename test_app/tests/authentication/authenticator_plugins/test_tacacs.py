@@ -232,7 +232,6 @@ def test_tacacs_create_authenticator_error_handling(admin_api_client, tacacs_con
         "name": "TACACS authenticator (should not get created)",
         "enabled": True,
         "create_objects": True,
-        "users_unique": False,
         "remove_users": True,
         "configuration": tacacs_configuration,
         "type": "ansible_base.authentication.authenticator_plugins.tacacs",

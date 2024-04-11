@@ -1,5 +1,4 @@
-from django.conf import settings
-from django.db.models import JSONField, ManyToManyField, fields
+from django.db.models import JSONField, fields
 
 from ansible_base.authentication.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_plugin
 from ansible_base.lib.abstract_models.common import UniqueNamedCommonModel
@@ -10,8 +9,6 @@ class Authenticator(UniqueNamedCommonModel):
     ignore_relations = ['authenticator_user']
     enabled = fields.BooleanField(default=False, help_text="Should this authenticator be enabled")
     create_objects = fields.BooleanField(default=True, help_text="Allow authenticator to create objects (users, teams, organizations)")
-    # TODO: Implement unique users, remove user, etc with team and org mapping feature.
-    users_unique = fields.BooleanField(default=False, help_text="Are users from this source the same as users from another source with the same id")
     remove_users = fields.BooleanField(
         default=True, help_text="When a user authenticates from this source should they be removed from any other groups they were previously added to"
     )
@@ -26,12 +23,6 @@ class Authenticator(UniqueNamedCommonModel):
     )
     slug = fields.SlugField(max_length=1024, default=None, editable=False, unique=True, help_text="An immutable identifier for the authenticator")
     category = fields.CharField(max_length=30, default=None, help_text="The base type of this authenticator")
-    users = ManyToManyField(
-        settings.AUTH_USER_MODEL,
-        related_name='authenticators',
-        blank=True,
-        help_text="The list of users who have authenticated from this authenticator",
-    )
 
     def save(self, *args, **kwargs):
         from ansible_base.lib.utils.encryption import ansible_encryption

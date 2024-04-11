@@ -70,7 +70,6 @@ def test_oidc_endpoint_url_validation(
     expected_status_code,
     expected_error,
 ):
-
     config = {
         "OIDC_ENDPOINT": endpoint_url,
         "VERIFY_SSL": True,
@@ -82,7 +81,6 @@ def test_oidc_endpoint_url_validation(
         "name": "OIDC TEST",
         "enabled": True,
         "create_objects": True,
-        "users_unique": False,
         "remove_users": True,
         "configuration": config,
         "type": "ansible_base.authentication.authenticator_plugins.oidc",

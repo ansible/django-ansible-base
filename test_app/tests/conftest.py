@@ -65,6 +65,23 @@ def test_migrations_okay(*args, **kwargs):
 post_migrate.connect(test_migrations_okay)
 
 
+def delete_authenticator(authenticator):
+    from django.conf import settings
+
+    from ansible_base.authentication.models import AuthenticatorUser
+
+    for au in AuthenticatorUser.objects.filter(provider=authenticator):
+        try:
+            # The tests are very sensitive to the SYSTEM_USER being removed so we won't delete that user
+            if au.username != settings.SYSTEM_USERNAME:
+                au.user.delete()
+        except Exception:
+            # Its possible that something else already delete the user if a user was multi linked somehow
+            pass
+        au.delete()
+    authenticator.delete()
+
+
 @pytest.fixture
 def azuread_configuration():
     return {
@@ -82,12 +99,12 @@ def azuread_authenticator(azuread_configuration):
         name="Test AzureAD Authenticator",
         enabled=True,
         create_objects=True,
-        users_unique=False,
         remove_users=True,
         type="ansible_base.authentication.authenticator_plugins.azuread",
         configuration=azuread_configuration,
     )
-    return authenticator
+    yield authenticator
+    delete_authenticator(authenticator)
 
 
 @pytest.fixture
@@ -162,12 +179,12 @@ def github_authenticator(github_configuration):
         name="Test Github Authenticator",
         enabled=True,
         create_objects=True,
-        users_unique=False,
         remove_users=True,
         type="ansible_base.authentication.authenticator_plugins.github",
         configuration=github_configuration,
     )
-    return authenticator
+    yield authenticator
+    delete_authenticator(authenticator)
 
 
 @pytest.fixture
@@ -178,12 +195,12 @@ def github_organization_authenticator(github_organization_configuration):
         name="Test Github Organization Authenticator",
         enabled=True,
         create_objects=True,
-        users_unique=False,
         remove_users=True,
         type="ansible_base.authentication.authenticator_plugins.github_org",
         configuration=github_organization_configuration,
     )
-    return authenticator
+    yield authenticator
+    delete_authenticator(authenticator)
 
 
 @pytest.fixture
@@ -194,12 +211,12 @@ def github_team_authenticator(github_team_configuration):
         name="Test Github Team Authenticator",
         enabled=True,
         create_objects=True,
-        users_unique=False,
         remove_users=True,
         type="ansible_base.authentication.authenticator_plugins.github_team",
         configuration=github_team_configuration,
     )
-    return authenticator
+    yield authenticator
+    delete_authenticator(authenticator)
 
 
 @pytest.fixture
@@ -210,12 +227,12 @@ def github_enterprise_authenticator(github_enterprise_configuration):
         name="Test Github Enterprise Authenticator",
         enabled=True,
         create_objects=True,
-        users_unique=False,
         remove_users=True,
         type="ansible_base.authentication.authenticator_plugins.github_enterprise",
         configuration=github_enterprise_configuration,
     )
-    return authenticator
+    yield authenticator
+    delete_authenticator(authenticator)
 
 
 @pytest.fixture
@@ -226,12 +243,12 @@ def github_enterprise_organization_authenticator(github_enterprise_organization_
         name="Test Github Enterprise Organization Authenticator",
         enabled=True,
         create_objects=True,
-        users_unique=False,
         remove_users=True,
         type="ansible_base.authentication.authenticator_plugins.github_enterprise_org",
         configuration=github_enterprise_organization_configuration,
     )
-    return authenticator
+    yield authenticator
+    delete_authenticator(authenticator)
 
 
 @pytest.fixture
@@ -242,12 +259,12 @@ def github_enterprise_team_authenticator(github_enterprise_team_configuration):
         name="Test Github Enterprise Team Authenticator",
         enabled=True,
         create_objects=True,
-        users_unique=False,
         remove_users=True,
         type="ansible_base.authentication.authenticator_plugins.github_enterprise_team",
         configuration=github_enterprise_team_configuration,
     )
-    return authenticator
+    yield authenticator
+    delete_authenticator(authenticator)
 
 
 @pytest.fixture
@@ -266,12 +283,12 @@ def google_oauth2_authenticator(google_oauth2_configuration):
         name="Test Google OAuth2 Authenticator",
         enabled=True,
         create_objects=True,
-        users_unique=False,
         remove_users=True,
         type="ansible_base.authentication.authenticator_plugins.google_oauth2",
         configuration=google_oauth2_configuration,
     )
-    return authenticator
+    yield authenticator
+    delete_authenticator(authenticator)
 
 
 @pytest.fixture
@@ -292,14 +309,12 @@ def oidc_authenticator(oidc_configuration):
         name="Test OIDC Authenticator",
         enabled=True,
         create_objects=True,
-        users_unique=False,
         remove_users=True,
         type="ansible_base.authentication.authenticator_plugins.oidc",
         configuration=oidc_configuration,
     )
     yield authenticator
-    authenticator.authenticator_user.all().delete()
-    authenticator.delete()
+    delete_authenticator(authenticator)
 
 
 @pytest.fixture
@@ -323,15 +338,16 @@ def ldap_configuration():
 def ldap_authenticator(ldap_configuration):
     from ansible_base.authentication.models import Authenticator
 
-    return Authenticator.objects.create(
+    authenticator = Authenticator.objects.create(
         name="Test LDAP Authenticator",
         enabled=True,
         create_objects=True,
-        users_unique=False,
         remove_users=True,
         type="ansible_base.authentication.authenticator_plugins.ldap",
         configuration=ldap_configuration,
     )
+    yield authenticator
+    delete_authenticator(authenticator)
 
 
 @pytest.fixture
@@ -354,14 +370,12 @@ def tacacs_authenticator(tacacs_configuration):
         name="Test TACACS Authenticator",
         enabled=True,
         create_objects=True,
-        users_unique=False,
         remove_users=True,
         type="ansible_base.authentication.authenticator_plugins.tacacs",
         configuration=tacacs_configuration,
     )
     yield authenticator
-    authenticator.authenticator_user.all().delete()
-    authenticator.delete()
+    delete_authenticator(authenticator)
 
 
 @pytest.fixture
@@ -397,12 +411,12 @@ def saml_authenticator(saml_configuration):
         name="Test SAML Authenticator",
         enabled=True,
         create_objects=True,
-        users_unique=False,
         remove_users=True,
         type="ansible_base.authentication.authenticator_plugins.saml",
         configuration=saml_configuration,
     )
-    return authenticator
+    yield authenticator
+    delete_authenticator(authenticator)
 
 
 @pytest.fixture
@@ -413,12 +427,12 @@ def custom_authenticator(db):
         name="Test Custom Authenticator",
         enabled=True,
         create_objects=True,
-        users_unique=False,
         remove_users=True,
         type="test_app.tests.fixtures.authenticator_plugins.custom",
         configuration={},
     )
-    return authenticator
+    yield authenticator
+    delete_authenticator(authenticator)
 
 
 @pytest.fixture
@@ -429,7 +443,6 @@ def keycloak_authenticator(db):
         name="Test Keycloak Authenticator",
         enabled=True,
         create_objects=True,
-        users_unique=False,
         remove_users=True,
         type="ansible_base.authentication.authenticator_plugins.keycloak",
         configuration={
@@ -440,7 +453,8 @@ def keycloak_authenticator(db):
             "SECRET": "asdf",
         },
     )
-    return authenticator
+    yield authenticator
+    delete_authenticator(authenticator)
 
 
 @copy_fixture(copies=3)  # noqa: F405
