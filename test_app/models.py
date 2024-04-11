@@ -2,6 +2,7 @@ import uuid
 
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.db.models import JSONField
 
 from ansible_base.activitystream.models import AuditableModel
 from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam, CommonModel, ImmutableCommonModel, ImmutableModel, NamedCommonModel
@@ -11,11 +12,18 @@ from ansible_base.resource_registry.fields import AnsibleResourceField
 
 
 class Organization(AbstractOrganization):
+    class Meta:
+        ordering = ['id']
+
     resource = AnsibleResourceField(primary_key_field="id")
 
 
 class User(AbstractUser, CommonModel, AuditableModel):
+    class Meta(AbstractUser.Meta):
+        ordering = ['id']
+
     resource = AnsibleResourceField(primary_key_field="id")
+    activity_stream_excluded_field_names = ['last_login']
 
     def summary_fields(self):
         return user_summary_fields(self)
@@ -29,6 +37,7 @@ class Team(AbstractTeam):
 
     class Meta:
         app_label = 'test_app'
+        ordering = ['id']
         abstract = False
         unique_together = [('organization', 'name')]
         ordering = ('organization__name', 'name')
@@ -58,6 +67,7 @@ class EncryptionModel(NamedCommonModel):
 
     class Meta:
         app_label = "test_app"
+        ordering = ['id']
 
     encrypted_fields = ['testing1', 'testing2']
 
@@ -94,10 +104,11 @@ class ImmutableLogEntryNotCommon(ImmutableModel):
 class Inventory(models.Model):
     "Simple example of a child object, it has a link to its parent organization"
     name = models.CharField(max_length=512)
-    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, null=True)
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, null=True, related_name='inventories')
 
     class Meta:
         app_label = 'test_app'
+        ordering = ['id']
         permissions = [('update_inventory', 'Do inventory updates')]
 
     def summary_fields(self):
@@ -112,7 +123,7 @@ class InstanceGroup(models.Model):
 class Namespace(models.Model):
     "Example of a child object with its own child objects"
     name = models.CharField(max_length=64, unique=True, blank=False)
-    organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name='namespaces')
 
 
 class CollectionImport(models.Model):
@@ -128,17 +139,18 @@ class ExampleEvent(models.Model):
 
 class Cow(models.Model):
     "This model has a special action it can do, which is to give advice"
-    organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name='cows')
 
     class Meta:
         app_label = 'test_app'
+        ordering = ['id']
         permissions = [('say_cow', 'Make cow say some advice')]
 
 
 class UUIDModel(models.Model):
     "Tests that system works with a model that has a string uuid primary key"
     id = models.UUIDField(primary_key=True, default=uuid.uuid4)
-    organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name='uuidmodels')
 
 
 class ImmutableTask(models.Model):
@@ -146,26 +158,28 @@ class ImmutableTask(models.Model):
 
     class Meta:
         default_permissions = ('add', 'view', 'delete')
+        ordering = ['id']
         permissions = [('cancel_immutabletask', 'Stop this task from running')]
 
 
 class ParentName(models.Model):
     "Tests that system works with a parent field name different from parent model name"
-    my_organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
+    my_organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name='parentnames')
 
 
 class PositionModel(models.Model):
     "Uses a primary key other than id to test that everything still works"
     position = models.BigIntegerField(primary_key=True)
-    organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name='positionmodels')
 
 
 class WeirdPerm(models.Model):
     "Uses a weird permission name"
-    organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name='weirdperms')
 
     class Meta:
         app_label = 'test_app'
+        ordering = ['id']
         permissions = [("I'm a lovely coconut", "You can be a lovely coconut with this object"), ("crack", "Can crack open this coconut")]
 
 
@@ -174,6 +188,7 @@ class ProxyInventory(Inventory):
 
     class Meta:
         proxy = True
+        ordering = ['id']
         permissions = [
             ("view_inventory", "Can view inventory"),
             ("change_inventory", "Can change inventory"),
@@ -218,6 +233,7 @@ permission_registry.track_relationship(Team, 'team_parents', 'team-member')
 class MultipleFieldsModel(NamedCommonModel):
     class Meta:
         app_label = "test_app"
+        ordering = ['id']
 
     char_field1 = models.CharField(max_length=100, null=True, default='a')
     char_field2 = models.CharField(max_length=100, null=True, default='b')
@@ -228,6 +244,7 @@ class MultipleFieldsModel(NamedCommonModel):
 class Animal(NamedCommonModel, AuditableModel):
     class Meta:
         app_label = "test_app"
+        ordering = ['id']
 
     activity_stream_excluded_field_names = ['age']
 
@@ -246,11 +263,13 @@ class Animal(NamedCommonModel, AuditableModel):
 class City(NamedCommonModel, AuditableModel):
     class Meta:
         app_label = "test_app"
+        ordering = ['id']
 
     activity_stream_limit_field_names = ['country']
 
     country = prevent_search(models.CharField(max_length=100, null=True, default='USA'))
     population = models.PositiveIntegerField(null=True, default=1000)
+    extra_data = JSONField(null=True, default=dict)
 
 
 class SecretColor(AuditableModel):

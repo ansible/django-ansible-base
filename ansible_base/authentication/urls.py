@@ -22,7 +22,7 @@ api_version_urls = []
 
 # Load urls from authenticator plugins
 for plugin_name in get_authenticator_plugins():
-    plugin_urls = getattr(get_authenticator_urls(plugin_name), 'urls', None)
+    plugin_urls = get_authenticator_urls(plugin_name)
     if plugin_urls:
         api_version_urls.extend(plugin_urls)
         logger.debug(f"Loaded URLS from {plugin_name}")

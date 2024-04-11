@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from rest_framework import serializers
 
 from ansible_base.activitystream.models import Entry
@@ -20,6 +22,7 @@ class EntrySerializer(ImmutableCommonModelSerializer):
 
     content_type_model = serializers.SerializerMethodField()
     related_content_type_model = serializers.SerializerMethodField()
+    changes = serializers.SerializerMethodField()
 
     def get_content_type_model(self, obj):
         if obj.content_type:
@@ -28,6 +31,32 @@ class EntrySerializer(ImmutableCommonModelSerializer):
     def get_related_content_type_model(self, obj):
         if obj.related_content_type:
             return obj.related_content_type.model
+
+    def _field_value_to_python(self, entry, field_name, value):
+        model = entry.content_type.model_class()
+        field = model._meta.get_field(field_name)
+        return field.to_python(value)
+
+    def get_changes(self, obj):
+        """
+        We store strings, we have to convert them back to the correct type.
+        """
+        if not obj.changes:
+            return None
+
+        changes = deepcopy(obj.changes)
+        # We'll have 'added_fields', 'removed_fields', 'changed_fields'. The first two
+        # are simple k-v pairs, the last is a k-v pair where the value is [old, new].
+        for field_name, value in obj.changes['added_fields'].items():
+            changes['added_fields'][field_name] = self._field_value_to_python(obj, field_name, value)
+        for field_name, value in obj.changes['removed_fields'].items():
+            changes['removed_fields'][field_name] = self._field_value_to_python(obj, field_name, value)
+        for field_name, value in obj.changes['changed_fields'].items():
+            changes['changed_fields'][field_name] = [
+                self._field_value_to_python(obj, field_name, value[0]),
+                self._field_value_to_python(obj, field_name, value[1]),
+            ]
+        return changes
 
     def _get_summary_fields(self, obj) -> dict[str, dict]:
         summary_fields = super()._get_summary_fields(obj)

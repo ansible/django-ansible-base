@@ -23,6 +23,8 @@ class Migration(migrations.Migration):
                 ('population', models.PositiveIntegerField(default=1000, null=True)),
                 ('created_by', models.ForeignKey(default=None, editable=False, help_text='The user who created this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_created+', to=settings.AUTH_USER_MODEL)),
                 ('modified_by', models.ForeignKey(default=None, editable=False, help_text='The user who last modified this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_modified+', to=settings.AUTH_USER_MODEL)),
+                ('extra_data', models.JSONField(default=dict, null=True, help_text='Extra data')),
             ],
+            options={'ordering': ['id']},
         ),
     ]

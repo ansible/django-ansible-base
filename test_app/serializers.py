@@ -61,6 +61,36 @@ class InventorySerializer(RelatedAccessMixin, ModelSerializer):
         fields = '__all__'
 
 
+class NamespaceSerializer(RelatedAccessMixin, ModelSerializer):
+    class Meta:
+        model = models.Namespace
+        fields = '__all__'
+
+
+class CollectionImportSerializer(RelatedAccessMixin, ModelSerializer):
+    class Meta:
+        model = models.CollectionImport
+        fields = '__all__'
+
+
+class ParentNameSerializer(RelatedAccessMixin, ModelSerializer):
+    class Meta:
+        model = models.ParentName
+        fields = '__all__'
+
+
+class PositionModelSerializer(RelatedAccessMixin, ModelSerializer):
+    class Meta:
+        model = models.PositionModel
+        fields = '__all__'
+
+
+class WeirdPermSerializer(RelatedAccessMixin, ModelSerializer):
+    class Meta:
+        model = models.WeirdPerm
+        fields = '__all__'
+
+
 class InstanceGroupSerializer(RelatedAccessMixin, ModelSerializer):
     class Meta:
         model = models.InstanceGroup
@@ -82,4 +112,10 @@ class UUIDModelSerializer(RelatedAccessMixin, ModelSerializer):
 class ImmutableLogEntrySerializer(ImmutableCommonModelSerializer):
     class Meta:
         model = models.ImmutableLogEntry
+        fields = '__all__'
+
+
+class CitySerializer(NamedCommonModelSerializer):
+    class Meta:
+        model = models.City
         fields = '__all__'

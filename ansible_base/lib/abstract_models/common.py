@@ -66,6 +66,9 @@ class ModifiableModel(models.Model):
             self.modified_by = current_user_or_system_user()
             update_fields.append('modified_by')
 
+        if kwargs.get('update_fields') is not None:
+            kwargs['update_fields'] = update_fields
+
         return super().save(*args, **kwargs)
 
 
@@ -93,12 +96,10 @@ class CreatableModel(models.Model):
         This save function will provide the following features automatically.
           * It will automatically add a created_by fields for new items
         '''
-        update_fields = list(kwargs.get('update_fields', []))
 
         if not self.pk:
             if self.created_by is None:
                 self.created_by = current_user_or_system_user()
-                update_fields.append('created_by')
 
         return super().save(*args, **kwargs)
 
