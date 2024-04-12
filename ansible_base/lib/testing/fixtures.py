@@ -135,12 +135,16 @@ def expected_log(no_log_messages):
             with no_log_messages():
                 yield
             sev_logger = getattr(logger, severity)
+
+            call_count = 0
+            for call in sev_logger.call_args_list:
+                if substr in call.args[0]:
+                    call_count = call_count + 1
+
             if assert_not_called:
-                sev_logger.assert_not_called()
+                assert call_count == 0, f"Expected 0 calls but got {call_count}"
             else:
-                sev_logger.assert_called_once()
-                args, kwargs = sev_logger.call_args
-                assert substr in args[0]
+                assert call_count == 1, f"Expected 1 call but got {call_count}"
 
     return f
 
