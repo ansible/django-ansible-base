@@ -24,14 +24,17 @@ def test_activitystream_create(system_user, animal):
     assert entry.changes['removed_fields'] == {}
     assert entry.changes['added_fields']['name'] == animal.name
     assert entry.changes['added_fields']['owner'] == str(animal.owner.pk)
+    # We don't include the "attnames"
+    assert 'owner_id' not in entry.changes['added_fields']
 
 
-def test_activitystream_update(system_user, animal):
+def test_activitystream_update(system_user, animal, random_user):
     """
     Ensure that an activity stream entry is created when an object is updated.
     """
     original_name = animal.name
     animal.name = 'Rocky'
+    animal.owner = random_user
     animal.save()
 
     entries = animal.activity_stream_entries
@@ -43,8 +46,10 @@ def test_activitystream_update(system_user, animal):
     assert entry.changes['removed_fields'] == {}
     # just name was changed. modified/modified_by doesn't show up because they
     # are set in save, and we're using pre_save, so we won't see the new values yet.
-    assert len(entry.changes['changed_fields']) == 1
+    assert len(entry.changes['changed_fields']) == 2
     assert entry.changes['changed_fields']['name'] == [original_name, 'Rocky']
+    # We don't include the "attnames"
+    assert 'owner_id' not in entry.changes['changed_fields']
 
 
 def test_activitystream_m2m(system_user, animal, user, random_user):
