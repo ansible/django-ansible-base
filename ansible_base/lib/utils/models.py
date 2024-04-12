@@ -15,13 +15,13 @@ from ansible_base.lib.utils.string import make_json_safe
 logger = logging.getLogger('ansible_base.lib.utils.models')
 
 
-def get_all_field_names(model, concrete_only=False):
+def get_all_field_names(model, concrete_only=False, include_attnames=True):
     # Implements compatibility with _meta.get_all_field_names
     # See: https://docs.djangoproject.com/en/1.11/ref/models/meta/#migrating-from-the-old-api
     return list(
         set(
             chain.from_iterable(
-                (field.name, field.attname) if hasattr(field, 'attname') else (field.name,)
+                (field.name, field.attname) if include_attnames and hasattr(field, 'attname') else (field.name,)
                 for field in model._meta.get_fields()
                 # For complete backwards compatibility, you may want to exclude
                 # GenericForeignKey from the results.
@@ -215,7 +215,7 @@ def diff(
         if obj is None:
             continue
 
-        for field in get_all_field_names(obj, concrete_only=True):
+        for field in get_all_field_names(obj, concrete_only=True, include_attnames=False):
             field_obj = obj._meta.get_field(field)
 
             # Skip the field if needed
