@@ -162,10 +162,10 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
     )
 
     RESPONSE_TYPE = CharField(
-        help_text=_("The authentication method to use at the token endpoint. Common values are 'client_secret_post', 'client_secret_basic'."),
+        help_text=_("The reponse type the OIDC endpoint should return. Common values are 'code', 'id_token' and 'token'."),
         default="code",
         allow_null=True,
-        ui_field_label=_("Token Endpoint Auth Method"),
+        ui_field_label=_("Response Type"),
     )
 
     SCOPE = ListField(
