@@ -19,7 +19,6 @@ def get_resource_server_config() -> ResourceServerConfig:
 
 def get_service_token(user_id, expiration=60):
     config = get_resource_server_config()
-    print(config)
     payload = {
         "service_id": str(service_id()),
         "user_id": str(user_id),
