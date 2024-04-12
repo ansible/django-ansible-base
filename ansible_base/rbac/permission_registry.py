@@ -158,7 +158,7 @@ class PermissionRegistry:
 
     @property
     def all_registered_models(self):
-        return [cls for cls in self._registry]
+        return list(self._registry)
 
     def is_registered(self, obj: Union[ModelBase, Model]) -> bool:
         """Tells if the given object or class is a type tracked by DAB RBAC"""
