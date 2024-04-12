@@ -5,12 +5,26 @@ from typing import Optional
 import requests
 import urllib3
 
+from ansible_base.resource_registry.resource_server import get_resource_server_config, get_service_token
+
 ResourceRequestBody = namedtuple("ResourceRequestBody", ["ansible_id", "service_id", "resource_type", "resource_data"], defaults=(None, None, None, None))
 
 
 urllib3.disable_warnings()
 
 logger = logging.getLogger('ansible_base.resources_api.rest_client')
+
+
+def get_resource_server_client(user_id, service_path, **kwargs):
+    config = get_resource_server_config()
+
+    return ResourceAPIClient(
+        service_url=config["URL"],
+        service_path=service_path,
+        requests_auth_kwargs={"headers": {"Authorization": "Token " + get_service_token(user_id)}},
+        verify_https=config["VALIDATE_HTTPS"],
+        **kwargs,
+    )
 
 
 class ResourceAPIClient:
