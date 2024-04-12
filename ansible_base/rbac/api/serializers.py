@@ -97,7 +97,7 @@ class ContentTypeField(ChoiceLikeMixin):
             return f'aap.{cls._meta.model_name}'
 
     def get_dynamic_choices(self):
-        return [(self.get_resource_type_name(cls), cls._meta.verbose_name.title()) for cls in permission_registry.all_registered_models]
+        return list(sorted((self.get_resource_type_name(cls), cls._meta.verbose_name.title()) for cls in permission_registry.all_registered_models))
 
     def get_dynamic_object(self, data):
         model = data.rsplit('.')[-1]
@@ -124,7 +124,7 @@ class PermissionField(ChoiceLikeMixin):
                 perms.append(f'{self.service_prefix}.{action}_{cls_name}')
             for perm_name, description in cls._meta.permissions:
                 perms.append(f'{self.service_prefix}.{perm_name}')
-        return perms
+        return list(sorted(perms))
 
     def get_dynamic_object(self, data):
         codename = data.rsplit('.')[-1]
