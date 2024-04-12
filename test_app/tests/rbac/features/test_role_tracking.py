@@ -9,11 +9,11 @@ def test_add_user_to_team_relationship(team, rando, inventory, inv_rd, member_rd
     assert not rando.has_obj_perm(team, 'member_team')
     assert not rando.has_obj_perm(inventory, 'change_inventory')
 
-    team.tracked_users.add(rando)
+    team.users.add(rando)
     assert rando.has_obj_perm(team, 'member_team')
     assert rando.has_obj_perm(inventory, 'change_inventory')
 
-    team.tracked_users.clear()
+    team.users.clear()
     assert not rando.has_obj_perm(team, 'member_team')
     assert not rando.has_obj_perm(inventory, 'change_inventory')
 
@@ -23,10 +23,10 @@ def test_add_user_to_tracked_role(team, rando, member_rd):
     assert not rando.has_obj_perm(team, 'member_team')
 
     member_rd.give_permission(rando, team)
-    assert rando in team.tracked_users.all()
+    assert rando in team.users.all()
 
     member_rd.remove_permission(rando, team)
-    assert rando not in team.tracked_users.all()
+    assert rando not in team.users.all()
 
 
 @pytest.mark.django_db

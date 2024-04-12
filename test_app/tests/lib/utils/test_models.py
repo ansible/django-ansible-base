@@ -113,7 +113,7 @@ def test_diff_old_none_means_all_fields_are_new(system_user, multiple_fields_mod
     require_type_match should not affect the result.
     """
     delta = models.diff(None, multiple_fields_model, require_type_match=require_type_match, json_safe=False)
-    field_names = models.get_all_field_names(multiple_fields_model)
+    field_names = models.get_all_field_names(multiple_fields_model, concrete_only=True, include_attnames=False)
     assert len(delta.added_fields) == len(field_names)
     assert delta.removed_fields == {}
     assert delta.changed_fields == {}
@@ -131,7 +131,7 @@ def test_diff_new_none_means_all_fields_are_old(system_user, multiple_fields_mod
     require_type_match should not affect the result.
     """
     delta = models.diff(multiple_fields_model, None, require_type_match=require_type_match, json_safe=False)
-    field_names = models.get_all_field_names(multiple_fields_model)
+    field_names = models.get_all_field_names(multiple_fields_model, concrete_only=True, include_attnames=False)
     assert len(delta.removed_fields) == len(field_names)
     assert delta.added_fields == {}
     assert delta.changed_fields == {}
@@ -259,11 +259,13 @@ def test_diff_with_fk(system_user, user, multiple_fields_model_1, multiple_field
 
     delta = models.diff(multiple_fields_model_1, multiple_fields_model_2, json_safe=False)
     assert delta.changed_fields['created_by'] == (multiple_fields_model_1.created_by, multiple_fields_model_2.created_by)
-    assert delta.changed_fields['created_by_id'] == (multiple_fields_model_1.created_by.pk, multiple_fields_model_2.created_by.pk)
+    # We don't include the "attnames"
+    assert 'created_by_id' not in delta.changed_fields
 
     delta = models.diff(multiple_fields_model_1, multiple_fields_model_2, json_safe=True)
     assert delta.changed_fields['created_by'] == (multiple_fields_model_1.created_by.username, multiple_fields_model_2.created_by.username)
-    assert delta.changed_fields['created_by_id'] == (multiple_fields_model_1.created_by.pk, multiple_fields_model_2.created_by.pk)
+    # We don't include the "attnames"
+    assert 'created_by_id' not in delta.changed_fields
 
 
 @pytest.mark.django_db
@@ -309,3 +311,43 @@ def test_diff_sanitizes_encrypted_fields_removed(disable_activity_stream):
     assert delta.removed_fields['testing1'] == ENCRYPTED_STRING
     assert delta.removed_fields['testing2'] == ENCRYPTED_STRING
     assert 'message' not in delta.removed_fields
+
+
+@pytest.mark.parametrize(
+    "username,expected_value",
+    [
+        (None, False),
+        ("system", True),
+        ("random", False),
+    ],
+)
+def test_is_system_user_system_user_setting_set(username, expected_value, system_user, random_user):
+    if username is None:
+        user = None
+    elif username == 'system':
+        user = system_user
+    else:
+        user = random_user
+
+    assert models.is_system_user(user) == expected_value
+
+
+@pytest.mark.parametrize(
+    "username",
+    [
+        None,
+        "system",
+        "random",
+    ],
+)
+def test_is_system_user_no_system_user_setting(username, system_user, random_user):
+    # If the system username is not set, no user should ever match it
+    if username is None:
+        user = None
+    elif username == "system":
+        user = system_user
+    else:
+        user = random_user
+
+    with override_settings(SYSTEM_USERNAME=None):
+        assert not models.is_system_user(user)
