@@ -14,6 +14,7 @@ from ansible_base.resource_registry.fields import AnsibleResourceField
 class Organization(AbstractOrganization):
     class Meta:
         ordering = ['id']
+        permissions = [('member_organization', 'User is member of this organization')]
 
     resource = AnsibleResourceField(primary_key_field="id")
 
