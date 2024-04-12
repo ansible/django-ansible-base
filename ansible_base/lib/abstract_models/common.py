@@ -2,6 +2,7 @@ import logging
 from collections import OrderedDict
 
 from django.conf import settings
+from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.urls.exceptions import NoReverseMatch
 from django.utils.translation import gettext_lazy as _
@@ -59,14 +60,36 @@ class ModifiableModel(models.Model):
         '''
         This save function will provide the following features automatically.
           * It will automatically add the modified fields for changing items
-        '''
-        update_fields = list(kwargs.get('update_fields', []))
 
-        if 'modified_by' not in update_fields:
+        There are several edge cases to be aware of:
+          * If the user is logging in and their "last_login" field is getting
+            changed (in their user model instance), then we do not update
+            "modified_by". (This is so they can see if someone changed their
+            user object while they were away).
+          * If no fields in update_fields are "editable", then we don't update
+            "modified_by".
+          * "modified" is updated in every case, since it's an auto_now
+            timestamp.
+        '''
+        has_update_fields = kwargs.get('update_fields') is not None
+        update_fields = list(kwargs.get('update_fields', []))
+        is_user_logging_in = isinstance(self, AbstractUser) and update_fields == ['last_login']
+        has_editable_field = any(self._meta.get_field(field).editable for field in update_fields)
+
+        if 'modified_by' in update_fields:
+            # Explicit update of modified_by, don't mess with it
+            pass
+        elif is_user_logging_in:
+            # User is logging in, only last_login is changing, don't update modified_by
+            pass
+        elif has_update_fields and not has_editable_field:
+            # No editable fields are changing, don't update modified_by
+            pass
+        else:
             self.modified_by = current_user_or_system_user()
             update_fields.append('modified_by')
 
-        if kwargs.get('update_fields') is not None:
+        if has_update_fields:
             kwargs['update_fields'] = update_fields
 
         return super().save(*args, **kwargs)

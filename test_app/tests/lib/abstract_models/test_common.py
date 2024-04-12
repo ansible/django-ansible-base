@@ -10,7 +10,7 @@ from django.test.client import RequestFactory
 from rest_framework.reverse import reverse
 
 from ansible_base.rbac.models import RoleDefinition
-from test_app.models import EncryptionModel, Organization, RelatedFieldsTestModel, User
+from test_app.models import City, EncryptionModel, Organization, RelatedFieldsTestModel, User
 
 
 @pytest.mark.django_db
@@ -147,7 +147,6 @@ def test_cascade_behavior_for_created_by(user, user_api_client):
     connection.check_constraints()
 
 
-@pytest.mark.xfail(reaason="https://github.com/ansible/django-ansible-base/issues/286")
 def test_do_not_update_modified_by_on_login(system_user, user, user_api_client):
     user.refresh_from_db()
     assert user.modified_by == system_user
@@ -229,3 +228,45 @@ def test_related_view_ignore_m2m_relations(ignore_relation, admin_user):
 
         related = admin_user.related_fields(request)
         assert ('member_of_organizations' not in related) is ignore_relation
+
+def test_modified_by_not_set_if_update_fields_are_all_uneditable(system_user, user):
+    city = City.objects.create(name='Boston', state='MA')
+    assert city.modified_by == system_user
+    city.state = 'Ohio'
+    with impersonate(user):
+        city.save(update_fields=['state'])
+    city.refresh_from_db()
+    assert city.modified_by == system_user
+
+
+def test_modified_by_gets_set_if_some_update_fields_are_uneditable(system_user, user):
+    city = City.objects.create(name='Boston', state='MA')
+    assert city.modified_by == system_user
+    city.state = 'Ohio'
+    city.population = 2
+    with impersonate(user):
+        city.save(update_fields=['state', 'population'])
+    city.refresh_from_db()
+    assert city.modified_by == user
+
+
+def test_modified_by_gets_set_if_update_fields_not_given(system_user, user):
+    city = City.objects.create(name='Boston', state='MA')
+    assert city.modified_by == system_user
+    city.state = 'Ohio'
+    city.population = 2
+    with impersonate(user):
+        city.save()
+    city.refresh_from_db()
+    assert city.modified_by == user
+
+
+def test_modified_by_not_set_if_update_fields_empty(system_user, user):
+    city = City.objects.create(name='Boston', state='MA')
+    assert city.modified_by == system_user
+    city.state = 'Ohio'
+    city.population = 2
+    with impersonate(user):
+        city.save(update_fields=[])
+    city.refresh_from_db()
+    assert city.modified_by == system_user
