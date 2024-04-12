@@ -149,7 +149,4 @@ ANSIBLE_BASE_ROLE_PRECREATE = {}  # tested in individual tests
 ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES = True
 ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES = True
 
-# Feature to use custom "create" serializer for create actions for OpenAPI stuff
-ANSIBLE_BASE_AUTO_CREATE_SERIALIZER = True
-
 ANSIBLE_BASE_USER_VIEWSET = 'test_app.views.UserViewSet'
