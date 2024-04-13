@@ -21,7 +21,7 @@ def get_resource_server_client(user_id, service_path, **kwargs):
     return ResourceAPIClient(
         service_url=config["URL"],
         service_path=service_path,
-        requests_auth_kwargs={"headers": {"Authorization": "Token " + get_service_token(user_id)}},
+        requests_auth_kwargs={"headers": {"Authorization": "Token " + get_service_token(user_id, request_resource_access=True)}},
         verify_https=config["VALIDATE_HTTPS"],
         **kwargs,
     )

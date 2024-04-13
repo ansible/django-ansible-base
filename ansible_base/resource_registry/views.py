@@ -146,6 +146,8 @@ class ServiceMetadataView(
         HasResourceRegistryPermissions,
     ]
 
+    action = "service-metadata"
+
     def get(self, request, **kwargs):
         registry = get_registry()
         return Response({"service_id": service_id(), "service_type": registry.api_config.service_type})
@@ -170,6 +172,8 @@ class ValidateLocalUserView(AnsibleBaseDjangoAppApiView):
     """
     Validate a user's username and password.
     """
+
+    action = "validate-local-user"
 
     permission_classes = [
         HasResourceRegistryPermissions,

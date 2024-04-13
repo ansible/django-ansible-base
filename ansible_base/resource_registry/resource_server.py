@@ -1,8 +1,10 @@
-from django.conf import settings
-import jwt
-from typing import TypedDict
-from ansible_base.resource_registry.models import service_id
 from datetime import datetime, timedelta
+from typing import TypedDict
+
+import jwt
+from django.conf import settings
+
+from ansible_base.resource_registry.models import service_id
 
 
 class ResourceServerConfig(TypedDict):
@@ -17,11 +19,12 @@ def get_resource_server_config() -> ResourceServerConfig:
     return ResourceServerConfig(**{**defaults, **settings.RESOURCE_SERVER})
 
 
-def get_service_token(user_id, expiration=60):
+def get_service_token(user_id, expiration=60, **kwargs):
     config = get_resource_server_config()
     payload = {
-        "service_id": str(service_id()),
-        "user_id": str(user_id),
+        "iss": str(service_id()),
+        "sub": str(user_id),
+        **kwargs,
     }
 
     if expiration is not None:
