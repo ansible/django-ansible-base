@@ -17,9 +17,9 @@ def test_activitystream_api_read(admin_api_client, user):
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert response.data["count"] > 0
-    assert response.data["results"][-1]["operation"] == "create"
+    assert response.data["results"][0]["operation"] == "create"
     # Ensure that even though we're storing a string here, the serializer is converting it back to the correct type.
-    assert response.data["results"][-1]["changes"]["added_fields"]["id"] == int(user.id)
+    assert response.data["results"][0]["changes"]["added_fields"]["id"] == int(user.id)
     count = response.data["count"]
     original_name = user.first_name
     user.first_name = "Firstname"
@@ -27,8 +27,8 @@ def test_activitystream_api_read(admin_api_client, user):
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert response.data["count"] == count + 1
-    assert response.data["results"][-1]["operation"] == "update"
-    assert response.data["results"][-1]["changes"]["changed_fields"]["first_name"] == [original_name, user.first_name]
+    assert response.data["results"][0]["operation"] == "update"
+    assert response.data["results"][0]["changes"]["changed_fields"]["first_name"] == [original_name, user.first_name]
 
 
 def test_activitystream_api_read_only(admin_api_client, user):
@@ -173,7 +173,7 @@ def test_activitystream_api_related_fks_not_in_list_view(admin_api_client, anima
     url = reverse("activitystream-list")
     response = admin_api_client.get(url)
     assert response.status_code == 200
-    entry = response.data["results"][-1]
+    entry = response.data["results"][0]
     assert entry["operation"] == "update"
     assert entry["changes"]["changed_fields"]["owner"] == [user.id, random_user.id]
     assert 'changes.owner' not in entry['related']
@@ -234,7 +234,7 @@ def test_activitystream_api_related_content_object(admin_api_client, animal, is_
     assert response.status_code == 200
 
     if is_list_view:
-        entry = response.data["results"][-1]
+        entry = response.data["results"][0]
     else:
         entry = response.data
 
@@ -267,7 +267,7 @@ def test_activitystream_api_related_related_content_object(admin_api_client, ani
     assert response.status_code == 200
 
     if is_list_view:
-        entry = response.data["results"][-1]
+        entry = response.data["results"][0]
     else:
         entry = response.data
 
@@ -315,7 +315,7 @@ def test_activitystream_api_summary_fields(admin_api_client, animal, admin_user,
     assert response.status_code == 200
 
     if is_list_view:
-        entry = response.data["results"][-1]
+        entry = response.data["results"][0]
     else:
         entry = response.data
 

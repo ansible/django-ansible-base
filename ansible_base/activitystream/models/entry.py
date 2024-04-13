@@ -20,6 +20,7 @@ class Entry(ImmutableCommonModel):
 
     class Meta:
         verbose_name_plural = _('Entries')
+        ordering = ['id']
 
     OPERATION_CHOICES = [
         ('create', _('Entity created')),

@@ -99,6 +99,7 @@ class EntrySerializer(ImmutableCommonModelSerializer):
         try:
             changed_fk_fields = obj.changed_fk_fields
         except AttributeError:
+            # The model was deleted
             changed_fk_fields = {}
 
         for field_name, pk in changed_fk_fields.items():
@@ -116,6 +117,7 @@ class EntrySerializer(ImmutableCommonModelSerializer):
         try:
             content_obj = obj.content_object_with_prefetched_changed_fields
         except AttributeError:
+            # The model was deleted
             return fields
 
         if content_obj is None:
