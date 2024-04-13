@@ -22,7 +22,7 @@ def get_cls_view_basename(cls):
     return underscore(cls.__name__)
 
 
-def get_url_for_object(obj, request=None):
+def get_url_for_object(obj, request=None, pk=None):
     # get_absolute_url mainly exists to support AWX
     if hasattr(obj, 'get_absolute_url'):
         return obj.get_absolute_url()
@@ -30,7 +30,7 @@ def get_url_for_object(obj, request=None):
     basename = get_cls_view_basename(obj.__class__)
 
     try:
-        return reverse(f'{basename}-detail', kwargs={'pk': obj.pk})
+        return reverse(f'{basename}-detail', kwargs={'pk': pk or obj.pk})
     except NoReverseMatch:
         logger.debug(f"Tried to reverse {basename}-detail for model {obj.__class__.__name__} but said view is not defined")
         return ''

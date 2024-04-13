@@ -1,4 +1,7 @@
+import datetime
+
 import pytest
+from crum import impersonate
 from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 from django.utils.http import urlencode
@@ -158,3 +161,164 @@ def test_activitystream_api_ordering(admin_api_client, animal, user, random_user
     assert response.status_code == 200
     assert response.data['count'] > 2
     assert response.data['results'][0]['id'] == Entry.objects.last().id
+
+
+@pytest.mark.xfail(reason="TODO: Decide if we really want to exclude these from list view.")
+def test_activitystream_api_related_fks_not_in_list_view(admin_api_client, animal, user, random_user):
+    """
+    Ensure that we don't link to related objects in the list view.
+    """
+    animal.owner = random_user
+    animal.save()
+    url = reverse("activitystream-list")
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    entry = response.data["results"][-1]
+    assert entry["operation"] == "update"
+    assert entry["changes"]["changed_fields"]["owner"] == [user.id, random_user.id]
+    assert 'changes.owner' not in entry['related']
+
+
+def test_activitystream_api_related_fks_in_detail_view(admin_api_client, animal, user, random_user):
+    """
+    Ensure that we link to related objects in the detail view.
+    """
+    animal.owner = random_user
+    animal.save()
+    url = reverse("activitystream-detail", args=[animal.activity_stream_entries.last().id])
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    entry = response.data
+    assert entry["operation"] == "update"
+    assert entry["changes"]["changed_fields"]["owner"] == [user.id, random_user.id]
+    assert 'changes.owner' in entry['related']
+
+
+def test_activitystream_api_related_fks_refused_for_bad_time_delta(admin_api_client, animal, user, random_user):
+    """
+    Ensure that we don't link to related objects that were created after the activity stream entry.
+    """
+    animal.owner = random_user
+    animal.save()
+
+    last_entry = animal.activity_stream_entries.last()
+    random_user.created = last_entry.created + datetime.timedelta(days=1)
+    random_user.save()
+
+    url = reverse("activitystream-detail", args=[last_entry.id])
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    entry = response.data
+    assert entry["operation"] == "update"
+    assert entry["changes"]["changed_fields"]["owner"] == [user.id, random_user.id]
+    assert 'changes.owner' not in entry['related']  # Don't link it, it's too new!
+
+
+@pytest.mark.parametrize(
+    "is_list_view",
+    [
+        pytest.param(True, id="list view"),
+        pytest.param(False, id="detail view"),
+    ],
+)
+def test_activitystream_api_related_content_object(admin_api_client, animal, is_list_view):
+    """
+    Ensure that we can link to the thing we're an entry for.
+    """
+    if is_list_view:
+        url = reverse("activitystream-list")
+    else:
+        url = reverse("activitystream-detail", args=[animal.activity_stream_entries.last().id])
+
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+
+    if is_list_view:
+        entry = response.data["results"][-1]
+    else:
+        entry = response.data
+
+    assert entry["operation"] == "create"
+    expected_url = reverse("animal-detail", args=[animal.id])
+    assert entry["related"]["content_object"] == expected_url
+
+
+@pytest.mark.parametrize(
+    "is_list_view",
+    [
+        pytest.param(True, id="list view"),
+        pytest.param(False, id="detail view"),
+    ],
+)
+def test_activitystream_api_related_related_content_object(admin_api_client, animal, random_user, is_list_view):
+    """
+    Ensure that we can link to the associated object if we're describing an m2m association.
+
+    Should show in both list and detail views.
+    """
+    animal.people_friends.add(random_user)
+
+    if is_list_view:
+        url = reverse("activitystream-list")
+    else:
+        url = reverse("activitystream-detail", args=[animal.activity_stream_entries.last().id])
+
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+
+    if is_list_view:
+        entry = response.data["results"][-1]
+    else:
+        entry = response.data
+
+    assert entry["operation"] == "associate"
+    expected_url = reverse("user-detail", args=[random_user.id])
+    assert entry["related"]["related_content_object"] == expected_url
+
+
+@pytest.mark.parametrize(
+    "is_list_view",
+    [
+        pytest.param(True, id="list view"),
+        pytest.param(False, id="detail view"),
+    ],
+)
+@pytest.mark.parametrize(
+    "field_name,expected_key,expected_value",
+    [
+        ("created_by", "username", "user"),
+        ("content_object", "name", "Fido"),
+        ("changes.modified_by", "username", "user"),
+        ("changes.owner", "username", "admin"),
+    ],
+)
+def test_activitystream_api_summary_fields(admin_api_client, animal, admin_user, user, is_list_view, field_name, expected_key, expected_value):
+    """
+    Ensure that summary_fields show up and include changed fields.
+
+    Should show in both list and detail views.
+    """
+    animal.owner = admin_user
+    animal.name = "Fido"
+    with impersonate(user):
+        animal.save()
+
+    if is_list_view:
+        url = reverse("activitystream-list")
+    else:
+        url = reverse("activitystream-detail", args=[animal.activity_stream_entries.last().id])
+
+    query_params = {
+        'page_size': 100,
+    }
+    response = admin_api_client.get(url + '?' + urlencode(query_params))
+    assert response.status_code == 200
+
+    if is_list_view:
+        entry = response.data["results"][-1]
+    else:
+        entry = response.data
+
+    assert entry["operation"] == "update"
+    assert field_name in entry["summary_fields"]
+    assert entry["summary_fields"][field_name][expected_key] == expected_value

@@ -1,3 +1,5 @@
+import functools
+
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
@@ -14,7 +16,7 @@ class Entry(ImmutableCommonModel):
     a wide variety of objects to be used in the activity stream.
     """
 
-    allow_anonymous_user_save = True
+    router_basename = 'activitystream'
 
     class Meta:
         verbose_name_plural = _('Entries')
@@ -41,6 +43,44 @@ class Entry(ImmutableCommonModel):
 
     def __str__(self):
         return f'[{self.created}] {self.get_operation_display()} by {self.created_by}: {self.content_type} {self.object_id}'
+
+    @functools.cached_property
+    def changed_fk_fields(self):
+        """
+        :return: A dictionary of {field_name: pk} for any ForeignKey fields that have changed.
+            the pk is the new pk value, for changed fields.
+        """
+        changed_fks = {}
+
+        if self.changes is None:
+            return changed_fks
+
+        for op in ('added_fields', 'changed_fields', 'removed_fields'):
+            for field_name, value in self.changes.get(op, {}).items():
+                field = self.content_type.model_class()._meta.get_field(field_name)
+                if isinstance(field, models.ForeignKey):
+                    if op == 'changed_fields':
+                        pk = value[1]
+                    else:
+                        pk = value
+                    changed_fks[field_name] = pk
+
+        return changed_fks
+
+    @functools.cached_property
+    def content_object_with_prefetched_changed_fields(self):
+        """
+        Get the content object with any changed ForeignKey fields prefetched.
+        This is useful for related and summary_fields in serializers.
+
+        :return: The content object with any changed ForeignKey fields prefetched.
+        """
+        if self.changes is None:
+            return self.content_object
+
+        changed_fks = self.changed_fk_fields.keys()
+        obj = self.content_type.model_class().objects.select_related(*changed_fks).get(pk=self.object_id)
+        return obj
 
 
 class AuditableModel(models.Model):
