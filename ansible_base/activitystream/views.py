@@ -10,6 +10,29 @@ from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiV
 from ansible_base.lib.utils.views.permissions import IsSuperuser
 
 
+def calculate_filter_backends():
+    """
+    Calculate the filter backends for the Activity Stream.
+
+    We want to use the ActivityStreamFilterBackend for the FieldLookupBackend, but we want to keep the
+    default filter backends (in order) for everything else.
+    """
+    default_filter_backends = AnsibleBaseDjangoAppApiView.filter_backends
+    filter_backends = []
+    added_activity_stream_backend = False
+    for backend in default_filter_backends:
+        if backend.__name__ == 'FieldLookupBackend':
+            filter_backends.append(ActivityStreamFilterBackend)
+            added_activity_stream_backend = True
+        else:
+            filter_backends.append(backend)
+
+    if not added_activity_stream_backend:
+        filter_backends.append(ActivityStreamFilterBackend)
+
+    return filter_backends
+
+
 class EntryReadOnlyViewSet(ReadOnlyModelViewSet, AnsibleBaseDjangoAppApiView):
     """
     API endpoint that allows for read-only access to activity stream entries.
@@ -17,7 +40,7 @@ class EntryReadOnlyViewSet(ReadOnlyModelViewSet, AnsibleBaseDjangoAppApiView):
 
     queryset = Entry.objects.all()
     serializer_class = EntrySerializer
-    filter_backends = [ActivityStreamFilterBackend]
+    filter_backends = calculate_filter_backends()
 
     def get_permissions(self):
         """
