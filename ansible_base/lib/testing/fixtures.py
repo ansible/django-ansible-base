@@ -131,13 +131,12 @@ def expected_log(no_log_messages):
 
     @contextmanager
     def f(patch, severity, substr, assert_not_called=False):
-        with mock.patch(patch) as logger:
+        with mock.patch(f'{patch}.{severity}') as logger:
             with no_log_messages():
                 yield
-            sev_logger = getattr(logger, severity)
 
             call_count = 0
-            for call in sev_logger.call_args_list:
+            for call in logger.call_args_list:
                 if substr in call.args[0]:
                     call_count = call_count + 1
 
