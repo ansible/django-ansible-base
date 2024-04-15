@@ -34,6 +34,12 @@ class EntrySerializer(ImmutableCommonModelSerializer):
 
     def _field_value_to_python(self, entry, field_name, value):
         model = entry.content_type.model_class()
+        if model is None:
+            # If the model was deleted, we lose the ability to convert the
+            # field back to the correct type, because we don't know what the
+            # field was. We'll just return the value as is and keep it as a
+            # string. This is kind of a gross edge case.
+            return value
         field = model._meta.get_field(field_name)
         return field.to_python(value)
 
@@ -61,11 +67,25 @@ class EntrySerializer(ImmutableCommonModelSerializer):
     def _get_summary_fields(self, obj) -> dict[str, dict]:
         summary_fields = super()._get_summary_fields(obj)
 
-        content_obj = obj.content_object
+        try:
+            # This will be None if the instance was deleted, but if the *model*
+            # was deleted, it'll raise an AttributeError.
+            content_obj = obj.content_object
+        except AttributeError:
+            # The model was deleted
+            content_obj = None
+
         if content_obj and hasattr(content_obj, 'summary_fields'):
             summary_fields['content_object'] = content_obj.summary_fields()
 
-        related_content_obj = obj.related_content_object
+        try:
+            # This will be None if the instance was deleted, but if the *model*
+            # was deleted, it'll raise an AttributeError.
+            related_content_obj = obj.related_content_object
+        except AttributeError:
+            # The model was deleted
+            related_content_obj = None
+
         if related_content_obj and hasattr(related_content_obj, 'summary_fields'):
             summary_fields['related_content_object'] = related_content_obj.summary_fields()
 
