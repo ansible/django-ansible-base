@@ -68,7 +68,6 @@ def initialize_resources(sender, **kwargs):
                 data.append(init_resource_from_object(obj, resource_model=Resource, resource_type=r_type, resource_config=resource_config))
 
             Resource.objects.bulk_create(data, ignore_conflicts=True)
-            r_type.migrated = True
             r_type.save()
 
 
