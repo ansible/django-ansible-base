@@ -1,5 +1,4 @@
 import pytest
-
 from django.urls import reverse
 
 from test_app.models import User
@@ -78,11 +77,7 @@ def test_org_admins_can_add_members(user, user_api_client, organization, org_mem
 
     org_member_rd.give_permission(user, organization)
 
-    data = {
-        'role_definition': org_member_rd.id,
-        'object_id': organization.id,
-        'user': rando.id
-    }
+    data = {'role_definition': org_member_rd.id, 'object_id': organization.id, 'user': rando.id}
 
     response = user_api_client.post(url, data=data)
     assert response.status_code == 403

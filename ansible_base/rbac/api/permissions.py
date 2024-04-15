@@ -1,9 +1,9 @@
 import logging
 
-from django.db.models import Model
-from django.http import Http404
 from django.apps import apps
 from django.conf import settings
+from django.db.models import Model
+from django.http import Http404
 from rest_framework.permissions import SAFE_METHODS, BasePermission, DjangoObjectPermissions
 
 from ansible_base.lib.utils.models import is_add_perm
@@ -136,13 +136,10 @@ def visible_users(request_user):
 
     object_id_fd = ObjectRole._meta.get_field('object_id')
     members_of_visble_orgs = ObjectRole.objects.filter(
-        role_definition__permissions__codename='member_organization',
-        object_id__in=org_cls.access_ids_qs(request_user, 'view', cast_field=object_id_fd)
+        role_definition__permissions__codename='member_organization', object_id__in=org_cls.access_ids_qs(request_user, 'view', cast_field=object_id_fd)
     ).values('users')
     return (
-        user_cls.objects.filter(pk__in=members_of_visble_orgs)
-        | user_cls.objects.filter(pk=request_user.id)
-        | user_cls.objects.filter(is_superuser=True)
+        user_cls.objects.filter(pk__in=members_of_visble_orgs) | user_cls.objects.filter(pk=request_user.id) | user_cls.objects.filter(is_superuser=True)
     ).distinct()
 
 
@@ -167,9 +164,7 @@ class AnsibleBaseUserPermissions(AnsibleBaseObjectPermissions):
                     result = bool(request.user.is_superuser)
                 else:
                     result = (
-                        not org_cls.access_qs(obj, 'member_organization').exclude(
-                            pk__in=org_cls.access_ids_qs(request.user, 'change_organization')
-                        ).exists()
+                        not org_cls.access_qs(obj, 'member_organization').exclude(pk__in=org_cls.access_ids_qs(request.user, 'change_organization')).exists()
                     )
             if not result:
                 return False
