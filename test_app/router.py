@@ -50,6 +50,7 @@ router.register(
         'organizations': (views.OrganizationViewSet, 'organizations'),
         'teams': (views.TeamViewSet, 'teams'),
     },
+    basename='user'
 )
 router.register(r'inventories', views.InventoryViewSet)
 router.register(r'instance_groups', views.InstanceGroupViewSet)

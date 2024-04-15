@@ -75,11 +75,11 @@ class AccessibleObjectsDescriptor(BaseEvaluationDescriptor):
 
 
 class AccessibleIdsDescriptor(BaseEvaluationDescriptor):
-    def __call__(self, actor, codename: str = 'view', content_types=None) -> QuerySet:
+    def __call__(self, actor, codename: str = 'view', content_types=None, cast_field=None) -> QuerySet:
         full_codename = validate_codename_for_model(codename, self.cls)
         if actor._meta.model_name == 'user' and has_super_permission(actor, full_codename):
             return self.cls.objects.values_list('id', flat=True)
-        return get_evaluation_model(self.cls).accessible_ids(self.cls, actor, full_codename, content_types=content_types)
+        return get_evaluation_model(self.cls).accessible_ids(self.cls, actor, full_codename, content_types=content_types, cast_field=cast_field)
 
 
 def bound_has_obj_perm(self, obj, codename) -> bool:

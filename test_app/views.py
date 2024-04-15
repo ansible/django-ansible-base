@@ -6,7 +6,7 @@ from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from ansible_base.rbac import permission_registry
-from ansible_base.rbac.api.permissions import AnsibleBaseObjectPermissions
+from ansible_base.rbac.api.permissions import AnsibleBaseObjectPermissions, AnsibleBaseUserPermissions, visible_users
 from test_app import models, serializers
 
 
@@ -42,11 +42,13 @@ class TeamViewSet(TestAppViewSet):
     select_related = ('resource__content_type',)
 
 
-class UserViewSet(ModelViewSet):
-    permission_classes = [AnsibleBaseObjectPermissions]
+class UserViewSet(TestAppViewSet):
+    permission_classes = [AnsibleBaseUserPermissions]
     serializer_class = serializers.UserSerializer
-    queryset = models.User.objects.all()
     prefetch_related = ('created_by', 'modified_by', 'resource', 'resource__content_type')
+
+    def get_queryset(self):
+        return visible_users(self.request.user)
 
 
 class EncryptionModelViewSet(TestAppViewSet):

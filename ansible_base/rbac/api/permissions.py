@@ -2,11 +2,14 @@ import logging
 
 from django.db.models import Model
 from django.http import Http404
+from django.apps import apps
+from django.conf import settings
 from rest_framework.permissions import SAFE_METHODS, BasePermission, DjangoObjectPermissions
 
 from ansible_base.lib.utils.models import is_add_perm
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.evaluations import has_super_permission
+from ansible_base.rbac.models import ObjectRole
 
 logger = logging.getLogger('ansible_base.rbac.api.permissions')
 
@@ -44,6 +47,86 @@ def is_cloned_request(request) -> bool:
     In these cases, a request wrapps the original and the method will not match.
     """
     return bool(request.method != request._request.method)
+
+
+def visible_users(request_user):
+    user_cls = apps.get_model(settings.AUTH_USER_MODEL)
+    org_cls = apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL)
+
+    object_id_fd = ObjectRole._meta.get_field('object_id')
+    members_of_visble_orgs = ObjectRole.objects.filter(
+        role_definition__permissions__codename='member_organization',
+        object_id__in=org_cls.access_ids_qs(request_user, 'view', cast_field=object_id_fd)
+    ).values('users')
+    return (
+        user_cls.objects.filter(pk__in=members_of_visble_orgs)
+        | user_cls.objects.filter(pk=request_user.id)
+        | user_cls.objects.filter(is_superuser=True)
+    ).distinct()
+
+
+class AnsibleBaseUserPermissions(DjangoObjectPermissions):
+
+    def has_permission(self, request, view):
+        if not request.user or (not request.user.is_authenticated and self.authenticated_users_only):
+            return False
+
+        # Following is DAB RBAC specific, handle add permission checking
+        if request.method == 'POST' and view.action == 'create':
+            user_cls = apps.get_model(settings.AUTH_USER_MODEL)
+            org_cls = apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL)
+
+            result = org_cls.access_qs(request.user, 'change_organization').exists()
+            if (not result) and (not is_cloned_request(request)):
+                logger.warning(f'User {request.user.pk} lacks global organization admin permissions to create user')
+            return result
+
+        # We are not checking many things here, a GET to list views can return 0 objects
+        return True
+
+    def has_object_permission(self, request, view, obj):
+        if not isinstance(obj, Model):
+            logger.info(f'Object-permission check called with non-object {type(obj)} for {request.method}')
+            return True  # for the DRF browsable API, showing PATCH form field
+
+        queryset = self._queryset(view)
+        model_cls = queryset.model
+
+        perms = self.get_required_object_permissions(request.method, model_cls)
+
+        if request.method in SAFE_METHODS:
+            result = visible_users(request.user).filter(id=obj.id).exists()
+        else:
+            org_cls = apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL)
+            if obj.is_superuser:
+                result = bool(request.user.is_superuser)
+            else:
+                result = (
+                    not org_cls.access_qs(obj, 'member_organization').exclude(
+                        pk__in=org_cls.access_ids_qs(request.user, 'change_organization')
+                    ).exists()
+                )
+
+        if not result:
+            # If the user does not have permissions we need to determine if
+            # they have read permissions to see 403, or not, and simply see
+            # a 404 response.
+            if not is_cloned_request(request):
+                logger.warning(f'User {request.user.pk} lacks {perms} permission to obj {obj._meta.model_name}-{obj.pk}')
+
+            if request.method in SAFE_METHODS:
+                # Read permissions already checked and failed, no need
+                # to make another lookup.
+                raise Http404
+
+            read_perms = self.get_required_object_permissions('GET', model_cls)
+            if not all(request.user.has_obj_perm(obj, perm) for perm in read_perms):
+                raise Http404
+
+            # Has read permissions.
+            return False
+
+        return True
 
 
 class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
