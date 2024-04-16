@@ -9,6 +9,8 @@ except ImportError:
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
+from django.utils.timezone import now
+from django.utils.translation import gettext_lazy as _
 
 from ansible_base.authentication.models import Authenticator, AuthenticatorUser
 
@@ -34,7 +36,7 @@ class Command(BaseCommand):
                 try:
                     authenticator = Authenticator.objects.get(id=id)
                 except Authenticator.DoesNotExist:
-                    raise CommandError(f"Authenticator {id} does not exist")
+                    raise CommandError(_("Authenticator %(id) does not exist") % {"id": id})
                 if authenticator.enabled is not state:
                     authenticator.enabled = state
                     authenticator.save()
