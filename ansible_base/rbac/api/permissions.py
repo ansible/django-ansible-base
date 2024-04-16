@@ -157,18 +157,9 @@ class AnsibleBaseUserPermissions(AnsibleBaseObjectPermissions):
         return request.user.is_superuser or org_cls.access_qs(request.user, 'change_organization').exists()
 
     def has_object_permission_by_codename(self, request, obj, perms):
-        for perm in perms:
-            app_name, codename = perm.rsplit('.')
-            if codename == 'view_user':
-                result = visible_users(request.user).filter(id=obj.id).exists()
-            else:
-                org_cls = apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL)
-                if obj.is_superuser:
-                    result = bool(request.user.is_superuser)
-                else:
-                    result = (
-                        not org_cls.access_qs(obj, 'member_organization').exclude(pk__in=org_cls.access_ids_qs(request.user, 'change_organization')).exists()
-                    )
-            if not result:
-                return False
+        if perms:
+            if obj.is_superuser:
+                return True
+            org_cls = apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL)
+            return not org_cls.access_qs(obj, 'member_organization').exclude(pk__in=org_cls.access_ids_qs(request.user, 'change_organization')).exists()
         return True
