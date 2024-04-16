@@ -226,8 +226,8 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
             'this setting has a value it will be used instead of '
             'AUTH_LDAP_USER_SEARCH.'
         ),
-        allow_null=False,
-        required=True,
+        allow_null=True,
+        required=False,
         with_user=True,
         ui_field_label=_('LDAP User DN Template'),
     )
