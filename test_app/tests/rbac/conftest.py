@@ -74,3 +74,14 @@ def org_member_rd():
         content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
         managed=True,
     )
+
+
+@pytest.fixture
+def org_team_member_rd():
+    "Gives membership to all teams in an organization"
+    return RoleDefinition.objects.create_from_permissions(
+        permissions=[permission_registry.team_permission, f'view_{permission_registry.team_model._meta.model_name}'],
+        name='org-level-team-member',
+        content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
+        managed=True,
+    )

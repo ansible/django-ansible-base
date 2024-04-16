@@ -132,6 +132,9 @@ class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
 
 def visible_users(request_user):
     user_cls = apps.get_model(settings.AUTH_USER_MODEL)
+    if has_super_permission(request_user, 'view'):
+        return user_cls.objects.all()
+
     org_cls = apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL)
 
     object_id_fd = ObjectRole._meta.get_field('object_id')
@@ -151,7 +154,7 @@ class AnsibleBaseUserPermissions(AnsibleBaseObjectPermissions):
     def has_create_permission(self, request, model_cls):
         org_cls = apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL)
 
-        return org_cls.access_qs(request.user, 'change_organization').exists()
+        return request.user.is_superuser or org_cls.access_qs(request.user, 'change_organization').exists()
 
     def has_object_permission_by_codename(self, request, obj, perms):
         for perm in perms:
