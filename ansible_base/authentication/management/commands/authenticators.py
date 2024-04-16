@@ -9,8 +9,6 @@ except ImportError:
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
-
-from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 
 from ansible_base.authentication.models import Authenticator, AuthenticatorUser
