@@ -1,8 +1,7 @@
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 from ansible_base.lib.abstract_models.common import NamedCommonModel
-
-from django.utils.translation import gettext_lazy as _
 
 from .authenticator import Authenticator
 
@@ -72,8 +71,10 @@ class AuthenticatorMap(NamedCommonModel):
     order = models.PositiveIntegerField(
         null=False,
         default=0,
-        help_text=(_(
-            "The order in which this rule should be processed, smaller numbers are of higher precedence. "
-            "Items with the same order will be executed in random order"
-        )),
+        help_text=(
+            _(
+                "The order in which this rule should be processed, smaller numbers are of higher precedence. "
+                "Items with the same order will be executed in random order"
+            )
+        ),
     )
