@@ -96,10 +96,10 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
             if configuration or configuration == {}:
                 for key in authenticator.configuration_encrypted_fields:
                     if not self.instance and configuration.get(key, None) == ENCRYPTED_STRING:
-                        invalid_encrypted_keys[key] = _("Can not be set to %(ENCRYPTED_STRING)") % {"ENCRYPTED_STRING": ENCRYPTED_STRING}
+                        invalid_encrypted_keys[key] = _("Can not be set to %(ENCRYPTED_STRING)s") % {"ENCRYPTED_STRING": ENCRYPTED_STRING}
                 if invalid_encrypted_keys:
                     raise ValidationError(invalid_encrypted_keys)
                 data['configuration'] = authenticator.validate_configuration(configuration, self.instance)
             return data
         except ImportError as e:
-            raise ValidationError({'type': _('Failed to import %(e)') % {'e': e}})
+            raise ValidationError({'type': _('Failed to import %(e)s') % {'e': e}})

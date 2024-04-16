@@ -35,7 +35,7 @@ class Command(BaseCommand):
                 try:
                     authenticator = Authenticator.objects.get(id=id)
                 except Authenticator.DoesNotExist:
-                    raise CommandError(_("Authenticator %(id) does not exist") % {"id": id})
+                    raise CommandError(_("Authenticator %(id)s does not exist") % {"id": id})
                 if authenticator.enabled is not state:
                     authenticator.enabled = state
                     authenticator.save()
