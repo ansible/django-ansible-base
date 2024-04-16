@@ -56,7 +56,8 @@ jobs:
           path: coverage.xml
 
       - name: SonarCloud Scan (on push)
-        uses: SonarSource/sonarcloud-github-action@master
+        #uses: SonarSource/sonarcloud-github-action@master
+        uses: relrod/sonarcloud-github-action@fix-dockerfile
         if: matrix.tests.sonar && github.event_name == 'push' && github.repository == 'ansible/django-ansible-base'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
