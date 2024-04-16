@@ -21,6 +21,13 @@ class BaseAuthenticatorConfiguration(serializers.Serializer):
         ui_field_label=_('Additional Authenticator Fields'),
     )
 
+    def _field_required(self, field):
+        if hasattr(field, 'required'):
+            return getattr(field, 'required')
+        elif hasattr(field, 'allow_null'):
+            return not getattr(field, 'allow_null')
+        return True
+
     def get_configuration_schema(self):
         fields = self.get_fields()
 
@@ -35,7 +42,7 @@ class BaseAuthenticatorConfiguration(serializers.Serializer):
             schema_data = {
                 "name": f,
                 "help_text": field.help_text,
-                "required": not field.allow_null,
+                "required": self._field_required(field),
                 "default": default,
                 "type": field.__class__.__name__,
                 "ui_field_label": getattr(field, 'ui_field_label', _('Undefined')),
