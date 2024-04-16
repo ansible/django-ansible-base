@@ -1,5 +1,6 @@
 import logging
 
+from django.utils.translation import gettext_lazy as _
 from rest_framework.response import Response
 from rest_framework.serializers import ValidationError
 
@@ -69,7 +70,7 @@ def generate_ui_auth_data():
         response['custom_login_info'] = custom_login_info
     else:
         logger.error("custom_login_info was not a string")
-        raise ValidationError("custom_login_info was set but was not a valid string, ignoring")
+        raise ValidationError(_("custom_login_info was set but was not a valid string, ignoring"))
 
     try:
         custom_logo = get_setting('custom_logo', '')
