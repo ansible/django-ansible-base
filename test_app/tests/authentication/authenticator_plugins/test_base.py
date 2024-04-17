@@ -1,6 +1,6 @@
 import pytest
 
-from ansible_base.authentication.authenticator_plugins.base import BaseAuthenticatorConfiguration
+from ansible_base.authentication.authenticator_plugins.base import _field_required
 
 
 class DummyField:
@@ -27,5 +27,4 @@ class DummyField:
 )
 def test__field_required(required, allow_null, expected_result):
     field = DummyField(required, allow_null)
-    configuration = BaseAuthenticatorConfiguration()
-    assert configuration._field_required(field) is expected_result
+    assert _field_required(field) is expected_result
