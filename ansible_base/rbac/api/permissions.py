@@ -10,7 +10,6 @@ from ansible_base.lib.utils.models import is_add_perm
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.evaluations import has_super_permission
-from ansible_base.rbac.models import ObjectRole
 
 logger = logging.getLogger('ansible_base.rbac.api.permissions')
 
@@ -129,24 +128,6 @@ class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
             return False
 
         return True
-
-
-def visible_users(request_user):
-    user_cls = apps.get_model(settings.AUTH_USER_MODEL)
-    org_cls = apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL)
-
-    if has_super_permission(request_user, 'view') or (
-        get_setting('ORG_ADMINS_CAN_SEE_ALL_USERS', False) and org_cls.access_ids_qs(request_user, 'change').exists()
-    ):
-        return user_cls.objects.all()
-
-    object_id_fd = ObjectRole._meta.get_field('object_id')
-    members_of_visble_orgs = ObjectRole.objects.filter(
-        role_definition__permissions__codename='member_organization', object_id__in=org_cls.access_ids_qs(request_user, 'view', cast_field=object_id_fd)
-    ).values('users')
-    return (
-        user_cls.objects.filter(pk__in=members_of_visble_orgs) | user_cls.objects.filter(pk=request_user.id) | user_cls.objects.filter(is_superuser=True)
-    ).distinct()
 
 
 class AnsibleBaseUserPermissions(AnsibleBaseObjectPermissions):

@@ -6,7 +6,8 @@ from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from ansible_base.rbac import permission_registry
-from ansible_base.rbac.api.permissions import AnsibleBaseObjectPermissions, AnsibleBaseUserPermissions, visible_users
+from ansible_base.rbac.api.permissions import AnsibleBaseObjectPermissions, AnsibleBaseUserPermissions
+from ansible_base.rbac.policies import visible_users
 from test_app import models, serializers
 
 
