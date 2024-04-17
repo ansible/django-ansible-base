@@ -1,5 +1,6 @@
 from collections import OrderedDict
 
+from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import ChoiceField, ValidationError
 
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin, get_authenticator_plugins
@@ -13,7 +14,7 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
 
     def validate_type(self, value):
         if self.instance and self.instance.type != value:
-            raise ValidationError("Cannot change authenticator type after it has been created.")
+            raise ValidationError(_("Cannot change authenticator type after it has been created."))
         return value
 
     class Meta:
@@ -46,7 +47,7 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
         except ImportError:
             # A log message will already be displayed if we can't load this
             ret['configuration'] = {}
-            ret['error'] = 'Failed to load the plugin behind this authenticator, configuration hidden to protect secrets'
+            ret['error'] = _('Failed to load the plugin behind this authenticator, configuration hidden to protect secrets')
             return ret
 
         # Generate a sso login URL if this is an sso category
@@ -85,7 +86,7 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
         # Not having configuration is only valid for a PATCH
         request = self.context.get('request', None)
         if not request or (request.method != 'PATCH' and configuration is None):
-            raise ValidationError("You must specify configuration for the authenticator")
+            raise ValidationError(_("You must specify configuration for the authenticator"))
 
         try:
             invalid_encrypted_keys = {}
@@ -95,10 +96,10 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
             if configuration or configuration == {}:
                 for key in authenticator.configuration_encrypted_fields:
                     if not self.instance and configuration.get(key, None) == ENCRYPTED_STRING:
-                        invalid_encrypted_keys[key] = f"Can not be set to {ENCRYPTED_STRING}"
+                        invalid_encrypted_keys[key] = _("Can not be set to %(ENCRYPTED_STRING)s") % {"ENCRYPTED_STRING": ENCRYPTED_STRING}
                 if invalid_encrypted_keys:
                     raise ValidationError(invalid_encrypted_keys)
                 data['configuration'] = authenticator.validate_configuration(configuration, self.instance)
             return data
         except ImportError as e:
-            raise ValidationError({'type': f'Failed to import {e}'})
+            raise ValidationError({'type': _('Failed to import %(e)s') % {'e': e}})

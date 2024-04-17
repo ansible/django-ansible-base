@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 from ansible_base.lib.abstract_models.common import NamedCommonModel
 
@@ -26,13 +27,13 @@ class AuthenticatorMap(NamedCommonModel):
         Authenticator,
         null=False,
         on_delete=models.CASCADE,
-        help_text="The authenticator this mapping belongs to",
+        help_text=(_("The authenticator this mapping belongs to")),
         related_name="authenticator_maps",
     )
     revoke = models.BooleanField(
         null=False,
         default=False,
-        help_text="If a user does not meet this rule should we revoke the permission",
+        help_text=(_("If a user does not meet this rule should we revoke the permission")),
     )
     map_type = models.CharField(
         max_length=17,
@@ -45,7 +46,7 @@ class AuthenticatorMap(NamedCommonModel):
             ('allow', 'allow'),
             ('organization', 'organization'),
         ],
-        help_text='What does the map work on, a team, a user flag or is this an allow rule',
+        help_text=(_('What does the map work on, a team, a user flag or is this an allow rule')),
     )
     team = models.CharField(
         max_length=512,
@@ -71,7 +72,9 @@ class AuthenticatorMap(NamedCommonModel):
         null=False,
         default=0,
         help_text=(
-            "The order in which this rule should be processed, smaller numbers are of higher precedence. "
-            "Items with the same order will be executed in random order"
+            _(
+                "The order in which this rule should be processed, smaller numbers are of higher precedence. "
+                "Items with the same order will be executed in random order"
+            )
         ),
     )
