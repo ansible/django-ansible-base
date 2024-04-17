@@ -14,9 +14,9 @@ def b64_encode_binary_data_in_dict(obj: Any) -> Any:
             obj[index] = b64_encode_binary_data_in_dict(obj[index])
     elif isinstance(obj, dict):
         for key, value in obj.items():
-            obj[key] = b64_encode_binary_data_in_dict(key)
+            obj[key] = b64_encode_binary_data_in_dict(value)
     elif isinstance(obj, bytes):
-        return b64encode(obj)
+        return b64encode(obj).decode("utf-8")
     return obj
 
 
