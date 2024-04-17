@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.utils.translation import gettext_lazy as _
 from rest_framework import permissions
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.viewsets import ModelViewSet
@@ -38,7 +39,7 @@ class RoleDefinitionViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
 
     def _error_if_managed(self, instance):
         if instance.managed is True:
-            raise ValidationError('Role is managed by the system')
+            raise ValidationError(_('Role is managed by the system'))
 
     def perform_update(self, serializer):
         self._error_if_managed(serializer.instance)
