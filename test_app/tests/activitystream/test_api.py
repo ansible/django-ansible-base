@@ -147,3 +147,14 @@ def test_activitystream_api_deleted_related_model(admin_api_client, animal):
     assert response.status_code == 200
     assert response.data["related_content_type"] == ct.id
     assert response.data["related_object_id"] == "1337"
+
+
+def test_activitystream_api_ordering(admin_api_client, animal, user, random_user):
+    url = reverse("activitystream-list")
+    query_params = {
+        'order_by': '-id',
+    }
+    response = admin_api_client.get(url + '?' + urlencode(query_params))
+    assert response.status_code == 200
+    assert response.data['count'] > 2
+    assert response.data['results'][0]['id'] == Entry.objects.last().id
