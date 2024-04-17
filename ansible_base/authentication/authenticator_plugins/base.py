@@ -23,7 +23,7 @@ class BaseAuthenticatorConfiguration(serializers.Serializer):
 
     def _field_required(self, field):
         if hasattr(field, 'required'):
-            return getattr(field, 'required')
+            return field.required
         elif hasattr(field, 'allow_null'):
             return not getattr(field, 'allow_null')
         return True
