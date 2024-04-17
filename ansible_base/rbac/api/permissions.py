@@ -7,6 +7,7 @@ from django.http import Http404
 from rest_framework.permissions import SAFE_METHODS, BasePermission, DjangoObjectPermissions
 
 from ansible_base.lib.utils.models import is_add_perm
+from ansible_base.lib.utils.settings import get_setting
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.evaluations import has_super_permission
 from ansible_base.rbac.models import ObjectRole
@@ -132,10 +133,12 @@ class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
 
 def visible_users(request_user):
     user_cls = apps.get_model(settings.AUTH_USER_MODEL)
-    if has_super_permission(request_user, 'view'):
-        return user_cls.objects.all()
-
     org_cls = apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL)
+
+    if has_super_permission(request_user, 'view') or (
+        get_setting('ORG_ADMINS_CAN_SEE_ALL_USERS', False) and org_cls.access_ids_qs(request_user, 'change').exists()
+    ):
+        return user_cls.objects.all()
 
     object_id_fd = ObjectRole._meta.get_field('object_id')
     members_of_visble_orgs = ObjectRole.objects.filter(
@@ -154,12 +157,22 @@ class AnsibleBaseUserPermissions(AnsibleBaseObjectPermissions):
     def has_create_permission(self, request, model_cls):
         org_cls = apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL)
 
-        return request.user.is_superuser or org_cls.access_qs(request.user, 'change_organization').exists()
+        if request.user.is_superuser:
+            return True
+
+        if not get_setting('MANAGE_ORGANIZATION_AUTH', False):
+            return False
+
+        return org_cls.access_qs(request.user, 'change_organization').exists()
 
     def has_object_permission_by_codename(self, request, obj, perms):
         if perms:
             if obj.is_superuser:
                 return True
+
+            if not get_setting('MANAGE_ORGANIZATION_AUTH', False):
+                return False
+
             org_cls = apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL)
             return not org_cls.access_qs(obj, 'member_organization').exclude(pk__in=org_cls.access_ids_qs(request.user, 'change_organization')).exists()
         return True
