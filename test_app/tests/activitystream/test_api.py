@@ -1,6 +1,9 @@
 import pytest
+from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 from django.utils.http import urlencode
+
+from ansible_base.activitystream.models import Entry
 
 
 def test_activitystream_api_read(admin_api_client, user):
@@ -97,3 +100,50 @@ def test_activitystream_api_filtering(admin_api_client, user):
     response = admin_api_client.get(url + '?' + urlencode(query_params))
     assert response.status_code == 200
     assert response.data['count'] == 1
+
+
+def test_activitystream_api_deleted_model(admin_api_client):
+    """
+    In Activity Stream we store GFKs to models. But over the lifetime of an
+    application, models can be deleted or renamed or otherwise come to no longer
+    exist. We shouldn't crash when we encounter these.
+    """
+    ct = ContentType.objects.create(app_label="test_app", model="NonExistentModel")
+    entry = Entry.objects.create(
+        operation="update",
+        content_type=ct,
+        object_id=1337,
+        changes={
+            "changed_fields": {
+                "name": ("Fido", "Bob The Fish"),
+                "is_cool_fish": ("False", "True"),
+            },
+            "added_fields": {},
+            "removed_fields": {},
+        },
+    )
+    url = reverse("activitystream-detail", args=[entry.id])
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    assert response.data["content_type"] == ct.id
+    assert response.data["changes"]["changed_fields"]["name"] == ["Fido", "Bob The Fish"]
+    assert response.data["changes"]["changed_fields"]["is_cool_fish"] == ["False", "True"]
+
+
+def test_activitystream_api_deleted_related_model(admin_api_client, animal):
+    """
+    Similar to the above test, but for the related_* fields.
+    """
+    ct = ContentType.objects.create(app_label="test_app", model="NonExistentModel")
+    entry = Entry.objects.create(
+        operation="associate",
+        content_object=animal,
+        related_content_type=ct,
+        related_object_id=1337,
+        changes=None,
+    )
+    url = reverse("activitystream-detail", args=[entry.id])
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    assert response.data["related_content_type"] == ct.id
+    assert response.data["related_object_id"] == "1337"
