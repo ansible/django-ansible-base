@@ -90,7 +90,8 @@ class FieldLookupBackend(BaseFilterBackend):
             try:
                 return self.to_python_related(value)
             except ValueError:
-                raise ParseError(_('Invalid {field_name} id: {field_id}').format(field_name=getattr(field, 'name', 'related field'), field_id=value))
+                field_name = getattr(field, 'name', 'related field')
+                raise ParseError(_("Invalid %(field_name)s id: %(field_id)s") % {"field_name": field_name, "field_id": value})
         else:
             return field.to_python(value)
 
@@ -98,7 +99,7 @@ class FieldLookupBackend(BaseFilterBackend):
         try:
             lookup.encode("ascii")
         except UnicodeEncodeError:
-            raise ValueError("%r is not an allowed field name. Must be ascii encodable." % lookup)
+            raise ValueError(_("%(lookup)s is not an allowed field name. Must be ascii encodable.") % {"lookup": lookup})
 
         field_list, new_lookup = self.get_fields_from_lookup(model, lookup)
         field = field_list[-1]
@@ -115,7 +116,7 @@ class FieldLookupBackend(BaseFilterBackend):
         elif new_lookup.endswith('__in'):
             items = []
             if not value:
-                raise ValueError('cannot provide empty value for __in')
+                raise ValueError(_('cannot provide empty value for __in'))
             for item in value.split(','):
                 items.append(self.value_to_python_for_field(field, item))
             value = items
@@ -126,11 +127,11 @@ class FieldLookupBackend(BaseFilterBackend):
                 raise ValueError(e.args[0])
         elif new_lookup.endswith('__iexact'):
             if not isinstance(field, (CharField, TextField)) and not (isinstance(field, JSONField) and not self.TREAT_JSONFIELD_AS_TEXT):
-                raise ValueError(f'{field.name} is not a text field and cannot be filtered by case-insensitive search')
+                raise ValueError(_('%(field_name)s is not a text field and cannot be filtered by case-insensitive search') % {'field_name': field.name})
         elif new_lookup.endswith('__search'):
             related_model = getattr(field, 'related_model', None)
             if not related_model:
-                raise ValueError('%s is not searchable' % new_lookup[:-8])
+                raise ValueError(_('%(related_model)s is not searchable') % {"related_model": new_lookup[:-8]})
             new_lookups = []
             for rm_field in related_model._meta.fields:
                 if rm_field.name in ('username', 'first_name', 'last_name', 'email', 'name', 'description', 'playbook'):
