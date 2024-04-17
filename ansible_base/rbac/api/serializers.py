@@ -189,7 +189,7 @@ class BaseAssignmentSerializer(CommonModelSerializer):
         return fields
 
     def raise_id_fields_error(self, field1, field2):
-        msg = _(f'Provide exactly one of {self.actor_field} or {self.actor_field}_ansible_id')
+        msg = _('Provide exactly one of %(actor_field)s or %(actor_field)s_ansible_id') % {'actor_field': self.actor_field}
         raise ValidationError({self.actor_field: msg, f'{self.actor_field}_ansible_id': msg})
 
     def get_by_ansible_id(self, ansible_id, for_field):
@@ -230,7 +230,10 @@ class BaseAssignmentSerializer(CommonModelSerializer):
             obj = self.get_by_ansible_id(validated_data.get('object_ansible_id'), for_field='object_ansible_id')
             if permission_registry.content_type_model.objects.get_for_model(obj) != role_definition.content_type:
                 raise ValidationError(
-                    {'object_ansible_id': _(f'Object type of {obj._meta.model_name} does not match role type of {role_definition.content_type.model}')}
+                    {
+                        'object_ansible_id': _('Object type of %(model_name)s does not match role type of %(role_definition)s')
+                        % {'model_name': obj._meta.model_name, 'role_definition': role_definition.content_type.model}
+                    }
                 )
         return obj
 

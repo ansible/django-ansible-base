@@ -12,6 +12,14 @@ from ansible_base.lib.serializers.fields import JSONField
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.base')
 
 
+def _field_required(field):
+    if hasattr(field, 'required'):
+        return field.required
+    elif hasattr(field, 'allow_null'):
+        return not field.allow_null
+    return True
+
+
 class BaseAuthenticatorConfiguration(serializers.Serializer):
     documentation_url = None
     ADDITIONAL_UNVERIFIED_ARGS = JSONField(
@@ -35,7 +43,7 @@ class BaseAuthenticatorConfiguration(serializers.Serializer):
             schema_data = {
                 "name": f,
                 "help_text": field.help_text,
-                "required": not field.allow_null,
+                "required": _field_required(field),
                 "default": default,
                 "type": field.__class__.__name__,
                 "ui_field_label": getattr(field, 'ui_field_label', _('Undefined')),
