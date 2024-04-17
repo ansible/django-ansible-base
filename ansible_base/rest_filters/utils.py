@@ -28,7 +28,7 @@ def get_fields_from_path(model, path, treat_jsonfield_as_text=True):
             continue
 
         if model is None:
-            raise ParseError(_('No related model for field {}.').format(name))
+            raise ParseError(_('No related model for field %(model_name)s.') % {'model_name': name})
         # TODO: Do we want to keep these AWX specific items here?
         # HACK: Make project and inventory source filtering by old field names work for backwards compatibility.
         if model._meta.object_name in ('Project', 'InventorySource'):
@@ -55,14 +55,14 @@ def get_fields_from_path(model, path, treat_jsonfield_as_text=True):
             else:
                 field = model._meta.get_field(name)
             if isinstance(field, ForeignObjectRel) and getattr(field.field, '__prevent_search__', False):
-                raise PermissionDenied(_('Filtering on %s is not allowed.' % name))
+                raise PermissionDenied(_('Filtering on %(field_name)s is not allowed.') % {"field_name": name})
             elif getattr(field, '__prevent_search__', False):
-                raise PermissionDenied(_('Filtering on %s is not allowed.' % name))
+                raise PermissionDenied(_('Filtering on %(field_name)s is not allowed.') % {"field_name": name})
             elif isinstance(field, JSONField) and not treat_jsonfield_as_text:
                 is_json_field = True
         if field in field_list:
             # Field traversed twice, could create infinite JOINs, DoS-ing the service
-            raise ParseError(_('Loops not allowed in filters, detected on field {}.').format(field.name))
+            raise ParseError(_('Loops not allowed in filters, detected on field %(field_name)s.') % {'field_name': field.name})
         field_list.append(field)
         model = getattr(field, 'related_model', None)
 
