@@ -1,8 +1,23 @@
+from base64 import b64encode
+from typing import Any
+
 from django.conf import settings
 from django.db import models
 from social_django.models import AbstractUserSocialAuth
 
 from ansible_base.authentication.models import Authenticator
+
+
+def b64_encode_binary_data_in_dict(obj: Any) -> Any:
+    if isinstance(obj, list):
+        for index in range(0, len(obj)):
+            obj[index] = b64_encode_binary_data_in_dict(obj[index])
+    elif isinstance(obj, dict):
+        for key, value in obj.items():
+            obj[key] = b64_encode_binary_data_in_dict(key)
+    elif isinstance(obj, bytes):
+        return b64encode(obj)
+    return obj
 
 
 class AuthenticatorUser(AbstractUserSocialAuth):
@@ -29,3 +44,9 @@ class AuthenticatorUser(AbstractUserSocialAuth):
         """Meta data"""
 
         unique_together = ("provider", "uid")
+
+    def save(self, *args, **kwargs):
+        # Some authenticators can put binary field in the extra data so we need to be sure to strip that out.
+        self.extra_data = b64_encode_binary_data_in_dict(self.extra_data)
+
+        super().save(*args, **kwargs)
