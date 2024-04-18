@@ -10,7 +10,7 @@ from rest_framework.permissions import SAFE_METHODS
 from rest_framework.response import Response
 
 from ansible_base.rbac.permission_registry import permission_registry
-from ansible_base.rbac.policies import check_content_obj_permission
+from ansible_base.rbac.policies import check_content_obj_permission, visible_users
 
 logger = logging.getLogger('ansible_base.lib.routers.association_resource_router')
 
@@ -27,6 +27,56 @@ class QuerySetMixinBase:
 
         child_queryset = getattr(parent_instance, self.association_fk).all()
         return child_queryset
+
+
+def viewset_model(viewset):
+    "Given some viewset or viewset class, return the Django Model for it"
+    if viewset.queryset:
+        return viewset.queryset.model
+    return viewset.serializer_class.Meta.model
+
+
+def basic_association_serializer_factory(related_view):
+    qs = related_view.queryset
+    if qs is None:
+        qs = related_view.serializer_class.Meta.model.objects.all()
+
+    class AssociationSerializer(serializers.Serializer):
+        instances = serializers.PrimaryKeyRelatedField(
+            queryset=qs,
+            many=True,
+        )
+
+    return AssociationSerializer
+
+
+def user_association_serializer_factory(related_view):
+
+    class AssociationSerializer(serializers.Serializer):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            request = self.context['request']
+            self.fields['instances'] = serializers.PrimaryKeyRelatedField(
+                queryset=visible_users(request.user),
+                many=True,
+            )
+
+    return AssociationSerializer
+
+
+def filtered_association_serializer_factory(related_view):
+    cls = viewset_model(related_view)
+
+    class AssociationSerializer(serializers.Serializer):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            request = self.context['request']
+            self.fields['instances'] = serializers.PrimaryKeyRelatedField(
+                queryset=cls.access_qs(request.user),
+                many=True,
+            )
+
+    return AssociationSerializer
 
 
 class AssociateMixin(QuerySetMixinBase):
@@ -113,11 +163,16 @@ class AssociateMixin(QuerySetMixinBase):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     def get_serializer_class(self):
-        association_class = getattr(self, 'association_serializer', None)
-        if self.action in ('associate', 'disassociate'):
-            if association_class is None:
-                raise RuntimeError('You must set association_serializer on the viewset')
-            return association_class
+        if self.action == 'disassociate':
+            return basic_association_serializer_factory(self)
+        elif self.action == 'associate':
+            cls = viewset_model(self)
+            if 'ansible_base.rbac' in settings.INSTALLED_APPS and permission_registry.is_registered(cls):
+                return filtered_association_serializer_factory(self)
+            elif 'ansible_base.rbac' in settings.INSTALLED_APPS and cls._meta.model_name == 'user':
+                return user_association_serializer_factory(self)
+            else:
+                return basic_association_serializer_factory(self)
         return super().get_serializer_class()
 
 
@@ -136,19 +191,6 @@ class AssociationResourceRouter(routers.SimpleRouter):
                     continue
                 bound_methods[method] = action_str
         return bound_methods
-
-    def association_serializer_factory(self, related_view):
-        qs = related_view.queryset
-        if qs is None:
-            qs = related_view.serializer_class.Meta.model.objects.all()
-
-        class AssociationSerializer(serializers.Serializer):
-            instances = serializers.PrimaryKeyRelatedField(
-                queryset=qs,
-                many=True,
-            )
-
-        return AssociationSerializer
 
     def register(self, prefix, viewset, related_views={}, basename=None):
         if basename is None:
@@ -172,7 +214,6 @@ class AssociationResourceRouter(routers.SimpleRouter):
                 {
                     'association_fk': fk,
                     'parent_viewset': viewset,
-                    'association_serializer': self.association_serializer_factory(related_view),
                     'lookup_field': fk,
                 },
             )

@@ -2,6 +2,7 @@ import pytest
 from django.test import override_settings
 from django.urls import reverse
 
+from ansible_base.rbac.policies import visible_users
 from test_app.models import User
 
 
@@ -141,15 +142,6 @@ class TestRoleBasedAssignment:
         assert rando.has_obj_perm(organization, 'member')
 
 
-# TO TEST
-# api/v1/ ^organizations/(?P<pk>[0-9]+)/members/$ [name='organization-users-list']
-# api/v1/ ^organizations/(?P<pk>[0-9]+)/members/associate/$ [name='organization-users-associate']
-# api/v1/ ^organizations/(?P<pk>[0-9]+)/members/disassociate/$ [name='organization-users-disassociate']
-# api/v1/ ^organizations/(?P<pk>[0-9]+)/admins/$ [name='organization-admins-list']
-# api/v1/ ^organizations/(?P<pk>[0-9]+)/admins/associate/$ [name='organization-admins-associate']
-# api/v1/ ^organizations/(?P<pk>[0-9]+)/admins/disassociate/$ [name='organization-admins-disassociate']
-
-
 @pytest.mark.django_db
 class TestRelationshipBasedAssignment:
     """Tests permissions via tracked_relationship feature, duplicated functionality with TestRoleBasedAssignment
@@ -190,3 +182,26 @@ class TestRelationshipBasedAssignment:
         response = user_api_client.post(url, data=data)
         assert response.status_code == 204, response.data
         assert rando.has_obj_perm(organization, 'member')
+
+    @override_settings(ORG_ADMINS_CAN_SEE_ALL_USERS=False)
+    def test_associate_needs_view_permission(self, user, user_api_client, organization, org_member_rd, org_admin_rd):
+        "Need view permission to user to associate to an organization"
+        org_admin_rd.give_permission(user, organization)
+        rando = User.objects.create(username='rando')
+        assert not visible_users(user).filter(pk=rando.id).exists()  # sanity
+        url = reverse('organization-admins-associate', kwargs={'pk': organization.pk})
+
+        data = {'instances': [rando.id]}
+
+        # user can not see other user rando, should get related object does not exist error
+        response = user_api_client.post(url, data=data)
+        assert response.status_code == 400, response.data
+        assert not rando.has_obj_perm(organization, 'change')
+
+        org_member_rd.give_permission(rando, organization)
+        assert visible_users(user).filter(pk=rando.id).exists()
+
+        # user can see other user rando, and can make rando an organization admin
+        response = user_api_client.post(url, data=data)
+        assert response.status_code == 204, response.data
+        assert rando.has_obj_perm(organization, 'change')  # action took full effect
