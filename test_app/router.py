@@ -37,7 +37,8 @@ router.register(
     r'teams',
     views.TeamViewSet,
     related_views={
-        'tracked_users': (views.UserViewSet, 'tracked_users'),
+        'members': (views.UserViewSet, 'users'),
+        'admins': (views.UserViewSet, 'admins'),
         'parents': (views.TeamViewSet, 'team_parents'),
         'role_assignments': (rbac_views.RoleTeamAssignmentViewSet, 'role_assignments'),
     },

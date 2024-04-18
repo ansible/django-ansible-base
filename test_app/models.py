@@ -228,6 +228,7 @@ permission_registry.register(CollectionImport, parent_field_name='namespace')
 permission_registry.register(InstanceGroup, ImmutableTask, parent_field_name=None)
 
 permission_registry.track_relationship(Team, 'users', 'team-member')
+permission_registry.track_relationship(Team, 'admins', 'team-admin')
 permission_registry.track_relationship(Team, 'team_parents', 'team-member')
 
 
