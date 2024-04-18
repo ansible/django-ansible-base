@@ -3,6 +3,7 @@ from unittest import mock
 import pytest
 from django.db import connection
 
+from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.authentication.utils import claims
 
 
@@ -600,3 +601,45 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
 def test_process_user_attributes(trigger_condition, attributes, expected):
     res = claims.process_user_attributes(trigger_condition, attributes, authenticator_id=1337)
     assert res is expected
+
+
+def test_update_user_claims_extra_data(user, local_authenticator_map):
+    """
+    We are testing a specific codepath path where update_user_claims() calls
+    create_claims() and passes it extra_data (aka "attrs"). The only way for
+    attrs to be used is for us to have an AuthenticatorMap attached to the
+    Authenticator, which has 'triggers' with a key of 'attributes' and some
+    condition value, and where the AuthenticatorUser has an extra_data with
+    something meaningful in it.
+    """
+    local_authenticator_map.triggers = {"attributes": {"email": {"contains": "@example.com"}}}
+    local_authenticator_map.save()
+    authenticator = local_authenticator_map.authenticator
+    # Associate the authenticator with the user
+    authenticator_user = AuthenticatorUser(
+        provider=authenticator,
+        user=user,
+        extra_data={"email": "test@example.com"},
+    )
+    authenticator_user.save()
+    assert local_authenticator_map.authenticator == authenticator_user.provider  # sanity check
+    result = claims.update_user_claims(user, authenticator, [])
+    assert result is user
+
+
+def test_update_user_claims_groups(user, local_authenticator_map):
+    """
+    Similar to above, but testing groups instead of attributes.
+    """
+    local_authenticator_map.triggers = {"groups": {"has_or": ["foo"]}}
+    local_authenticator_map.save()
+    authenticator = local_authenticator_map.authenticator
+    # Associate the authenticator with the user
+    authenticator_user = AuthenticatorUser(
+        provider=authenticator,
+        user=user,
+    )
+    authenticator_user.save()
+    assert local_authenticator_map.authenticator == authenticator_user.provider  # sanity check
+    result = claims.update_user_claims(user, authenticator, ["foo"])
+    assert result is user
