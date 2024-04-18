@@ -1,6 +1,6 @@
 import logging
 
-from django.urls import include, path
+from django.urls import include, path, re_path
 
 from ansible_base.authentication import views
 from ansible_base.authentication.apps import AuthenticationConfig
@@ -26,11 +26,14 @@ for plugin_name in get_authenticator_plugins():
         logger.debug(f"Loaded URLS from {plugin_name}")
 
 
-authenticator_related_views = {
-    'authenticator_maps': (views.AuthenticatorMapViewSet, 'authenticator_maps'),
-}
 router = AssociationResourceRouter()
-router.register('authenticators', views.AuthenticatorViewSet, related_views=authenticator_related_views)
+router.register(
+    'authenticators',
+    views.AuthenticatorViewSet,
+    related_views={
+        'authenticator_maps': (views.AuthenticatorMapViewSet, 'authenticator_maps'),
+    },
+)
 router.register(
     'authenticator_maps',
     views.AuthenticatorMapViewSet,
@@ -42,7 +45,15 @@ router.register(
 # Add a custom related authenticator/X/users endpoint (not a standard FK relation on authenticators)
 auth_user_view = get_authenticator_user_view()
 if auth_user_view is not None:
-    router.register('authenticators/(?P<authenticator_id>[0-9]+)/users', auth_user_view, basename='authenticator-users')
+    api_version_urls.extend(
+        [
+            re_path(
+                '^authenticators/(?P<pk>[0-9]+)/users/$',
+                auth_user_view.as_view(view_only_list),
+                name='authenticator-users-list',
+            )
+        ]
+    )
 
 api_version_urls.extend(
     [

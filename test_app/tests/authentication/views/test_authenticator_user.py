@@ -54,5 +54,5 @@ def test_authenticator_user_view_authenticator_user_count(local_authenticator, d
 
     view_class = get_authenticator_user_view()
     view = view_class()
-    query_set = view.get_queryset(**{'authenticator_id': local_authenticator.id})
+    query_set = view.get_queryset(**{'pk': local_authenticator.id})
     assert query_set.count() == num_users
