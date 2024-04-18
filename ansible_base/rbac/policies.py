@@ -28,6 +28,17 @@ def visible_users(request_user) -> QuerySet:
     ).distinct()
 
 
+def can_change_user(request_user, target_user) -> bool:
+    if request_user.is_superuser:
+        return True
+
+    if not get_setting('MANAGE_ORGANIZATION_AUTH', False):
+        return False
+
+    org_cls = apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL)
+    return not org_cls.access_qs(target_user, 'member_organization').exclude(pk__in=org_cls.access_ids_qs(request_user, 'change_organization')).exists()
+
+
 def check_content_obj_permission(request_user, obj) -> None:
     """Permission policy rules for giving or removing obj permission
 
@@ -35,8 +46,8 @@ def check_content_obj_permission(request_user, obj) -> None:
     on objects, so we firstly look to a simple matter of having change permission
     If that is not available, then we check all object-level permissions.
     """
-    # User must have all permissions for the applicable model
     if 'change' in obj._meta.default_permissions:
+        # Model has no change permission, so user must have all permissions for the applicable model
         if not request_user.has_obj_perm(obj, 'change'):
             raise PermissionDenied
     else:

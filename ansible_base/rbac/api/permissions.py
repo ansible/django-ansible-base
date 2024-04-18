@@ -10,6 +10,7 @@ from ansible_base.lib.utils.models import is_add_perm
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.evaluations import has_super_permission
+from ansible_base.rbac.policies import can_change_user
 
 logger = logging.getLogger('ansible_base.rbac.api.permissions')
 
@@ -148,12 +149,5 @@ class AnsibleBaseUserPermissions(AnsibleBaseObjectPermissions):
 
     def has_object_permission_by_codename(self, request, obj, perms):
         if perms:
-            if obj.is_superuser:
-                return True
-
-            if not get_setting('MANAGE_ORGANIZATION_AUTH', False):
-                return False
-
-            org_cls = apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL)
-            return not org_cls.access_qs(obj, 'member_organization').exclude(pk__in=org_cls.access_ids_qs(request.user, 'change_organization')).exists()
+            return can_change_user(request.user, obj)
         return True

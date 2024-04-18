@@ -131,11 +131,62 @@ class TestRoleBasedAssignment:
         data = {'role_definition': org_member_rd.id, 'object_id': organization.id, 'user': rando.id}
 
         response = user_api_client.post(url, data=data)
-        assert response.status_code == 403
+        assert response.status_code == 403, response.data
         assert not rando.has_obj_perm(organization, 'member')  # sanity, verify atomicity
 
         org_admin_rd.give_permission(user, organization)
 
         response = user_api_client.post(url, data=data)
-        assert response.status_code == 201
+        assert response.status_code == 201, response.data
+        assert rando.has_obj_perm(organization, 'member')
+
+
+# TO TEST
+# api/v1/ ^organizations/(?P<pk>[0-9]+)/members/$ [name='organization-users-list']
+# api/v1/ ^organizations/(?P<pk>[0-9]+)/members/associate/$ [name='organization-users-associate']
+# api/v1/ ^organizations/(?P<pk>[0-9]+)/members/disassociate/$ [name='organization-users-disassociate']
+# api/v1/ ^organizations/(?P<pk>[0-9]+)/admins/$ [name='organization-admins-list']
+# api/v1/ ^organizations/(?P<pk>[0-9]+)/admins/associate/$ [name='organization-admins-associate']
+# api/v1/ ^organizations/(?P<pk>[0-9]+)/admins/disassociate/$ [name='organization-admins-disassociate']
+
+
+@pytest.mark.django_db
+class TestRelationshipBasedAssignment:
+    """Tests permissions via tracked_relationship feature, duplicated functionality with TestRoleBasedAssignment
+
+    Philosophically, this should perform the same actions and make the same assertions as TestRoleBasedAssignment
+    because under the hood, signals are used to make these memberships exactly the same
+    as the corresponding role assignments
+    """
+
+    def test_parent_object_view_permission(self, user, user_api_client, organization, org_member_rd):
+        url = reverse('organization-list')
+        response = user_api_client.get(url)
+        assert response.data['count'] == 0
+
+        url = reverse('organization-users-list', kwargs={'pk': organization.pk})
+        response = user_api_client.get(url)
+        assert response.status_code == 404, response.data
+
+        org_member_rd.give_permission(user, organization)
+        response = user_api_client.get(url)
+        assert response.status_code == 200, response.data
+        assert user.username in set(item['username'] for item in response.data['results'])
+
+    def test_org_admins_can_add_members(self, user, user_api_client, organization, org_member_rd, org_admin_rd):
+        rando = User.objects.create(username='rando')
+        url = reverse('organization-users-associate', kwargs={'pk': organization.pk})
+
+        org_member_rd.give_permission(user, organization)
+
+        data = {'instances': [rando.id]}
+
+        response = user_api_client.post(url, data=data)
+        assert response.status_code == 403, response.data
+        assert not rando.has_obj_perm(organization, 'member')  # sanity, verify atomicity
+
+        org_admin_rd.give_permission(user, organization)
+
+        response = user_api_client.post(url, data=data)
+        assert response.status_code == 204, response.data
         assert rando.has_obj_perm(organization, 'member')

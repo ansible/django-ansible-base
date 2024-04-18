@@ -22,6 +22,8 @@ router.register(
     r'organizations',
     views.OrganizationViewSet,
     related_views={
+        'members': (views.UserViewSet, 'users'),
+        'admins': (views.UserViewSet, 'admins'),
         'teams': (views.TeamViewSet, 'teams'),
         'inventories': (views.InventoryViewSet, 'inventories'),
         'namespaces': (views.NamespaceViewSet, 'namespaces'),

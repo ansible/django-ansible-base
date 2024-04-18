@@ -72,6 +72,8 @@ class Migration(migrations.Migration):
                 ('description', models.TextField(blank=True, default='', help_text='The organization description.')),
                 ('created_by', models.ForeignKey(default=None, editable=False, help_text='The user who created this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_created+', to=settings.AUTH_USER_MODEL)),
                 ('modified_by', models.ForeignKey(default=None, editable=False, help_text='The user who last modified this resource', null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='%(app_label)s_%(class)s_modified+', to=settings.AUTH_USER_MODEL)),
+                ('admins', models.ManyToManyField(blank=True, help_text='The list of admins for this organization', related_name='admin_of_organizations', to=settings.AUTH_USER_MODEL)),
+                ('users', models.ManyToManyField(blank=True, help_text='The list of users on this organization', related_name='member_of_organizations', to=settings.AUTH_USER_MODEL))
             ],
             options={'ordering': ['id'], 'permissions': [('member_organization', 'User is member of this organization')]},
         ),

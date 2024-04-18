@@ -1,10 +1,16 @@
 import logging
 
+from django.conf import settings
 from django.db.models.fields import IntegerField
+from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
 from rest_framework import routers, serializers, status
 from rest_framework.decorators import action
+from rest_framework.permissions import SAFE_METHODS
 from rest_framework.response import Response
+
+from ansible_base.rbac.permission_registry import permission_registry
+from ansible_base.rbac.policies import check_content_obj_permission
 
 logger = logging.getLogger('ansible_base.lib.routers.association_resource_router')
 
@@ -12,7 +18,7 @@ logger = logging.getLogger('ansible_base.lib.routers.association_resource_router
 class QuerySetMixinBase:
     def get_queryset(self):
         parent_pk = self.kwargs['pk']
-        parent_model = self.parent_view_model
+        parent_model = self.parent_viewset.serializer_class.Meta.model
 
         try:
             parent_instance = parent_model.objects.get(pk=parent_pk)
@@ -24,6 +30,37 @@ class QuerySetMixinBase:
 
 
 class AssociateMixin(QuerySetMixinBase):
+    def check_parent_object_permissions(self, request, parent_obj):
+        # Because this is a POST request, the normal process in parent_view of
+        # get_object --> check_object_permissions
+        # will not check "change" permissions to the parent object
+        # this method is a replacement for that flow for both attaching and detatching
+        if (request.method not in SAFE_METHODS) and 'ansible_base.rbac' in settings.INSTALLED_APPS and permission_registry.is_registered(parent_obj):
+            return check_content_obj_permission(request.user, parent_obj)
+        return True
+
+    def get_parent_object(self):
+        """Modeled mostly after DRF get_object
+
+        This is kept separate to be more manual and explicit
+        """
+        parent_view = self.parent_viewset()
+        parent_view.request = self.request
+        queryset = parent_view.filter_queryset(parent_view.get_queryset())
+        filter_kwargs = {'pk': self.kwargs['pk']}
+
+        parent_obj = get_object_or_404(queryset, **filter_kwargs)
+
+        # May raise a permission denied
+        self.check_parent_object_permissions(self.request, parent_obj)
+
+        return parent_obj
+
+    def list(self, *args, **kwargs):
+        "Override list strictly for purpose of checking parent object permission"
+        self.get_parent_object()
+        return super().list(*args, **kwargs)
+
     @action(detail=False, methods=['post'])
     def associate(self, request, **kwargs):
         """
@@ -32,7 +69,7 @@ class AssociateMixin(QuerySetMixinBase):
         This will be served at /{basename}/{pk}/{related_name}/associate/
         We will be given a list of primary keys in the request body.
         """
-        instance = self.parent_view_model.objects.get(pk=kwargs['pk'])
+        instance = self.get_parent_object()
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         related_instances = serializer.validated_data['instances']
@@ -50,7 +87,7 @@ class AssociateMixin(QuerySetMixinBase):
         This will be served at /{basename}/{pk}/{related_name}/disassociate/
         We will be given a list of primary keys in the request body.
         """
-        instance = self.parent_view_model.objects.get(pk=kwargs['pk'])
+        instance = self.get_parent_object()
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         related_instances = serializer.validated_data['instances']
@@ -134,7 +171,7 @@ class AssociationResourceRouter(routers.SimpleRouter):
                 (mixin_class, related_view),
                 {
                     'association_fk': fk,
-                    'parent_view_model': parent_model,
+                    'parent_viewset': viewset,
                     'association_serializer': self.association_serializer_factory(related_view),
                     'lookup_field': fk,
                 },

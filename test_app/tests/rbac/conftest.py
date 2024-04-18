@@ -60,7 +60,7 @@ def org_admin_rd():
     perm_list = combine_values(permissions_allowed_for_role(Organization))
     return RoleDefinition.objects.create_from_permissions(
         permissions=perm_list,
-        name='org-admin',
+        name='organization-admin',
         content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
         managed=True,
     )
@@ -70,7 +70,7 @@ def org_admin_rd():
 def org_member_rd():
     return RoleDefinition.objects.create_from_permissions(
         permissions=['view_organization', 'member_organization'],
-        name='org-member',
+        name='organization-member',
         content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
         managed=True,
     )

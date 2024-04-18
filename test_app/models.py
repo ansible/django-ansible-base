@@ -1,5 +1,6 @@
 import uuid
 
+from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.db.models import JSONField
@@ -17,6 +18,20 @@ class Organization(AbstractOrganization):
         permissions = [('member_organization', 'User is member of this organization')]
 
     resource = AnsibleResourceField(primary_key_field="id")
+
+    users = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        related_name='member_of_organizations',
+        blank=True,
+        help_text="The list of users on this organization",
+    )
+
+    admins = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        related_name='admin_of_organizations',
+        blank=True,
+        help_text="The list of admins for this organization",
+    )
 
 
 class User(AbstractUser, CommonModel, AuditableModel):
@@ -230,6 +245,9 @@ permission_registry.register(InstanceGroup, ImmutableTask, parent_field_name=Non
 permission_registry.track_relationship(Team, 'users', 'team-member')
 permission_registry.track_relationship(Team, 'admins', 'team-admin')
 permission_registry.track_relationship(Team, 'team_parents', 'team-member')
+
+permission_registry.track_relationship(Organization, 'users', 'organization-member')
+permission_registry.track_relationship(Organization, 'admins', 'organization-admin')
 
 
 class MultipleFieldsModel(NamedCommonModel):
