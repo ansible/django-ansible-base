@@ -14,7 +14,7 @@ from ansible_base.lib.abstract_models.common import get_url_for_object
 from ansible_base.lib.serializers.common import CommonModelSerializer, ImmutableCommonModelSerializer
 from ansible_base.rbac.models import RoleDefinition, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry  # careful for circular imports
-from ansible_base.rbac.policies import check_content_obj_permission
+from ansible_base.rbac.policies import check_content_obj_permission, visible_users
 from ansible_base.rbac.validators import validate_permissions_for_model
 
 
@@ -200,7 +200,14 @@ class BaseAssignmentSerializer(CommonModelSerializer):
             raise ValidationError({for_field: _('Django-ansible-base resource registry must be installed to use ansible_id fields')})
 
         try:
-            resource = resource_cls.access_qs(requesting_user).get(ansible_id=ansible_id)
+            resource = resource_cls.objects.get(ansible_id=ansible_id)
+            # Ensure that the request user has permission to view provided data
+            obj = resource.content_object
+            if obj._meta.model_name == 'user':
+                if not visible_users(requesting_user).filter(pk=obj.pk).exists():
+                    raise ObjectDoesNotExist
+            elif not requesting_user.has_obj_perm(obj, 'view'):
+                raise ObjectDoesNotExist
         except ObjectDoesNotExist:
             msg = serializers.PrimaryKeyRelatedField.default_error_messages['does_not_exist']
             raise ValidationError({for_field: msg.format(pk_value=ansible_id)})
@@ -231,7 +238,7 @@ class BaseAssignmentSerializer(CommonModelSerializer):
             except ValidationError as exc:
                 raise ValidationError({'object_id': exc.detail})
         elif validated_data.get('object_ansible_id'):
-            obj = self.get_by_ansible_id(validated_data.get('object_ansible_id'), for_field='object_ansible_id')
+            obj = self.get_by_ansible_id(validated_data.get('object_ansible_id'), requesting_user, for_field='object_ansible_id')
             if permission_registry.content_type_model.objects.get_for_model(obj) != role_definition.content_type:
                 raise ValidationError(
                     {
