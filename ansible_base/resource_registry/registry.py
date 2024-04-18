@@ -2,6 +2,7 @@ from collections import namedtuple
 from typing import List, Optional
 
 from django.contrib.auth import authenticate
+from django.utils.translation import gettext_lazy as _
 
 from ansible_base.resource_registry.utils.resource_type_processor import ResourceTypeProcessor
 
@@ -114,7 +115,7 @@ class ResourceRegistry:
         if model_label:
             return self.registry[model_label]
 
-        raise AttributeError("Must include either model or model_label arg.")
+        raise AttributeError(_("Must include either model or model_label arg."))
 
 
 def get_registry() -> ResourceRegistry:
