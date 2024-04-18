@@ -131,12 +131,26 @@ def task_admin_rd():
     )
 
 
-@pytest.mark.django_db
-def test_create_user_assignment_immutable(user_api_client, user, rando, task_admin_rd):
-    task = ImmutableTask.objects.create()
+@pytest.fixture
+def task_view_rd():
+    return RoleDefinition.objects.create_from_permissions(
+        permissions=['view_immutabletask'],
+        name='Task View',
+        content_type=permission_registry.content_type_model.objects.get_for_model(ImmutableTask),
+    )
 
+
+@pytest.mark.django_db
+def test_create_user_assignment_immutable(user_api_client, user, rando, task_admin_rd, task_view_rd):
+    task = ImmutableTask.objects.create()
     url = reverse('roleuserassignment-list')
     request_data = {"user": rando.pk, "role_definition": task_admin_rd.pk, "object_id": task.pk}
+
+    response = user_api_client.post(url, data=request_data)
+    assert response.status_code == 400, response.data
+    assert 'object does not exist' in response.data['object_id'][0]
+
+    task_view_rd.give_permission(user, task)
     response = user_api_client.post(url, data=request_data)
     assert response.status_code == 403, response.data
 
@@ -146,20 +160,15 @@ def test_create_user_assignment_immutable(user_api_client, user, rando, task_adm
 
 
 @pytest.mark.django_db
-def test_remove_user_assignment_immutable(user_api_client, user, rando, task_admin_rd):
+def test_remove_user_assignment_immutable(user_api_client, user, rando, task_admin_rd, task_view_rd):
     task = ImmutableTask.objects.create()
     assignment = task_admin_rd.give_permission(rando, task)
-
     url = reverse('roleuserassignment-detail', kwargs={'pk': assignment.pk})
+
     response = user_api_client.delete(url)
     assert response.status_code == 404, response.data
 
-    rd_view = RoleDefinition.objects.create_from_permissions(
-        permissions=['view_immutabletask'],
-        name='Task Viewer',
-        content_type=permission_registry.content_type_model.objects.get_for_model(ImmutableTask),
-    )
-    rd_view.give_permission(user, task)
+    task_view_rd.give_permission(user, task)
     response = user_api_client.delete(url)
     assert response.status_code == 403, response.data
 
