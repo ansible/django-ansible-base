@@ -1,6 +1,7 @@
 from collections import OrderedDict
 
 from django.utils.translation import gettext_lazy as _
+from rest_framework.reverse import reverse
 from rest_framework.serializers import ChoiceField, ValidationError
 
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin, get_authenticator_plugins
@@ -103,3 +104,12 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
             return data
         except ImportError as e:
             raise ValidationError({'type': _('Failed to import %(e)s') % {'e': e}})
+
+    def _get_related(self, obj) -> dict[str, str]:
+        related = super()._get_related(obj)
+        from ansible_base.authentication.views.authenticator_users import get_authenticator_user_view
+
+        if get_authenticator_user_view():
+            related['users'] = reverse('authenticator-users-list', kwargs={'pk': obj.pk})
+
+        return related
