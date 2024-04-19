@@ -132,17 +132,16 @@ class AssociateMixin(QuerySetMixinBase):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     def get_serializer_class(self):
+        if self.queryset:
+            qs = self.queryset
+            cls = self.queryset.model
+        else:
+            cls = self.serializer_class.Meta.model
+            qs = cls.objects.all()
+
         if self.action == 'disassociate':
-            return basic_association_serializer_factory(self)
+            return basic_association_serializer_factory(qs)
         elif self.action == 'associate':
-
-            if self.queryset:
-                qs = self.queryset
-                cls = self.queryset.model
-            else:
-                cls = self.serializer_class.Meta.model
-                qs = cls.objects.all()
-
             if 'ansible_base.rbac' in settings.INSTALLED_APPS and permission_registry.is_registered(cls):
                 return filtered_association_serializer_factory(cls, qs)
             elif 'ansible_base.rbac' in settings.INSTALLED_APPS and cls._meta.model_name == 'user':
