@@ -26,7 +26,7 @@ class QuerySetMixinBase:
         return True
 
     def get_parent_object(self):
-        """Modeled mostly after DRF get_object, for for the parent model
+        """Modeled mostly after DRF get_object, but for the parent model
 
         Like for /api/v2/organizations/<pk>/cows/, this returns the organization
         with the specified pk.
