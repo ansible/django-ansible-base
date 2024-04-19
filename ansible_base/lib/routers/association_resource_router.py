@@ -15,7 +15,7 @@ from ansible_base.rbac.policies import check_content_obj_permission, visible_use
 logger = logging.getLogger('ansible_base.lib.routers.association_resource_router')
 
 
-class QuerySetMixinBase:
+class RelatedListMixin:
     def check_parent_object_permissions(self, request, parent_obj):
         # Associate and disassociate is a POST request, list is GET
         # the normal process of get_object --> check_object_permissions
@@ -79,7 +79,7 @@ class UserAssociationSerializer(serializers.Serializer):
         )
 
 
-class AssociateMixin(QuerySetMixinBase):
+class AssociateMixin(RelatedListMixin):
     @action(detail=False, methods=['post'])
     def associate(self, request, **kwargs):
         """
@@ -151,10 +151,6 @@ class AssociateMixin(QuerySetMixinBase):
         return super().get_serializer_class()
 
 
-class ReverseViewMixin(QuerySetMixinBase):
-    pass
-
-
 class AssociationResourceRouter(routers.SimpleRouter):
     def get_method_map(self, viewset, method_map):
         is_associate_viewset = issubclass(viewset, AssociateMixin)
@@ -180,7 +176,7 @@ class AssociationResourceRouter(routers.SimpleRouter):
             mixin_class = AssociateMixin
             if any(x.related_model == child_model for x in parent_model._meta.related_objects):
                 is_reverse_view = True
-                mixin_class = ReverseViewMixin
+                mixin_class = RelatedListMixin
 
             # Generate the related viewset
             modified_related_viewset = type(
