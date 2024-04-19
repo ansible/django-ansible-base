@@ -16,83 +16,20 @@ logger = logging.getLogger('ansible_base.lib.routers.association_resource_router
 
 
 class QuerySetMixinBase:
-    def get_queryset(self):
-        parent_pk = self.kwargs['pk']
-        parent_model = self.parent_viewset.serializer_class.Meta.model
-
-        try:
-            parent_instance = parent_model.objects.get(pk=parent_pk)
-        except parent_model.DoesNotExist:
-            return parent_model.objects.none()
-
-        child_queryset = getattr(parent_instance, self.association_fk).all()
-        return child_queryset
-
-
-def viewset_model(viewset):
-    "Given some viewset or viewset class, return the Django Model for it"
-    if viewset.queryset:
-        return viewset.queryset.model
-    return viewset.serializer_class.Meta.model
-
-
-def basic_association_serializer_factory(related_view):
-    qs = related_view.queryset
-    if qs is None:
-        qs = related_view.serializer_class.Meta.model.objects.all()
-
-    class AssociationSerializer(serializers.Serializer):
-        instances = serializers.PrimaryKeyRelatedField(
-            queryset=qs,
-            many=True,
-        )
-
-    return AssociationSerializer
-
-
-def user_association_serializer_factory(related_view):
-
-    class AssociationSerializer(serializers.Serializer):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            request = self.context['request']
-            self.fields['instances'] = serializers.PrimaryKeyRelatedField(
-                queryset=visible_users(request.user),
-                many=True,
-            )
-
-    return AssociationSerializer
-
-
-def filtered_association_serializer_factory(related_view):
-    cls = viewset_model(related_view)
-
-    class AssociationSerializer(serializers.Serializer):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            request = self.context['request']
-            self.fields['instances'] = serializers.PrimaryKeyRelatedField(
-                queryset=cls.access_qs(request.user),
-                many=True,
-            )
-
-    return AssociationSerializer
-
-
-class AssociateMixin(QuerySetMixinBase):
     def check_parent_object_permissions(self, request, parent_obj):
-        # Because this is a POST request, the normal process in parent_view of
-        # get_object --> check_object_permissions
-        # will not check "change" permissions to the parent object
-        # this method is a replacement for that flow for both attaching and detatching
+        # Associate and disassociate is a POST request, list is GET
+        # the normal process of get_object --> check_object_permissions
+        # will not check "change" permissions to the parent object on POST
+        # this method checks parent change permission, view permission should be handled by filter_queryset
         if (request.method not in SAFE_METHODS) and 'ansible_base.rbac' in settings.INSTALLED_APPS and permission_registry.is_registered(parent_obj):
             return check_content_obj_permission(request.user, parent_obj)
         return True
 
     def get_parent_object(self):
-        """Modeled mostly after DRF get_object
+        """Modeled mostly after DRF get_object, for for the parent model
 
-        This is kept separate to be more manual and explicit
+        Like for /api/v2/organizations/<pk>/cows/, this returns the organization
+        with the specified pk.
         """
         parent_view = self.parent_viewset()
         parent_view.request = self.request
@@ -106,11 +43,43 @@ class AssociateMixin(QuerySetMixinBase):
 
         return parent_obj
 
-    def list(self, *args, **kwargs):
-        "Override list strictly for purpose of checking parent object permission"
-        self.get_parent_object()
-        return super().list(*args, **kwargs)
+    def get_queryset(self):
+        parent_instance = self.get_parent_object()
+        return getattr(parent_instance, self.association_fk).all()
 
+
+def basic_association_serializer_factory(qs):
+    class AssociationSerializer(serializers.Serializer):
+        instances = serializers.PrimaryKeyRelatedField(queryset=qs, many=True)
+
+    return AssociationSerializer
+
+
+def filtered_association_serializer_factory(cls, qs):
+
+    class AssociationSerializer(serializers.Serializer):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            request = self.context['request']
+            self.fields['instances'] = serializers.PrimaryKeyRelatedField(
+                queryset=cls.access_qs(request.user, queryset=qs),
+                many=True,
+            )
+
+    return AssociationSerializer
+
+
+class UserAssociationSerializer(serializers.Serializer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context['request']
+        self.fields['instances'] = serializers.PrimaryKeyRelatedField(
+            queryset=visible_users(request.user),
+            many=True,
+        )
+
+
+class AssociateMixin(QuerySetMixinBase):
     @action(detail=False, methods=['post'])
     def associate(self, request, **kwargs):
         """
@@ -166,13 +135,20 @@ class AssociateMixin(QuerySetMixinBase):
         if self.action == 'disassociate':
             return basic_association_serializer_factory(self)
         elif self.action == 'associate':
-            cls = viewset_model(self)
-            if 'ansible_base.rbac' in settings.INSTALLED_APPS and permission_registry.is_registered(cls):
-                return filtered_association_serializer_factory(self)
-            elif 'ansible_base.rbac' in settings.INSTALLED_APPS and cls._meta.model_name == 'user':
-                return user_association_serializer_factory(self)
+
+            if self.queryset:
+                qs = self.queryset
+                cls = self.queryset.model
             else:
-                return basic_association_serializer_factory(self)
+                cls = self.serializer_class.Meta.model
+                qs = cls.objects.all()
+
+            if 'ansible_base.rbac' in settings.INSTALLED_APPS and permission_registry.is_registered(cls):
+                return filtered_association_serializer_factory(cls, qs)
+            elif 'ansible_base.rbac' in settings.INSTALLED_APPS and cls._meta.model_name == 'user':
+                return UserAssociationSerializer
+            else:
+                return basic_association_serializer_factory(qs)
         return super().get_serializer_class()
 
 

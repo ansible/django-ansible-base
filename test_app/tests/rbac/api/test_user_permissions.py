@@ -205,3 +205,21 @@ class TestRelationshipBasedAssignment:
         response = user_api_client.post(url, data=data)
         assert response.status_code == 204, response.data
         assert rando.has_obj_perm(organization, 'change')  # action took full effect
+
+    def test_sublist_visibility(self, user, user_api_client, team, member_rd, admin_rd):
+        url = reverse('team-users-list', kwargs={'pk': team.pk})
+
+        # with no permissions, user should not be able to make a GET to members list
+        response = user_api_client.get(url)
+        assert response.status_code == 404
+
+        rando = User.objects.create(username='rando')
+        member_rd.give_permission(rando, team)
+        admin_rd.give_permission(user, team)
+        assert not visible_users(user).filter(pk=rando.id).exists()  # sanity
+
+        # even though user can not see rando, they still show in members list
+        # this would be important if user wanted to remove rando permissions
+        response = user_api_client.get(url)
+        assert response.status_code == 200
+        assert 'rando' in set(item['username'] for item in response.data['results'])
