@@ -141,8 +141,9 @@ def task_view_rd():
 
 
 @pytest.mark.django_db
-def test_create_user_assignment_immutable(user_api_client, user, rando, task_admin_rd, task_view_rd):
+def test_create_user_assignment_immutable(user_api_client, user, rando, task_admin_rd, task_view_rd, org_admin_rd, organization):
     task = ImmutableTask.objects.create()
+    org_admin_rd.give_permission(user, organization)  # setup so that user can see rando
     url = reverse('roleuserassignment-list')
     request_data = {"user": rando.pk, "role_definition": task_admin_rd.pk, "object_id": task.pk}
 

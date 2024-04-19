@@ -191,7 +191,7 @@ class BaseAssignmentSerializer(CommonModelSerializer):
             qs = self.get_actor_queryset(request.user)
         else:
             qs = self.Meta.model.get_field(self.actor_field).model.objects.all()
-        self.fields[self.actor_field] = serializers.PrimaryKeyRelatedField(queryset=qs, required=True)
+        self.fields[self.actor_field] = serializers.PrimaryKeyRelatedField(queryset=qs, required=False)
 
     def raise_id_fields_error(self, field1, field2):
         msg = _('Provide exactly one of %(actor_field)s or %(actor_field)s_ansible_id') % {'actor_field': self.actor_field}

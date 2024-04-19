@@ -3,7 +3,7 @@ from django.test import override_settings
 from django.urls import reverse
 
 from ansible_base.rbac.policies import visible_users
-from test_app.models import Team, User
+from test_app.models import Organization, Team, User
 
 
 @pytest.mark.django_db
@@ -147,6 +147,8 @@ class TestUserDetailView:
 class TestRoleBasedAssignment:
     def test_org_admins_can_add_members(self, user, user_api_client, organization, org_member_rd, org_admin_rd):
         rando = User.objects.create(username='rando')
+        unrelated_org = Organization.objects.create(name='another-org')
+        org_admin_rd.give_permission(user, unrelated_org)  # setup permissions so user can see rando
         url = reverse('roleuserassignment-list')
 
         org_member_rd.give_permission(user, organization)
