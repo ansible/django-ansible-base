@@ -9,7 +9,7 @@ from ansible_base.oauth2_provider.models import OAuth2Application
     [
         ("admin_api_client", 200),
         ("user_api_client", 200),
-        ("client", 401),
+        ("unauthenticated_api_client", 401),
     ],
 )
 @pytest.mark.django_db
@@ -31,7 +31,7 @@ def test_oauth2_provider_application_list(request, client_fixture, expected_stat
     [
         ("admin_api_client", 200),
         ("user_api_client", 200),
-        ("client", 401),
+        ("unauthenticated_api_client", 401),
     ],
 )
 @pytest.mark.django_db
@@ -52,7 +52,7 @@ def test_oauth2_provider_application_detail(request, client_fixture, expected_st
     [
         ("admin_api_client", 201),
         ("user_api_client", 201),
-        ("client", 401),
+        ("unauthenticated_api_client", 401),
     ],
 )
 def test_oauth2_provider_application_create(request, client_fixture, expected_status, randname, organization):
@@ -101,3 +101,40 @@ def test_oauth2_provider_application_validator(admin_api_client):
         },
     )
     assert response.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "client_fixture,expected_status",
+    [
+        ("admin_api_client", 200),
+        ("user_api_client", 200),
+        ("unauthenticated_api_client", 401),
+    ],
+)
+@pytest.mark.django_db
+def test_oauth2_provider_application_update(request, client_fixture, expected_status, oauth2_application):
+    """
+    Test that we can update oauth2 applications iff we are authenticated.
+    """
+    client = request.getfixturevalue(client_fixture)
+    url = reverse("application-detail", args=[oauth2_application.pk])
+    response = client.patch(
+        url,
+        data={
+            'name': 'Updated Name',
+            'description': 'Updated Description',
+            'redirect_uris': 'http://example.com/updated',
+            'client_type': 'public',
+        },
+    )
+    assert response.status_code == expected_status, response.data
+    if expected_status == 200:
+        assert response.data['name'] == 'Updated Name'
+        assert response.data['description'] == 'Updated Description'
+        assert response.data['redirect_uris'] == 'http://example.com/updated'
+        assert response.data['client_type'] == 'public'
+        oauth2_application.refresh_from_db()
+        assert oauth2_application.name == 'Updated Name'
+        assert oauth2_application.description == 'Updated Description'
+        assert oauth2_application.redirect_uris == 'http://example.com/updated'
+        assert oauth2_application.client_type == 'public'

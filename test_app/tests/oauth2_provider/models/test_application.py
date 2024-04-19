@@ -1,26 +1,4 @@
 # @pytest.mark.django_db
-# def test_oauth_application_update(oauth_application, organization, patch, admin, alice):
-#     patch(
-#         reverse('api:o_auth2_application_detail', kwargs={'pk': oauth_application.pk}),
-#         {
-#             'name': 'Test app with immutable grant type and user',
-#             'organization': organization.pk,
-#             'redirect_uris': 'http://localhost/api/',
-#             'authorization_grant_type': 'password',
-#             'skip_authorization': True,
-#         },
-#         admin,
-#         expect=200,
-#     )
-#     updated_app = Application.objects.get(client_id=oauth_application.client_id)
-#     assert updated_app.name == 'Test app with immutable grant type and user'
-#     assert updated_app.redirect_uris == 'http://localhost/api/'
-#     assert updated_app.skip_authorization is True
-#     assert updated_app.authorization_grant_type == 'password'
-#     assert updated_app.organization == organization
-#
-#
-# @pytest.mark.django_db
 # def test_oauth_application_encryption(admin, organization, post):
 #     response = post(
 #         reverse('api:o_auth2_application_list'),
