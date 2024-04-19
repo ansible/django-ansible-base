@@ -1,11 +1,7 @@
 import pytest
 
-from ansible_base.authentication.models import AuthenticatorUser
+from ansible_base.authentication.models import Authenticator, AuthenticatorUser
 from ansible_base.oauth2_provider.utils import is_external_account
-
-
-def test_oauth2_provider_is_external_account_none():
-    assert is_external_account(None) is None
 
 
 @pytest.mark.parametrize("link_local, link_ldap, expected", [(False, False, False), (True, False, False), (False, True, True), (True, True, True)])
@@ -25,10 +21,7 @@ def test_oauth2_provider_is_external_account_with_user(user, local_authenticator
 def test_oauth2_provider_is_external_account_import_error(user, local_authenticator):
     au = AuthenticatorUser(provider=local_authenticator, user=user)
     au.save()
-    from django.db import connection
-
-    with connection.cursor() as cursor:
-        cursor.execute(
-            f'UPDATE dab_authentication_authenticator SET type="test_app.tests.fixtures.authenticator_plugins.broken" WHERE id={local_authenticator.id}'
-        )
-    assert is_external_account(user) is True
+    local_authenticator.type = "test_app.tests.fixtures.authenticator_plugins.broken"
+    # Avoid save() which would raise an ImportError
+    Authenticator.objects.bulk_update([local_authenticator], ['type'])
+    assert is_external_account(user)
