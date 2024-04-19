@@ -11,8 +11,8 @@ class AuthenticatorUser(AbstractUserSocialAuth):
     the authenticators and links the user to the authenticator that they used to login.
     """
 
-    provider = models.ForeignKey(Authenticator, to_field='slug', on_delete=models.PROTECT, related_name="authenticator_provider")
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="authenticator_user", on_delete=models.CASCADE)
+    provider = models.ForeignKey(Authenticator, to_field='slug', on_delete=models.PROTECT, related_name="authenticator_providers")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="authenticator_users", on_delete=models.CASCADE)
     # TODO: set self.authenticated based on the provider that is passed to this method.
     # the provider should be the name of the Authenticator model instance
     claims = models.JSONField(default=dict, null=False, blank=True)
