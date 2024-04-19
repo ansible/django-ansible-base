@@ -37,6 +37,28 @@ class TestUserListView:
         assert response.status_code == 201
         assert User.objects.filter(username='created-user').exists()
 
+    def test_superuser_create_permission(self, user, user_api_client, organization, org_admin_rd):
+        "Only superusers can create other superusers"
+        url = reverse('user-list')
+        create_data = self.CREATE_DATA.copy()
+        create_data['is_superuser'] = True
+
+        # Ordinary users can not create superusers
+        response = user_api_client.post(url, data=create_data)
+        assert response.status_code == 403
+
+        # Organization admins can not create superusers
+        org_admin_rd.give_permission(user, organization)
+        response = user_api_client.post(url, data=create_data)
+        assert response.status_code == 403
+
+        # Only other superusers can create a superuser
+        user.is_superuser = True
+        user.save(update_fields=['is_superuser'])
+        response = user_api_client.post(url, data=create_data)
+        assert response.status_code == 201
+        assert User.objects.filter(username='created-user').exists()
+
     @pytest.mark.parametrize('admin_setting', [True, False])
     def test_org_admin_setting(self, user, user_api_client, org_admin_rd, organization, admin_setting):
         org_admin_rd.give_permission(user, organization)
