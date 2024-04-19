@@ -4,8 +4,9 @@ import oauth2_provider.models as oauth2_models
 from django.conf import settings
 from django.core.validators import RegexValidator
 from django.db import models
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
-from oauth2_provider.generators import generate_client_id, generate_client_secret
+from oauth2_provider.generators import generate_client_secret
 
 from ansible_base.lib.abstract_models.common import NamedCommonModel
 
@@ -32,8 +33,6 @@ class OAuth2Application(oauth2_models.AbstractApplication, NamedCommonModel):
         ("password", _("Resource owner password-based")),
     )
 
-    # Here we are going to overwrite this from the parent class so that we can change the default
-    client_id = models.CharField(db_index=True, default=generate_client_id, max_length=100, unique=True)
     description = models.TextField(
         default='',
         blank=True,
@@ -64,3 +63,8 @@ class OAuth2Application(oauth2_models.AbstractApplication, NamedCommonModel):
     authorization_grant_type = models.CharField(
         max_length=32, choices=GRANT_TYPES, help_text=_('The Grant type the user must use for acquire tokens for this application.')
     )
+
+    def get_absolute_url(self):
+        # This is kind of annoying. This method lives on the superclass and we check for it in CommonModel.
+        # But better would be to not have this method and let the CommonModel logic fall back to the "right" way of finding this.
+        return reverse('application-detail', kwargs={'pk': self.pk})
