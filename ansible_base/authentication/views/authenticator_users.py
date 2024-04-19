@@ -27,7 +27,7 @@ def get_authenticator_user_view():
                 # if we didn't get an ID for some reason we will just return None
                 if authenticator_id is None:
                     return get_user_model().objects.none()
-                authenticator_users = get_user_model().objects.filter(authenticator_user__provider__id=authenticator_id)
+                authenticator_users = get_user_model().objects.filter(authenticator_users__provider__id=authenticator_id)
                 return authenticator_users
 
         return AuthenticatorPluginRelatedUsersView
