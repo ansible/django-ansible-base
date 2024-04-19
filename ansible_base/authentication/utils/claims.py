@@ -49,9 +49,9 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
 
         for trigger_type, trigger in auth_map.triggers.items():
             if trigger_type == 'groups':
-                has_permission = process_groups(trigger, groups, authenticator.name)
+                has_permission = process_groups(trigger, groups, authenticator.pk)
             if trigger_type == 'attributes':
-                has_permission = process_user_attributes(trigger, attrs, authenticator.name)
+                has_permission = process_user_attributes(trigger, attrs, authenticator.pk)
             if trigger_type == 'always':
                 has_permission = True
             if trigger_type == 'never':
@@ -259,10 +259,9 @@ def update_user_claims(user, database_authenticator, groups):
     if not user:
         return None
 
-    results = create_claims(database_authenticator, user.username, user.authenticator_user.extra, groups)
-
     needs_save = False
     authenticator_user, _ = AuthenticatorUser.objects.get_or_create(provider=database_authenticator, user=user)
+    results = create_claims(database_authenticator, user.username, authenticator_user.extra_data, groups)
     # update the auth_time field to align with the general format used for other authenticators
     authenticator_user.extra_data = {**authenticator_user.extra_data, "auth_time": DateTimeField().to_representation(now())}
     authenticator_user.save(update_fields=["extra_data"])
