@@ -1,42 +1,4 @@
 # @pytest.mark.django_db
-# def test_oauth2_application_create(admin, organization, post):
-#     response = post(
-#         reverse('api:o_auth2_application_list'),
-#         {
-#             'name': 'test app',
-#             'organization': organization.pk,
-#             'client_type': 'confidential',
-#             'authorization_grant_type': 'password',
-#         },
-#         admin,
-#         expect=201,
-#     )
-#     assert 'modified' in response.data
-#     assert 'updated' not in response.data
-#     created_app = Application.objects.get(client_id=response.data['client_id'])
-#     assert created_app.name == 'test app'
-#     assert created_app.skip_authorization is False
-#     assert created_app.redirect_uris == ''
-#     assert created_app.client_type == 'confidential'
-#     assert created_app.authorization_grant_type == 'password'
-#     assert created_app.organization == organization
-#
-#
-# @pytest.mark.django_db
-# def test_oauth2_validator(admin, oauth_application, post):
-#     post(
-#         reverse('api:o_auth2_application_list'),
-#         {
-#             'name': 'Write App Token',
-#             'application': oauth_application.pk,
-#             'scope': 'Write',
-#         },
-#         admin,
-#         expect=400,
-#     )
-#
-#
-# @pytest.mark.django_db
 # def test_oauth_application_update(oauth_application, organization, patch, admin, alice):
 #     patch(
 #         reverse('api:o_auth2_application_detail', kwargs={'pk': oauth_application.pk}),
