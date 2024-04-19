@@ -8,23 +8,13 @@ from django.utils.translation import gettext_lazy as _
 from oauth2_provider.generators import generate_client_id, generate_client_secret
 
 from ansible_base.lib.abstract_models.common import NamedCommonModel
-from ansible_base.lib.utils.encryption import ansible_encryption
 
 DATA_URI_RE = re.compile(r'.*')  # FIXME
 
 
-class OAuth2ClientSecretField(models.CharField):
-    def get_db_prep_value(self, value, connection, prepared=False):
-        return super().get_db_prep_value(ansible_encryption.encrypt_string(value), connection, prepared)
-
-    def from_db_value(self, value, expression, connection):
-        if value and value.startswith('$encrypted$'):
-            return ansible_encryption.decrypt_string(value)
-        return value
-
-
 class OAuth2Application(oauth2_models.AbstractApplication, NamedCommonModel):
     reverse_name_override = 'application'
+    encrtyped_fields = ['client_secret']
 
     class Meta(oauth2_models.AbstractAccessToken.Meta):
         verbose_name = _('application')
@@ -60,7 +50,7 @@ class OAuth2Application(oauth2_models.AbstractApplication, NamedCommonModel):
         on_delete=models.CASCADE,
         null=True,
     )
-    client_secret = OAuth2ClientSecretField(
+    client_secret = models.CharField(
         max_length=1024,
         blank=True,
         default=generate_client_secret,

@@ -36,7 +36,7 @@ class Migration(migrations.Migration):
                 ('client_id', models.CharField(db_index=True, default=oauth2_provider.generators.generate_client_id, max_length=100, unique=True)),
                 ('description', models.TextField(blank=True, default='')),
                 ('logo_data', models.TextField(default='', editable=False, validators=[django.core.validators.RegexValidator(re.compile('.*'))])),
-                ('client_secret', ansible_base.oauth2_provider.models.application.OAuth2ClientSecretField(blank=True, db_index=True, default=oauth2_provider.generators.generate_client_secret, help_text='Used for more stringent verification of access to an application when creating a token.', max_length=1024)),
+                ('client_secret', models.CharField(blank=True, db_index=True, default=oauth2_provider.generators.generate_client_secret, help_text='Used for more stringent verification of access to an application when creating a token.', max_length=1024)),
                 ('client_type', models.CharField(choices=[('confidential', 'Confidential'), ('public', 'Public')], help_text='Set to Public or Confidential depending on how secure the client device is.', max_length=32)),
                 ('skip_authorization', models.BooleanField(default=False, help_text='Set True to skip authorization step for completely trusted applications.')),
                 ('authorization_grant_type', models.CharField(choices=[('authorization-code', 'Authorization code'), ('password', 'Resource owner password-based')], help_text='The Grant type the user must use for acquire tokens for this application.', max_length=32)),
