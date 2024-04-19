@@ -8,6 +8,15 @@ router.register(r'encrypted_models', views.EncryptionModelViewSet, basename='enc
 
 # intentionally not registering ResourceMigrationTestModel to test lack of URLs
 
+
+# Here, we demonstrate how to turn on or off filtering of related endpoints
+# viewsets of models with roles filter to what is visable by requesting user
+# in the filter_queryset method, but in some endpoints we show all users
+class RelatedUserViewSet(views.UserViewSet):
+    def filter_queryset(self, qs):
+        return self.apply_optimizations(qs)
+
+
 router.register(
     r'related_fields_test_models',
     views.RelatedFieldsTestModelViewSet,
@@ -22,8 +31,8 @@ router.register(
     r'organizations',
     views.OrganizationViewSet,
     related_views={
-        'members': (views.UserViewSet, 'users'),
-        'admins': (views.UserViewSet, 'admins'),
+        'members': (RelatedUserViewSet, 'users'),
+        'admins': (RelatedUserViewSet, 'admins'),
         'teams': (views.TeamViewSet, 'teams'),
         'inventories': (views.InventoryViewSet, 'inventories'),
         'namespaces': (views.NamespaceViewSet, 'namespaces'),
@@ -39,8 +48,8 @@ router.register(
     r'teams',
     views.TeamViewSet,
     related_views={
-        'members': (views.UserViewSet, 'users'),
-        'admins': (views.UserViewSet, 'admins'),
+        'members': (RelatedUserViewSet, 'users'),
+        'admins': (RelatedUserViewSet, 'admins'),
         'parents': (views.TeamViewSet, 'team_parents'),
         'role_assignments': (rbac_views.RoleTeamAssignmentViewSet, 'role_assignments'),
     },

@@ -9,7 +9,7 @@ from ansible_base.rbac.models import ObjectRole
 from ansible_base.rbac.validators import permissions_allowed_for_role
 
 
-def visible_users(request_user) -> QuerySet:
+def visible_users(request_user, queryset=None) -> QuerySet:
     "Gives a queryset of users that another user should be able to view"
     user_cls = apps.get_model(settings.AUTH_USER_MODEL)
     org_cls = apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL)
@@ -23,8 +23,10 @@ def visible_users(request_user) -> QuerySet:
     members_of_visble_orgs = ObjectRole.objects.filter(
         role_definition__permissions__codename='member_organization', object_id__in=org_cls.access_ids_qs(request_user, 'view', cast_field=object_id_fd)
     ).values('users')
+    if queryset is None:
+        queryset = user_cls.objects
     return (
-        user_cls.objects.filter(pk__in=members_of_visble_orgs) | user_cls.objects.filter(pk=request_user.id) | user_cls.objects.filter(is_superuser=True)
+        queryset.filter(pk__in=members_of_visble_orgs) | user_cls.objects.filter(pk=request_user.id) | user_cls.objects.filter(is_superuser=True)
     ).distinct()
 
 

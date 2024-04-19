@@ -16,15 +16,19 @@ class TestAppViewSet(ModelViewSet, AnsibleBaseView):
     prefetch_related = ()
     select_related = ()
 
-    def filter_queryset(self, qs):
-        cls = self.serializer_class.Meta.model
-        if permission_registry.is_registered(cls):
-            qs = cls.access_qs(self.request.user, queryset=qs)
-
+    def apply_optimizations(self, qs):
         if self.prefetch_related:
             qs = qs.prefetch_related(*self.prefetch_related)
         if self.select_related:
             qs = qs.select_related(*self.select_related)
+        return qs
+
+    def filter_queryset(self, qs):
+        cls = qs.model
+        if permission_registry.is_registered(cls):
+            qs = cls.access_qs(self.request.user, queryset=qs)
+
+        qs = self.apply_optimizations(qs)
 
         return super().filter_queryset(qs)
 
@@ -44,12 +48,15 @@ class TeamViewSet(TestAppViewSet):
 
 
 class UserViewSet(TestAppViewSet):
+    queryset = models.User.objects.all()
     permission_classes = [AnsibleBaseUserPermissions]
     serializer_class = serializers.UserSerializer
     prefetch_related = ('created_by', 'modified_by', 'resource', 'resource__content_type')
 
-    def get_queryset(self):
-        return visible_users(self.request.user)
+    def filter_queryset(self, qs):
+        qs = visible_users(self.request.user, queryset=qs)
+        qs = self.apply_optimizations(qs)
+        return qs
 
 
 class EncryptionModelViewSet(TestAppViewSet):
