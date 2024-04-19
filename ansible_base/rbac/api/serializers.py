@@ -314,8 +314,8 @@ class RoleUserAssignmentSerializer(BaseAssignmentSerializer):
         model = RoleUserAssignment
         fields = ASSIGNMENT_FIELDS + ['user', 'user_ansible_id']
 
-        def get_actor_queryset(self, requesting_user):
-            return visible_users(requesting_user)
+    def get_actor_queryset(self, requesting_user):
+        return visible_users(requesting_user)
 
 
 class RoleTeamAssignmentSerializer(BaseAssignmentSerializer):
