@@ -180,14 +180,18 @@ class BaseAssignmentSerializer(CommonModelSerializer):
         help_text=_('Resource id of the object this role applies to. Alternative to the object_id field.'),
     )
 
-    def get_fields(self):
+    def __init__(self, *args, **kwargs):
         """
         We want to allow ansible_id override of user and team fields
-        but want to keep the non-null database constraint, which leads to this solution
+        but want to keep the non-null database constraint, so actor field is marked required=True here
         """
-        fields = dict(super().get_fields())
-        fields[self.actor_field].required = False
-        return fields
+        super().__init__(*args, **kwargs)
+        request = self.context.get('request')
+        if request:
+            qs = self.get_actor_queryset(request.user)
+        else:
+            qs = self.Meta.model.get_field(self.actor_field).model.objects.all()
+        self.fields[self.actor_field] = serializers.PrimaryKeyRelatedField(queryset=qs, required=True)
 
     def raise_id_fields_error(self, field1, field2):
         msg = _('Provide exactly one of %(actor_field)s or %(actor_field)s_ansible_id') % {'actor_field': self.actor_field}
@@ -310,6 +314,9 @@ class RoleUserAssignmentSerializer(BaseAssignmentSerializer):
         model = RoleUserAssignment
         fields = ASSIGNMENT_FIELDS + ['user', 'user_ansible_id']
 
+        def get_actor_queryset(self, requesting_user):
+            return visible_users(requesting_user)
+
 
 class RoleTeamAssignmentSerializer(BaseAssignmentSerializer):
     actor_field = 'team'
@@ -321,3 +328,6 @@ class RoleTeamAssignmentSerializer(BaseAssignmentSerializer):
     class Meta:
         model = RoleTeamAssignment
         fields = ASSIGNMENT_FIELDS + ['team', 'team_ansible_id']
+
+    def get_actor_queryset(self, requesting_user):
+        return permission_registry.team_model.access_qs(requesting_user)

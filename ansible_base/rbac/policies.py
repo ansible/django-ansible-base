@@ -6,12 +6,13 @@ from rest_framework.exceptions import PermissionDenied
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.rbac.evaluations import has_super_permission
 from ansible_base.rbac.models import ObjectRole
+from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.validators import permissions_allowed_for_role
 
 
 def visible_users(request_user, queryset=None) -> QuerySet:
     "Gives a queryset of users that another user should be able to view"
-    user_cls = apps.get_model(settings.AUTH_USER_MODEL)
+    user_cls = permission_registry.user_model
     org_cls = apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL)
 
     if has_super_permission(request_user, 'view') or (

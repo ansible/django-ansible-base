@@ -3,7 +3,7 @@ from django.test import override_settings
 from django.urls import reverse
 
 from ansible_base.rbac.policies import visible_users
-from test_app.models import User
+from test_app.models import Team, User
 
 
 @pytest.mark.django_db
@@ -140,6 +140,37 @@ class TestRoleBasedAssignment:
         response = user_api_client.post(url, data=data)
         assert response.status_code == 201, response.data
         assert rando.has_obj_perm(organization, 'member')
+
+    def test_team_admins_can_add_children(self, user, user_api_client, organization, inventory, inv_rd, admin_rd, member_rd):
+        url = reverse('roleteamassignment-list')
+
+        parent_team = Team.objects.create(name='parent', organization=organization)
+        child_team = Team.objects.create(name='child', organization=organization)
+        data = {'role_definition': member_rd.id, 'object_id': child_team.id, 'team': parent_team.id}
+        # set up permissions for resource, this permission will be connected with the team assignment
+        rando = User.objects.create(username='rando')
+        member_rd.give_permission(rando, parent_team)
+        inv_rd.give_permission(child_team, inventory)
+        assert not rando.has_obj_perm(inventory, 'change')
+
+        # (1) user can not view the team receiving the permission, cannot make assignment
+        member_rd.give_permission(user, child_team)
+        admin_rd.give_permission(user, child_team)
+        response = user_api_client.post(url, data=data)
+        assert response.status_code == 400
+        assert 'object does not exist' in response.data['team'][0]
+        admin_rd.remove_permission(user, child_team)  # hacky, need to test (1) in isolation of (2)
+
+        # (2) user does not have admin permissions to the target (child) team, cannot make assignment
+        member_rd.give_permission(user, parent_team)
+        response = user_api_client.post(url, data=data)
+        assert response.status_code == 403
+
+        # (3) with admin permission to child team and view permission to parent, can make assignment
+        admin_rd.give_permission(user, child_team)
+        response = user_api_client.post(url, data=data)
+        assert response.status_code == 201
+        assert rando.has_obj_perm(inventory, 'change')
 
 
 @pytest.mark.django_db
