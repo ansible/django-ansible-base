@@ -1,24 +1,4 @@
 # @pytest.mark.django_db
-# def test_oauth_application_encryption(admin, organization, post):
-#     response = post(
-#         reverse('api:o_auth2_application_list'),
-#         {
-#             'name': 'test app',
-#             'organization': organization.pk,
-#             'client_type': 'confidential',
-#             'authorization_grant_type': 'password',
-#         },
-#         admin,
-#         expect=201,
-#     )
-#     pk = response.data.get('id')
-#     secret = response.data.get('client_secret')
-#     with connection.cursor() as cursor:
-#         encrypted = cursor.execute('SELECT client_secret FROM main_oauth2application WHERE id={}'.format(pk)).fetchone()[0]
-#         assert encrypted.startswith('$encrypted$')
-#         assert decrypt_value(get_encryption_key('value', pk=None), encrypted) == secret
-#
-# @pytest.mark.django_db
 # def test_oauth_token_create(oauth_application, get, post, admin):
 #     response = post(reverse('api:o_auth2_application_token_list', kwargs={'pk': oauth_application.pk}), {'scope': 'read'}, admin, expect=201)
 #     assert 'modified' in response.data and response.data['modified'] is not None

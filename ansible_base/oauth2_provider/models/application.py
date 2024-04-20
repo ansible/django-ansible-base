@@ -15,7 +15,7 @@ DATA_URI_RE = re.compile(r'.*')  # FIXME
 
 class OAuth2Application(oauth2_models.AbstractApplication, NamedCommonModel):
     reverse_name_override = 'application'
-    encrtyped_fields = ['client_secret']
+    encrypted_fields = ['client_secret']
 
     class Meta(oauth2_models.AbstractAccessToken.Meta):
         verbose_name = _('application')

@@ -1,7 +1,7 @@
 from django.utils.translation import gettext_lazy as _
 
 from ansible_base.lib.serializers.common import NamedCommonModelSerializer
-from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
+from ansible_base.lib.utils.encryption import ENCRYPTED_STRING, ansible_encryption
 from ansible_base.oauth2_provider.models import OAuth2Application
 
 
@@ -31,8 +31,9 @@ class OAuth2ApplicationSerializer(NamedCommonModelSerializer):
     def to_representation(self, obj):
         ret = super(OAuth2ApplicationSerializer, self).to_representation(obj)
         request = self.context.get('request', None)
-        if not request or (request.method != 'POST' and obj.client_type == 'confidential'):
-            ret['client_secret'] = ENCRYPTED_STRING
+        if request and request.method == 'POST':
+            # Only return the (decrypted) client_secret on the initial create
+            ret['client_secret'] = ansible_encryption.decrypt_string(obj.client_secret)
         if obj.client_type == 'public':
             ret.pop('client_secret', None)
         return ret

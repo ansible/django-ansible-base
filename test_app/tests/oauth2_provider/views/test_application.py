@@ -1,6 +1,8 @@
 import pytest
+from django.db import connection
 from django.urls import reverse
 
+from ansible_base.lib.utils.encryption import ENCRYPTED_STRING, ansible_encryption
 from ansible_base.oauth2_provider.models import OAuth2Application
 
 
@@ -138,3 +140,62 @@ def test_oauth2_provider_application_update(request, client_fixture, expected_st
         assert oauth2_application.description == 'Updated Description'
         assert oauth2_application.redirect_uris == 'http://example.com/updated'
         assert oauth2_application.client_type == 'public'
+
+
+def test_oauth2_provider_application_client_secret_encrypted(admin_api_client, organization):
+    """
+    The client_secret should be encrypted in the database.
+    We only show it to the user once, on creation. All other requests should show the encrypted value.
+    """
+    url = reverse("application-list")
+    response = admin_api_client.post(
+        url,
+        data={
+            'name': 'Test Application',
+            'description': 'Test Description',
+            'organization': organization.pk,
+            'redirect_uris': 'http://example.com/callback',
+            'authorization_grant_type': 'authorization-code',
+            'client_type': 'confidential',
+        },
+    )
+    assert response.status_code == 201, response.data
+    application = OAuth2Application.objects.get(pk=response.data['id'])
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT client_secret FROM dab_oauth2_provider_oauth2application WHERE id = %s", [application.pk])
+        encrypted = cursor.fetchone()[0]
+    assert encrypted.startswith(ENCRYPTED_STRING), encrypted
+    assert ansible_encryption.decrypt_string(encrypted) == response.data['client_secret']
+
+    # GET
+    response = admin_api_client.get(reverse("application-detail", args=[application.pk]))
+    assert response.status_code == 200
+    assert response.data['client_secret'] == ENCRYPTED_STRING, response.data
+
+    # PATCH
+    response = admin_api_client.patch(
+        reverse("application-detail", args=[application.pk]),
+        data={'name': 'Updated Name'},
+    )
+    assert response.status_code == 200
+    assert response.data['client_secret'] == ENCRYPTED_STRING, response.data
+
+    # PUT
+    response = admin_api_client.put(
+        reverse("application-detail", args=[application.pk]),
+        data={
+            'name': 'Updated Name',
+            'description': 'Updated Description',
+            'organization': organization.pk,
+            'redirect_uris': 'http://example.com/updated',
+            'client_type': 'public',
+            'authorization_grant_type': 'password',
+        },
+    )
+    assert response.status_code == 200
+    assert 'client_secret' not in response.data
+
+    # DELETE
+    response = admin_api_client.delete(reverse("application-detail", args=[application.pk]))
+    assert response.status_code == 204
+    assert response.data is None, response.data
