@@ -29,6 +29,40 @@ def test_oauth2_provider_application_list(request, client_fixture, expected_stat
 
 
 @pytest.mark.parametrize(
+    "view, path",
+    [
+        ("application-list", lambda data: data['results'][0]),
+        ("application-detail", lambda data: data),
+    ],
+)
+def test_oauth2_provider_application_related(admin_api_client, oauth2_application, organization, view, path):
+    """
+    Test that the related fields are correct.
+
+    Organization should only be shown if the application is associated with an organization.
+    Associating an application with an organization should not affect other related fields.
+    """
+    if view == "application-list":
+        url = reverse(view)
+    else:
+        url = reverse(view, args=[oauth2_application.pk])
+
+    oauth2_application.organization = None
+    oauth2_application.save()
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    assert path(response.data)['related']['access_tokens'] == reverse("application-access_tokens-list", args=[oauth2_application.pk])
+    assert 'organization' not in path(response.data)['related']
+
+    oauth2_application.organization = organization
+    oauth2_application.save()
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    assert path(response.data)['related']['access_tokens'] == reverse("application-access_tokens-list", args=[oauth2_application.pk])
+    assert path(response.data)['related']['organization'] == reverse("organization-detail", args=[organization.pk])
+
+
+@pytest.mark.parametrize(
     "client_fixture,expected_status",
     [
         ("admin_api_client", 200),

@@ -18,7 +18,6 @@ logger = logging.getLogger("ansible_base.serializers.oauth2_provider")
 
 
 class BaseOAuth2TokenSerializer(CommonModelSerializer):
-    reverse_url_name = 'token-detail'
     refresh_token = SerializerMethodField()
     token = SerializerMethodField()
     ALLOWED_SCOPES = ['read', 'write']

@@ -11,11 +11,8 @@ from ansible_base.oauth2_provider.utils import is_external_account
 
 
 class OAuth2AccessToken(oauth2_models.AbstractAccessToken, CommonModel):
-    reverse_name_override = 'token'
-    # There is a special condition where, as the user is logging in we want to update the last_used field.
-    # However, this happens before the user is set for the request.
-    # If this is the only field attempting to be saved, don't update the modified on/by fields
-    not_user_modified_fields = ['last_used']
+    router_basename = 'token'
+    ignore_relations = ['refresh_token']
 
     class Meta(oauth2_models.AbstractAccessToken.Meta):
         verbose_name = _('access token')
@@ -29,6 +26,14 @@ class OAuth2AccessToken(oauth2_models.AbstractAccessToken, CommonModel):
         null=True,
         related_name="%(app_label)s_%(class)s",
         help_text=_('The user representing the token owner'),
+    )
+    # Overriding to set related_name
+    application = models.ForeignKey(
+        settings.OAUTH2_PROVIDER_APPLICATION_MODEL,
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+        related_name='access_tokens',
     )
     description = models.TextField(
         default='',

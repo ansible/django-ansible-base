@@ -14,7 +14,8 @@ DATA_URI_RE = re.compile(r'.*')  # FIXME
 
 
 class OAuth2Application(oauth2_models.AbstractApplication, NamedCommonModel):
-    reverse_name_override = 'application'
+    router_basename = 'application'
+    ignore_relations = ['oauth2idtoken', 'grant', 'oauth2refreshtoken']
     encrypted_fields = ['client_secret']
 
     class Meta(oauth2_models.AbstractAccessToken.Meta):
@@ -67,4 +68,4 @@ class OAuth2Application(oauth2_models.AbstractApplication, NamedCommonModel):
     def get_absolute_url(self):
         # This is kind of annoying. This method lives on the superclass and we check for it in CommonModel.
         # But better would be to not have this method and let the CommonModel logic fall back to the "right" way of finding this.
-        return reverse('application-detail', kwargs={'pk': self.pk})
+        return reverse(f'{self.router_basename}-detail', kwargs={'pk': self.pk})
