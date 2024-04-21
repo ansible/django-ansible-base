@@ -178,6 +178,9 @@ class AbstractCommonModel(models.Model):
             except NoReverseMatch:
                 logger.error(f"Wanted to add {reverse_view} for {self.__class__} but view was missing")
 
+        if hasattr(self, 'extra_related_fields'):
+            response.update(self.extra_related_fields(request))
+
         sorted_response = OrderedDict()
         sorted_keys = list(response.keys())
         sorted_keys.sort()
