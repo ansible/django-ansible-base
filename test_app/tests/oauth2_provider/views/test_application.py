@@ -148,6 +148,8 @@ def test_oauth2_provider_application_client_secret_encrypted(admin_api_client, o
     We only show it to the user once, on creation. All other requests should show the encrypted value.
     """
     url = reverse("application-list")
+
+    # POST
     response = admin_api_client.post(
         url,
         data={
@@ -165,7 +167,7 @@ def test_oauth2_provider_application_client_secret_encrypted(admin_api_client, o
         cursor.execute("SELECT client_secret FROM dab_oauth2_provider_oauth2application WHERE id = %s", [application.pk])
         encrypted = cursor.fetchone()[0]
     assert encrypted.startswith(ENCRYPTED_STRING), encrypted
-    assert ansible_encryption.decrypt_string(encrypted) == response.data['client_secret']
+    assert ansible_encryption.decrypt_string(encrypted) == response.data['client_secret'], response.data
 
     # GET
     response = admin_api_client.get(reverse("application-detail", args=[application.pk]))

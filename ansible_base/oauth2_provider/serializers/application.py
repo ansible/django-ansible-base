@@ -1,3 +1,4 @@
+from django.core.exceptions import ObjectDoesNotExist
 from django.utils.translation import gettext_lazy as _
 
 from ansible_base.lib.serializers.common import NamedCommonModelSerializer
@@ -11,8 +12,6 @@ def has_model_field_prefetched(obj, thing):
 
 
 class OAuth2ApplicationSerializer(NamedCommonModelSerializer):
-    reverse_url_name = 'application-detail'
-
     class Meta:
         model = OAuth2Application
         fields = NamedCommonModelSerializer.Meta.fields + [x.name for x in OAuth2Application._meta.concrete_fields]
@@ -28,36 +27,30 @@ class OAuth2ApplicationSerializer(NamedCommonModelSerializer):
             'skip_authorization': {'label': _('Skip Authorization')},
         }
 
-    def to_representation(self, obj):
-        ret = super(OAuth2ApplicationSerializer, self).to_representation(obj)
+    def _get_client_secret(self, obj):
         request = self.context.get('request', None)
-        if request and request.method == 'POST':
-            # Only return the (decrypted) client_secret on the initial create
-            ret['client_secret'] = ansible_encryption.decrypt_string(obj.client_secret)
-        if obj.client_type == 'public':
-            ret.pop('client_secret', None)
+        try:
+            if obj.client_type == 'public':
+                return None
+            elif request.method == 'POST':
+                return ansible_encryption.decrypt_string(obj.client_secret)
+            else:
+                return ENCRYPTED_STRING
+        except ObjectDoesNotExist:
+            return ''
+
+    def to_representation(self, instance):
+        # We have to override this because in AbstractCommonModelSerializer, we'll
+        # auto-force all encrypted fields to ENCRYPTED_STRING. Usually that's fine,
+        # but we want to show the client_secret on POST. Ideally we'd just use
+        # get_client_secret() and a SerializerMethodField.
+        ret = super().to_representation(instance)
+        secret = self._get_client_secret(instance)
+        if secret is None:
+            del ret['client_secret']
+        else:
+            ret['client_secret'] = self._get_client_secret(instance)
         return ret
-
-    def get_related(self, obj):
-        res = super(OAuth2ApplicationSerializer, self).get_related(obj)
-        res.update(
-            dict(
-                tokens=self.reverse('api:o_auth2_application_token_list', kwargs={'pk': obj.pk}),
-                activity_stream=self.reverse('api:o_auth2_application_activity_stream_list', kwargs={'pk': obj.pk}),
-            )
-        )
-        if obj.organization_id:
-            res.update(
-                dict(
-                    organization=self.reverse('api:organization_detail', kwargs={'pk': obj.organization_id}),
-                )
-            )
-        return res
-
-    def get_modified(self, obj):
-        if obj is None:
-            return None
-        return obj.updated
 
     def _summary_field_tokens(self, obj):
         token_list = [{'id': x.pk, 'token': ENCRYPTED_STRING, 'scope': x.scope} for x in obj.oauth2accesstoken_set.all()[:10]]
