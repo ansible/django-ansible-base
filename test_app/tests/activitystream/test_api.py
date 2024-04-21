@@ -163,22 +163,6 @@ def test_activitystream_api_ordering(admin_api_client, animal, user, random_user
     assert response.data['results'][0]['id'] == Entry.objects.last().id
 
 
-@pytest.mark.xfail(reason="TODO: Decide if we really want to exclude these from list view.")
-def test_activitystream_api_related_fks_not_in_list_view(admin_api_client, animal, user, random_user):
-    """
-    Ensure that we don't link to related objects in the list view.
-    """
-    animal.owner = random_user
-    animal.save()
-    url = reverse("activitystream-list")
-    response = admin_api_client.get(url)
-    assert response.status_code == 200
-    entry = response.data["results"][0]
-    assert entry["operation"] == "update"
-    assert entry["changes"]["changed_fields"]["owner"] == [user.id, random_user.id]
-    assert 'changes.owner' not in entry['related']
-
-
 def test_activitystream_api_related_fks_in_detail_view(admin_api_client, animal, user, random_user):
     """
     Ensure that we link to related objects in the detail view.

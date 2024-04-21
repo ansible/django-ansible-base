@@ -36,11 +36,6 @@ class AbstractCommonModelSerializer(ValidationSerializerMixin, serializers.Model
     def get_url(self, obj) -> str:
         return get_url_for_object(obj)
 
-    @property
-    def is_list_view(self) -> bool:
-        view = self.context.get('view')
-        return view and view.action == 'list'
-
     # Type hints are used by OpenAPI
     def _get_related(self, obj) -> dict[str, str]:
         if obj is None:
