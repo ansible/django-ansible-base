@@ -69,12 +69,12 @@ class Entry(ImmutableCommonModel):
         return changed_fks
 
     @functools.cached_property
-    def content_object_with_prefetched_changed_fields(self):
+    def content_object_with_cached_changed_fields(self):
         """
-        Get the content object with any changed ForeignKey fields prefetched.
+        Get the content object with any changed ForeignKey fields cached.
         This is useful for related and summary_fields in serializers.
 
-        :return: The content object with any changed ForeignKey fields prefetched.
+        :return: The content object with any changed ForeignKey fields cached.
         """
         if self.changes is None:
             return self.content_object

@@ -74,7 +74,7 @@ class EntrySerializer(ImmutableCommonModelSerializer):
         try:
             # This will be None if the instance was deleted, but if the *model*
             # was deleted, it'll raise an AttributeError.
-            content_obj = obj.content_object_with_prefetched_changed_fields
+            content_obj = obj.content_object_with_cached_changed_fields
         except AttributeError:
             # The model was deleted
             content_obj = None
@@ -115,7 +115,7 @@ class EntrySerializer(ImmutableCommonModelSerializer):
     def _get_related(self, obj) -> dict[str, str]:
         fields = super()._get_related(obj)
         try:
-            content_obj = obj.content_object_with_prefetched_changed_fields
+            content_obj = obj.content_object_with_cached_changed_fields
         except AttributeError:
             # The model was deleted
             return fields
