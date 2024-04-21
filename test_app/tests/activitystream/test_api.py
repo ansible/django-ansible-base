@@ -322,3 +322,22 @@ def test_activitystream_api_summary_fields(admin_api_client, animal, admin_user,
     assert entry["operation"] == "update"
     assert field_name in entry["summary_fields"]
     assert entry["summary_fields"][field_name][expected_key] == expected_value
+
+
+def test_activitystream_api_summary_fields_after_patch(admin_api_client, animal, user, random_user):
+    """
+    Ensure that summary_fields show up and include changed fields for PATCH requests.
+    """
+    animal.owner = user
+    animal.save()
+    animal.refresh_from_db()
+
+    url = reverse("animal-detail", args=[animal.id])
+    response = admin_api_client.patch(url, data={"owner": random_user.id})
+    assert response.status_code == 200
+
+    url = reverse("activitystream-detail", args=[animal.activity_stream_entries.last().id])
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    assert response.data["summary_fields"]["changes.owner"]["username"] == random_user.username
+    assert response.data["summary_fields"]["changes.owner"]["id"] == random_user.id
