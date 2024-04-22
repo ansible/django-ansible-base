@@ -1,4 +1,3 @@
-from rest_framework import permissions
 from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.authentication.models import AuthenticatorMap
@@ -13,4 +12,3 @@ class AuthenticatorMapViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
 
     queryset = AuthenticatorMap.objects.all().order_by("id")
     serializer_class = AuthenticatorMapSerializer
-    permission_classes = [permissions.IsAuthenticated]

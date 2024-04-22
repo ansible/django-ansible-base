@@ -2,6 +2,7 @@ import logging
 import time
 
 from django.utils.translation import gettext_lazy as _
+from rest_framework import permissions
 from rest_framework.views import APIView
 
 from ansible_base.lib.utils.settings import get_function_from_setting, get_setting
@@ -10,6 +11,8 @@ logger = logging.getLogger('ansible_base.lib.utils.views.ansible_base')
 
 
 class AnsibleBaseView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
     def initialize_request(self, request, *args, **kwargs):
         """
         Store the Django REST Framework Request object as an attribute on the
