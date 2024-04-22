@@ -1,9 +1,13 @@
+import logging
 from copy import deepcopy
 
 from rest_framework import serializers
 
 from ansible_base.activitystream.models import Entry
+from ansible_base.lib.abstract_models.common import CreatableModel, get_url_for_object
 from ansible_base.lib.serializers.common import ImmutableCommonModelSerializer
+
+logger = logging.getLogger('ansible_base.activitystream.serializers')
 
 
 class EntrySerializer(ImmutableCommonModelSerializer):
@@ -70,7 +74,7 @@ class EntrySerializer(ImmutableCommonModelSerializer):
         try:
             # This will be None if the instance was deleted, but if the *model*
             # was deleted, it'll raise an AttributeError.
-            content_obj = obj.content_object
+            content_obj = obj.content_object_with_cached_changed_fields
         except AttributeError:
             # The model was deleted
             content_obj = None
@@ -89,4 +93,70 @@ class EntrySerializer(ImmutableCommonModelSerializer):
         if related_content_obj and hasattr(related_content_obj, 'summary_fields'):
             summary_fields['related_content_object'] = related_content_obj.summary_fields()
 
+        if obj.changes is None:
+            return summary_fields
+
+        try:
+            changed_fk_fields = obj.changed_fk_fields
+        except AttributeError:
+            # The model was deleted
+            changed_fk_fields = {}
+
+        for field_name, pk in changed_fk_fields.items():
+            related_object = getattr(content_obj, field_name, None)
+            if related_object is None:
+                continue
+
+            if hasattr(related_object, 'summary_fields'):
+                summary_fields[f"changes.{field_name}"] = related_object.summary_fields()
+
         return summary_fields
+
+    def _get_related(self, obj) -> dict[str, str]:
+        fields = super()._get_related(obj)
+        try:
+            content_obj = obj.content_object_with_cached_changed_fields
+        except AttributeError:
+            # The model was deleted
+            return fields
+
+        if content_obj is None:
+            return fields
+
+        # Add related fields for the content_object and related_content_object
+        fields['content_object'] = get_url_for_object(content_obj)
+
+        try:
+            # This will be None if the instance was deleted, but if the *model*
+            # was deleted, it'll raise an AttributeError.
+            related_content_obj = obj.related_content_object
+        except AttributeError:
+            # The model was deleted
+            related_content_obj = None
+
+        if related_content_obj is not None:
+            fields['related_content_object'] = get_url_for_object(obj.related_content_object)
+
+        if obj.changes is None:
+            return fields
+
+        changes_links = {}
+        for field_name, pk in obj.changed_fk_fields.items():
+            related_object = getattr(content_obj, field_name, None)
+            if related_object is None:
+                continue
+
+            # If the related object inherits CreatableModel, we can check and make sure it's
+            # older than the activity stream entry. If it's not, then we don't want to link to it.
+            if isinstance(related_object, CreatableModel) and related_object.created > obj.created:
+                model = obj.content_type.model_class()
+                logger.warning(
+                    f"Refusing to relate {related_object} to activity stream entry for {model} {obj.object_id} because it was created after the entry"
+                )
+                continue
+
+            if related_url := get_url_for_object(related_object, pk=pk):
+                changes_links[f"changes.{field_name}"] = related_url
+
+        fields.update(changes_links)
+        return fields

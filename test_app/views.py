@@ -129,6 +129,7 @@ class MultipleFieldsViewSet(TestAppViewSet):
 
 class AnimalViewSet(TestAppViewSet):
     serializer_class = serializers.AnimalSerializer
+    queryset = models.Animal.objects.all()
 
 
 class CityViewSet(TestAppViewSet):
