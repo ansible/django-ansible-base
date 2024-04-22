@@ -1,5 +1,6 @@
 import logging
 from contextlib import contextmanager
+from typing import Optional
 
 from django.apps import apps
 from django.conf import settings
@@ -325,7 +326,7 @@ class TrackedRelationship:
         else:
             manager.remove(actor)
 
-    def _sync_actor_to_role(self, actor_model, instance, action, pk_set, reverse):
+    def _sync_actor_to_role(self, actor_model: type, instance: Model, action: str, pk_set: Optional[set[int]]):
         if self._active_sync_flag:
             return
         if action.startswith('pre_'):
@@ -343,14 +344,22 @@ class TrackedRelationship:
                 actor_set = set(role.users.values_list('id', flat=True))
 
         giving = bool(action == 'post_add')
-        for team in actor_model.objects.filter(pk__in=actor_set):
-            rd.give_or_remove_permission(team, instance, giving=giving, sync_action=True)
+        for actor in actor_model.objects.filter(pk__in=actor_set):
+            rd.give_or_remove_permission(actor, instance, giving=giving, sync_action=True)
 
-    def sync_team_to_role(self, instance, action, model, pk_set, reverse, **kwargs):
-        self._sync_actor_to_role(permission_registry.team_model, instance, action, pk_set, reverse)
+    def sync_team_to_role(self, instance: Model, action: str, model: type, pk_set: Optional[set[int]], reverse: bool, **kwargs):
+        if not reverse:
+            self._sync_actor_to_role(permission_registry.team_model, instance, action, pk_set)
+        else:
+            for pk in pk_set:
+                self._sync_actor_to_role(permission_registry.team_model, model(pk=pk), action, {instance.pk})
 
-    def sync_user_to_role(self, instance, action, model, pk_set, reverse, **kwargs):
-        self._sync_actor_to_role(permission_registry.user_model, instance, action, pk_set, reverse)
+    def sync_user_to_role(self, instance: Model, action: str, model: type, pk_set: Optional[set[int]], reverse: bool, **kwargs):
+        if not reverse:
+            self._sync_actor_to_role(permission_registry.user_model, instance, action, pk_set)
+        else:
+            for pk in pk_set:
+                self._sync_actor_to_role(permission_registry.user_model, model(pk=pk), action, {instance.pk})
 
 
 def connect_rbac_signals(cls):

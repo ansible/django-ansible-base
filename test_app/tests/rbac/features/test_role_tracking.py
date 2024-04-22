@@ -55,3 +55,19 @@ def test_add_team_to_tracked_role(rando, organization, member_rd):
 
     member_rd.remove_permission(parent_team, child_team)
     assert parent_team not in child_team.team_parents.all()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("reverse", [True, False])
+def test_add_organization_member_to_relationship(rando, organization, org_member_rd, reverse):
+    assert not rando.has_obj_perm(organization, 'member')
+
+    if reverse:
+        rando.member_of_organizations.add(organization)
+    else:
+        organization.users.add(rando)
+
+    assert org_member_rd.object_roles.count() == 1
+    object_role = org_member_rd.object_roles.first()
+    assert rando in object_role.users.all()
+    assert rando.has_obj_perm(organization, 'member')
