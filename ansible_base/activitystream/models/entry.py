@@ -49,7 +49,9 @@ class Entry(ImmutableCommonModel):
     def changed_fk_fields(self):
         """
         :return: A dictionary of {field_name: pk} for any ForeignKey fields that have changed.
-            the pk is the new pk value, for changed fields.
+            the pk is the new pk value, for changed fields. In the case of added/removed fields,
+            the pk is the pk of the related object. In the case of a changed field, the pk is the
+            new pk value.
         """
         changed_fks = {}
 
