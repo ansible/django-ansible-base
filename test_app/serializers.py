@@ -60,6 +60,7 @@ class MultipleFieldsModelSerializer(NamedCommonModelSerializer):
 class AnimalSerializer(NamedCommonModelSerializer):
     class Meta:
         model = models.Animal
+        fields = '__all__'
 
 
 class InventorySerializer(RelatedAccessMixin, ModelSerializer):

@@ -19,10 +19,15 @@ def get_authenticator_user_view():
 
         class AuthenticatorPluginRelatedUsersView(user_viewset_view):
             def get_queryset(self, **kwargs):
-                authenticator_id = kwargs.get('authenticator_id', None)
+                # during unit testing we get the pk from kwargs
+                authenticator_id = kwargs.get('pk', None)
+                if hasattr(self, 'kwargs'):
+                    # But at runtime self has kwargs attached and no kwargs associated
+                    authenticator_id = self.kwargs.get('pk', None)
+                # if we didn't get an ID for some reason we will just return None
                 if authenticator_id is None:
                     return get_user_model().objects.none()
-                authenticator_users = get_user_model().objects.filter(authenticator_user__provider__id=authenticator_id)
+                authenticator_users = get_user_model().objects.filter(authenticator_users__provider__id=authenticator_id)
                 return authenticator_users
 
         return AuthenticatorPluginRelatedUsersView

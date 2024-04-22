@@ -5,6 +5,7 @@ from django.conf import settings
 from django.db import models
 from django.db.models.fields.reverse_related import ManyToManyRel
 from django.urls.exceptions import NoReverseMatch
+from django.utils.translation import gettext_lazy as _
 from inflection import underscore
 from rest_framework.reverse import reverse
 
@@ -22,7 +23,7 @@ def get_cls_view_basename(cls):
     return underscore(cls.__name__)
 
 
-def get_url_for_object(obj, request=None):
+def get_url_for_object(obj, request=None, pk=None):
     # get_absolute_url mainly exists to support AWX
     if hasattr(obj, 'get_absolute_url'):
         return obj.get_absolute_url()
@@ -30,7 +31,7 @@ def get_url_for_object(obj, request=None):
     basename = get_cls_view_basename(obj.__class__)
 
     try:
-        return reverse(f'{basename}-detail', kwargs={'pk': obj.pk})
+        return reverse(f'{basename}-detail', kwargs={'pk': pk or obj.pk})
     except NoReverseMatch:
         logger.debug(f"Tried to reverse {basename}-detail for model {obj.__class__.__name__} but said view is not defined")
         return ''
@@ -42,7 +43,7 @@ class ModifiableModel(models.Model):
 
     modified = models.DateTimeField(
         editable=False,
-        help_text="The date/time this resource was created",
+        help_text=_("The date/time this resource was created"),
         auto_now=True,
     )
     modified_by = models.ForeignKey(
@@ -52,7 +53,7 @@ class ModifiableModel(models.Model):
         null=True,
         editable=False,
         on_delete=models.SET_NULL,
-        help_text="The user who last modified this resource",
+        help_text=_("The user who last modified this resource"),
     )
 
     def save(self, *args, **kwargs):
@@ -78,7 +79,7 @@ class CreatableModel(models.Model):
 
     created = models.DateTimeField(
         editable=False,
-        help_text="The date/time this resource was created",
+        help_text=_("The date/time this resource was created"),
         auto_now_add=True,
     )
     created_by = models.ForeignKey(
@@ -88,7 +89,7 @@ class CreatableModel(models.Model):
         null=True,
         editable=False,
         on_delete=models.SET_NULL,
-        help_text="The user who created this resource",
+        help_text=_("The user who created this resource"),
     )
 
     def save(self, *args, **kwargs):
@@ -207,7 +208,7 @@ class NamedCommonModel(CommonModel):
 
     name = models.CharField(
         max_length=512,
-        help_text="The name of this resource",
+        help_text=_("The name of this resource"),
     )
 
     def summary_fields(self):
@@ -226,7 +227,7 @@ class UniqueNamedCommonModel(CommonModel):
     name = models.CharField(
         max_length=512,
         unique=True,
-        help_text="The name of this resource",
+        help_text=_("The name of this resource"),
     )
 
     def summary_fields(self):
