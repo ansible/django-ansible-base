@@ -68,6 +68,8 @@ class Entry(ImmutableCommonModel):
                         fk_model = field.related_model
                     except AttributeError:  # Likely the model was deleted
                         continue
+                    # For added/removed fields, the value is the pk of the related object
+                    # For changed fields, the value is the *new* pk value
                     pk = value[1] if op == 'changed_fields' else value
                     changed_fks[field_name] = (fk_model, pk)
 
