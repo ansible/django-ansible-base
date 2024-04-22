@@ -70,93 +70,65 @@ class EntrySerializer(ImmutableCommonModelSerializer):
 
     def _get_summary_fields(self, obj) -> dict[str, dict]:
         summary_fields = super()._get_summary_fields(obj)
+        if self.is_list_view:
+            return summary_fields
 
         try:
-            # This will be None if the instance was deleted, but if the *model*
-            # was deleted, it'll raise an AttributeError.
-            content_obj = obj.content_object_with_cached_changed_fields
-        except AttributeError:
-            # The model was deleted
-            content_obj = None
-
-        if content_obj and hasattr(content_obj, 'summary_fields'):
-            summary_fields['content_object'] = content_obj.summary_fields()
+            if obj.content_object is not None and hasattr(obj.content_object, 'summary_fields'):
+                summary_fields['content_object'] = obj.content_object.summary_fields()
+        except AttributeError:  # Likely the model was deleted
+            pass
 
         try:
-            # This will be None if the instance was deleted, but if the *model*
-            # was deleted, it'll raise an AttributeError.
-            related_content_obj = obj.related_content_object
-        except AttributeError:
-            # The model was deleted
-            related_content_obj = None
-
-        if related_content_obj and hasattr(related_content_obj, 'summary_fields'):
-            summary_fields['related_content_object'] = related_content_obj.summary_fields()
+            if obj.related_content_object is not None and hasattr(obj.related_content_object, 'summary_fields'):
+                summary_fields['related_content_object'] = obj.related_content_object.summary_fields()
+        except AttributeError:  # Likely the model was deleted
+            pass
 
         if obj.changes is None:
             return summary_fields
 
-        try:
-            changed_fk_fields = obj.changed_fk_fields
-        except AttributeError:
-            # The model was deleted
-            changed_fk_fields = {}
+        changed_fk_fields = obj.changed_fk_fields
 
-        for field_name, pk in changed_fk_fields.items():
-            related_object = getattr(content_obj, field_name, None)
-            if related_object is None:
-                continue
-
-            if hasattr(related_object, 'summary_fields'):
-                summary_fields[f"changes.{field_name}"] = related_object.summary_fields()
+        for field_name, (related_model, pk) in changed_fk_fields.items():
+            if related_object := related_model.objects.filter(pk=pk).first():
+                if hasattr(related_object, 'summary_fields'):
+                    summary_fields[f"changes.{field_name}"] = related_object.summary_fields()
 
         return summary_fields
 
     def _get_related(self, obj) -> dict[str, str]:
         fields = super()._get_related(obj)
+
+        if self.is_list_view:
+            return fields
+
+        # content_object
         try:
-            content_obj = obj.content_object_with_cached_changed_fields
-        except AttributeError:
-            # The model was deleted
-            return fields
+            if obj.content_object is not None:
+                fields['content_object'] = get_url_for_object(obj.content_object)
+        except AttributeError:  # Likely the model was deleted
+            pass
 
-        if content_obj is None:
-            return fields
-
-        # Add related fields for the content_object and related_content_object
-        fields['content_object'] = get_url_for_object(content_obj)
-
+        # related_content_object
         try:
-            # This will be None if the instance was deleted, but if the *model*
-            # was deleted, it'll raise an AttributeError.
-            related_content_obj = obj.related_content_object
-        except AttributeError:
-            # The model was deleted
-            related_content_obj = None
+            if obj.related_content_object is not None:
+                fields['related_content_object'] = get_url_for_object(obj.related_content_object)
+        except AttributeError:  # Likely the model was deleted
+            pass
 
-        if related_content_obj is not None:
-            fields['related_content_object'] = get_url_for_object(obj.related_content_object)
+        for field_name, (related_model, pk) in obj.changed_fk_fields.items():
+            if related_object := related_model.objects.filter(pk=pk).first():
+                # If the related object inherits CreatableModel, we can check and make sure it's
+                # older than the activity stream entry. If it's not, then we don't want to link to it.
+                if isinstance(related_object, CreatableModel) and related_object.created > obj.created:
+                    model = obj.content_type.model_class()
+                    logger.warning(
+                        f"Refusing to relate {related_object} to activity stream entry for {model} {obj.object_id} because it was created after the entry"
+                    )
+                    continue
 
-        if obj.changes is None:
-            return fields
+                if related_url := get_url_for_object(related_object, pk=pk):
+                    fields[f"changes.{field_name}"] = related_url
 
-        changes_links = {}
-        for field_name, pk in obj.changed_fk_fields.items():
-            related_object = getattr(content_obj, field_name, None)
-            if related_object is None:
-                continue
-
-            # If the related object inherits CreatableModel, we can check and make sure it's
-            # older than the activity stream entry. If it's not, then we don't want to link to it.
-            if isinstance(related_object, CreatableModel) and related_object.created > obj.created:
-                model = obj.content_type.model_class()
-                logger.warning(
-                    f"Refusing to relate {related_object} to activity stream entry for {model} {obj.object_id} because it was created after the entry"
-                )
-                continue
-
-            if related_url := get_url_for_object(related_object, pk=pk):
-                changes_links[f"changes.{field_name}"] = related_url
-
-        fields.update(changes_links)
         return fields
