@@ -320,3 +320,21 @@ def test_activitystream_api_no_fatal_with_invalid_fks(admin_api_client, animal):
     assert response.status_code == 200
     assert "changes.owner" not in response.data["summary_fields"]
     assert "changes.owner" not in response.data["related"]
+
+
+def test_activitystream_api_deleted_object(admin_api_client, animal, user):
+    """
+    Ensure we can properly render a response for an activity stream entry
+    that describes an object that has since been deleted.
+    """
+    animal.owner = user
+    animal.save()
+    entries = animal.activity_stream_entries
+    animal.delete()
+    entry = entries.last()
+    assert entry.operation == "delete"
+    url = reverse("activitystream-detail", args=[entry.id])
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    assert response.data["operation"] == "delete"
+    assert response.data["changes"]["removed_fields"]["owner"] == user.id
