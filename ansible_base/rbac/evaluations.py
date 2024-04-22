@@ -1,6 +1,7 @@
 from typing import Optional
 
 from django.conf import settings
+from django.db.models.functions import Cast
 from django.db.models.query import QuerySet
 
 from ansible_base.rbac import permission_registry
@@ -75,11 +76,14 @@ class AccessibleObjectsDescriptor(BaseEvaluationDescriptor):
 
 
 class AccessibleIdsDescriptor(BaseEvaluationDescriptor):
-    def __call__(self, actor, codename: str = 'view', content_types=None) -> QuerySet:
+    def __call__(self, actor, codename: str = 'view', content_types=None, cast_field=None) -> QuerySet:
         full_codename = validate_codename_for_model(codename, self.cls)
         if actor._meta.model_name == 'user' and has_super_permission(actor, full_codename):
-            return self.cls.objects.values_list('id', flat=True)
-        return get_evaluation_model(self.cls).accessible_ids(self.cls, actor, full_codename, content_types=content_types)
+            if cast_field is None:
+                return self.cls.objects.values_list('id', flat=True)
+            else:
+                return self.cls.objects.values_list(Cast('id', output_field=cast_field), flat=True)
+        return get_evaluation_model(self.cls).accessible_ids(self.cls, actor, full_codename, content_types=content_types, cast_field=cast_field)
 
 
 def bound_has_obj_perm(self, obj, codename) -> bool:

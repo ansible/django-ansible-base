@@ -79,7 +79,7 @@ def check_related_permissions(user, cls, old_data, new_data):
             if not user.has_obj_perm(rel_obj, to_check):
                 errors[field.name] = _('You do not have permission to use this object.')
 
-    # It is fairly useful to log the outcome to transparency to the administrator
+    # It is fairly useful to log the outcome for transparency to the administrator
     log_related_check(user, cls, errors, checked_fields, unchanged_fields)
 
     if errors:

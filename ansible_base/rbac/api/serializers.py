@@ -14,7 +14,8 @@ from ansible_base.lib.abstract_models.common import get_url_for_object
 from ansible_base.lib.serializers.common import CommonModelSerializer, ImmutableCommonModelSerializer
 from ansible_base.rbac.models import RoleDefinition, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry  # careful for circular imports
-from ansible_base.rbac.validators import check_content_obj_permission, validate_permissions_for_model
+from ansible_base.rbac.policies import check_content_obj_permission, visible_users
+from ansible_base.rbac.validators import validate_permissions_for_model
 
 
 class ChoiceLikeMixin(serializers.ChoiceField):
@@ -179,20 +180,24 @@ class BaseAssignmentSerializer(CommonModelSerializer):
         help_text=_('Resource id of the object this role applies to. Alternative to the object_id field.'),
     )
 
-    def get_fields(self):
+    def __init__(self, *args, **kwargs):
         """
         We want to allow ansible_id override of user and team fields
-        but want to keep the non-null database constraint, which leads to this solution
+        but want to keep the non-null database constraint, so actor field is marked required=True here
         """
-        fields = dict(super().get_fields())
-        fields[self.actor_field].required = False
-        return fields
+        super().__init__(*args, **kwargs)
+        request = self.context.get('request')
+        if request:
+            qs = self.get_actor_queryset(request.user)
+        else:
+            qs = self.Meta.model.get_field(self.actor_field).model.objects.all()
+        self.fields[self.actor_field] = serializers.PrimaryKeyRelatedField(queryset=qs, required=False)
 
     def raise_id_fields_error(self, field1, field2):
         msg = _('Provide exactly one of %(actor_field)s or %(actor_field)s_ansible_id') % {'actor_field': self.actor_field}
         raise ValidationError({self.actor_field: msg, f'{self.actor_field}_ansible_id': msg})
 
-    def get_by_ansible_id(self, ansible_id, for_field):
+    def get_by_ansible_id(self, ansible_id, requesting_user, for_field):
         try:
             resource_cls = apps.get_model('dab_resource_registry', 'Resource')
         except LookupError:
@@ -200,24 +205,31 @@ class BaseAssignmentSerializer(CommonModelSerializer):
 
         try:
             resource = resource_cls.objects.get(ansible_id=ansible_id)
+            # Ensure that the request user has permission to view provided data
+            obj = resource.content_object
+            if obj._meta.model_name == 'user':
+                if not visible_users(requesting_user).filter(pk=obj.pk).exists():
+                    raise ObjectDoesNotExist
+            elif not requesting_user.has_obj_perm(obj, 'view'):
+                raise ObjectDoesNotExist
         except ObjectDoesNotExist:
             msg = serializers.PrimaryKeyRelatedField.default_error_messages['does_not_exist']
             raise ValidationError({for_field: msg.format(pk_value=ansible_id)})
         return resource.content_object
 
-    def get_actor_from_data(self, validated_data):
+    def get_actor_from_data(self, validated_data, requesting_user):
         actor_aid_field = f'{self.actor_field}_ansible_id'
         if validated_data.get(self.actor_field) and validated_data.get(actor_aid_field):
             self.raise_id_fields_error(self.actor_field, actor_aid_field)
         elif validated_data.get(self.actor_field):
             actor = validated_data[self.actor_field]
         elif ansible_id := validated_data.get(actor_aid_field):
-            actor = self.get_by_ansible_id(ansible_id, for_field=actor_aid_field)
+            actor = self.get_by_ansible_id(ansible_id, requesting_user, for_field=actor_aid_field)
         else:
             self.raise_id_fields_error(self.actor_field, f'{self.actor_field}_ansible_id')
         return actor
 
-    def get_object_from_data(self, validated_data, role_definition):
+    def get_object_from_data(self, validated_data, role_definition, requesting_user):
         obj = None
         if validated_data.get('object_id') and validated_data.get('object_ansible_id'):
             self.raise_id_fields_error('object_id', 'object_ansible_id')
@@ -225,9 +237,12 @@ class BaseAssignmentSerializer(CommonModelSerializer):
             if not role_definition.content_type:
                 raise ValidationError({'object_id': _('System role does not allow for object assignment')})
             model = role_definition.content_type.model_class()
-            obj = model.objects.get(pk=validated_data['object_id'])
+            try:
+                obj = serializers.PrimaryKeyRelatedField(queryset=model.access_qs(requesting_user)).to_internal_value(validated_data['object_id'])
+            except ValidationError as exc:
+                raise ValidationError({'object_id': exc.detail})
         elif validated_data.get('object_ansible_id'):
-            obj = self.get_by_ansible_id(validated_data.get('object_ansible_id'), for_field='object_ansible_id')
+            obj = self.get_by_ansible_id(validated_data.get('object_ansible_id'), requesting_user, for_field='object_ansible_id')
             if permission_registry.content_type_model.objects.get_for_model(obj) != role_definition.content_type:
                 raise ValidationError(
                     {
@@ -242,10 +257,10 @@ class BaseAssignmentSerializer(CommonModelSerializer):
         requesting_user = self.context['view'].request.user
 
         # Resolve actor - team or user
-        actor = self.get_actor_from_data(validated_data)
+        actor = self.get_actor_from_data(validated_data, requesting_user)
 
         # Resolve object
-        obj = self.get_object_from_data(validated_data, rd)
+        obj = self.get_object_from_data(validated_data, rd, requesting_user)
 
         if rd.content_type:
             # Object role assignment
@@ -299,6 +314,9 @@ class RoleUserAssignmentSerializer(BaseAssignmentSerializer):
         model = RoleUserAssignment
         fields = ASSIGNMENT_FIELDS + ['user', 'user_ansible_id']
 
+    def get_actor_queryset(self, requesting_user):
+        return visible_users(requesting_user)
+
 
 class RoleTeamAssignmentSerializer(BaseAssignmentSerializer):
     actor_field = 'team'
@@ -310,3 +328,6 @@ class RoleTeamAssignmentSerializer(BaseAssignmentSerializer):
     class Meta:
         model = RoleTeamAssignment
         fields = ASSIGNMENT_FIELDS + ['team', 'team_ansible_id']
+
+    def get_actor_queryset(self, requesting_user):
+        return permission_registry.team_model.access_qs(requesting_user)
