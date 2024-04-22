@@ -10,7 +10,6 @@ from rest_framework.permissions import SAFE_METHODS
 from rest_framework.response import Response
 
 from ansible_base.rbac.permission_registry import permission_registry
-from ansible_base.rbac.policies import check_content_obj_permission, visible_users
 
 logger = logging.getLogger('ansible_base.lib.routers.association_resource_router')
 
@@ -22,6 +21,8 @@ class RelatedListMixin:
         # will not check "change" permissions to the parent object on POST
         # this method checks parent change permission, view permission should be handled by filter_queryset
         if (request.method not in SAFE_METHODS) and 'ansible_base.rbac' in settings.INSTALLED_APPS and permission_registry.is_registered(parent_obj):
+            from ansible_base.rbac.policies import check_content_obj_permission
+
             return check_content_obj_permission(request.user, parent_obj)
         return True
 
@@ -73,6 +74,9 @@ class UserAssociationSerializer(serializers.Serializer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         request = self.context['request']
+        # Use in-line import because not all apps may be using RBAC
+        from ansible_base.rbac.policies import visible_users
+
         self.fields['instances'] = serializers.PrimaryKeyRelatedField(
             queryset=visible_users(request.user),
             many=True,
