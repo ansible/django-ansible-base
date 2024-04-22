@@ -58,30 +58,18 @@ class Entry(ImmutableCommonModel):
 
         for op in ('added_fields', 'changed_fields', 'removed_fields'):
             for field_name, value in self.changes.get(op, {}).items():
-                field = self.content_type.model_class()._meta.get_field(field_name)
+                if (model := self.content_type.model_class()) is None:
+                    continue
+                field = model._meta.get_field(field_name)
                 if isinstance(field, models.ForeignKey):
-                    if op == 'changed_fields':
-                        pk = value[1]
-                    else:
-                        pk = value
-                    changed_fks[field_name] = pk
+                    try:
+                        fk_model = field.related_model
+                    except AttributeError:  # Likely the model was deleted
+                        continue
+                    pk = value[1] if op == 'changed_fields' else value
+                    changed_fks[field_name] = (fk_model, pk)
 
         return changed_fks
-
-    @functools.cached_property
-    def content_object_with_cached_changed_fields(self):
-        """
-        Get the content object with any changed ForeignKey fields cached.
-        This is useful for related and summary_fields in serializers.
-
-        :return: The content object with any changed ForeignKey fields cached.
-        """
-        if self.changes is None:
-            return self.content_object
-
-        changed_fks = self.changed_fk_fields.keys()
-        obj = self.content_type.model_class().objects.select_related(*changed_fks).get(pk=self.object_id)
-        return obj
 
 
 class AuditableModel(models.Model):

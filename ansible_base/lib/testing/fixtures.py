@@ -64,6 +64,7 @@ def user(db, django_user_model, local_authenticator):
     return django_user_model.objects.create_user(username="user", password="password")
 
 
+@copy_fixture(copies=3)
 @pytest.fixture
 def random_user(db, django_user_model, randname, local_authenticator):
     return django_user_model.objects.create_user(username=randname("user"), password="password")
