@@ -155,3 +155,13 @@ if 'ansible_base.rbac' in INSTALLED_APPS:
     ANSIBLE_BASE_BYPASS_ACTION_FLAGS = {}
 
     ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS = False
+
+    try:
+        MANAGE_ORGANIZATION_AUTH
+    except NameError:
+        MANAGE_ORGANIZATION_AUTH = True
+
+    try:
+        ORG_ADMINS_CAN_SEE_ALL_USERS
+    except NameError:
+        ORG_ADMINS_CAN_SEE_ALL_USERS = True

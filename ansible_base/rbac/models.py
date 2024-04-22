@@ -608,7 +608,7 @@ class RoleEvaluationFields(models.Model):
         return (self.codename, self.content_type_id, self.object_id)
 
     @classmethod
-    def accessible_ids(cls, model_cls, actor, codename: str, content_types: Optional[Iterable[int]] = None) -> QuerySet:
+    def accessible_ids(cls, model_cls, actor, codename: str, content_types: Optional[Iterable[int]] = None, cast_field=None) -> QuerySet:
         """
         Corresponds to AWX accessible_pk_qs
 
@@ -625,7 +625,11 @@ class RoleEvaluationFields(models.Model):
             filter_kwargs['content_type_id__in'] = content_types
         else:
             filter_kwargs['content_type_id'] = ContentType.objects.get_for_model(model_cls).id
-        return cls.objects.filter(**filter_kwargs).values_list('object_id').distinct()
+        qs = cls.objects.filter(**filter_kwargs)
+        if cast_field is None:
+            return qs.values_list('object_id').distinct()
+        else:
+            return qs.values_list(Cast('object_id', output_field=cast_field)).distinct()
 
     @classmethod
     def accessible_objects(cls, model_cls, user, codename, queryset: Optional[QuerySet] = None) -> QuerySet:

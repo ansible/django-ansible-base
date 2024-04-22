@@ -573,3 +573,18 @@ def member_rd():
         content_type=permission_registry.content_type_model.objects.get_for_model(permission_registry.team_model),
         managed=True,
     )
+
+
+@pytest.fixture
+def admin_rd():
+    "Member role for a team, place in root conftest because it is needed for the team users tracked relationship"
+    return RoleDefinition.objects.create_from_permissions(
+        permissions=[
+            permission_registry.team_permission,
+            f'view_{permission_registry.team_model._meta.model_name}',
+            f'change_{permission_registry.team_model._meta.model_name}',
+        ],
+        name='team-admin',
+        content_type=permission_registry.content_type_model.objects.get_for_model(permission_registry.team_model),
+        managed=True,
+    )

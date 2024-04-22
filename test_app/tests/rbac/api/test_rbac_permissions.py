@@ -189,34 +189,3 @@ def test_custom_action(user_api_client, user, organization):
     cow_say_url = reverse('cow-cowsay', kwargs={'pk': cow.id})
     r = user_api_client.post(cow_say_url, {})
     assert r.status_code == 200
-
-
-@pytest.mark.django_db
-def test_user_list_admin(admin_api_client, rando):
-    url = reverse('user-list')
-    response = admin_api_client.get(url)
-    assert response.status_code == 200
-    assert response.data['count'] >= 2
-
-    response = admin_api_client.post(url, data={'username': 'foo', 'password': 'bar'})
-    assert response.status_code == 201
-
-
-@pytest.mark.django_db
-def test_user_list_non_admin(user_api_client, rando):
-    url = reverse('user-list')
-    response = user_api_client.get(url)
-    assert response.status_code == 200
-
-    response = user_api_client.post(url, data={'username': 'foo', 'password': 'bar'})
-    assert response.status_code == 403
-
-
-@pytest.mark.django_db
-def test_user_detail_works_superuser(admin_api_client, rando):
-    url = reverse('user-detail', kwargs={'pk': rando.pk})
-    response = admin_api_client.get(url)
-    assert response.status_code == 200
-
-    user_response = admin_api_client.patch(url, data={})
-    assert user_response.status_code == 200

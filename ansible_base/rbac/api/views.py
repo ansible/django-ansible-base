@@ -14,7 +14,7 @@ from ansible_base.rbac.api.serializers import (
 )
 from ansible_base.rbac.evaluations import has_super_permission
 from ansible_base.rbac.models import RoleDefinition
-from ansible_base.rbac.validators import check_content_obj_permission
+from ansible_base.rbac.policies import check_content_obj_permission
 
 
 class RoleDefinitionViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):

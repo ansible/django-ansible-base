@@ -1,12 +1,16 @@
 import logging
 
+from django.apps import apps
+from django.conf import settings
 from django.db.models import Model
 from django.http import Http404
 from rest_framework.permissions import SAFE_METHODS, BasePermission, DjangoObjectPermissions
 
 from ansible_base.lib.utils.models import is_add_perm
+from ansible_base.lib.utils.settings import get_setting
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.evaluations import has_super_permission
+from ansible_base.rbac.policies import can_change_user
 
 logger = logging.getLogger('ansible_base.rbac.api.permissions')
 
@@ -48,6 +52,10 @@ def is_cloned_request(request) -> bool:
 
 class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
 
+    def has_create_permission(self, request, model_cls):
+        full_codename = f'add_{model_cls._meta.model_name}'
+        return has_super_permission(request.user, full_codename)
+
     def has_permission(self, request, view):
         "Some of this comes from ModelAccessPermission. We assume user.permissions is unused"
         if not request.user or (not request.user.is_authenticated and self.authenticated_users_only):
@@ -61,13 +69,13 @@ class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
         # Following is DAB RBAC specific, handle add permission checking
         if request.method == 'POST' and view.action == 'create':
             model_cls = self._queryset(view).model
-            full_codename = f'add_{model_cls._meta.model_name}'
+
             parent_field_name = permission_registry.get_parent_fd_name(model_cls)
             if parent_field_name is None:
-                if not is_cloned_request(request):
-                    logger.warning(f'User {request.user.pk} lacks global {full_codename} permission to create {model_cls._meta.model_name}')
-
-                return has_super_permission(request.user, full_codename)
+                result = self.has_create_permission(request, model_cls)
+                if (not result) and (not is_cloned_request(request)):
+                    logger.warning(f'User {request.user.pk} lacks global add_{model_cls._meta.model_name} permission to create {model_cls._meta.model_name}')
+                return result
 
         # We are not checking many things here, a GET to list views can return 0 objects
         return True
@@ -80,6 +88,12 @@ class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
         # Remove add permissions, since they are handled in has_permission
         return [p for p in perms if not is_add_perm(p)]
 
+    def has_object_permission_by_codename(self, request, obj, perms):
+        return all(request.user.has_obj_perm(obj, perm) for perm in perms)
+
+    def model_is_valid(self, model_cls):
+        return permission_registry.is_registered(model_cls)
+
     def has_object_permission(self, request, view, obj):
         if not isinstance(obj, Model):
             logger.info(f'Object-permission check called with non-object {type(obj)} for {request.method}')
@@ -87,7 +101,7 @@ class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
 
         queryset = self._queryset(view)
         model_cls = queryset.model
-        if not permission_registry.is_registered(model_cls):
+        if not self.model_is_valid(model_cls):
             if request.user.is_superuser:
                 return True
             logger.warning(f'User {request.user.pk} denied {request.method} to {obj._meta.model_name}, not in DAB RBAC permission registry')
@@ -95,7 +109,7 @@ class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
 
         perms = self.get_required_object_permissions(request.method, model_cls, view=view)
 
-        if not all(request.user.has_obj_perm(obj, perm) for perm in perms):
+        if not self.has_object_permission_by_codename(request, obj, perms):
             # If the user does not have permissions we need to determine if
             # they have read permissions to see 403, or not, and simply see
             # a 404 response.
@@ -114,4 +128,26 @@ class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
             # Has read permissions.
             return False
 
+        return True
+
+
+class AnsibleBaseUserPermissions(AnsibleBaseObjectPermissions):
+
+    def model_is_valid(self, model_cls):
+        return bool(model_cls._meta.model_name == 'user')
+
+    def has_create_permission(self, request, model_cls):
+        org_cls = apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL)
+
+        if request.user.is_superuser:
+            return True
+
+        if not get_setting('MANAGE_ORGANIZATION_AUTH', False):
+            return False
+
+        return org_cls.access_qs(request.user, 'change_organization').exists()
+
+    def has_object_permission_by_codename(self, request, obj, perms):
+        if perms:
+            return can_change_user(request.user, obj)
         return True

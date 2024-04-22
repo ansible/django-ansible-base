@@ -86,8 +86,13 @@ class Command(BaseCommand):
         # NOTE: managed role definitions are turned off, you could turn them on and get rid of these
         org_perms = combine_values(permissions_allowed_for_role(Organization))
         org_admin, _ = RoleDefinition.objects.get_or_create(
-            name='Organization admin permissions',
+            name='organization-admin',
             permissions=org_perms,
+            defaults={'content_type': ContentType.objects.get_for_model(Organization), 'managed': True},
+        )
+        RoleDefinition.objects.get_or_create(
+            name='organization-member',
+            permissions=['member_organization', 'view_organization'],
             defaults={'content_type': ContentType.objects.get_for_model(Organization), 'managed': True},
         )
         ig_admin, _ = RoleDefinition.objects.get_or_create(
@@ -95,8 +100,14 @@ class Command(BaseCommand):
             permissions=['change_instancegroup', 'delete_instancegroup', 'view_instancegroup'],
             defaults={'content_type': ContentType.objects.get_for_model(InstanceGroup)},
         )
+        team_perms = combine_values(permissions_allowed_for_role(Team))
+        RoleDefinition.objects.get_or_create(
+            name='team-admin',
+            permissions=team_perms,
+            defaults={'content_type': ContentType.objects.get_for_model(Team), 'managed': True},
+        )
         team_member, _ = RoleDefinition.objects.get_or_create(
-            name='Special Team member role',
+            name='team-member',
             permissions=['view_team', 'member_team'],
             defaults={'content_type': ContentType.objects.get_for_model(Team), 'managed': True},
         )
