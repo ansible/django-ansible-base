@@ -50,9 +50,17 @@ class OrderByBackend(BaseFilterBackend):
 
     def get_default_ordering(self, view):
         ordering = getattr(view, 'ordering', None)
+        # Favor the ordering attribute
         if isinstance(ordering, str):
             return (ordering,)
-        return ordering
+
+        # if ordering is not set, see if they queryset specifies the order
+        queryset = getattr(view, 'queryset', None)
+        if queryset is not None and len(queryset._query.order_by) > 0:
+            return queryset._query.order_by
+
+        # return PK
+        return ('pk',)
 
     def _validate_ordering_fields(self, model, order_by):
         for field_name in order_by:
