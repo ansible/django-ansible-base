@@ -1,7 +1,9 @@
+import copy
 import logging
 
 from django.conf import settings
 from django.db.models.fields import IntegerField
+from django.http import QueryDict
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
 from rest_framework import routers, serializers, status
@@ -33,10 +35,11 @@ class RelatedListMixin:
         with the specified pk.
         """
         parent_view = self.parent_viewset()
-        parent_view.request = self.request
+        parent_view.request = copy.copy(self.request)
+        parent_view.request._request = copy.copy(self.request._request)
+        parent_view.request._request.GET = QueryDict()
         queryset = parent_view.filter_queryset(parent_view.get_queryset())
         filter_kwargs = {'pk': self.kwargs['pk']}
-
         parent_obj = get_object_or_404(queryset, **filter_kwargs)
 
         # May raise a permission denied

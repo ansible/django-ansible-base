@@ -8,21 +8,6 @@ from test_app.models import Inventory, Organization
 
 
 @pytest.fixture
-def organization():
-    return Organization.objects.create(name='Default')
-
-
-@pytest.fixture
-def team(organization):
-    return permission_registry.team_model.objects.create(name='example-team-or-group', organization=organization)
-
-
-@pytest.fixture
-def inventory(organization):
-    return Inventory.objects.create(name='Default-inv', organization=organization)
-
-
-@pytest.fixture
 def rando():
     return get_user_model().objects.create(username='rando')
 

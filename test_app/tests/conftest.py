@@ -532,6 +532,11 @@ def team(organization, randname):
     return models.Team.objects.create(name=randname("Test Team"), organization=organization)
 
 
+@pytest.fixture
+def inventory(organization):
+    return models.Inventory.objects.create(name='Default-inv', organization=organization)
+
+
 @copy_fixture(copies=3)  # noqa: F405
 @pytest.fixture
 def multiple_fields_model(db, randname):
