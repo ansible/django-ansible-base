@@ -3,6 +3,8 @@ import functools
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
+from django.urls import reverse
+from django.utils.http import urlencode
 from django.utils.translation import gettext_lazy as _
 
 from ansible_base.lib.abstract_models import ImmutableCommonModel
@@ -98,3 +100,14 @@ class AuditableModel(models.Model):
         A helper property that returns the activity stream entries for this object.
         """
         return Entry.objects.filter(content_type=ContentType.objects.get_for_model(self), object_id=self.pk).order_by('created')
+
+    def extra_related_fields(self, request):
+        content_type = ContentType.objects.get_for_model(self)
+        query_kwargs = {
+            'content_type': content_type.pk,
+            'object_id': self.pk,
+        }
+        activity_stream_url = reverse('activitystream-list') + '?' + urlencode(query_kwargs)
+        return {
+            'activity_stream': activity_stream_url,
+        }
