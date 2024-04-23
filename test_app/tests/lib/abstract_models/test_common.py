@@ -175,3 +175,16 @@ def test_modified_by_gets_saved_even_if_not_in_update_fields(system_user, user, 
         animal.save(update_fields=['name', 'kind'])
     animal.refresh_from_db()
     assert animal.modified_by == user
+
+
+def test_ignore_relations_in_summary_fields_and_related(team, admin_api_client):
+    url = reverse('team-detail', kwargs={'pk': team.pk})
+    response = admin_api_client.get(url)
+    summary_fields = response.data.get('summary_fields', {})
+    assert summary_fields['organization']['name'] == team.organization.name
+    assert 'organization' in response.data['related']
+
+    with patch('test_app.models.Team.ignore_relations', new=['organization']):
+        response = admin_api_client.get(url)
+        assert 'organization' not in response.data['summary_fields']
+        assert 'organization' not in response.data['related']
