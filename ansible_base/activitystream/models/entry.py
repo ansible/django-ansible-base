@@ -1,3 +1,5 @@
+import functools
+
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
@@ -16,10 +18,11 @@ class Entry(ImmutableCommonModel):
     a wide variety of objects to be used in the activity stream.
     """
 
-    allow_anonymous_user_save = True
+    router_basename = 'activitystream'
 
     class Meta:
         verbose_name_plural = _('Entries')
+        ordering = ['id']
 
     OPERATION_CHOICES = [
         ('create', _('Entity created')),
@@ -43,6 +46,36 @@ class Entry(ImmutableCommonModel):
 
     def __str__(self):
         return f'[{self.created}] {self.get_operation_display()} by {self.created_by}: {self.content_type} {self.object_id}'
+
+    @functools.cached_property
+    def changed_fk_fields(self):
+        """
+        :return: A dictionary of {field_name: pk} for any ForeignKey fields that have changed.
+            the pk is the new pk value, for changed fields. In the case of added/removed fields,
+            the pk is the pk of the related object. In the case of a changed field, the pk is the
+            new pk value.
+        """
+        changed_fks = {}
+
+        if self.changes is None:
+            return changed_fks
+
+        for op in ('added_fields', 'changed_fields', 'removed_fields'):
+            for field_name, value in self.changes.get(op, {}).items():
+                if (model := self.content_type.model_class()) is None:
+                    continue
+                field = model._meta.get_field(field_name)
+                if isinstance(field, models.ForeignKey):
+                    try:
+                        fk_model = field.related_model
+                    except AttributeError:  # Likely the model was deleted
+                        continue
+                    # For added/removed fields, the value is the pk of the related object
+                    # For changed fields, the value is the *new* pk value
+                    pk = value[1] if op == 'changed_fields' else value
+                    changed_fks[field_name] = (fk_model, pk)
+
+        return changed_fks
 
 
 class AuditableModel(models.Model):

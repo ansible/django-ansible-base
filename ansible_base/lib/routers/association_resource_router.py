@@ -1,29 +1,92 @@
+import copy
 import logging
 
+from django.conf import settings
 from django.db.models.fields import IntegerField
+from django.http import QueryDict
+from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
 from rest_framework import routers, serializers, status
 from rest_framework.decorators import action
+from rest_framework.permissions import SAFE_METHODS
 from rest_framework.response import Response
+
+from ansible_base.rbac.permission_registry import permission_registry
 
 logger = logging.getLogger('ansible_base.lib.routers.association_resource_router')
 
 
-class QuerySetMixinBase:
+class RelatedListMixin:
+    def check_parent_object_permissions(self, request, parent_obj):
+        # Associate and disassociate is a POST request, list is GET
+        # the normal process of get_object --> check_object_permissions
+        # will not check "change" permissions to the parent object on POST
+        # this method checks parent change permission, view permission should be handled by filter_queryset
+        if (request.method not in SAFE_METHODS) and 'ansible_base.rbac' in settings.INSTALLED_APPS and permission_registry.is_registered(parent_obj):
+            from ansible_base.rbac.policies import check_content_obj_permission
+
+            return check_content_obj_permission(request.user, parent_obj)
+        return True
+
+    def get_parent_object(self):
+        """Modeled mostly after DRF get_object, but for the parent model
+
+        Like for /api/v2/organizations/<pk>/cows/, this returns the organization
+        with the specified pk.
+        """
+        parent_view = self.parent_viewset()
+        parent_view.request = copy.copy(self.request)
+        parent_view.request._request = copy.copy(self.request._request)
+        parent_view.request._request.GET = QueryDict()
+        queryset = parent_view.filter_queryset(parent_view.get_queryset())
+        filter_kwargs = {'pk': self.kwargs['pk']}
+        parent_obj = get_object_or_404(queryset, **filter_kwargs)
+
+        # May raise a permission denied
+        self.check_parent_object_permissions(self.request, parent_obj)
+
+        return parent_obj
+
     def get_queryset(self):
-        parent_pk = self.kwargs['pk']
-        parent_model = self.parent_view_model
-
-        try:
-            parent_instance = parent_model.objects.get(pk=parent_pk)
-        except parent_model.DoesNotExist:
-            return parent_model.objects.none()
-
-        child_queryset = getattr(parent_instance, self.association_fk).all()
-        return child_queryset
+        parent_instance = self.get_parent_object()
+        return getattr(parent_instance, self.association_fk).all()
 
 
-class AssociateMixin(QuerySetMixinBase):
+def basic_association_serializer_factory(qs):
+    class AssociationSerializer(serializers.Serializer):
+        instances = serializers.PrimaryKeyRelatedField(queryset=qs, many=True)
+
+    return AssociationSerializer
+
+
+def filtered_association_serializer_factory(cls, qs):
+
+    class AssociationSerializer(serializers.Serializer):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            request = self.context['request']
+            self.fields['instances'] = serializers.PrimaryKeyRelatedField(
+                queryset=cls.access_qs(request.user, queryset=qs),
+                many=True,
+            )
+
+    return AssociationSerializer
+
+
+class UserAssociationSerializer(serializers.Serializer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context['request']
+        # Use in-line import because not all apps may be using RBAC
+        from ansible_base.rbac.policies import visible_users
+
+        self.fields['instances'] = serializers.PrimaryKeyRelatedField(
+            queryset=visible_users(request.user),
+            many=True,
+        )
+
+
+class AssociateMixin(RelatedListMixin):
     @action(detail=False, methods=['post'])
     def associate(self, request, **kwargs):
         """
@@ -32,7 +95,7 @@ class AssociateMixin(QuerySetMixinBase):
         This will be served at /{basename}/{pk}/{related_name}/associate/
         We will be given a list of primary keys in the request body.
         """
-        instance = self.parent_view_model.objects.get(pk=kwargs['pk'])
+        instance = self.get_parent_object()
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         related_instances = serializer.validated_data['instances']
@@ -50,7 +113,7 @@ class AssociateMixin(QuerySetMixinBase):
         This will be served at /{basename}/{pk}/{related_name}/disassociate/
         We will be given a list of primary keys in the request body.
         """
-        instance = self.parent_view_model.objects.get(pk=kwargs['pk'])
+        instance = self.get_parent_object()
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         related_instances = serializer.validated_data['instances']
@@ -76,16 +139,23 @@ class AssociateMixin(QuerySetMixinBase):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     def get_serializer_class(self):
-        association_class = getattr(self, 'association_serializer', None)
-        if self.action in ('associate', 'disassociate'):
-            if association_class is None:
-                raise RuntimeError('You must set association_serializer on the viewset')
-            return association_class
+        if self.queryset:
+            qs = self.queryset
+            cls = self.queryset.model
+        else:
+            cls = self.serializer_class.Meta.model
+            qs = cls.objects.all()
+
+        if self.action == 'disassociate':
+            return basic_association_serializer_factory(qs)
+        elif self.action == 'associate':
+            if 'ansible_base.rbac' in settings.INSTALLED_APPS and permission_registry.is_registered(cls):
+                return filtered_association_serializer_factory(cls, qs)
+            elif 'ansible_base.rbac' in settings.INSTALLED_APPS and cls._meta.model_name == 'user':
+                return UserAssociationSerializer
+            else:
+                return basic_association_serializer_factory(qs)
         return super().get_serializer_class()
-
-
-class ReverseViewMixin(QuerySetMixinBase):
-    pass
 
 
 class AssociationResourceRouter(routers.SimpleRouter):
@@ -100,19 +170,6 @@ class AssociationResourceRouter(routers.SimpleRouter):
                 bound_methods[method] = action_str
         return bound_methods
 
-    def association_serializer_factory(self, related_view):
-        qs = related_view.queryset
-        if qs is None:
-            qs = related_view.serializer_class.Meta.model.objects.all()
-
-        class AssociationSerializer(serializers.Serializer):
-            instances = serializers.PrimaryKeyRelatedField(
-                queryset=qs,
-                many=True,
-            )
-
-        return AssociationSerializer
-
     def register(self, prefix, viewset, related_views={}, basename=None):
         if basename is None:
             basename = self.get_default_basename(viewset)
@@ -126,7 +183,7 @@ class AssociationResourceRouter(routers.SimpleRouter):
             mixin_class = AssociateMixin
             if any(x.related_model == child_model for x in parent_model._meta.related_objects):
                 is_reverse_view = True
-                mixin_class = ReverseViewMixin
+                mixin_class = RelatedListMixin
 
             # Generate the related viewset
             modified_related_viewset = type(
@@ -134,8 +191,7 @@ class AssociationResourceRouter(routers.SimpleRouter):
                 (mixin_class, related_view),
                 {
                     'association_fk': fk,
-                    'parent_view_model': parent_model,
-                    'association_serializer': self.association_serializer_factory(related_view),
+                    'parent_viewset': viewset,
                     'lookup_field': fk,
                 },
             )

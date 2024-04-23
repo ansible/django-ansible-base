@@ -6,7 +6,8 @@ from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from ansible_base.rbac import permission_registry
-from ansible_base.rbac.api.permissions import AnsibleBaseObjectPermissions
+from ansible_base.rbac.api.permissions import AnsibleBaseObjectPermissions, AnsibleBaseUserPermissions
+from ansible_base.rbac.policies import visible_users
 from test_app import models, serializers
 
 
@@ -15,15 +16,19 @@ class TestAppViewSet(ModelViewSet, AnsibleBaseView):
     prefetch_related = ()
     select_related = ()
 
-    def filter_queryset(self, qs):
-        cls = self.serializer_class.Meta.model
-        if permission_registry.is_registered(cls):
-            qs = cls.access_qs(self.request.user, queryset=qs)
-
+    def apply_optimizations(self, qs):
         if self.prefetch_related:
             qs = qs.prefetch_related(*self.prefetch_related)
         if self.select_related:
             qs = qs.select_related(*self.select_related)
+        return qs
+
+    def filter_queryset(self, qs):
+        cls = qs.model
+        if permission_registry.is_registered(cls):
+            qs = cls.access_qs(self.request.user, queryset=qs)
+
+        qs = self.apply_optimizations(qs)
 
         return super().filter_queryset(qs)
 
@@ -42,11 +47,16 @@ class TeamViewSet(TestAppViewSet):
     select_related = ('resource__content_type',)
 
 
-class UserViewSet(ModelViewSet):
-    permission_classes = [AnsibleBaseObjectPermissions]
-    serializer_class = serializers.UserSerializer
+class UserViewSet(TestAppViewSet):
     queryset = models.User.objects.all()
+    permission_classes = [AnsibleBaseUserPermissions]
+    serializer_class = serializers.UserSerializer
     prefetch_related = ('created_by', 'modified_by', 'resource', 'resource__content_type')
+
+    def filter_queryset(self, qs):
+        qs = visible_users(self.request.user, queryset=qs)
+        qs = self.apply_optimizations(qs)
+        return qs
 
 
 class EncryptionModelViewSet(TestAppViewSet):
@@ -129,6 +139,7 @@ class MultipleFieldsViewSet(TestAppViewSet):
 
 class AnimalViewSet(TestAppViewSet):
     serializer_class = serializers.AnimalSerializer
+    queryset = models.Animal.objects.all()
 
 
 class CityViewSet(TestAppViewSet):

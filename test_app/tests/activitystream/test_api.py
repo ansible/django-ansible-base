@@ -1,4 +1,7 @@
+import datetime
+
 import pytest
+from crum import impersonate
 from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 from django.utils.http import urlencode
@@ -14,9 +17,9 @@ def test_activitystream_api_read(admin_api_client, user):
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert response.data["count"] > 0
-    assert response.data["results"][-1]["operation"] == "create"
+    assert response.data["results"][0]["operation"] == "create"
     # Ensure that even though we're storing a string here, the serializer is converting it back to the correct type.
-    assert response.data["results"][-1]["changes"]["added_fields"]["id"] == int(user.id)
+    assert response.data["results"][0]["changes"]["added_fields"]["id"] == int(user.id)
     count = response.data["count"]
     original_name = user.first_name
     user.first_name = "Firstname"
@@ -24,8 +27,8 @@ def test_activitystream_api_read(admin_api_client, user):
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert response.data["count"] == count + 1
-    assert response.data["results"][-1]["operation"] == "update"
-    assert response.data["results"][-1]["changes"]["changed_fields"]["first_name"] == [original_name, user.first_name]
+    assert response.data["results"][0]["operation"] == "update"
+    assert response.data["results"][0]["changes"]["changed_fields"]["first_name"] == [original_name, user.first_name]
 
 
 def test_activitystream_api_read_only(admin_api_client, user):
@@ -158,3 +161,180 @@ def test_activitystream_api_ordering(admin_api_client, animal, user, random_user
     assert response.status_code == 200
     assert response.data['count'] > 2
     assert response.data['results'][0]['id'] == Entry.objects.last().id
+
+
+def test_activitystream_api_related_fks_not_in_list_view(admin_api_client, animal, user, random_user):
+    """
+    Ensure that we don't link to related objects in the list view.
+    """
+    animal.owner = random_user
+    animal.save()
+    url = reverse("activitystream-list")
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    entry = response.data["results"][0]
+    assert entry["operation"] == "update"
+    assert entry["changes"]["changed_fields"]["owner"] == [user.id, random_user.id]
+    assert 'changes.owner' not in entry['related']
+
+
+def test_activitystream_api_related_fks_in_detail_view(admin_api_client, animal, user, random_user):
+    """
+    Ensure that we link to related objects in the detail view.
+    """
+    animal.owner = random_user
+    animal.save()
+    url = reverse("activitystream-detail", args=[animal.activity_stream_entries.last().id])
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    entry = response.data
+    assert entry["operation"] == "update"
+    assert entry["changes"]["changed_fields"]["owner"] == [user.id, random_user.id]
+    assert 'changes.owner' in entry['related']
+
+
+def test_activitystream_api_related_fks_refused_for_bad_time_delta(admin_api_client, animal, user, random_user):
+    """
+    Ensure that we don't link to related objects that were created after the activity stream entry.
+    """
+    animal.owner = random_user
+    animal.save()
+
+    last_entry = animal.activity_stream_entries.last()
+    random_user.created = last_entry.created + datetime.timedelta(days=1)
+    random_user.save()
+
+    url = reverse("activitystream-detail", args=[last_entry.id])
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    entry = response.data
+    assert entry["operation"] == "update"
+    assert entry["changes"]["changed_fields"]["owner"] == [user.id, random_user.id]
+    assert 'changes.owner' not in entry['related']  # Don't link it, it's too new!
+
+
+def test_activitystream_api_related_content_object(admin_api_client, animal):
+    """
+    Ensure that we can link to the thing we're an entry for.
+    """
+    url = reverse("activitystream-detail", args=[animal.activity_stream_entries.last().id])
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    entry = response.data
+    assert entry["operation"] == "create"
+    expected_url = reverse("animal-detail", args=[animal.id])
+    assert entry["related"]["content_object"] == expected_url
+
+
+def test_activitystream_api_related_related_content_object(admin_api_client, animal, random_user):
+    """
+    Ensure that we can link to the associated object if we're describing an m2m association.
+
+    Should show in both list and detail views.
+    """
+    animal.people_friends.add(random_user)
+
+    url = reverse("activitystream-detail", args=[animal.activity_stream_entries.last().id])
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    entry = response.data
+    assert entry["operation"] == "associate"
+    expected_url = reverse("user-detail", args=[random_user.id])
+    assert entry["related"]["related_content_object"] == expected_url
+
+
+@pytest.mark.parametrize(
+    "field_name,expected_key,expected_value",
+    [
+        ("created_by", "username", "user"),
+        ("content_object", "name", "Fido"),
+        ("changes.modified_by", "username", "user"),
+        ("changes.owner", "username", "admin"),
+    ],
+)
+def test_activitystream_api_summary_fields(admin_api_client, animal, admin_user, user, field_name, expected_key, expected_value):
+    """
+    Ensure that summary_fields show up and include changed fields.
+
+    Should show in both list and detail views.
+    """
+    animal.owner = admin_user
+    animal.name = "Fido"
+    with impersonate(user):
+        animal.save()
+
+    url = reverse("activitystream-detail", args=[animal.activity_stream_entries.last().id])
+    query_params = {
+        'page_size': 100,
+    }
+    response = admin_api_client.get(url + '?' + urlencode(query_params))
+    assert response.status_code == 200
+    entry = response.data
+    assert entry["operation"] == "update"
+    assert field_name in entry["summary_fields"]
+    assert entry["summary_fields"][field_name][expected_key] == expected_value
+
+
+def test_activitystream_api_summary_fields_after_patch(admin_api_client, animal, user, random_user, random_user_1):
+    """
+    After updating an FK, our summary fields should reflect the FK pointed to at the
+    time of the activity stream entry, not the current FK.
+    """
+    animal.owner = user
+    animal.save()
+    animal.refresh_from_db()
+
+    url = reverse("animal-detail", args=[animal.id])
+    response = admin_api_client.patch(url, data={"owner": random_user.id})
+    assert response.status_code == 200
+
+    stream_id = animal.activity_stream_entries.last().id
+    url = reverse("activitystream-detail", args=[stream_id])
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    assert response.data["summary_fields"]["changes.owner"]["username"] == random_user.username
+    assert response.data["summary_fields"]["changes.owner"]["id"] == random_user.id
+
+    url = reverse("animal-detail", args=[animal.id])
+    response = admin_api_client.patch(url, data={"owner": random_user_1.id})
+    assert response.status_code == 200
+
+    url = reverse("activitystream-detail", args=[stream_id])
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    assert response.data["summary_fields"]["changes.owner"]["username"] == random_user.username
+    assert response.data["summary_fields"]["changes.owner"]["id"] == random_user.id
+
+
+def test_activitystream_api_no_fatal_with_invalid_fks(admin_api_client, animal):
+    """
+    We should never fatal, even if we point to bad FKs.
+    Just don't show the related objects.
+    """
+    entry = animal.activity_stream_entries.last()
+    entry.object_id = '31337'
+    entry.changes['changed_fields']['owner'] = ['31337', '99999']
+    Entry.objects.bulk_update([entry], ['object_id', 'changes'])
+    url = reverse("activitystream-detail", args=[entry.id])
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    assert "changes.owner" not in response.data["summary_fields"]
+    assert "changes.owner" not in response.data["related"]
+
+
+def test_activitystream_api_deleted_object(admin_api_client, animal, user):
+    """
+    Ensure we can properly render a response for an activity stream entry
+    that describes an object that has since been deleted.
+    """
+    animal.owner = user
+    animal.save()
+    entries = animal.activity_stream_entries
+    animal.delete()
+    entry = entries.last()
+    assert entry.operation == "delete"
+    url = reverse("activitystream-detail", args=[entry.id])
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    assert response.data["operation"] == "delete"
+    assert response.data["changes"]["removed_fields"]["owner"] == user.id

@@ -1,3 +1,4 @@
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.serializers import ModelSerializer
 
 from ansible_base.lib.serializers.common import CommonModelSerializer, ImmutableCommonModelSerializer, NamedCommonModelSerializer
@@ -24,6 +25,12 @@ class UserSerializer(CommonModelSerializer):
             'user_permissions',
             'groups',
         )
+
+    def validate_is_superuser(self, value):
+        if value is True:
+            if not self.context['request'].user.is_superuser:
+                raise PermissionDenied
+        return value
 
 
 class EncryptionModelSerializer(NamedCommonModelSerializer):
@@ -53,6 +60,7 @@ class MultipleFieldsModelSerializer(NamedCommonModelSerializer):
 class AnimalSerializer(NamedCommonModelSerializer):
     class Meta:
         model = models.Animal
+        fields = '__all__'
 
 
 class InventorySerializer(RelatedAccessMixin, ModelSerializer):

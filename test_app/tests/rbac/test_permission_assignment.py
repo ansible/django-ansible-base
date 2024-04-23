@@ -147,7 +147,7 @@ class TestRoleTeamAssignment:
 
 @pytest.mark.django_db
 class TestOrgTeamMemberAssignment:
-    def test_organization_team_assignment(self, rando, organization, member_rd, org_member_rd, inv_rd):
+    def test_organization_team_assignment(self, rando, organization, member_rd, org_team_member_rd, inv_rd):
         assert permission_registry.permission_qs.filter(codename='member_team').exists()  # sanity
         inv1 = Inventory.objects.create(name='inv1', organization=organization)
         inv2 = Inventory.objects.create(name='inv2', organization=organization)
@@ -159,7 +159,7 @@ class TestOrgTeamMemberAssignment:
         assert set(RoleEvaluation.accessible_objects(Inventory, rando, 'change_inventory')) == set()  # sanity
 
         # assure user gets permission to that team that existed before getting the org member_team permission
-        member_assignment = org_member_rd.give_permission(rando, organization)
+        member_assignment = org_team_member_rd.give_permission(rando, organization)
         assert set(member_assignment.object_role.provides_teams.all()) == set([team1])
         assert set(member_assignment.object_role.descendent_roles()) == set([inv1_assignment.object_role])
         assert set(RoleEvaluation.accessible_objects(Inventory, rando, 'change_inventory')) == set([inv1])
@@ -172,11 +172,11 @@ class TestOrgTeamMemberAssignment:
         assert set(RoleEvaluation.accessible_objects(Inventory, rando, 'change_inventory')) == set([inv1, inv2])
 
         # make sure these are also revokable on the member level, both inventories at same time
-        org_member_rd.remove_permission(rando, organization)
+        org_team_member_rd.remove_permission(rando, organization)
         assert set(RoleEvaluation.accessible_objects(Inventory, rando, 'change_inventory')) == set([])
 
     @pytest.mark.parametrize('order', ['role_first', 'obj_first'])
-    def test_team_assignment_to_organization(self, rando, org_member_rd, org_inv_rd, order):
+    def test_team_assignment_to_organization(self, rando, org_team_member_rd, org_inv_rd, order):
         inv_org = Organization.objects.create(name='inv-org')
         team_org = Organization.objects.create(name='team-org')
         inventory = Inventory.objects.create(name='inv1', organization=inv_org)
@@ -184,12 +184,12 @@ class TestOrgTeamMemberAssignment:
         team = permission_registry.team_model.objects.create(name='test-team', organization=team_org)
 
         if order == 'role_first':
-            member_assignment = org_member_rd.give_permission(rando, team.organization)
+            member_assignment = org_team_member_rd.give_permission(rando, team.organization)
             # This is similar in effect to the old "inventory_admin_role" for organizations
             inv_assignment = org_inv_rd.give_permission(team, inventory.organization)
         else:
             inv_assignment = org_inv_rd.give_permission(team, inventory.organization)
-            member_assignment = org_member_rd.give_permission(rando, team.organization)
+            member_assignment = org_team_member_rd.give_permission(rando, team.organization)
 
         assert set(member_assignment.object_role.provides_teams.all()) == set([team])
         assert set(member_assignment.object_role.descendent_roles()) == set([inv_assignment.object_role])
@@ -201,11 +201,11 @@ class TestOrgTeamMemberAssignment:
         assert set(RoleEvaluation.accessible_objects(Inventory, rando, 'change_inventory')) == set([inventory, inv2])
 
         # now make these those permissions can be revoked by revoking team permission
-        org_member_rd.remove_permission(rando, team.organization)
+        org_team_member_rd.remove_permission(rando, team.organization)
         assert set(RoleEvaluation.accessible_objects(Inventory, rando, 'change_inventory')) == set([])
 
     @pytest.mark.parametrize('order', ['role_first', 'obj_first'])
-    def test_team_team_permission_via_org(self, rando, member_rd, org_member_rd, inv_rd, order):
+    def test_team_team_permission_via_org(self, rando, member_rd, org_team_member_rd, inv_rd, order):
         """
         NOTE: this was never supported in AWX, meaning teams could not have organization admin_role
         """
@@ -217,19 +217,19 @@ class TestOrgTeamMemberAssignment:
         member_rd.give_permission(rando, parent_team)
 
         if order == 'role_first':
-            org_member_rd.give_permission(parent_team, child_team.organization)
+            org_team_member_rd.give_permission(parent_team, child_team.organization)
             assert set(RoleEvaluation.accessible_objects(Inventory, rando, 'change_inventory')) == set([])
             inv_rd.give_permission(child_team, inv)
         else:
             inv_rd.give_permission(child_team, inv)
             assert set(RoleEvaluation.accessible_objects(Inventory, rando, 'change_inventory')) == set([])
-            org_member_rd.give_permission(parent_team, child_team.organization)
+            org_team_member_rd.give_permission(parent_team, child_team.organization)
 
         assert set(RoleEvaluation.accessible_objects(Inventory, rando, 'change_inventory')) == set([inv])
 
         # assure permission can be revoked, only 1 link needs to be removed
         if order == 'role_first':
-            org_member_rd.remove_permission(parent_team, child_team.organization)
+            org_team_member_rd.remove_permission(parent_team, child_team.organization)
         else:
             inv_rd.remove_permission(child_team, inv)
 

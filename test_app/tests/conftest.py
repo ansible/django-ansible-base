@@ -19,7 +19,7 @@ from rest_framework.request import Request
 from rest_framework.test import force_authenticate
 
 from ansible_base.lib.testing.fixtures import *  # noqa: F403, F401
-from ansible_base.lib.testing.util import copy_fixture
+from ansible_base.lib.testing.util import copy_fixture, delete_authenticator
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
 from test_app import models
@@ -63,23 +63,6 @@ def test_migrations_okay(*args, **kwargs):
 
 
 post_migrate.connect(test_migrations_okay)
-
-
-def delete_authenticator(authenticator):
-    from django.conf import settings
-
-    from ansible_base.authentication.models import AuthenticatorUser
-
-    for au in AuthenticatorUser.objects.filter(provider=authenticator):
-        try:
-            # The tests are very sensitive to the SYSTEM_USER being removed so we won't delete that user
-            if au.username != settings.SYSTEM_USERNAME:
-                au.user.delete()
-        except Exception:
-            # Its possible that something else already delete the user if a user was multi linked somehow
-            pass
-        au.delete()
-    authenticator.delete()
 
 
 @pytest.fixture
@@ -318,39 +301,6 @@ def oidc_authenticator(oidc_configuration):
 
 
 @pytest.fixture
-def ldap_configuration():
-    return {
-        "SERVER_URI": ["ldap://ldap06.example.com:389"],
-        "BIND_DN": "cn=ldapadmin,dc=example,dc=org",
-        "BIND_PASSWORD": "securepassword",
-        "START_TLS": False,
-        "CONNECTION_OPTIONS": {"OPT_REFERRALS": 0, "OPT_NETWORK_TIMEOUT": 30},
-        "USER_SEARCH": ["ou=users,dc=example,dc=org", "SCOPE_SUBTREE", "(cn=%(user)s)"],
-        "USER_DN_TEMPLATE": "cn=%(user)s,ou=users,dc=example,dc=org",
-        "USER_ATTR_MAP": {"email": "mail", "last_name": "sn", "first_name": "givenName"},
-        "GROUP_SEARCH": ["ou=groups,dc=example,dc=org", "SCOPE_SUBTREE", "(objectClass=groupOfNames)"],
-        "GROUP_TYPE": "MemberDNGroupType",
-        "GROUP_TYPE_PARAMS": {"name_attr": "cn", "member_attr": "member"},
-    }
-
-
-@pytest.fixture
-def ldap_authenticator(ldap_configuration):
-    from ansible_base.authentication.models import Authenticator
-
-    authenticator = Authenticator.objects.create(
-        name="Test LDAP Authenticator",
-        enabled=True,
-        create_objects=True,
-        remove_users=True,
-        type="ansible_base.authentication.authenticator_plugins.ldap",
-        configuration=ldap_configuration,
-    )
-    yield authenticator
-    delete_authenticator(authenticator)
-
-
-@pytest.fixture
 def tacacs_configuration():
     return {
         "PORT": 49,
@@ -582,6 +532,11 @@ def team(organization, randname):
     return models.Team.objects.create(name=randname("Test Team"), organization=organization)
 
 
+@pytest.fixture
+def inventory(organization):
+    return models.Inventory.objects.create(name='Default-inv', organization=organization)
+
+
 @copy_fixture(copies=3)  # noqa: F405
 @pytest.fixture
 def multiple_fields_model(db, randname):
@@ -620,6 +575,21 @@ def member_rd():
     return RoleDefinition.objects.create_from_permissions(
         permissions=[permission_registry.team_permission, f'view_{permission_registry.team_model._meta.model_name}'],
         name='team-member',
+        content_type=permission_registry.content_type_model.objects.get_for_model(permission_registry.team_model),
+        managed=True,
+    )
+
+
+@pytest.fixture
+def admin_rd():
+    "Member role for a team, place in root conftest because it is needed for the team users tracked relationship"
+    return RoleDefinition.objects.create_from_permissions(
+        permissions=[
+            permission_registry.team_permission,
+            f'view_{permission_registry.team_model._meta.model_name}',
+            f'change_{permission_registry.team_model._meta.model_name}',
+        ],
+        name='team-admin',
         content_type=permission_registry.content_type_model.objects.get_for_model(permission_registry.team_model),
         managed=True,
     )

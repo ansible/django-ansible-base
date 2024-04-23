@@ -54,10 +54,10 @@ class TestProhibitedAssignments:
         assert 'Assigning organization permissions to teams is not allowed' in str(exc)
 
     @override_settings(ANSIBLE_BASE_ALLOW_TEAM_ORG_ADMIN=False)
-    def test_team_org_member_assignment(self, org_member_rd, organization):
+    def test_team_org_member_assignment(self, org_team_member_rd, organization):
         team = permission_registry.team_model.objects.create(name='example-team', organization=organization)
         with pytest.raises(ValidationError) as exc:
-            org_member_rd.give_permission(team, organization)
+            org_team_member_rd.give_permission(team, organization)
         assert 'Assigning organization permissions that manage other teams is not allowed' in str(exc)
 
     @override_settings(ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES=False)

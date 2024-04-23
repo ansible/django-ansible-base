@@ -3,7 +3,7 @@ from django.urls import reverse
 
 from ansible_base.lib.routers import AssociationResourceRouter
 from test_app import views
-from test_app.models import User
+from test_app.models import Inventory, User
 
 
 def validate_expected_url_pattern_names(router, expected_url_pattern_names):
@@ -190,3 +190,18 @@ def test_association_router_related_viewset_all_mapings(db):
         'my_test_basename-teams-list',
     ]
     validate_expected_url_pattern_names(router, expected_urls)
+
+
+def test_sublist_filtering(inventory, organization, admin_api_client):
+    Inventory.objects.create(name='another-inventory', organization=organization)
+    url = reverse('organization-inventories-list', kwargs={'pk': organization.pk})
+
+    # sanity, without filtering, we get the 2 inventories
+    response = admin_api_client.get(url)
+    assert response.status_code == 200, response.data
+    assert response.data['count'] == 2
+
+    # now we can filter by name for only the inventory object
+    response = admin_api_client.get(url, data={'name': inventory.name})
+    assert response.status_code == 200, response.data
+    assert response.data['count'] == 1
