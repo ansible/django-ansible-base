@@ -106,3 +106,35 @@ Following along with the example above, if we didn't want the API to show `teams
 ```
 
 Be sure to not include the reverse_view or related_view on the router registration or the view will still be present just not listed in the API. 
+
+
+# Combining Relations
+
+Its possible to specify multiple fields to combine into a single relation for reverse m2m views.
+For example, lets say a user has two relations to the Organization model:
+  * organizations (indicating membership)
+  * organizations_administrated (indicating a different type of membership)
+
+The following route would only show the `organizations` related fields:
+```
+router.register(
+    r'users',
+    views.UserViewSet,
+    related_views={
+        'organizations': (views.OrganizationViewSet, 'organizations'),
+    },
+)
+```
+
+But maybe you want your `/users/:id/organizations` endpoint to show the conglomeration of the two relationships. In this case we can turn the second argument into an array indicating to the router to conglomerate the fields:
+```
+router.register(
+    r'users',
+    views.UserViewSet,
+    related_views={
+        'organizations': (views.OrganizationViewSet, ['organizations', 'organizations_administrated']),
+    },
+)
+```
+
+Note, this should only be done for reverse relationships because these views will not have the associated/disassociate actions with them. If you perform this on a forward relationship it will show the conglomeration of fields but the associate/disassociate will only apply to the first relationship in the list. 

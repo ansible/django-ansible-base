@@ -49,7 +49,13 @@ class RelatedListMixin:
 
     def get_queryset(self):
         parent_instance = self.get_parent_object()
-        return getattr(parent_instance, self.association_fk).all()
+        if type(self.association_fk) is list:
+            all_models = getattr(parent_instance, self.association_fk[0]).all()
+            for index in range(1, len(self.association_fk)):
+                all_models = all_models.union(getattr(parent_instance, self.association_fk[index]).all())
+        else:
+            all_models = getattr(parent_instance, self.association_fk).all()
+        return all_models
 
 
 def basic_association_serializer_factory(qs):
@@ -60,7 +66,6 @@ def basic_association_serializer_factory(qs):
 
 
 def filtered_association_serializer_factory(cls, qs):
-
     class AssociationSerializer(serializers.Serializer):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
@@ -174,7 +179,7 @@ class AssociationResourceRouter(routers.SimpleRouter):
         if basename is None:
             basename = self.get_default_basename(viewset)
 
-        for related_name, (related_view, fk) in related_views.items():
+        for related_name, (related_view, fks) in related_views.items():
             parent_model = viewset.serializer_class.Meta.model
             child_model = related_view.serializer_class.Meta.model
 
@@ -185,14 +190,19 @@ class AssociationResourceRouter(routers.SimpleRouter):
                 is_reverse_view = True
                 mixin_class = RelatedListMixin
 
+            if type(fks) is list:
+                related_name = fks[0]
+            else:
+                related_name = fks
+
             # Generate the related viewset
             modified_related_viewset = type(
                 f'Related{related_view.__name__}',
                 (mixin_class, related_view),
                 {
-                    'association_fk': fk,
+                    'association_fk': fks,
                     'parent_viewset': viewset,
-                    'lookup_field': fk,
+                    'lookup_field': related_name,
                 },
             )
 
@@ -206,6 +216,6 @@ class AssociationResourceRouter(routers.SimpleRouter):
                 url_path = f"{prefix}/(?P<pk>[^/.]+)/{related_name}"
 
             # Register the viewset
-            self.registry.append((url_path, modified_related_viewset, f'{basename}-{fk}'))
+            self.registry.append((url_path, modified_related_viewset, f'{basename}-{related_name}'))
 
         super().register(prefix, viewset, basename)
