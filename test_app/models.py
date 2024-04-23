@@ -51,6 +51,8 @@ class Team(AbstractTeam):
 
     encryptioner = models.ForeignKey('test_app.EncryptionModel', on_delete=models.SET_NULL, null=True)
 
+    ignore_relations = []
+
     class Meta:
         app_label = 'test_app'
         ordering = ['id']
