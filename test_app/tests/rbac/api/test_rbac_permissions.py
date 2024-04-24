@@ -221,6 +221,22 @@ def test_related_view_permissions(inventory, organization, user, user_api_client
 
 
 @pytest.mark.django_db
+@override_settings(ANSIBLE_BASE_CHECK_RELATED_PERMISSIONS=[])
+def test_related_no_permissions(inventory, organization, user, user_api_client, inv_rd):
+    "Turn off checking of related permissions"
+    credential = Credential.objects.create(name='foo-cred', organization=organization)
+    assert not inventory.credential  # sanity
+    inv_rd.give_permission(user, inventory)
+    url = reverse('inventory-detail', kwargs={'pk': inventory.pk})
+
+    # No permissions to related credential needed, YOLO
+    response = user_api_client.patch(url, data={'credential': credential.pk})
+    assert response.status_code == 200
+    inventory.refresh_from_db()
+    assert inventory.credential == credential
+
+
+@pytest.mark.django_db
 def test_related_use_permission(inventory, organization, user, user_api_client, inv_rd, cred_view_rd):
     credential = Credential.objects.create(name='foo-cred', organization=organization)
     inv_rd.give_permission(user, inventory)
