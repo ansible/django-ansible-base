@@ -34,6 +34,8 @@ def visible_users(request_user, queryset=None) -> QuerySet:
 def can_change_user(request_user, target_user) -> bool:
     if request_user.is_superuser:
         return True
+    elif target_user.is_superuser:
+        return False  # target is a superuser and request user is not
 
     if not get_setting('MANAGE_ORGANIZATION_AUTH', False):
         return False
