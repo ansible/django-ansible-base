@@ -1,6 +1,6 @@
 import pytest
 
-from ansible_base.rbac.policies import can_change_user, visible_users
+from ansible_base.rbac.policies import can_change_user
 from test_app.models import User
 
 
