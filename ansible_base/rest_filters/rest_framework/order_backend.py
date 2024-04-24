@@ -20,7 +20,7 @@ class OrderByBackend(BaseFilterBackend):
                         order_by = value.split(',')
                     else:
                         order_by = (value,)
-            default_order_by = self.get_default_ordering(view)
+            default_order_by = self.get_default_ordering(view, queryset)
             # glue the order by and default order by together so that the default is the backup option
             order_by = list(order_by or []) + list(default_order_by or [])
             if order_by:
@@ -48,14 +48,15 @@ class OrderByBackend(BaseFilterBackend):
             # Return a 400 for invalid field names.
             raise ParseError(*e.args)
 
-    def get_default_ordering(self, view):
+    def get_default_ordering(self, view, queryset=None):
         ordering = getattr(view, 'ordering', None)
         # Favor the ordering attribute
         if isinstance(ordering, str):
             return (ordering,)
 
         # if ordering is not set, see if they queryset specifies the order
-        queryset = getattr(view, 'queryset', None)
+        if queryset is None:
+            queryset = getattr(view, 'queryset', None)
         if queryset is not None and len(queryset._query.order_by) > 0:
             return queryset._query.order_by
 
