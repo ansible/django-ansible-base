@@ -79,6 +79,18 @@ django-auth-ldap
 python-ldap
 ```
 
+## Password Auth
+
+Local password based authentication should call a couple methods.
+
+The first method `ansible_base.authentication.utils.determine_username_from_uid` this method takes the username of the user and the authenticator they are coming from. This will return you a string representing the username which will be in the User table. This handles conditions where user with the username "some_user" logs in from one authenticator and then a second user with the username "some_user" logs in from another authenticator. On the first call this method returns "some_user". On the second call this function will detect the name collision and return "some_user<hash>".
+
+**Note**, that you need to ensure you are authenticating the user with the provided username/password but that you are creating/updating a User object with the return username from the method above.
+
+The next method is `ansible_base.authentication.utils.authentication.get_or_create_authenticator_user` and takes the username (provided from the last function), user details, the authenticator and extra_authentication data. This method will actually create the User and AuthenticatorUser in the database returning both the User, AuthenticatorUser and a created flag.
+
+Finally, you should return from `ansible_base.authentication.utils.claims.update_user_claims`. This takes the User, the Authenticator instance (self.database_instance) and a list of groups the user belongs to. This function will synchronize the User and AbstractUser data and then take information from `extra_data` in the AbstractUser associated with the User/Authenticator and the passed in groups and determine and sync the users permissions. 
+
 ## Social Auth
 
 Social Auth backends can be turned into authenticators by subclassing `SocialAuthMixin` and `AbstractAuthenticatorPlugin`

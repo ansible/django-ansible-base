@@ -198,6 +198,57 @@ class TestRoleBasedAssignment:
 
 
 @pytest.mark.django_db
+class TestRelatedUserListView:
+    def _initial_check(self, url, user_api_client, count=0):
+        response = user_api_client.get(url)
+        assert response.status_code == 200
+        assert response.data['count'] == count
+
+    def _assign_users(self, role_definition, object):
+        members = [
+            User.objects.create(username='rando1'),
+            User.objects.create(username='rando2'),
+            User.objects.create(username='rando3'),
+        ]
+        role_definition.give_permission(members[0], object)
+        role_definition.give_permission(members[1], object)
+
+    def test_org_admin_list_org_members(self, user, user_api_client, organization, org_member_rd, org_admin_rd):
+        org_admin_rd.give_permission(user, organization)
+
+        url = reverse('organization-users-list', kwargs={'pk': organization.pk})
+        self._initial_check(url, user_api_client)
+        self._assign_users(org_member_rd, organization)
+
+        response = user_api_client.get(url)
+        assert response.status_code == 200
+        assert response.data['count'] == 2
+
+    def test_org_member_list_org_members(self, user, user_api_client, organization, org_member_rd):
+        org_member_rd.give_permission(user, organization)
+
+        url = reverse('organization-users-list', kwargs={'pk': organization.pk})
+        self._initial_check(url, user_api_client, 1)
+        self._assign_users(org_member_rd, organization)
+
+        response = user_api_client.get(url)
+        assert response.status_code == 200
+        assert response.data['count'] == 3
+
+    def test_superadmin_list_org_members(self, user, user_api_client, organization, org_member_rd):
+        user.is_superuser = True
+        user.save()
+
+        url = reverse('organization-users-list', kwargs={'pk': organization.pk})
+        self._initial_check(url, user_api_client)
+        self._assign_users(org_member_rd, organization)
+
+        response = user_api_client.get(url)
+        assert response.status_code == 200
+        assert response.data['count'] == 2
+
+
+@pytest.mark.django_db
 class TestRelationshipBasedAssignment:
     """Tests permissions via tracked_relationship feature, duplicated functionality with TestRoleBasedAssignment
 

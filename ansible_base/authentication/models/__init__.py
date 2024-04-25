@@ -1,6 +1,6 @@
 from .authenticator import Authenticator
 from .authenticator_map import AuthenticatorMap
-from .social_auth import AuthenticatorUser
+from .authenticator_user import AuthenticatorUser
 
 __all__ = (
     'Authenticator',
