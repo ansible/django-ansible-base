@@ -1,4 +1,5 @@
 import datetime
+import os
 import uuid
 from collections import namedtuple
 from contextlib import contextmanager
@@ -20,6 +21,25 @@ def randname():
         return f"{prefix}-{uuid.uuid4().hex[:6]}"
 
     return _randname
+
+
+@pytest.fixture
+def env():
+    """
+    Set an environment variable within a context manager.
+    """
+
+    @contextmanager
+    def _env(key, value):
+        old_value = os.environ.get(key)
+        os.environ[key] = value
+        yield
+        if old_value is None:
+            del os.environ[key]
+        else:
+            os.environ[key] = old_value
+
+    return _env
 
 
 @pytest.fixture
