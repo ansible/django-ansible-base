@@ -69,13 +69,21 @@ class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
         # Following is DAB RBAC specific, handle add permission checking
         if request.method == 'POST' and view.action == 'create':
             model_cls = self._queryset(view).model
-
             parent_field_name = permission_registry.get_parent_fd_name(model_cls)
             if parent_field_name is None:
                 result = self.has_create_permission(request, model_cls)
                 if (not result) and (not is_cloned_request(request)):
                     logger.warning(f'User {request.user.pk} lacks global add_{model_cls._meta.model_name} permission to create {model_cls._meta.model_name}')
                 return result
+        elif request.method == 'OPTIONS' and view.action == 'metadata':
+            # If this is OPTIONS or for form-rendering purposes
+            # return a speculative answer about whether user might be generally able to create
+            model_cls = self._queryset(view).model
+            parent_model = permission_registry.get_parent_model(model_cls)
+            if parent_model is None:
+                return self.has_create_permission(request, model_cls)
+            else:
+                return parent_model.access_qs(request.user, f'add_{model_cls._meta.model_name}').exists()
 
         # We are not checking many things here, a GET to list views can return 0 objects
         return True

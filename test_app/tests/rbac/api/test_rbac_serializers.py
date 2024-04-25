@@ -45,13 +45,6 @@ class TestAssignmentPermission:
         "Inventory unrelated to organization fixture so we can test isolated permissions"
         return Inventory.objects.create(name='inventory-2', organization=organization_2)
 
-    @pytest.fixture
-    def view_inv_rd(self):
-        view_inv, _ = RoleDefinition.objects.get_or_create(
-            name='view-inv', permissions=['view_inventory'], defaults={'content_type': permission_registry.content_type_model.objects.get_for_model(Inventory)}
-        )
-        return view_inv
-
     def test_object_permission_needed(self, inventory_2, inv_rd, org_admin, user_api_client, view_inv_rd):
         url = reverse('roleuserassignment-list')
         rando = User.objects.create(username='rando')
