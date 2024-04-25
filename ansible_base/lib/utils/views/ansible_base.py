@@ -2,7 +2,6 @@ import logging
 import time
 
 from django.utils.translation import gettext_lazy as _
-from rest_framework import permissions
 from rest_framework.views import APIView
 
 from ansible_base.lib.utils.settings import get_function_from_setting, get_setting
