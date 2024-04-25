@@ -11,8 +11,6 @@ logger = logging.getLogger('ansible_base.lib.utils.views.ansible_base')
 
 
 class AnsibleBaseView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
     def initialize_request(self, request, *args, **kwargs):
         """
         Store the Django REST Framework Request object as an attribute on the
