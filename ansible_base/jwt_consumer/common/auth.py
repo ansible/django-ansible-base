@@ -82,7 +82,7 @@ class JWTCommonAuth:
 
     @debug_timer
     def log_and_raise(self, conditional_translate_object, expand_values={}):
-        logger.debug(conditional_translate_object.not_translated() % expand_values)
+        logger.error(conditional_translate_object.not_translated() % expand_values)
         raise AuthenticationFailed(conditional_translate_object.translated() % expand_values)
 
     @debug_timer
