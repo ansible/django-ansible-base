@@ -1,0 +1,42 @@
+---
+name: Testing DAB Consumers
+on:
+  push:
+  pull_request:
+jobs:
+  awx:
+    name: AWX
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    strategy:
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Pull AWX devel image
+        run: docker pull ghcr.io/ansible/awx_devel:devel
+
+      # Generate a docker image that includes current DAB
+      - name: Create image for AWX devel that includes our DAB
+        run: |
+          mkdir awx-dockerfile
+          cat <<EOF > awx-dockerfile/Dockerfile
+          FROM ghcr.io/ansible/awx_devel:devel
+          COPY . /opt/dab/
+          RUN pip install -e /opt/dab/
+          EOF
+          docker build -t awx-with-dab:latest -f awx-dockerfile/Dockerfile .
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ansible/awx
+          path: awx
+
+      - name: Run AWX tests in the generated image
+        run: |
+          cd awx
+          DEVEL_IMAGE_NAME=awx-with-dab:latest AWX_DOCKER_CMD=/start_tests.sh make docker-runner
