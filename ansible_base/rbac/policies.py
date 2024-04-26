@@ -18,7 +18,10 @@ def visible_users(request_user, queryset=None) -> QuerySet:
     if has_super_permission(request_user, 'view') or (
         get_setting('ORG_ADMINS_CAN_SEE_ALL_USERS', False) and org_cls.access_ids_qs(request_user, 'change').exists()
     ):
-        return user_cls.objects.all()
+        if queryset is not None:
+            return queryset
+        else:
+            return user_cls.objects.all()
 
     object_id_fd = ObjectRole._meta.get_field('object_id')
     members_of_visble_orgs = ObjectRole.objects.filter(
@@ -34,6 +37,8 @@ def visible_users(request_user, queryset=None) -> QuerySet:
 def can_change_user(request_user, target_user) -> bool:
     if request_user.is_superuser:
         return True
+    elif target_user.is_superuser:
+        return False  # target is a superuser and request user is not
 
     if not get_setting('MANAGE_ORGANIZATION_AUTH', False):
         return False

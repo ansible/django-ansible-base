@@ -65,6 +65,8 @@ lxml==5.1.0
     # via
     #   python3-saml
     #   xmlsec
+netaddr==1.2.1
+    # via pyrad
 oauthlib==3.2.2
     # via
     #   requests-oauthlib
@@ -85,6 +87,8 @@ pyjwt==2.8.0
     # via
     #   -r requirements/requirements_jwt_consumer.in
     #   social-auth-core
+pyrad==2.4
+    # via -r requirements/requirements_authentication.in
 pytest==8.1.1
     # via
     #   -r requirements/requirements_testing.in
@@ -123,6 +127,7 @@ rpds-py==0.18.0
 six==1.16.0
     # via
     #   isodate
+    #   pyrad
     #   tacacs-plus
 social-auth-app-django==5.4.0
     # via -r requirements/requirements_authentication.in

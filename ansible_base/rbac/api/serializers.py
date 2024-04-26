@@ -190,7 +190,7 @@ class BaseAssignmentSerializer(CommonModelSerializer):
         if request:
             qs = self.get_actor_queryset(request.user)
         else:
-            qs = self.Meta.model.get_field(self.actor_field).model.objects.all()
+            qs = self.Meta.model._meta.get_field(self.actor_field).model.objects.all()
         self.fields[self.actor_field] = serializers.PrimaryKeyRelatedField(queryset=qs, required=False)
 
     def raise_id_fields_error(self, field1, field2):

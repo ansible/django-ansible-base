@@ -1,4 +1,5 @@
 import datetime
+import os
 import uuid
 from collections import namedtuple
 from contextlib import contextmanager
@@ -20,6 +21,25 @@ def randname():
         return f"{prefix}-{uuid.uuid4().hex[:6]}"
 
     return _randname
+
+
+@pytest.fixture
+def env():
+    """
+    Set an environment variable within a context manager.
+    """
+
+    @contextmanager
+    def _env(key, value):
+        old_value = os.environ.get(key)
+        os.environ[key] = value
+        yield
+        if old_value is None:
+            del os.environ[key]
+        else:
+            os.environ[key] = old_value
+
+    return _env
 
 
 @pytest.fixture
@@ -131,16 +151,16 @@ def expected_log(no_log_messages):
 
     @contextmanager
     def f(patch, severity, substr, assert_not_called=False):
-        with mock.patch(patch) as logger:
+        with mock.patch(f'{patch}.{severity}') as logger:
             with no_log_messages():
                 yield
-            sev_logger = getattr(logger, severity)
+
+            call_count = sum(1 for call in logger.call_args_list if substr in call.args[0])
+
             if assert_not_called:
-                sev_logger.assert_not_called()
+                assert call_count == 0, f"Expected 0 calls but got {call_count}"
             else:
-                sev_logger.assert_called_once()
-                args, kwargs = sev_logger.call_args
-                assert substr in args[0]
+                assert call_count == 1, f"Expected 1 call but got {call_count}"
 
     return f
 

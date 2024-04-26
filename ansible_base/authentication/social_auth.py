@@ -2,6 +2,7 @@ import importlib
 import logging
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import models
 from django.db.utils import IntegrityError
 from django.http import HttpResponseNotFound
@@ -108,6 +109,18 @@ class AuthenticatorStrategy(DjangoStrategy):
         if isinstance(value, models.Model):
             value = str(value)
         return super().session_set(name, value)
+
+    def create_user(self, *args, **kwargs):
+        # In the social pipeline we still want to call social_core.pipeline.user.create_user
+        #     because it will pull in the user fields if set.
+        # However, we want to be able to connect to existing Users which social auth does not handle well.
+        # This is a short circuit to return an already created user to appease social auth login in our model.
+        try:
+            # Return the existing user if it already exists.
+            return get_user_model().objects.get(username=kwargs.get('username', None))
+        except get_user_model().DoesNotExist:
+            # Call the parent class if the User has not already been created.
+            return self.storage.user.create_user(*args, **kwargs)
 
 
 class AuthenticatorConfigTestStrategy(AuthenticatorStrategy):

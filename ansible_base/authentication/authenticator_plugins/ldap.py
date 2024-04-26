@@ -13,7 +13,8 @@ from django_auth_ldap.config import LDAPGroupType
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, Authenticator, BaseAuthenticatorConfiguration
-from ansible_base.authentication.utils.claims import get_or_create_authenticator_user, update_user_claims
+from ansible_base.authentication.utils.authentication import get_or_create_authenticator_user
+from ansible_base.authentication.utils.claims import update_user_claims
 from ansible_base.lib.serializers.fields import BooleanField, CharField, ChoiceField, DictField, ListField, URLListField, UserAttrMap
 from ansible_base.lib.utils.validation import VALID_STRING
 
@@ -196,6 +197,7 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
     )
     GROUP_TYPE_PARAMS = DictField(
         help_text=_('Key value parameters to send the chosen group type init method.'),
+        # There is no default here because it depends on your GROUP_TYPE
         allow_null=False,
         required=True,
         ui_field_label=_('LDAP Group Type Parameters'),
@@ -371,20 +373,27 @@ class AuthenticatorPlugin(LDAPBackend, AbstractAuthenticatorPlugin):
             data = getattr(self.settings, field, None)
             if data is None:
                 setattr(self.settings, field, None)
-            else:
+            elif not isinstance(data, config.LDAPSearch):
                 try:
                     # Search fields should be LDAPSearch objects, so we need to convert them from [] to these objects
                     search_object = config.LDAPSearch(data[0], getattr(ldap, data[1]), data[2])
                     setattr(self.settings, field, search_object)
                 except Exception as e:
-                    logger.error(f'Failed to instantiate LDAPSearch object: {e}')
+                    logger.error(f'Failed to instantiate {field} LDAPSearch object: {e}')
                     return None
 
         try:
             user_from_ldap = super().authenticate(request, username, password)
 
+            self.process_login_messages(user_from_ldap, username)
+
+            # If we didn't get a user we can return None
+            if user_from_ldap is None:
+                return None
+
             if user_from_ldap is not None and user_from_ldap.ldap_user:
-                users_groups = list(user_from_ldap.ldap_user._get_groups().get_group_dns())
+                if getattr(self.settings, 'GROUP_SEARCH'):
+                    users_groups = list(user_from_ldap.ldap_user._get_groups().get_group_dns())
 
                 # If we have an LDAP user and that user we found has an user_from_ldap internal object and that object has a bound connection
                 # Then we can try and force an unbind to close the sticky connection
@@ -398,8 +407,10 @@ class AuthenticatorPlugin(LDAPBackend, AbstractAuthenticatorPlugin):
                             f"Got unexpected LDAP exception when forcing LDAP disconnect for user {user_from_ldap.username}, login will still proceed"
                         )
 
-            self.process_login_messages(user_from_ldap, username)
-
+            # In unit testing there were cases where the function we are in was being called before get_or_build_user.
+            # Its unclear if that was just a byproduct of mocking or a real scenario.
+            # Since this call is idempotent we are just going to call it again to ensure the AuthenticatorUser is created for update_user_claims
+            get_or_create_authenticator_user(username, self.database_instance, user_details={}, extra_data=user_from_ldap.ldap_user.attrs.data)
             return update_user_claims(user_from_ldap, self.database_instance, users_groups)
         except Exception:
             logger.exception(f"Encountered an error authenticating to LDAP {self.database_instance.name}")
@@ -426,13 +437,13 @@ class AuthenticatorPlugin(LDAPBackend, AbstractAuthenticatorPlugin):
         """
         This gets called by _LDAPUser to create the user in the database.
         """
-        authenticator_user, created = get_or_create_authenticator_user(
-            user_id=username,
+        user, _authenticator_user, created = get_or_create_authenticator_user(
+            username,
+            self.database_instance,
             user_details={
                 "username": username,
             },
-            authenticator=self.database_instance,
             extra_data=ldap_user.attrs.data,
         )
 
-        return authenticator_user.user, created
+        return user, created

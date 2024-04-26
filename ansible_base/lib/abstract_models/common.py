@@ -3,7 +3,6 @@ from collections import OrderedDict
 
 from django.conf import settings
 from django.db import models
-from django.db.models.fields.reverse_related import ManyToManyRel
 from django.urls.exceptions import NoReverseMatch
 from django.utils.translation import gettext_lazy as _
 from inflection import underscore
@@ -167,17 +166,20 @@ class AbstractCommonModel(models.Model):
         basename = get_cls_view_basename(self.__class__)
 
         # Add any reverse relations required
+        missing_relations = []
         for relation in self._meta.related_objects + self._meta.many_to_many:
             field_name = relation.name
             # obey the model ignore list
-            # skip reverse m2m, we only want to manage associations via the forward
-            if field_name in self.ignore_relations or isinstance(relation, ManyToManyRel):
+            if field_name in self.ignore_relations:
                 continue
             reverse_view = f"{basename}-{field_name}-list"
             try:
                 response[field_name] = reverse(reverse_view, kwargs={'pk': self.pk})
             except NoReverseMatch:
-                logger.error(f"Wanted to add {reverse_view} for {self.__class__} but view was missing")
+                missing_relations.append(reverse_view)
+
+        if missing_relations and settings.DEBUG:
+            logger.error(f"Wanted to add {', '.join(missing_relations)} for {self.__class__} but view was missing")
 
         if hasattr(self, 'extra_related_fields'):
             response.update(self.extra_related_fields(request))

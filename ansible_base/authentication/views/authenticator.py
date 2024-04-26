@@ -1,6 +1,6 @@
 import logging
 
-from rest_framework import permissions, status
+from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
@@ -18,7 +18,6 @@ class AuthenticatorViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
 
     queryset = Authenticator.objects.all()
     serializer_class = AuthenticatorSerializer
-    permission_classes = [permissions.IsAuthenticated]
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()

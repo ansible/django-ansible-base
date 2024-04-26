@@ -6,6 +6,7 @@ from crum import impersonate
 from django.contrib.auth.models import AnonymousUser
 from django.db import connection
 from django.test import override_settings
+from django.test.client import RequestFactory
 from rest_framework.reverse import reverse
 
 from ansible_base.rbac.models import RoleDefinition
@@ -188,3 +189,43 @@ def test_ignore_relations_in_summary_fields_and_related(team, admin_api_client):
         response = admin_api_client.get(url)
         assert 'organization' not in response.data['summary_fields']
         assert 'organization' not in response.data['related']
+
+
+@pytest.mark.parametrize(
+    "debug_mode,not_called",
+    [
+        (True, False),
+        (False, True),
+    ],
+)
+def test_related_view_log_message(debug_mode, not_called, expected_log):
+    from test_app.models import RelatedFieldsTestModel
+
+    rf = RequestFactory()
+    request = rf.get('/')
+
+    with override_settings(DEBUG=debug_mode):
+        with expected_log('ansible_base.lib.abstract_models.common.logger', 'error', 'but view was missing', assert_not_called=not_called):
+            model = RelatedFieldsTestModel()
+            model.related_fields(request)
+
+
+@pytest.mark.parametrize(
+    "ignore_relation",
+    [
+        True,
+        False,
+    ],
+)
+@pytest.mark.django_db
+def test_related_view_ignore_m2m_relations(ignore_relation, admin_user):
+    rf = RequestFactory()
+    request = rf.get('/')
+    with patch('ansible_base.lib.abstract_models.common.reverse', return_value='https://www.example.com/user'):
+        if ignore_relation:
+            admin_user.ignore_relations = ['member_of_organizations']
+        else:
+            admin_user.ignore_relations = []
+
+        related = admin_user.related_fields(request)
+        assert ('member_of_organizations' not in related) is ignore_relation

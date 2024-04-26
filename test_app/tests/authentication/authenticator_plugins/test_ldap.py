@@ -304,6 +304,8 @@ def test_ldap_backend_authenticate_valid_user(
     Test normal login flow. Force authenticate() to return a user.
     """
     user.ldap_user = MagicMock()
+    user.ldap_user.attrs = MagicMock()
+    user.ldap_user.attrs.data = {}
     authenticate.return_value = user
     client = unauthenticated_api_client
     client.login(username=user.username, password="bar")
@@ -335,6 +337,8 @@ def test_ldap_backend_authenticate_unbind_exception(
     But an exception is thrown during unbind.
     """
     user.ldap_user = MagicMock()
+    user.ldap_user.attrs = MagicMock()
+    user.ldap_user.attrs.data = {}
     user.ldap_user._connection.unbind_s.side_effect = Exception("Something went wrong")
     authenticate.return_value = user
     client = unauthenticated_api_client
