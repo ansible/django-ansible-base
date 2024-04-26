@@ -166,6 +166,31 @@ def test_modified_by_respects_given_value(system_user, random_user, user, animal
     assert animal.modified_by == random_user
 
 
+@pytest.mark.parametrize(
+    'update_fields, expected_modified_by',
+    [
+        pytest.param(['population'], 'user', id='modified_by saved even if not in update_fields'),
+        pytest.param(['state'], 'system_user', id='update_fields only lists non-editable fields, modified_by does not get set'),
+        pytest.param(['state', 'population'], 'user', id='update_fields lists some non-editable fields, modified_by gets set'),
+        pytest.param(None, 'user', id='update_fields is None, modified_by gets set'),
+        pytest.param(False, 'user', id='update_fields not passed, modified_by gets set'),
+        pytest.param([], 'system_user', id='update_fields empty, modified_by does not get set'),
+    ],
+)
+def test_modified_by_not_set_if_update_fields_are_all_uneditable(system_user, user, update_fields, expected_modified_by):
+    city = City.objects.create(name='Boston', state='MA')
+    assert city.modified_by == system_user
+    city.state = 'Ohio'
+    city.population = 38
+    with impersonate(user):
+        if update_fields is False:
+            city.save()
+        else:
+            city.save(update_fields=update_fields)
+    city.refresh_from_db()
+    assert city.modified_by == (user if expected_modified_by == 'user' else system_user)
+
+
 def test_modified_by_gets_saved_even_if_not_in_update_fields(system_user, user, animal):
     animal.save()
     assert animal.modified_by == system_user
@@ -228,45 +253,3 @@ def test_related_view_ignore_m2m_relations(ignore_relation, admin_user):
 
         related = admin_user.related_fields(request)
         assert ('member_of_organizations' not in related) is ignore_relation
-
-def test_modified_by_not_set_if_update_fields_are_all_uneditable(system_user, user):
-    city = City.objects.create(name='Boston', state='MA')
-    assert city.modified_by == system_user
-    city.state = 'Ohio'
-    with impersonate(user):
-        city.save(update_fields=['state'])
-    city.refresh_from_db()
-    assert city.modified_by == system_user
-
-
-def test_modified_by_gets_set_if_some_update_fields_are_uneditable(system_user, user):
-    city = City.objects.create(name='Boston', state='MA')
-    assert city.modified_by == system_user
-    city.state = 'Ohio'
-    city.population = 2
-    with impersonate(user):
-        city.save(update_fields=['state', 'population'])
-    city.refresh_from_db()
-    assert city.modified_by == user
-
-
-def test_modified_by_gets_set_if_update_fields_not_given(system_user, user):
-    city = City.objects.create(name='Boston', state='MA')
-    assert city.modified_by == system_user
-    city.state = 'Ohio'
-    city.population = 2
-    with impersonate(user):
-        city.save()
-    city.refresh_from_db()
-    assert city.modified_by == user
-
-
-def test_modified_by_not_set_if_update_fields_empty(system_user, user):
-    city = City.objects.create(name='Boston', state='MA')
-    assert city.modified_by == system_user
-    city.state = 'Ohio'
-    city.population = 2
-    with impersonate(user):
-        city.save(update_fields=[])
-    city.refresh_from_db()
-    assert city.modified_by == system_user

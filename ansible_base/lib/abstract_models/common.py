@@ -72,7 +72,9 @@ class ModifiableModel(models.Model):
             timestamp.
         '''
         has_update_fields = kwargs.get('update_fields') is not None
-        update_fields = list(kwargs.get('update_fields', []))
+        update_fields = kwargs.get('update_fields', [])
+        if update_fields is None:
+            update_fields = []
         is_user_logging_in = isinstance(self, AbstractUser) and update_fields == ['last_login']
         has_editable_field = any(self._meta.get_field(field).editable for field in update_fields)
 
@@ -87,10 +89,8 @@ class ModifiableModel(models.Model):
             pass
         else:
             self.modified_by = current_user_or_system_user()
-            update_fields.append('modified_by')
-
-        if has_update_fields:
-            kwargs['update_fields'] = update_fields
+            if has_update_fields:
+                kwargs['update_fields'].append('modified_by')
 
         return super().save(*args, **kwargs)
 
