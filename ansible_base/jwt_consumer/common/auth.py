@@ -1,4 +1,5 @@
 import logging
+import time
 from urllib.parse import urljoin, urlparse
 
 import jwt
@@ -11,6 +12,17 @@ from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.translations import translatableConditionally as _
 
 logger = logging.getLogger("ansible_base.jwt_consumer.common.auth")
+
+
+def debug_timer(func):
+    def inner(*args, **kwargs):
+        start = time.time()
+        res = func(*args, **kwargs)
+        delta_ms = (time.time() - start) * 1000
+        logger.debug(f'Function {func.__name__} took {delta_ms:.0f} (ms)')
+        return res
+
+    return inner
 
 
 # These fields are used to both map the user as well as to validate the JWT token
@@ -27,6 +39,7 @@ class JWTCommonAuth:
     def __init__(self, user_fields=default_mapped_user_fields) -> None:
         self.mapped_user_fields = user_fields
 
+    @debug_timer
     def parse_jwt_token(self, request):
         logger.debug("Starting JWT Authentication")
         token = request.headers.get("X-DAB-JW-TOKEN", None)
@@ -46,6 +59,7 @@ class JWTCommonAuth:
             timeout=get_setting("ANSIBLE_BASE_JWT_URL_TIMEOUT", 30),
         )
         validated_body = self.validate_token(token, decryption_key)
+        start = time.time()
         user_model = get_user_model()
         user, created = user_model.objects.update_or_create(
             username=validated_body["sub"],
@@ -56,6 +70,8 @@ class JWTCommonAuth:
                 "is_superuser": validated_body["is_superuser"],
             },
         )
+        delta_ms = (time.time() - start) * 1000
+        logger.debug(f'Getting/saving user took {delta_ms:.0f} (ms)')
         setattr(user, "resource_api_actions", validated_body.get("resource_api_actions", None))
         if created:
             logger.warn(f"New user {user.username} created from JWT auth")
@@ -64,10 +80,12 @@ class JWTCommonAuth:
 
         return user, validated_body
 
+    @debug_timer
     def log_and_raise(self, conditional_translate_object, expand_values={}):
-        logger.error(conditional_translate_object.not_translated() % expand_values)
+        logger.debug(conditional_translate_object.not_translated() % expand_values)
         raise AuthenticationFailed(conditional_translate_object.translated() % expand_values)
 
+    @debug_timer
     def get_decryption_key_from_url(self, url, timeout, validate_certs):
         # If the URL does not end with / the urljoin will wipe out the existing path
         if not url.endswith('/'):
@@ -92,6 +110,7 @@ class JWTCommonAuth:
         except requests.exceptions.RequestException as e:
             self.log_and_raise(_("Failed to get JWT decryption key from JWT server: (%(e_class_name)s) %(e)s"), {"e_class_name": e.__class__.__name__, "e": e})
 
+    @debug_timer
     def get_decryption_key_from_file(self, file_path):
         logger.debug(f"Loading decryption key from file {file_path}")
 
@@ -108,6 +127,7 @@ class JWTCommonAuth:
         except Exception as e:
             self.log_and_raise(_("Failed reading %(file_path)s: %(e)s"), {"file_path": file_path, "e": e})
 
+    @debug_timer
     def get_decryption_key(self, url_or_string, **kwargs):
         timeout = kwargs.get('timeout', 30)
         validate_certs = kwargs.get('validate_certs', True)
@@ -132,6 +152,7 @@ class JWTCommonAuth:
         logger.debug(f"{key}")
         return key
 
+    @debug_timer
     def map_user_fields(self, user, token):
         user_needs_save = False
         for attribute in self.mapped_user_fields:
@@ -145,6 +166,7 @@ class JWTCommonAuth:
             logger.info(f"Saving user {user.username}")
             user.save()
 
+    @debug_timer
     def validate_token(self, token, decryption_key):
         validated_body = None
         required_fields = self.mapped_user_fields
@@ -158,6 +180,7 @@ class JWTCommonAuth:
         # Decrypt the token
         try:
             logger.info("Decrypting token")
+            start = time.time()
             validated_body = jwt.decode(
                 token,
                 decryption_key,
@@ -166,6 +189,8 @@ class JWTCommonAuth:
                 issuer="ansible-issuer",
                 algorithms=["RS256"],
             )
+            delta_ms = (time.time() - start) * 1000
+            logger.debug(f'Decoding jwt took {delta_ms:.0f} (ms)')
         except jwt.exceptions.DecodeError as e:
             self.log_and_raise(_("JWT decoding failed: %(e)s, check your key and generated token"), {"e": e})
         except jwt.exceptions.ExpiredSignatureError:
@@ -187,6 +212,7 @@ class JWTCommonAuth:
 class JWTAuthentication(BaseAuthentication):
     map_fields = default_mapped_user_fields
 
+    @debug_timer
     def authenticate(self, request):
         common_auth = JWTCommonAuth(self.map_fields)
         user, token = common_auth.parse_jwt_token(request)
@@ -199,9 +225,11 @@ class JWTAuthentication(BaseAuthentication):
         else:
             return None
 
+    @debug_timer
     def process_user_data(self, user, token):
         common_auth = JWTCommonAuth(self.map_fields)
         common_auth.map_user_fields(user, token)
 
+    @debug_timer
     def process_permissions(self, user, claims, token):
         logger.info("process_permissions was not overridden for JWTAuthentication")
