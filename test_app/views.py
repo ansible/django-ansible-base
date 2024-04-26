@@ -126,15 +126,22 @@ def api_root(request, format=None):
     from ansible_base.activitystream.urls import router as activitystream_router
     from ansible_base.authentication.urls import router as auth_router
     from ansible_base.resource_registry.urls import service_router
+    from ansible_base.rbac.api.router import router as rbac_router
     from test_app.router import router
 
     list_endpoints = {}
-    for url in router.urls + auth_router.urls + service_router.urls + activitystream_router.urls:
+    for url in router.urls + auth_router.urls + service_router.urls + activitystream_router.urls + rbac_router.urls:
         # only want "root" list views, for example:
         # want '^users/$' [name='user-list']
         # do not want '^users/(?P<pk>[^/.]+)/organizations/$' [name='user-organizations-list'],
         if '-list' in url.name and url.pattern._regex.count('/') == 1:
             list_endpoints[url.name.removesuffix('-list')] = reverse(url.name, request=request, format=format)
+
+    from ansible_base.api_documentation.urls import api_version_urls as docs_urls
+
+    for url in docs_urls:
+        list_endpoints[url.name] = reverse(url.name, request=request, format=format)
+
     return Response(list_endpoints)
 
 
