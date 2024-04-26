@@ -75,8 +75,8 @@ class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
                 if (not result) and (not is_cloned_request(request)):
                     logger.warning(f'User {request.user.pk} lacks global add_{model_cls._meta.model_name} permission to create {model_cls._meta.model_name}')
                 return result
-        elif request.method == 'OPTIONS' and view.action == 'metadata':
-            # If this is OPTIONS or for form-rendering purposes
+        elif request.method == 'POST' and is_cloned_request(request):
+            # If this is OPTIONS purposes
             # return a speculative answer about whether user might be generally able to create
             model_cls = self._queryset(view).model
             parent_model = permission_registry.get_parent_model(model_cls)
