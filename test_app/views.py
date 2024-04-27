@@ -60,6 +60,12 @@ class UserViewSet(TestAppViewSet):
         qs = self.apply_optimizations(qs)
         return qs
 
+    @action(detail=False, methods=['get'])
+    def me(self, request, pk=None):
+        user = request.user
+        serializer = self.get_serializer(user)
+        return Response(serializer.data)
+
 
 class EncryptionModelViewSet(TestAppViewSet):
     serializer_class = serializers.EncryptionModelSerializer
