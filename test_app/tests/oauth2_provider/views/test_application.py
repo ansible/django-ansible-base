@@ -1,8 +1,8 @@
 import pytest
-from django.db import connection
+from django.contrib.auth.hashers import check_password
 from django.urls import reverse
 
-from ansible_base.lib.utils.encryption import ENCRYPTED_STRING, ansible_encryption
+from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.oauth2_provider.models import OAuth2Application
 
 
@@ -25,7 +25,7 @@ def test_oauth2_provider_application_list(request, client_fixture, expected_stat
     assert response.status_code == expected_status
     if expected_status == 200:
         assert len(response.data['results']) == OAuth2Application.objects.count()
-        assert response.data['results'][0]['name'] == oauth2_application.name
+        assert response.data['results'][0]['name'] == oauth2_application[0].name
 
 
 @pytest.mark.parametrize(
@@ -42,6 +42,7 @@ def test_oauth2_provider_application_related(admin_api_client, oauth2_applicatio
     Organization should only be shown if the application is associated with an organization.
     Associating an application with an organization should not affect other related fields.
     """
+    oauth2_application = oauth2_application[0]
     if view == "application-list":
         url = reverse(view)
     else:
@@ -75,6 +76,7 @@ def test_oauth2_provider_application_detail(request, client_fixture, expected_st
     """
     Test that we can view the detail of an OAuth2 application iff we are authenticated.
     """
+    oauth2_application = oauth2_application[0]
     client = request.getfixturevalue(client_fixture)
     url = reverse("application-detail", args=[oauth2_application.pk])
     response = client.get(url)
@@ -152,6 +154,7 @@ def test_oauth2_provider_application_update(request, client_fixture, expected_st
     """
     Test that we can update oauth2 applications iff we are authenticated.
     """
+    oauth2_application = oauth2_application[0]
     client = request.getfixturevalue(client_fixture)
     url = reverse("application-detail", args=[oauth2_application.pk])
     response = client.patch(
@@ -197,11 +200,22 @@ def test_oauth2_provider_application_client_secret_encrypted(admin_api_client, o
     )
     assert response.status_code == 201, response.data
     application = OAuth2Application.objects.get(pk=response.data['id'])
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT client_secret FROM dab_oauth2_provider_oauth2application WHERE id = %s", [application.pk])
-        encrypted = cursor.fetchone()[0]
-    assert encrypted.startswith(ENCRYPTED_STRING), encrypted
-    assert ansible_encryption.decrypt_string(encrypted) == response.data['client_secret'], response.data
+
+    # If we ever switch to using *our* encryption, this is a good test.
+    # But until a release with jazzband/django-oauth-toolkit#1311 hits pypi,
+    # we have no way to disable their built-in hashing (which conflicts with our
+    # own encryption).
+    # with connection.cursor() as cursor:
+    #     cursor.execute("SELECT client_secret FROM dab_oauth2_provider_oauth2application WHERE id = %s", [application.pk])
+    #     encrypted = cursor.fetchone()[0]
+    # assert encrypted.startswith(ENCRYPTED_STRING), encrypted
+    # assert ansible_encryption.decrypt_string(encrypted) == response.data['client_secret'], response.data
+    # assert response.data['client_secret'] == application.client_secret
+
+    # For now we just make sure it shows the real client secret on POST
+    # and never on any other method.
+    assert 'client_secret' in response.data
+    assert check_password(response.data['client_secret'], application.client_secret)
 
     # GET
     response = admin_api_client.get(reverse("application-detail", args=[application.pk]))

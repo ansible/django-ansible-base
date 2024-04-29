@@ -8,13 +8,21 @@ from ansible_base.oauth2_provider.models import OAuth2AccessToken, OAuth2Applica
 
 @pytest.fixture
 def oauth2_application(randname):
-    return OAuth2Application.objects.create(
+    """
+    Creates an OAuth2 application with a random name and returns
+    both the application and its client secret.
+    """
+    app = OAuth2Application(
         name=randname("OAuth2 Application"),
         description="Test OAuth2 Application",
         redirect_uris="http://example.com/callback",
         authorization_grant_type="authorization-code",
         client_type="confidential",
     )
+    # Store this before it gets hashed
+    secret = app.client_secret
+    app.save()
+    return (app, secret)
 
 
 @pytest.fixture

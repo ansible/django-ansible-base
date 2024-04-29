@@ -1,8 +1,9 @@
 from django.core.exceptions import ObjectDoesNotExist
 from django.utils.translation import gettext_lazy as _
+from oauth2_provider.generators import generate_client_secret
 
 from ansible_base.lib.serializers.common import NamedCommonModelSerializer
-from ansible_base.lib.utils.encryption import ENCRYPTED_STRING, ansible_encryption
+from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.oauth2_provider.models import OAuth2Application
 
 
@@ -12,6 +13,8 @@ def has_model_field_prefetched(obj, thing):
 
 
 class OAuth2ApplicationSerializer(NamedCommonModelSerializer):
+    oauth2_client_secret = None
+
     class Meta:
         model = OAuth2Application
         fields = NamedCommonModelSerializer.Meta.fields + [x.name for x in OAuth2Application._meta.concrete_fields]
@@ -33,7 +36,11 @@ class OAuth2ApplicationSerializer(NamedCommonModelSerializer):
             if obj.client_type == 'public':
                 return None
             elif request.method == 'POST':
-                return ansible_encryption.decrypt_string(obj.client_secret)
+                if self.oauth2_client_secret is None:
+                    # This should be an impossible case, but...
+                    return ENCRYPTED_STRING
+                # Show the secret, one time, on POST
+                return self.oauth2_client_secret
             else:
                 return ENCRYPTED_STRING
         except ObjectDoesNotExist:
@@ -49,7 +56,7 @@ class OAuth2ApplicationSerializer(NamedCommonModelSerializer):
         if secret is None:
             del ret['client_secret']
         else:
-            ret['client_secret'] = self._get_client_secret(instance)
+            ret['client_secret'] = secret
         return ret
 
     def _summary_field_tokens(self, obj):
@@ -67,3 +74,27 @@ class OAuth2ApplicationSerializer(NamedCommonModelSerializer):
         ret = super(OAuth2ApplicationSerializer, self).get_summary_fields(obj)
         ret['tokens'] = self._summary_field_tokens(obj)
         return ret
+
+    def create(self, validated_data):
+        # This is hacky:
+        # There is a cascading set of issues here.
+        # 1. The first thing to know is that DOT automatically hashes the client_secret
+        #    in a pre_save method on the client_secret field.
+        # 2. In current released versions, there is no way to disable (1). It uses
+        #    the built-in Django password hashing stuff to do this. There's a merged
+        #    PR to allow disabling this (DOT #1311), but it's not released yet.
+        # 3. If we use our own encrypted_field stuff, it conflicts with (1) and (2).
+        #    They end up giving our encrypted field to Django's password check
+        #    and *we* end up showing *their* hashed value to the user on POST, which
+        #    doesn't work, the user needs to see the real (decrypted) value. So
+        #    until upstream #1311 is released, we do NOT treat the field as an
+        #    encrypted_field, we just defer to the upstream hashing.
+        # 4. But we have no way to see the client_secret on POST, if we let the
+        #    model generate it, because it's hashed by the time we get to the
+        #    serializer...
+        #
+        # So to that end, on POST, we'll make the client secret here, and then
+        # we can access it to show the user the value (once) on POST.
+        validated_data['client_secret'] = generate_client_secret()
+        self.oauth2_client_secret = validated_data['client_secret']
+        return super().create(validated_data)

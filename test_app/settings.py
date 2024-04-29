@@ -35,6 +35,11 @@ LOGGING = {
             'handlers': ['console'],
             'level': 'DEBUG',
         },
+        '': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
     },
 }
 for logger in LOGGING["loggers"]:  # noqa: F405

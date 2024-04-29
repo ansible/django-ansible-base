@@ -6,7 +6,6 @@ from django.core.validators import RegexValidator
 from django.db import models
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
-from oauth2_provider.generators import generate_client_secret
 
 from ansible_base.lib.abstract_models.common import NamedCommonModel
 
@@ -16,7 +15,8 @@ DATA_URI_RE = re.compile(r'.*')  # FIXME
 class OAuth2Application(oauth2_models.AbstractApplication, NamedCommonModel):
     router_basename = 'application'
     ignore_relations = ['oauth2idtoken', 'grant', 'oauth2refreshtoken']
-    encrypted_fields = ['client_secret']
+    # We do NOT add client_secret to encrypted_fields because it is hashed by Django OAuth Toolkit
+    # and it would end up hashing the encrypted value.
 
     class Meta(oauth2_models.AbstractAccessToken.Meta):
         verbose_name = _('application')
@@ -50,13 +50,14 @@ class OAuth2Application(oauth2_models.AbstractApplication, NamedCommonModel):
         on_delete=models.CASCADE,
         null=True,
     )
-    client_secret = models.CharField(
-        max_length=1024,
-        blank=True,
-        default=generate_client_secret,
-        db_index=True,
-        help_text=_('Used for more stringent verification of access to an application when creating a token.'),
-    )
+    # Not overriding client_secret... Details:
+    # It would be nice to just use our usual encrypted_fields flow here
+    # until DOT makes a release with https://github.com/jazzband/django-oauth-toolkit/pull/1311
+    # there is no way to disable its expectation of using its own hashing
+    # (which is Django's make_password/check_password).
+    # So we use their field here.
+    # Previous versions of DOT didn't hash the field at all and AWX pins
+    # to <2.0.0 so AWX used the AWX encryption with no issue.
     client_type = models.CharField(
         max_length=32, choices=CLIENT_TYPES, help_text=_('Set to Public or Confidential depending on how secure the client device is.')
     )
