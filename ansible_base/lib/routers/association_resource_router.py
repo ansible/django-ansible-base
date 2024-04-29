@@ -9,6 +9,7 @@ from django.utils.translation import gettext as _
 from rest_framework import routers, serializers, status
 from rest_framework.decorators import action
 from rest_framework.permissions import SAFE_METHODS
+from rest_framework.request import clone_request
 from rest_framework.response import Response
 
 from ansible_base.rbac.permission_registry import permission_registry
@@ -35,7 +36,7 @@ class RelatedListMixin:
         with the specified pk.
         """
         parent_view = self.parent_viewset()
-        parent_view.request = copy.copy(self.request)
+        parent_view.request = clone_request(self.request, 'GET')
         parent_view.request._request = copy.copy(self.request._request)
         parent_view.request._request.GET = QueryDict()
         queryset = parent_view.filter_queryset(parent_view.get_queryset())
