@@ -79,6 +79,11 @@ class NamespaceViewSet(TestAppViewSet):
     queryset = models.Namespace.objects.all()
 
 
+class CollectionImportViewSet(TestAppViewSet):
+    serializer_class = serializers.CollectionImportSerializer
+    queryset = models.CollectionImport.objects.all()
+
+
 class ParentNameViewSet(TestAppViewSet):
     serializer_class = serializers.ParentNameSerializer
     queryset = models.ParentName.objects.all()

@@ -63,6 +63,8 @@ class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
         if parent_model is None:
             return self.has_create_permission(request, model_cls)
         else:
+            if request.user.is_superuser:
+                return True  # special case only for superuser when no objects exist
             return parent_model.access_qs(request.user, f'add_{model_cls._meta.model_name}').exists()
 
     def has_permission(self, request, view):

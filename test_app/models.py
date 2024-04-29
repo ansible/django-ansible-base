@@ -147,7 +147,7 @@ class Namespace(models.Model):
 class CollectionImport(models.Model):
     "Example of a child of a child object, organization is implied by its namespace"
     name = models.CharField(max_length=64, unique=True, blank=False)
-    namespace = models.ForeignKey(Namespace, on_delete=models.CASCADE)
+    namespace = models.ForeignKey(Namespace, on_delete=models.CASCADE, related_name='collections')
 
 
 class ExampleEvent(models.Model):

@@ -4,7 +4,7 @@ from django.urls import reverse
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
 from ansible_base.rbac.policies import can_change_user, visible_users
-from test_app.models import Organization, User
+from test_app.models import Namespace, Organization, User
 
 
 @pytest.fixture
@@ -96,4 +96,16 @@ def test_user_creator_options(user, user_api_client, organization, org_admin_rd)
     org_admin_rd.give_permission(user, organization)
     r = user_api_client.options(url)
     assert r.status_code == 200
+    assert 'POST' in r.data['actions']
+
+
+@pytest.mark.django_db
+def test_no_parent_objects(admin_api_client):
+    url = reverse('collectionimport-list')
+
+    assert Namespace.objects.count() == 0  # sanity
+
+    r = admin_api_client.options(url)
+    assert r.status_code == 200, r.data
+    assert 'actions' in r.data
     assert 'POST' in r.data['actions']
