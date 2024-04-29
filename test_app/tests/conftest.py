@@ -473,6 +473,19 @@ def test_encryption_public_key():
 
 
 @pytest.fixture
+def random_public_key():
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=4096, backend=default_backend())
+    return (
+        private_key.public_key()
+        .public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        .decode()
+    )
+
+
+@pytest.fixture
 def jwt_token(test_encryption_private_key):
     class Token:
         def __init__(self):

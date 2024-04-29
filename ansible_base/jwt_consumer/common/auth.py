@@ -1,9 +1,12 @@
 import logging
+from typing import Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
 import jwt
 import requests
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.cache import caches
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
@@ -21,11 +24,21 @@ default_mapped_user_fields = [
     "is_superuser",
     "is_system_auditor",
 ]
+# This setting allows a service to override which django cache we want to use
+jwt_cache_name = getattr(settings, 'ANSIBLE_BASE_JWT_CACHE_NAME', 'default')
+cache = caches[jwt_cache_name]
+# This is the cache name we will use for the JWT key
+cache_key = 'ansible_base_jwt_public_key'
 
 
 class JWTCommonAuth:
     def __init__(self, user_fields=default_mapped_user_fields) -> None:
         self.mapped_user_fields = user_fields
+
+    def get_cache_timeout(self):
+        # If unspecified the cache will expire in 7 days
+        cache_timeout = get_setting('ANSIBLE_BASE_JWT_CACHE_TIMEOUT_SECONDS', 604800)
+        return cache_timeout
 
     def parse_jwt_token(self, request):
         logger.debug("Starting JWT Authentication")
@@ -40,35 +53,97 @@ class JWTCommonAuth:
             logger.info("Failed to get the setting ANSIBLE_BASE_JWT_KEY")
             return None, None
 
-        decryption_key = self.get_decryption_key(
+        decryption_key, jwt_key_was_cached = self.get_decryption_key(
             jwt_key_setting,
             validate_certs=get_setting("ANSIBLE_BASE_JWT_VALIDATE_CERT", True),
             timeout=get_setting("ANSIBLE_BASE_JWT_URL_TIMEOUT", 30),
         )
-        validated_body = self.validate_token(token, decryption_key)
-        user_model = get_user_model()
-        user, created = user_model.objects.update_or_create(
-            username=validated_body["sub"],
-            defaults={
-                "first_name": validated_body["first_name"],
-                "last_name": validated_body["last_name"],
-                "email": validated_body["email"],
-                "is_superuser": validated_body["is_superuser"],
-            },
-        )
-        setattr(user, "resource_api_actions", validated_body.get("resource_api_actions", None))
-        if created:
-            logger.warn(f"New user {user.username} created from JWT auth")
-        else:
-            logger.info(f"User {user.username} authenticated from JWT auth")
+        try:
+            validated_body = self.validate_token(token, decryption_key)
+        except jwt.exceptions.DecodeError as de:
+            # This exception means the decryption key failed... maybe it was because the cache is bad.
+            if not jwt_key_was_cached:
+                # It wasn't cached anyway so we an just raise our exception
+                self.log_and_raise(_("JWT decoding failed: %(e)s, check your key and generated token"), {"e": de})
 
+            # We had a cached key so lets get the key again ignoring the cache
+            new_decryption_key, _junk = self.get_decryption_key(
+                jwt_key_setting,
+                validate_certs=get_setting("ANSIBLE_BASE_JWT_VALIDATE_CERT", True),
+                timeout=get_setting("ANSIBLE_BASE_JWT_URL_TIMEOUT", 30),
+                ignore_cache=True,
+            )
+            if new_decryption_key == decryption_key:
+                # The new key matched the old key so don't even try and decrypt again, the key just doesn't match
+                self.log_and_raise(_("JWT decoding failed: %(e)s, cached key was correct; check your key and generated token"), {"e": de})
+            # Since we got a new key, lets go ahead and try to validate the token again.
+            # If it fails this time we can just raise whatever
+            validated_body = self.validate_token(token, new_decryption_key)
+
+        # Let's see if we have the same user info in the cache already
+        is_cached, user_defaults = self.check_user_in_cache(validated_body)
+
+        user_model = get_user_model()
+        user = None
+        if is_cached:
+            try:
+                user = user_model.objects.get(username=validated_body['sub'])
+            except user_model.DoesNotExist:
+                # ooofff... I'm sorry, you user was in the cache but deleted from the database?
+                # but now you have to pay the price to continue logging in
+                pass
+
+        if not user:
+            # Either the user wasn't cached or the requested user was not in the DB so we need to make a new one
+            user, created = user_model.objects.update_or_create(
+                username=validated_body["sub"],
+                defaults=user_defaults,
+            )
+            if created:
+                logger.warn(f"New user {user.username} created from JWT auth")
+
+        setattr(user, "resource_api_actions", validated_body.get("resource_api_actions", None))
+
+        logger.info(f"User {user.username} authenticated from JWT auth")
         return user, validated_body
 
     def log_and_raise(self, conditional_translate_object, expand_values={}):
         logger.error(conditional_translate_object.not_translated() % expand_values)
         raise AuthenticationFailed(conditional_translate_object.translated() % expand_values)
 
-    def get_decryption_key_from_url(self, url, timeout, validate_certs):
+    def check_user_in_cache(self, validated_body: dict) -> Tuple[bool, dict]:
+        # These are the defaults which will get passed to the user creation and what we expect in the cache
+        expected_cache_value = {
+            "first_name": validated_body["first_name"],
+            "last_name": validated_body["last_name"],
+            "email": validated_body["email"],
+            "is_superuser": validated_body["is_superuser"],
+        }
+        cached_user = cache.get(validated_body["sub"], None)
+        # If the user was in the cache and the values of the cache match the expected values we had it in cache
+        if cached_user is not None and cached_user == expected_cache_value:
+            return True, expected_cache_value
+        # The user was not previously in the cache, set the user in the cache so it is found on future requests
+        cache.set(validated_body["sub"], expected_cache_value, timeout=self.get_cache_timeout())
+        return False, expected_cache_value
+
+    def get_key_from_cache(self, ignore_cache: bool = False) -> Optional[str]:
+        # If we are not ignoring the cache (forcing a reload of the key), check it
+        logger.debug(f"Ignore cache is {ignore_cache}")
+        if not ignore_cache:
+            key = cache.get(cache_key, None)
+            logger.debug(f"Cached key is {key}")
+            # We had a key in the cache so we can return that
+            if key:
+                return key
+        return None
+
+    def get_decryption_key_from_url(self, url: str, timeout: int = 30, validate_certs: bool = True, ignore_cache: bool = False) -> Tuple[str, bool]:
+        cached_key = self.get_key_from_cache(ignore_cache)
+        if cached_key:
+            logger.debug(f"Loading decryption key from cache instead of from url {url}")
+            return cached_key, True
+
         # If the URL does not end with / the urljoin will wipe out the existing path
         if not url.endswith('/'):
             url = f"{url}/"
@@ -84,7 +159,7 @@ class JWTCommonAuth:
             )
             if response.status_code != 200:
                 self.log_and_raise(_("Failed to get 200 response from the issuer: %(status_code)s"), {"status_code": response.status_code})
-            return response.text
+            return response.text, False
         except requests.exceptions.ConnectionError as e:
             self.log_and_raise(_("Failed to connect to %(jwt_key_url)s: %(e)s"), {"jwt_key_url": jwt_key_url, "e": e})
         except requests.exceptions.Timeout:
@@ -92,13 +167,18 @@ class JWTCommonAuth:
         except requests.exceptions.RequestException as e:
             self.log_and_raise(_("Failed to get JWT decryption key from JWT server: (%(e_class_name)s) %(e)s"), {"e_class_name": e.__class__.__name__, "e": e})
 
-    def get_decryption_key_from_file(self, file_path):
+    def get_decryption_key_from_file(self, file_path: str, ignore_cache: bool = False) -> Tuple[str, bool]:
+        cached_key = self.get_key_from_cache(ignore_cache)
+        if cached_key:
+            logger.debug(f"Loading decryption key from cache instead of from file {file_path}")
+            return cached_key, True
+
         logger.debug(f"Loading decryption key from file {file_path}")
 
         try:
             with open(file_path, "r") as f:
                 cert = f.read()
-            return cert
+            return cert, False
         except FileNotFoundError:
             self.log_and_raise(_("The specified file %(file_path)s does not exist"), {"file_path": file_path})
         except IsADirectoryError:
@@ -108,17 +188,18 @@ class JWTCommonAuth:
         except Exception as e:
             self.log_and_raise(_("Failed reading %(file_path)s: %(e)s"), {"file_path": file_path, "e": e})
 
-    def get_decryption_key(self, url_or_string, **kwargs):
-        timeout = kwargs.get('timeout', 30)
-        validate_certs = kwargs.get('validate_certs', True)
+    def get_decryption_key(self, url_or_string: str, ignore_cache: bool = False, validate_certs: bool = True, timeout: Optional[int] = 30) -> Tuple[str, bool]:
+        # We don't check the cache right away here because we only want to check the cache if its a file or URL.
+        # A hard coded key would be less efficient if we were attempting to load the cache every time.
+        cached = False
         url_info = urlparse(url_or_string)
         key = None
         logger.info(f"Loading decryption key from {url_or_string} scheme {url_info.scheme}")
         if url_info.scheme in ["http", "https"]:
-            key = self.get_decryption_key_from_url(url_or_string, timeout, validate_certs)
+            key, cached = self.get_decryption_key_from_url(url_or_string, timeout, validate_certs, ignore_cache)
         elif url_info.scheme == "file":
             file_path = url_info.path
-            key = self.get_decryption_key_from_file(file_path)
+            key, cached = self.get_decryption_key_from_file(file_path, ignore_cache)
         elif url_info.scheme == "" and url_info.path != "":
             logger.debug("Assuming decryption key is the actual cert")
             key = url_or_string
@@ -130,7 +211,10 @@ class JWTCommonAuth:
             self.log_and_raise(_("Returned key does not start and end with BEGIN/END PUBLIC KEY"))
         logger.info("Decryption key appears valid")
         logger.debug(f"{key}")
-        return key
+
+        # Here we cache whatever key we were able to load
+        cache.set(cache_key, key, timeout=self.get_cache_timeout())
+        return key, cached
 
     def map_user_fields(self, user, token):
         user_needs_save = False
@@ -167,7 +251,7 @@ class JWTCommonAuth:
                 algorithms=["RS256"],
             )
         except jwt.exceptions.DecodeError as e:
-            self.log_and_raise(_("JWT decoding failed: %(e)s, check your key and generated token"), {"e": e})
+            raise e  # This will be handled higher up
         except jwt.exceptions.ExpiredSignatureError:
             self.log_and_raise(_("JWT has expired"))
         except jwt.exceptions.InvalidAudienceError:
@@ -197,7 +281,7 @@ class JWTAuthentication(BaseAuthentication):
 
             return user, None
         else:
-            return None
+            return None, None
 
     def process_user_data(self, user, token):
         common_auth = JWTCommonAuth(self.map_fields)
