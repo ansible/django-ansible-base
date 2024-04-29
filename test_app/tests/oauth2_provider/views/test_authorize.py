@@ -28,6 +28,7 @@ def test_oauth2_provider_authorize_view_flow(user_api_client, oauth2_application
     """
     As a user, I should be able to complete the authorization flow and get an authorization code.
     """
+    oauth2_application = oauth2_application[0]
     url = reverse("authorize")
     query_params = {
         'client_id': oauth2_application.client_id,

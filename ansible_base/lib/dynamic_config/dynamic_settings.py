@@ -200,3 +200,5 @@ if 'ansible_base.oauth2_provider' in INSTALLED_APPS:  # noqa: F821
     OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL = 'dab_oauth2_provider.OAuth2AccessToken'
     OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL = "dab_oauth2_provider.OAuth2RefreshToken"
     OAUTH2_PROVIDER_ID_TOKEN_MODEL = "dab_oauth2_provider.OAuth2IDToken"
+
+    ALLOW_OAUTH2_FOR_EXTERNAL_USERS = False

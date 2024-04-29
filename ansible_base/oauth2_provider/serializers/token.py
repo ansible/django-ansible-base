@@ -88,7 +88,7 @@ class BaseOAuth2TokenSerializer(CommonModelSerializer):
     def create(self, validated_data):
         validated_data['user'] = self.context['request'].user
         try:
-            return super(BaseOAuth2TokenSerializer, self).create(validated_data)
+            return super().create(validated_data)
         except AccessDeniedError as e:
             raise PermissionDenied(str(e))
 
@@ -101,7 +101,7 @@ class OAuth2TokenSerializer(BaseOAuth2TokenSerializer):
         if expires_delta == 0:
             logger.warning("OAUTH2_PROVIDER.ACCESS_TOKEN_EXPIRE_SECONDS was set to 0, creating token that has already expired")
         validated_data['expires'] = now() + timedelta(seconds=expires_delta)
-        obj = super(OAuth2TokenSerializer, self).create(validated_data)
+        obj = super().create(validated_data)
         if obj.application and obj.application.user:
             obj.user = obj.application.user
         obj.save()

@@ -13,6 +13,12 @@ from ansible_base.oauth2_provider.serializers import OAuth2TokenSerializer
 
 
 class TokenView(oauth_views.TokenView, AnsibleBaseDjangoAppApiView):
+    # There is a big flow of logic that happens around this behind the scenes.
+    #
+    # oauth2_provider.views.TokenView inherits from oauth2_provider.views.mixins.OAuthLibMixin
+    # That's where this method comes from originally.
+    # Then *that* method ends up calling oauth2_provider.oauth2_backends.OAuthLibCore.create_token_response
+    # Then *that* method ends up (ultimately) calling oauthlib.oauth2.rfc6749....
     def create_token_response(self, request):
         # Django OAuth2 Toolkit has a bug whereby refresh tokens are *never*
         # properly expired (ugh):
@@ -27,10 +33,21 @@ class TokenView(oauth_views.TokenView, AnsibleBaseDjangoAppApiView):
                 expire_seconds = get_setting('OAUTH2_PROVIDER', {}).get('REFRESH_TOKEN_EXPIRE_SECONDS', 0)
                 if refresh_token.created + timedelta(seconds=expire_seconds) < now():
                     return request.build_absolute_uri(), {}, 'The refresh token has expired.', '403'
+
+        core = self.get_oauthlib_core()  # oauth2_provider.views.mixins.OAuthLibMixin.create_token_response
+
+        # oauth2_provider.oauth2_backends.OAuthLibCore.create_token_response
+        # (we override this so we can implement our own error handling to be compatible with AWX)
+        uri, http_method, body, headers = core._extract_params(request)
+        extra_credentials = core._get_extra_credentials(request)
         try:
-            return super(TokenView, self).create_token_response(request)
+            headers, body, status = core.server.create_token_response(uri, http_method, body, headers, extra_credentials)
+            uri = headers.get("Location", None)
+            return uri, headers, body, 201
         except oauth2.AccessDeniedError as e:
-            return request.build_absolute_uri(), {}, str(e), '403'
+            return request.build_absolute_uri(), {}, str(e), 403  # Compat with AWX
+        except oauth2.OAuth2Error as e:
+            return request.build_absolute_uri(), {}, str(e), e.status_code
 
 
 class OAuth2TokenViewSet(ModelViewSet, AnsibleBaseDjangoAppApiView):
