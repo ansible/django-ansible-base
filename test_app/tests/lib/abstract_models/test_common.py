@@ -10,7 +10,7 @@ from django.test.client import RequestFactory
 from rest_framework.reverse import reverse
 
 from ansible_base.rbac.models import RoleDefinition
-from test_app.models import EncryptionModel, Organization, RelatedFieldsTestModel, User
+from test_app.models import City, EncryptionModel, Organization, RelatedFieldsTestModel, User
 
 
 @pytest.mark.django_db
@@ -147,7 +147,6 @@ def test_cascade_behavior_for_created_by(user, user_api_client):
     connection.check_constraints()
 
 
-@pytest.mark.xfail(reaason="https://github.com/ansible/django-ansible-base/issues/286")
 def test_do_not_update_modified_by_on_login(system_user, user, user_api_client):
     user.refresh_from_db()
     assert user.modified_by == system_user
@@ -165,6 +164,31 @@ def test_modified_by_respects_given_value(system_user, random_user, user, animal
         animal.save(update_fields=['modified_by'])
     animal.refresh_from_db()
     assert animal.modified_by == random_user
+
+
+@pytest.mark.parametrize(
+    'update_fields, expected_modified_by',
+    [
+        pytest.param(['population'], 'user', id='modified_by saved even if not in update_fields'),
+        pytest.param(['state'], 'system_user', id='update_fields only lists non-editable fields, modified_by does not get set'),
+        pytest.param(['state', 'population'], 'user', id='update_fields lists some non-editable fields, modified_by gets set'),
+        pytest.param(None, 'user', id='update_fields is None, modified_by gets set'),
+        pytest.param(False, 'user', id='update_fields not passed, modified_by gets set'),
+        pytest.param([], 'system_user', id='update_fields empty, modified_by does not get set'),
+    ],
+)
+def test_modified_by_not_set_if_update_fields_are_all_uneditable(system_user, user, update_fields, expected_modified_by):
+    city = City.objects.create(name='Boston', state='MA')
+    assert city.modified_by == system_user
+    city.state = 'Ohio'
+    city.population = 38
+    with impersonate(user):
+        if update_fields is False:
+            city.save()
+        else:
+            city.save(update_fields=update_fields)
+    city.refresh_from_db()
+    assert city.modified_by == (user if expected_modified_by == 'user' else system_user)
 
 
 def test_modified_by_gets_saved_even_if_not_in_update_fields(system_user, user, animal):

@@ -292,6 +292,7 @@ class City(NamedCommonModel, AuditableModel):
     country = prevent_search(models.CharField(max_length=100, null=True, default='USA'))
     population = models.PositiveIntegerField(null=True, default=1000)
     extra_data = JSONField(null=True, default=dict)
+    state = models.CharField(max_length=100, null=True, editable=False)
 
 
 class SecretColor(AuditableModel):
