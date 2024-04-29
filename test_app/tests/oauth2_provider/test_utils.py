@@ -4,7 +4,7 @@ from ansible_base.authentication.models import Authenticator, AuthenticatorUser
 from ansible_base.oauth2_provider.utils import is_external_account
 
 
-@pytest.mark.parametrize("link_local, link_ldap, expected", [(False, False, False), (True, False, False), (False, True, True), (True, True, True)])
+@pytest.mark.parametrize("link_local, link_ldap, expected", [(False, False, None), (True, False, None), (False, True, "ldap"), (True, True, "ldap")])
 def test_oauth2_provider_is_external_account_with_user(user, local_authenticator, ldap_authenticator, link_local, link_ldap, expected):
     if link_local:
         # Link the user to the local authenticator
@@ -15,7 +15,9 @@ def test_oauth2_provider_is_external_account_with_user(user, local_authenticator
         ldap_au = AuthenticatorUser(provider=ldap_authenticator, user=user)
         ldap_au.save()
 
-    assert is_external_account(user) is expected
+    if expected == "ldap":
+        expected = ldap_authenticator
+    assert is_external_account(user) == expected
 
 
 def test_oauth2_provider_is_external_account_import_error(user, local_authenticator):
