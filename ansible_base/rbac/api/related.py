@@ -1,5 +1,7 @@
 import logging
+from typing import Optional
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Field, ForeignKey, Model
 from django.forms import model_to_dict
@@ -13,7 +15,7 @@ from ansible_base.rbac.permission_registry import permission_registry
 logger = logging.getLogger(__name__)
 
 
-def required_related_permission(field: Field) -> str:
+def required_related_permission(field: Field) -> Optional[str]:
     """Permission level required to change field
 
     Returns a permission codename like change_inventory.
@@ -21,9 +23,13 @@ def required_related_permission(field: Field) -> str:
     parent_field_name = permission_registry.get_parent_fd_name(field.model)
     if field.name == parent_field_name:
         return f'add_{field.model._meta.model_name}'
-    if 'change' in field.related_model._meta.default_permissions:
-        return f'change_{field.related_model._meta.model_name}'
-    return f'view_{field.related_model._meta.model_name}'
+    rel_cls = field.related_model
+    custom_perms = dict(rel_cls._meta.permissions)
+    for action in settings.ANSIBLE_BASE_CHECK_RELATED_PERMISSIONS:
+        codename = f'{action}_{rel_cls._meta.model_name}'
+        if action in rel_cls._meta.default_permissions or codename in custom_perms:
+            return codename
+    return None
 
 
 def related_permission_fields(cls):
@@ -71,7 +77,7 @@ def check_related_permissions(user, cls, old_data, new_data):
         else:
             # This field is verified to have changed compared to old data
             to_check = required_related_permission(field)
-            if field.null and (new_data.get(field.name) is None) and (not is_add_perm(to_check)):
+            if (to_check is None) or (field.null and (new_data.get(field.name) is None) and (not is_add_perm(to_check))):
                 # user can null non-parent fields with no additional permission
                 continue
             checked_fields[field.name] = to_check

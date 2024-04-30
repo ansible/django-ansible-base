@@ -1,10 +1,11 @@
 import pytest
 from django.contrib.contenttypes.models import ContentType
+from django.test import override_settings
 from django.urls import reverse
 
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition, RoleUserAssignment
-from test_app.models import Cow, Inventory, Organization
+from test_app.models import Cow, Credential, Inventory, Organization
 
 
 @pytest.fixture
@@ -189,3 +190,72 @@ def test_custom_action(user_api_client, user, organization):
     cow_say_url = reverse('cow-cowsay', kwargs={'pk': cow.id})
     r = user_api_client.post(cow_say_url, {})
     assert r.status_code == 200
+
+
+@pytest.fixture
+def cred_view_rd():
+    return RoleDefinition.objects.create_from_permissions(
+        permissions=['view_credential'],
+        name='view-credential',
+        content_type=permission_registry.content_type_model.objects.get_for_model(Credential),
+    )
+
+
+@pytest.mark.django_db
+def test_related_view_permissions(inventory, organization, user, user_api_client, inv_rd, cred_view_rd):
+    credential = Credential.objects.create(name='foo-cred', organization=organization)
+    assert not inventory.credential  # sanity
+    inv_rd.give_permission(user, inventory)
+    cred_view_rd.give_permission(user, credential)
+    url = reverse('inventory-detail', kwargs={'pk': inventory.pk})
+
+    response = user_api_client.patch(url, data={'credential': credential.pk})
+    assert response.status_code == 403
+    assert 'credential' in response.data
+
+    with override_settings(ANSIBLE_BASE_CHECK_RELATED_PERMISSIONS=['view']):
+        response = user_api_client.patch(url, data={'credential': credential.pk})
+        assert response.status_code == 200
+        inventory.refresh_from_db()
+        assert inventory.credential == credential
+
+
+@pytest.mark.django_db
+@override_settings(ANSIBLE_BASE_CHECK_RELATED_PERMISSIONS=[])
+def test_related_no_permissions(inventory, organization, user, user_api_client, inv_rd):
+    "Turn off checking of related permissions"
+    credential = Credential.objects.create(name='foo-cred', organization=organization)
+    assert not inventory.credential  # sanity
+    inv_rd.give_permission(user, inventory)
+    url = reverse('inventory-detail', kwargs={'pk': inventory.pk})
+
+    # No permissions to related credential needed, YOLO
+    response = user_api_client.patch(url, data={'credential': credential.pk})
+    assert response.status_code == 200
+    inventory.refresh_from_db()
+    assert inventory.credential == credential
+
+
+@pytest.mark.django_db
+def test_related_use_permission(inventory, organization, user, user_api_client, inv_rd, cred_view_rd):
+    credential = Credential.objects.create(name='foo-cred', organization=organization)
+    inv_rd.give_permission(user, inventory)
+    cred_view_rd.give_permission(user, credential)
+    url = reverse('inventory-detail', kwargs={'pk': inventory.pk})
+
+    # without needed permissions to the credential, user can not apply this credential
+    response = user_api_client.patch(url, data={'credential': credential.pk})
+    assert response.status_code == 403
+    assert 'credential' in response.data
+
+    # with use permission (by default settings) user can apply this credential
+    cred_use_rd = RoleDefinition.objects.create_from_permissions(
+        permissions=['use_credential', 'view_credential'],
+        name='use-credential',
+        content_type=permission_registry.content_type_model.objects.get_for_model(Credential),
+    )
+    cred_use_rd.give_permission(user, credential)
+    response = user_api_client.patch(url, data={'credential': credential.pk})
+    assert response.status_code == 200
+    inventory.refresh_from_db()
+    assert inventory.credential == credential

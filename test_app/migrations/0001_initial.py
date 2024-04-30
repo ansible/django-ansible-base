@@ -134,11 +134,24 @@ class Migration(migrations.Migration):
             ],
         ),
         migrations.CreateModel(
+            name='Credential',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('name', models.CharField(max_length=512)),
+                ('organization', models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, related_name='credentials', to='test_app.organization')),
+            ],
+            options={
+                'ordering': ['id'],
+                'permissions': [('use_credential', 'Apply credential to other models')],
+            },
+        ),
+        migrations.CreateModel(
             name='Inventory',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('name', models.CharField(max_length=512)),
                 ('organization', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.ANSIBLE_BASE_ORGANIZATION_MODEL, null=True, related_name='inventories')),
+                ('credential', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='inventories', to='test_app.credential'),)
             ],
             options={
                 'permissions': [('update_inventory', 'Do inventory updates')],

@@ -123,11 +123,26 @@ class Inventory(models.Model):
     "Simple example of a child object, it has a link to its parent organization"
     name = models.CharField(max_length=512)
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, null=True, related_name='inventories')
+    credential = models.ForeignKey('test_app.Credential', on_delete=models.SET_NULL, null=True, related_name='inventories')
 
     class Meta:
         app_label = 'test_app'
         ordering = ['id']
         permissions = [('update_inventory', 'Do inventory updates')]
+
+    def summary_fields(self):
+        return {"id": self.id, "name": self.name}
+
+
+class Credential(models.Model):
+    "Example of a model that gets used by other models"
+    name = models.CharField(max_length=512)
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, null=True, related_name='credentials')
+
+    class Meta:
+        app_label = 'test_app'
+        ordering = ['id']
+        permissions = [('use_credential', 'Apply credential to other models')]
 
     def summary_fields(self):
         return {"id": self.id, "name": self.name}
@@ -239,7 +254,7 @@ class Proxy2(Original2):
         proxy = True
 
 
-permission_registry.register(Organization, Inventory, Namespace, Team, Cow, UUIDModel, PositionModel, WeirdPerm)
+permission_registry.register(Organization, Inventory, Credential, Namespace, Team, Cow, UUIDModel, PositionModel, WeirdPerm)
 permission_registry.register(ParentName, parent_field_name='my_organization')
 permission_registry.register(CollectionImport, parent_field_name='namespace')
 permission_registry.register(InstanceGroup, ImmutableTask, parent_field_name=None)
