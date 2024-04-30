@@ -35,6 +35,7 @@ def visible_users(request_user, queryset=None) -> QuerySet:
 
 
 def can_change_user(request_user, target_user) -> bool:
+    """Tells if the request user can modify details of the target user"""
     if request_user.is_superuser:
         return True
     elif target_user.is_superuser:
@@ -43,8 +44,19 @@ def can_change_user(request_user, target_user) -> bool:
     if not get_setting('MANAGE_ORGANIZATION_AUTH', False):
         return False
 
+    # All users can chang their own password and other details
+    if request_user.pk == target_user.pk:
+        return True
+
+    # If the user is not in any organizations, answer can not consider organization permissions
     org_cls = apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL)
-    return not org_cls.access_qs(target_user, 'member_organization').exclude(pk__in=org_cls.access_ids_qs(request_user, 'change_organization')).exists()
+    target_user_orgs = org_cls.access_qs(target_user, 'member_organization')
+    if not target_user_orgs.exists():
+        return request_user.is_superuser
+
+    # Organization admins can manage users in their organization
+    # this requires change permission to all organizations the target user is a member of
+    return not target_user_orgs.exclude(pk__in=org_cls.access_ids_qs(request_user, 'change_organization')).exists()
 
 
 def check_content_obj_permission(request_user, obj) -> None:
