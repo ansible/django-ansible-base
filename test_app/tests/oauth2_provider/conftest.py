@@ -48,7 +48,7 @@ def oauth2_application_password(randname):
 def oauth2_admin_access_token(oauth2_application, admin_user):
     return OAuth2AccessToken.objects.get_or_create(
         user=admin_user,
-        application=oauth2_application,
+        application=oauth2_application[0],
         description="Test Access Token",
         # This has to be timezone aware
         expires=datetime(2088, 1, 1, tzinfo=timezone.utc),
