@@ -1,6 +1,5 @@
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
-from rest_framework import permissions
 from rest_framework.viewsets import ReadOnlyModelViewSet
 
 from ansible_base.activitystream.filtering import ActivityStreamFilterBackend
@@ -48,7 +47,9 @@ class EntryReadOnlyViewSet(ReadOnlyModelViewSet, AnsibleBaseDjangoAppApiView):
         Otherwise, we require superuser status.
         """
         if 'ansible_base.rbac' in settings.INSTALLED_APPS:
-            permission_classes = [permissions.IsAuthenticated]
+            # TODO: permission_classes = [AnsibleBaseObjectPermissions] is not applicable now,
+            #  set to default permission class
+            return super().get_permissions()
         else:
             permission_classes = [IsSuperuser]
         return [permission() for permission in permission_classes]
