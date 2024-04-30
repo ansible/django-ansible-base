@@ -2,8 +2,6 @@ import pytest
 from django.test.utils import override_settings
 from rest_framework.reverse import reverse
 
-from ansible_base.rbac.models import RoleDefinition
-from ansible_base.rbac.permission_registry import permission_registry
 from test_app.models import Inventory, User
 
 
@@ -44,13 +42,6 @@ class TestAssignmentPermission:
     def inventory_2(self, organization_2):
         "Inventory unrelated to organization fixture so we can test isolated permissions"
         return Inventory.objects.create(name='inventory-2', organization=organization_2)
-
-    @pytest.fixture
-    def view_inv_rd(self):
-        view_inv, _ = RoleDefinition.objects.get_or_create(
-            name='view-inv', permissions=['view_inventory'], defaults={'content_type': permission_registry.content_type_model.objects.get_for_model(Inventory)}
-        )
-        return view_inv
 
     def test_object_permission_needed(self, inventory_2, inv_rd, org_admin, user_api_client, view_inv_rd):
         url = reverse('roleuserassignment-list')

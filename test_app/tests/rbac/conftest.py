@@ -25,7 +25,7 @@ def global_inv_rd():
 def org_inv_rd():
     return RoleDefinition.objects.create_from_permissions(
         permissions=['change_organization', 'view_organization', 'change_inventory', 'view_inventory'],
-        name='org-admin',
+        name='org-inv-rd',
         content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
     )
 
@@ -35,6 +35,15 @@ def inv_rd():
     return RoleDefinition.objects.create_from_permissions(
         permissions=['change_inventory', 'view_inventory'],
         name='change-inv',
+        content_type=permission_registry.content_type_model.objects.get_for_model(Inventory),
+    )
+
+
+@pytest.fixture
+def view_inv_rd():
+    return RoleDefinition.objects.create_from_permissions(
+        name='view-inv',
+        permissions=['view_inventory'],
         content_type=permission_registry.content_type_model.objects.get_for_model(Inventory),
     )
 

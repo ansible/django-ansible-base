@@ -52,9 +52,20 @@ def is_cloned_request(request) -> bool:
 
 class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
 
-    def has_create_permission(self, request, model_cls):
+    def has_create_permission(self, request, model_cls) -> bool:
+        "Does the request user absolutely have permission to create an object via superuser or system role"
         full_codename = f'add_{model_cls._meta.model_name}'
         return has_super_permission(request.user, full_codename)
+
+    def abstract_create_permission(self, request, model_cls) -> bool:
+        "Abstractly, without knowing the request data, could the request user theoretically create an object"
+        parent_model = permission_registry.get_parent_model(model_cls)
+        if parent_model is None:
+            return self.has_create_permission(request, model_cls)
+        else:
+            if request.user.is_superuser:
+                return True  # special case only for superuser when no objects exist
+            return parent_model.access_qs(request.user, f'add_{model_cls._meta.model_name}').exists()
 
     def has_permission(self, request, view):
         "Some of this comes from ModelAccessPermission. We assume user.permissions is unused"
@@ -69,13 +80,17 @@ class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
         # Following is DAB RBAC specific, handle add permission checking
         if request.method == 'POST' and view.action == 'create':
             model_cls = self._queryset(view).model
-
             parent_field_name = permission_registry.get_parent_fd_name(model_cls)
             if parent_field_name is None:
                 result = self.has_create_permission(request, model_cls)
                 if (not result) and (not is_cloned_request(request)):
                     logger.warning(f'User {request.user.pk} lacks global add_{model_cls._meta.model_name} permission to create {model_cls._meta.model_name}')
                 return result
+        elif request.method == 'POST' and is_cloned_request(request):
+            # If this is OPTIONS purposes
+            # return a speculative answer about whether user might be generally able to create
+            model_cls = self._queryset(view).model
+            return self.abstract_create_permission(request, model_cls)
 
         # We are not checking many things here, a GET to list views can return 0 objects
         return True
@@ -146,6 +161,10 @@ class AnsibleBaseUserPermissions(AnsibleBaseObjectPermissions):
             return False
 
         return org_cls.access_qs(request.user, 'change_organization').exists()
+
+    def abstract_create_permission(self, request, model_cls):
+        # For users, only, ability to create a new user does not depend on the data
+        return self.has_create_permission(request, model_cls)
 
     def has_object_permission_by_codename(self, request, obj, perms):
         if perms:
