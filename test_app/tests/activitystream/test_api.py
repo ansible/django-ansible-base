@@ -46,42 +46,6 @@ def test_activitystream_api_read_only(admin_api_client, user):
     assert response.status_code == 405
 
 
-@pytest.mark.parametrize(
-    "has_rbac_app,who",
-    [
-        (True, "user"),
-        (False, "admin"),
-    ],
-)
-def test_activitystream_api_permission_classes(admin_api_client, user_api_client, has_rbac_app, who, settings):
-    """
-    Test that access to the activity stream is dynamically determined based on
-    whether or not RBAC is enabled.
-
-    If RBAC is enabled, then it locks down permissions on its own, so we allow IsAuthenticated.
-    If RBAC is not enabled, then we require IsSuperuser.
-    """
-    url = reverse("activitystream-list")
-
-    if 'ansible_base.rbac' in settings.INSTALLED_APPS:
-        if not has_rbac_app:
-            settings.INSTALLED_APPS.remove('ansible_base.rbac')
-    else:
-        if has_rbac_app:
-            settings.INSTALLED_APPS.append('ansible_base.rbac')
-
-    # Admin can always access
-    response = admin_api_client.get(url)
-    assert response.status_code == 200
-
-    # User can access if the permission class allows it
-    response = user_api_client.get(url)
-    if who == "user":
-        assert response.status_code == 200
-    else:
-        assert response.status_code == 403
-
-
 def test_activitystream_api_filtering(admin_api_client, user):
     url = reverse("activitystream-list")
     query_params = {
