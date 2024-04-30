@@ -63,12 +63,18 @@ def test_oauth2_token_creation_disabled_for_external_accounts(
     oauth2_application_password,
     user,
     ldap_authenticator,
+    local_authenticator,
     settings,
-    user_api_client,
+    unauthenticated_api_client,
     allow_oauth,
     status,
 ):
-    AuthenticatorUser.objects.create(uid=user.username, user=user, provider=ldap_authenticator)
+    """
+    If ALLOW_OAUTH2_FOR_EXTERNAL_USERS is enabled, users associated with an external authentication provider
+    can create OAuth2 tokens. Otherwise, they cannot.
+    """
+    AuthenticatorUser.objects.get_or_create(uid=user.username, user=user, provider=ldap_authenticator)
+    AuthenticatorUser.objects.get_or_create(uid=user.username, user=user, provider=local_authenticator)
     app = oauth2_application_password[0]
     secret = oauth2_application_password[1]
     url = reverse('token')
@@ -79,7 +85,7 @@ def test_oauth2_token_creation_disabled_for_external_accounts(
         'password': 'password',
         'scope': 'read',
     }
-    resp = user_api_client.post(
+    resp = unauthenticated_api_client.post(
         url,
         data=urlencode(data),
         content_type='application/x-www-form-urlencoded',
@@ -94,55 +100,74 @@ def test_oauth2_token_creation_disabled_for_external_accounts(
         assert OAuth2AccessToken.objects.count() == 0
 
 
-# @pytest.mark.django_db
-# def test_existing_token_enabled_for_external_accounts(oauth_application, get, post, admin):
-#     UserEnterpriseAuth(user=admin, provider='radius').save()
-#     url = drf_reverse('api:oauth_authorization_root_view') + 'token/'
-#     with override_settings(RADIUS_SERVER='example.org', ALLOW_OAUTH2_FOR_EXTERNAL_USERS=True):
-#         resp = post(
-#             url,
-#             data='grant_type=password&username=admin&password=admin&scope=read',
-#             content_type='application/x-www-form-urlencoded',
-#             HTTP_AUTHORIZATION='Basic ' + smart_str(base64.b64encode(smart_bytes(':'.join([oauth_application.client_id, oauth_application.client_secret])))),
-#             status=201,
-#         )
-#         token = json.loads(resp.content)['access_token']
-#         assert AccessToken.objects.count() == 1
-#
-#         with immediate_on_commit():
-#             resp = get(drf_reverse('api:user_me_list', kwargs={'version': 'v2'}), HTTP_AUTHORIZATION='Bearer ' + token, status=200)
-#             assert json.loads(resp.content)['results'][0]['username'] == 'admin'
-#
-#     with override_settings(RADIUS_SERVER='example.org', ALLOW_OAUTH2_FOR_EXTERNAL_USER=False):
-#         with immediate_on_commit():
-#             resp = get(drf_reverse('api:user_me_list', kwargs={'version': 'v2'}), HTTP_AUTHORIZATION='Bearer ' + token, status=200)
-#             assert json.loads(resp.content)['results'][0]['username'] == 'admin'
-#
-# @pytest.mark.django_db
-# def test_pat_creation_no_default_scope(oauth_application, post, admin):
-#     # tests that the default scope is overriden
-#     url = reverse('api:o_auth2_token_list')
-#     response = post(
-#         url,
-#         {
-#             'description': 'test token',
-#             'scope': 'read',
-#             'application': oauth_application.pk,
-#         },
-#         admin,
-#     )
-#     assert response.data['scope'] == 'read'
-#
-# @pytest.mark.django_db
-# def test_pat_creation_no_scope(oauth_application, post, admin):
-#     url = reverse('api:o_auth2_token_list')
-#     response = post(
-#         url,
-#         {
-#             'description': 'test token',
-#             'application': oauth_application.pk,
-#         },
-#         admin,
-#     )
-#     assert response.data['scope'] == 'write'
-#
+@pytest.mark.django_db
+def test_oauth2_existing_token_enabled_for_external_accounts(
+    oauth2_application_password, user, unauthenticated_api_client, settings, ldap_authenticator, local_authenticator
+):
+    """
+    If a token already exists but then ALLOW_OAUTH2_FOR_EXTERNAL_USERS becomes False
+    the token should still be usable.
+    """
+    AuthenticatorUser.objects.get_or_create(uid=user.username, user=user, provider=ldap_authenticator)
+    AuthenticatorUser.objects.get_or_create(uid=user.username, user=user, provider=local_authenticator)
+    app = oauth2_application_password[0]
+    secret = oauth2_application_password[1]
+    url = reverse('token')
+    settings.ALLOW_OAUTH2_FOR_EXTERNAL_USERS = True
+    data = {
+        'grant_type': 'password',
+        'username': 'user',
+        'password': 'password',
+        'scope': 'read',
+    }
+    resp = unauthenticated_api_client.post(
+        url,
+        data=urlencode(data),
+        content_type='application/x-www-form-urlencoded',
+        headers={'Authorization': 'Basic ' + base64.b64encode(f"{app.client_id}:{secret}".encode()).decode()},
+    )
+    assert resp.status_code == 201
+    token = resp.json()['access_token']
+    assert OAuth2AccessToken.objects.count() == 1
+
+    for val in (True, False):
+        settings.ALLOW_OAUTH2_FOR_EXTERNAL_USERS = val
+        url = reverse('user-me')
+        resp = unauthenticated_api_client.get(
+            url,
+            headers={'Authorization': f'Bearer {token}'},
+        )
+        assert resp.json()['username'] == user.username
+
+
+@pytest.mark.django_db
+def test_oauth2_pat_creation_no_default_scope(oauth2_application, admin_api_client):
+    """
+    Tests that the default scope is overriden
+    """
+    url = reverse('token-list')
+    response = admin_api_client.post(
+        url,
+        {
+            'description': 'test token',
+            'scope': 'read',
+            'application': oauth2_application[0].pk,
+        },
+    )
+    assert response.data['scope'] == 'read'
+
+
+@pytest.mark.django_db
+def test_oauth2_pat_creation_no_scope(oauth2_application, admin_api_client):
+    """
+    Tests that the default scope is as expected
+    """
+    url = reverse('token-list')
+    response = admin_api_client.post(
+        url,
+        {
+            'description': 'test token',
+            'application': oauth2_application[0].pk,
+        },
+    )
+    assert response.data['scope'] == 'write'

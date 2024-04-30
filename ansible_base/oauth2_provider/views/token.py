@@ -43,7 +43,8 @@ class TokenView(oauth_views.TokenView, AnsibleBaseDjangoAppApiView):
         try:
             headers, body, status = core.server.create_token_response(uri, http_method, body, headers, extra_credentials)
             uri = headers.get("Location", None)
-            return uri, headers, body, 201
+            status = 201 if request.method == 'POST' and status == 200 else status
+            return uri, headers, body, status
         except oauth2.AccessDeniedError as e:
             return request.build_absolute_uri(), {}, str(e), 403  # Compat with AWX
         except oauth2.OAuth2Error as e:
