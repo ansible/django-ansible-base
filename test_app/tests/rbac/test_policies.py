@@ -20,3 +20,9 @@ def test_unrelated_can_not_change_user():
 
     for first, second in [(alice, bob), (bob, alice)]:
         assert not can_change_user(first, second)
+
+@pytest.mark.django_db
+def test_user_can_manage_themself():
+    alice = User.objects.create(username='alice')
+
+    assert can_change_user(alice, alice)

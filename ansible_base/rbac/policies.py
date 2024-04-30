@@ -44,6 +44,10 @@ def can_change_user(request_user, target_user) -> bool:
     if not get_setting('MANAGE_ORGANIZATION_AUTH', False):
         return False
 
+    # All users can chang their own password and other details
+    if request_user.pk == target_user.pk:
+        return True
+
     # If the user is not in any organizations, answer can not consider organization permissions
     org_cls = apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL)
     target_user_orgs = org_cls.access_qs(target_user, 'member_organization')
