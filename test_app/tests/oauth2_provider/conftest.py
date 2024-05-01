@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import pytest
 from oauthlib.common import generate_token
 
+from ansible_base.lib.testing.fixtures import copy_fixture
 from ansible_base.oauth2_provider.models import OAuth2AccessToken, OAuth2Application
 
 
@@ -50,6 +51,18 @@ def oauth2_admin_access_token(oauth2_application, admin_user):
         user=admin_user,
         application=oauth2_application[0],
         description="Test Access Token",
+        # This has to be timezone aware
+        expires=datetime(2088, 1, 1, tzinfo=timezone.utc),
+        token=generate_token(),
+    )[0]
+
+
+@copy_fixture(copies=3)
+@pytest.fixture
+def oauth2_user_pat(user, randname):
+    return OAuth2AccessToken.objects.get_or_create(
+        user=user,
+        description=randname("Personal Access Token for 'user'"),
         # This has to be timezone aware
         expires=datetime(2088, 1, 1, tzinfo=timezone.utc),
         token=generate_token(),
