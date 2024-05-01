@@ -27,7 +27,7 @@ def resource_client(system_user, admin_user, live_server, local_authenticator, t
     [1] https://pytest-django.readthedocs.io/en/latest/helpers.html#live-server
     [2] test_app/migrations/0003_create_system_user.py
     """
-    return ResourceAPIClient(live_server.url, "/api/v1/service-index/", {"auth": ("admin", "password")})
+    return ResourceAPIClient(live_server.url, "/api/v1/service-index/", jwt_user_id=admin_user.resource.ansible_id)
 
 
 @pytest.mark.django_db

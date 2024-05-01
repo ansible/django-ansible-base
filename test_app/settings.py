@@ -82,7 +82,10 @@ MIDDLEWARE = [
 ]
 
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': ['test_app.authentication.logged_basic_auth.LoggedBasicAuthentication'],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'test_app.authentication.logged_basic_auth.LoggedBasicAuthentication',
+        'test_app.authentication.service_token_auth.ServiceTokenAuthentication',
+    ],
     'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.IsAuthenticated'],
 }
 
@@ -160,3 +163,9 @@ ANSIBLE_BASE_USER_VIEWSET = 'test_app.views.UserViewSet'
 LOGIN_URL = "/login/login"
 
 ANSIBLE_BASE_SHARED_SECRET = 'testing'
+
+RESOURCE_SERVER = {
+    "URL": "http://localhost",
+    "SECRET_KEY": "my secret key",
+    "VALIDATE_HTTPS": False,
+}

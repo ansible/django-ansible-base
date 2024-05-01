@@ -19,13 +19,15 @@ def get_resource_server_config() -> ResourceServerConfig:
     return ResourceServerConfig(**{**defaults, **settings.RESOURCE_SERVER})
 
 
-def get_service_token(user_id, expiration=60, **kwargs):
+def get_service_token(user_id=None, expiration=60, **kwargs):
     config = get_resource_server_config()
     payload = {
         "iss": str(service_id()),
-        "sub": str(user_id),
         **kwargs,
     }
+
+    if user_id is not None:
+        payload["sub"] = user_id
 
     if expiration is not None:
         payload["exp"] = datetime.now() + timedelta(seconds=expiration)
