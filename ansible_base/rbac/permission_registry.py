@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, Union
+from typing import Optional, Type, Union
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -57,7 +57,7 @@ class PermissionRegistry:
     def get_parent_fd_name(self, model) -> Optional[str]:
         return self._parent_fields.get(model._meta.model_name)
 
-    def get_child_models(self, parent_model, seen=None) -> list[tuple[str, Model]]:
+    def get_child_models(self, parent_model, seen=None) -> list[tuple[str, Type[Model]]]:
         """Returns child models and the filter relationship to the parent
 
         This is used for rebuilding RoleEvaluation entries.
