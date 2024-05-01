@@ -39,9 +39,9 @@ class BaseOAuth2TokenSerializer(CommonModelSerializer):
         extra_kwargs = {'scope': {'allow_null': False, 'required': False}, 'user': {'allow_null': False, 'required': True}}
 
     def get_token(self, obj):
-        request = self.context.get('request', None)
+        request = self.context.get('request')
         try:
-            if request.method == 'POST':
+            if request and request.method == 'POST':
                 return obj.token
             else:
                 return ENCRYPTED_STRING
@@ -49,7 +49,7 @@ class BaseOAuth2TokenSerializer(CommonModelSerializer):
             return ''
 
     def get_refresh_token(self, obj):
-        request = self.context.get('request', None)
+        request = self.context.get('request')
         try:
             if not obj.refresh_token:
                 return None
@@ -59,15 +59,6 @@ class BaseOAuth2TokenSerializer(CommonModelSerializer):
                 return ENCRYPTED_STRING
         except ObjectDoesNotExist:
             return None
-
-    def get_related(self, obj):
-        ret = super(BaseOAuth2TokenSerializer, self).get_related(obj)
-        if obj.user:
-            ret['user'] = self.reverse('api:user_detail', kwargs={'pk': obj.user.pk})
-        if obj.application:
-            ret['application'] = self.reverse('api:o_auth2_application_detail', kwargs={'pk': obj.application.pk})
-        ret['activity_stream'] = self.reverse('api:o_auth2_token_activity_stream_list', kwargs={'pk': obj.pk})
-        return ret
 
     def _is_valid_scope(self, value):
         if not value or (not isinstance(value, str)):

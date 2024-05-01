@@ -7,6 +7,7 @@ from rest_framework.reverse import reverse
 from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
+from ansible_base.oauth2_provider.views import DABOAuth2UserViewsetMixin
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.api.permissions import AnsibleBaseObjectPermissions, AnsibleBaseUserPermissions
 from ansible_base.rbac.policies import visible_users
@@ -49,7 +50,7 @@ class TeamViewSet(TestAppViewSet):
     select_related = ('resource__content_type',)
 
 
-class UserViewSet(TestAppViewSet):
+class UserViewSet(DABOAuth2UserViewsetMixin, TestAppViewSet):
     queryset = models.User.objects.all()
     permission_classes = [AnsibleBaseUserPermissions]
     serializer_class = serializers.UserSerializer
