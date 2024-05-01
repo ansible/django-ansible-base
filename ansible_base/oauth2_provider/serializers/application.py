@@ -7,11 +7,6 @@ from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.oauth2_provider.models import OAuth2Application
 
 
-def has_model_field_prefetched(obj, thing):
-    # from awx.main.utils import has_model_field_prefetched
-    pass
-
-
 class OAuth2ApplicationSerializer(NamedCommonModelSerializer):
     oauth2_client_secret = None
 
@@ -60,18 +55,15 @@ class OAuth2ApplicationSerializer(NamedCommonModelSerializer):
         return ret
 
     def _summary_field_tokens(self, obj):
-        token_list = [{'id': x.pk, 'token': ENCRYPTED_STRING, 'scope': x.scope} for x in obj.oauth2accesstoken_set.all()[:10]]
-        if has_model_field_prefetched(obj, 'oauth2accesstoken_set'):
-            token_count = len(obj.oauth2accesstoken_set.all())
+        token_list = [{'id': x.pk, 'token': ENCRYPTED_STRING, 'scope': x.scope} for x in obj.access_tokens.all()[:10]]
+        if len(token_list) < 10:
+            token_count = len(token_list)
         else:
-            if len(token_list) < 10:
-                token_count = len(token_list)
-            else:
-                token_count = obj.oauth2accesstoken_set.count()
+            token_count = obj.access_tokens.count()
         return {'count': token_count, 'results': token_list}
 
-    def get_summary_fields(self, obj):
-        ret = super(OAuth2ApplicationSerializer, self).get_summary_fields(obj)
+    def _get_summary_fields(self, obj):
+        ret = super()._get_summary_fields(obj)
         ret['tokens'] = self._summary_field_tokens(obj)
         return ret
 
