@@ -15,3 +15,6 @@ class OAuth2IDToken(oauth2_models.AbstractIDToken, CommonModel, activitystream):
     class Meta(oauth2_models.AbstractIDToken.Meta):
         verbose_name = _('id token')
         swappable = "OAUTH2_PROVIDER_ID_TOKEN_MODEL"
+
+    created = None  # Tracked in CommonModel, no need for this
+    updated = None  # Tracked in CommonModel, no need for this

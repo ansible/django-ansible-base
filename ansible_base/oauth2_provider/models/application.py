@@ -80,6 +80,8 @@ class OAuth2Application(oauth2_models.AbstractApplication, NamedCommonModel, act
     authorization_grant_type = models.CharField(
         max_length=32, choices=GRANT_TYPES, help_text=_('The Grant type the user must use for acquire tokens for this application.')
     )
+    created = None  # Tracked in CommonModel, no need for this
+    updated = None  # Tracked in CommonModel, no need for this
 
     def get_absolute_url(self):
         # This is kind of annoying. This method lives on the superclass and we check for it in CommonModel.
