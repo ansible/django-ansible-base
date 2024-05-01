@@ -51,7 +51,7 @@ def oauth2_admin_access_token(oauth2_application, admin_api_client, admin_user):
     url = reverse('token-list')
     response = admin_api_client.post(url, {'application': oauth2_application[0].pk})
     assert response.status_code == 201
-    return response.data['token']
+    return OAuth2AccessToken.objects.get(token=response.data['token'])
 
 
 @copy_fixture(copies=3)

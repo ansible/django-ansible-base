@@ -53,7 +53,7 @@ class BaseOAuth2TokenSerializer(CommonModelSerializer):
         try:
             if not obj.refresh_token:
                 return None
-            elif request.method == 'POST':
+            elif request and request.method == 'POST':
                 return getattr(obj.refresh_token, 'token', '')
             else:
                 return ENCRYPTED_STRING

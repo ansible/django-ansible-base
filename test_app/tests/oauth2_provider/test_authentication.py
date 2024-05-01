@@ -10,10 +10,10 @@ def test_oauth2_bearer_get_user_correct(unauthenticated_api_client, oauth2_admin
     url = reverse("user-me")
     response = unauthenticated_api_client.get(
         url,
-        headers={'Authorization': f'Bearer {oauth2_admin_access_token}'},
+        headers={'Authorization': f'Bearer {oauth2_admin_access_token.token}'},
     )
     assert response.status_code == 200
-    assert response.data['username'] == 'admin'
+    assert response.data['username'] == oauth2_admin_access_token.user.username
 
 
 @pytest.mark.parametrize(
@@ -28,7 +28,7 @@ def test_oauth2_bearer_get(unauthenticated_api_client, oauth2_admin_access_token
     GET an animal with a bearer token.
     """
     url = reverse("animal-detail", kwargs={"pk": animal.pk})
-    token = oauth2_admin_access_token if token == 'fixture' else generate_token()
+    token = oauth2_admin_access_token.token if token == 'fixture' else generate_token()
     response = unauthenticated_api_client.get(
         url,
         headers={'Authorization': f'Bearer {token}'},
@@ -50,7 +50,7 @@ def test_oauth2_bearer_post(unauthenticated_api_client, oauth2_admin_access_toke
     POST an animal with a bearer token.
     """
     url = reverse("animal-list")
-    token = oauth2_admin_access_token if token == 'fixture' else generate_token()
+    token = oauth2_admin_access_token.token if token == 'fixture' else generate_token()
     data = {
         "name": "Fido",
         "owner": admin_user.pk,
@@ -77,7 +77,7 @@ def test_oauth2_bearer_patch(unauthenticated_api_client, oauth2_admin_access_tok
     PATCH an animal with a bearer token.
     """
     url = reverse("animal-detail", kwargs={"pk": animal.pk})
-    token = oauth2_admin_access_token if token == 'fixture' else generate_token()
+    token = oauth2_admin_access_token.token if token == 'fixture' else generate_token()
     data = {
         "name": "Fido",
     }
@@ -103,7 +103,7 @@ def test_oauth2_bearer_put(unauthenticated_api_client, oauth2_admin_access_token
     PUT an animal with a bearer token.
     """
     url = reverse("animal-detail", kwargs={"pk": animal.pk})
-    token = oauth2_admin_access_token if token == 'fixture' else generate_token()
+    token = oauth2_admin_access_token.token if token == 'fixture' else generate_token()
     data = {
         "name": "Fido",
         "owner": admin_user.pk,
