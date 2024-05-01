@@ -6,11 +6,18 @@ from django.utils.translation import gettext_lazy as _
 from oauthlib import oauth2
 
 from ansible_base.lib.abstract_models.common import CommonModel
+from ansible_base.lib.utils.models import prevent_search
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.oauth2_provider.utils import is_external_account
 
+activitystream = object
+if 'ansible_base.activitystream' in settings.INSTALLED_APPS:
+    from ansible_base.activitystream.models import AuditableModel
 
-class OAuth2AccessToken(oauth2_models.AbstractAccessToken, CommonModel):
+    activitystream = AuditableModel
+
+
+class OAuth2AccessToken(oauth2_models.AbstractAccessToken, CommonModel, activitystream):
     router_basename = 'token'
     ignore_relations = ['refresh_token']
 
@@ -24,7 +31,7 @@ class OAuth2AccessToken(oauth2_models.AbstractAccessToken, CommonModel):
         on_delete=models.CASCADE,
         blank=True,
         null=True,
-        related_name="%(app_label)s_%(class)s",
+        related_name="access_tokens",
         help_text=_('The user representing the token owner'),
     )
     # Overriding to set related_name
@@ -50,6 +57,12 @@ class OAuth2AccessToken(oauth2_models.AbstractAccessToken, CommonModel):
         max_length=32,
         choices=[('read', 'read'), ('write', 'write')],
         help_text=_("Allowed scopes, further restricts user's permissions. Must be a simple space-separated string with allowed scopes ['read', 'write']."),
+    )
+    token = prevent_search(
+        models.CharField(
+            max_length=255,
+            unique=True,
+        )
     )
 
     def is_valid(self, scopes=None):

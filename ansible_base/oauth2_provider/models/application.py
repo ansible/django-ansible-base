@@ -9,10 +9,17 @@ from django.utils.translation import gettext_lazy as _
 
 from ansible_base.lib.abstract_models.common import NamedCommonModel
 
+activitystream = object
+if 'ansible_base.activitystream' in settings.INSTALLED_APPS:
+    from ansible_base.activitystream.models import AuditableModel
+
+    activitystream = AuditableModel
+
+
 DATA_URI_RE = re.compile(r'.*')  # FIXME
 
 
-class OAuth2Application(oauth2_models.AbstractApplication, NamedCommonModel):
+class OAuth2Application(oauth2_models.AbstractApplication, NamedCommonModel, activitystream):
     router_basename = 'application'
     ignore_relations = ['oauth2idtoken', 'grant', 'oauth2refreshtoken']
     # We do NOT add client_secret to encrypted_fields because it is hashed by Django OAuth Toolkit
@@ -32,6 +39,14 @@ class OAuth2Application(oauth2_models.AbstractApplication, NamedCommonModel):
     GRANT_TYPES = (
         ("authorization-code", _("Authorization code")),
         ("password", _("Resource owner password-based")),
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="applications",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
     )
 
     description = models.TextField(
