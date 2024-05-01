@@ -64,6 +64,8 @@ class OAuth2AccessToken(oauth2_models.AbstractAccessToken, CommonModel, activity
             unique=True,
         )
     )
+    created = None  # Tracked in CommonModel, no need for this
+    updated = None  # Tracked in CommonModel, no need for this
 
     def is_valid(self, scopes=None):
         valid = super(OAuth2AccessToken, self).is_valid(scopes)
