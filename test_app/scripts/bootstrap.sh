@@ -28,8 +28,6 @@ else
     set +e
     python manage.py migrate --check; migrate_needed=$?
     set -e
-    python manage.py migrate --check; migrate_needed=$?
-    set -e
 fi
 
 MAX_ATTEMPTS=10
