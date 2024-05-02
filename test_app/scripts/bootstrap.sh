@@ -25,7 +25,9 @@ then
     make postgres
 else
     echo "dab_postgres container is already running, will use that container"
+    set +e
     python manage.py migrate --check; migrate_needed=$?
+    set -e
 fi
 
 MAX_ATTEMPTS=10
@@ -43,6 +45,7 @@ done
 
 if [ "${migrate_needed}" -ne 0 ]
 then
+    echo "Migrating database"
     python3 manage.py migrate
     DJANGO_SUPERUSER_PASSWORD=password DJANGO_SUPERUSER_USERNAME=admin DJANGO_SUPERUSER_EMAIL=admin@stuff.invalid python3 manage.py createsuperuser --noinput
     python3 manage.py authenticators --initialize
