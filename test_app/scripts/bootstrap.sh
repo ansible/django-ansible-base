@@ -25,7 +25,9 @@ then
     make postgres
 else
     echo "dab_postgres container is already running, will use that container"
-    migrate_needed=$(echo $(python manage.py migrate --check > /dev/null 2> /dev/null; echo $?))
+    set +e
+    python manage.py migrate --check; migrate_needed=$?
+    set -e
 fi
 
 MAX_ATTEMPTS=10
