@@ -1,4 +1,5 @@
 from collections import OrderedDict
+from typing import Type
 
 from django.db import transaction
 from django.db.models import Model
@@ -23,7 +24,7 @@ from ansible_base.rbac.policies import check_content_obj_permission
 from ansible_base.rbac.validators import permissions_allowed_for_role, system_roles_enabled
 
 
-def list_combine_values(data: dict[Model, list[str]]) -> list[str]:
+def list_combine_values(data: dict[Type[Model], list[str]]) -> list[str]:
     "Utility method to merge everything in .values() into a single list"
     ret = []
     for this_list in data.values():
