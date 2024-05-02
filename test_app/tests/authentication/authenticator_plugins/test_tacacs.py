@@ -13,6 +13,9 @@ from ansible_base.authentication.session import SessionAuthentication
 authenticated_test_page = "authenticator-list"
 
 
+generic_request = RequestFactory().get('/hello/')
+
+
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
 @mock.patch("ansible_base.authentication.authenticator_plugins.tacacs.AuthenticatorPlugin.authenticate")
 def test_tacacs_auth_successful(authenticate, unauthenticated_api_client, tacacs_authenticator, user):
@@ -84,41 +87,6 @@ def test_tacacs_validate_tacacsplus_disallow_nonascii(value, raises):
 
 
 @pytest.mark.parametrize(
-    'request_type, x_forwarded_for, remote_addr, expected',
-    [
-        (None, None, None, None),
-        ('mocked_http', None, None, None),
-        ('rf', None, None, None),
-        ('rf', '1.2.3.4,Whatever', None, '1.2.3.4'),
-        ('rf', '1.2.3.4', None, '1.2.3.4'),
-        ('rf', '1.2.3.4,Whatever,Else', None, '1.2.3.4'),
-        ('rf', '1.2.3.4,Whatever', '127.0.0.1', '1.2.3.4'),
-        ('rf', None, '4.3.2.1', '4.3.2.1'),
-    ],
-)
-def test_tacacs_get_client_ip(request_type, x_forwarded_for, remote_addr, expected, mocked_http):
-    plugin = AuthenticatorPlugin()
-    request_object = None
-    if request_type == 'rf':
-        rf = RequestFactory()
-
-        headers = {}
-        if x_forwarded_for:
-            headers['X_FORWARDED_FOR'] = x_forwarded_for
-
-        request_object = rf.get('/hello/', REMOTE_ADDR=remote_addr, headers=headers)
-
-        if remote_addr is None:
-            del request_object.META['REMOTE_ADDR']
-
-    elif request_type == 'mocked_http':
-        request_object = mocked_http
-
-    result = plugin._get_client_ip(request_object)
-    assert result == expected
-
-
-@pytest.mark.parametrize(
     "username,password,result",
     [
         (None, None, None),
@@ -129,7 +97,7 @@ def test_tacacs_get_client_ip(request_type, x_forwarded_for, remote_addr, expect
 @pytest.mark.django_db
 def test_tacacs_authenticate_no_user_pass_combos(username, password, result):
     tacacs_authenticator_plugin = AuthenticatorPlugin()
-    assert tacacs_authenticator_plugin.authenticate(request=RequestFactory(), username=username, password=password) is result
+    assert tacacs_authenticator_plugin.authenticate(request=generic_request, username=username, password=password) is result
 
 
 def test_tacacs_authenticate_no_database_instance(expected_log):
@@ -137,7 +105,7 @@ def test_tacacs_authenticate_no_database_instance(expected_log):
     tacacs_authenticator_plugin = AuthenticatorPlugin()
 
     with expected_log("error", "AuthenticatorPlugin was missing an authenticator"):
-        assert tacacs_authenticator_plugin.authenticate(request=RequestFactory(), username='jane', password='doe') is None
+        assert tacacs_authenticator_plugin.authenticate(request=generic_request, username='jane', password='doe') is None
 
 
 @pytest.mark.django_db
@@ -152,7 +120,7 @@ def test_tacacs_authenticate_database_instance_disabled(expected_log, tacacs_aut
     authenticator_object.update_if_needed(tacacs_authenticator)
 
     with expected_log("info", "is disabled, skipping"):
-        assert authenticator_object.authenticate(request=RequestFactory(), username='jane', password='doe') is None
+        assert authenticator_object.authenticate(request=generic_request, username='jane', password='doe') is None
 
 
 @pytest.mark.django_db
@@ -179,7 +147,7 @@ def test_tacacs_authenticate_with_exception(expected_log, tacacs_authenticator):
         authenticator_object = get_authenticator_plugin(tacacs_authenticator.type)
         authenticator_object.update_if_needed(tacacs_authenticator)
         with expected_log("exception", "TACACS+ Authentication Error"):
-            assert authenticator_object.authenticate(request=RequestFactory(), username='jane', password='doe') is None
+            assert authenticator_object.authenticate(request=generic_request, username='jane', password='doe') is None
 
 
 class AuthenticateResponse:
@@ -228,7 +196,7 @@ def test_tacacs_authenticate_with_authentication(expected_log, tacacs_authentica
             logger_create_user_called = True
 
         with expected_log('info', f'Authenticator {tacacs_authenticator.name} created User', assert_not_called=(not logger_create_user_called)):
-            authentication_response = authenticator_object.authenticate(request=RequestFactory(), username=username, password=password)
+            authentication_response = authenticator_object.authenticate(request=generic_request, username=username, password=password)
 
         if response is None:
             assert authentication_response is response
