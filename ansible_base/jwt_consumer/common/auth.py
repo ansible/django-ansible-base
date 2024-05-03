@@ -281,7 +281,7 @@ class JWTAuthentication(BaseAuthentication):
 
             return user, None
         else:
-            return None, None
+            return None
 
     def process_user_data(self, user, token):
         common_auth = JWTCommonAuth(self.map_fields)
