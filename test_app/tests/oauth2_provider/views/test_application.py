@@ -3,7 +3,7 @@ from django.contrib.auth.hashers import check_password
 from django.urls import reverse
 
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
-from ansible_base.oauth2_provider.models import OAuth2Application
+from ansible_base.oauth2_provider.models import OAuth2AccessToken, OAuth2Application, OAuth2RefreshToken
 
 
 @pytest.mark.parametrize(
@@ -249,3 +249,17 @@ def test_oauth2_provider_application_client_secret_encrypted(admin_api_client, o
     response = admin_api_client.delete(reverse("application-detail", args=[application.pk]))
     assert response.status_code == 204
     assert response.data is None, response.data
+
+
+@pytest.mark.django_db
+def test_oauth2_application_delete(oauth2_application, admin_api_client):
+    """
+    Test that we can delete an OAuth2 application.
+    """
+    oauth2_application = oauth2_application[0]
+    url = reverse("application-detail", args=[oauth2_application.pk])
+    response = admin_api_client.delete(url)
+    assert response.status_code == 204
+    assert OAuth2Application.objects.filter(client_id=oauth2_application.client_id).count() == 0
+    assert OAuth2RefreshToken.objects.filter(application=oauth2_application).count() == 0
+    assert OAuth2AccessToken.objects.filter(application=oauth2_application).count() == 0

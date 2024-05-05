@@ -1,4 +1,6 @@
 import base64
+import json
+import time
 
 import pytest
 from django.urls import reverse
@@ -210,31 +212,6 @@ def test_oauth2_pat_list_is_user_related_field(user, admin_api_client):
     assert response.data['related']['personal_tokens'] == reverse('user-personal-tokens-list', kwargs={"pk": user.pk})
 
 
-@pytest.mark.django_db
-def test_oauth2_token_create(oauth2_application, admin_api_client, admin_user):
-    oauth2_application = oauth2_application[0]
-    url = reverse('token-list')
-    response = admin_api_client.post(url, {'scope': 'read', 'application': oauth2_application.pk})
-    assert response.status_code == 201
-    assert 'modified' in response.data and response.data['modified'] is not None
-    assert 'updated' not in response.data
-    token = OAuth2AccessToken.objects.get(token=response.data['token'])
-    refresh_token = OAuth2RefreshToken.objects.get(token=response.data['refresh_token'])
-    assert token.application == oauth2_application
-    assert refresh_token.application == oauth2_application
-    assert token.user == admin_user
-    assert refresh_token.user == admin_user
-    assert refresh_token.access_token == token
-    assert token.scope == 'read'
-
-    url = reverse('application-access_tokens-list', kwargs={'pk': oauth2_application.pk})
-    response = admin_api_client.get(url)
-    assert response.status_code == 200
-    assert response.data['count'] == 1
-    assert response.data['results'][0]['id'] == token.pk
-    assert response.data['results'][0]['scope'] == token.scope
-
-
 def test_oauth2_application_token_summary_fields(admin_api_client, oauth2_admin_access_token, oauth2_application):
     url = reverse('application-detail', kwargs={'pk': oauth2_application[0].pk})
     response = admin_api_client.get(url)
@@ -282,3 +259,150 @@ def test_oauth2_authorized_list_is_user_related_field(user, admin_api_client):
     assert response.status_code == 200
     assert 'authorized_tokens' in response.data['related']
     assert response.data['related']['authorized_tokens'] == reverse('user-authorized-tokens-list', kwargs={"pk": user.pk})
+
+
+@pytest.mark.django_db
+def test_oauth2_token_createn(oauth2_application, admin_api_client, admin_user):
+    oauth2_application = oauth2_application[0]
+    url = reverse('token-list')
+    response = admin_api_client.post(url, {'scope': 'read', 'application': oauth2_application.pk})
+    assert response.status_code == 201
+    assert 'modified' in response.data and response.data['modified'] is not None
+    assert 'updated' not in response.data
+    token = OAuth2AccessToken.objects.get(token=response.data['token'])
+    refresh_token = OAuth2RefreshToken.objects.get(token=response.data['refresh_token'])
+    assert token.application == oauth2_application
+    assert refresh_token.application == oauth2_application
+    assert token.user == admin_user
+    assert refresh_token.user == admin_user
+    assert refresh_token.access_token == token
+    assert token.scope == 'read'
+
+    url = reverse('application-access_tokens-list', kwargs={'pk': oauth2_application.pk})
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    assert response.data['count'] == 1
+    assert response.data['results'][0]['id'] == token.pk
+
+    url = reverse('application-detail', kwargs={'pk': oauth2_application.pk})
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    assert response.data['summary_fields']['tokens']['count'] == 1
+    assert response.data['summary_fields']['tokens']['results'][0] == {'id': token.pk, 'scope': token.scope, 'token': ENCRYPTED_STRING}
+
+    url = reverse('token-list')
+    response = admin_api_client.post(url, {'scope': 'write', 'application': oauth2_application.pk})
+    assert response.status_code == 201
+    assert response.data['refresh_token']
+
+    url = reverse('token-list')
+    response = admin_api_client.post(url, {'scope': 'read', 'application': oauth2_application.pk, 'user': admin_user.pk})
+    assert response.status_code == 201
+    assert response.data['refresh_token']
+
+    url = reverse('token-list')
+    response = admin_api_client.post(url, {'scope': 'read', 'application': oauth2_application.pk})
+    assert response.status_code == 201
+    assert response.data['refresh_token']
+
+
+@pytest.mark.django_db
+def test_oauth2_token_update(oauth2_admin_access_token, admin_api_client):
+    assert oauth2_admin_access_token.scope == 'write'
+    url = reverse('token-detail', kwargs={'pk': oauth2_admin_access_token.pk})
+    response = admin_api_client.patch(url, {'scope': 'read'})
+    assert response.status_code == 200
+    oauth2_admin_access_token.refresh_from_db()
+    assert oauth2_admin_access_token.scope == 'read'
+
+
+@pytest.mark.django_db
+def test_oauth2_token_delete(oauth2_admin_access_token, admin_api_client):
+    url = reverse('token-detail', kwargs={'pk': oauth2_admin_access_token.pk})
+    response = admin_api_client.delete(url)
+    assert response.status_code == 204
+    assert OAuth2AccessToken.objects.count() == 0
+    assert OAuth2RefreshToken.objects.count() == 1
+
+    url = reverse('application-access_tokens-list', kwargs={'pk': oauth2_admin_access_token.application.pk})
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    assert response.data['count'] == 0
+
+    url = reverse('application-detail', kwargs={'pk': oauth2_admin_access_token.application.pk})
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    assert response.data['summary_fields']['tokens']['count'] == 0
+
+
+@pytest.mark.django_db
+def test_oauth2_refresh_access_token(oauth2_application, oauth2_admin_access_token, unauthenticated_api_client):
+    """
+    Test that we can refresh an access token.
+    """
+    app = oauth2_application[0]
+    secret = oauth2_application[1]
+    refresh_token = oauth2_admin_access_token.refresh_token
+
+    url = reverse('token')
+    data = {
+        'grant_type': 'refresh_token',
+        'refresh_token': refresh_token.token,
+    }
+    resp = unauthenticated_api_client.post(
+        url,
+        data=urlencode(data),
+        content_type='application/x-www-form-urlencoded',
+        headers={'Authorization': 'Basic ' + base64.b64encode(f"{app.client_id}:{secret}".encode()).decode()},
+    )
+    assert resp.status_code == 201
+    assert OAuth2RefreshToken.objects.filter(token=refresh_token).exists()
+    original_refresh_token = OAuth2RefreshToken.objects.get(token=refresh_token)
+    assert oauth2_admin_access_token not in OAuth2AccessToken.objects.all()
+    assert OAuth2AccessToken.objects.count() == 1
+
+    # the same RefreshToken remains but is marked revoked
+    assert OAuth2RefreshToken.objects.count() == 2
+    assert original_refresh_token.revoked
+
+    json_resp = json.loads(resp.content)
+    new_token = json_resp['access_token']
+    new_refresh_token = json_resp['refresh_token']
+
+    assert OAuth2AccessToken.objects.filter(token=new_token).count() == 1
+    # checks that RefreshTokens are rotated (new RefreshToken issued)
+    assert OAuth2RefreshToken.objects.filter(token=new_refresh_token).count() == 1
+    new_refresh_obj = OAuth2RefreshToken.objects.get(token=new_refresh_token)
+    assert not new_refresh_obj.revoked
+
+
+@pytest.mark.django_db
+def test_oauth2_refresh_token_expiration_is_respected(oauth2_application, oauth2_admin_access_token, admin_api_client, settings):
+    """
+    Test that a refresh token that has expired cannot be used to refresh an access token.
+    """
+    app = oauth2_application[0]
+    secret = oauth2_application[1]
+    refresh_token = oauth2_admin_access_token.refresh_token
+
+    settings.OAUTH2_PROVIDER['REFRESH_TOKEN_EXPIRE_SECONDS'] = 1
+    settings.OAUTH2_PROVIDER['ACCESS_TOKEN_EXPIRE_SECONDS'] = 1
+    settings.OAUTH2_PROVIDER['AUTHORIZATION_CODE_EXPIRE_SECONDS'] = 1
+    time.sleep(1)
+
+    url = reverse('token')
+    data = {
+        'grant_type': 'refresh_token',
+        'refresh_token': refresh_token.token,
+    }
+    response = admin_api_client.post(
+        url,
+        data=urlencode(data),
+        content_type='application/x-www-form-urlencoded',
+        headers={'Authorization': 'Basic ' + base64.b64encode(f"{app.client_id}:{secret}".encode()).decode()},
+    )
+    assert response.status_code == 403
+    assert b'The refresh token has expired.' in response.content
+    assert OAuth2RefreshToken.objects.filter(token=refresh_token).exists()
+    assert OAuth2AccessToken.objects.count() == 1
+    assert OAuth2RefreshToken.objects.count() == 1
