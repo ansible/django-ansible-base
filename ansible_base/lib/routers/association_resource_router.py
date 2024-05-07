@@ -1,5 +1,7 @@
 import copy
 import logging
+from itertools import chain
+from typing import Type
 
 from django.conf import settings
 from django.db.models.fields import IntegerField
@@ -11,6 +13,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import SAFE_METHODS
 from rest_framework.request import clone_request
 from rest_framework.response import Response
+from rest_framework.viewsets import ViewSetMixin
 
 from ansible_base.rbac.permission_registry import permission_registry
 
@@ -159,6 +162,11 @@ class AssociateMixin(RelatedListMixin):
         return super().get_serializer_class()
 
 
+@property
+def attribute_raiser(cls):
+    raise AttributeError
+
+
 class AssociationResourceRouter(routers.SimpleRouter):
     def get_method_map(self, viewset, method_map):
         is_associate_viewset = issubclass(viewset, AssociateMixin)
@@ -170,6 +178,26 @@ class AssociationResourceRouter(routers.SimpleRouter):
                     continue
                 bound_methods[method] = action_str
         return bound_methods
+
+    def associated_viewset_cls_factory(self, viewset: Type[ViewSetMixin]) -> Type[ViewSetMixin]:
+        """Given viewset (as a class) return a subclass containing all its actions except for list"""
+
+        class AssociatedViewSetType(type(viewset)):
+            """Metaclass that turns off viewset methods other than list"""
+
+            pass
+
+        custom_methods = chain.from_iterable(action.mapping.values() for action in viewset.get_extra_actions())
+
+        for method in ('retrieve', 'update', 'partial_update', 'destroy') + tuple(custom_methods):
+            setattr(AssociatedViewSetType, method, attribute_raiser)
+
+        class AssociatedViewSet(viewset, metaclass=AssociatedViewSetType):
+            """Adjusted version of given viewset for related endpoint with only list views"""
+
+            pass
+
+        return AssociatedViewSet
 
     def register(self, prefix, viewset, related_views={}, basename=None):
         if basename is None:
@@ -186,10 +214,13 @@ class AssociationResourceRouter(routers.SimpleRouter):
                 is_reverse_view = True
                 mixin_class = RelatedListMixin
 
+            # Start with a viewset that only has list action enabled
+            associated_viewset = self.associated_viewset_cls_factory(related_view)
+
             # Generate the related viewset
             modified_related_viewset = type(
                 f'Related{related_view.__name__}',
-                (mixin_class, related_view),
+                (mixin_class, associated_viewset),
                 {
                     'association_fk': fk,
                     'parent_viewset': viewset,

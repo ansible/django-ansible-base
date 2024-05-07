@@ -3,7 +3,7 @@ from django.urls import reverse
 
 from ansible_base.lib.routers import AssociationResourceRouter
 from test_app import views
-from test_app.models import Inventory, Organization, User
+from test_app.models import Cow, Organization, Inventory, User
 
 
 def validate_expected_url_pattern_names(router, expected_url_pattern_names):
@@ -202,3 +202,30 @@ def test_sublist_filtering(inventory, organization, admin_api_client):
     response = admin_api_client.get(url, data={'name': inventory.name})
     assert response.status_code == 200, response.data
     assert response.data['count'] == 1
+
+
+@pytest.mark.parametrize('method', ['GET', 'PUT', 'POST', 'DELETE'])
+def test_related_detail_actions_get_scrubed(organization, method, admin_api_client):
+    cow = Cow.objects.create(organization=organization)
+    # raise Exception(reverse('organization-cows-list', kwargs={'pk': organization.pk}))
+    url = f'/api/v1/organizations/{organization.pk}/cows/{cow.pk}/'
+    # Can not use the reverse function like this, because post-fix, the view does not exist
+    # url = reverse('organization-cows-detail', kwargs={'pk': organization.pk, 'cows': cow.pk})
+    if method in ('PUT', 'POST'):
+        response = admin_api_client.get(url, data={})
+    else:
+        response = admin_api_client.get(url)
+    assert response.status_code == 404
+
+
+@pytest.mark.parametrize('method', ['GET', 'PUT', 'POST', 'DELETE'])
+def test_related_custom_actions_get_scrubed(organization, method, admin_api_client):
+    cow = Cow.objects.create(organization=organization)
+    url = f'/api/v1/organizations/{organization.pk}/cows/{cow.pk}/cowsay/'
+    # Can not use the reverse function like this, because post-fix, the view does not exist
+    # url = reverse('organization-cows-cowsay', kwargs={'pk': organization.pk, 'cows': cow.pk})
+    if method in ('PUT', 'POST'):
+        response = admin_api_client.get(url, data={})
+    else:
+        response = admin_api_client.get(url)
+    assert response.status_code == 404
