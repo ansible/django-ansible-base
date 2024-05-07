@@ -13,10 +13,11 @@ if 'ansible_base.activitystream' in settings.INSTALLED_APPS:
     activitystream = AuditableModel
 
 
-class OAuth2RefreshToken(oauth2_models.AbstractRefreshToken, CommonModel, activitystream):
+class OAuth2RefreshToken(CommonModel, oauth2_models.AbstractRefreshToken, activitystream):
     class Meta(oauth2_models.AbstractRefreshToken.Meta):
         verbose_name = _('access token')
         ordering = ('id',)
         swappable = "OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL"
 
     token = prevent_search(models.CharField(max_length=255))
+    updated = None  # Tracked in CommonModel with 'modified', no need for this

@@ -19,7 +19,7 @@ if 'ansible_base.activitystream' in settings.INSTALLED_APPS:
 DATA_URI_RE = re.compile(r'.*')  # FIXME
 
 
-class OAuth2Application(oauth2_models.AbstractApplication, NamedCommonModel, activitystream):
+class OAuth2Application(NamedCommonModel, oauth2_models.AbstractApplication, activitystream):
     router_basename = 'application'
     ignore_relations = ['oauth2idtoken', 'grant', 'oauth2refreshtoken']
     # We do NOT add client_secret to encrypted_fields because it is hashed by Django OAuth Toolkit
@@ -80,8 +80,7 @@ class OAuth2Application(oauth2_models.AbstractApplication, NamedCommonModel, act
     authorization_grant_type = models.CharField(
         max_length=32, choices=GRANT_TYPES, help_text=_('The Grant type the user must use for acquire tokens for this application.')
     )
-    created = None  # Tracked in CommonModel, no need for this
-    updated = None  # Tracked in CommonModel, no need for this
+    updated = None  # Tracked in CommonModel with 'modified', no need for this
 
     def get_absolute_url(self):
         # This is kind of annoying. This method lives on the superclass and we check for it in CommonModel.

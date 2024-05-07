@@ -17,7 +17,7 @@ if 'ansible_base.activitystream' in settings.INSTALLED_APPS:
     activitystream = AuditableModel
 
 
-class OAuth2AccessToken(oauth2_models.AbstractAccessToken, CommonModel, activitystream):
+class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activitystream):
     router_basename = 'token'
     ignore_relations = ['refresh_token']
 
@@ -64,8 +64,7 @@ class OAuth2AccessToken(oauth2_models.AbstractAccessToken, CommonModel, activity
             unique=True,
         )
     )
-    created = None  # Tracked in CommonModel, no need for this
-    updated = None  # Tracked in CommonModel, no need for this
+    updated = None  # Tracked in CommonModel with 'modified', no need for this
 
     def is_valid(self, scopes=None):
         valid = super(OAuth2AccessToken, self).is_valid(scopes)
