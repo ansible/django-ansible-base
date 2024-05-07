@@ -3,7 +3,7 @@ from django.urls import reverse
 
 from ansible_base.lib.routers import AssociationResourceRouter
 from test_app import views
-from test_app.models import Cow, Organization, Inventory, User
+from test_app.models import Cow, Inventory, RelatedFieldsTestModel, Team, User
 
 
 def validate_expected_url_pattern_names(router, expected_url_pattern_names):
@@ -60,8 +60,6 @@ def test_association_router_associate_viewset_all_mapings():
 
 
 def test_association_router_good_associate(db, admin_api_client, randname, organization):
-    from test_app.models import RelatedFieldsTestModel, Team
-
     related_model = RelatedFieldsTestModel.objects.create()
     assert related_model.more_teams.count() == 0
 
@@ -89,8 +87,6 @@ def test_association_router_good_associate(db, admin_api_client, randname, organ
     ],
 )
 def test_association_router_associate_bad_data(db, admin_api_client, data, response_instances):
-    from test_app.models import RelatedFieldsTestModel
-
     related_model = RelatedFieldsTestModel.objects.create()
     assert related_model.users.count() == 0
 
@@ -101,8 +97,6 @@ def test_association_router_associate_bad_data(db, admin_api_client, data, respo
 
 
 def test_association_router_associate_existing_item(db, admin_api_client, random_user):
-    from test_app.models import RelatedFieldsTestModel
-
     related_model = RelatedFieldsTestModel.objects.create()
     related_model.users.add(random_user)
     assert related_model.users.count() == 1
@@ -114,8 +108,6 @@ def test_association_router_associate_existing_item(db, admin_api_client, random
 
 
 def test_association_router_disassociate(db, admin_api_client, randname, organization):
-    from test_app.models import RelatedFieldsTestModel, Team
-
     team = Team.objects.create(name=randname('team'), organization=organization)
 
     related_model = RelatedFieldsTestModel.objects.create()
@@ -144,8 +136,6 @@ def test_association_router_disassociate(db, admin_api_client, randname, organiz
     ],
 )
 def test_association_router_disassociate_bad_data(db, admin_api_client, data, response_instances):
-    from test_app.models import RelatedFieldsTestModel
-
     related_model = RelatedFieldsTestModel.objects.create()
     assert related_model.more_teams.count() == 0
 
@@ -156,8 +146,6 @@ def test_association_router_disassociate_bad_data(db, admin_api_client, data, re
 
 
 def test_association_router_disassociate_something_not_associated(db, admin_api_client, organization):
-    from test_app.models import RelatedFieldsTestModel, Team
-
     related_model = RelatedFieldsTestModel.objects.create()
     team1 = Team.objects.create(name='Team 1', organization=organization)
     team2 = Team.objects.create(name='Team 2', organization=organization)
@@ -170,7 +158,7 @@ def test_association_router_disassociate_something_not_associated(db, admin_api_
     assert response.json().get('instances') == f'Cannot disassociate these objects because they are not all related to this object: {team2.pk}, {team3.pk}'
 
 
-def test_association_router_related_viewset_all_mapings(db):
+def test_association_router_related_viewset_reverse_mapings(db):
     router = AssociationResourceRouter()
     router.register(
         r'organization',
@@ -183,8 +171,29 @@ def test_association_router_related_viewset_all_mapings(db):
     expected_urls = [
         'my_test_basename-detail',
         'my_test_basename-list',
-        'my_test_basename-teams-detail',
         'my_test_basename-teams-list',
+    ]
+    validate_expected_url_pattern_names(router, expected_urls)
+
+
+def test_association_router_related_viewset_m2m_mapings(db, user):
+    router = AssociationResourceRouter()
+    obj = RelatedFieldsTestModel.objects.create()
+    obj.users.add(user)
+    router.register(
+        r'rel_models',
+        views.RelatedFieldsTestModelViewSet,
+        related_views={
+            'users': (views.UserViewSet, 'users'),
+        },
+        basename='rel_test_basename',
+    )
+    expected_urls = [
+        'rel_test_basename-detail',
+        'rel_test_basename-list',
+        'rel_test_basename-users-list',
+        'rel_test_basename-users-associate',
+        'rel_test_basename-users-disassociate',
     ]
     validate_expected_url_pattern_names(router, expected_urls)
 
