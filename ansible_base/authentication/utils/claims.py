@@ -8,6 +8,7 @@ from django.utils.timezone import now
 from rest_framework.serializers import DateTimeField
 
 from ansible_base.authentication.models import Authenticator, AuthenticatorMap
+from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 
 from .trigger_definition import TRIGGER_DEFINITION
 
@@ -256,6 +257,11 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
         logger.warning(f"User {user.username} failed an allow map and was denied access")
         return None
 
+    # Make the orgs and the teams as necessary ...
+    print(f'MAKE results: {results}')
+    org_list = [x[0] for x in results['claims']['organization_membership'].items() if x[1]]
+    create_org_and_teams(org_list, {})
+
     # We have allowed access so now we need to make the user within the system
     reconcile_class = getattr(settings, 'ANSIBLE_BASE_AUTHENTICATOR_RECONCILE_MODULE', 'ansible_base.authentication.utils.claims')
     try:
@@ -265,7 +271,78 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
     except Exception as e:
         logger.error(f"Failed to reconcile user attributes! {e}")
 
+    #import epdb; epdb.st()
+
     return user
+
+
+def get_orgs_by_ids():
+    Organization = get_organization_model()
+    existing_orgs = {}
+    for org_id, org_name in Organization.objects.all().values_list('id', 'name'):
+        existing_orgs[org_name] = org_id
+    return existing_orgs
+
+
+def create_org_and_teams(org_list, team_map, adapter=None, can_create=True):
+    #
+    # org_list is a set of organization names
+    # team_map is a dict of {<team_name>: <org name>}
+    #
+    # Move this junk into save of the settings for performance later, there is no need to do that here
+    #    with maybe the exception of someone defining this in settings before the server is started?
+    # ==============================================================================================================
+
+    if not can_create:
+        logger.debug(f"Adapter {adapter} is not allowed to create orgs/teams")
+        return
+
+    # Get all of the IDs and names of orgs in the DB and create any new org defined in LDAP that does not exist in the DB
+    existing_orgs = get_orgs_by_ids()
+
+    # Parse through orgs and teams provided and create a list of unique items we care about creating
+    all_orgs = list(set(org_list))
+    all_teams = []
+    for team_name in team_map:
+        org_name = team_map[team_name]
+        if org_name:
+            if org_name not in all_orgs:
+                all_orgs.append(org_name)
+            # We don't have to test if this is in all_teams because team_map is already a hash
+            all_teams.append(team_name)
+        else:
+            # The UI should prevent this condition so this is just a double check to prevent a stack trace....
+            #  although the rest of the login process might stack later on
+            logger.error("{} adapter is attempting to create a team {} but it does not have an org".format(adapter, team_name))
+
+    for org_name in all_orgs:
+        if org_name and org_name not in existing_orgs:
+            logger.info("{} adapter is creating org {}".format(adapter, org_name))
+            '''
+            try:
+                new_org = get_or_create_org_with_default_galaxy_cred(name=org_name)
+            except IntegrityError:
+                # Another thread must have created this org before we did so now we need to get it
+                new_org = get_or_create_org_with_default_galaxy_cred(name=org_name)
+            # Add the org name to the existing orgs since we created it and we may need it to build the teams below
+            existing_orgs[org_name] = new_org.id
+            '''
+
+    # Do the same for teams
+    Team = get_team_model()
+    existing_team_names = list(Team.objects.all().values_list('name', flat=True))
+    for team_name in all_teams:
+        if team_name not in existing_team_names:
+            logger.info("{} adapter is creating team {} in org {}".format(adapter, team_name, team_map[team_name]))
+            '''
+            try:
+                Team.objects.create(name=team_name, organization_id=existing_orgs[team_map[team_name]])
+            except IntegrityError:
+                # If another process got here before us that is ok because we don't need the ID from this team or anything
+                pass
+            '''
+    # End move some day
+    # ==============================================================================================================
 
 
 class ReconcileUser:
