@@ -1,6 +1,8 @@
 from itertools import chain
 
 from django.shortcuts import render
+from django.urls.exceptions import NoReverseMatch
+from django.urls.resolvers import URLPattern
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework.reverse import reverse
@@ -156,9 +158,14 @@ def api_root(request, format=None):
             list_endpoints[url.name.removesuffix('-list')] = reverse(url.name, request=request, format=format)
 
     from ansible_base.api_documentation.urls import api_version_urls as docs_urls
+    from ansible_base.authentication.urls import api_version_urls as authentication_urls
 
-    for url in docs_urls:
-        list_endpoints[url.name] = reverse(url.name, request=request, format=format)
+    for url in docs_urls + authentication_urls[1:]:
+        if isinstance(url, URLPattern):
+            try:
+                list_endpoints[url.name] = reverse(url.name, request=request, format=format)
+            except NoReverseMatch:
+                pass
 
     return Response(list_endpoints)
 
