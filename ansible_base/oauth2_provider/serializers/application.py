@@ -31,9 +31,6 @@ class OAuth2ApplicationSerializer(NamedCommonModelSerializer):
             if obj.client_type == 'public':
                 return None
             elif request.method == 'POST':
-                if self.oauth2_client_secret is None:
-                    # This should be an impossible case, but...
-                    return ENCRYPTED_STRING
                 # Show the secret, one time, on POST
                 return self.oauth2_client_secret
             else:
