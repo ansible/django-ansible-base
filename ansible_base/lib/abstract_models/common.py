@@ -150,8 +150,7 @@ class AbstractCommonModel(models.Model):
         # Encrypt any fields
         for field in self.encrypted_fields:
             field_value = getattr(self, field, None)
-            if field_value:
-                setattr(self, field, ansible_encryption.encrypt_string(field_value))
+            setattr(self, field, ansible_encryption.encrypt_string(field_value))
 
         return super().save(*args, **kwargs)
 
@@ -161,8 +160,7 @@ class AbstractCommonModel(models.Model):
 
         for field in self.encrypted_fields:
             field_value = getattr(instance, field, None)
-            if field_value:
-                setattr(instance, field, ansible_encryption.decrypt_string(field_value))
+            setattr(instance, field, ansible_encryption.decrypt_string(field_value))
 
         return instance
 

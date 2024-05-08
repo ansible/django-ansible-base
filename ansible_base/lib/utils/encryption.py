@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import json
 import logging
 import re
 from typing import Any, Optional, Tuple
@@ -90,21 +91,20 @@ class Fernet256(Fernet):
         else:
             return False, None, None
 
-    def encrypt_string(self, value: str) -> str:
+    def encrypt_string(self, value: Any) -> str:
         # Its possible for a serializer to accept a number for a CharField (like 5). In the serializer its "5" but when we get here it might be 5
-        if not isinstance(value, str):
-            value = str(value)
 
         is_encrypted = self.is_encrypted_string(value)[0]
 
         if is_encrypted:
             return value
+        value = json.dumps(value)
 
         encrypted = self.encrypt(smart_bytes(value))
         b64data = smart_str(base64.b64encode(encrypted))
         return f'{ENCRYPTED_STRING}UTF8${ENCRYPTION_METHOD}${b64data}'
 
-    def decrypt_string(self, value: str) -> str:
+    def decrypt_string(self, value: str) -> Any:
         if not isinstance(value, str):
             raise ValueError("decrypt_string can only accept string")
 
@@ -120,7 +120,12 @@ class Fernet256(Fernet):
         # Finally decode the value
         encrypted = base64.b64decode(data)
 
-        return smart_str(self.decrypt(encrypted))
+        decrypted_value = smart_str(self.decrypt(encrypted))
+        try:
+            return json.loads(decrypted_value)
+        except json.JSONDecodeError as e:
+            logger.exception("Failed to decode encrytped value as json from database")
+            raise e
 
 
 ansible_encryption = SimpleLazyObject(func=lambda: Fernet256())

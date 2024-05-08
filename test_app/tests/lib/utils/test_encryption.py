@@ -1,4 +1,5 @@
 import base64
+from unittest import mock
 
 import pytest
 from django.utils.encoding import smart_str
@@ -8,14 +9,26 @@ from ansible_base.lib.utils.encryption import ENCRYPTION_METHOD, Fernet256
 logger = 'ansible_base.lib.utils.encryption.logger'
 
 
-def test_fernet256_encrypt_is_idempotent():
+@pytest.mark.parametrize(
+    "input",
+    [
+        "test",
+        None,
+        {},
+        [],
+        True,
+        False,
+        {"value": 1, "value2": True, "value3": ["a", "b", "c"]},
+        ["a", "list"],
+    ],
+)
+def test_fernet256_encrypt_is_idempotent(input):
     """
     Ensure that encrypting a string twice still results in the same encrypted
     string.
     """
     fernet = Fernet256()
-    input_string = "test"
-    encrypted_string = fernet.encrypt_string(input_string)
+    encrypted_string = fernet.encrypt_string(input)
     double_encrypted_string = fernet.encrypt_string(encrypted_string)
     assert encrypted_string == double_encrypted_string
 
@@ -99,3 +112,17 @@ def test_encrypt_decrypt_string():
     encrypted = fernet.encrypt_string(input_string)
     decrypted_string = fernet.decrypt_string(encrypted)
     assert decrypted_string == input_string
+
+
+def test_fernet256_decrypt_raise_exception_on_json_decode_error(expected_log):
+    from json import JSONDecodeError
+
+    exception = JSONDecodeError('testing', 'test', 0)
+    with mock.patch('ansible_base.lib.utils.encryption.json.loads', side_effect=exception):
+        with expected_log('ansible_base.lib.utils.encryption.logger', 'exception', 'Failed to'):
+            fernet = Fernet256()
+            input_string = "test"
+            encrypted_string = fernet.encrypt_string(input_string)
+            with pytest.raises(JSONDecodeError) as e:
+                fernet.decrypt_string(encrypted_string)
+                assert e == exception

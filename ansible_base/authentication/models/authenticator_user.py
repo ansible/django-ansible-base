@@ -6,6 +6,8 @@ from django.db import models
 from social_django.models import AbstractUserSocialAuth
 
 from ansible_base.authentication.models import Authenticator
+from ansible_base.lib.abstract_models.common import AbstractCommonModel
+from ansible_base.lib.utils.encryption import ansible_encryption
 
 
 def b64_encode_binary_data_in_dict(obj: Any) -> Any:
@@ -20,7 +22,7 @@ def b64_encode_binary_data_in_dict(obj: Any) -> Any:
     return obj
 
 
-class AuthenticatorUser(AbstractUserSocialAuth):
+class AuthenticatorUser(AbstractUserSocialAuth, AbstractCommonModel):
     """
     This appends extra information on the local user model that includes extra data returned by
     the authenticators and links the user to the authenticator that they used to login.
@@ -34,6 +36,8 @@ class AuthenticatorUser(AbstractUserSocialAuth):
     last_login_map_results = models.JSONField(default=list, null=False, blank=True)
     # This field tracks if a user passed or failed an allow map
     access_allowed = models.BooleanField(default=None, null=True)
+
+    encrypted_fields = ["extra_data"]
 
     @classmethod
     def create_social_auth(cls, user, uid, slug):
@@ -50,3 +54,6 @@ class AuthenticatorUser(AbstractUserSocialAuth):
         self.extra_data = b64_encode_binary_data_in_dict(self.extra_data)
 
         super().save(*args, **kwargs)
+
+        # After super().save extra_data will be encrypted but we need this to field to not be encrypted during the login process
+        self.extra_data = ansible_encryption.decrypt_string(self.extra_data)
