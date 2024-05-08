@@ -1,6 +1,7 @@
 import logging
 from datetime import timedelta
 
+from crum import get_current_user
 from django.core.exceptions import ObjectDoesNotExist
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
@@ -86,7 +87,7 @@ class BaseOAuth2TokenSerializer(CommonModelSerializer):
 
 class OAuth2TokenSerializer(BaseOAuth2TokenSerializer):
     def create(self, validated_data):
-        current_user = self.context['request'].user
+        current_user = get_current_user()
         validated_data['token'] = generate_token()
         expires_delta = get_setting('OAUTH2_PROVIDER', {}).get('ACCESS_TOKEN_EXPIRE_SECONDS', 0)
         if expires_delta == 0:
