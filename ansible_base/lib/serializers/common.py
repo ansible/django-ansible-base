@@ -1,6 +1,5 @@
 import logging
 
-from django.conf import settings
 from django.db.models.fields import NOT_PROVIDED
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
@@ -111,6 +110,6 @@ class UneditableSystemUserSerializer(CommonModelSerializer):
     """
 
     def validate(self, data):
-        if self.instance.id == models.get_system_user().id:
+        if hasattr(self.instance, "id") and self.instance.id == models.get_system_user().id:
             raise ValidationError(_('System users cannot be modified'))
         return data
