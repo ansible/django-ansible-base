@@ -7,10 +7,3 @@ def apply_authentication_customizations() -> None:
     class MyAuthenticationScheme(SessionScheme):
         target_class = SessionAuthentication  # full import path OR class ref
         name = 'SessionAuthentication'
-
-        def get_security_definition(self, auto_schema):
-            return {
-                'type': 'apiKey',
-                'in': 'header',
-                'name': 'api_key',
-            }
