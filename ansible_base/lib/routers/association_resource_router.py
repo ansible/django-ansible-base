@@ -215,8 +215,9 @@ class AssociationResourceRouter(routers.SimpleRouter):
             associated_viewset = self.associated_viewset_cls_factory(related_view)
 
             # Generate the related viewset
+            # Name includes and parent and child viewset, because this defines global uniqueness
             modified_related_viewset = type(
-                f'Related{related_view.__name__}',
+                f'Related{viewset.__name__}{related_view.__name__}',
                 (mixin_class, associated_viewset),
                 {
                     'association_fk': fk,
