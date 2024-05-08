@@ -151,7 +151,7 @@ class AssociateMixin(RelatedListMixin):
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    def get_parent_serializer_class(self, cls: Model) -> Type[serializers.Serializer]:
+    def get_parent_serializer_class(self, cls: Type[Model]) -> Type[serializers.Serializer]:
         if self.action == 'disassociate':
             return BasicAssociationSerializer
         elif self.action == 'associate':
