@@ -216,6 +216,9 @@ class RoleDefinition(CommonModel):
         # sanitize the object_id to its database version, practically, remove "-" chars from uuids
         object_id = content_object._meta.pk.get_db_prep_value(content_object.pk, connection)
         kwargs = dict(role_definition=self, content_type=obj_ct, object_id=object_id)
+        if hasattr(content_object, 'resource'):
+            if resource := content_object.resource:
+                kwargs['resource'] = resource
 
         created = False
         object_role = ObjectRole.objects.filter(**kwargs).first()
@@ -336,10 +339,20 @@ class AssignmentBase(ImmutableCommonModel, ObjectRoleFields):
     """
 
     object_role = models.ForeignKey('dab_rbac.ObjectRole', on_delete=models.CASCADE, editable=False, null=True)
+    # Resource link fields are duplicated from object_role, for serializer purposes
     object_id = models.TextField(
         null=True, blank=True, help_text=_('Primary key of the object this assignment applies to, null value indicates system-wide assignment')
     )
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, null=True)
+    resource = models.ForeignKey(
+        'dab_resource_registry.Resource',
+        on_delete=models.CASCADE,
+        null=True,
+        related_name='%(class)s_object_assignments',
+        help_text=_(
+            'A UUID identifier of the object this role assignment applies to, null value may indicate system-wide role or a model that has no ansible_id'
+        ),
+    )
 
     # object_role is internal, and not shown in serializer
     # content_type does not have a link, and ResourceType will be used in lieu sometime
@@ -357,6 +370,10 @@ class AssignmentBase(ImmutableCommonModel, ObjectRoleFields):
             self.object_id = self.object_role.object_id
             self.content_type_id = self.object_role.content_type_id
             self.role_definition_id = self.object_role.role_definition_id
+        if self.object_role_id and not self.resource_id:
+            # ObjectRole may not have a linked resource, if not tracked in resource registry
+            if resource_id := self.object_role.resource_id:
+                self.resource_id = resource_id
 
 
 class RoleUserAssignment(AssignmentBase):
@@ -367,6 +384,14 @@ class RoleUserAssignment(AssignmentBase):
         related_name='user_assignments',
     )
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='role_assignments')
+    user_resource = models.ForeignKey(
+        'dab_resource_registry.Resource',
+        on_delete=models.CASCADE,
+        null=True,
+        related_name='role_user_assignments',
+        help_text=_('A UUID identifier of the user given permission defined by this assignment'),
+    )
+
     router_basename = 'roleuserassignment'
 
     class Meta:
@@ -391,6 +416,14 @@ class RoleTeamAssignment(AssignmentBase):
         related_name='team_assignments',
     )
     team = models.ForeignKey(settings.ANSIBLE_BASE_TEAM_MODEL, on_delete=models.CASCADE, related_name='role_assignments')
+    user_resource = models.ForeignKey(
+        'dab_resource_registry.Resource',
+        on_delete=models.CASCADE,
+        null=True,
+        related_name='role_team_assignments',
+        help_text=_('A UUID identifier of the team given permission defined by this assignment'),
+    )
+
     router_basename = 'roleteamassignment'
 
     class Meta:
@@ -451,6 +484,16 @@ class ObjectRole(ObjectRoleFields):
         related_name='member_roles',
         editable=False,
         help_text=_("Users who have this role obtain member access to these teams, and inherit all their permissions"),
+    )
+    # Not really computed, but cached just to have around
+    resource = models.ForeignKey(
+        'dab_resource_registry.Resource',
+        on_delete=models.CASCADE,
+        null=True,
+        related_name='%(class)s_object_assignments',
+        help_text=_(
+            'A UUID identifier of the object this role assignment applies to, null value may indicate system-wide role or a model that has no ansible_id'
+        ),
     )
 
     def __str__(self):

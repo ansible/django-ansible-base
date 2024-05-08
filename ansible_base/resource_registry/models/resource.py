@@ -58,6 +58,9 @@ class Resource(models.Model):
     def summary_fields(self):
         return {"ansible_id": self.ansible_id, "resource_type": self.resource_type}
 
+    def __str__(self):
+        return f'Resource(name={self.name}, object_id={self.object_id}, ansible_id={self.ansible_id})'
+
     @property
     def resource_type(self):
         return resource_type_cache(self.content_type.pk).name

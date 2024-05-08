@@ -151,6 +151,7 @@ def test_create_user_assignment_immutable(user_api_client, user, rando, task_adm
 
     response = user_api_client.post(url, data=request_data)
     assert response.status_code == 400, response.data
+    assert 'object_id' in response.data, response.data
     assert 'object does not exist' in response.data['object_id'][0]
 
     task_view_rd.give_permission(user, task)
