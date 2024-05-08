@@ -20,7 +20,7 @@ logger = logging.getLogger("ansible_base.oauth2_provider.serializers.token")
 class BaseOAuth2TokenSerializer(CommonModelSerializer):
     refresh_token = SerializerMethodField()
     token = SerializerMethodField()
-    ALLOWED_SCOPES = ['read', 'write']
+    ALLOWED_SCOPES = [x[0] for x in OAuth2AccessToken.SCOPE_CHOICES]
 
     class Meta:
         model = OAuth2AccessToken

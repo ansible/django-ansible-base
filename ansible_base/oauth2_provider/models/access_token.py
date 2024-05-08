@@ -26,6 +26,11 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
         ordering = ('id',)
         swappable = "OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL"
 
+    SCOPE_CHOICES = [
+        ('read', _('Read')),
+        ('write', _('Write')),
+    ]
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -55,7 +60,7 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
         blank=True,
         default='write',
         max_length=32,
-        choices=[('read', 'read'), ('write', 'write')],
+        choices=SCOPE_CHOICES,
         help_text=_("Allowed scopes, further restricts user's permissions. Must be a simple space-separated string with allowed scopes ['read', 'write']."),
     )
     token = prevent_search(
