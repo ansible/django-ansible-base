@@ -28,11 +28,11 @@ class EntrySerializer(ImmutableCommonModelSerializer):
     related_content_type_model = serializers.SerializerMethodField()
     changes = serializers.SerializerMethodField()
 
-    def get_content_type_model(self, obj):
+    def get_content_type_model(self, obj) -> str:
         if obj.content_type:
             return obj.content_type.model
 
-    def get_related_content_type_model(self, obj):
+    def get_related_content_type_model(self, obj) -> str:
         if obj.related_content_type:
             return obj.related_content_type.model
 
@@ -47,7 +47,7 @@ class EntrySerializer(ImmutableCommonModelSerializer):
         field = model._meta.get_field(field_name)
         return field.to_python(value)
 
-    def get_changes(self, obj):
+    def get_changes(self, obj) -> dict[str, dict]:
         """
         We store strings, we have to convert them back to the correct type.
         """
