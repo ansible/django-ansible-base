@@ -4,7 +4,6 @@ from itertools import chain
 from typing import Type
 
 from django.conf import settings
-from django.db.models import Model
 from django.db.models.fields import IntegerField
 from django.db.models.query import QuerySet
 from django.http import QueryDict
