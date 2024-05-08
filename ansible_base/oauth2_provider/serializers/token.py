@@ -14,7 +14,7 @@ from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.oauth2_provider.models import OAuth2AccessToken, OAuth2RefreshToken
 
-logger = logging.getLogger("ansible_base.serializers.oauth2_provider")
+logger = logging.getLogger("ansible_base.oauth2_provider.serializers.token")
 
 
 class BaseOAuth2TokenSerializer(CommonModelSerializer):
