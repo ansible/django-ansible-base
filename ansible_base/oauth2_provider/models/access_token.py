@@ -89,7 +89,7 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
             if external_account:
                 raise oauth2.AccessDeniedError(
                     _('OAuth2 Tokens cannot be created by users associated with an external authentication provider (%(authenticator)s)')
-                    % {'authenticator': external_account.type}
+                    % {'authenticator': external_account.name}
                 )
 
     def save(self, *args, **kwargs):
