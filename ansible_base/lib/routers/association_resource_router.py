@@ -151,32 +151,33 @@ class AssociateMixin(RelatedListMixin):
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    def get_parent_serializer_class(self, cls: Type[Model]) -> Type[serializers.Serializer]:
+    def get_association_parent_serializer_class(self, cls: Type[Model]) -> Type[serializers.Serializer]:
         if self.action == 'disassociate':
             return BasicAssociationSerializer
-        elif self.action == 'associate':
-            if 'ansible_base.rbac' in settings.INSTALLED_APPS and permission_registry.is_registered(cls):
-                return FilteredAssociationSerializer
-            elif 'ansible_base.rbac' in settings.INSTALLED_APPS and cls._meta.model_name == 'user':
-                return UserAssociationSerializer
-            else:
-                return BasicAssociationSerializer
-        return None
+
+        # Implied that action is associate
+        if 'ansible_base.rbac' in settings.INSTALLED_APPS and permission_registry.is_registered(cls):
+            return FilteredAssociationSerializer
+        elif 'ansible_base.rbac' in settings.INSTALLED_APPS and cls._meta.model_name == 'user':
+            return UserAssociationSerializer
+        return BasicAssociationSerializer
 
     def get_serializer_class(self):
-        if self.queryset:
-            qs = self.queryset
-            cls = self.queryset.model
-        else:
-            cls = self.serializer_class.Meta.model
-            qs = cls.objects.all()
+        if self.action in ('disassociate', 'associate'):
+            if self.queryset:
+                qs = self.queryset
+                cls = self.queryset.model
+            else:
+                cls = self.serializer_class.Meta.model
+                qs = cls.objects.all()
 
-        if parent_cls := self.get_parent_serializer_class(cls):
-            cls_name = f'{qs.model.__name__}{parent_cls.__name__}'
+            # qs = self.filter_queryset(qs)
+            if parent_cls := self.get_association_parent_serializer_class(cls):
+                cls_name = f'{qs.model.__name__}{parent_cls.__name__}'
 
-            if cls_name not in serializer_registry:
-                serializer_registry[cls_name] = type(cls_name, (parent_cls,), {'target_queryset': qs})
-            return serializer_registry[cls_name]
+                if cls_name not in serializer_registry:
+                    serializer_registry[cls_name] = type(cls_name, (parent_cls,), {'target_queryset': qs})
+                return serializer_registry[cls_name]
 
         return super().get_serializer_class()
 
