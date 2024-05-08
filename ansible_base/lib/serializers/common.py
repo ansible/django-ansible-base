@@ -1,8 +1,11 @@
 import logging
 
+from django.conf import settings
 from django.db.models.fields import NOT_PROVIDED
+from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from rest_framework.fields import empty
+from rest_framework.serializers import ValidationError
 
 from ansible_base.lib.abstract_models.common import get_url_for_object
 from ansible_base.lib.serializers.validation import ValidationSerializerMixin
@@ -98,3 +101,14 @@ class NamedCommonModelSerializer(CommonModelSerializer):
 class ImmutableCommonModelSerializer(AbstractCommonModelSerializer):
     class Meta(AbstractCommonModelSerializer.Meta):
         fields = AbstractCommonModelSerializer.Meta.fields + ['created', 'created_by']
+
+
+class UneditableSystemUserSerializer(CommonModelSerializer):
+    """
+    Disallows editing of system user (settings.SYSTEM_USERNAME).
+    Make sure to call super if you override validate(..).
+    """
+
+    def validate(self, data):
+        if data["username"] == settings.SYSTEM_USERNAME:
+            raise ValidationError(_('System users cannot be modified'))
