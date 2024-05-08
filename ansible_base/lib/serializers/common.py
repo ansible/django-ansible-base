@@ -47,10 +47,16 @@ class AbstractCommonModelSerializer(ValidationSerializerMixin, serializers.Model
     def _get_related(self, obj) -> dict[str, str]:
         if obj is None:
             return {}
+        related_fields = {}
+        view = self.context.get('view')
+        if view is not None and hasattr(view, 'extra_related_fields'):
+            related_fields.update(view.extra_related_fields(obj))
         if not hasattr(obj, 'related_fields'):
             logger.warning(f"Object {obj.__class__} has no related_fields method")
-            return {}
-        return obj.related_fields(self.context.get('request'))
+        else:
+            related_fields.update(obj.related_fields(self.context.get('request')))
+
+        return related_fields
 
     def _get_summary_fields(self, obj) -> dict[str, dict]:
         if obj is None:

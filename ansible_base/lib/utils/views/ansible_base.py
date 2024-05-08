@@ -51,3 +51,13 @@ class AnsibleBaseView(APIView):
             response['Warning'] = _('This resource has been deprecated and will be removed in a future release.')
 
         return response
+
+    def extra_related_fields(self, obj):
+        """
+        A hook for adding extra related fields to serializers which
+        make use of this view/viewset.
+
+        This is particularly useful for mixins which want to extend a viewset
+        with additional actions and provide those actions as related fields.
+        """
+        return {}

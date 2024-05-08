@@ -1,3 +1,5 @@
+from itertools import chain
+
 from django.shortcuts import render
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
@@ -5,6 +7,7 @@ from rest_framework.reverse import reverse
 from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
+from ansible_base.oauth2_provider.views import DABOAuth2UserViewsetMixin
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.api.permissions import AnsibleBaseObjectPermissions, AnsibleBaseUserPermissions
 from ansible_base.rbac.policies import visible_users
@@ -47,7 +50,7 @@ class TeamViewSet(TestAppViewSet):
     select_related = ('resource__content_type',)
 
 
-class UserViewSet(TestAppViewSet):
+class UserViewSet(DABOAuth2UserViewsetMixin, TestAppViewSet):
     queryset = models.User.objects.all()
     permission_classes = [AnsibleBaseUserPermissions]
     serializer_class = serializers.UserSerializer
@@ -57,6 +60,12 @@ class UserViewSet(TestAppViewSet):
         qs = visible_users(self.request.user, queryset=qs)
         qs = self.apply_optimizations(qs)
         return qs
+
+    @action(detail=False, methods=['get'])
+    def me(self, request, pk=None):
+        user = request.user
+        serializer = self.get_serializer(user)
+        return Response(serializer.data)
 
 
 class EncryptionModelViewSet(TestAppViewSet):
@@ -125,12 +134,21 @@ class UUIDModelViewSet(TestAppViewSet):
 def api_root(request, format=None):
     from ansible_base.activitystream.urls import router as activitystream_router
     from ansible_base.authentication.urls import router as auth_router
+    from ansible_base.oauth2_provider.urls import router as oauth2_provider_router
     from ansible_base.rbac.api.router import router as rbac_router
     from ansible_base.resource_registry.urls import service_router
     from test_app.router import router
 
     list_endpoints = {}
-    for url in router.urls + auth_router.urls + service_router.urls + activitystream_router.urls + rbac_router.urls:
+    urls = [
+        activitystream_router.urls,
+        auth_router.urls,
+        oauth2_provider_router.urls,
+        rbac_router.urls,
+        router.urls,
+        service_router.urls,
+    ]
+    for url in chain(*urls):
         # only want "root" list views, for example:
         # want '^users/$' [name='user-list']
         # do not want '^users/(?P<pk>[^/.]+)/organizations/$' [name='user-organizations-list'],

@@ -3,7 +3,7 @@ from django.urls import reverse
 
 from ansible_base.lib.routers import AssociationResourceRouter
 from test_app import views
-from test_app.models import Inventory, User
+from test_app.models import Inventory, Organization, User
 
 
 def validate_expected_url_pattern_names(router, expected_url_pattern_names):
@@ -19,20 +19,20 @@ def validate_expected_url_pattern_names(router, expected_url_pattern_names):
 def test_association_router_basic_viewset():
     router = AssociationResourceRouter()
     router.register(
-        r'user',
-        views.UserViewSet,
-        basename='user',
+        r'organizations',
+        views.OrganizationViewSet,
+        basename='organization',
     )
-    validate_expected_url_pattern_names(router, ['user-list', 'user-detail'])
+    validate_expected_url_pattern_names(router, ['organization-list', 'organization-detail'])
 
 
 def test_association_router_basic_viewset_no_basename():
-    class UserViewSetWithQueryset(views.UserViewSet):
-        queryset = User.objects.all()
+    class OrganizationViewSetWithQueryset(views.OrganizationViewSet):
+        queryset = Organization.objects.all()
 
     router = AssociationResourceRouter()
-    router.register(r'user', UserViewSetWithQueryset)
-    validate_expected_url_pattern_names(router, ['user-list', 'user-detail'])
+    router.register(r'organizations', OrganizationViewSetWithQueryset)
+    validate_expected_url_pattern_names(router, ['organization-list', 'organization-detail'])
 
 
 def test_association_router_associate_viewset_all_mapings():
@@ -106,9 +106,6 @@ def test_association_router_associate_existing_item(db, admin_api_client, random
     related_model = RelatedFieldsTestModel.objects.create()
     related_model.users.add(random_user)
     assert related_model.users.count() == 1
-
-    from test_app.models import User
-
     assert User.objects.get(pk=random_user.pk) is not None
 
     url = reverse('related_fields_test_model-users-associate', kwargs={'pk': related_model.pk})

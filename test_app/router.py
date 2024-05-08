@@ -1,4 +1,5 @@
 from ansible_base.lib.routers import AssociationResourceRouter
+from ansible_base.oauth2_provider import views as oauth2_provider_views
 from ansible_base.rbac.api import views as rbac_views
 from test_app import views
 
@@ -61,6 +62,8 @@ router.register(
     related_views={
         'organizations': (views.OrganizationViewSet, 'organizations'),
         'teams': (views.TeamViewSet, 'teams'),
+        'tokens': (oauth2_provider_views.OAuth2TokenViewSet, 'access_tokens'),
+        'applications': (oauth2_provider_views.OAuth2ApplicationViewSet, 'applications'),
     },
     basename='user',
 )
