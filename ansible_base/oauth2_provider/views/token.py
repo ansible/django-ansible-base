@@ -13,7 +13,7 @@ from ansible_base.oauth2_provider.serializers import OAuth2TokenSerializer
 
 
 class TokenView(oauth_views.TokenView, AnsibleBaseDjangoAppApiView):
-    # There is a big flow of logic that happens around this behind the scenes.
+    # There is a big flow of logic that happens around this (create_token_response) behind the scenes.
     #
     # oauth2_provider.views.TokenView inherits from oauth2_provider.views.mixins.OAuthLibMixin
     # That's where this method comes from originally.
