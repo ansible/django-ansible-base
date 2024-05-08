@@ -1,7 +1,7 @@
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.serializers import ModelSerializer
 
-from ansible_base.lib.serializers.common import CommonModelSerializer, ImmutableCommonModelSerializer, NamedCommonModelSerializer
+from ansible_base.lib.serializers.common import CommonModelSerializer, ImmutableCommonModelSerializer, NamedCommonModelSerializer, UneditableSystemUserSerializer
 from ansible_base.rbac.api.related import RelatedAccessMixin
 from test_app import models
 
@@ -18,7 +18,7 @@ class TeamSerializer(RelatedAccessMixin, NamedCommonModelSerializer):
         fields = '__all__'
 
 
-class UserSerializer(CommonModelSerializer):
+class UserSerializer(UneditableSystemUserSerializer):
     class Meta:
         model = models.User
         exclude = (

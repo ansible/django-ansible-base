@@ -2,8 +2,9 @@ import pytest
 from crum import impersonate
 
 from ansible_base.authentication.models import AuthenticatorMap
-from ansible_base.lib.serializers.common import CommonModelSerializer
+from ansible_base.lib.serializers.common import CommonModelSerializer, UneditableSystemUserSerializer
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
+from rest_framework.serializers import ValidationError
 from test_app.models import EncryptionModel, ImmutableLogEntry, ResourceMigrationTestModel, Team
 from test_app.serializers import EncryptionModelSerializer, ImmutableLogEntrySerializer, ResourceMigrationTestModelSerializer, TeamSerializer, UserSerializer
 
@@ -57,6 +58,14 @@ def test_no_reverse_url_name():
     serializer = ResourceMigrationTestModelSerializer()
     assert serializer.get_url(model) == ''
 
+@pytest.mark.django_db
+def test_no_modify_system_user():
+    sysuser = models.get_system_user()
+    update = {}
+    update["email"] = "noworky@gmail.com"
+    serializer = UneditableSystemUserSerializer(sysuser)
+    with pytest.raises(ValidationError):
+        serializer.validate(update)
 
 @pytest.mark.django_db
 def test_encrypted_model_reverse_url_name():

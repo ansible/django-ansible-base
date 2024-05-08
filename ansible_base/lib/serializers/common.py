@@ -9,6 +9,7 @@ from rest_framework.serializers import ValidationError
 
 from ansible_base.lib.abstract_models.common import get_url_for_object
 from ansible_base.lib.serializers.validation import ValidationSerializerMixin
+from ansible_base.lib.utils import models
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 
 logger = logging.getLogger('ansible_base.lib.serializers.common')
@@ -110,5 +111,6 @@ class UneditableSystemUserSerializer(CommonModelSerializer):
     """
 
     def validate(self, data):
-        if data["username"] == settings.SYSTEM_USERNAME:
+        if self.instance.id == models.get_system_user().id:
             raise ValidationError(_('System users cannot be modified'))
+        return data
