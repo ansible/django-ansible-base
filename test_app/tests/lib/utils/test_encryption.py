@@ -56,7 +56,7 @@ def test_generate_hmac_field_setting_set(expected_log):
     """
     Ensure a log is generated if the variable is unset
     """
-    hmac_message = 'The setting ANSIBLE_BASE_SHARED_SECRET was not set, insecurely using default'
+    hmac_message = 'The setting ANSIBLE_BASE_SHARED_SECRET was not set, some functionality may be disabled.'
     with expected_log(logger, 'error', hmac_message, assert_not_called=True):
         generate_hmac_sha256_shared_secret()
 

@@ -88,7 +88,7 @@ class SharedSecretNotFound(Exception):
 def generate_hmac_sha256_shared_secret(nonce: Optional[str] = None) -> str:
     shared_secret = getattr(settings, 'ANSIBLE_BASE_SHARED_SECRET', None)
     if shared_secret is None or not shared_secret:
-        logger.error("The setting ANSIBLE_BASE_SHARED_SECRET was not set, insecurely using default")
+        logger.error("The setting ANSIBLE_BASE_SHARED_SECRET was not set, some functionality may be disabled.")
         raise SharedSecretNotFound()
 
     if nonce is None:
