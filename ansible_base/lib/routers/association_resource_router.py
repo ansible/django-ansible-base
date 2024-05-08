@@ -141,7 +141,10 @@ class AssociateMixin(RelatedListMixin):
             qs = cls.objects.all()
 
         if self.action == 'associate':
-            return self.filter_queryset(qs)
+            if hasattr(self, 'filter_associate_queryset'):
+                return self.filter_associate_queryset(qs)
+            else:
+                return self.filter_queryset(qs)
         return qs
 
     def get_serializer_class(self):

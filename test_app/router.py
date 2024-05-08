@@ -18,9 +18,8 @@ class RelatedUserViewSet(views.UserViewSet):
         "Do not filter users for the related list view, /organizations/42/users/"
         return self.apply_optimizations(qs)
 
-    def get_association_queryset(self):
+    def filter_associate_queryset(self, qs):
         "Use RBAC filter when associating new users, /organizations/42/users/associate/"
-        qs = super.get_assocation_queryset()
         return super().filter_queryset(qs)
 
 
