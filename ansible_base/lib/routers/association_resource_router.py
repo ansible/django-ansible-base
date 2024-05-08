@@ -58,7 +58,7 @@ class RelatedListMixin:
         return getattr(parent_instance, self.association_fk).all()
 
 
-class BasicAssociationSerializer(serializers.Serializer):
+class AssociationSerializerBase(serializers.Serializer):
     """Serializer used for associating related objects, where all those related objects are allowed
 
     It is expected that subclasses will set target_queryset which gives the queryset
@@ -75,27 +75,8 @@ class BasicAssociationSerializer(serializers.Serializer):
         self.fields['instances'] = serializers.PrimaryKeyRelatedField(queryset=self.get_queryset_on_init(request), many=True)
 
 
-class FilteredAssociationSerializer(BasicAssociationSerializer):
-    """Serializer used for associating related objects, with DAB RBAC filtering applied
-
-    This applies a filtered queryset to instances so that only those the request user can view
-    are considered, and objects the user can not see will result in a 400 as if it did not exist"""
-
-    def get_queryset_on_init(self, request) -> QuerySet:
-        cls = self.target_queryset.model
-        return cls.access_qs(request.user, queryset=self.target_queryset)
-
-
-class UserAssociationSerializer(BasicAssociationSerializer):
-    """Serializer used for associating related users, using DAB RBAC rules for user visibility"""
-
-    def get_queryset_on_init(self, request) -> QuerySet:
-        # Use in-line import because not all apps may be using RBAC
-        from ansible_base.rbac.policies import visible_users
-
-        return visible_users(request.user, queryset=self.target_queryset)
-
-
+# Registry contains subclasses of AssociationSerializerBase indexed by name
+# this prevents duplicate names which would cause schema to not render correctly
 serializer_registry = {}
 
 
@@ -151,33 +132,27 @@ class AssociateMixin(RelatedListMixin):
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    def get_association_parent_serializer_class(self, cls: Type[Model]) -> Type[serializers.Serializer]:
-        if self.action == 'disassociate':
-            return BasicAssociationSerializer
+    def get_association_queryset(self) -> QuerySet:
+        if self.queryset:
+            qs = self.queryset
+            cls = self.queryset.model
+        else:
+            cls = self.serializer_class.Meta.model
+            qs = cls.objects.all()
 
-        # Implied that action is associate
-        if 'ansible_base.rbac' in settings.INSTALLED_APPS and permission_registry.is_registered(cls):
-            return FilteredAssociationSerializer
-        elif 'ansible_base.rbac' in settings.INSTALLED_APPS and cls._meta.model_name == 'user':
-            return UserAssociationSerializer
-        return BasicAssociationSerializer
+        if self.action == 'associate':
+            return self.filter_queryset(qs)
+        return qs
 
     def get_serializer_class(self):
         if self.action in ('disassociate', 'associate'):
-            if self.queryset:
-                qs = self.queryset
-                cls = self.queryset.model
-            else:
-                cls = self.serializer_class.Meta.model
-                qs = cls.objects.all()
+            qs = self.get_association_queryset()
 
-            # qs = self.filter_queryset(qs)
-            if parent_cls := self.get_association_parent_serializer_class(cls):
-                cls_name = f'{qs.model.__name__}{parent_cls.__name__}'
+            cls_name = f'{self.__name__}AssociationSerializer'
 
-                if cls_name not in serializer_registry:
-                    serializer_registry[cls_name] = type(cls_name, (parent_cls,), {'target_queryset': qs})
-                return serializer_registry[cls_name]
+            if cls_name not in serializer_registry:
+                serializer_registry[cls_name] = type(cls_name, (AssociationSerializerBase,), {'target_queryset': qs})
+            return serializer_registry[cls_name]
 
         return super().get_serializer_class()
 

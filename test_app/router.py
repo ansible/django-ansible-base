@@ -15,7 +15,13 @@ router.register(r'encrypted_models', views.EncryptionModelViewSet, basename='enc
 # in the filter_queryset method, but in some endpoints we show all users
 class RelatedUserViewSet(views.UserViewSet):
     def filter_queryset(self, qs):
+        "Do not filter users for the related list view, /organizations/42/users/"
         return self.apply_optimizations(qs)
+
+    def get_association_queryset(self):
+        "Use RBAC filter when associating new users, /organizations/42/users/associate/"
+        qs = super.get_assocation_queryset()
+        return super().filter_queryset(qs)
 
 
 router.register(
