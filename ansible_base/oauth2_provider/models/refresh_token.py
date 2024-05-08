@@ -15,7 +15,7 @@ if 'ansible_base.activitystream' in settings.INSTALLED_APPS:
 
 class OAuth2RefreshToken(CommonModel, oauth2_models.AbstractRefreshToken, activitystream):
     class Meta(oauth2_models.AbstractRefreshToken.Meta):
-        verbose_name = _('access token')
+        verbose_name = _('refresh token')
         ordering = ('id',)
         swappable = "OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL"
 
