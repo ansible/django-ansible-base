@@ -74,7 +74,8 @@ force-exclude = '''
 [tool.isort]
 profile = "black"
 line_length = 160
-extend_skip = [ "ansible_base/authentication/migrations", "ansible_base/activitystream/migrations", "test_app/migrations", "ansible_base/oauth2_provider/migrations" ]
+extend_skip = [ "test_app/migrations" ]
+skip_glob = [ "ansible_base/*/migrations" ]
 
 
 [tool.flake8]
