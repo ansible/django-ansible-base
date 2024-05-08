@@ -48,3 +48,22 @@ class DefaultAPIView(AnsibleBaseView):
     all my good stuff
     ...
 ```
+
+
+## Adding extra related fields
+
+There may be cases where the associative router does not provide a way to add specific related views to your view. As a way to help combat this the `AnsibleBaseView` class has a method defined called `extra_related_fields` which returns an empty dict (`{}`) by default. The entries expected in this dictionary are in the format:
+```
+{
+    "string": "url",
+}
+```
+Where string is the name of the field under the related section in the API and URL is the URL to that object. For example, a return like:
+```
+{
+    'authenticators': reverse('user-authenticators-list', kwargs={'pk': obj.pk}),
+}
+```
+Would cause `authenticators` to be listed under the related field and the related URL will be generated from the user-authenticators-list url and should end up as something like `/api/users/:id/authenticators/`.
+
+This can be particularly useful if a feature in DAB wants to extend a view that is created by a service. In this case you can create a MixIn like `ansible_base.oauth2_provider.views/user_mixin.DABOAuth2UserViewsetMixin` which can set `extra_related_fields` and then have the view in the service extend the MixIn. 
