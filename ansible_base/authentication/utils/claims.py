@@ -286,10 +286,14 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
     return user
 
 
-def get_orgs_by_name():
+def get_orgs_by_name(filter_names=None):
     Organization = get_organization_model()
     existing_orgs = {}
-    for org_id, org_name in Organization.objects.all().values_list('id', 'name'):
+    if filter_names:
+        qs = Organization.objects.filter(name__in=filter_names)
+    else:
+        qs = Organization.objects.all()
+    for org_id, org_name in qs.values_list('id', 'name'):
         existing_orgs[org_name] = org_id
     return existing_orgs
 
@@ -308,7 +312,7 @@ def create_orgs_and_teams(org_list, team_map, adapter=None, can_create=True):
         return
 
     # Get all of the IDs and names of orgs in the DB and create any new org defined in LDAP that does not exist in the DB
-    existing_orgs = get_orgs_by_name()
+    existing_orgs = get_orgs_by_name(filter_names=org_list)
     print(f'EXISTING ORGS: {existing_orgs}')
 
     # Parse through orgs and teams provided and create a list of unique items we care about creating
@@ -335,7 +339,7 @@ def create_orgs_and_teams(org_list, team_map, adapter=None, can_create=True):
 
     # Do the same for teams
     Team = get_team_model()
-    existing_team_names = list(Team.objects.all().values_list('name', flat=True))
+    existing_team_names = list(Team.objects.filter(name__in=all_teams).values_list('name', flat=True))
     print(f'EXISTING TEAMS: {existing_team_names}')
     print(f'ALL TEAMS: {all_teams}')
     for team_name in all_teams:
