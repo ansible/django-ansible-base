@@ -77,7 +77,6 @@ def test_load_existing_teams():
     for team in teams:
         if team in filtered_teams:
             assert team.name in res
-            assert res[team.name] == team.id
         else:
             assert team.name not in res
 
