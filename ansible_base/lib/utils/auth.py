@@ -11,13 +11,9 @@ def get_model_from_settings(setting_name):
     try:
         return django_apps.get_model(setting, require_ready=False)
     except ValueError:
-        raise ImproperlyConfigured(
-            f"{setting_name} must be of the form 'app_label.model_name'"
-        )
+        raise ImproperlyConfigured(f"{setting_name} must be of the form 'app_label.model_name'")
     except LookupError:
-        raise ImproperlyConfigured(
-            f"{setting_name} refers to model '{setting}' that has not been installed"
-        )
+        raise ImproperlyConfigured(f"{setting_name} refers to model '{setting}' that has not been installed")
 
 
 def get_team_model():
