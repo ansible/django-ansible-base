@@ -2,7 +2,7 @@ import copy
 import logging
 import os
 from typing import Union
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.translation import gettext as _
@@ -53,16 +53,27 @@ class RedisClient(DefaultClient):
 
         # If we can't parse this just let it raise because other things will fail anyway
         parsed_url = urlparse(self._server[index])
-        for arg_name, parse_name in [('host', 'hostname'), ('port', 'port'), ('username', 'username'), ('password', 'password')]:
-            attribute = getattr(parsed_url, parse_name, None)
-            if attribute:
-                kwargs[arg_name] = attribute
+        if parsed_url.scheme in ['file', 'unix']:
+            # Attempt to attach to a socket if its a file or unix scheme
+            kwargs['unix_socket_path'] = parsed_url.path
+        elif parsed_url.scheme in ['redis', 'rediss']:
+            # Extract information from a rediss url
+            for arg_name, parse_name in [('host', 'hostname'), ('port', 'port'), ('username', 'username'), ('password', 'password')]:
+                attribute = getattr(parsed_url, parse_name, None)
+                if attribute:
+                    kwargs[arg_name] = attribute
 
-        # Add the DB from the URL (if passed)
-        try:
-            kwargs['db'] = int(parsed_url.path.split('/')[1])
-        except (IndexError, ValueError):
-            pass
+            # Add the DB from the URL (if passed)
+            try:
+                kwargs['db'] = int(parsed_url.path.split('/')[1])
+            except (IndexError, ValueError):
+                pass
+        else:
+            raise ImproperlyConfigured('This redis client can only accept file, unix, redis or rediss URLs')
+
+        # Add any additional query params from the URL as kwargs
+        for key, value in parse_qs(parsed_url.query).items():
+            kwargs[key] = value[-1]
 
         if kwargs.get('ssl', None):
             for file_setting in ['ssl_certfile', 'ssl_keyfile', 'ssl_ca_certs']:
