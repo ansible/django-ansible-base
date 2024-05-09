@@ -235,14 +235,22 @@ def test_activitystream_api_related_related_content_object(admin_api_client, ani
     Should show in both list and detail views.
     """
     animal.people_friends.add(random_user)
+    db_entry = animal.activity_stream_entries.last()
 
-    url = reverse("activitystream-detail", args=[animal.activity_stream_entries.last().id])
+    # sanity assertions that entry links models we expect
+    assert db_entry.related_content_type == ContentType.objects.get_for_model(random_user)
+    assert db_entry.content_type == ContentType.objects.get_for_model(animal)
+
+    url = reverse("activitystream-detail", args=[db_entry.id])
     response = admin_api_client.get(url)
     assert response.status_code == 200
     entry = response.data
     assert entry["operation"] == "associate"
     expected_url = reverse("user-detail", args=[random_user.id])
     assert entry["related"]["related_content_object"] == expected_url
+    assert entry["changes"] is None
+    assert entry["content_type_model"] == 'animal'
+    assert entry["related_content_type_model"] == 'user'
 
 
 @pytest.mark.parametrize(

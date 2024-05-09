@@ -48,9 +48,10 @@ class EntrySerializer(ImmutableCommonModelSerializer):
         field = model._meta.get_field(field_name)
         return field.to_python(value)
 
-    def get_changes(self, obj) -> dict[str, dict]:
+    def get_changes(self, obj) -> Optional[dict[str, dict]]:
         """
         We store strings, we have to convert them back to the correct type.
+        Related associations and disassociations will show a null for changes.
         """
         if not obj.changes:
             return None
