@@ -1,8 +1,5 @@
-import re
-
 import oauth2_provider.models as oauth2_models
 from django.conf import settings
-from django.core.validators import RegexValidator
 from django.db import models
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
@@ -14,9 +11,6 @@ if 'ansible_base.activitystream' in settings.INSTALLED_APPS:
     from ansible_base.activitystream.models import AuditableModel
 
     activitystream = AuditableModel
-
-
-DATA_URI_RE = re.compile(r'.*')  # FIXME
 
 
 class OAuth2Application(NamedCommonModel, oauth2_models.AbstractApplication, activitystream):
@@ -52,11 +46,6 @@ class OAuth2Application(NamedCommonModel, oauth2_models.AbstractApplication, act
     description = models.TextField(
         default='',
         blank=True,
-    )
-    logo_data = models.TextField(
-        default='',
-        editable=False,
-        validators=[RegexValidator(DATA_URI_RE)],
     )
     organization = models.ForeignKey(
         getattr(settings, 'ANSIBLE_BASE_ORGANIZATION_MODEL'),
