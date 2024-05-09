@@ -258,18 +258,12 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
         return None
 
     # Make the orgs and the teams as necessary ...
-    print('*' * 100)
-    print(f'MAKE results: {results}')
-    print('*' * 100)
     org_list = [x[0] for x in results['claims']['organization_membership'].items() if x[1]]
     team_map = {}
     for org_name,v in results['claims']['team_membership'].items():
         for team_name, member in v.items():
             if member:
                 team_map[team_name] = org_name
-    print(org_list)
-    print(team_map)
-    print('*' * 100)
     create_orgs_and_teams(org_list, team_map)
 
     # We have allowed access so now we need to make the user within the system
@@ -287,6 +281,7 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
 
 
 def get_orgs_by_name(filter_names=None):
+    '''Make a map of orgs by their name and id.'''
     Organization = get_organization_model()
     existing_orgs = {}
     if filter_names:
@@ -299,13 +294,8 @@ def get_orgs_by_name(filter_names=None):
 
 
 def create_orgs_and_teams(org_list, team_map, adapter=None, can_create=True):
-    #
     # org_list is a set of organization names
     # team_map is a dict of {<team_name>: <org name>}
-    #
-    # Move this junk into save of the settings for performance later, there is no need to do that here
-    #    with maybe the exception of someone defining this in settings before the server is started?
-    # ==============================================================================================================
 
     if not can_create:
         logger.debug(f"Adapter {adapter} is not allowed to create orgs/teams")
@@ -313,7 +303,6 @@ def create_orgs_and_teams(org_list, team_map, adapter=None, can_create=True):
 
     # Get all of the IDs and names of orgs in the DB and create any new org defined in LDAP that does not exist in the DB
     existing_orgs = get_orgs_by_name(filter_names=org_list)
-    print(f'EXISTING ORGS: {existing_orgs}')
 
     # Parse through orgs and teams provided and create a list of unique items we care about creating
     all_orgs = list(set(org_list))
@@ -340,8 +329,6 @@ def create_orgs_and_teams(org_list, team_map, adapter=None, can_create=True):
     # Do the same for teams
     Team = get_team_model()
     existing_team_names = list(Team.objects.filter(name__in=all_teams).values_list('name', flat=True))
-    print(f'EXISTING TEAMS: {existing_team_names}')
-    print(f'ALL TEAMS: {all_teams}')
     for team_name in all_teams:
         if team_name not in existing_team_names:
             logger.info("{} adapter is creating team {} in org {}".format(adapter, team_name, team_map[team_name]))
