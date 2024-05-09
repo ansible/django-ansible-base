@@ -1,7 +1,9 @@
-import pytest
 from unittest.mock import patch
-from ansible_base.lib.utils.auth import get_model_from_settings
+
+import pytest
 from django.core.exceptions import ImproperlyConfigured
+
+from ansible_base.lib.utils.auth import get_model_from_settings
 
 
 def test_get_model_from_settings_invalid_setting_name():

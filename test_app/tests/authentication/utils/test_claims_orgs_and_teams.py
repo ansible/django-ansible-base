@@ -1,15 +1,18 @@
-import pytest
 import random
 import string
 from unittest.mock import patch
 
+import pytest
+
+from ansible_base.authentication.utils.claims import (
+    create_missing_orgs,
+    create_missing_teams,
+    create_orgs_and_teams,
+    load_existing_orgs,
+    load_existing_teams,
+    process_organization_and_team_memberships,
+)
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
-from ansible_base.authentication.utils.claims import process_organization_and_team_memberships
-from ansible_base.authentication.utils.claims import create_orgs_and_teams
-from ansible_base.authentication.utils.claims import load_existing_orgs
-from ansible_base.authentication.utils.claims import load_existing_teams
-from ansible_base.authentication.utils.claims import create_missing_orgs
-from ansible_base.authentication.utils.claims import create_missing_teams
 
 
 def generate_org_or_team_name():
