@@ -260,7 +260,7 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
     # Make the orgs and the teams as necessary ...
     print(f'MAKE results: {results}')
     org_list = [x[0] for x in results['claims']['organization_membership'].items() if x[1]]
-    create_org_and_teams(org_list, {})
+    create_orgs_and_teams(org_list, {})
 
     # We have allowed access so now we need to make the user within the system
     reconcile_class = getattr(settings, 'ANSIBLE_BASE_AUTHENTICATOR_RECONCILE_MODULE', 'ansible_base.authentication.utils.claims')
@@ -276,7 +276,7 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
     return user
 
 
-def get_orgs_by_ids():
+def get_orgs_by_name():
     Organization = get_organization_model()
     existing_orgs = {}
     for org_id, org_name in Organization.objects.all().values_list('id', 'name'):
@@ -284,7 +284,7 @@ def get_orgs_by_ids():
     return existing_orgs
 
 
-def create_org_and_teams(org_list, team_map, adapter=None, can_create=True):
+def create_orgs_and_teams(org_list, team_map, adapter=None, can_create=True):
     #
     # org_list is a set of organization names
     # team_map is a dict of {<team_name>: <org name>}
@@ -298,7 +298,7 @@ def create_org_and_teams(org_list, team_map, adapter=None, can_create=True):
         return
 
     # Get all of the IDs and names of orgs in the DB and create any new org defined in LDAP that does not exist in the DB
-    existing_orgs = get_orgs_by_ids()
+    existing_orgs = get_orgs_by_name()
 
     # Parse through orgs and teams provided and create a list of unique items we care about creating
     all_orgs = list(set(org_list))
@@ -315,18 +315,12 @@ def create_org_and_teams(org_list, team_map, adapter=None, can_create=True):
             #  although the rest of the login process might stack later on
             logger.error("{} adapter is attempting to create a team {} but it does not have an org".format(adapter, team_name))
 
+    Organization = get_organization_model()
     for org_name in all_orgs:
         if org_name and org_name not in existing_orgs:
             logger.info("{} adapter is creating org {}".format(adapter, org_name))
-            '''
-            try:
-                new_org = get_or_create_org_with_default_galaxy_cred(name=org_name)
-            except IntegrityError:
-                # Another thread must have created this org before we did so now we need to get it
-                new_org = get_or_create_org_with_default_galaxy_cred(name=org_name)
-            # Add the org name to the existing orgs since we created it and we may need it to build the teams below
+            new_org, _ = Organization.objects.get_or_create(name=org_name)
             existing_orgs[org_name] = new_org.id
-            '''
 
     # Do the same for teams
     Team = get_team_model()
@@ -334,15 +328,7 @@ def create_org_and_teams(org_list, team_map, adapter=None, can_create=True):
     for team_name in all_teams:
         if team_name not in existing_team_names:
             logger.info("{} adapter is creating team {} in org {}".format(adapter, team_name, team_map[team_name]))
-            '''
-            try:
-                Team.objects.create(name=team_name, organization_id=existing_orgs[team_map[team_name]])
-            except IntegrityError:
-                # If another process got here before us that is ok because we don't need the ID from this team or anything
-                pass
-            '''
-    # End move some day
-    # ==============================================================================================================
+            Team.objects.get_or_create(name=team_name, organization_id=existing_orgs[team_map[team_name]])
 
 
 class ReconcileUser:
