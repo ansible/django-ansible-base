@@ -150,7 +150,8 @@ class AssociateMixin(RelatedListMixin):
         if self.action in ('disassociate', 'associate'):
             qs = self.get_association_queryset()
 
-            cls_name = f'{type(self).__name__}AssociationSerializer'
+            rel_name = self.association_fk.replace('_', ' ').title().replace(' ', '')
+            cls_name = f'{self.parent_viewset.__name__}{rel_name}AssociationSerializer'
 
             if cls_name not in serializer_registry:
                 serializer_registry[cls_name] = type(cls_name, (AssociationSerializerBase,), {'target_queryset': qs})

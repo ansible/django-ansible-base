@@ -3,7 +3,7 @@ from django.urls import reverse
 
 from ansible_base.lib.routers import AssociationResourceRouter
 from test_app import views
-from test_app.models import Cow, Organization, Inventory, RelatedFieldsTestModel, Team, User
+from test_app.models import Cow, Inventory, Organization, RelatedFieldsTestModel, Team, User
 
 
 def validate_expected_url_pattern_names(router, expected_url_pattern_names):
