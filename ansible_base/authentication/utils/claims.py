@@ -258,13 +258,7 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
         return None
 
     # Make the orgs and the teams as necessary ...
-    org_list = [x[0] for x in results['claims']['organization_membership'].items() if x[1]]
-    team_map = {}
-    for org_name,v in results['claims']['team_membership'].items():
-        for team_name, member in v.items():
-            if member:
-                team_map[team_name] = org_name
-    create_orgs_and_teams(org_list, team_map)
+    process_organization_and_team_memberships(results)
 
     # We have allowed access so now we need to make the user within the system
     reconcile_class = getattr(settings, 'ANSIBLE_BASE_AUTHENTICATOR_RECONCILE_MODULE', 'ansible_base.authentication.utils.claims')
@@ -275,9 +269,23 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
     except Exception as e:
         logger.error(f"Failed to reconcile user attributes! {e}")
 
-    #import epdb; epdb.st()
-
     return user
+
+
+def process_organization_and_team_memberships(results):
+    # Extract organizations where the user is a member
+    org_list = [org_name for org_name, is_member in results['claims']['organization_membership'].items() if is_member]
+
+    # Build a mapping of teams to their respective organizations, filtering out non-members
+    team_map = {
+        team_name: org_name
+        for org_name, teams in results['claims']['team_membership'].items()
+        for team_name, is_member in teams.items() if is_member
+    }
+
+    # Create organizations and teams based on the membership data
+    create_orgs_and_teams(org_list, team_map)
+
 
 def create_orgs_and_teams(org_list, team_map, adapter=None, can_create=True):
     # Early exit if creation is not allowed
