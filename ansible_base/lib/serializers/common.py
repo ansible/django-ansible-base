@@ -111,7 +111,7 @@ class CommonUserSerializer(CommonModelSerializer):
     """
 
     def validate(self, data):
-        if hasattr(self.instance, "id") and self.instance.id == models.get_system_user().id:
+        if hasattr(self, 'instance') and hasattr(self.instance, 'id') and self.instance.id == models.get_system_user().id:
             raise ValidationError(_('System users cannot be modified'))
         return data
 
