@@ -61,7 +61,7 @@ def determine_username_from_uid(uid: str = None, authenticator: Authenticator = 
         new_username = get_local_username({'username': uid})
         logger.info(
             f'Authenticator {authenticator.name} wants to authenticate {uid} but that'
-            f'username is already in use by another authenticator,'
+            f' username is already in use by another authenticator,'
             f' the user from this authenticator will be {new_username}'
         )
         return new_username

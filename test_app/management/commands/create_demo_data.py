@@ -7,6 +7,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand
 
 from ansible_base.authentication.models import Authenticator, AuthenticatorUser
+from ansible_base.oauth2_provider.models import OAuth2Application
 from ansible_base.rbac.models import RoleDefinition
 from ansible_base.rbac.validators import combine_values, permissions_allowed_for_role
 from test_app.models import EncryptionModel, InstanceGroup, Inventory, Organization, Team, User
@@ -121,6 +122,14 @@ class Command(BaseCommand):
             user.save()
 
         team_member.give_permission(spud, awx_devs)
+
+        OAuth2Application.objects.get_or_create(
+            name="Demo OAuth2 Application",
+            description="Demo OAuth2 Application",
+            redirect_uris="http://example.com/callback",
+            authorization_grant_type="authorization-code",
+            client_type="confidential",
+        )
 
         self.stdout.write('Finished creating demo data!')
         self.stdout.write(f'Admin user password: {admin_password}')

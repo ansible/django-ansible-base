@@ -11,6 +11,7 @@ from ansible_base.authentication.social_auth import SocialAuthMixin
 from ansible_base.authentication.utils.authentication import determine_username_from_uid, get_or_create_authenticator_user
 from ansible_base.authentication.utils.claims import update_user_claims
 from ansible_base.lib.serializers.fields import BooleanField, CharField, ChoiceField, IntegerField
+from ansible_base.lib.utils.requests import get_remote_host
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.tacacs')
 
@@ -105,7 +106,7 @@ class AuthenticatorPlugin(SocialAuthMixin, AbstractAuthenticatorPlugin, ModelBac
                 timeout=self.database_instance.configuration["SESSION_TIMEOUT"],
             )
             rem_addr = TAC_PLUS_VIRTUAL_REM_ADDR
-            client_ip = self._get_client_ip(request)
+            client_ip = get_remote_host(request)
             if client_ip:
                 rem_addr = client_ip
 
@@ -131,15 +132,3 @@ class AuthenticatorPlugin(SocialAuthMixin, AbstractAuthenticatorPlugin, ModelBac
 
         # Tacacs could not validate us so return None.
         return None
-
-    def _get_client_ip(self, request):
-        if not request or not hasattr(request, 'META'):
-            return None
-
-        ip = None
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(',')[0]
-        else:
-            ip = request.META.get('REMOTE_ADDR')
-        return ip

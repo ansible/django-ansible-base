@@ -35,6 +35,11 @@ LOGGING = {
             'handlers': ['console'],
             'level': 'DEBUG',
         },
+        '': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
     },
 }
 for logger in LOGGING["loggers"]:  # noqa: F405
@@ -57,6 +62,7 @@ INSTALLED_APPS = [
     'ansible_base.resource_registry',
     'ansible_base.rest_pagination',
     'ansible_base.rbac',
+    'ansible_base.oauth2_provider',
     'test_app',
     'django_extensions',
     'debug_toolbar',
@@ -150,3 +156,7 @@ ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES = True
 ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES = True
 
 ANSIBLE_BASE_USER_VIEWSET = 'test_app.views.UserViewSet'
+
+LOGIN_URL = "/login/login"
+
+ANSIBLE_BASE_SHARED_SECRET = 'testing'
