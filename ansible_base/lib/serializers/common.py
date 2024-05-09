@@ -3,6 +3,7 @@ import logging
 from django.db.models.fields import NOT_PROVIDED
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.fields import empty
 from rest_framework.serializers import ValidationError
 
@@ -103,13 +104,19 @@ class ImmutableCommonModelSerializer(AbstractCommonModelSerializer):
         fields = AbstractCommonModelSerializer.Meta.fields + ['created', 'created_by']
 
 
-class UneditableSystemUserSerializer(CommonModelSerializer):
+class CommonUserSerializer(CommonModelSerializer):
     """
-    Disallows editing of system user (settings.SYSTEM_USERNAME).
-    Make sure to call super if you override validate(..).
+    Disallows editing of system user (settings.SYSTEM_USERNAME) and enforces
+    superuser requirement.
     """
 
     def validate(self, data):
         if hasattr(self.instance, "id") and self.instance.id == models.get_system_user().id:
             raise ValidationError(_('System users cannot be modified'))
         return data
+
+    def validate_is_superuser(self, value):
+        if value is True:
+            if not self.context['request'].user.is_superuser:
+                raise PermissionDenied
+        return value

@@ -3,7 +3,7 @@ from crum import impersonate
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.models import AuthenticatorMap
-from ansible_base.lib.serializers.common import CommonModelSerializer, UneditableSystemUserSerializer
+from ansible_base.lib.serializers.common import CommonModelSerializer, CommonUserSerializer
 from ansible_base.lib.utils import models
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from test_app.models import EncryptionModel, ImmutableLogEntry, ResourceMigrationTestModel, Team
@@ -65,7 +65,7 @@ def test_no_modify_system_user():
     sysuser = models.get_system_user()
     update = {}
     update["email"] = "noworky@gmail.com"
-    serializer = UneditableSystemUserSerializer(sysuser)
+    serializer = CommonUserSerializer(sysuser)
     with pytest.raises(ValidationError):
         serializer.validate(update)
 

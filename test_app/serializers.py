@@ -1,12 +1,6 @@
-from rest_framework.exceptions import PermissionDenied
 from rest_framework.serializers import ModelSerializer
 
-from ansible_base.lib.serializers.common import (
-    CommonModelSerializer,
-    ImmutableCommonModelSerializer,
-    NamedCommonModelSerializer,
-    UneditableSystemUserSerializer,
-)
+from ansible_base.lib.serializers.common import CommonModelSerializer, CommonUserSerializer, ImmutableCommonModelSerializer, NamedCommonModelSerializer
 from ansible_base.rbac.api.related import RelatedAccessMixin
 from test_app import models
 
@@ -23,19 +17,13 @@ class TeamSerializer(RelatedAccessMixin, NamedCommonModelSerializer):
         fields = '__all__'
 
 
-class UserSerializer(UneditableSystemUserSerializer):
+class UserSerializer(CommonUserSerializer):
     class Meta:
         model = models.User
         exclude = (
             'user_permissions',
             'groups',
         )
-
-    def validate_is_superuser(self, value):
-        if value is True:
-            if not self.context['request'].user.is_superuser:
-                raise PermissionDenied
-        return value
 
 
 class EncryptionModelSerializer(NamedCommonModelSerializer):
