@@ -280,19 +280,6 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
     return user
 
 
-def get_orgs_by_name(filter_names=None):
-    '''Make a map of orgs by their name and id.'''
-    Organization = get_organization_model()
-    existing_orgs = {}
-    if filter_names:
-        qs = Organization.objects.filter(name__in=filter_names)
-    else:
-        qs = Organization.objects.all()
-    for org_id, org_name in qs.values_list('id', 'name'):
-        existing_orgs[org_name] = org_id
-    return existing_orgs
-
-
 def create_orgs_and_teams(org_list, team_map, adapter=None, can_create=True):
     # org_list is a set of organization names
     # team_map is a dict of {<team_name>: <org name>}
@@ -320,6 +307,13 @@ def create_orgs_and_teams(org_list, team_map, adapter=None, can_create=True):
             logger.error("{} adapter is attempting to create a team {} but it does not have an org".format(adapter, team_name))
 
     Organization = get_organization_model()
+    existing_orgs = {}
+    if filter_names:
+        qs = Organization.objects.filter(name__in=filter_names)
+    else:
+        qs = Organization.objects.all()
+    for org_id, org_name in qs.values_list('id', 'name'):
+        existing_orgs[org_name] = org_id
     for org_name in all_orgs:
         if org_name and org_name not in existing_orgs:
             logger.info("{} adapter is creating org {}".format(adapter, org_name))
