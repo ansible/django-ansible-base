@@ -279,54 +279,60 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
 
     return user
 
-
 def create_orgs_and_teams(org_list, team_map, adapter=None, can_create=True):
-    # org_list is a set of organization names
-    # team_map is a dict of {<team_name>: <org name>}
-
+    # Early exit if creation is not allowed
     if not can_create:
         logger.debug(f"Adapter {adapter} is not allowed to create orgs/teams")
         return
 
-    # Get all of the IDs and names of orgs in the DB and create any new org defined in LDAP that does not exist in the DB
-    existing_orgs = get_orgs_by_name(filter_names=org_list)
+    # Ensure unique organization names and gather all team names
+    all_orgs = set(org_list) | set(team_map.values())
+    all_teams = list(team_map.keys())
 
-    # Parse through orgs and teams provided and create a list of unique items we care about creating
-    all_orgs = list(set(org_list))
-    all_teams = []
-    for team_name in team_map:
-        org_name = team_map[team_name]
-        if org_name:
-            if org_name not in all_orgs:
-                all_orgs.append(org_name)
-            # We don't have to test if this is in all_teams because team_map is already a hash
-            all_teams.append(team_name)
-        else:
-            # The UI should prevent this condition so this is just a double check to prevent a stack trace....
-            #  although the rest of the login process might stack later on
-            logger.error("{} adapter is attempting to create a team {} but it does not have an org".format(adapter, team_name))
+    # Load existing organizations
+    existing_orgs = load_existing_orgs(all_orgs)
 
+    # Create missing organizations
+    create_missing_orgs(all_orgs, existing_orgs, adapter)
+
+    # Load existing teams
+    existing_teams = load_existing_teams(all_teams)
+
+    # Create missing teams
+    create_missing_teams(all_teams, team_map, existing_orgs, existing_teams, adapter)
+
+
+def load_existing_orgs(org_names):
     Organization = get_organization_model()
-    existing_orgs = {}
-    if filter_names:
-        qs = Organization.objects.filter(name__in=filter_names)
-    else:
-        qs = Organization.objects.all()
-    for org_id, org_name in qs.values_list('id', 'name'):
-        existing_orgs[org_name] = org_id
-    for org_name in all_orgs:
-        if org_name and org_name not in existing_orgs:
-            logger.info("{} adapter is creating org {}".format(adapter, org_name))
+    existing_orgs = {org.name: org.id for org in Organization.objects.filter(name__in=org_names)}
+    return existing_orgs
+
+
+def create_missing_orgs(org_names, existing_orgs, adapter):
+    Organization = get_organization_model()
+    for org_name in org_names:
+        if org_name not in existing_orgs:
+            logger.info(f"{adapter} adapter is creating org {org_name}")
             new_org, _ = Organization.objects.get_or_create(name=org_name)
             existing_orgs[org_name] = new_org.id
 
-    # Do the same for teams
+
+def load_existing_teams(team_names):
     Team = get_team_model()
-    existing_team_names = list(Team.objects.filter(name__in=all_teams).values_list('name', flat=True))
-    for team_name in all_teams:
-        if team_name not in existing_team_names:
-            logger.info("{} adapter is creating team {} in org {}".format(adapter, team_name, team_map[team_name]))
-            Team.objects.get_or_create(name=team_name, organization_id=existing_orgs[team_map[team_name]])
+    existing_teams = set(Team.objects.filter(name__in=team_names).values_list('name', flat=True))
+    return existing_teams
+
+
+def create_missing_teams(team_names, team_map, existing_orgs, existing_teams, adapter):
+    Team = get_team_model()
+    for team_name in team_names:
+        if team_name not in existing_teams:
+            org_name = team_map[team_name]
+            if org_name in existing_orgs:
+                logger.info(f"{adapter} adapter is creating team {team_name} in org {org_name}")
+                Team.objects.get_or_create(name=team_name, organization_id=existing_orgs[org_name])
+            else:
+                logger.error(f"{adapter} adapter is attempting to create team {team_name} but its organization does not exist")
 
 
 class ReconcileUser:
