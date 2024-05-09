@@ -8,6 +8,8 @@ from ansible_base.authentication.utils.claims import process_organization_and_te
 from ansible_base.authentication.utils.claims import create_orgs_and_teams
 from ansible_base.authentication.utils.claims import load_existing_orgs
 from ansible_base.authentication.utils.claims import load_existing_teams
+from ansible_base.authentication.utils.claims import create_missing_orgs
+from ansible_base.authentication.utils.claims import create_missing_teams
 
 
 def generate_org_or_team_name():
@@ -75,3 +77,29 @@ def test_load_existing_teams():
             assert res[team.name] == team.id
         else:
             assert team.name not in res
+
+
+@pytest.mark.django_db
+def test_create_missing_orgs():
+    Organization = get_organization_model()
+    org_name = generate_org_or_team_name()
+    existing_orgs = {}
+    create_missing_orgs([org_name], existing_orgs)
+    assert org_name in existing_orgs
+    assert Organization.objects.filter(name=org_name).exists()
+
+
+@pytest.mark.django_db
+def test_create_missing_teams():
+    Organization = get_organization_model()
+    Team = get_team_model()
+
+    org_name = generate_org_or_team_name()
+    org, _ = Organization.objects.get_or_create(name=org_name)
+    team_name = generate_org_or_team_name()
+    team_map = {team_name: org_name}
+    existing_orgs = {org_name: org.id}
+
+    create_missing_teams([team_name], team_map, existing_orgs, [])
+
+    assert Team.objects.filter(name=team_name, organization=org).exists()
