@@ -1,5 +1,6 @@
 import logging
 from copy import deepcopy
+from typing import Optional
 
 from rest_framework import serializers
 
@@ -32,7 +33,7 @@ class EntrySerializer(ImmutableCommonModelSerializer):
         if obj.content_type:
             return obj.content_type.model
 
-    def get_related_content_type_model(self, obj) -> str:
+    def get_related_content_type_model(self, obj) -> Optional[str]:
         if obj.related_content_type:
             return obj.related_content_type.model
 
