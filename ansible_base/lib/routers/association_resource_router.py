@@ -157,7 +157,6 @@ class AssociateMixin(RelatedListMixin):
         """Return queryset for instances field of the serializer used for association"""
         if self.queryset:
             qs = self.queryset
-            cls = self.queryset.model
         else:
             cls = self.serializer_class.Meta.model
             qs = cls.objects.all()
