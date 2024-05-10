@@ -168,4 +168,3 @@ def test_reconcile_user_claims(create_objects):
         assert not org.users.filter(pk=user.pk).exists()
         # now check that the team !includes the user ...
         assert not team.users.filter(pk=user.pk).exists()
-
