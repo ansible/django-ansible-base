@@ -5,7 +5,6 @@ from crum import impersonate
 from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 from django.utils.http import urlencode
-from typeguard import suppress_type_checks
 
 from ansible_base.activitystream.models import Entry
 
@@ -134,7 +133,6 @@ def test_activitystream_api_deleted_model(admin_api_client):
     assert response.data["changes"]["changed_fields"]["is_cool_fish"] == ["False", "True"]
 
 
-@suppress_type_checks
 def test_activitystream_api_deleted_related_model(admin_api_client, animal):
     """
     Similar to the above test, but for the related_* fields.

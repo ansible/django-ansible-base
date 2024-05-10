@@ -29,7 +29,7 @@ class EntrySerializer(ImmutableCommonModelSerializer):
     related_content_type_model = serializers.SerializerMethodField()
     changes = serializers.SerializerMethodField()
 
-    def get_content_type_model(self, obj) -> str:
+    def get_content_type_model(self, obj) -> Optional[str]:
         if obj.content_type:
             return obj.content_type.model
 
