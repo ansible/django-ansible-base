@@ -146,6 +146,10 @@ def test_reconcile_user_claims():
         'team_membership': {org_name: {team_name: True}},
     }
 
+    # enable object creation ...
+    authenticator_user.provider = MagicMock()
+    authenticator_user.provider.create_objects = True
+
     # do the reconciliation ...
     ReconcileUser.reconcile_user_claims(user, authenticator_user)
 
