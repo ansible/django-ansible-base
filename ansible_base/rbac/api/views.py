@@ -6,8 +6,8 @@ from django.db.models import Model
 from django.utils.translation import gettext_lazy as _
 from rest_framework import permissions
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.response import Response
 from rest_framework.generics import GenericAPIView
+from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
@@ -15,9 +15,9 @@ from ansible_base.rbac.api.permissions import AuthenticatedReadAdminChange
 from ansible_base.rbac.api.serializers import (
     RoleDefinitionDetailSerializer,
     RoleDefinitionSerializer,
+    RoleMetadataSerializer,
     RoleTeamAssignmentSerializer,
     RoleUserAssignmentSerializer,
-    RoleMetadataSerializer,
 )
 from ansible_base.rbac.evaluations import has_super_permission
 from ansible_base.rbac.models import RoleDefinition
