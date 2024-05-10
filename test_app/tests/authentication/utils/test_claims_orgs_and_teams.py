@@ -1,8 +1,12 @@
 import random
 import string
 from unittest.mock import patch
+from unittest.mock import MagicMock
 
 import pytest
+
+from django.contrib.auth import get_user_model
+from ansible_base.rbac import permission_registry
 
 from ansible_base.authentication.utils.claims import (
     create_missing_orgs,
@@ -11,8 +15,10 @@ from ansible_base.authentication.utils.claims import (
     load_existing_orgs,
     load_existing_teams,
     process_organization_and_team_memberships,
+    ReconcileUser,
 )
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
+from ansible_base.rbac.models import RoleDefinition
 
 
 def generate_org_or_team_name():
@@ -105,3 +111,57 @@ def test_create_missing_teams():
     create_missing_teams([team_name], team_map, existing_orgs, [])
 
     assert Team.objects.filter(name=team_name, organization=org).exists()
+
+
+@pytest.mark.django_db
+def test_reconcile_user_claims():
+    Organization = get_organization_model()
+    Team = get_team_model()
+    User = get_user_model()
+
+    org_name = generate_org_or_team_name()
+    org, _ = Organization.objects.get_or_create(name=org_name)
+    team_name = generate_org_or_team_name()
+    team, _ = Team.objects.get_or_create(name=team_name, organization=org)
+
+    user_name = generate_org_or_team_name()
+    user, _ = User.objects.get_or_create(username=user_name)
+
+    # FIXME - test_app doesn't have organizaiton-member or team-member roles?
+    RoleDefinition.objects.create_from_permissions(
+        permissions=['view_organization', 'member_organization'],
+        name='organization-member',
+        content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
+        managed=True
+    )
+    RoleDefinition.objects.create_from_permissions(
+        permissions=['view_team', 'member_team'],
+        name='team-member',
+        content_type=permission_registry.content_type_model.objects.get_for_model(Team),
+        managed=True
+    )
+
+    # make the User.authenticator_user.claims property ...
+    authenticator_user = MagicMock()
+    authenticator_user.claims = {
+        'organization_membership': {org_name: True},
+        'team_membership': {
+            org_name: {
+                team_name: True
+            }
+        },
+    }
+
+    # do the reconciliation ...
+    ReconcileUser.reconcile_user_claims(user, authenticator_user)
+
+    # refresh objects ...
+    org.refresh_from_db()
+    team.refresh_from_db()
+
+    # now check that the org includes the user ...
+    assert org.users.filter(pk=user.pk).exists()
+
+    # now check that the team includes the user ...
+    assert team.users.filter(pk=user.pk).exists()
+
