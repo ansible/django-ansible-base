@@ -22,8 +22,6 @@ class FieldLookupBackend(BaseFilterBackend):
     Filter using field lookups provided via query string parameters.
     """
 
-    RESERVED_NAMES = ('page', 'page_size', 'format', 'order', 'order_by', 'search', 'type', 'host_filter', 'count_disabled', 'no_truncate', 'limit', 'validate')
-
     SUPPORTED_LOOKUPS = (
         'exact',
         'iexact',
@@ -143,6 +141,17 @@ class FieldLookupBackend(BaseFilterBackend):
             value = self.value_to_python_for_field(field, value)
         return value, new_lookup, needs_distinct
 
+    def reserved_names(self, view):
+        """The names in query_params to ignore given the current settings and current view"""
+        from django.conf import settings
+
+        reserved_set = set(settings.ANSIBLE_BASE_REST_FILTERS_RESERVED_NAMES)
+
+        if hasattr(view, 'rest_filters_reserved_names'):
+            reserved_set |= set(view.rest_filters_reserved_names)
+
+        return reserved_set
+
     def filter_queryset(self, request, queryset, view):
         try:
             # Apply filters specified via query_params. Each entry in the lists
@@ -158,7 +167,7 @@ class FieldLookupBackend(BaseFilterBackend):
             # If 'OR' is used, an item just needs to satisfy one condition to appear in results.
             search_filter_relation = 'OR'
             for key, values in request.query_params.lists():
-                if key in self.RESERVED_NAMES:
+                if key in self.reserved_names(view):
                     continue
 
                 # HACK: make `created` available via API for the Django User ORM model

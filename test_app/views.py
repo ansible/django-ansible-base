@@ -119,6 +119,9 @@ class CowViewSet(TestAppViewSet):
     serializer_class = serializers.CowSerializer
     queryset = models.Cow.objects.all()
     rbac_action = None
+    # Reserved names corresponds to
+    # test_app/tests/rest_filters/rest_framework/test_field_lookup_backend.py::test_view_level_ignore_field
+    rest_filters_reserved_names = ['cud']
 
     @action(detail=True, rbac_action='say', methods=['post'])
     def cowsay(self, request, pk=None):

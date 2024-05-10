@@ -31,6 +31,34 @@ REST_FRAMEWORK = {
 }
 ```
 
+## Letting Extra Query Params Through
+
+Sometimes you may have a view that needs to use a query param for a reason unrelated to filtering.
+If the rest_filters filtering is enabled, then this will not work, resulting in a 400 response code
+due to the model not having an expected field.
+
+To deal with this, after including the dynamic settings, you can add your field to the "reserved" list:
+
+```python
+from ansible_base.lib import dynamic_config
+dab_settings = os.path.join(os.path.dirname(dynamic_config.__file__), 'dynamic_settings.py')
+include(dab_settings)
+
+ANSIBLE_BASE_REST_FILTERS_RESERVED_NAMES += ('extra_querystring',)
+```
+
+This will prevent 400 errors for requests like `/api/v1/organizations/?extra_querystring=foo`.
+No filtering would be done in this case, the query string would simply be ignored.
+
+If you want to do this on a view level, not for the whole app, then add `rest_filters_reserved_names` to the view.
+
+```python
+class CowViewSet(ModelViewSet, AnsibleBaseView):
+    serializer_class = MySerializer
+    queryset = MyModel.objects.all()
+    rest_filters_reserved_names = ('extra_querystring',)
+```
+
 ## Preventing Field Searching
 
 ### prevent_search function
