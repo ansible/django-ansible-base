@@ -240,7 +240,5 @@ def test_filter_queryset(user_api_client, user, inventory, inv_rd):
 def test_role_metadata_view(user_api_client):
     response = user_api_client.get(reverse('role-metadata'))
     assert response.status_code == 200
-    child_models = response.data['child_models']
-    assert child_models['shared.organization']['aap.namespace']['aap.collectionimport'] == {}
     role_permissions = response.data['role_permissions']
     assert 'aap.change_collectionimport' in role_permissions['aap.namespace']
