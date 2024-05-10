@@ -112,7 +112,8 @@ def test_create_missing_teams():
 
 
 @pytest.mark.django_db
-def test_reconcile_user_claims():
+@pytest.mark.parametrize("create_objects", [True, False])
+def test_reconcile_user_claims(create_objects):
     Organization = get_organization_model()
     Team = get_team_model()
     User = get_user_model()
@@ -148,7 +149,7 @@ def test_reconcile_user_claims():
 
     # enable object creation ...
     authenticator_user.provider = MagicMock()
-    authenticator_user.provider.create_objects = True
+    authenticator_user.provider.create_objects = create_objects
 
     # do the reconciliation ...
     ReconcileUser.reconcile_user_claims(user, authenticator_user)
@@ -157,8 +158,14 @@ def test_reconcile_user_claims():
     org.refresh_from_db()
     team.refresh_from_db()
 
-    # now check that the org includes the user ...
-    assert org.users.filter(pk=user.pk).exists()
+    if create_objects:
+        # now check that the org includes the user ...
+        assert org.users.filter(pk=user.pk).exists()
+        # now check that the team includes the user ...
+        assert team.users.filter(pk=user.pk).exists()
+    else:
+        # now check that the org !includes the user ...
+        assert not org.users.filter(pk=user.pk).exists()
+        # now check that the team !includes the user ...
+        assert not team.users.filter(pk=user.pk).exists()
 
-    # now check that the team includes the user ...
-    assert team.users.filter(pk=user.pk).exists()
