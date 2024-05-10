@@ -70,16 +70,9 @@ class RoleMetadataView(AnsibleBaseDjangoAppApiView, GenericAPIView):
 
     def get(self, request, format=None):
         data = OrderedDict()
-        tree = OrderedDict()
         role_permissions = OrderedDict()
 
         all_models = sorted(permission_registry.all_registered_models, key=lambda cls: cls._meta.model_name)
-
-        for cls in all_models:
-            if permission_registry.get_parent_fd_name(cls):
-                continue  # only list root models in parent dictionary
-            cls_repr = f"{permission_registry.get_resource_prefix(cls)}.{cls._meta.model_name}"
-            tree[cls_repr] = self.resource_tree(cls, seen=set())
 
         role_model_types = list(all_models)
         if system_roles_enabled():
@@ -96,7 +89,6 @@ class RoleMetadataView(AnsibleBaseDjangoAppApiView, GenericAPIView):
                 perm_repr = f"{permission_registry.get_resource_prefix(ct.model_class())}.{codename}"
                 role_permissions[cls_repr].append(perm_repr)
 
-        data['child_models'] = tree
         data['role_permissions'] = role_permissions
 
         serializer = self.get_serializer(data)
