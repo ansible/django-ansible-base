@@ -311,3 +311,7 @@ class RoleTeamAssignmentSerializer(BaseAssignmentSerializer):
 
     def get_actor_queryset(self, requesting_user):
         return permission_registry.team_model.access_qs(requesting_user)
+
+
+class RoleMetadataSerializer(serializers.Serializer):
+    role_permissions = serializers.DictField(help_text=_('List of permissions allowed for a role definition, given its content type.'))

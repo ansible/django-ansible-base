@@ -7,6 +7,7 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import permissions
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
+from rest_framework.generics import GenericAPIView
 from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
@@ -16,6 +17,7 @@ from ansible_base.rbac.api.serializers import (
     RoleDefinitionSerializer,
     RoleTeamAssignmentSerializer,
     RoleUserAssignmentSerializer,
+    RoleMetadataSerializer,
 )
 from ansible_base.rbac.evaluations import has_super_permission
 from ansible_base.rbac.models import RoleDefinition
@@ -32,7 +34,7 @@ def list_combine_values(data: dict[Type[Model], list[str]]) -> list[str]:
     return ret
 
 
-class RoleMetadataView(AnsibleBaseDjangoAppApiView):
+class RoleMetadataView(AnsibleBaseDjangoAppApiView, GenericAPIView):
     """General data about models and permissions tracked by django-ansible-base RBAC
 
     Information from this endpoint should be static given a server version.
@@ -44,6 +46,7 @@ class RoleMetadataView(AnsibleBaseDjangoAppApiView):
     """
 
     permission_classes = [permissions.IsAuthenticated]
+    serializer_class = RoleMetadataSerializer
 
     def resource_tree(self, parent_model, seen: set) -> dict[str, dict]:
         tree = OrderedDict()
@@ -96,7 +99,9 @@ class RoleMetadataView(AnsibleBaseDjangoAppApiView):
         data['child_models'] = tree
         data['role_permissions'] = role_permissions
 
-        return Response(data)
+        serializer = self.get_serializer(data)
+
+        return Response(serializer.data)
 
 
 class RoleDefinitionViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
