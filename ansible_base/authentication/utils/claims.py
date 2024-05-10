@@ -336,6 +336,29 @@ def create_missing_teams(team_names, team_map, existing_orgs, existing_teams):
 
 class ReconcileUser:
     def reconcile_user_claims(user, authenticator_user):
-        logger.error("TODO: Fix reconciliation of user claims")
+        logger.info("Reconciling user claims")
         claims = getattr(user, 'claims', getattr(authenticator_user, 'claims'))
-        logger.error(claims)
+
+        Organization = get_organization_model()
+        for org_name, is_member in claims['organization_membership'].items():
+            if is_member:
+                org = Organization.objects.get(name=org_name)
+                if not org.users.filter(pk=user.pk).exists():
+                    logger.info(f"Adding {user.username} to {org_name} organization")
+                    org.users.add(user)
+                else:
+                    logger.info(f"Skip adding {user.username} to {org_name} organization")
+
+        Team = get_team_model()
+        for org_name, team_info in claims['team_membership'].items():
+            org = Organization.objects.get(name=org_name)
+            for team_name, is_member in team_info.items():
+                if is_member:
+                    team = Team.objects.get(name=team_name, organization=org)
+                    if not team.users.filter(pk=user.pk).exists():
+                        logger.info(f"Adding {user.username} to {team_name} team")
+                        team.users.add(user)
+                    else:
+                        logger.info(f"Skip adding {user.username} to {team_name} team")
+
+
