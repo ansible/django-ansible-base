@@ -258,7 +258,8 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
         return None
 
     # Make the orgs and the teams as necessary ...
-    process_organization_and_team_memberships(results)
+    if database_authenticator.create_objects:
+        process_organization_and_team_memberships(results)
 
     # We have allowed access so now we need to make the user within the system
     reconcile_class = getattr(settings, 'ANSIBLE_BASE_AUTHENTICATOR_RECONCILE_MODULE', 'ansible_base.authentication.utils.claims')
@@ -336,6 +337,11 @@ def create_missing_teams(team_names, team_map, existing_orgs, existing_teams):
 
 class ReconcileUser:
     def reconcile_user_claims(user, authenticator_user):
+
+        if not authenticator_user.provider.create_objects:
+            logger.info("Skip reconciling user claims")
+            return
+
         logger.info("Reconciling user claims")
         claims = getattr(user, 'claims', getattr(authenticator_user, 'claims'))
 
