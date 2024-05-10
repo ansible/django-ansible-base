@@ -1,23 +1,21 @@
 import random
 import string
-from unittest.mock import patch
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
-
 from django.contrib.auth import get_user_model
-from ansible_base.rbac import permission_registry
 
 from ansible_base.authentication.utils.claims import (
+    ReconcileUser,
     create_missing_orgs,
     create_missing_teams,
     create_orgs_and_teams,
     load_existing_orgs,
     load_existing_teams,
     process_organization_and_team_memberships,
-    ReconcileUser,
 )
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
+from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
 
 
@@ -132,24 +130,20 @@ def test_reconcile_user_claims():
         permissions=['view_organization', 'member_organization'],
         name='organization-member',
         content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
-        managed=True
+        managed=True,
     )
     RoleDefinition.objects.create_from_permissions(
         permissions=['view_team', 'member_team'],
         name='team-member',
         content_type=permission_registry.content_type_model.objects.get_for_model(Team),
-        managed=True
+        managed=True,
     )
 
     # make the User.authenticator_user.claims property ...
     authenticator_user = MagicMock()
     authenticator_user.claims = {
         'organization_membership': {org_name: True},
-        'team_membership': {
-            org_name: {
-                team_name: True
-            }
-        },
+        'team_membership': {org_name: {team_name: True}},
     }
 
     # do the reconciliation ...
@@ -164,4 +158,3 @@ def test_reconcile_user_claims():
 
     # now check that the team includes the user ...
     assert team.users.filter(pk=user.pk).exists()
-
