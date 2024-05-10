@@ -360,5 +360,3 @@ class ReconcileUser:
                         team.users.add(user)
                     else:
                         logger.info(f"Skip adding {user.username} to {team_name} team")
-
-
