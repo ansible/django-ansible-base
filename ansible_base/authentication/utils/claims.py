@@ -277,10 +277,17 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
 
 def process_organization_and_team_memberships(results):
     # Extract organizations where the user is a member
-    org_list = [org_name for org_name, is_member in results['claims']['organization_membership'].items() if is_member]
+    org_list = set()
+    for org_name, is_member in results['claims']['organization_membership'].items():
+        if is_member:
+            org_list.add(org_name
 
     # Build a mapping of teams to their respective organizations, filtering out non-members
-    team_map = {team_name: org_name for org_name, teams in results['claims']['team_membership'].items() for team_name, is_member in teams.items() if is_member}
+    team_map = {}
+    for org_name, teams in results['claims']['team_membership'].items():
+        for team_name, is_member in teams.items():
+            if is_member:
+                team_map[team_name] = org_name
 
     # Create organizations and teams based on the membership data
     create_orgs_and_teams(org_list, team_map)
