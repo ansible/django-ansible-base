@@ -338,10 +338,6 @@ def create_missing_teams(team_names, team_map, existing_orgs, existing_teams):
 class ReconcileUser:
     def reconcile_user_claims(user, authenticator_user):
 
-        if not authenticator_user.provider.create_objects:
-            logger.info("Skip reconciling user claims")
-            return
-
         logger.info("Reconciling user claims")
         claims = getattr(user, 'claims', getattr(authenticator_user, 'claims'))
 
