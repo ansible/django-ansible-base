@@ -343,7 +343,10 @@ class ReconcileUser:
 
         for org_name, is_member in claims['organization_membership'].items():
             if is_member:
-                org = Organization.objects.get(name=org_name)
+                try:
+                    org = Organization.objects.get(name=org_name)
+                except Organization.DoesNotExist:
+                    continue
                 if not org.users.filter(pk=user.pk).exists():
                     logger.info(f"Adding {user.username} to {org_name} organization")
                     org.users.add(user)
@@ -351,10 +354,16 @@ class ReconcileUser:
                     logger.info(f"Skip adding {user.username} to {org_name} organization")
 
         for org_name, team_info in claims['team_membership'].items():
-            org = Organization.objects.get(name=org_name)
+            try:
+                org = Organization.objects.get(name=org_name)
+            except Organization.DoesNotExist:
+                continue
             for team_name, is_member in team_info.items():
                 if is_member:
-                    team = Team.objects.get(name=team_name, organization=org)
+                    try:
+                        team = Team.objects.get(name=team_name, organization=org)
+                    except Team.DoesNotExist:
+                        continue
                     if not team.users.filter(pk=user.pk).exists():
                         logger.info(f"Adding {user.username} to {team_name} team")
                         team.users.add(user)
