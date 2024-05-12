@@ -280,7 +280,7 @@ def process_organization_and_team_memberships(results):
     org_list = set()
     for org_name, is_member in results['claims']['organization_membership'].items():
         if is_member:
-            org_list.add(org_name
+            org_list.add(org_name)
 
     # Build a mapping of teams to their respective organizations, filtering out non-members
     team_map = {}
