@@ -3,11 +3,12 @@ import re
 from typing import Optional
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractUser
 from django.utils.timezone import now
 from rest_framework.serializers import DateTimeField
 
-from ansible_base.authentication.models import Authenticator, AuthenticatorMap
+from ansible_base.authentication.models import Authenticator, AuthenticatorMap, AuthenticatorUser
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 
 from .trigger_definition import TRIGGER_DEFINITION
@@ -15,6 +16,7 @@ from .trigger_definition import TRIGGER_DEFINITION
 logger = logging.getLogger('ansible_base.authentication.utils.claims')
 Organization = get_organization_model()
 Team = get_team_model()
+User = get_user_model()
 
 
 def create_claims(authenticator: Authenticator, username: str, attrs: dict, groups: list[str]) -> dict:
@@ -275,7 +277,7 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
     return user
 
 
-def process_organization_and_team_memberships(results):
+def process_organization_and_team_memberships(results) -> None:
     # Extract organizations where the user is a member
     org_list = set()
     for org_name, is_member in results['claims']['organization_membership'].items():
@@ -293,7 +295,7 @@ def process_organization_and_team_memberships(results):
     create_orgs_and_teams(org_list, team_map)
 
 
-def create_orgs_and_teams(org_list, team_map):
+def create_orgs_and_teams(org_list: set[str], team_map: dict[str, str]) -> None:
     # Ensure unique organization names and gather all team names
     all_orgs = set(org_list) | set(team_map.values())
     all_teams = list(team_map.keys())
@@ -311,12 +313,12 @@ def create_orgs_and_teams(org_list, team_map):
     create_missing_teams(all_teams, team_map, existing_orgs, existing_teams)
 
 
-def load_existing_orgs(org_names):
+def load_existing_orgs(org_names: set(str)) -> dict[str, int]:
     existing_orgs = {org.name: org.id for org in Organization.objects.filter(name__in=org_names)}
     return existing_orgs
 
 
-def create_missing_orgs(org_names, existing_orgs):
+def create_missing_orgs(org_names: set(str), existing_orgs: dict[str, int]) -> None:
     for org_name in org_names:
         if org_name not in existing_orgs:
             logger.info(f"creating org {org_name}")
@@ -324,12 +326,12 @@ def create_missing_orgs(org_names, existing_orgs):
             existing_orgs[org_name] = new_org.id
 
 
-def load_existing_teams(team_names):
+def load_existing_teams(team_names: set(str)) -> set(str):
     existing_teams = set(Team.objects.filter(name__in=team_names).values_list('name', flat=True))
     return existing_teams
 
 
-def create_missing_teams(team_names, team_map, existing_orgs, existing_teams):
+def create_missing_teams(team_names: set(str), team_map: dict[str, str], existing_orgs: dict[str, int], existing_teams: set(str)) -> None:
     for team_name in team_names:
         if team_name not in existing_teams:
             org_name = team_map[team_name]
@@ -343,7 +345,7 @@ def create_missing_teams(team_names, team_map, existing_orgs, existing_teams):
 class ReconcileUser:
 
     @staticmethod
-    def reconcile_user_claims(user, authenticator_user):
+    def reconcile_user_claims(user: Optional[AbstractUser], authenticator_user: AuthenticatorUser) -> None:
 
         logger.info("Reconciling user claims")
         claims = getattr(user, 'claims', getattr(authenticator_user, 'claims'))
