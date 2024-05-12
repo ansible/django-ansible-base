@@ -1,9 +1,11 @@
+from typing import Any
+
 from django.apps import apps as django_apps
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
 
-def get_model_from_settings(setting_name):
+def get_model_from_settings(setting_name: str) -> Any:
     """
     Return the User model that is active in this project.
     """
