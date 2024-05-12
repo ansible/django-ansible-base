@@ -13,6 +13,8 @@ from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 from .trigger_definition import TRIGGER_DEFINITION
 
 logger = logging.getLogger('ansible_base.authentication.utils.claims')
+Organization = get_organization_model()
+Team = get_team_model()
 
 
 def create_claims(authenticator: Authenticator, username: str, attrs: dict, groups: list[str]) -> dict:
@@ -303,13 +305,11 @@ def create_orgs_and_teams(org_list, team_map):
 
 
 def load_existing_orgs(org_names):
-    Organization = get_organization_model()
     existing_orgs = {org.name: org.id for org in Organization.objects.filter(name__in=org_names)}
     return existing_orgs
 
 
 def create_missing_orgs(org_names, existing_orgs):
-    Organization = get_organization_model()
     for org_name in org_names:
         if org_name not in existing_orgs:
             logger.info(f"creating org {org_name}")
@@ -318,13 +318,11 @@ def create_missing_orgs(org_names, existing_orgs):
 
 
 def load_existing_teams(team_names):
-    Team = get_team_model()
     existing_teams = set(Team.objects.filter(name__in=team_names).values_list('name', flat=True))
     return existing_teams
 
 
 def create_missing_teams(team_names, team_map, existing_orgs, existing_teams):
-    Team = get_team_model()
     for team_name in team_names:
         if team_name not in existing_teams:
             org_name = team_map[team_name]
@@ -341,7 +339,6 @@ class ReconcileUser:
         logger.info("Reconciling user claims")
         claims = getattr(user, 'claims', getattr(authenticator_user, 'claims'))
 
-        Organization = get_organization_model()
         for org_name, is_member in claims['organization_membership'].items():
             if is_member:
                 org = Organization.objects.get(name=org_name)
@@ -351,7 +348,6 @@ class ReconcileUser:
                 else:
                     logger.info(f"Skip adding {user.username} to {org_name} organization")
 
-        Team = get_team_model()
         for org_name, team_info in claims['team_membership'].items():
             org = Organization.objects.get(name=org_name)
             for team_name, is_member in team_info.items():
