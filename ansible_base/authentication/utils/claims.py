@@ -334,6 +334,8 @@ def create_missing_teams(team_names, team_map, existing_orgs, existing_teams):
 
 
 class ReconcileUser:
+
+    @staticmethod
     def reconcile_user_claims(user, authenticator_user):
 
         logger.info("Reconciling user claims")
