@@ -163,3 +163,38 @@ def test_reconcile_user_claims(create_objects):
     assert org.users.filter(pk=user.pk).exists()
     # now check that the team includes the user ...
     assert team.users.filter(pk=user.pk).exists()
+
+
+@pytest.mark.django_db
+def test_reconcile_user_claims_with_no_org_or_team():
+    """Make sure reconciliation skips missing orgs&teams."""
+    Organization = get_organization_model()
+    Team = get_team_model()
+    User = get_user_model()
+
+    # define these but do not create them ...
+    org_name = generate_org_or_team_name()
+    team_name = generate_org_or_team_name()
+
+    user_name = generate_org_or_team_name()
+    user, _ = User.objects.get_or_create(username=user_name)
+
+    # make the User.authenticator_user.claims property ...
+    authenticator_user = MagicMock()
+    authenticator_user.claims = {
+        'organization_membership': {org_name: True},
+        'team_membership': {org_name: {team_name: True}},
+    }
+
+    # enable object creation ...
+    authenticator_user.provider = MagicMock()
+    authenticator_user.provider.create_objects = False
+
+    # do the reconciliation ...
+    ReconcileUser.reconcile_user_claims(user, authenticator_user)
+
+    # ensure the org does not exist ...
+    assert not Organization.objects.filter(name=org_name).exists()
+
+    # ensure the team does not exist ...
+    assert not Team.objects.filter(name=team_name).exists()
