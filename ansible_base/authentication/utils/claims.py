@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import Iterable, Optional
+from typing import Optional
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -278,68 +278,56 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
 
 
 def process_organization_and_team_memberships(results) -> None:
-    # Extract organizations where the user is a member
+    """
+    Use the results data from 'create_claims' to make the Organization
+    and Team objects necessary for the user if they do not exist.
+    """
+
+    # a flat list of relevant org names
     org_list = set()
+    # a flat list of relevant org:team names
+    team_list = set()
+
+    # a structure for caching org+team,member info
+    membership_map = {}
+
+    # fill in the top level org membership data ...
     for org_name, is_member in results['claims']['organization_membership'].items():
         if is_member:
             org_list.add(org_name)
+            membership_map[org_name] = {'id': None, 'member': True, 'teams': {}}
 
-    # Build a mapping of teams to their respective organizations, filtering out non-members
-    team_map = {}
+    # fill in the team membership data ...
     for org_name, teams in results['claims']['team_membership'].items():
         for team_name, is_member in teams.items():
             if is_member:
-                team_map[team_name] = org_name
+                org_list.add(org_name)
+                team_list.add((org_name, team_name))
+                if org_name not in membership_map:
+                    # team membership doesn't imply org membership, right?
+                    membership_map[org_name] = {'id': None, 'member': False, 'teams': {}}
+                membership_map[org_name]['teams'][team_name] = True
 
-    # Create organizations and teams based on the membership data
-    create_orgs_and_teams(org_list, team_map)
+    # make a map or org name to org id to reduce calls and data sent over the wire
+    existing_orgs = {org.name: org.id for org in Organization.objects.filter(name__in=org_list)}
 
-
-def create_orgs_and_teams(org_list: set[str], team_map: dict[str, str]) -> None:
-    # Ensure unique organization names and gather all team names
-    all_orgs = set(org_list) | set(team_map.values())
-    all_teams = list(team_map.keys())
-
-    # Load existing organizations
-    existing_orgs = load_existing_orgs(all_orgs)
-
-    # Create missing organizations
-    create_missing_orgs(all_orgs, existing_orgs)
-
-    # Load existing teams
-    existing_teams = load_existing_teams(all_teams)
-
-    # Create missing teams
-    create_missing_teams(all_teams, team_map, existing_orgs, existing_teams)
-
-
-def load_existing_orgs(org_names: set[str]) -> dict[str, int]:
-    existing_orgs = {org.name: org.id for org in Organization.objects.filter(name__in=org_names)}
-    return existing_orgs
-
-
-def create_missing_orgs(org_names: set[str], existing_orgs: dict[str, int]) -> None:
-    for org_name in org_names:
+    # make each org as necessary or simply store the id
+    for org_name in org_list:
         if org_name not in existing_orgs:
-            logger.info(f"creating org {org_name}")
             new_org, _ = Organization.objects.get_or_create(name=org_name)
-            existing_orgs[org_name] = new_org.id
+            membership_map[org_name]['id'] = new_org.id
+        else:
+            membership_map[org_name]['id'] = existing_orgs[org_name]
 
+    # make a map or org id, team name to reduce calls and data sent over the wire
+    existing_teams = [x for x in Team.objects.filter(name__in=team_list).values_list('organization', 'name')]
 
-def load_existing_teams(team_names: Iterable[str]) -> set[str]:
-    existing_teams = set(Team.objects.filter(name__in=team_names).values_list('name', flat=True))
-    return existing_teams
-
-
-def create_missing_teams(team_names: Iterable[str], team_map: dict[str, str], existing_orgs: dict[str, int], existing_teams: set[str]) -> None:
-    for team_name in team_names:
-        if team_name not in existing_teams:
-            org_name = team_map[team_name]
-            if org_name in existing_orgs:
-                logger.info(f"creating team {team_name} in org {org_name}")
-                Team.objects.get_or_create(name=team_name, organization_id=existing_orgs[org_name])
-            else:
-                logger.error(f"attempting to create team {team_name} but its organization does not exist")
+    # make each team as necessary
+    for org_name, org_data in membership_map.items():
+        org_id = org_data['id']
+        for team_name, is_member in org_data['teams'].items():
+            if (org_id, team_name) not in existing_teams:
+                new_team, _ = Team.objects.get_or_create(name=team_name, organization_id=org_id)
 
 
 class ReconcileUser:
