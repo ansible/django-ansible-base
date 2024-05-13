@@ -126,7 +126,7 @@ class Command(BaseCommand):
         OAuth2Application.objects.get_or_create(
             name="Demo OAuth2 Application",
             description="Demo OAuth2 Application",
-            redirect_uris="http://example.com/callback",
+            redirect_uris="https://example.com/callback",
             authorization_grant_type="authorization-code",
             client_type="confidential",
         )
