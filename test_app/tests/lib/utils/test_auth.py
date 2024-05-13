@@ -7,7 +7,7 @@ from ansible_base.lib.utils.auth import get_model_from_settings
 
 
 def test_get_model_from_settings_invalid_setting_name():
-    with pytest.raises(AttributeError):
+    with pytest.raises(ImproperlyConfigured):
         get_model_from_settings('jimbob')
 
 
