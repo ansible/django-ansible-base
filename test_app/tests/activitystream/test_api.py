@@ -1,4 +1,4 @@
-import datetime
+from datetime import timedelta
 
 import pytest
 from crum import impersonate
@@ -201,7 +201,7 @@ def test_activitystream_api_related_fks_refused_for_bad_time_delta(admin_api_cli
     animal.save()
 
     last_entry = animal.activity_stream_entries.last()
-    random_user.created = last_entry.created + datetime.timedelta(days=1)
+    random_user.created = last_entry.created + timedelta(days=1)
     random_user.save()
 
     url = reverse("activitystream-detail", args=[last_entry.id])
