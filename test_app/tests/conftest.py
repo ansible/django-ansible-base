@@ -1,8 +1,8 @@
-import datetime
 import os
 import random
 import re
 from collections import defaultdict
+from datetime import datetime, timedelta
 from unittest import mock
 
 import jwt
@@ -490,7 +490,7 @@ def random_public_key():
 def jwt_token(test_encryption_private_key):
     class Token:
         def __init__(self):
-            expiration_date = datetime.datetime.now() + datetime.timedelta(minutes=10)
+            expiration_date = datetime.now() + timedelta(minutes=10)
             self.unencrypted_token = {
                 "iss": "ansible-issuer",
                 "exp": int(expiration_date.timestamp()),
