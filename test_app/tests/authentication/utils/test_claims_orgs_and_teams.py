@@ -27,12 +27,14 @@ def generate_org_or_team_name():
 def test_process_organization_and_team_memberships(mock_create_orgs_and_teams):
     results = {
         'claims': {
-            'organization_membership': {},
-            'team_membership': {},
+            'organization_membership': {'foo-org': True},
+            'team_membership': {'foo-org': {'foo-team': True}},
         }
     }
     process_organization_and_team_memberships(results)
     mock_create_orgs_and_teams.assert_called_once()
+
+    assert mock_create_orgs_and_teams.call_args.args == ({'foo-org'}, {'foo-team': 'foo-org'})
 
 
 @patch('ansible_base.authentication.utils.claims.load_existing_orgs')
@@ -91,6 +93,7 @@ def test_create_missing_orgs():
     org_name = generate_org_or_team_name()
     existing_orgs = {}
     create_missing_orgs(set([org_name]), existing_orgs)
+
     assert org_name in existing_orgs
     assert Organization.objects.filter(name=org_name).exists()
 
