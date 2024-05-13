@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import Optional
+from typing import Iterable, Optional
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -326,12 +326,12 @@ def create_missing_orgs(org_names: set[str], existing_orgs: dict[str, int]) -> N
             existing_orgs[org_name] = new_org.id
 
 
-def load_existing_teams(team_names: set[str]) -> set[str]:
+def load_existing_teams(team_names: Iterable[str]) -> set[str]:
     existing_teams = set(Team.objects.filter(name__in=team_names).values_list('name', flat=True))
     return existing_teams
 
 
-def create_missing_teams(team_names: set[str], team_map: dict[str, str], existing_orgs: dict[str, int], existing_teams: set[str]) -> None:
+def create_missing_teams(team_names: Iterable[str], team_map: dict[str, str], existing_orgs: dict[str, int], existing_teams: set[str]) -> None:
     for team_name in team_names:
         if team_name not in existing_teams:
             org_name = team_map[team_name]
