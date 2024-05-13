@@ -106,7 +106,7 @@ def test_oauth2_provider_application_create(request, client_fixture, expected_st
             'name': name,
             'description': 'Test Description',
             'organization': organization.pk,
-            'redirect_uris': 'http://example.com/callback',
+            'redirect_uris': 'https://example.com/callback',
             'authorization_grant_type': 'authorization-code',
             'client_type': 'confidential',
         },
@@ -119,7 +119,7 @@ def test_oauth2_provider_application_create(request, client_fixture, expected_st
         created_app = OAuth2Application.objects.get(client_id=response.data['client_id'])
         assert created_app.name == name
         assert not created_app.skip_authorization
-        assert created_app.redirect_uris == 'http://example.com/callback'
+        assert created_app.redirect_uris == 'https://example.com/callback'
         assert created_app.client_type == 'confidential'
         assert created_app.authorization_grant_type == 'authorization-code'
         assert created_app.organization == organization
@@ -193,7 +193,7 @@ def test_oauth2_provider_application_client_secret_encrypted(admin_api_client, o
             'name': 'Test Application',
             'description': 'Test Description',
             'organization': organization.pk,
-            'redirect_uris': 'http://example.com/callback',
+            'redirect_uris': 'https://example.com/callback',
             'authorization_grant_type': 'authorization-code',
             'client_type': 'confidential',
         },

@@ -27,7 +27,7 @@ def oauth2_application(randname):
     app = OAuth2Application(
         name=randname("OAuth2 Application"),
         description="Test OAuth2 Application",
-        redirect_uris="http://example.com/callback",
+        redirect_uris="https://example.com/callback",
         authorization_grant_type="authorization-code",
         client_type="confidential",
     )
@@ -46,7 +46,7 @@ def oauth2_application_password(randname):
     app = OAuth2Application(
         name=randname("OAuth2 Application"),
         description="Test OAuth2 Application",
-        redirect_uris="http://example.com/callback",
+        redirect_uris="https://example.com/callback",
         authorization_grant_type="password",
         client_type="confidential",
     )
