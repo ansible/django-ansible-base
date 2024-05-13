@@ -51,7 +51,7 @@ def view_inv_rd():
 
 @pytest.fixture
 def org_admin_rd():
-    "Give all permissions possible for an organization"
+    """Give all permissions possible for an organization"""
     perm_list = combine_values(permissions_allowed_for_role(Organization))
     return RoleDefinition.objects.create_from_permissions(
         permissions=perm_list,
@@ -73,7 +73,7 @@ def org_member_rd():
 
 @pytest.fixture
 def org_team_member_rd():
-    "Gives membership to all teams in an organization"
+    """Gives membership to all teams in an organization"""
     return RoleDefinition.objects.create_from_permissions(
         permissions=[permission_registry.team_permission, f'view_{permission_registry.team_model._meta.model_name}'],
         name='org-level-team-member',

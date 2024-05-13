@@ -1,3 +1,4 @@
+import importlib
 import logging
 import re
 from typing import Optional
@@ -8,8 +9,10 @@ from django.contrib.auth.models import AbstractUser
 from django.utils.timezone import now
 from rest_framework.serializers import DateTimeField
 
+from ansible_base.authentication import constants
 from ansible_base.authentication.models import Authenticator, AuthenticatorMap, AuthenticatorUser
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
+from ansible_base.rbac.models import RoleDefinition
 
 from .trigger_definition import TRIGGER_DEFINITION
 
@@ -20,9 +23,9 @@ User = get_user_model()
 
 
 def create_claims(authenticator: Authenticator, username: str, attrs: dict, groups: list[str]) -> dict:
-    '''
+    """
     Given an authenticator and a username, attrs and groups determine what the user has access to
-    '''
+    """
 
     # Assume we are not going to change our flags
     is_superuser = None
@@ -99,9 +102,9 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
 
 
 def process_groups(trigger_condition: dict, groups: list, authenticator_id: int) -> Optional[bool]:
-    '''
+    """
     Looks at a maps trigger for a group and users groups and determines if the trigger True or False
-    '''
+    """
 
     invalid_conditions = set(trigger_condition.keys()) - set(TRIGGER_DEFINITION['groups']['keys'].keys())
     if invalid_conditions:
@@ -132,9 +135,9 @@ def process_groups(trigger_condition: dict, groups: list, authenticator_id: int)
 
 
 def has_access_with_join(current_access: Optional[bool], new_access: bool, condition: str = 'or') -> Optional[bool]:
-    '''
+    """
     Handle join of authenticator_maps
-    '''
+    """
     if current_access is None:
         return new_access
 
@@ -146,9 +149,9 @@ def has_access_with_join(current_access: Optional[bool], new_access: bool, condi
 
 
 def process_user_attributes(trigger_condition: dict, attributes: dict, authenticator_id: int) -> Optional[bool]:
-    '''
+    """
     Looks at a maps trigger for an attribute and the users attributes and determines if the trigger is True, False or None
-    '''
+    """
 
     has_access = None
     join_condition = trigger_condition.get('join_condition', 'or')
@@ -219,7 +222,7 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, authentic
 def update_user_claims(user: Optional[AbstractUser], database_authenticator: Authenticator, groups: list[str]) -> Optional[AbstractUser]:
     """
     This method takes a user, an authenticator and a list of the users associated groups.
-    It will lookup the AuthenticatorUser (it must exist already) and update that User and their permissions in the system.
+    It will look up the AuthenticatorUser (it must exist already) and update that User and their permissions in the system.
     """
     if not user:
         return None
@@ -263,21 +266,34 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
 
     # Make the orgs and the teams as necessary ...
     if database_authenticator.create_objects:
-        process_organization_and_team_memberships(results)
+        create_organizations_and_teams(results)
 
-    # We have allowed access so now we need to make the user within the system
-    reconcile_class = getattr(settings, 'ANSIBLE_BASE_AUTHENTICATOR_RECONCILE_MODULE', 'ansible_base.authentication.utils.claims')
-    try:
-        module = __import__(reconcile_class, fromlist=['ReconcileUser'])
-        klass = getattr(module, 'ReconcileUser')
-        klass.reconcile_user_claims(user, authenticator_user)
-    except Exception as e:
-        logger.error(f"Failed to reconcile user attributes! {e}")
+    if reconcile_user_class := load_reconcile_user_class():
+        try:
+            # We have allowed access, so now we need to make the user within the system
+            reconcile_user_class.reconcile_user_claims(user, authenticator_user)
+        except Exception as e:
+            logger.exception("Failed to reconcile user claims: %s", e)
 
     return user
 
 
-def process_organization_and_team_memberships(results) -> None:
+def load_reconcile_user_class():
+    module_path = getattr(settings, 'ANSIBLE_BASE_AUTHENTICATOR_RECONCILE_MODULE', 'ansible_base.authentication.utils.claims')
+    try:
+        module = importlib.import_module(module_path)
+    except ImportError:
+        logger.warning("Failed to load module '%s'.", module_path)
+        return None
+
+    try:
+        return getattr(module, 'ReconcileUser')
+    except AttributeError:
+        logger.warning("Failed to load ReconcileUser class in module '%s'.", module_path)
+        return None
+
+
+def create_organizations_and_teams(results) -> None:
     """
     Use the results data from 'create_claims' to make the Organization
     and Team objects necessary for the user if they do not exist.
@@ -320,6 +336,7 @@ def process_organization_and_team_memberships(results) -> None:
             membership_map[org_name]['id'] = existing_orgs[org_name]
 
     # make a map or org id, team name to reduce calls and data sent over the wire
+    # NOTE(cutwater): This doesn't seem to work
     existing_teams = [x for x in Team.objects.filter(name__in=team_list).values_list('organization', 'name')]
 
     # make each team as necessary
@@ -330,39 +347,61 @@ def process_organization_and_team_memberships(results) -> None:
                 new_team, _ = Team.objects.get_or_create(name=team_name, organization_id=org_id)
 
 
+# NOTE(cutwater): Current class is sub-optimal, since it loads the data that has been already loaded
+#  at the teams and organizations creation. Next step will be combining teams and organizations creation with
+#  this class and transforming it into a reconciliation use case class. This implies either
+#  removal or update of a pluggable interface.
 class ReconcileUser:
 
-    @staticmethod
-    def reconcile_user_claims(user: Optional[AbstractUser], authenticator_user: AuthenticatorUser) -> None:
+    @classmethod
+    def _remove_role_from_user(cls, user: AbstractUser, rd: RoleDefinition):
+        for role in user.has_roles.filter(role_definition=rd):
+            rd.remove_permission(user, role.content_object)
 
+    @classmethod
+    def reconcile_user_claims(cls, user: AbstractUser, authenticator_user: AuthenticatorUser) -> None:
         logger.info("Reconciling user claims")
-        claims = getattr(user, 'claims', getattr(authenticator_user, 'claims'))
+
+        claims = getattr(user, 'claims', authenticator_user.claims)
+        org_member_rd = RoleDefinition.objects.get(name=constants.ORGANIZATION_MEMBER_ROLE_NAME)
+        team_member_rd = RoleDefinition.objects.get(name=constants.TEAM_MEMBER_ROLE_NAME)
+
+        remove_users = authenticator_user.provider.remove_users
+        if remove_users:
+            cls._remove_role_from_user(user, org_member_rd)
+            cls._remove_role_from_user(user, team_member_rd)
+
+        org_names = claims['organization_membership'].keys() | claims['team_membership'].keys()
+        orgs_by_name = {org.name: org for org in Organization.objects.filter(name__in=org_names)}
 
         for org_name, is_member in claims['organization_membership'].items():
+            org = orgs_by_name.get(org_name)
+            if org is None:
+                logger.info("Skipping organization '%s'", org_name)
+                continue
             if is_member:
-                try:
-                    org = Organization.objects.get(name=org_name)
-                except Organization.DoesNotExist:
-                    continue
-                if not org.users.filter(pk=user.pk).exists():
-                    logger.info(f"Adding {user.username} to {org_name} organization")
-                    org.users.add(user)
-                else:
-                    logger.info(f"Skip adding {user.username} to {org_name} organization")
+                logger.info("Adding user '%s' to organization '%s'", user.username, org_name)
+                org_member_rd.give_permission(user, org)
+            else:
+                logger.info("Removing '%s' from organization '%s'", user.username, org_name)
+                org_member_rd.remove_permission(user, org)
 
         for org_name, team_info in claims['team_membership'].items():
-            try:
-                org = Organization.objects.get(name=org_name)
-            except Organization.DoesNotExist:
+            org = orgs_by_name.get(org_name)
+            if org is None:
+                logger.info("Skipping organization '%s'", org_name)
                 continue
+
+            teams_by_name = {team.name: team for team in Team.objects.filter(organization=org, name__in=team_info.keys())}
+
             for team_name, is_member in team_info.items():
+                team = teams_by_name.get(team_name)
+                if team is None:
+                    logger.info("Skipping team '%s'", org_name)
+                    continue
                 if is_member:
-                    try:
-                        team = Team.objects.get(name=team_name, organization=org)
-                    except Team.DoesNotExist:
-                        continue
-                    if not team.users.filter(pk=user.pk).exists():
-                        logger.info(f"Adding {user.username} to {team_name} team")
-                        team.users.add(user)
-                    else:
-                        logger.info(f"Skip adding {user.username} to {team_name} team")
+                    logger.info("Adding user '%s' to team '%s'", user.username, team_name)
+                    team_member_rd.give_permission(user, team)
+                else:
+                    logger.info("Removing user '%s' from team '%s'", user.username, team_name)
+                    team_member_rd.remove_permission(user, team)
