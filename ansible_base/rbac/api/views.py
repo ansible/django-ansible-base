@@ -48,26 +48,6 @@ class RoleMetadataView(AnsibleBaseDjangoAppApiView, GenericAPIView):
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = RoleMetadataSerializer
 
-    def resource_tree(self, parent_model, seen: set) -> dict[str, dict]:
-        tree = OrderedDict()
-        parent_model_name = parent_model._meta.model_name
-
-        for model_name in sorted(permission_registry._parent_fields.keys()):
-            parent_field_name = permission_registry._parent_fields[model_name]
-            if parent_field_name is None:
-                continue
-            child_model = permission_registry._name_to_model[model_name]
-            this_parent_name = child_model._meta.get_field(parent_field_name).related_model._meta.model_name
-            if this_parent_name == parent_model_name:
-                if model_name in seen:
-                    continue
-                seen.add(model_name)
-
-                child_repr = f"{permission_registry.get_resource_prefix(child_model)}.{model_name}"
-                tree[child_repr] = self.resource_tree(child_model, seen=seen)
-
-        return tree
-
     def get(self, request, format=None):
         data = OrderedDict()
         role_permissions = OrderedDict()
