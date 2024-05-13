@@ -3,15 +3,20 @@ import re
 from typing import Optional
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractUser
 from django.utils.timezone import now
 from rest_framework.serializers import DateTimeField
 
-from ansible_base.authentication.models import Authenticator, AuthenticatorMap
+from ansible_base.authentication.models import Authenticator, AuthenticatorMap, AuthenticatorUser
+from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 
 from .trigger_definition import TRIGGER_DEFINITION
 
 logger = logging.getLogger('ansible_base.authentication.utils.claims')
+Organization = get_organization_model()
+Team = get_team_model()
+User = get_user_model()
 
 
 def create_claims(authenticator: Authenticator, username: str, attrs: dict, groups: list[str]) -> dict:
@@ -256,6 +261,10 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
         logger.warning(f"User {user.username} failed an allow map and was denied access")
         return None
 
+    # Make the orgs and the teams as necessary ...
+    if database_authenticator.create_objects:
+        process_organization_and_team_memberships(results)
+
     # We have allowed access so now we need to make the user within the system
     reconcile_class = getattr(settings, 'ANSIBLE_BASE_AUTHENTICATOR_RECONCILE_MODULE', 'ansible_base.authentication.utils.claims')
     try:
@@ -268,8 +277,92 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
     return user
 
 
+def process_organization_and_team_memberships(results) -> None:
+    """
+    Use the results data from 'create_claims' to make the Organization
+    and Team objects necessary for the user if they do not exist.
+    """
+
+    # a flat list of relevant org names
+    org_list = set()
+    # a flat list of relevant org:team names
+    team_list = set()
+
+    # a structure for caching org+team,member info
+    membership_map = {}
+
+    # fill in the top level org membership data ...
+    for org_name, is_member in results['claims']['organization_membership'].items():
+        if is_member:
+            org_list.add(org_name)
+            membership_map[org_name] = {'id': None, 'member': True, 'teams': {}}
+
+    # fill in the team membership data ...
+    for org_name, teams in results['claims']['team_membership'].items():
+        for team_name, is_member in teams.items():
+            if is_member:
+                org_list.add(org_name)
+                team_list.add((org_name, team_name))
+                if org_name not in membership_map:
+                    # team membership doesn't imply org membership, right?
+                    membership_map[org_name] = {'id': None, 'member': False, 'teams': {}}
+                membership_map[org_name]['teams'][team_name] = True
+
+    # make a map or org name to org id to reduce calls and data sent over the wire
+    existing_orgs = {org.name: org.id for org in Organization.objects.filter(name__in=org_list)}
+
+    # make each org as necessary or simply store the id
+    for org_name in org_list:
+        if org_name not in existing_orgs:
+            new_org, _ = Organization.objects.get_or_create(name=org_name)
+            membership_map[org_name]['id'] = new_org.id
+        else:
+            membership_map[org_name]['id'] = existing_orgs[org_name]
+
+    # make a map or org id, team name to reduce calls and data sent over the wire
+    existing_teams = [x for x in Team.objects.filter(name__in=team_list).values_list('organization', 'name')]
+
+    # make each team as necessary
+    for org_name, org_data in membership_map.items():
+        org_id = org_data['id']
+        for team_name, is_member in org_data['teams'].items():
+            if (org_id, team_name) not in existing_teams:
+                new_team, _ = Team.objects.get_or_create(name=team_name, organization_id=org_id)
+
+
 class ReconcileUser:
-    def reconcile_user_claims(user, authenticator_user):
-        logger.error("TODO: Fix reconciliation of user claims")
+
+    @staticmethod
+    def reconcile_user_claims(user: Optional[AbstractUser], authenticator_user: AuthenticatorUser) -> None:
+
+        logger.info("Reconciling user claims")
         claims = getattr(user, 'claims', getattr(authenticator_user, 'claims'))
-        logger.error(claims)
+
+        for org_name, is_member in claims['organization_membership'].items():
+            if is_member:
+                try:
+                    org = Organization.objects.get(name=org_name)
+                except Organization.DoesNotExist:
+                    continue
+                if not org.users.filter(pk=user.pk).exists():
+                    logger.info(f"Adding {user.username} to {org_name} organization")
+                    org.users.add(user)
+                else:
+                    logger.info(f"Skip adding {user.username} to {org_name} organization")
+
+        for org_name, team_info in claims['team_membership'].items():
+            try:
+                org = Organization.objects.get(name=org_name)
+            except Organization.DoesNotExist:
+                continue
+            for team_name, is_member in team_info.items():
+                if is_member:
+                    try:
+                        team = Team.objects.get(name=team_name, organization=org)
+                    except Team.DoesNotExist:
+                        continue
+                    if not team.users.filter(pk=user.pk).exists():
+                        logger.info(f"Adding {user.username} to {team_name} team")
+                        team.users.add(user)
+                    else:
+                        logger.info(f"Skip adding {user.username} to {team_name} team")
