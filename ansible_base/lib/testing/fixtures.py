@@ -1,8 +1,8 @@
-import datetime
 import os
 import uuid
 from collections import namedtuple
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 from unittest import mock
 
 import pytest
@@ -220,8 +220,8 @@ def rsa_keypair_with_cert(rsa_keypair_factory):
         .issuer_name(issuer)
         .public_key(public_key)
         .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.datetime.utcnow())
-        .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=365))
+        .not_valid_before(datetime.utcnow())
+        .not_valid_after(datetime.utcnow() + timedelta(days=365))
         .add_extension(
             x509.SubjectAlternativeName([x509.DNSName(u"mycompany.com")]),
             critical=False,

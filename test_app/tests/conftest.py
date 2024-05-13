@@ -1,8 +1,8 @@
-import datetime
 import os
 import random
 import re
 from collections import defaultdict
+from datetime import datetime, timedelta
 from unittest import mock
 
 import jwt
@@ -20,6 +20,7 @@ from rest_framework.test import force_authenticate
 
 from ansible_base.lib.testing.fixtures import *  # noqa: F403, F401
 from ansible_base.lib.testing.util import copy_fixture, delete_authenticator
+from ansible_base.oauth2_provider.fixtures import *  # noqa: F403, F401
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
 from test_app import models
@@ -489,7 +490,7 @@ def random_public_key():
 def jwt_token(test_encryption_private_key):
     class Token:
         def __init__(self):
-            expiration_date = datetime.datetime.now() + datetime.timedelta(minutes=10)
+            expiration_date = datetime.now() + timedelta(minutes=10)
             self.unencrypted_token = {
                 "iss": "ansible-issuer",
                 "exp": int(expiration_date.timestamp()),

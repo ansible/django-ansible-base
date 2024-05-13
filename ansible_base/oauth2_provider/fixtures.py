@@ -7,6 +7,16 @@ from oauthlib.common import generate_token
 from ansible_base.lib.testing.fixtures import copy_fixture
 from ansible_base.oauth2_provider.models import OAuth2AccessToken, OAuth2Application
 
+__all__ = [  # noqa: F822, the additional _pat_X are unknown so we need this here
+    'oauth2_application',
+    'oauth2_application_password',
+    'oauth2_admin_access_token',
+    'oauth2_user_pat',
+    'oauth2_user_pat_1',
+    'oauth2_user_pat_2',
+    'oauth2_user_pat_3',
+]
+
 
 @pytest.fixture
 def oauth2_application(randname):
@@ -17,7 +27,7 @@ def oauth2_application(randname):
     app = OAuth2Application(
         name=randname("OAuth2 Application"),
         description="Test OAuth2 Application",
-        redirect_uris="http://example.com/callback",
+        redirect_uris="https://example.com/callback",
         authorization_grant_type="authorization-code",
         client_type="confidential",
     )
@@ -36,7 +46,7 @@ def oauth2_application_password(randname):
     app = OAuth2Application(
         name=randname("OAuth2 Application"),
         description="Test OAuth2 Application",
-        redirect_uris="http://example.com/callback",
+        redirect_uris="https://example.com/callback",
         authorization_grant_type="password",
         client_type="confidential",
     )
