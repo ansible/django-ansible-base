@@ -7,6 +7,16 @@ from oauthlib.common import generate_token
 from ansible_base.lib.testing.fixtures import copy_fixture
 from ansible_base.oauth2_provider.models import OAuth2AccessToken, OAuth2Application
 
+__all__ = [  # noqa: F822, the additional _pat_X are unknown so we need this here
+    'oauth2_application',
+    'oauth2_application_password',
+    'oauth2_admin_access_token',
+    'oauth2_user_pat',
+    'oauth2_user_pat_1',
+    'oauth2_user_pat_2',
+    'oauth2_user_pat_3',
+]
+
 
 @pytest.fixture
 def oauth2_application(randname):
