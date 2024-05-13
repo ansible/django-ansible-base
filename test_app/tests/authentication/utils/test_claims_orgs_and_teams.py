@@ -40,7 +40,7 @@ def test_process_organization_and_team_memberships(mock_create_orgs_and_teams):
 @patch('ansible_base.authentication.utils.claims.load_existing_teams')
 @patch('ansible_base.authentication.utils.claims.create_missing_teams')
 def test_create_orgs_and_teams(mock_load_existing_orgs, mock_create_missing_orgs, mock_load_existing_teams, mock_create_missing_teams):
-    org_list = []
+    org_list = set()
     team_map = {}
     create_orgs_and_teams(org_list, team_map)
 
@@ -57,7 +57,7 @@ def test_load_existing_orgs():
     orgs = [Organization.objects.get_or_create(name=x)[0] for x in org_names]
 
     filtered_orgs = orgs[1:]
-    filtered_org_names = [x.name for x in filtered_orgs]
+    filtered_org_names = set(x.name for x in filtered_orgs)
     res = load_existing_orgs(filtered_org_names)
     for org in orgs:
         if org in filtered_orgs:
@@ -72,11 +72,11 @@ def test_load_existing_teams():
     Organization = get_organization_model()
     Team = get_team_model()
     org, _ = Organization.objects.get_or_create(name=generate_org_or_team_name())
-    team_names = [generate_org_or_team_name() for x in range(0, 5)]
+    team_names = set(generate_org_or_team_name() for x in range(0, 5))
     teams = [Team.objects.get_or_create(name=x, organization=org)[0] for x in team_names]
 
-    filtered_teams = teams[1:]
-    filtered_team_names = [x.name for x in filtered_teams]
+    filtered_teams = set(teams[1:])
+    filtered_team_names = set(x.name for x in filtered_teams)
     res = load_existing_teams(filtered_team_names)
     for team in teams:
         if team in filtered_teams:
@@ -90,7 +90,7 @@ def test_create_missing_orgs():
     Organization = get_organization_model()
     org_name = generate_org_or_team_name()
     existing_orgs = {}
-    create_missing_orgs([org_name], existing_orgs)
+    create_missing_orgs(set([org_name]), existing_orgs)
     assert org_name in existing_orgs
     assert Organization.objects.filter(name=org_name).exists()
 
@@ -104,9 +104,10 @@ def test_create_missing_teams():
     org, _ = Organization.objects.get_or_create(name=org_name)
     team_name = generate_org_or_team_name()
     team_map = {team_name: org_name}
+    existing_teams = set([team_name])
     existing_orgs = {org_name: org.id}
 
-    create_missing_teams([team_name], team_map, existing_orgs, [])
+    create_missing_teams(existing_teams, team_map, existing_orgs, set())
 
     assert Team.objects.filter(name=team_name, organization=org).exists()
 

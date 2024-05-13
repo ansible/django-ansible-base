@@ -313,12 +313,12 @@ def create_orgs_and_teams(org_list: set[str], team_map: dict[str, str]) -> None:
     create_missing_teams(all_teams, team_map, existing_orgs, existing_teams)
 
 
-def load_existing_orgs(org_names: set(str)) -> dict[str, int]:
+def load_existing_orgs(org_names: set[str]) -> dict[str, int]:
     existing_orgs = {org.name: org.id for org in Organization.objects.filter(name__in=org_names)}
     return existing_orgs
 
 
-def create_missing_orgs(org_names: set(str), existing_orgs: dict[str, int]) -> None:
+def create_missing_orgs(org_names: set[str], existing_orgs: dict[str, int]) -> None:
     for org_name in org_names:
         if org_name not in existing_orgs:
             logger.info(f"creating org {org_name}")
@@ -326,12 +326,12 @@ def create_missing_orgs(org_names: set(str), existing_orgs: dict[str, int]) -> N
             existing_orgs[org_name] = new_org.id
 
 
-def load_existing_teams(team_names: set(str)) -> set(str):
+def load_existing_teams(team_names: set[str]) -> set[str]:
     existing_teams = set(Team.objects.filter(name__in=team_names).values_list('name', flat=True))
     return existing_teams
 
 
-def create_missing_teams(team_names: set(str), team_map: dict[str, str], existing_orgs: dict[str, int], existing_teams: set(str)) -> None:
+def create_missing_teams(team_names: set[str], team_map: dict[str, str], existing_orgs: dict[str, int], existing_teams: set[str]) -> None:
     for team_name in team_names:
         if team_name not in existing_teams:
             org_name = team_map[team_name]
