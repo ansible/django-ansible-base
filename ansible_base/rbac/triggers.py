@@ -350,14 +350,14 @@ class TrackedRelationship:
     def sync_team_to_role(self, instance: Model, action: str, model: type, pk_set: Optional[set[int]], reverse: bool, **kwargs):
         if not reverse:
             self._sync_actor_to_role(permission_registry.team_model, instance, action, pk_set)
-        else:
+        elif pk_set:
             for pk in pk_set:
                 self._sync_actor_to_role(permission_registry.team_model, model(pk=pk), action, {instance.pk})
 
     def sync_user_to_role(self, instance: Model, action: str, model: type, pk_set: Optional[set[int]], reverse: bool, **kwargs):
         if not reverse:
             self._sync_actor_to_role(permission_registry.user_model, instance, action, pk_set)
-        else:
+        elif pk_set:
             for pk in pk_set:
                 self._sync_actor_to_role(permission_registry.user_model, model(pk=pk), action, {instance.pk})
 
