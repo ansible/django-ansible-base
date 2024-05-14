@@ -18,7 +18,7 @@ services:
     working_dir: /src
     command: 'test_app/scripts/container_startup.sh'
     volumes:
-      - '.:/src'
+      - '.:/src:z'
     depends_on:
       postgres:
         condition: service_healthy
