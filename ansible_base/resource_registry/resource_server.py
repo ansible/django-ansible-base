@@ -16,7 +16,8 @@ class ResourceServerConfig(TypedDict):
 
 def get_resource_server_config() -> ResourceServerConfig:
     defaults = {"JWT_ALGORITHM": "HS256", "VALIDATE_HTTPS": True}
-    return ResourceServerConfig(**{**defaults, **settings.RESOURCE_SERVER})
+    defaults.update(settings.RESOURCE_SERVER)
+    return defaults
 
 
 def get_service_token(user_id=None, expiration=60, **kwargs):

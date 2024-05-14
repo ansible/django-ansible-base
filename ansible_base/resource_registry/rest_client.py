@@ -53,7 +53,7 @@ class ResourceAPIClient:
         verify_https (bool): check the server's SSL certificates
         raise_if_bad_request (bool): raise an exception if the API call returns a non
             successful status code.
-        user_id (UUID): ansible ID of the user to make the request as.
+        jwt_user_id (UUID): ansible ID of the user to make the request as.
         jwt_expiration (int): number of seconds that the JWT token is valid.
         """
 
@@ -72,10 +72,7 @@ class ResourceAPIClient:
 
     @property
     def jwt(self):
-        if self._jwt is None or self._jwt_timeout is None:
-            self.refresh_jwt()
-
-        if time.time() >= self._jwt_timeout:
+        if self._jwt is None or self._jwt_timeout is None or time.time() >= self._jwt_timeout:
             self.refresh_jwt()
 
         return self._jwt
