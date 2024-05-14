@@ -6,6 +6,7 @@ from typing import Optional
 from django.conf import settings
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import connection, models, transaction
 from django.db.models.functions import Cast
 from django.db.models.query import QuerySet
@@ -189,6 +190,19 @@ class RoleDefinition(CommonModel):
     def remove_permission(self, actor, content_object):
         return self.give_or_remove_permission(actor, content_object, giving=False)
 
+    def get_object_role(self, **kwargs):
+        """Downselects kwargs to the lookup_fields we want to use and does lookup"""
+        lookup_fields = {'object_id', 'content_type', 'role_definition'}
+        lookup_data = {}
+        defaults = {}
+        for field_name, field_value in kwargs.items():
+            if field_name in lookup_fields:
+                lookup_data[field_name] = field_value
+            else:
+                defaults[field_name] = field_value
+
+        return ObjectRole.objects.filter(**lookup_data).first()
+
     def get_or_create_object_role(self, **kwargs):
         """Transaction-safe method to create ObjectRole
 
@@ -197,17 +211,24 @@ class RoleDefinition(CommonModel):
         postgres constraints will still be violated by other active transactions
         which gives us a way to gracefully handle this.
         """
-        if transaction.get_connection().in_atomic_block:
-            try:
-                with transaction.atomic():
-                    object_role = ObjectRole.objects.create(**kwargs)
-                    return (object_role, True)
-            except IntegrityError:
-                object_role = ObjectRole.objects.get(**kwargs)
-                return (object_role, False)
+        object_role = self.get_object_role(**kwargs)
+        if object_role:
+            return (object_role, False)
         else:
-            object_role = ObjectRole.objects.create(**kwargs)
-            return (object_role, True)
+            if transaction.get_connection().in_atomic_block:
+                try:
+                    with transaction.atomic():
+                        object_role = ObjectRole.objects.create(**kwargs)
+                        return (object_role, True)
+                except IntegrityError:
+                    object_role = ObjectRole.objects.get(**kwargs)
+                    if object_role:
+                        return (object_role, False)
+                    # Should not really happen, but we will give up here
+                    raise ObjectRole.DoesNotExist
+            else:
+                object_role = ObjectRole.objects.create(**kwargs)
+                return (object_role, True)
 
     def give_or_remove_permission(self, actor, content_object, giving=True, sync_action=False):
         "Shortcut method to do whatever needed to give user or team these permissions"
@@ -216,15 +237,20 @@ class RoleDefinition(CommonModel):
         # sanitize the object_id to its database version, practically, remove "-" chars from uuids
         object_id = content_object._meta.pk.get_db_prep_value(content_object.pk, connection)
         kwargs = dict(role_definition=self, content_type=obj_ct, object_id=object_id)
-        if hasattr(content_object, 'resource'):
-            if resource := content_object.resource:
-                kwargs['resource'] = resource
+
+        try:
+            if hasattr(content_object, 'resource'):
+                if resource := content_object.resource:
+                    kwargs['resource'] = resource
+        except ObjectDoesNotExist:
+            pass
 
         created = False
-        object_role = ObjectRole.objects.filter(**kwargs).first()
-        if object_role is None:
-            if not giving:
-                return  # nothing to do
+        if not giving:
+            object_role = self.get_object_role(**kwargs)
+            if not object_role:
+                return
+        else:
             object_role, created = self.get_or_create_object_role(**kwargs)
 
         from ansible_base.rbac.triggers import needed_updates_on_assignment, update_after_assignment

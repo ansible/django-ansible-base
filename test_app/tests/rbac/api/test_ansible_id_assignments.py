@@ -5,6 +5,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 
 from ansible_base.rbac.models import ObjectRole, RoleEvaluation
+from ansible_base.rbac.triggers import update_after_assignment
 from ansible_base.resource_registry.models import Resource
 
 
@@ -12,10 +13,45 @@ from ansible_base.resource_registry.models import Resource
 def test_user_assignment_ansible_id(admin_api_client, inv_rd, rando, inventory):
     resource = Resource.objects.get(object_id=rando.pk, content_type=ContentType.objects.get_for_model(rando).pk)
     url = reverse('roleuserassignment-list')
-    data = dict(role_definition=inv_rd.id, content_type='aap.inventory', user_ansible_id=str(resource.ansible_id), object_id=inventory.id)
+    data = dict(role_definition=inv_rd.id, user_ansible_id=str(resource.ansible_id), object_id=inventory.id)
     response = admin_api_client.post(url, data=data, format="json")
     assert response.status_code == 201, response.data
     assert rando.has_obj_perm(inventory, 'change')
+
+
+@pytest.mark.django_db
+def test_user_assinment_resource_deleted(admin_api_client, rando, organization, org_admin_rd):
+    resource = Resource.objects.get(object_id=rando.pk, content_type=ContentType.objects.get_for_model(rando).pk)
+    url = reverse('roleuserassignment-list')
+    data = dict(role_definition=org_admin_rd.id, user_ansible_id=str(resource.ansible_id), object_id=organization.id)
+
+    # sanity assertions of initial state
+    assert hasattr(organization, 'resource')
+    assert not ObjectRole.objects.filter(object_id=organization.id, content_type=ContentType.objects.get_for_model(organization)).exists()
+
+    response = admin_api_client.post(url, data=data, format="json")
+    assert response.status_code == 201, response.data
+    assert rando.has_obj_perm(organization, 'change')
+
+    # test duplicate assignment
+    organization.resource.delete()
+    response = admin_api_client.post(url, data=data, format="json")
+    assert response.status_code in (201, 200), response.data
+
+
+@pytest.mark.django_db
+def test_user_assinment_unmigrated_assignment(admin_api_client, rando, organization, org_admin_rd):
+    # Mock an object from from before assignment link was added
+    org_ct = ContentType.objects.get_for_model(organization)
+    object_role = ObjectRole.objects.create(object_id=organization.pk, content_type=org_ct, role_definition=org_admin_rd)
+    update_after_assignment([], [object_role])
+
+    url = reverse('roleuserassignment-list')
+    data = dict(role_definition=org_admin_rd.id, user_ansible_id=str(rando.resource.ansible_id), object_id=organization.id)
+
+    response = admin_api_client.post(url, data=data, format="json")
+    assert response.status_code == 201, response.data
+    assert rando.has_obj_perm(organization, 'change')
 
 
 @pytest.mark.django_db
