@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 from django.contrib.auth import get_user_model
 
+from ansible_base.authentication import constants
 from ansible_base.authentication.utils.claims import ReconcileUser, process_organization_and_team_memberships
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 from ansible_base.rbac import permission_registry
@@ -54,13 +55,13 @@ def test_reconcile_user_claims(create_objects):
     # FIXME - test_app doesn't have organizaiton-member or team-member roles?
     RoleDefinition.objects.create_from_permissions(
         permissions=['view_organization', 'member_organization'],
-        name='organization-member',
+        name=constants.ORGANIZATION_MEMBER_ROLE_NAME,
         content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
         managed=True,
     )
     RoleDefinition.objects.create_from_permissions(
         permissions=['view_team', 'member_team'],
-        name='team-member',
+        name=constants.TEAM_MEMBER_ROLE_NAME,
         content_type=permission_registry.content_type_model.objects.get_for_model(Team),
         managed=True,
     )

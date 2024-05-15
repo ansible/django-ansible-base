@@ -6,6 +6,7 @@ from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand
 
+from ansible_base.authentication import constants
 from ansible_base.authentication.models import Authenticator, AuthenticatorUser
 from ansible_base.oauth2_provider.models import OAuth2Application
 from ansible_base.rbac.models import RoleDefinition
@@ -87,12 +88,12 @@ class Command(BaseCommand):
         # NOTE: managed role definitions are turned off, you could turn them on and get rid of these
         org_perms = combine_values(permissions_allowed_for_role(Organization))
         org_admin, _ = RoleDefinition.objects.get_or_create(
-            name='organization-admin',
+            name=constants.ORGANIZATION_ADMIN_ROLE_NAME,
             permissions=org_perms,
             defaults={'content_type': ContentType.objects.get_for_model(Organization), 'managed': True},
         )
         RoleDefinition.objects.get_or_create(
-            name='organization-member',
+            name=constants.ORGANIZATION_MEMBER_ROLE_NAME,
             permissions=['member_organization', 'view_organization'],
             defaults={'content_type': ContentType.objects.get_for_model(Organization), 'managed': True},
         )
@@ -103,12 +104,12 @@ class Command(BaseCommand):
         )
         team_perms = combine_values(permissions_allowed_for_role(Team))
         RoleDefinition.objects.get_or_create(
-            name='team-admin',
+            name=constants.TEAM_ADMIN_ROLE_NAME,
             permissions=team_perms,
             defaults={'content_type': ContentType.objects.get_for_model(Team), 'managed': True},
         )
         team_member, _ = RoleDefinition.objects.get_or_create(
-            name='team-member',
+            name=constants.TEAM_MEMBER_ROLE_NAME,
             permissions=['view_team', 'member_team'],
             defaults={'content_type': ContentType.objects.get_for_model(Team), 'managed': True},
         )
