@@ -264,3 +264,28 @@ def ldap_authenticator(ldap_configuration):
     )
     yield authenticator
     delete_authenticator(authenticator)
+
+
+@pytest.fixture
+def create_mock_method():
+    # Creates a function that when called, generates a function that can be used to patch
+    # a method. Useful for when you want to mock an object method that modifies an object's state.
+    # Accepts arguments:
+    #   field_dicts: iterable of dictionaries containing key-value pairs to modify for parent object
+    def mock_method_generator(field_dicts: list[dict]):
+        def create_generator():
+            for field_dict in field_dicts:
+                yield field_dict
+
+        generator = create_generator()
+
+        def mock_method(self, ignore_cache=False):
+            # Get dictionary of fields to modify
+            fields = next(generator)
+            # Modify JWTCert object with each field defined in the fields dictionary
+            for field, value in fields.items():
+                setattr(self, field, value)
+
+        return mock_method
+
+    return mock_method_generator

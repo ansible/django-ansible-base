@@ -169,8 +169,6 @@ ANSIBLE_BASE_USER_VIEWSET = 'test_app.views.UserViewSet'
 
 LOGIN_URL = "/login/login"
 
-ANSIBLE_BASE_SHARED_SECRET = 'testing'
-
 RESOURCE_SERVER = {
     "URL": "http://localhost",
     "SECRET_KEY": "my secret key",
