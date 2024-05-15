@@ -156,14 +156,9 @@ class AssociateMixin(RelatedListMixin):
     def get_association_queryset(self) -> QuerySet:
         """Return queryset for instances field of the serializer used for association"""
         if self.queryset:
-            qs = self.queryset
-        else:
-            cls = self.serializer_class.Meta.model
-            qs = cls.objects.all()
-
-        if self.action == 'associate':
-            return self.filter_associate_queryset(qs)
-        return qs
+            return self.queryset
+        cls = self.serializer_class.Meta.model
+        return cls.objects.all()
 
     def get_serializer_class(self):
         if self.action in ('disassociate', 'associate'):
@@ -172,10 +167,17 @@ class AssociateMixin(RelatedListMixin):
 
             if cls_name not in serializer_registry:
                 qs = self.get_association_queryset()
-                serializer_registry[cls_name] = type(cls_name, (AssociationSerializerBase,), {'target_queryset': qs})
+                if self.action == 'associate':
+                    serializer_registry[cls_name] = type(cls_name, (FilteredAssociationSerializer,), {'target_queryset': qs, 'viewset_instance': self})
+                else:
+                    serializer_registry[cls_name] = type(cls_name, (AssociationSerializerBase,), {'target_queryset': qs})
             return serializer_registry[cls_name]
 
         return super().get_serializer_class()
+
+
+def filter_queryset_no_op(qs: QuerySet) -> QuerySet:
+    return qs
 
 
 class AssociationSerializerBase(serializers.Serializer):
@@ -186,13 +188,22 @@ class AssociationSerializerBase(serializers.Serializer):
 
     target_queryset = None
 
-    def get_queryset_on_init(self, request) -> QuerySet:
+    def get_queryset_on_init(self) -> QuerySet:
         return self.target_queryset
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        request = self.context['request']
-        self.fields['instances'] = serializers.PrimaryKeyRelatedField(queryset=self.get_queryset_on_init(request), many=True)
+        self.fields['instances'] = serializers.PrimaryKeyRelatedField(queryset=self.get_queryset_on_init(), many=True)
+
+
+class FilteredAssociationSerializer(AssociationSerializerBase):
+    viewset_instance = None
+
+    def get_queryset_on_init(self) -> QuerySet:
+        qs = super().get_queryset_on_init()
+        if self.viewset_instance and hasattr(self.viewset_instance, 'filter_associate_queryset'):
+            return self.viewset_instance.filter_associate_queryset(qs)
+        return qs
 
 
 # Registry contains subclasses of AssociationSerializerBase indexed by name
