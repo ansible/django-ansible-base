@@ -1,22 +1,16 @@
 import base64
 import hashlib
-import hmac
-import json
 import logging
-import time
-from typing import Optional
 
 from cryptography.fernet import Fernet
 from cryptography.hazmat.backends import default_backend
 from django.conf import settings
-from django.utils.encoding import force_bytes, smart_bytes, smart_str
+from django.utils.encoding import smart_bytes, smart_str
 from django.utils.functional import SimpleLazyObject
 
 __all__ = [
     'ENCRYPTED_STRING',
     'ansible_encryption',
-    'generate_hmac_sha256_shared_secret',
-    'validate_hmac_sha256_shared_secret',
 ]
 
 logger = logging.getLogger('ansible_base.lib.utils.encryption')
@@ -79,30 +73,3 @@ class Fernet256(Fernet):
 
 
 ansible_encryption = SimpleLazyObject(func=lambda: Fernet256())
-
-
-class SharedSecretNotFound(Exception):
-    pass
-
-
-def generate_hmac_sha256_shared_secret(nonce: Optional[str] = None) -> str:
-    shared_secret = getattr(settings, 'ANSIBLE_BASE_SHARED_SECRET', None)
-    if shared_secret is None or not shared_secret:
-        logger.error("The setting ANSIBLE_BASE_SHARED_SECRET was not set, some functionality may be disabled.")
-        raise SharedSecretNotFound()
-
-    if nonce is None:
-        nonce = str(time.time())
-
-    message = {'nonce': nonce, 'shared_secret': shared_secret}
-    signature = hmac.new(force_bytes(shared_secret), msg=force_bytes(json.dumps(message)), digestmod='sha256').hexdigest()
-    secret = f"{nonce}:{signature}"
-
-    return secret
-
-
-def validate_hmac_sha256_shared_secret(secret: str) -> bool:
-    nonce, _signature = secret.split(':')
-    expected_secret = generate_hmac_sha256_shared_secret(nonce=nonce)
-
-    return expected_secret == secret
