@@ -71,3 +71,13 @@ def test_add_organization_member_to_relationship(rando, organization, org_member
     object_role = org_member_rd.object_roles.first()
     assert rando in object_role.users.all()
     assert rando.has_obj_perm(organization, 'member')
+
+
+@pytest.mark.django_db
+def test_user_teams_clear(rando):
+    rando.teams.clear()
+
+
+@pytest.mark.django_db
+def test_user_orgs_clear(rando):
+    rando.member_of_organizations.clear()

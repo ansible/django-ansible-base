@@ -7,6 +7,7 @@ from ansible_base.rbac.validators import combine_values, permissions_allowed_for
 from test_app.models import Inventory, Organization
 
 
+# REVIEW(cutwater): Fixture name is obscure and non-descriptive.
 @pytest.fixture
 def rando():
     return get_user_model().objects.create(username='rando')
