@@ -386,7 +386,7 @@ class ReconcileUser:
             if is_member:
                 logger.info("Adding user '%s' to organization '%s'", user.username, org_name)
                 org_member_rd.give_permission(user, org)
-            else:
+            elif not remove_users:
                 logger.info("Removing '%s' from organization '%s'", user.username, org_name)
                 org_member_rd.remove_permission(user, org)
 
@@ -408,6 +408,6 @@ class ReconcileUser:
                 if is_member:
                     logger.info("Adding user '%s' to team '%s'", user.username, team_name)
                     team_member_rd.give_permission(user, team)
-                else:
+                elif not remove_users:
                     logger.info("Removing user '%s' from team '%s'", user.username, team_name)
                     team_member_rd.remove_permission(user, team)
