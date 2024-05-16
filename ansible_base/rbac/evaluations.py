@@ -1,6 +1,7 @@
 from typing import Optional
 
 from django.conf import settings
+from django.contrib.auth.models import AnonymousUser
 from django.db.models.functions import Cast
 from django.db.models.query import QuerySet
 
@@ -23,6 +24,9 @@ models in an app using these RBAC internals.
 
 def has_super_permission(user, full_codename=None) -> bool:
     "Analog to has_obj_perm but only evaluates to True if user has this permission system-wide"
+    if isinstance(user, AnonymousUser):
+        return False
+
     if user._meta.model_name == permission_registry.user_model._meta.model_name:
         # Super permission flags only exist for users, teams can use global roles
         for super_flag in settings.ANSIBLE_BASE_BYPASS_SUPERUSER_FLAGS:
@@ -69,6 +73,8 @@ class AccessibleObjectsDescriptor(BaseEvaluationDescriptor):
     def __call__(self, actor, codename: str = 'view', queryset: Optional[QuerySet] = None) -> QuerySet:
         if queryset is None:
             queryset = self.cls.objects.all()
+        if isinstance(actor, AnonymousUser):
+            return queryset.model.objects.none()
         full_codename = validate_codename_for_model(codename, self.cls)
         if actor._meta.model_name == 'user' and has_super_permission(actor, full_codename):
             return queryset
@@ -78,6 +84,8 @@ class AccessibleObjectsDescriptor(BaseEvaluationDescriptor):
 class AccessibleIdsDescriptor(BaseEvaluationDescriptor):
     def __call__(self, actor, codename: str = 'view', content_types=None, cast_field=None) -> QuerySet:
         full_codename = validate_codename_for_model(codename, self.cls)
+        if isinstance(actor, AnonymousUser):
+            return self.cls.objects.none().values_list()
         if actor._meta.model_name == 'user' and has_super_permission(actor, full_codename):
             if cast_field is None:
                 return self.cls.objects.values_list('id', flat=True)
