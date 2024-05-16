@@ -1,5 +1,6 @@
 import pytest
 from crum import impersonate
+from django.test import override_settings
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.models import AuthenticatorMap
@@ -67,6 +68,10 @@ def test_no_modify_system_user():
     update["email"] = "noworky@gmail.com"
     serializer = CommonUserSerializer(sysuser)
     with pytest.raises(ValidationError):
+        serializer.validate(update)
+
+    # Verify lack of system user does not break validation
+    with override_settings(SYSTEM_USERNAME=None):
         serializer.validate(update)
 
 
