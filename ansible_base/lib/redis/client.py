@@ -66,9 +66,8 @@ class RedisClient(DefaultClient):
 
         for file_setting in ['ssl_certfile', 'ssl_keyfile', 'ssl_ca_certs']:
             file = kwargs.get(file_setting, None)
-            if file:
-                if not os.access(file, os.R_OK):
-                    raise ImproperlyConfigured(_('Unable to read file {} from setting {}').format(file, file_setting))
+            if file and not os.access(file, os.R_OK):
+                raise ImproperlyConfigured(_('Unable to read file {} from setting {}').format(file, file_setting))
 
         # Connect to either a cluster or a standalone redis
         if self.clustered:
