@@ -9,7 +9,6 @@ from django.contrib.auth.models import AbstractUser
 from django.utils.timezone import now
 from rest_framework.serializers import DateTimeField
 
-from ansible_base.authentication import constants
 from ansible_base.authentication.models import Authenticator, AuthenticatorMap, AuthenticatorUser
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 from ansible_base.rbac.models import RoleDefinition
@@ -353,6 +352,11 @@ def create_organizations_and_teams(results) -> None:
 #  removal or update of a pluggable interface.
 class ReconcileUser:
 
+    TEAM_MEMBER_ROLE_NAME = "Team Member"
+    TEAM_ADMIN_ROLE_NAME = "Team Admin"
+    ORGANIZATION_MEMBER_ROLE_NAME = "Organization Member"
+    ORGANIZATION_ADMIN_ROLE_NAME = "Organization Admin"
+
     @classmethod
     def _remove_role_from_user(cls, user: AbstractUser, rd: RoleDefinition):
         for role in user.has_roles.filter(role_definition=rd):
@@ -363,8 +367,8 @@ class ReconcileUser:
         logger.info("Reconciling user claims")
 
         claims = getattr(user, 'claims', authenticator_user.claims)
-        org_member_rd = RoleDefinition.objects.get(name=constants.ORGANIZATION_MEMBER_ROLE_NAME)
-        team_member_rd = RoleDefinition.objects.get(name=constants.TEAM_MEMBER_ROLE_NAME)
+        org_member_rd = RoleDefinition.objects.get(name=cls.ORGANIZATION_MEMBER_ROLE_NAME)
+        team_member_rd = RoleDefinition.objects.get(name=cls.TEAM_MEMBER_ROLE_NAME)
 
         remove_users = authenticator_user.provider.remove_users
         if remove_users:

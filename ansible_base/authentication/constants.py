@@ -1,4 +1,0 @@
-TEAM_MEMBER_ROLE_NAME = "Team Member"
-TEAM_ADMIN_ROLE_NAME = "Team Admin"
-ORGANIZATION_MEMBER_ROLE_NAME = "Organization Member"
-ORGANIZATION_ADMIN_ROLE_NAME = "Organization Admin"

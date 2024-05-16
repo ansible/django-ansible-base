@@ -18,7 +18,7 @@ from drf_spectacular.generators import SchemaGenerator
 from rest_framework.request import Request
 from rest_framework.test import force_authenticate
 
-from ansible_base.authentication import constants
+from ansible_base.authentication.utils.claims import ReconcileUser
 from ansible_base.lib.testing.fixtures import *  # noqa: F403, F401
 from ansible_base.lib.testing.util import copy_fixture, delete_authenticator
 from ansible_base.oauth2_provider.fixtures import *  # noqa: F403, F401
@@ -613,7 +613,7 @@ def member_rd():
     "Member role for a team, place in root conftest because it is needed for the team users tracked relationship"
     return RoleDefinition.objects.create_from_permissions(
         permissions=[permission_registry.team_permission, f'view_{permission_registry.team_model._meta.model_name}'],
-        name=constants.TEAM_MEMBER_ROLE_NAME,
+        name=ReconcileUser.TEAM_MEMBER_ROLE_NAME,
         content_type=permission_registry.content_type_model.objects.get_for_model(permission_registry.team_model),
         managed=True,
     )
@@ -628,7 +628,7 @@ def admin_rd():
             f'view_{permission_registry.team_model._meta.model_name}',
             f'change_{permission_registry.team_model._meta.model_name}',
         ],
-        name=constants.TEAM_ADMIN_ROLE_NAME,
+        name=ReconcileUser.TEAM_ADMIN_ROLE_NAME,
         content_type=permission_registry.content_type_model.objects.get_for_model(permission_registry.team_model),
         managed=True,
     )

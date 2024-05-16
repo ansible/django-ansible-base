@@ -5,7 +5,6 @@ from unittest import mock
 import pytest
 from django.contrib.auth import get_user_model
 
-from ansible_base.authentication import constants
 from ansible_base.authentication.utils.claims import ReconcileUser, create_organizations_and_teams
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 from ansible_base.rbac import permission_registry
@@ -26,7 +25,7 @@ def random_name(length: int = 10) -> str:
 def org_member_rd():
     return RoleDefinition.objects.create_from_permissions(
         permissions=['view_organization', 'member_organization'],
-        name=constants.ORGANIZATION_MEMBER_ROLE_NAME,
+        name=ReconcileUser.ORGANIZATION_MEMBER_ROLE_NAME,
         content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
         managed=True,
     )
@@ -36,7 +35,7 @@ def org_member_rd():
 def team_member_rd():
     return RoleDefinition.objects.create_from_permissions(
         permissions=['view_team', 'member_team'],
-        name=constants.TEAM_MEMBER_ROLE_NAME,
+        name=ReconcileUser.TEAM_MEMBER_ROLE_NAME,
         content_type=permission_registry.content_type_model.objects.get_for_model(Team),
         managed=True,
     )
