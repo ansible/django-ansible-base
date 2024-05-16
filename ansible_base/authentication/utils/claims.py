@@ -277,6 +277,7 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
     return user
 
 
+# TODO(cutwater): Implement a generic version of this function and move it to lib/utils.
 def load_reconcile_user_class():
     module_path = getattr(settings, 'ANSIBLE_BASE_AUTHENTICATOR_RECONCILE_MODULE', 'ansible_base.authentication.utils.claims')
     try:
