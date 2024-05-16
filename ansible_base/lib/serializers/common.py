@@ -1,11 +1,15 @@
 import logging
 
 from django.db.models.fields import NOT_PROVIDED
+from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.fields import empty
+from rest_framework.serializers import ValidationError
 
 from ansible_base.lib.abstract_models.common import get_url_for_object
 from ansible_base.lib.serializers.validation import ValidationSerializerMixin
+from ansible_base.lib.utils import models
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 
 logger = logging.getLogger('ansible_base.lib.serializers.common')
@@ -98,3 +102,21 @@ class NamedCommonModelSerializer(CommonModelSerializer):
 class ImmutableCommonModelSerializer(AbstractCommonModelSerializer):
     class Meta(AbstractCommonModelSerializer.Meta):
         fields = AbstractCommonModelSerializer.Meta.fields + ['created', 'created_by']
+
+
+class CommonUserSerializer(CommonModelSerializer):
+    """
+    Disallows editing of system user (settings.SYSTEM_USERNAME) and enforces
+    superuser requirement.
+    """
+
+    def validate(self, data):
+        if hasattr(self, 'instance') and hasattr(self.instance, 'id') and self.instance.id == models.get_system_user().id:
+            raise ValidationError(_('System users cannot be modified'))
+        return data
+
+    def validate_is_superuser(self, value):
+        if value is True:
+            if not self.context['request'].user.is_superuser:
+                raise PermissionDenied
+        return value
