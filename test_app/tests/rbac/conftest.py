@@ -1,6 +1,7 @@
 import pytest
 from django.contrib.auth import get_user_model
 
+from ansible_base.authentication.utils.claims import ReconcileUser
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
 from ansible_base.rbac.validators import combine_values, permissions_allowed_for_role
@@ -50,11 +51,11 @@ def view_inv_rd():
 
 @pytest.fixture
 def org_admin_rd():
-    "Give all permissions possible for an organization"
+    """Give all permissions possible for an organization"""
     perm_list = combine_values(permissions_allowed_for_role(Organization))
     return RoleDefinition.objects.create_from_permissions(
         permissions=perm_list,
-        name='organization-admin',
+        name=ReconcileUser.ORGANIZATION_ADMIN_ROLE_NAME,
         content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
         managed=True,
     )
@@ -64,7 +65,7 @@ def org_admin_rd():
 def org_member_rd():
     return RoleDefinition.objects.create_from_permissions(
         permissions=['view_organization', 'member_organization'],
-        name='organization-member',
+        name=ReconcileUser.ORGANIZATION_MEMBER_ROLE_NAME,
         content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
         managed=True,
     )
@@ -72,7 +73,7 @@ def org_member_rd():
 
 @pytest.fixture
 def org_team_member_rd():
-    "Gives membership to all teams in an organization"
+    """Gives membership to all teams in an organization"""
     return RoleDefinition.objects.create_from_permissions(
         permissions=[permission_registry.team_permission, f'view_{permission_registry.team_model._meta.model_name}'],
         name='org-level-team-member',

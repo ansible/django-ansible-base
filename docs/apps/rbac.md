@@ -396,8 +396,8 @@ This sub-feature will use signals to do bidirectional syncing of memberships of
 that relationship with memberships of their corresponding role.
 
 ```
-permission_registry.track_relationship(Team, 'users', 'team-member')
-permission_registry.track_relationship(Team, 'team_parents', 'team-member')
+permission_registry.track_relationship(Team, 'users', 'Team Member')
+permission_registry.track_relationship(Team, 'team_parents', 'Team Member')
 ```
 
 This only works with our 2 "actor" types of users and teams.

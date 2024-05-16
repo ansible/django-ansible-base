@@ -259,12 +259,15 @@ permission_registry.register(ParentName, parent_field_name='my_organization')
 permission_registry.register(CollectionImport, parent_field_name='namespace')
 permission_registry.register(InstanceGroup, ImmutableTask, parent_field_name=None)
 
-permission_registry.track_relationship(Team, 'users', 'team-member')
-permission_registry.track_relationship(Team, 'admins', 'team-admin')
-permission_registry.track_relationship(Team, 'team_parents', 'team-member')
+# NOTE(cutwater): Using hard coded role names instead of ones defined in ReconcileUser class,
+#   to avoid circular dependency between models and claims modules. This is a temporary workarond,
+#   since we plan to drop support of tracked relationships in future.
+permission_registry.track_relationship(Team, 'users', 'Team Member')
+permission_registry.track_relationship(Team, 'admins', 'Team Admin')
+permission_registry.track_relationship(Team, 'team_parents', 'Team Member')
 
-permission_registry.track_relationship(Organization, 'users', 'organization-member')
-permission_registry.track_relationship(Organization, 'admins', 'organization-admin')
+permission_registry.track_relationship(Organization, 'users', 'Organization Member')
+permission_registry.track_relationship(Organization, 'admins', 'Organization Admin')
 
 
 class MultipleFieldsModel(NamedCommonModel):
