@@ -1,7 +1,9 @@
 from unittest.mock import MagicMock, Mock
 
 import pytest
+from django.conf import settings
 from django.core.exceptions import FieldDoesNotExist, FieldError, ValidationError
+from django.test.utils import override_settings
 from django.urls import reverse
 from django.utils.http import urlencode
 from rest_framework.exceptions import ParseError, PermissionDenied
@@ -173,3 +175,28 @@ def test_filter_jsonfield_as_text(admin_api_client):
     response = admin_api_client.get(url + '?' + urlencode(query_params))
     assert response.status_code == 200
     assert response.data['count'] == 1
+
+
+def test_filter_unexpected_field(admin_api_client):
+    url = reverse('organization-list')
+    response = admin_api_client.get(url, data={'foofield': 'bar'})
+    assert response.status_code == 400, response.data
+
+
+def test_app_ignore_field(admin_api_client):
+    base_list = tuple(settings.ANSIBLE_BASE_REST_FILTERS_RESERVED_NAMES)
+    with override_settings(ANSIBLE_BASE_REST_FILTERS_RESERVED_NAMES=base_list + ('foofield',)):
+        url = reverse('organization-list')
+        response = admin_api_client.get(url, data={'foofield': 'bar'})
+        assert response.status_code == 200, response.data
+
+
+def test_view_level_ignore_field(admin_api_client):
+    """See CowViewSet definition which corresponds to expectations of this test"""
+    url = reverse('cow-list')
+    response = admin_api_client.get(url, data={'cud': 'chew'})
+    assert response.status_code == 200, response.data
+
+    # Make sure that normal function is not disrupted by this customization
+    response = admin_api_client.get(url, data={'foofield': 'bar'})
+    assert response.status_code == 400, response.data
