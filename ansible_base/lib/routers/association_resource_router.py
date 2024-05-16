@@ -198,7 +198,13 @@ class AssociationSerializerBase(serializers.Serializer):
 
 
 class FilteredAssociationSerializer(AssociationSerializerBase):
-    viewset_instance = None
+    """Serializer that adds filtering on top of AssociationSerializerBase
+
+    This filtering is expected to be used for limiting candidate association objects
+    to only those the requesting user has permission to view.
+    None of that is handled here, that is the sole discression of the view,
+    which can define filter_associate_queryset to their liking.
+    """
 
     def get_queryset_on_init(self) -> QuerySet:
         qs = super().get_queryset_on_init()
