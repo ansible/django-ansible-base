@@ -381,7 +381,7 @@ class ReconcileUser:
         for org_name, is_member in claims['organization_membership'].items():
             org = orgs_by_name.get(org_name)
             if org is None:
-                logger.info("Skipping organization '%s'", org_name)
+                logger.info("Skipping organization '%s', because the organization does not exist", org_name)
                 continue
             if is_member:
                 logger.info("Adding user '%s' to organization '%s'", user.username, org_name)
@@ -393,15 +393,17 @@ class ReconcileUser:
         for org_name, team_info in claims['team_membership'].items():
             org = orgs_by_name.get(org_name)
             if org is None:
-                logger.info("Skipping organization '%s'", org_name)
+                logger.info("Skipping all teams in organization '%s', because the organization does not exist", org_name)
                 continue
 
+            # FIXME(cutwater): Load all teams in all organizations at once.
+            #       This will require raw query to filter by tuples of (org id, team name).
             teams_by_name = {team.name: team for team in Team.objects.filter(organization=org, name__in=team_info.keys())}
 
             for team_name, is_member in team_info.items():
                 team = teams_by_name.get(team_name)
                 if team is None:
-                    logger.info("Skipping team '%s'", org_name)
+                    logger.info("Skipping team '%s' in organization '%s', because the team does not exist", team_name, org_name)
                     continue
                 if is_member:
                     logger.info("Adding user '%s' to team '%s'", user.username, team_name)
