@@ -33,7 +33,7 @@ class ResourceType(models.Model):
 
     @property
     def can_be_managed(self):
-        return self.externally_managed and self.serializer_class
+        return self.serializer_class is not None
 
     def get_resource_config(self):
         return self.resource_registry.get_config_for_model(model=ContentType.objects.get_for_id(self.content_type_id).model_class())

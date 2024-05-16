@@ -1,9 +1,12 @@
 import logging
+import time
 from collections import namedtuple
 from typing import Optional
 
 import requests
 import urllib3
+
+from ansible_base.resource_registry.resource_server import get_resource_server_config, get_service_token
 
 ResourceRequestBody = namedtuple("ResourceRequestBody", ["ansible_id", "service_id", "resource_type", "resource_data"], defaults=(None, None, None, None))
 
@@ -13,25 +16,70 @@ urllib3.disable_warnings()
 logger = logging.getLogger('ansible_base.resources_api.rest_client')
 
 
+def get_resource_server_client(user_id, service_path, **kwargs):
+    config = get_resource_server_config()
+
+    return ResourceAPIClient(
+        service_url=config["URL"],
+        service_path=service_path,
+        verify_https=config["VALIDATE_HTTPS"],
+        **kwargs,
+    )
+
+
 class ResourceAPIClient:
     """
     Client for Ansible services to interact with the service-index/ api
     """
 
-    def __init__(self, service_url: str, service_path: str, requests_auth_kwargs: dict, verify_https=True, raise_if_bad_request: bool = False):
+    header_name = "Authorization"
+    _jwt_timeout = None
+    _jwt = None
+
+    def __init__(
+        self,
+        service_url: str,
+        service_path: str,
+        verify_https=True,
+        raise_if_bad_request: bool = False,
+        jwt_user_id=None,
+        jwt_expiration=60,
+    ):
         """
-        service_url: fully qualified hostname for the service that the client
+        service_url (str): fully qualified hostname for the service that the client
             is connecting to (http://www.example.com:123).
-        service_path: path on the service where the service-index/ api is found
+        service_path (str): path on the service where the service-index/ api is found
             (/api/v1/service-index/).
-        requests_auth_kwargs: dictionary of additional args to pass to requests.request()
-            ({auth=("username", "password")})
+        verify_https (bool): check the server's SSL certificates
+        raise_if_bad_request (bool): raise an exception if the API call returns a non
+            successful status code.
+        jwt_user_id (UUID): ansible ID of the user to make the request as.
+        jwt_expiration (int): number of seconds that the JWT token is valid.
         """
 
         self.base_url = f"{service_url}/{service_path.strip('/')}/"
-        self.requests_auth_kwargs = requests_auth_kwargs
         self.verify_https = verify_https
         self.raise_if_bad_request = raise_if_bad_request
+        self.jwt_user_id = str(jwt_user_id)
+        self.jwt_expiration = jwt_expiration
+        self._jwt = None
+        self._jwt_timeout = None
+
+    def refresh_jwt(self):
+        # Add a buffer to the token timeout to account for slower requests.
+        self._jwt_timeout = time.time() + (self.jwt_expiration - 2)
+        self._jwt = "Token " + get_service_token(self.jwt_user_id, expiration=self.jwt_expiration)
+
+    @property
+    def jwt(self):
+        if self._jwt is None or self._jwt_timeout is None or time.time() >= self._jwt_timeout:
+            self.refresh_jwt()
+
+        return self._jwt
+
+    @property
+    def requests_auth_kwargs(self):
+        return {"headers": {self.header_name: self.jwt}}
 
     def _make_request(self, method: str, path: str, data: Optional[dict] = None, params: Optional[dict] = None) -> requests.Response:
         url = self.base_url + path.lstrip("/")
