@@ -6,7 +6,6 @@ from django.db import models
 from django.db.models import JSONField
 
 from ansible_base.activitystream.models import AuditableModel
-from ansible_base.authentication.utils.claims import ReconcileUser
 from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam, CommonModel, ImmutableCommonModel, ImmutableModel, NamedCommonModel
 from ansible_base.lib.utils.models import prevent_search, user_summary_fields
 from ansible_base.rbac import permission_registry
@@ -260,12 +259,15 @@ permission_registry.register(ParentName, parent_field_name='my_organization')
 permission_registry.register(CollectionImport, parent_field_name='namespace')
 permission_registry.register(InstanceGroup, ImmutableTask, parent_field_name=None)
 
-permission_registry.track_relationship(Team, 'users', ReconcileUser.TEAM_MEMBER_ROLE_NAME)
-permission_registry.track_relationship(Team, 'admins', ReconcileUser.TEAM_ADMIN_ROLE_NAME)
-permission_registry.track_relationship(Team, 'team_parents', ReconcileUser.TEAM_MEMBER_ROLE_NAME)
+# NOTE(cutwater): Using hard coded role names instead of ones defined in ReconcileUser class,
+#   to avoid circular dependency between models and claims modules. This is a temporary workarond,
+#   since we plan to drop support of tracked relationships in future.
+permission_registry.track_relationship(Team, 'users', 'Team Member')
+permission_registry.track_relationship(Team, 'admins', 'Team Admin')
+permission_registry.track_relationship(Team, 'team_parents', 'Team Member')
 
-permission_registry.track_relationship(Organization, 'users', ReconcileUser.ORGANIZATION_MEMBER_ROLE_NAME)
-permission_registry.track_relationship(Organization, 'admins', ReconcileUser.ORGANIZATION_ADMIN_ROLE_NAME)
+permission_registry.track_relationship(Organization, 'users', 'Organization Member')
+permission_registry.track_relationship(Organization, 'admins', 'Organization Admin')
 
 
 class MultipleFieldsModel(NamedCommonModel):
