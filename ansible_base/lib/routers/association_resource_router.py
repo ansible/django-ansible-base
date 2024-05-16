@@ -168,9 +168,10 @@ class AssociateMixin(RelatedListMixin):
             if cls_name not in serializer_registry:
                 qs = self.get_association_queryset()
                 if self.action == 'associate':
-                    serializer_registry[cls_name] = type(cls_name, (FilteredAssociationSerializer,), {'target_queryset': qs, 'viewset_instance': self})
+                    parent_cls = FilteredAssociationSerializer
                 else:
-                    serializer_registry[cls_name] = type(cls_name, (AssociationSerializerBase,), {'target_queryset': qs})
+                    parent_cls = AssociationSerializerBase
+                serializer_registry[cls_name] = type(cls_name, (parent_cls,), {'target_queryset': qs})
             return serializer_registry[cls_name]
 
         return super().get_serializer_class()
@@ -201,8 +202,10 @@ class FilteredAssociationSerializer(AssociationSerializerBase):
 
     def get_queryset_on_init(self) -> QuerySet:
         qs = super().get_queryset_on_init()
-        if self.viewset_instance and hasattr(self.viewset_instance, 'filter_associate_queryset'):
-            return self.viewset_instance.filter_associate_queryset(qs)
+        if 'view' in self.context:
+            # If the view exists we require it to be an instance of AssociationViewSetMethodsMixin
+            view = self.context['view']
+            return view.filter_associate_queryset(qs)
         return qs
 
 
