@@ -174,3 +174,12 @@ def test_redis_client_cluster_hosts_parsing(clustered_hosts, raises, expected_le
             assert 'port' not in m.call_args.kwargs
             assert 'startup_nodes' in m.call_args.kwargs
             assert len(m.call_args.kwargs['startup_nodes']) == expected_length
+
+
+def test_redis_client_read_files():
+    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'ssl_certfile': '/tmp/junk.does.not.exist'}}}
+    redis_cache = RedisCache('localhost', args)
+    client = RedisClient('localhost', args, redis_cache)
+    with pytest.raises(ImproperlyConfigured) as ic:
+        client.connect()
+        assert 'Unable to read file' in ic

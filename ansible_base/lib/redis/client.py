@@ -1,5 +1,6 @@
 import copy
 import logging
+import os
 from typing import Union
 from urllib.parse import urlparse
 
@@ -62,6 +63,11 @@ class RedisClient(DefaultClient):
             kwargs['db'] = int(parsed_url.path.split('/')[1])
         except (IndexError, ValueError):
             pass
+
+        for file_setting in ['ssl_certfile', 'ssl_keyfile', 'ssl_ca_certs']:
+            file = kwargs.get(file_setting, None)
+            if file and not os.access(file, os.R_OK):
+                raise ImproperlyConfigured(_('Unable to read file {} from setting {}').format(file, file_setting))
 
         # Connect to either a cluster or a standalone redis
         if self.clustered:
