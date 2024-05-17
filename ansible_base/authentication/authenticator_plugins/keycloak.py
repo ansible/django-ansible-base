@@ -52,4 +52,5 @@ class AuthenticatorPlugin(SocialAuthMixin, KeycloakOAuth2, AbstractAuthenticator
     def extra_data(self, user, uid, response, details=None, *args, **kwargs):
         data = super().extra_data(user, uid, response, details=None, *args, **kwargs)
         for perm in ["is_superuser", "is_system_auditor"]:
-            if perm in response and bool(response[perm]): data[perm] = response[perm]
+            if perm in response and bool(response[perm]):
+                data[perm] = response[perm]
