@@ -3,6 +3,7 @@ import sys
 
 from split_settings.tools import include
 
+
 DEBUG = True
 
 if "pytest" in sys.modules:
