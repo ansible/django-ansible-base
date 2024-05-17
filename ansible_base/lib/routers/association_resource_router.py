@@ -29,7 +29,7 @@ class RelatedListMixin:
             return check_content_obj_permission(request.user, parent_obj)
         return True
 
-    def get_parent_object(self):
+    def get_association_parent(self):
         """Modeled mostly after DRF get_object, but for the parent model
 
         Like for /api/v2/organizations/<pk>/cows/, this returns the organization
@@ -49,7 +49,7 @@ class RelatedListMixin:
         return parent_obj
 
     def get_queryset(self):
-        parent_instance = self.get_parent_object()
+        parent_instance = self.get_association_parent()
         return getattr(parent_instance, self.association_fk).all()
 
 
@@ -96,7 +96,7 @@ class AssociateMixin(RelatedListMixin):
         This will be served at /{basename}/{pk}/{related_name}/associate/
         We will be given a list of primary keys in the request body.
         """
-        instance = self.get_parent_object()
+        instance = self.get_association_parent()
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         related_instances = serializer.validated_data['instances']
@@ -114,7 +114,7 @@ class AssociateMixin(RelatedListMixin):
         This will be served at /{basename}/{pk}/{related_name}/disassociate/
         We will be given a list of primary keys in the request body.
         """
-        instance = self.get_parent_object()
+        instance = self.get_association_parent()
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         related_instances = serializer.validated_data['instances']
