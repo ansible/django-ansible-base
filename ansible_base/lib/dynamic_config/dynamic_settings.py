@@ -26,6 +26,28 @@ except NameError:
     REST_FRAMEWORK = {}
 
 
+# This is needed for the rest_filters app, but someone may use the filter class
+# without enabling the ansible_base.rest_filters app explicitly
+# we also apply this to views from other apps so we should always define it
+try:
+    ANSIBLE_BASE_REST_FILTERS_RESERVED_NAMES
+except NameError:
+    ANSIBLE_BASE_REST_FILTERS_RESERVED_NAMES = (
+        'page',
+        'page_size',
+        'format',
+        'order',
+        'order_by',
+        'search',
+        'type',
+        'host_filter',
+        'count_disabled',
+        'no_truncate',
+        'limit',
+        'validate',
+    )
+
+
 if 'ansible_base.api_documentation' in INSTALLED_APPS:
     if 'drf_spectacular' not in INSTALLED_APPS:
         INSTALLED_APPS.append('drf_spectacular')
@@ -59,21 +81,6 @@ ANSIBLE_BASE_ALL_REST_FILTERS = (
 
 if 'ansible_base.rest_filters' in INSTALLED_APPS:
     REST_FRAMEWORK.update({'DEFAULT_FILTER_BACKENDS': ANSIBLE_BASE_ALL_REST_FILTERS})
-
-    ANSIBLE_BASE_REST_FILTERS_RESERVED_NAMES = (
-        'page',
-        'page_size',
-        'format',
-        'order',
-        'order_by',
-        'search',
-        'type',
-        'host_filter',
-        'count_disabled',
-        'no_truncate',
-        'limit',
-        'validate',
-    )
 else:
     # Explanation - these are the filters for views provided by DAB like /authenticators/
     # we want them to be enabled by default _even if_ the rest_filters app is not used
