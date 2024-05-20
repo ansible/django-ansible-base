@@ -177,9 +177,16 @@ def test_redis_client_cluster_hosts_parsing(clustered_hosts, raises, expected_le
 
 
 def test_redis_client_read_files():
-    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'ssl_certfile': '/tmp/junk.does.not.exist'}}}
+    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'ssl_certfile': '/tmp/junk.does.not.exist', 'ssl': True}}}
     redis_cache = RedisCache('localhost', args)
     client = RedisClient('localhost', args, redis_cache)
     with pytest.raises(ImproperlyConfigured) as ic:
         client.connect()
         assert 'Unable to read file' in ic
+
+
+def test_redis_client_read_files_no_tls():
+    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'ssl_certfile': '/tmp/junk.does.not.exist'}}}
+    redis_cache = RedisCache('localhost', args)
+    client = RedisClient('localhost', args, redis_cache)
+    client.connect()
