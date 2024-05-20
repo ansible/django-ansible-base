@@ -263,3 +263,18 @@ def test_oauth2_application_delete(oauth2_application, admin_api_client):
     assert OAuth2Application.objects.filter(client_id=oauth2_application.client_id).count() == 0
     assert OAuth2RefreshToken.objects.filter(application=oauth2_application).count() == 0
     assert OAuth2AccessToken.objects.filter(application=oauth2_application).count() == 0
+
+
+@pytest.mark.django_db
+def test_oauth2_application_prevent_search_client_secret(oauth2_application, admin_api_client):
+    url = reverse("application-list")
+    query_params = {
+        'client_secret__isnull': False,
+    }
+    response = admin_api_client.get(url, data=query_params)
+    assert response.status_code == 403
+    assert 'Filtering on client_secret is not allowed' in response.data['detail']
+
+    # Also ensure we don't leak the client_secret in activity stream
+    creation_entry = oauth2_application[0].activity_stream_entries.first()
+    assert creation_entry.changes['added_fields']['client_secret'] == ENCRYPTED_STRING
