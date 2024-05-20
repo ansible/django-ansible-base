@@ -213,5 +213,5 @@ class AuthenticatorPlugin(SocialAuthMixin, OpenIdConnectAuth, AbstractAuthentica
         data = super().extra_data(user, backend, response, *args, **kwargs)
         return data
 
-    def get_user_groups(self, extra_groups):
+    def get_user_groups(self, extra_groups=[]):
         return extra_groups
