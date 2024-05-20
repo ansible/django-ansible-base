@@ -125,7 +125,7 @@ def test_association_router_disassociate(db, admin_api_client, randname, organiz
 @pytest.mark.parametrize(
     "data,response_instances",
     [
-        ({'instances': [-1]}, ['Invalid pk "-1" - object does not exist.']),
+        ({'instances': [-1]}, ['Invalid pk "-1" - object does not exist or is not associated with parent object.']),
         ({'instances': ['a']}, ['Incorrect type. Expected pk value, received str.']),
         ({'instances': [True]}, ['Incorrect type. Expected pk value, received bool.']),
         ({'instances': {}}, 'Please pass in one or more instances to disassociate'),
@@ -155,7 +155,7 @@ def test_association_router_disassociate_something_not_associated(db, admin_api_
     url = reverse('related_fields_test_model-more_teams-disassociate', kwargs={'pk': related_model.pk})
     response = admin_api_client.post(url, data={'instances': [team1.pk, team2.pk, team3.pk]}, format='json')
     assert response.status_code == 400
-    assert response.json().get('instances') == f'Cannot disassociate these objects because they are not all related to this object: {team2.pk}, {team3.pk}'
+    assert response.json().get('instances') == [f'Invalid pk "{team2.pk}" - object does not exist or is not associated with parent object.']
 
 
 def test_association_router_related_viewset_reverse_mapings(db):

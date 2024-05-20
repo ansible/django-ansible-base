@@ -57,20 +57,6 @@ class AssociationViewSetMethodsMixin:
     def perform_disassociate(self, parent_instance: Model, related_instances: list[Model]) -> None:
         """Remove related_instances from the managed relationship of instance"""
         manager = getattr(parent_instance, self.association_fk)
-
-        # Ensure each of the given related_instances is actually related to the instance.
-        # If any isn't, then bomb out and tell the user which ones aren't related.
-        given_related_instance_set = set(related_instances)
-        related_instance_set = set(manager.all())
-        non_related_instances = given_related_instance_set - related_instance_set
-        if non_related_instances:
-            raise serializers.ValidationError(
-                {
-                    'instances': _('Cannot disassociate these objects because they are not all related to this object: %(non_related_instances)s')
-                    % {'non_related_instances': ', '.join(str(i.pk) for i in non_related_instances)},
-                }
-            )
-
         manager.remove(*related_instances)
 
 
@@ -155,44 +141,59 @@ class AssociateMixin(RelatedListMixin):
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    def get_association_queryset(self) -> QuerySet:
-        """Return queryset for instances field of the serializer used for association"""
+    def get_viewset_model(self) -> Type[Model]:
+        """Return model for this viewset"""
         if self.queryset:
-            return self.queryset
-        cls = self.serializer_class.Meta.model
-        return cls.objects.all()
+            return self.queryset.model
+        return self.serializer_class.Meta.model
 
     def get_serializer_class(self) -> Type[serializers.BaseSerializer]:
         if self.action in ('disassociate', 'associate'):
-            rel_name = self.association_fk.replace('_', ' ').title().replace(' ', '')
-            cls_name = f'{self.parent_viewset.__name__}{rel_name}{self.action.title()}Serializer'
+            cls = self.get_viewset_model()
+            cls_name = f'{cls._meta.model_name}{self.action.title()}Serializer'
+
+            default_instances_field = serializers.PrimaryKeyRelatedField(queryset=cls.objects.all(), many=True)
 
             if cls_name not in serializer_registry:
-                qs = self.get_association_queryset()
                 if self.action == 'associate':
                     parent_cls = FilteredAssociationSerializer
                 else:
-                    parent_cls = AssociationSerializerBase
-                serializer_registry[cls_name] = type(cls_name, (parent_cls,), {'target_queryset': qs})
+                    parent_cls = DisassociationSerializerBase
+                serializer_registry[cls_name] = type(cls_name, (parent_cls,), {'instances': default_instances_field})
             return serializer_registry[cls_name]
 
         return super().get_serializer_class()
 
 
 class AssociationSerializerBase(serializers.Serializer):
-    """Serializer used for associating related objects, where all those related objects are allowed
+    """It is expected that final subclasses will set the instances field"""
 
-    It is expected that subclasses will set target_queryset which gives the queryset
-    for the model that will be associated"""
+    instances = None
 
-    target_queryset = None
-
-    def get_queryset_on_init(self) -> QuerySet:
-        return self.target_queryset
+    def get_queryset_on_init(self, original_qs: QuerySet) -> QuerySet:
+        raise NotImplementedError
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['instances'] = serializers.PrimaryKeyRelatedField(queryset=self.get_queryset_on_init(), many=True)
+        new_qs = self.get_queryset_on_init(self.fields['instances'].child_relation.queryset)
+        self.fields['instances'].child_relation.queryset = new_qs
+
+
+class DisassociationSerializerBase(AssociationSerializerBase):
+    """Serializer used for removing related objects, where instances are currently attached objects"""
+
+    def get_queryset_on_init(self, original_qs: QuerySet) -> QuerySet:
+        if 'view' in self.context:
+            view = self.context['view']
+            return view.get_queryset()
+        return original_qs
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['instances'].child_relation.error_messages = self.fields['instances'].child_relation.error_messages.copy()
+        self.fields['instances'].child_relation.error_messages['does_not_exist'] = _(
+            'Invalid pk "{pk_value}" - object does not exist or is not associated with parent object.'
+        )
 
 
 class FilteredAssociationSerializer(AssociationSerializerBase):
@@ -204,13 +205,12 @@ class FilteredAssociationSerializer(AssociationSerializerBase):
     which can define filter_associate_queryset to their liking.
     """
 
-    def get_queryset_on_init(self) -> QuerySet:
-        qs = super().get_queryset_on_init()
+    def get_queryset_on_init(self, original_qs: QuerySet) -> QuerySet:
         if 'view' in self.context:
             # If the view exists we require it to be an instance of AssociationViewSetMethodsMixin
             view = self.context['view']
-            return view.filter_associate_queryset(qs)
-        return qs
+            return view.filter_associate_queryset(original_qs)
+        return original_qs
 
 
 # Registry contains subclasses of AssociationSerializerBase indexed by name
