@@ -50,14 +50,18 @@ NOTE: Often times the `<entry in API related field>` will be the same as `<relat
 Several methods defined in the `<ViewSet for relation>` will have an effect on constructed related endpoints.
 Those are:
 
+ - `get_sublist_queryset` - queryset for items shown in a GET for the listing _before_ filtering
+ - `filter_queryset` - filter applied to items shown in sublist, which works the same as the viewset by itself
  - `filter_associate_queryset` - queryset that can be associated, defers to `filter_queryset` by default
- - `get_sublist_queryset` - queryset for items shown in a GET for the listing
  - `perform_associate` - associate items
  - `perform_disassociate` - disassociate items
 
 These are intended to be overwritten for customization.
 For heavy customizations, you can either manage this on your existing viewset like `views.TeamViewSet`
 or introduce a new class that subclasses from that.
+
+Standard DAB practice is that `filter_queryset` limits the queryset to what the request user can view.
+If you want a sublist to show all items, then you would need to create a new class for the related viewset.
 
 
 ## Many-to-Many

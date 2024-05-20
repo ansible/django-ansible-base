@@ -13,14 +13,22 @@ router.register(r'encrypted_models', views.EncryptionModelViewSet, basename='enc
 # Here, we demonstrate how to turn on or off filtering of related endpoints
 # viewsets of models with roles filter to what is visable by requesting user
 # in the filter_queryset method, but in some endpoints we show all users
-class RelatedUserViewSet(views.UserViewSet):
+class RelatedCowViewSet(views.CowViewSet):
     def filter_queryset(self, qs):
-        "Do not filter users for the related list view, /organizations/42/users/"
-        return self.apply_optimizations(qs)
+        # AVOID RBAC filtering of cows, for test case test_sublist_override_filtering
+        return super(views.TestAppViewSet, self).filter_queryset(qs)
 
-    def filter_associate_queryset(self, qs):
-        "Use RBAC filter when associating new users, /organizations/42/users/associate/"
-        return super().filter_queryset(qs)
+
+class RelatedUserViewSet(views.UserViewSet):
+    """Class that avoids RBAC filtering on user sublists
+
+    View permission to an organization implies permission to view its users anyway
+    So this is basically an optimization to turn off sublist filtering for organizations
+
+    Teams, on the other hand, need to be able to see their members
+    """
+    def filter_queryset(self, qs):
+        return super(views.TestAppViewSet, self).filter_queryset(qs)
 
 
 router.register(
@@ -42,7 +50,7 @@ router.register(
         'teams': (views.TeamViewSet, 'teams'),
         'inventories': (views.InventoryViewSet, 'inventories'),
         'namespaces': (views.NamespaceViewSet, 'namespaces'),
-        'cows': (views.CowViewSet, 'cows'),
+        'cows': (RelatedCowViewSet, 'cows'),
         'uuidmodels': (views.UUIDModelViewSet, 'uuidmodels'),
         'parentnames': (views.ParentNameViewSet, 'parentnames'),
         'positionmodels': (views.PositionModelViewSet, 'positionmodels'),

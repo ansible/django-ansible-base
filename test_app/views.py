@@ -61,7 +61,7 @@ class UserViewSet(DABOAuth2UserViewsetMixin, TestAppViewSet):
     def filter_queryset(self, qs):
         qs = visible_users(self.request.user, queryset=qs)
         qs = self.apply_optimizations(qs)
-        return qs
+        return super().filter_queryset(qs)
 
     @action(detail=False, methods=['get'])
     def me(self, request, pk=None):

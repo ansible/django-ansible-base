@@ -198,8 +198,9 @@ def test_association_router_related_viewset_m2m_mapings(db, user):
     validate_expected_url_pattern_names(router, expected_urls)
 
 
-def test_sublist_filtering(inventory, organization, admin_api_client):
-    Inventory.objects.create(name='another-inventory', organization=organization)
+def test_sublist_filtering(organization, admin_api_client):
+    obj = Inventory.objects.create(name='first-one', organization=organization)
+    Inventory.objects.create(name='another-one', organization=organization)
     url = reverse('organization-inventories-list', kwargs={'pk': organization.pk})
 
     # sanity, without filtering, we get the 2 inventories
@@ -208,9 +209,33 @@ def test_sublist_filtering(inventory, organization, admin_api_client):
     assert response.data['count'] == 2
 
     # now we can filter by name for only the inventory object
-    response = admin_api_client.get(url, data={'name': inventory.name})
+    response = admin_api_client.get(url, data={'name': obj.name})
     assert response.status_code == 200, response.data
     assert response.data['count'] == 1
+
+
+def test_sublist_override_filtering(organization, inventory, user_api_client, user, org_member_rd):
+    "The organization cow list shows all cows regardless of view permission"
+    cow_url = reverse('organization-cows-list', kwargs={'pk': organization.pk})
+    inventory_url = reverse('organization-inventories-list', kwargs={'pk': organization.pk})
+    Cow.objects.create(organization=organization)
+
+    # User needs view permission to the parent object
+    org_member_rd.give_permission(user, organization)
+
+    # User can not view any inventories because they do not have view permission
+    # The cow sublist is not set up this way in test_app, just for testing
+    response = user_api_client.get(cow_url)
+    assert response.status_code == 200, response.data
+    assert response.data['count'] == 1
+    response = user_api_client.get(inventory_url)
+    assert response.status_code == 200, response.data
+    assert response.data['count'] == 0
+
+    # Assures that rest_filters still works
+    response = user_api_client.get(cow_url, data={'id': 12341234})
+    assert response.status_code == 200, response.data
+    assert response.data['count'] == 0
 
 
 @pytest.mark.parametrize('method', ['GET', 'PUT', 'POST', 'DELETE'])
