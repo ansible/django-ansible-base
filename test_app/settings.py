@@ -64,6 +64,8 @@ INSTALLED_APPS = [
     'ansible_base.rbac',
     'ansible_base.oauth2_provider',
     'test_app',
+    'django_extensions',
+    'debug_toolbar',
     'ansible_base.activitystream',
 ]
 
