@@ -77,7 +77,7 @@ class AssociationViewSetMethodsMixin:
 class RelatedListMixin:
     """Mixin used for related viewsets which contain a sub-list, like /organizations/N/teams/"""
 
-    def check_parent_object_permissions(self, request, parent_obj: Model) -> None:
+    def check_parent_object_permissions(self, request, parent_obj: Model) -> bool:
         """Check that request user has permission to parent_obj
 
         Associate and disassociate is a POST request, list is GET
