@@ -95,6 +95,7 @@ def test_oidc_endpoint_url_validation(
     else:
         assert response.json()['configuration']['OIDC_ENDPOINT'] == endpoint_url
 
+
 @mock.patch("social_core.backends.oauth.BaseOAuth2.extra_data")
 def test_extra_data(mockedsuper):
     ap = AuthenticatorPlugin()
