@@ -34,7 +34,7 @@ router.register(
 )
 ```
 
-The router interrogates model of the queryset from the parent view along with the model of the query set from the related view and determines if the relation is a many-to-many or a reverse foreign key.
+The router interrogates the parent viewset (`views.UserViewSet`) along with the related viewset (ex. `views.TeamViewSet` above) and automatically constructuts a new viewset for the related teams of a user. If the relation is a many-to-many, associate and disassociate endpoints are added, and if it is a reverse foreign key it only provides list.
 
 Related views are expressed in the following format:
 
@@ -43,6 +43,21 @@ Related views are expressed in the following format:
 ```
 
 NOTE: Often times the `<entry in API related field>` will be the same as `<related field name>` but this is not always the case.
+
+
+## Customization
+
+Several methods defined in the `<ViewSet for relation>` will have an effect on constructed related endpoints.
+Those are:
+
+ - `filter_associate_queryset` - queryset that can be associated, defers to `filter_queryset` by default
+ - `get_sublist_queryset` - queryset for items shown in a GET for the listing
+ - `perform_associate` - associate items
+ - `perform_disassociate` - disassociate items
+
+These are intended to be overwritten for customization.
+For heavy customizations, you can either manage this on your existing viewset like `views.TeamViewSet`
+or introduce a new class that subclasses from that.
 
 
 ## Many-to-Many

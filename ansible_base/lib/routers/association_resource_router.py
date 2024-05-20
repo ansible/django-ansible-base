@@ -77,18 +77,21 @@ class AssociationViewSetMethodsMixin:
 class RelatedListMixin:
     """Mixin used for related viewsets which contain a sub-list, like /organizations/N/teams/"""
 
-    def check_parent_object_permissions(self, request, parent_obj):
-        # Associate and disassociate is a POST request, list is GET
-        # the normal process of get_object --> check_object_permissions
-        # will not check "change" permissions to the parent object on POST
-        # this method checks parent change permission, view permission should be handled by filter_queryset
+    def check_parent_object_permissions(self, request, parent_obj: Model) -> None:
+        """Check that request user has permission to parent_obj
+
+        Associate and disassociate is a POST request, list is GET
+        the normal process of get_object --> check_object_permissions
+        will not check "change" permissions to the parent object on POST
+        this method checks parent change permission, view permission should be handled by filter_queryset
+        """
         if (request.method not in SAFE_METHODS) and 'ansible_base.rbac' in settings.INSTALLED_APPS and permission_registry.is_registered(parent_obj):
             from ansible_base.rbac.policies import check_content_obj_permission
 
             return check_content_obj_permission(request.user, parent_obj)
         return True
 
-    def get_parent_object(self):
+    def get_parent_object(self) -> Model:
         """Modeled mostly after DRF get_object, but for the parent model
 
         Like for /api/v2/organizations/<pk>/cows/, this returns the organization
@@ -107,7 +110,7 @@ class RelatedListMixin:
 
         return parent_obj
 
-    def get_queryset(self):
+    def get_queryset(self) -> QuerySet:
         parent_instance = self.get_parent_object()
         return self.get_sublist_queryset(parent_instance)
 
@@ -160,7 +163,7 @@ class AssociateMixin(RelatedListMixin):
         cls = self.serializer_class.Meta.model
         return cls.objects.all()
 
-    def get_serializer_class(self):
+    def get_serializer_class(self) -> serializers.Serializer:
         if self.action in ('disassociate', 'associate'):
             rel_name = self.association_fk.replace('_', ' ').title().replace(' ', '')
             cls_name = f'{self.parent_viewset.__name__}{rel_name}{self.action.title()}Serializer'
@@ -175,10 +178,6 @@ class AssociateMixin(RelatedListMixin):
             return serializer_registry[cls_name]
 
         return super().get_serializer_class()
-
-
-def filter_queryset_no_op(qs: QuerySet) -> QuerySet:
-    return qs
 
 
 class AssociationSerializerBase(serializers.Serializer):
