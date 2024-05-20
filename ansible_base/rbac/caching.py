@@ -3,6 +3,8 @@ from collections import defaultdict
 from typing import Optional
 from uuid import UUID
 
+from django.conf import settings
+
 from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation, RoleEvaluationUUID
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.prefetch import TypesPrefetch
@@ -193,9 +195,9 @@ def compute_object_role_permissions(object_roles=None, types_prefetch=None):
             else:
                 raise RuntimeError(f'Could not find a place in cache for {evaluation}')
         if to_add_int:
-            RoleEvaluation.objects.bulk_create(to_add_int)
+            RoleEvaluation.objects.bulk_create(to_add_int, ignore_conflicts=settings.ANSIBLE_BASE_EVALUATIONS_IGNORE_CONFLICTS)
         if to_add_uuid:
-            RoleEvaluationUUID.objects.bulk_create(to_add_uuid)
+            RoleEvaluationUUID.objects.bulk_create(to_add_uuid, ignore_conflicts=settings.ANSIBLE_BASE_EVALUATIONS_IGNORE_CONFLICTS)
 
     if to_delete:
         logger.info(f'Deleting {len(to_delete)} object-permission records')
