@@ -3,6 +3,7 @@ from unittest import mock
 import pytest
 from django.urls import reverse
 
+from ansible_base.authentication.authenticator_plugins.oidc import AuthenticatorPlugin
 from ansible_base.authentication.session import SessionAuthentication
 
 authenticated_test_page = "authenticator-list"
@@ -93,3 +94,19 @@ def test_oidc_endpoint_url_validation(
         assert response.json() == expected_error
     else:
         assert response.json()['configuration']['OIDC_ENDPOINT'] == endpoint_url
+
+@mock.patch("social_core.backends.oauth.BaseOAuth2.extra_data")
+def test_extra_data(mockedsuper):
+    ap = AuthenticatorPlugin()
+
+    class SocialUser:
+        def __init__(self):
+            self.extra_data = {}
+
+    rDict = {}
+    rDict["is_superuser"] = "True"
+    rDict["Group"] = ["mygroup"]
+    social = SocialUser()
+    ap.extra_data(None, None, response=rDict, social=social)
+    assert mockedsuper.called
+    assert "is_superuser" in social.extra_data
