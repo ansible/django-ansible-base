@@ -8,19 +8,19 @@ To leverage this client you can setup your Django cache like:
         "default": {
             "BACKEND": "django_redis.cache.RedisCache",
             # Note, the location is not really used but we parse it in the client to get settings like host/port/username/etc.
-            "LOCATION": f"redis://{os.environ.get('REDIS_USER')}:{os.environ.get('REDIS_PASS')}@{os.environ.get('REDIS_HOST')}:{os.environ.get('REDIS_PORT')}",
+            "LOCATION": f"<redis, rediss, file or unix schemed URL>",
             "KEY_PREFIX": '<service name>',
             "OPTIONS": {
                 "CLIENT_CLASS": "ansible_base.lib.redis.RedisClient",
                 "CLIENT_CLASS_KWARGS": {
-                    "clustered": to_python_boolean(os.environ.get('REDIS_IS_CLUSTERED', False)),
+                    "clustered": <true or false>
                     'clustered_hosts': "<host 1>:<port>,<host 2>:<port>,[...],<host N>:<port>",
-                    'ssl': to_python_boolean(os.environ.get('REDIS_TLS', True)),
-                    'ssl_keyfile': '/etc/path/redis.key',
-                    'ssl_certfile': '/etc/path/redis.cert',
-                    'ssl_cert_reqs': 'required',
-                    'ssl_ca_certs': '/etc/path/redis_ca.cert',
-                    'ssl_check_hostname': False,
+                    'ssl': <true or false>,
+                    'ssl_keyfile': '<file path>',
+                    'ssl_certfile': '<file path>',
+                    'ssl_cert_reqs': '<required or none>',
+                    'ssl_ca_certs': '<file path>',
+                    'ssl_check_hostname': <true or false>,
                 },
             },
         }
