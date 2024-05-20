@@ -77,7 +77,7 @@ class AssociationViewSetMethodsMixin:
 class RelatedListMixin:
     """Mixin used for related viewsets which contain a sub-list, like /organizations/N/teams/"""
 
-    def check_parent_object_permissions(self, request, parent_obj: Model) -> bool:
+    def check_parent_object_permissions(self, request, parent_obj: Model) -> None:
         """Check that request user has permission to parent_obj
 
         Associate and disassociate is a POST request, list is GET
@@ -88,8 +88,7 @@ class RelatedListMixin:
         if (request.method not in SAFE_METHODS) and 'ansible_base.rbac' in settings.INSTALLED_APPS and permission_registry.is_registered(parent_obj):
             from ansible_base.rbac.policies import check_content_obj_permission
 
-            return check_content_obj_permission(request.user, parent_obj)
-        return True
+            check_content_obj_permission(request.user, parent_obj)
 
     def get_parent_object(self) -> Model:
         """Modeled mostly after DRF get_object, but for the parent model
