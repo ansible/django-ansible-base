@@ -163,7 +163,7 @@ class AssociateMixin(RelatedListMixin):
         cls = self.serializer_class.Meta.model
         return cls.objects.all()
 
-    def get_serializer_class(self) -> serializers.Serializer:
+    def get_serializer_class(self) -> serializers.BaseSerializer:
         if self.action in ('disassociate', 'associate'):
             rel_name = self.association_fk.replace('_', ' ').title().replace(' ', '')
             cls_name = f'{self.parent_viewset.__name__}{rel_name}{self.action.title()}Serializer'
