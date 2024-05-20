@@ -207,12 +207,10 @@ class AuthenticatorPlugin(SocialAuthMixin, OpenIdConnectAuth, AbstractAuthentica
     configuration_encrypted_fields = ['SECRET']
 
     def extra_data(self, user, backend, response, *args, **kwargs):
-        data = super().extra_data(user, backend, response, *args, **kwargs)
-
         for perm in ["is_superuser", "is_system_auditor"]:
-            if perm in response and bool(response[perm]):
-                logger.debug(f"User has {perm}, storing.")
-                kwargs['social'].extra_data[perm] = True
+            if perm in response:
+                kwargs["social"].extra_data[perm] = response[perm]
+        data = super().extra_data(user, backend, response, *args, **kwargs)
         return data
 
     def get_user_groups(self, extra_groups):

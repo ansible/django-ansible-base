@@ -249,15 +249,15 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAML
         return {"metadata": reverse('authenticator-metadata', kwargs={'pk': authenticator.id})}
 
     def extra_data(self, user, backend, response, *args, **kwargs):
-        data = super().extra_data(user, backend, response, *args, **kwargs)
+        attrs = response["attributes"]
         for perm in ["is_superuser", "is_system_auditor"]:
-            if perm in response["attributes"] and bool(response["attributes"][perm]):
-                logger.debug(f"User has {perm}, storing.")
-                kwargs['social'].extra_data[perm] = True
+            if perm in attrs:
+                kwargs["social"].extra_data[perm] = attrs[perm]
 
         # Move group spec up a level if present
-        if "Group" in response["attributes"]:
-            response["Group"] = response["attributes"]["Group"]
+        if "Group" in attrs:
+            response["Group"] = attrs["Group"]
+        data = super().extra_data(user, backend, response, *args, **kwargs)
         return data
 
     def get_user_groups(self, extra_groups):
