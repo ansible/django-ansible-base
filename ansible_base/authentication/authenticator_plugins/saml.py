@@ -249,7 +249,7 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAML
         return {"metadata": reverse('authenticator-metadata', kwargs={'pk': authenticator.id})}
 
     def extra_data(self, user, backend, response, *args, **kwargs):
-        attrs = response["attributes"]
+        attrs = response["attributes"] if "attributes" in response else {}
         for perm in ["is_superuser", "is_system_auditor"]:
             if perm in attrs:
                 kwargs["social"].extra_data[perm] = attrs[perm]

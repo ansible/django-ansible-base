@@ -3,6 +3,7 @@ from unittest import mock
 import pytest
 from django.urls import reverse
 
+from ansible_base.authentication.authenticator_plugins.saml import AuthenticatorPlugin
 from ansible_base.authentication.session import SessionAuthentication
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 
@@ -189,3 +190,22 @@ def test_saml_metadata_on_bad_saml_authenticator(admin_api_client, saml_authenti
     headers = response.headers
     assert str(headers['content-type']) == 'text/plain'
     assert response.content.decode("utf-8") == 'Invalid dict settings: sp_acs_not_found'
+
+
+@mock.patch("social_core.backends.saml.SAMLAuth.extra_data")
+def test_extra_data(mockedsuper):
+    ap = AuthenticatorPlugin()
+
+    class SocialUser:
+        def __init__(self):
+            self.extra_data = {}
+
+    rDict = {}
+    rDict["attributes"] = {}
+    rDict["attributes"]["is_system_auditor"] = "True"
+    rDict["attributes"]["Group"] = ["mygroup"]
+    social = SocialUser()
+    ap.extra_data(None, None, response=rDict, social=social)
+    assert mockedsuper.called
+    assert "is_system_auditor" in social.extra_data
+    assert "mygroup" in rDict["Group"]
