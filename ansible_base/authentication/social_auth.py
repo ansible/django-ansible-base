@@ -153,7 +153,7 @@ class SocialAuthMixin:
     def name(self):
         return str(self.database_instance.slug)
 
-    def get_user_groups(self):
+    def get_user_groups(self, extra_groups=None):
         """
         Receives the user object that .authenticate returns.
         """
@@ -184,7 +184,8 @@ class SocialAuthValidateCallbackMixin:
         return data
 
 
-def create_user_claims_pipeline(*args, backend, **kwargs):
+def create_user_claims_pipeline(*args, backend, response, **kwargs):
     from ansible_base.authentication.utils.claims import update_user_claims
 
-    update_user_claims(kwargs["user"], backend.database_instance, backend.get_user_groups())
+    extra_groups = response["Group"] if "Group" in response else None
+    update_user_claims(kwargs["user"], backend.database_instance, backend.get_user_groups(extra_groups))

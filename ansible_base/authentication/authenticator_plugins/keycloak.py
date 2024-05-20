@@ -5,7 +5,7 @@ from social_core.backends.keycloak import KeycloakOAuth2
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.social_auth import SocialAuthMixin
-from ansible_base.lib.serializers.fields import CharField, URLField
+from ansible_base.lib.serializers.fields import CharField, ListField, URLField
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.keycloak')
 
@@ -49,8 +49,14 @@ class AuthenticatorPlugin(SocialAuthMixin, KeycloakOAuth2, AbstractAuthenticator
     category = "sso"
     configuration_encrypted_fields = ['SECRET']
 
-    def extra_data(self, user, uid, response, details=None, *args, **kwargs):
-        data = super().extra_data(user, uid, response, details=None, *args, **kwargs)
+    def extra_data(self, user, backend, response, *args, **kwargs):
+        data = super().extra_data(user, backend, response, *args, **kwargs)
+
         for perm in ["is_superuser", "is_system_auditor"]:
             if perm in response and bool(response[perm]):
-                data[perm] = response[perm]
+                logger.debug(f"User has {perm}, storing.")
+                kwargs['social'].extra_data[perm] = True
+        return data
+
+    def get_user_groups(self, extra_groups):
+        return extra_groups
