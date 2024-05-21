@@ -57,8 +57,7 @@ Several methods defined in the `<ViewSet for relation>` will have an effect on c
 Those are:
 
  - `get_sublist_queryset` - items shown in the listing _before_ filtering, OR candidate items for disassociation
- - `filter_queryset` - filter applied to items shown in sublist, which works the same as the viewset by itself
- - `get_queryset` - candidate items to associate _before_ filtering
+ - `filter_queryset` - filter applied to items shown in sublist, typically RBAC filtering of what the request user can view in addition to filters from query params
  - `filter_associate_queryset` - filter to items user should be able to associate, defers to `filter_queryset` by default
  - `perform_associate` - associate items
  - `perform_disassociate` - disassociate items
@@ -67,8 +66,9 @@ These are intended to be overwritten for customization.
 For heavy customizations, you can either manage this on your existing viewset like `views.TeamViewSet`
 or introduce a new class that subclasses from that.
 
-Standard DAB practice is that `filter_queryset` limits the queryset to what the request user can view.
 If you want a sublist to show all items, then you probably need to create a new class for the related viewset.
+This is because `filter_queryset` is used for the global lists as well (like `/api/v1/teams/`), so you likely
+will need a new class so that sublist-specific behavior is non-conflicting with the global list.
 
 
 ## Many-to-Many
