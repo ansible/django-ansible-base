@@ -1,6 +1,12 @@
 # Associative Resource Router
 
-django-ansible-base provides an `AssociationResourceRouter` which will auto-construct /associate and /disassociate endpoints for related ManyToMany fields for your models.
+django-ansible-base provides an `AssociationResourceRouter` which will auto-construct 3 endpoints for related ManyToMany fields for your models.
+
+1. Read-only listing of items at `/api/v2/parent_objects/:id/relationship/`
+2. An `/associate` write-only endpoint with (1) as URL base
+3. A `/disassociate` write-only endpoint with (1) as URL base
+
+This can also be used for reverse relationships, which will only construct (1).
 
 To use this router simply do the following:
 ```
@@ -20,9 +26,9 @@ urlpatterns = [
 
 This would create an endpoint called `users` in your application with all of the post/patch/put/delete/get endpoints as defined by the UserViewSet.
 
-# Related fields
+## Related fields
 
-The AssociationResourceRouter can also handle many-to-many or reverse foreign key (one-to_many) fields by adding a `related_views` field to the register function. For example, consider this register command:
+The AssociationResourceRouter works by adding a `related_views` field to the register function. For example, consider this register command:
 ```
 router.register(
     r'users',
@@ -50,9 +56,10 @@ NOTE: Often times the `<entry in API related field>` will be the same as `<relat
 Several methods defined in the `<ViewSet for relation>` will have an effect on constructed related endpoints.
 Those are:
 
- - `get_sublist_queryset` - queryset for items shown in a GET for the listing _before_ filtering
+ - `get_sublist_queryset` - items shown in the listing _before_ filtering, OR candidate items for disassociation
  - `filter_queryset` - filter applied to items shown in sublist, which works the same as the viewset by itself
- - `filter_associate_queryset` - queryset that can be associated, defers to `filter_queryset` by default
+ - `get_queryset` - candidate items to associate _before_ filtering
+ - `filter_associate_queryset` - filter to items user should be able to associate, defers to `filter_queryset` by default
  - `perform_associate` - associate items
  - `perform_disassociate` - disassociate items
 
@@ -61,7 +68,7 @@ For heavy customizations, you can either manage this on your existing viewset li
 or introduce a new class that subclasses from that.
 
 Standard DAB practice is that `filter_queryset` limits the queryset to what the request user can view.
-If you want a sublist to show all items, then you would need to create a new class for the related viewset.
+If you want a sublist to show all items, then you probably need to create a new class for the related viewset.
 
 
 ## Many-to-Many

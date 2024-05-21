@@ -22,6 +22,54 @@ from ansible_base.rbac.permission_registry import permission_registry
 logger = logging.getLogger('ansible_base.lib.routers.association_resource_router')
 
 
+# Registry contains subclasses of AssociationSerializerBase indexed by name
+# this prevents duplicate names which would cause schema to not render correctly
+serializer_registry = {}
+
+
+class AssociationSerializerBase(serializers.Serializer):
+    """It is expected that final subclasses will set the instances field"""
+
+    instances = None
+
+    def get_queryset_on_init(self, original_qs: QuerySet) -> QuerySet:
+        raise NotImplementedError
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        new_qs = self.get_queryset_on_init(self.fields['instances'].child_relation.queryset)
+        self.fields['instances'].child_relation.queryset = new_qs
+
+
+class DisassociationSerializerBase(AssociationSerializerBase):
+    """Serializer used for removing objects that are currently associated via a many-to-many relationship"""
+
+    def get_queryset_on_init(self, original_qs: QuerySet) -> QuerySet:
+        if 'view' in self.context:
+            view = self.context['view']
+            if 'pk' in view.kwargs:
+                return view.get_queryset()
+        return original_qs
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['instances'].child_relation.error_messages = self.fields['instances'].child_relation.error_messages.copy()
+        self.fields['instances'].child_relation.error_messages['does_not_exist'] = _(
+            'Invalid pk "{pk_value}" - object does not exist or is not associated with parent object.'
+        )
+
+
+class FilteredAssociationSerializer(AssociationSerializerBase):
+    """Serializer used for adding objects to a many-to-many relationship"""
+
+    def get_queryset_on_init(self, original_qs: QuerySet) -> QuerySet:
+        if 'view' in self.context:
+            # If the view exists we require it to be an instance of AssociationViewSetMethodsMixin
+            view = self.context['view']
+            return view.filter_associate_queryset(original_qs)
+        return original_qs
+
+
 class AssociationViewSetMethodsMixin:
     """Contains methods called by viewset methods for list, associate, disassociate actions
 
@@ -103,6 +151,12 @@ class RelatedListMixin:
 class AssociateMixin(RelatedListMixin):
     """Mixin used for writable related viewsets, where objects can be associated or disassociated from the relationship"""
 
+    instances_help_text = {
+        'associate': _('List of {model_name} to add to this relationship'),
+        'disassociate': _('List of {model_name} to remove from this relationship'),
+    }
+    parent_serializer_cls = {'associate': FilteredAssociationSerializer, 'disassociate': DisassociationSerializerBase}
+
     @action(detail=False, methods=['post'])
     def associate(self, request, **kwargs):
         """
@@ -153,71 +207,15 @@ class AssociateMixin(RelatedListMixin):
             pretty_model_name = cls._meta.verbose_name.title().replace(' ', '')
             cls_name = f'{pretty_model_name}{self.action.title()}Serializer'
 
-            default_instances_field = serializers.PrimaryKeyRelatedField(queryset=cls.objects.all(), many=True)
+            default_instances_field = serializers.PrimaryKeyRelatedField(
+                queryset=cls.objects.all(), many=True, help_text=self.instances_help_text[self.action].format(model_name=cls._meta.verbose_name_plural)
+            )
 
             if cls_name not in serializer_registry:
-                if self.action == 'associate':
-                    parent_cls = FilteredAssociationSerializer
-                else:
-                    parent_cls = DisassociationSerializerBase
-                serializer_registry[cls_name] = type(cls_name, (parent_cls,), {'instances': default_instances_field})
+                serializer_registry[cls_name] = type(cls_name, (self.parent_serializer_cls[self.action],), {'instances': default_instances_field})
             return serializer_registry[cls_name]
 
         return super().get_serializer_class()
-
-
-class AssociationSerializerBase(serializers.Serializer):
-    """It is expected that final subclasses will set the instances field"""
-
-    instances = None
-
-    def get_queryset_on_init(self, original_qs: QuerySet) -> QuerySet:
-        raise NotImplementedError
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        new_qs = self.get_queryset_on_init(self.fields['instances'].child_relation.queryset)
-        self.fields['instances'].child_relation.queryset = new_qs
-
-
-class DisassociationSerializerBase(AssociationSerializerBase):
-    """Serializer used for removing related objects, where instances are currently attached objects"""
-
-    def get_queryset_on_init(self, original_qs: QuerySet) -> QuerySet:
-        if 'view' in self.context:
-            view = self.context['view']
-            if 'pk' in view.kwargs:
-                return view.get_queryset()
-        return original_qs
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields['instances'].child_relation.error_messages = self.fields['instances'].child_relation.error_messages.copy()
-        self.fields['instances'].child_relation.error_messages['does_not_exist'] = _(
-            'Invalid pk "{pk_value}" - object does not exist or is not associated with parent object.'
-        )
-
-
-class FilteredAssociationSerializer(AssociationSerializerBase):
-    """Serializer that adds filtering on top of AssociationSerializerBase
-
-    This filtering is expected to be used for limiting candidate association objects
-    to only those the requesting user has permission to view.
-    None of that is handled here, that is the sole discression of the view,
-    which can define filter_associate_queryset to their liking.
-    """
-
-    def get_queryset_on_init(self, original_qs: QuerySet) -> QuerySet:
-        if 'view' in self.context:
-            # If the view exists we require it to be an instance of AssociationViewSetMethodsMixin
-            view = self.context['view']
-            return view.filter_associate_queryset(original_qs)
-        return original_qs
-
-
-# Registry contains subclasses of AssociationSerializerBase indexed by name
-# this prevents duplicate names which would cause schema to not render correctly
-serializer_registry = {}
 
 
 @property
