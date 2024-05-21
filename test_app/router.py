@@ -30,6 +30,10 @@ class RelatedUserViewSet(views.UserViewSet):
     def filter_queryset(self, qs):
         return super(views.TestAppViewSet, self).filter_queryset(qs)
 
+    def filter_associate_queryset(self, qs):
+        "Shows special case, although we want an unfiltered list, we require view permission to attach"
+        return super().filter_queryset(qs)
+
 
 router.register(
     r'related_fields_test_models',

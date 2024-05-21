@@ -150,7 +150,8 @@ class AssociateMixin(RelatedListMixin):
     def get_serializer_class(self) -> Type[serializers.BaseSerializer]:
         if self.action in ('disassociate', 'associate'):
             cls = self.get_viewset_model()
-            cls_name = f'{cls._meta.model_name}{self.action.title()}Serializer'
+            pretty_model_name = cls._meta.verbose_name.title().replace(' ', '')
+            cls_name = f'{pretty_model_name}{self.action.title()}Serializer'
 
             default_instances_field = serializers.PrimaryKeyRelatedField(queryset=cls.objects.all(), many=True)
 
@@ -185,7 +186,8 @@ class DisassociationSerializerBase(AssociationSerializerBase):
     def get_queryset_on_init(self, original_qs: QuerySet) -> QuerySet:
         if 'view' in self.context:
             view = self.context['view']
-            return view.get_queryset()
+            if 'pk' in view.kwargs:
+                return view.get_queryset()
         return original_qs
 
     def __init__(self, *args, **kwargs):
