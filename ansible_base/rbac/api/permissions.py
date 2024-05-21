@@ -52,6 +52,13 @@ def is_cloned_request(request) -> bool:
     return bool(request.method != request._request.method)
 
 
+class RoleDefinitionPermissions(AuthenticatedReadAdminChange):
+    def has_permission(self, request, view):
+        if is_cloned_request(request) and settings.ANSIBLE_BASE_ALLOW_CUSTOM_ROLES is False:
+            return False
+        return super().has_permission(request, view)
+
+
 class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
 
     def has_create_permission(self, request, model_cls) -> bool:
