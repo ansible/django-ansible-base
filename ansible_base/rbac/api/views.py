@@ -41,7 +41,6 @@ class RoleMetadataView(AnsibleBaseDjangoAppApiView, GenericAPIView):
     This reflects model definitions, registrations with the permission registry,
     and enablement of RBAC features in settings.
 
-    child_models: Mappings that indicate what resource roles can confer permission to child resources
     role_permissions: Valid permissions for a role of a given type
     """
 
