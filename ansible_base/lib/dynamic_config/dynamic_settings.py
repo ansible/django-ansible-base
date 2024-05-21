@@ -166,6 +166,7 @@ if 'ansible_base.rbac' in INSTALLED_APPS:
     # For assignments
     ANSIBLE_BASE_ALLOW_TEAM_PARENTS = True
     ANSIBLE_BASE_ALLOW_TEAM_ORG_PERMS = True
+    ANSIBLE_BASE_ALLOW_TEAM_ORG_MEMBER = False
     ANSIBLE_BASE_ALLOW_TEAM_ORG_ADMIN = True
     # For role definitions
     ANSIBLE_BASE_ALLOW_CUSTOM_ROLES = True

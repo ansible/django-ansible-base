@@ -1,7 +1,9 @@
 import re
 from collections import defaultdict
+from typing import Type, Union
 
 from django.conf import settings
+from django.db.models import Model
 from rest_framework.exceptions import ValidationError
 
 from ansible_base.lib.utils.models import is_add_perm
@@ -77,7 +79,7 @@ def validate_role_definition_enabled(permissions, content_type) -> None:
                 raise ValidationError('Creating custom roles that include team permissions is disabled')
 
 
-def validate_permissions_for_model(permissions, content_type, managed=False) -> None:
+def validate_permissions_for_model(permissions, content_type: Model, managed: bool = False) -> None:
     """Validation for creating a RoleDefinition
 
     This is called by the RoleDefinitionSerializer so clients will get these errors.
@@ -112,7 +114,7 @@ def validate_permissions_for_model(permissions, content_type, managed=False) -> 
             raise ValidationError({'permissions': f'Permissions for model {role_model._meta.verbose_name} needs to include view, got: {display_perms}'})
 
 
-def validate_codename_for_model(codename: str, model) -> str:
+def validate_codename_for_model(codename: str, model: Union[Model, Type[Model]]) -> str:
     """Shortcut method and validation to allow action name, codename, or app_name.codename
 
     This institutes a shortcut for easier use of the evaluation methods
@@ -143,7 +145,7 @@ def validate_codename_for_model(codename: str, model) -> str:
     raise RuntimeError(f'The permission {name} is not valid for model {model._meta.model_name}')
 
 
-def validate_assignment_enabled(actor, content_type, has_team_perm=False):
+def validate_team_assignment_enabled(content_type: Model, has_team_perm: bool = False, has_org_member: bool = False) -> None:
     """Called in role assignment logic, inside RoleDefinition.give_permission
 
     Raises error if a setting disables the kind of permission being given.
@@ -151,13 +153,12 @@ def validate_assignment_enabled(actor, content_type, has_team_perm=False):
     """
     team_team_allowed = settings.ANSIBLE_BASE_ALLOW_TEAM_PARENTS
     team_org_allowed = settings.ANSIBLE_BASE_ALLOW_TEAM_ORG_PERMS
+    team_org_member_allowed = settings.ANSIBLE_BASE_ALLOW_TEAM_ORG_MEMBER
     team_org_team_allowed = settings.ANSIBLE_BASE_ALLOW_TEAM_ORG_ADMIN
 
-    if all([team_team_allowed, team_org_allowed, team_org_team_allowed]):
+    if all([team_team_allowed, team_org_allowed, team_org_member_allowed, team_org_team_allowed]):
         return  # Everything is allowed
     team_model_name = permission_registry.team_model._meta.model_name
-    if actor._meta.model_name != team_model_name:
-        return  # Current prohibition settings only apply to team actors
 
     if not team_team_allowed and content_type.model == team_model_name:
         raise ValidationError('Assigning team permissions to other teams is not allowed')
@@ -165,6 +166,9 @@ def validate_assignment_enabled(actor, content_type, has_team_perm=False):
     team_parent_model_name = permission_registry.get_parent_model(permission_registry.team_model)._meta.model_name
     if not team_org_allowed and content_type.model == team_parent_model_name:
         raise ValidationError(f'Assigning {team_parent_model_name} permissions to teams is not allowed')
+
+    if (not team_org_member_allowed) and has_org_member:
+        raise ValidationError(f'Assigning {team_parent_model_name} member permission to teams is not allowed')
 
     if not team_org_team_allowed and content_type.model == team_parent_model_name and has_team_perm:
         raise ValidationError(f'Assigning {team_parent_model_name} permissions that manage other teams is not allowed')
