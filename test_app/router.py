@@ -27,6 +27,7 @@ class RelatedUserViewSet(views.UserViewSet):
 
     Teams, on the other hand, need to be able to see their members
     """
+
     def filter_queryset(self, qs):
         return super(views.TestAppViewSet, self).filter_queryset(qs)
 
