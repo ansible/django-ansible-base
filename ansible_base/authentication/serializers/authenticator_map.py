@@ -3,12 +3,13 @@ from rest_framework.serializers import ValidationError
 from ansible_base.authentication.models import AuthenticatorMap
 from ansible_base.authentication.utils.trigger_definition import TRIGGER_DEFINITION
 from ansible_base.lib.serializers.common import NamedCommonModelSerializer
+from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 
 
 class AuthenticatorMapSerializer(NamedCommonModelSerializer):
     class Meta:
         model = AuthenticatorMap
-        fields = NamedCommonModelSerializer.Meta.fields + ['authenticator', 'order', 'organization', 'revoke', 'team', 'triggers', 'map_type']
+        fields = NamedCommonModelSerializer.Meta.fields + ['authenticator', 'map_type', 'organization', 'team', 'role', 'revoke', 'triggers', 'order']
 
     def validate(self, data) -> dict:
         errors = {}
@@ -17,16 +18,41 @@ class AuthenticatorMapSerializer(NamedCommonModelSerializer):
         map_type = data.get('map_type', None)
         team = data.get('team', None)
         org = data.get('organization', None)
+        role = data.get('role', None)
+
         if map_type == 'team' and (not team or team == ''):
             errors["team"] = "You must specify a team with the selected map type"
-        if map_type == 'team' and (not org or org == ''):
+        if map_type in ['team', 'organization'] and (not org or org == ''):
             errors["organization"] = "You must specify an organization with the selected map type"
-        if map_type == 'organization' and (not org or org == ''):
-            errors["organization"] = "You must specify an organization with the selected map type"
+        if map_type in ['team', 'organization', 'role'] and role is None:
+            errors["role"] = "You must specify a role with the selected map type"
+        if map_type in ['allow', 'is_superuser'] and role is not None:
+            errors["role"] = "You cannot specify role with the selected map type"
+
+        if role is not None:
+            errors.update(self.validate_role_data(role, org, team))
 
         if errors:
             raise ValidationError(errors)
         return data
+
+    def validate_role_data(self, role, org, team):
+        errors = {}
+
+        if not role.content_type:
+            return errors
+
+        model_class = role.content_type.model_class()
+        is_org_role = model_class == get_organization_model()
+        is_team_role = model_class == get_team_model()
+
+        if (is_org_role or is_team_role) and (not org or org == ''):
+            errors["organization"] = "You must specify an organization with the selected role"
+
+        if is_team_role and (not team or team == ''):
+            errors["team"] = "You must specify a team with the selected role"
+
+        return errors
 
     def validate_trigger_data(self, data):
         errors = {}

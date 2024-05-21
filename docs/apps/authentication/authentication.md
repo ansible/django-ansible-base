@@ -11,6 +11,7 @@ Add `ansible_base.authentication` to your installed apps:
 INSTALLED_APPS = [
     ...
     'ansible_base.authentication',
+    'ansible_base.rbac'  # dependency
 ]
 ```
 
