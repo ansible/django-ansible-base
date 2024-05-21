@@ -18,10 +18,11 @@ class DABOAuth2UserViewsetMixin:
         user_basename = get_cls_view_basename(get_user_model())
         fields['personal_tokens'] = reverse(f'{user_basename}-personal-tokens-list', kwargs={"pk": obj.pk})
         fields['authorized_tokens'] = reverse(f'{user_basename}-authorized-tokens-list', kwargs={"pk": obj.pk})
+        fields['tokens'] = reverse(f'{user_basename}-tokens-list', kwargs={"pk": obj.pk})
         return fields
 
-    def _user_token_response(self, request, application_isnull, pk):
-        tokens = OAuth2AccessToken.objects.filter(application__isnull=application_isnull, user=pk)
+    def _user_token_response(self, request, filters, pk):
+        tokens = OAuth2AccessToken.objects.filter(user=pk, **filters)
         page = self.paginate_queryset(tokens)
         if page is not None:
             serializer = OAuth2TokenSerializer(page, many=True, context={"request": request})
@@ -32,8 +33,14 @@ class DABOAuth2UserViewsetMixin:
 
     @action(detail=True, methods=["get"], url_name="personal-tokens-list")
     def personal_tokens(self, request, pk=None):
-        return self._user_token_response(request, True, pk)
+        filters = {'application__isnull': True}
+        return self._user_token_response(request, filters, pk)
 
     @action(detail=True, methods=["get"], url_name="authorized-tokens-list")
     def authorized_tokens(self, request, pk=None):
-        return self._user_token_response(request, False, pk)
+        filters = {'application__isnull': False}
+        return self._user_token_response(request, filters, pk)
+
+    @action(detail=True, methods=["get"], url_name="tokens-list")
+    def tokens(self, request, pk=None):
+        return self._user_token_response(request, {}, pk)
