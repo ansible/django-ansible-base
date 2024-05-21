@@ -25,10 +25,10 @@ class JWTCache:
     def check_user_in_cache(self, validated_body: dict) -> Tuple[bool, dict]:
         # These are the defaults which will get passed to the user creation and what we expect in the cache
         expected_cache_value = {
-            "first_name": validated_body["first_name"],
-            "last_name": validated_body["last_name"],
-            "email": validated_body["email"],
-            "is_superuser": validated_body["is_superuser"],
+            "first_name": validated_body['user_data']["first_name"],
+            "last_name": validated_body['user_data']["last_name"],
+            "email": validated_body['user_data']["email"],
+            "is_superuser": validated_body['user_data']["is_superuser"],
         }
         cached_user = cache.get(validated_body["sub"], None)
         # If the user was in the cache and the values of the cache match the expected values we had it in cache

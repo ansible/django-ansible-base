@@ -8,8 +8,7 @@ logger = logging.getLogger("ansible_base.jwt_consumer.eda.auth")
 
 
 class EDAJWTAuthentication(JWTAuthentication):
-    def process_permissions(self, user, claims, token):
-        logger.info("Processing permissions for {}".format(user.username))
+    use_rbac_permissions = True
 
 
 class EDAJWTAuthScheme(OpenApiAuthenticationExtension):

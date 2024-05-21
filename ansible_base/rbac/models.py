@@ -35,6 +35,7 @@ class DABPermission(models.Model):
     codename = models.CharField("codename", max_length=100)
 
     class Meta:
+        app_label = 'dab_rbac'
         verbose_name = "permission"
         verbose_name_plural = "permissions"
         unique_together = [["content_type", "codename"]]

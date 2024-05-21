@@ -7,5 +7,4 @@ logger = logging.getLogger('ansible_base.jwt_consumer.awx.auth')
 
 
 class AwxJWTAuthentication(JWTAuthentication):
-    def process_permissions(self, user, claims, token):
-        logger.error("Processing claims for {}".format(user.username))
+    use_rbac_permissions = True

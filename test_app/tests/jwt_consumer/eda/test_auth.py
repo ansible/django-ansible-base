@@ -1,4 +1,3 @@
-import logging
 import sys
 from unittest.mock import MagicMock
 
@@ -7,11 +6,7 @@ from ansible_base.jwt_consumer.eda.auth import EDAJWTAuthentication
 
 def test_eda_process_permissions(user, caplog):
     authentication = EDAJWTAuthentication()
-    claims = {}
-    token = {}
-    with caplog.at_level(logging.INFO):
-        authentication.process_permissions(user, claims, token)
-        assert f"Processing permissions for {user.username}" in caplog.text
+    assert authentication.use_rbac_permissions is True
 
 
 def test_eda_jwt_auth_scheme():
