@@ -144,6 +144,10 @@ if 'ansible_base.rest_pagination' in INSTALLED_APPS:
     REST_FRAMEWORK['DEFAULT_PAGINATION_CLASS'] = 'ansible_base.rest_pagination.DefaultPaginator'
 
 
+if 'ansible_base.jwt_consumer' in INSTALLED_APPS:
+    if 'ansible_base.rbac' not in INSTALLED_APPS:
+        INSTALLED_APPS.append('ansible_base.rbac')
+
 if 'ansible_base.rbac' in INSTALLED_APPS:
     # The settings-based specification of managed roles from DAB RBAC vendored ones
     ANSIBLE_BASE_MANAGED_ROLE_REGISTRY = {}

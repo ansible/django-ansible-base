@@ -491,16 +491,21 @@ def jwt_token(test_encryption_private_key):
         def __init__(self):
             expiration_date = datetime.now() + timedelta(minutes=10)
             self.unencrypted_token = {
+                "version": "1",
                 "iss": "ansible-issuer",
                 "exp": int(expiration_date.timestamp()),
                 "aud": "ansible-services",
-                "sub": "john.westcott.iv",
-                "first_name": "john",
-                "last_name": "westcott",
-                "email": "noone@redhat.com",
-                "is_superuser": False,
-                "is_system_auditor": False,
-                "claims": {"organizations": {}, "teams": {}},
+                "sub": "1e3de989-5286-48a6-83d4-5de9a6618ffd",
+                "user_data": {
+                    "username": "john.westcott.iv",
+                    "first_name": "john",
+                    "last_name": "westcott",
+                    "email": "noone@redhat.com",
+                    "is_superuser": False,
+                },
+                "objects": {},
+                "object_roles": {},
+                "global_roles": [],
             }
 
         def encrypt_token(self):
