@@ -1,10 +1,8 @@
 import pytest
 from django.contrib.auth import get_user_model
 
-from ansible_base.authentication.utils.claims import ReconcileUser
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
-from ansible_base.rbac.validators import combine_values, permissions_allowed_for_role
 from test_app.models import Inventory, Organization
 
 
@@ -46,28 +44,6 @@ def view_inv_rd():
         name='view-inv',
         permissions=['view_inventory'],
         content_type=permission_registry.content_type_model.objects.get_for_model(Inventory),
-    )
-
-
-@pytest.fixture
-def org_admin_rd():
-    """Give all permissions possible for an organization"""
-    perm_list = combine_values(permissions_allowed_for_role(Organization))
-    return RoleDefinition.objects.create_from_permissions(
-        permissions=perm_list,
-        name=ReconcileUser.ORGANIZATION_ADMIN_ROLE_NAME,
-        content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
-        managed=True,
-    )
-
-
-@pytest.fixture
-def org_member_rd():
-    return RoleDefinition.objects.create_from_permissions(
-        permissions=['view_organization', 'member_organization'],
-        name=ReconcileUser.ORGANIZATION_MEMBER_ROLE_NAME,
-        content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
-        managed=True,
     )
 
 
