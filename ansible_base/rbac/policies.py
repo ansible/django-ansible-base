@@ -34,6 +34,12 @@ def visible_users(request_user, queryset=None) -> QuerySet:
     ).distinct()
 
 
+def can_delete_user(request_user, target_user) -> bool:
+    if request_user.pk == target_user.pk:
+        return False
+    return can_change_user(request_user, target_user)
+
+
 def can_change_user(request_user, target_user) -> bool:
     """Tells if the request user can modify details of the target user"""
     if request_user.is_superuser:

@@ -10,7 +10,7 @@ from ansible_base.lib.utils.models import is_add_perm
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.evaluations import has_super_permission
-from ansible_base.rbac.policies import can_change_user
+from ansible_base.rbac.policies import can_change_user, can_delete_user
 
 logger = logging.getLogger('ansible_base.rbac.api.permissions')
 
@@ -168,5 +168,8 @@ class AnsibleBaseUserPermissions(AnsibleBaseObjectPermissions):
 
     def has_object_permission_by_codename(self, request, obj, perms):
         if perms:
-            return can_change_user(request.user, obj)
+            if request.method == 'DELETE':
+                return can_delete_user(request.user, obj)
+            else:
+                return can_change_user(request.user, obj)
         return True
