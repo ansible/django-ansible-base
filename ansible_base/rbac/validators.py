@@ -15,23 +15,23 @@ def system_roles_enabled():
     )
 
 
-def codenames_for_cls(cls) -> set[str]:
+def codenames_for_cls(cls) -> list[str]:
     "Helper method that gives the Django permission codenames for a given class"
-    return {t[0] for t in cls._meta.permissions} | {f'{act}_{cls._meta.model_name}' for act in cls._meta.default_permissions}
+    return [t[0] for t in cls._meta.permissions] + [f'{act}_{cls._meta.model_name}' for act in cls._meta.default_permissions]
 
 
-def permissions_allowed_for_system_role() -> dict[type, set[str]]:
+def permissions_allowed_for_system_role() -> dict[type, list[str]]:
     "Permission codenames useable in system-wide roles, which have content_type set to None"
-    permissions_by_model = defaultdict(set)
-    for cls in permission_registry.all_registered_models:
+    permissions_by_model = defaultdict(list)
+    for cls in sorted(permission_registry.all_registered_models, key=lambda cls: cls._meta.model_name):
         if cls._meta.model_name == 'team':
             continue  # special exclusion of team object permissions from system-wide roles
         for codename in codenames_for_cls(cls):
-            permissions_by_model[cls].add(codename)
+            permissions_by_model[cls].append(codename)
     return permissions_by_model
 
 
-def permissions_allowed_for_role(cls) -> dict[type, set[str]]:
+def permissions_allowed_for_role(cls) -> dict[type, list[str]]:
     "Permission codenames valid for a RoleDefinition of given class, organized by permission class"
     if cls is None:
         return permissions_allowed_for_system_role()
@@ -40,21 +40,21 @@ def permissions_allowed_for_role(cls) -> dict[type, set[str]]:
         raise ValidationError(f'Django-ansible-base RBAC does not track permissions for model {cls._meta.model_name}')
 
     # Include direct model permissions (except for add permission)
-    permissions_by_model = defaultdict(set)
-    permissions_by_model[cls] = {codename for codename in codenames_for_cls(cls) if not is_add_perm(codename)}
+    permissions_by_model = defaultdict(list)
+    permissions_by_model[cls] = [codename for codename in codenames_for_cls(cls) if not is_add_perm(codename)]
 
     # Include model permissions for all child models, including the add permission
     for rel, child_cls in permission_registry.get_child_models(cls):
-        permissions_by_model[child_cls] |= codenames_for_cls(child_cls)
+        permissions_by_model[child_cls] += codenames_for_cls(child_cls)
 
     return permissions_by_model
 
 
-def combine_values(data: dict[type, set[str]]) -> set[str]:
+def combine_values(data: dict[type, list[str]]) -> set[str]:
     "Utility method to merge everything in .values() into a single set"
     ret = set()
-    for this_set in data.values():
-        ret |= this_set
+    for this_list in data.values():
+        ret |= set(this_list)
     return ret
 
 
@@ -105,7 +105,7 @@ def validate_permissions_for_model(permissions, content_type, managed=False) -> 
 
     # Check that view permission is given for every model that has update/delete/special actions listed
     for cls, valid_model_permissions in permissions_by_model.items():
-        model_permissions = valid_model_permissions & codename_list
+        model_permissions = set(valid_model_permissions) & codename_list
         non_add_model_permissions = {codename for codename in model_permissions if not is_add_perm(codename)}
         if non_add_model_permissions and not any('view' in codename for codename in non_add_model_permissions):
             display_perms = ', '.join(non_add_model_permissions)
