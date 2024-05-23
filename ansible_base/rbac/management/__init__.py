@@ -9,19 +9,19 @@ from ansible_base.rbac import permission_registry
 logger = logging.getLogger(__name__)
 
 
-def create_dab_permissions(app_config, verbosity=2, interactive=True, using=DEFAULT_DB_ALIAS, apps=global_apps, **kwargs):
+def create_dab_permissions(app_config, verbosity=2, interactive=True, using=DEFAULT_DB_ALIAS, apps=global_apps, **kwargs) -> bool:
     """
     This is modified from the django auth.
     This will create DABPermission entries
     this will only create permissions for registered models
     """
     if not getattr(app_config, 'models_module', None):
-        return
+        return False
 
     # exit early if nothing is registered for this app
     app_label = app_config.label
     if not any(cls._meta.app_label == app_label for cls in permission_registry._registry):
-        return
+        return False
 
     # Ensure that contenttypes are created for this app. Needed if
     # 'ansible_base.rbac' is in INSTALLED_APPS before
@@ -40,10 +40,10 @@ def create_dab_permissions(app_config, verbosity=2, interactive=True, using=DEFA
         ContentType = apps.get_model("contenttypes", "ContentType")
         Permission = apps.get_model("dab_rbac", "DABPermission")
     except LookupError:
-        return
+        return False
 
     if not router.allow_migrate_model(using, Permission):
-        return
+        return False
 
     # This will hold the permissions we're looking for as (content_type, (codename, name))
     searched_perms = []
@@ -86,6 +86,11 @@ def create_dab_permissions(app_config, verbosity=2, interactive=True, using=DEFA
             permission.content_type = ct
             perms.append(permission)
 
+    if not perms:
+        return False
+
     Permission.objects.using(using).bulk_create(perms)
     for perm in perms:
         logger.debug("Adding permission '%s'" % perm)
+
+    return True
