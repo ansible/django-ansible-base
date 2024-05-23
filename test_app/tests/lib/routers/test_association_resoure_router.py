@@ -4,6 +4,8 @@ from django.urls import reverse
 from ansible_base.lib.routers import AssociationResourceRouter
 from test_app import views
 from test_app.models import Cow, Inventory, Organization, RelatedFieldsTestModel, Team, User
+from test_app.router import router
+from test_app.views import TeamViewSet
 
 
 def validate_expected_url_pattern_names(router, expected_url_pattern_names):
@@ -263,3 +265,20 @@ def test_related_custom_actions_get_scrubed(organization, method, admin_api_clie
     else:
         response = admin_api_client.get(url)
     assert response.status_code == 404
+
+
+def test_autogen_viewset_attributes():
+    sublist_viewset = None
+    for url, viewset, view_name in router.registry:
+        if view_name == 'organization-teams':
+            sublist_viewset = viewset
+            break
+    if not sublist_viewset:
+        raise Exception(f'Failed to find organization teams list in {router.registry}')
+
+    for removed_method in ('retrieve', 'partial_update', 'destroy'):
+        assert hasattr(TeamViewSet, removed_method)
+        assert not hasattr(sublist_viewset, removed_method)
+
+        assert removed_method in dir(TeamViewSet)
+        assert removed_method not in dir(sublist_viewset)
