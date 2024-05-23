@@ -41,7 +41,7 @@ class RoleMetadataView(AnsibleBaseDjangoAppApiView, GenericAPIView):
     This reflects model definitions, registrations with the permission registry,
     and enablement of RBAC features in settings.
 
-    role_permissions: Valid permissions for a role of a given type
+    allowed_permissions: Valid permissions for a role of a given content_type
     """
 
     permission_classes = [permissions.IsAuthenticated]
@@ -49,7 +49,7 @@ class RoleMetadataView(AnsibleBaseDjangoAppApiView, GenericAPIView):
 
     def get(self, request, format=None):
         data = OrderedDict()
-        role_permissions = OrderedDict()
+        allowed_permissions = OrderedDict()
 
         all_models = sorted(permission_registry.all_registered_models, key=lambda cls: cls._meta.model_name)
 
@@ -61,14 +61,14 @@ class RoleMetadataView(AnsibleBaseDjangoAppApiView, GenericAPIView):
                 cls_repr = 'system'
             else:
                 cls_repr = f"{permission_registry.get_resource_prefix(cls)}.{cls._meta.model_name}"
-            role_permissions[cls_repr] = []
+            allowed_permissions[cls_repr] = []
             for codename in list_combine_values(permissions_allowed_for_role(cls)):
                 perm = permission_registry.permission_qs.get(codename=codename)
                 ct = permission_registry.content_type_model.objects.get_for_id(perm.content_type_id)
                 perm_repr = f"{permission_registry.get_resource_prefix(ct.model_class())}.{codename}"
-                role_permissions[cls_repr].append(perm_repr)
+                allowed_permissions[cls_repr].append(perm_repr)
 
-        data['role_permissions'] = role_permissions
+        data['allowed_permissions'] = allowed_permissions
 
         serializer = self.get_serializer(data)
 

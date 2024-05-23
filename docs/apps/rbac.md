@@ -23,7 +23,7 @@ Out of the choices a single `content_type` needs to be chosen for a role definit
 
 Multiple permissions can be selected, and are accepted in the form of a list.
 To find out what permissions are valid for a role definition for a given `content_type`
-make a GET to `/api/v1/role_metadata/` and look up the type under "role_permissions".
+make a GET to `/api/v1/role_metadata/` and look up the type under "allowed_permissions".
 
 A POST to this endpoint will create a new role definition, example data:
 

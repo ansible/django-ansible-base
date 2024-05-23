@@ -314,4 +314,4 @@ class RoleTeamAssignmentSerializer(BaseAssignmentSerializer):
 
 
 class RoleMetadataSerializer(serializers.Serializer):
-    role_permissions = serializers.DictField(help_text=_('List of permissions allowed for a role definition, given its content type.'))
+    allowed_permissions = serializers.DictField(help_text=_('List of permissions allowed for a role definition, given its content type.'))
