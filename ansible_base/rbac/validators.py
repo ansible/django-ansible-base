@@ -1,6 +1,6 @@
 import re
 from collections import defaultdict
-from typing import Type, Union, Optional
+from typing import Optional, Type, Union
 
 from django.conf import settings
 from django.db.models import Model
