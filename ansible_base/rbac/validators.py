@@ -1,6 +1,6 @@
 import re
 from collections import defaultdict
-from typing import Type, Union
+from typing import Type, Union, Optional
 
 from django.conf import settings
 from django.db.models import Model
@@ -145,7 +145,7 @@ def validate_codename_for_model(codename: str, model: Union[Model, Type[Model]])
     raise RuntimeError(f'The permission {name} is not valid for model {model._meta.model_name}')
 
 
-def validate_team_assignment_enabled(content_type: Model, has_team_perm: bool = False, has_org_member: bool = False) -> None:
+def validate_team_assignment_enabled(content_type: Optional[Model], has_team_perm: bool = False, has_org_member: bool = False) -> None:
     """Called in role assignment logic, inside RoleDefinition.give_permission
 
     Raises error if a setting disables the kind of permission being given.
