@@ -13,6 +13,7 @@ from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.string import make_json_safe
 
 logger = logging.getLogger('ansible_base.lib.utils.models')
+_WARNED_ABOUT_SYSTEM_USER = False
 
 
 def get_all_field_names(model, concrete_only=False, include_attnames=True):
@@ -88,11 +89,13 @@ def is_system_user(user):
 
 
 def get_system_user():
+    global _WARNED_ABOUT_SYSTEM_USER
     system_user = None
     setting_name = 'SYSTEM_USERNAME'
     system_username = get_setting(setting_name)
     system_user = get_user_model().objects.filter(username=system_username).first()
-    if system_username is not None and system_user is None:
+    # We are using a global variable to try and track if this thread has already spit out the message, if so ignore
+    if system_username is not None and system_user is None and not _WARNED_ABOUT_SYSTEM_USER:
         logger.error(
             _(
                 "{setting_name} is set to {system_username} but no user with that username exists.".format(
@@ -100,6 +103,7 @@ def get_system_user():
                 )
             )
         )
+        _WARNED_ABOUT_SYSTEM_USER = True
     return system_user
 
 
