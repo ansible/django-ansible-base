@@ -79,7 +79,7 @@ def validate_role_definition_enabled(permissions, content_type) -> None:
                 raise ValidationError('Creating custom roles that include team permissions is disabled')
 
 
-def validate_permissions_for_model(permissions, content_type: Model, managed: bool = False) -> None:
+def validate_permissions_for_model(permissions, content_type: Optional[Model], managed: bool = False) -> None:
     """Validation for creating a RoleDefinition
 
     This is called by the RoleDefinitionSerializer so clients will get these errors.
