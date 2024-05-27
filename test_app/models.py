@@ -45,6 +45,10 @@ class User(AbstractUser, CommonModel, AuditableModel):
         return user_summary_fields(self)
 
 
+class ManagedUser(User):
+    managed = models.BooleanField(default=False)
+
+
 class Team(AbstractTeam):
     resource = AnsibleResourceField(primary_key_field="id")
     team_parents = models.ManyToManyField('Team', related_name='team_children', blank=True)

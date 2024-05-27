@@ -1,15 +1,17 @@
 import logging
 from dataclasses import asdict, dataclass
 from itertools import chain
+from typing import Optional
 
 from crum import get_current_user
 from django.contrib.auth import get_user_model
-from django.db.models import Model
+from django.contrib.auth.models import AbstractUser
+from django.db import models
 from django.utils.translation import gettext_lazy as _
 from inflection import underscore
 
+from ansible_base.lib.utils.create_system_user import create_system_user, get_system_username
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
-from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.string import make_json_safe
 
 logger = logging.getLogger('ansible_base.lib.utils.models')
@@ -76,22 +78,21 @@ def user_summary_fields(user):
     return sf
 
 
-def is_system_user(user):
+def is_system_user(user: Optional[models.Model]) -> bool:
     """
-    Takes a user objects and returns a boolean if that user's username is the same as the SYSTEM_USERNAME
+    Takes a model and returns a boolean if its a user whose username is the same as the SYSTEM_USERNAME setting
     """
-    setting_name = 'SYSTEM_USERNAME'
-    system_username = get_setting(setting_name)
-    if system_username is None or user is None:
+    system_username = get_system_username()[0]
+    if user is None or not isinstance(user, AbstractUser) or system_username is None:
+        # If we didn't get anything or that thing isn't an AbstractUser or system_username is not set set than what we have can't be the system user
         return False
     return user.username == system_username
 
 
-def get_system_user():
-    system_user = None
-    setting_name = 'SYSTEM_USERNAME'
-    system_username = get_setting(setting_name)
+def get_system_user() -> Optional[AbstractUser]:
+    system_username, setting_name = get_system_username()
     system_user = get_user_model().objects.filter(username=system_username).first()
+    # We are using a global variable to try and track if this thread has already spit out the message, if so ignore
     if system_username is not None and system_user is None:
         logger.error(
             _(
@@ -100,10 +101,11 @@ def get_system_user():
                 )
             )
         )
+        system_user = create_system_user(user_model=get_user_model())
     return system_user
 
 
-def current_user_or_system_user():
+def current_user_or_system_user() -> Optional[AbstractUser]:
     """
     Attempt to get the current user. If there is none or it is anonymous,
     try to return the system user instead.
@@ -117,8 +119,6 @@ def current_user_or_system_user():
 def is_encrypted_field(model, field_name):
     if model is None:
         return False
-
-    from django.contrib.auth.models import AbstractUser
 
     if issubclass(model, AbstractUser) and field_name == 'password':
         return True
@@ -208,7 +208,7 @@ def diff(
         return model_diff
 
     # Fail if we are not dealing with None or Model types
-    if (old is not None and not isinstance(old, Model)) or (new is not None and not isinstance(new, Model)):
+    if (old is not None and not isinstance(old, models.Model)) or (new is not None and not isinstance(new, models.Model)):
         raise TypeError('old and new must be a Model instance or None')
 
     # If we have to have matching types and both objects are not None and their types don't match then fail
