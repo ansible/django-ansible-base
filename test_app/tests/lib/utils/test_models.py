@@ -64,7 +64,7 @@ def test_system_user_set_but_no_user(expected_log):
     with override_settings(SYSTEM_USERNAME=system_username):
         expected_log = partial(expected_log, "ansible_base.lib.utils.models.logger")
         with expected_log('error', f'is set to {system_username} but no user with that username exists'):
-            assert models.get_system_user() is None
+            assert models.get_system_user() is not None
 
 
 @pytest.mark.django_db
@@ -319,15 +319,20 @@ def test_diff_sanitizes_encrypted_fields_removed(disable_activity_stream):
         (None, False),
         ("system", True),
         ("random", False),
+        ("organization", False),
     ],
 )
-def test_is_system_user_system_user_setting_set(username, expected_value, system_user, random_user):
+def test_is_system_user_system_user_setting_set(username, expected_value, system_user, random_user, organization):
     if username is None:
         user = None
     elif username == 'system':
         user = system_user
-    else:
+    elif username == 'organization':
+        user = organization
+    elif username == 'random':
         user = random_user
+    else:
+        assert False, f"This test doesn't know what to do with type {username}"
 
     assert models.is_system_user(user) == expected_value
 

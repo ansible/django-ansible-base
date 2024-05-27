@@ -11,7 +11,7 @@ from rest_framework.reverse import reverse
 
 from ansible_base.lib.abstract_models.immutable import ImmutableModel
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING, ansible_encryption
-from ansible_base.lib.utils.models import current_user_or_system_user
+from ansible_base.lib.utils.models import current_user_or_system_user, is_system_user
 
 logger = logging.getLogger('ansible_base.lib.abstract_models.common')
 
@@ -89,6 +89,9 @@ class ModifiableModel(models.Model):
         elif has_update_fields and not has_editable_field:
             # No editable fields are changing, don't update modified_by
             pass
+        elif not self.pk and is_system_user(self):
+            # If we are building the system user we can't set the modified_by or it will error (because it would be system which isn't built yet)
+            pass
         else:
             self.modified_by = current_user_or_system_user()
             update_fields.append('modified_by')
@@ -123,7 +126,7 @@ class CreatableModel(models.Model):
           * It will automatically add a created_by fields for new items
         '''
 
-        if not self.pk:
+        if not self.pk and not is_system_user(self):
             if self.created_by is None:
                 self.created_by = current_user_or_system_user()
 

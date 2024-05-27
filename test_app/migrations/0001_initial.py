@@ -10,23 +10,6 @@ import django.db.models.deletion
 import django.utils.timezone
 
 
-def create_system_user(apps, schema_editor):
-    """
-    Create the system user using the username in settings.
-
-    The user is self-referential in its created_by and modified_by fields.
-    It is inactive, only used for attributing internal changes to the system.
-    """
-    User = apps.get_model(settings.AUTH_USER_MODEL)
-
-    system_username = settings.SYSTEM_USERNAME
-    if not User.objects.filter(username=system_username).exists():
-        system_user = User.objects.create(username=system_username, is_active=False)
-        system_user.created_by = system_user
-        system_user.modified_by = system_user
-        system_user.save()
-
-
 class Migration(migrations.Migration):
 
     initial = True
@@ -301,5 +284,4 @@ class Migration(migrations.Migration):
             },
             bases=('test_app.original2',),
         ),
-        migrations.RunPython(create_system_user),
     ]

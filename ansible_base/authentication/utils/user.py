@@ -12,11 +12,11 @@ def can_user_change_password(user: Optional[AbstractUser]) -> bool:
     See if the given user is allowed to change their password.
     True if they are authenticated from the `local` authenticator
     False otherwise.
-    SYSTEM_USER can never change their password
+    The system user can never change their password
     """
     if user is None or is_system_user(user):
-        # The system user can not change their password ever
-        # Or if we didn't actually get a user we can't say they can change their password
+        # If we didn't actually get a user we can't say they can change their password
+        # Or if we are the system user, we can not change our password ever
         return False
 
     auth_users = AuthenticatorUser.objects.filter(user=user)

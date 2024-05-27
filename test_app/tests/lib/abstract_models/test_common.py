@@ -49,15 +49,18 @@ def test_save_attribution_no_system_username():
 def test_save_attribution_with_system_username_set_but_nonexistent_as_false(system_user, organization, expected_log):
     expected_log = partial(expected_log, "ansible_base.lib.abstract_models.common.logger")
 
-    with expected_log("warn", "no user with that username exists", assert_not_called=True):
+    with expected_log("error", "no user with that username exists", assert_not_called=True):
         organization.save()
 
+    from ansible_base.lib.utils.models import get_system_user
+
+    not_system_user = get_system_user()
     assert organization.created_by == system_user
-    assert organization.modified_by is None
+    assert organization.modified_by == not_system_user, "org modified by should have been not_system_user"
 
     organization.refresh_from_db()
     assert organization.created_by == system_user
-    assert organization.modified_by is None
+    assert organization.modified_by == not_system_user, "org modified by should have been not_system_user after refresh"
 
 
 @pytest.mark.django_db
@@ -111,12 +114,15 @@ def test_resave_of_model_with_no_created(expected_log, system_user):
     # Create a random model and save it without warning and no system user
     model = Organization()
     with override_settings(SYSTEM_USERNAME='_not_system'):
+        from ansible_base.lib.utils.models import get_system_user
+
+        not_system_user = get_system_user()
         model.save()
 
-    assert model.created_by is None
+    assert model.created_by == not_system_user, "First created_by was not the correct user"
 
     model.save()
-    assert model.created_by is None
+    assert model.modified_by == system_user, "Second created_by was not the correct user"
 
     model.delete()
 

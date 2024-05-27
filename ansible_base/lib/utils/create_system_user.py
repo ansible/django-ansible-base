@@ -1,0 +1,61 @@
+import logging
+from typing import Optional, Tuple, Type
+
+from django.core.exceptions import ImproperlyConfigured
+from django.db import models
+from django.utils.translation import gettext as _
+
+from ansible_base.lib.utils.settings import get_setting
+
+logger = logging.getLogger('ansible_base.lib.utils.create_system_user')
+
+"""
+These functions are in its own file because it is loaded during migrations so it has no access to models.
+"""
+
+
+def create_system_user(user_model: Type[models.Model]) -> models.Model:  # Note: We can't load models here so we can typecast to anything better than Model
+    #
+    # Creating the system user is a little tricky because we need to reference ourselves
+    #
+    if not user_model:
+        logger.error("You must pass a user_model to create_system_user")
+        return None
+
+    # First create a User object for the system user
+    system_user, created = user_model.objects.get_or_create(username=get_system_username()[0])
+
+    if created:
+        logger.info(f"Created system user {system_user.username}")
+    else:
+        logger.debug("System user is already created")
+        return system_user
+
+    system_user.is_active = False
+    system_user.set_unusable_password()
+    system_user.created_by = system_user
+    system_user.modified_by = system_user
+    update_fields = ['is_active', 'password', 'created_by', 'modified_by']
+
+    # If our model has a managed flag set it to true
+    if hasattr(user_model, 'managed'):
+        system_user.managed = True
+        update_fields.append('managed')
+
+    system_user.save(update_fields=update_fields)
+
+    return system_user
+
+
+def get_system_username() -> Tuple[Optional[str], str]:
+    # Returns (system_username, setting_name)
+    setting_name = 'SYSTEM_USERNAME'
+    value = get_setting(setting_name)
+    if value is None:
+        return None, setting_name
+
+    if isinstance(value, str):
+        return str(value), setting_name
+
+    logger.error(f"Expected get_setting to return a string for {setting_name}, got {type(value)}")
+    raise ImproperlyConfigured(_("Setting %(setting_name)s needs to be a string not a %(type)s") % {'setting_name': setting_name, 'type': type(value)})

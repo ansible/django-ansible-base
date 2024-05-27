@@ -24,7 +24,7 @@ def test_unregistered_model_triggers_no_signals():
 
 @pytest.mark.django_db
 @pytest.mark.parametrize('model', [Organization, Original1, Original2, Proxy1, Proxy2])
-def test_registered_model_triggers_signals(model):
+def test_registered_model_triggers_signals(model, system_user):
     with mock.patch('ansible_base.resource_registry.signals.handlers.init_resource_from_object', wraps=handlers.init_resource_from_object) as mck:
         obj = model.objects.create(name='foo')
     mck.assert_called_once_with(obj)

@@ -86,7 +86,7 @@ def test_authenticators_cli_initialize(django_user_model):
     err = StringIO()
 
     # Sanity check:
-    assert django_user_model.objects.count() == 1
+    assert django_user_model.objects.count() == 0
 
     with pytest.raises(SystemExit) as pytest_wrapped_e:
         call_command('authenticators', "--initialize", stdout=out, stderr=err)
