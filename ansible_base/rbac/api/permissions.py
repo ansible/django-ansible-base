@@ -4,13 +4,15 @@ from django.apps import apps
 from django.conf import settings
 from django.db.models import Model
 from django.http import Http404
+from django.utils.translation import gettext_lazy as _
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import SAFE_METHODS, BasePermission, DjangoObjectPermissions
 
 from ansible_base.lib.utils.models import is_add_perm
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.evaluations import has_super_permission
-from ansible_base.rbac.policies import can_change_user, can_delete_user
+from ansible_base.rbac.policies import can_change_user
 
 logger = logging.getLogger('ansible_base.rbac.api.permissions')
 
@@ -168,8 +170,7 @@ class AnsibleBaseUserPermissions(AnsibleBaseObjectPermissions):
 
     def has_object_permission_by_codename(self, request, obj, perms):
         if perms:
-            if request.method == 'DELETE':
-                return can_delete_user(request.user, obj)
-            else:
-                return can_change_user(request.user, obj)
+            if request.method == 'DELETE' and request.user.pk == obj.pk:
+                raise PermissionDenied({'detail': _("You can't delete yourself")})
+            return can_change_user(request.user, obj)
         return True

@@ -1,6 +1,6 @@
 import pytest
 
-from ansible_base.rbac.policies import can_change_user, can_delete_user
+from ansible_base.rbac.policies import can_change_user
 from test_app.models import User
 
 
@@ -32,16 +32,3 @@ def test_superuser_can_change_new_user(admin_user):
 def test_user_can_manage_themselves():
     alice = User.objects.create(username='alice')
     assert can_change_user(alice, alice)
-
-
-@pytest.mark.django_db
-def test_superuser_can_delete_new_user(admin_user):
-    alice = User.objects.create(username='alice')
-    assert can_delete_user(admin_user, alice)
-
-
-@pytest.mark.django_db
-def test_user_can_not_delete_themselves(admin_user):
-    alice = User.objects.create(username='alice')
-    assert not can_delete_user(alice, alice)
-    assert not can_delete_user(admin_user, admin_user)
