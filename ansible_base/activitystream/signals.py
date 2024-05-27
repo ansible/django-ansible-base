@@ -2,8 +2,6 @@ import logging
 import threading
 from contextlib import contextmanager
 
-from ansible_base.lib.utils.models import current_user_or_system_user, diff
-
 logger = logging.getLogger('ansible_base.activitystream.signals')
 
 
@@ -33,6 +31,7 @@ def _store_activitystream_entry(old, new, operation):
         return
 
     from ansible_base.activitystream.models import Entry
+    from ansible_base.lib.utils.models import diff
 
     if operation not in ('create', 'update', 'delete'):
         raise ValueError("Invalid operation: {}".format(operation))
@@ -64,6 +63,7 @@ def _store_activitystream_m2m(given_instance, model, operation, pk_set, reverse,
         return
 
     from ansible_base.activitystream.models import Entry
+    from ansible_base.lib.utils.models import current_user_or_system_user
 
     if operation not in ('associate', 'disassociate'):
         raise ValueError("Invalid operation: {}".format(operation))
