@@ -1,9 +1,11 @@
 import logging
 from dataclasses import asdict, dataclass
 from itertools import chain
+from typing import Optional, Tuple
 
 from crum import get_current_user
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AbstractUser
 from django.db.models import Model
 from django.utils.translation import gettext_lazy as _
 from inflection import underscore
@@ -13,7 +15,6 @@ from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.string import make_json_safe
 
 logger = logging.getLogger('ansible_base.lib.utils.models')
-_WARNED_ABOUT_SYSTEM_USER = False
 
 
 def get_all_field_names(model, concrete_only=False, include_attnames=True):
@@ -77,25 +78,24 @@ def user_summary_fields(user):
     return sf
 
 
-def is_system_user(user):
+def is_system_user(user: Optional[AbstractUser]) -> bool:
     """
     Takes a user objects and returns a boolean if that user's username is the same as the SYSTEM_USERNAME
     """
-    setting_name = 'SYSTEM_USERNAME'
-    system_username = get_setting(setting_name)
+    system_username = get_system_username()[0]
     if system_username is None or user is None:
         return False
     return user.username == system_username
 
 
-def get_system_user():
-    global _WARNED_ABOUT_SYSTEM_USER
-    system_user = None
-    setting_name = 'SYSTEM_USERNAME'
-    system_username = get_setting(setting_name)
+def get_system_user() -> Optional[AbstractUser]:
+    system_username, setting_name = get_system_username()
     system_user = get_user_model().objects.filter(username=system_username).first()
+    logger.error(f"Got system user {system_user} for {system_username}")
     # We are using a global variable to try and track if this thread has already spit out the message, if so ignore
-    if system_username is not None and system_user is None and not _WARNED_ABOUT_SYSTEM_USER:
+    logger.error(f"{system_username is not None} {system_user is None}")
+    if system_username is not None and system_user is None:
+        logger.error("HERE")
         logger.error(
             _(
                 "{setting_name} is set to {system_username} but no user with that username exists.".format(
@@ -103,11 +103,79 @@ def get_system_user():
                 )
             )
         )
-        _WARNED_ABOUT_SYSTEM_USER = True
+        system_user = create_system_user()
+        logger.error(f"Create system user returned {system_user}")
+    logger.error(f"Returning {system_user}")
     return system_user
 
 
-def current_user_or_system_user():
+def get_system_username() -> Tuple[Optional[str], str]:
+    # Returns (system_username, setting_name)
+    setting_name = 'SYSTEM_USERNAME'
+    return get_setting(setting_name), setting_name
+
+
+def create_system_user() -> AbstractUser:
+    #
+    # Creating a system user using ORM is near impossible because it needs to reference itself for created/modified _by
+    #
+
+    # Build our own user but do not call save
+    system_user = get_user_model()(username=get_system_username()[0], is_active=False)
+    system_user.set_unusable_password()
+    if hasattr(get_user_model(), 'managed'):
+        system_user.managed = True
+
+    # Generate the SQL queries through the ORM
+    from django.db import connection
+    from django.db.models import sql
+
+    values = system_user._meta.local_fields[1:]
+    query = sql.InsertQuery(system_user)
+    query.insert_values(values, [system_user])
+    compiler = query.get_compiler('default')
+    statements = compiler.as_sql()
+
+    # Do one last check to make sure someone didn't sneak in on us....
+    system_user = get_user_model().objects.filter(username=get_system_username()[0]).first()
+
+    if not system_user:
+        # Execute the insert statement to create the user without calling save
+        with connection.cursor() as cursor:
+            for statement in statements:
+                cursor.execute(statement[0], statement[1])
+
+        # Reload the user object from the DB "formally"
+        system_user = get_user_model().objects.get(username=get_system_username()[0])
+
+        logger.info(f"Created system user {system_user.username} as {system_user.pk}")
+
+        # Update the system user created/modified _by
+        system_user.created_by = system_user
+        system_user.modified_by = system_user
+
+        values = system_user._meta.local_fields
+        query = sql.UpdateQuery(system_user)
+        query.add_related_update(system_user, 'modified_by', system_user)
+        query.add_update_values(
+            {
+                'created_by': system_user,
+                'modified_by': system_user,
+            }
+        )
+        compiler = query.get_compiler('default')
+        statements = compiler.as_sql()
+
+        # Execute the insert statement to create the user without calling save
+        with connection.cursor() as cursor:
+            cursor.execute(statements[0], statements[1])
+
+        system_user.refresh_from_db()
+
+    return system_user
+
+
+def current_user_or_system_user() -> Optional[AbstractUser]:
     """
     Attempt to get the current user. If there is none or it is anonymous,
     try to return the system user instead.
@@ -121,8 +189,6 @@ def current_user_or_system_user():
 def is_encrypted_field(model, field_name):
     if model is None:
         return False
-
-    from django.contrib.auth.models import AbstractUser
 
     if issubclass(model, AbstractUser) and field_name == 'password':
         return True

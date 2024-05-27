@@ -106,8 +106,7 @@ class ImmutableCommonModelSerializer(AbstractCommonModelSerializer):
 
 class CommonUserSerializer(CommonModelSerializer):
     """
-    Disallows editing of system user (settings.SYSTEM_USERNAME) and enforces
-    superuser requirement.
+    Disallows editing of system user and enforces superuser requirement.
     """
 
     def validate(self, data):

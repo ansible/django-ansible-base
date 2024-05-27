@@ -53,11 +53,11 @@ def test_save_attribution_with_system_username_set_but_nonexistent_as_false(syst
         organization.save()
 
     assert organization.created_by == system_user
-    assert organization.modified_by is None
+    assert organization.modified_by is None, "org modified by should have been none"
 
     organization.refresh_from_db()
     assert organization.created_by == system_user
-    assert organization.modified_by is None
+    assert organization.modified_by is None, "org modified by should have been none"
 
 
 @pytest.mark.django_db

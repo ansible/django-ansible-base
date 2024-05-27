@@ -62,11 +62,10 @@ def test_system_user_set(system_user):
 def test_system_user_set_but_no_user(expected_log):
     system_username = 'LittleTimmy'
     with override_settings(SYSTEM_USERNAME=system_username):
-        global _WARNED_ABOUT_SYSTEM_USER
-        _WARNED_ABOUT_SYSTEM_USER = False
         expected_log = partial(expected_log, "ansible_base.lib.utils.models.logger")
         with expected_log('error', f'is set to {system_username} but no user with that username exists'):
-            assert models.get_system_user() is None
+            with expected_log('info', 'Created system user'):
+                assert models.get_system_user() is not None
 
 
 @pytest.mark.django_db

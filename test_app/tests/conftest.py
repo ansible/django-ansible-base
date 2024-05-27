@@ -555,9 +555,11 @@ def mocked_http(test_encryption_public_key, jwt_token):
 
 
 @pytest.fixture
-def system_user(db, settings, no_log_messages):
+def system_user(db, no_log_messages):
     with no_log_messages():
-        user_obj, _created = models.User.objects.get_or_create(username=settings.SYSTEM_USERNAME)
+        from ansible_base.lib.utils.models import get_system_user
+
+        user_obj = get_system_user()
     yield user_obj
 
 

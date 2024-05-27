@@ -22,17 +22,16 @@ def copy_fixture(copies=1):
 
 
 def delete_authenticator(authenticator):
-    from django.conf import settings
-
     from ansible_base.authentication.models import AuthenticatorUser
+    from ansible_base.lib.utils.models import get_system_username
 
     for au in AuthenticatorUser.objects.filter(provider=authenticator):
         try:
-            # The tests are very sensitive to the SYSTEM_USER being removed so we won't delete that user
-            if au.username != settings.SYSTEM_USERNAME:
+            # The tests are very sensitive to the system user being removed so we won't delete that user
+            if au.username != get_system_username[0]:
                 au.user.delete()
         except Exception:
-            # Its possible that something else already delete the user if a user was multi linked somehow
+            # Its possible that something else already deleted the user if a user was multi linked somehow
             pass
         au.delete()
     authenticator.delete()
