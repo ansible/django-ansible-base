@@ -38,9 +38,6 @@ class ResourceType(models.Model):
     def get_resource_config(self):
         return self.resource_registry.get_config_for_model(model=ContentType.objects.get_for_id(self.content_type_id).model_class())
 
-    def __str__(self):
-        return f"{self.name} - {self.pk}"
-
 
 class Resource(models.Model):
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, related_name="resources")
@@ -57,9 +54,6 @@ class Resource(models.Model):
 
     # human readable name for the resource
     name = models.CharField(max_length=512, null=True)
-
-    created = models.DateTimeField(auto_now_add=True)
-    modified = models.DateTimeField(auto_now=True)
 
     def summary_fields(self):
         return {"ansible_id": self.ansible_id, "resource_type": self.resource_type}
@@ -141,9 +135,6 @@ class Resource(models.Model):
             self.save()
 
             processor(self.content_object).save(resource_data)
-
-    def __str__(self):
-        return f"{self.resource_type} - {self.ansible_id} - {self.name}"
 
 
 # This is a separate function so that it can work with models from apps in the

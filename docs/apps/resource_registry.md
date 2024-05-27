@@ -313,7 +313,7 @@ Each service connected to the RESOURCE_SERVER can schedule a sync process, this 
 be done via the management command `resource_sync` or by wrapping the `tasks.sync.SyncExecutor().run()`
 in a main task and spawning any tasking system that the service uses.
 
-The sync will be performed only for resources managed by APP, those which `service_id`
+The sync will be performed only for resources managed by RESOURCE_SERVER, those which `service_id`
 matched the RESOURCE_SERVER `service_id`, local managed resources will not be affected.
 
 > IMPORTANT: Syncs must happen after initial resource migration is performed.
@@ -323,7 +323,7 @@ matched the RESOURCE_SERVER `service_id`, local managed resources will not be af
 
 The sync process consists in:
 
-0. Fetch the remote manifest from APP
+0. Fetch the remote manifest from RESOURCE_SERVER
 0. Based on the remote manifest, cleanup orphaned managed resources from local service
 0. Iterate over resources organization, team, user
     - Order matters, orgs must be created before team and so on.

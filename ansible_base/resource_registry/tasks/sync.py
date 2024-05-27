@@ -32,7 +32,7 @@ class ResourceSyncHTTPError(HTTPError):
     """Custom catchall error"""
 
 
-ResourcePK = AnsibleID = ResourceHash = ServiceID = ModifiedTime = str
+ResourcePK = AnsibleID = ResourceHash = ServiceID = str
 
 
 class ResourceTypeName(str, Enum):
@@ -57,7 +57,6 @@ class SyncStatus(str, Enum):
 class ManifestItem:
     ansible_id: AnsibleID
     resource_hash: ResourceHash
-    modified: ModifiedTime
     service_id: ServiceID | None = None
     resource_data: dict | None = None
 
@@ -116,11 +115,9 @@ def fetch_manifest(
 def get_orphan_resources(
     resource_type_name: ResourceTypeName,
     manifest_list: list[ManifestItem],
-    retain_seconds: int = 120,
 ) -> QuerySet:
     """QuerySet with orphaned managed resources to be deleted."""
     return Resource.objects.filter(
-        created__lt=timezone.now() - timedelta(seconds=retain_seconds),
         service_id=manifest_list[0].service_id,
         content_type__resource_type__name=resource_type_name,
     ).exclude(ansible_id__in=[item.ansible_id for item in manifest_list])
@@ -312,12 +309,14 @@ class SyncExecutor:
         resources_to_cleanup = get_orphan_resources(
             resource_type,
             manifest_list,
-            self.retain_seconds,
         )
         self.deleted_count = resources_to_cleanup.count()
         if self.deleted_count:
             self.write(f"Deleting {self.deleted_count} orphaned resources")
             for orphan in resources_to_cleanup:
+                # If it was created in the latest X seconds, ignore it.
+                if orphan.content_object.created >= timezone.now() - timedelta(seconds=self.retain_seconds):
+                    continue
                 try:
                     with transaction.atomic():
                         delete_resource(orphan)
