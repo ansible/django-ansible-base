@@ -159,12 +159,6 @@ class AssociateMixin(RelatedListMixin):
 
     @action(detail=False, methods=['post'])
     def associate(self, request, **kwargs):
-        """
-        Associate a related object with this object.
-
-        This will be served at /{basename}/{pk}/{related_name}/associate/
-        We will be given a list of primary keys in the request body.
-        """
         instance = self.get_parent_object()
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -178,12 +172,6 @@ class AssociateMixin(RelatedListMixin):
 
     @action(detail=False, methods=['post'])
     def disassociate(self, request, **kwargs):
-        """
-        Disassociate a related object from this object.
-
-        This will be served at /{basename}/{pk}/{related_name}/disassociate/
-        We will be given a list of primary keys in the request body.
-        """
         instance = self.get_parent_object()
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -232,6 +220,22 @@ def attribute_raiser(cls):
 
 
 class AssociationResourceRouter(routers.SimpleRouter):
+    docstring_template = _(
+        """Manage {child_model} objects in the '{relationship}' relationship of this particular {parent_model}.
+
+        Starting from the detail URL:
+
+        GET /:id/{relationship}/ to show {child_model_plural} currently in the relationship"""
+    )
+    reverse_docstring = _(
+        """
+
+        POST a list of instances to /:id/{relationship}/associate/ to add those {child_model_plural} to the relationship
+
+        POST a list of instances to /:id/{relationship}/disassociate/ to remove those {child_model_plural} from the relationshp
+        """
+    )
+
     def get_method_map(self, viewset, method_map):
         is_associate_viewset = issubclass(viewset, AssociateMixin)
         associate_actions = ['associate', 'disassociate', 'list']
@@ -281,14 +285,24 @@ class AssociationResourceRouter(routers.SimpleRouter):
             child_model = related_view.serializer_class.Meta.model
 
             # Determine if this is a related view or a reverse view
-            is_reverse_view = False
+            is_reverse_view = bool(any(x.related_model == child_model for x in parent_model._meta.related_objects))
             mixin_class = AssociateMixin
-            if any(x.related_model == child_model for x in parent_model._meta.related_objects):
-                is_reverse_view = True
+            docstring_template = self.docstring_template
+            if is_reverse_view:
                 mixin_class = RelatedListMixin
+            else:
+                docstring_template += self.reverse_docstring
 
             # Start with a viewset that only has list action enabled
             associated_viewset = self.associated_viewset_cls_factory(related_view)
+
+            docstring_kwargs = {
+                'child_model': child_model._meta.verbose_name.title(),
+                'parent_model': parent_model._meta.verbose_name.title(),
+                'child_model_plural': child_model._meta.verbose_name_plural,
+                'parent_model_plural': parent_model._meta.verbose_name_plural,
+                'relationship': fk,
+            }
 
             # Generate the related viewset
             # Name includes and parent and child viewset, because this defines global uniqueness
@@ -296,6 +310,7 @@ class AssociationResourceRouter(routers.SimpleRouter):
                 f'Related{viewset.__name__}{related_view.__name__}',
                 (mixin_class, associated_viewset),
                 {
+                    '__doc__': docstring_template.format(**docstring_kwargs),
                     'association_fk': fk,
                     'parent_viewset': viewset,
                     'lookup_field': fk,
