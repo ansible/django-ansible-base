@@ -59,7 +59,7 @@ class OAuth2ApplicationSerializer(NamedCommonModelSerializer):
             token_count = obj.access_tokens.count()
         return {'count': token_count, 'results': token_list}
 
-    def _get_summary_fields(self, obj):
+    def _get_summary_fields(self, obj) -> dict[str, dict]:
         ret = super()._get_summary_fields(obj)
         ret['tokens'] = self._summary_field_tokens(obj)
         return ret

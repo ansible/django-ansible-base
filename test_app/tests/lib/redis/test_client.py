@@ -33,38 +33,51 @@ def test_redis_client_confirm_connect_does_not_change_options():
     args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'clustered': False, 'clustered_hosts': 'a:1'}}}
     validate_args = copy.deepcopy(args)
     redis_cache = RedisCache('localhost', args)
-    client = RedisClient('localhost', args, redis_cache)
+    client = RedisClient('redis://localhost', args, redis_cache)
     client.connect()
     assert args == validate_args
 
 
 @pytest.mark.parametrize(
-    "url,host,port,username,password,db",
+    "url,host,port,username,password,db,raises,socket",
     [
-        ('localhost', 'localhost', 6379, None, None, 0),
-        ('redis://my_mom:her_pass@example.com:1234/1', 'example.com', 1234, 'my_mom', 'her_pass', 1),  # NOSONAR
-        ('redis://my_mom:her_pass@example.com/1', 'example.com', 6379, 'my_mom', 'her_pass', 1),  # NOSONAR
-        ('redis://my_mom@example.com/', 'example.com', 6379, 'my_mom', None, 0),
-        ('redis://:her_pass@example.com/', 'example.com', 6379, None, 'her_pass', 0),
-        ('redis://example.com:1234/a', 'example.com', 1234, None, None, 0),
+        ('localhost', 'localhost', 6379, None, None, 0, True, None),
+        ('redis://my_mom:her_pass@example.com:1234/1', 'example.com', 1234, 'my_mom', 'her_pass', 1, False, None),  # NOSONAR
+        ('redis://my_mom:her_pass@example.com/1', 'example.com', 6379, 'my_mom', 'her_pass', 1, False, None),  # NOSONAR
+        ('redis://my_mom@example.com/', 'example.com', 6379, 'my_mom', None, 0, False, None),
+        ('redis://:her_pass@example.com/', 'example.com', 6379, None, 'her_pass', 0, False, None),
+        ('redis://example.com:1234/a', 'example.com', 1234, None, None, 0, False, None),
+        ('unix:///var/temp/my.socket', None, None, None, None, 0, False, '/var/temp/my.socket'),
+        ('unix:///var/temp/my.socket?db=junk', None, None, None, None, 'junk', False, '/var/temp/my.socket'),
+        ('file:///var/temp/my.socket?db=junk', None, None, None, None, 'junk', False, '/var/temp/my.socket'),
+        ('file:///var/temp/my.socket?port=junk', None, None, None, None, 0, False, '/var/temp/my.socket'),  # A socket will prevent a port from being set
+        ('file:///var/temp/my.socket?password=junk', None, None, None, 'junk', 0, False, '/var/temp/my.socket'),
     ],
 )
-def test_redis_client_url_parsing(url, host, port, username, password, db):
+def test_redis_client_location_parsing(url, host, port, username, password, db, raises, socket):
     redis_cache = RedisCache(url, {})
     client = RedisClient(url, {}, redis_cache)
-    connection = client.connect()
-    assert connection.connection_pool.connection_kwargs.get('host', None) == host
-    assert connection.connection_pool.connection_kwargs.get('port', None) == port
-    assert connection.connection_pool.connection_kwargs.get('username', None) == username
-    assert connection.connection_pool.connection_kwargs.get('password', None) == password
-    assert connection.connection_pool.connection_kwargs.get('db', None) == db
+    connection = None
+    try:
+        connection = client.connect()
+    except ImproperlyConfigured as ic:
+        if not raises:
+            raise ic
+    if connection:
+        assert connection.connection_pool.connection_kwargs.get('host', None) == host
+        assert connection.connection_pool.connection_kwargs.get('port', None) == port
+        assert connection.connection_pool.connection_kwargs.get('username', None) == username
+        assert connection.connection_pool.connection_kwargs.get('password', None) == password
+        assert connection.connection_pool.connection_kwargs.get('db', None) == db
+        # The unix_socket_path gets converted to path in the connection_pool
+        assert connection.connection_pool.connection_kwargs.get('path', None) == socket
 
 
 @pytest.mark.parametrize("clustered,expect_exception", [(True, True), (False, False)])
 def test_redis_client_right_connection_type(clustered, expect_exception):
     args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'clustered': clustered, 'clustered_hosts': 'a:1'}}}
     redis_cache = RedisCache('localhost', args)
-    client = RedisClient('localhost', args, redis_cache)
+    client = RedisClient('redis://localhost', args, redis_cache)
 
     # When creating a cluster the cluster initialization tries to connect to the cluster.
     # Since we don't have one running we expect a redis.exceptions.RedisClusterException to be raised
@@ -79,7 +92,7 @@ def test_redis_client_right_connection_type(clustered, expect_exception):
 def test_redis_client_cluster_of_clustered_hosts():
     args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'clustered': True, 'clustered_hosts': 'a:1'}}}
     redis_cache = RedisCache('localhost', args)
-    client = RedisClient('localhost', args, redis_cache)
+    client = RedisClient('redis://localhost', args, redis_cache)
     with mock.patch('redis.cluster.RedisCluster.__init__', return_value=None) as m:
         client.connect()
         assert 'host' not in m.call_args.kwargs
@@ -163,7 +176,7 @@ def test_redis_cluster_mget_raises_expected_exception():
 def test_redis_client_cluster_hosts_parsing(clustered_hosts, raises, expected_length):
     args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'clustered': True, 'clustered_hosts': clustered_hosts}}}
     redis_cache = RedisCache('localhost', args)
-    client = RedisClient('localhost', args, redis_cache)
+    client = RedisClient('redis://localhost', args, redis_cache)
     with mock.patch('redis.cluster.RedisCluster.__init__', return_value=None) as m:
         if raises:
             with pytest.raises(ImproperlyConfigured):
@@ -178,8 +191,8 @@ def test_redis_client_cluster_hosts_parsing(clustered_hosts, raises, expected_le
 
 def test_redis_client_read_files():
     args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'ssl_certfile': '/tmp/junk.does.not.exist', 'ssl': True}}}
-    redis_cache = RedisCache('localhost', args)
-    client = RedisClient('localhost', args, redis_cache)
+    redis_cache = RedisCache('redis://localhost', args)
+    client = RedisClient('redis://localhost', args, redis_cache)
     with pytest.raises(ImproperlyConfigured) as ic:
         client.connect()
         assert 'Unable to read file' in ic
@@ -187,6 +200,6 @@ def test_redis_client_read_files():
 
 def test_redis_client_read_files_no_tls():
     args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'ssl_certfile': '/tmp/junk.does.not.exist'}}}
-    redis_cache = RedisCache('localhost', args)
-    client = RedisClient('localhost', args, redis_cache)
+    redis_cache = RedisCache('redis://localhost', args)
+    client = RedisClient('redis://localhost', args, redis_cache)
     client.connect()

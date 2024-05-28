@@ -234,3 +234,11 @@ def test_filter_queryset(user_api_client, user, inventory, inv_rd):
     inv_rd.give_permission(user, inventory)
     response = user_api_client.get(url, format="json")
     assert response.data['count'] == 1
+
+
+@pytest.mark.django_db
+def test_role_metadata_view(user_api_client):
+    response = user_api_client.get(reverse('role-metadata'))
+    assert response.status_code == 200
+    allowed_permissions = response.data['allowed_permissions']
+    assert 'aap.change_collectionimport' in allowed_permissions['aap.namespace']

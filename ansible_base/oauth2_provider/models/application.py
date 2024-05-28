@@ -3,8 +3,10 @@ from django.conf import settings
 from django.db import models
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
+from oauth2_provider.generators import generate_client_secret
 
 from ansible_base.lib.abstract_models.common import NamedCommonModel
+from ansible_base.lib.utils.models import prevent_search
 
 activitystream = object
 if 'ansible_base.activitystream' in settings.INSTALLED_APPS:
@@ -54,7 +56,7 @@ class OAuth2Application(NamedCommonModel, oauth2_models.AbstractApplication, act
         on_delete=models.CASCADE,
         null=True,
     )
-    # Not overriding client_secret... Details:
+
     # It would be nice to just use our usual encrypted_fields flow here
     # until DOT makes a release with https://github.com/jazzband/django-oauth-toolkit/pull/1311
     # there is no way to disable its expectation of using its own hashing
@@ -62,6 +64,17 @@ class OAuth2Application(NamedCommonModel, oauth2_models.AbstractApplication, act
     # So we use their field here.
     # Previous versions of DOT didn't hash the field at all and AWX pins
     # to <2.0.0 so AWX used the AWX encryption with no issue.
+    # We still override it here so that we can prevent_search() on it.
+    client_secret = prevent_search(
+        oauth2_models.ClientSecretField(
+            max_length=255,
+            blank=True,
+            default=generate_client_secret,
+            db_index=True,
+            help_text=_("Hashed on Save. Copy it now if this is a new secret."),
+        )
+    )
+
     client_type = models.CharField(
         max_length=32, choices=CLIENT_TYPES, help_text=_('Set to Public or Confidential depending on how secure the client device is.')
     )

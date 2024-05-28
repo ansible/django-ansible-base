@@ -1,5 +1,6 @@
 import logging
 from datetime import timedelta
+from typing import Optional
 
 from crum import get_current_user
 from django.core.exceptions import ObjectDoesNotExist
@@ -39,7 +40,7 @@ class BaseOAuth2TokenSerializer(CommonModelSerializer):
         read_only_fields = ('user', 'token', 'expires', 'refresh_token')
         extra_kwargs = {'scope': {'allow_null': False, 'required': False}, 'user': {'allow_null': False, 'required': True}}
 
-    def get_token(self, obj):
+    def get_token(self, obj) -> str:
         request = self.context.get('request')
         try:
             if request and request.method == 'POST':
@@ -49,7 +50,7 @@ class BaseOAuth2TokenSerializer(CommonModelSerializer):
         except ObjectDoesNotExist:
             return ''
 
-    def get_refresh_token(self, obj):
+    def get_refresh_token(self, obj) -> Optional[str]:
         request = self.context.get('request')
         try:
             if not obj.refresh_token:

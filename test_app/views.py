@@ -61,7 +61,7 @@ class UserViewSet(DABOAuth2UserViewsetMixin, TestAppViewSet):
     def filter_queryset(self, qs):
         qs = visible_users(self.request.user, queryset=qs)
         qs = self.apply_optimizations(qs)
-        return qs
+        return super().filter_queryset(qs)
 
     @action(detail=False, methods=['get'])
     def me(self, request, pk=None):
@@ -142,7 +142,7 @@ def api_root(request, format=None):
     from ansible_base.oauth2_provider.urls import router as oauth2_provider_router
     from ansible_base.rbac.api.router import router as rbac_router
     from ansible_base.resource_registry.urls import service_router
-    from test_app.router import router
+    from test_app.router import router as test_app_router
 
     list_endpoints = {}
     urls = [
@@ -150,7 +150,7 @@ def api_root(request, format=None):
         auth_router.urls,
         oauth2_provider_router.urls,
         rbac_router.urls,
-        router.urls,
+        test_app_router.urls,
         service_router.urls,
     ]
     for url in chain(*urls):
@@ -169,6 +169,9 @@ def api_root(request, format=None):
                 list_endpoints[url.name] = reverse(url.name, request=request, format=format)
             except NoReverseMatch:
                 pass
+
+    list_endpoints['service-index'] = reverse('service-index-root', request=request, format=format)
+    list_endpoints['role-metadata'] = reverse('role-metadata', request=request, format=format)
 
     return Response(list_endpoints)
 

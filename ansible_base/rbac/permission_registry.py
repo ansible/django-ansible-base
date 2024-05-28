@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, Union
+from typing import Optional, Type, Union
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -57,9 +57,13 @@ class PermissionRegistry:
     def get_parent_fd_name(self, model) -> Optional[str]:
         return self._parent_fields.get(model._meta.model_name)
 
-    def get_child_models(self, parent_model, seen=None):
-        """
-        Returns a set of tuples that give the filter args and the model for child resources
+    def get_child_models(self, parent_model, seen=None) -> list[tuple[str, Type[Model]]]:
+        """Returns child models and the filter relationship to the parent
+
+        This is used for rebuilding RoleEvaluation entries.
+        For the given parent model like organization, this returns a list of tuples that contains
+         - path like "parent__organization" in Model.objects.filter(parent__organization=organization)
+         - the model class which is a child resource of the parent model
         """
         if not seen:
             seen = set()
@@ -79,6 +83,30 @@ class PermissionRegistry:
                 for next_parent_filter, grandchild_model in self.get_child_models(child_model, seen=seen):
                     child_filters.append((f'{next_parent_filter}__{parent_field_name}', grandchild_model))
         return child_filters
+
+    def get_resource_prefix(self, cls: Type[Model]) -> str:
+        """For a given model class, give the prefix like shared, of API naming like shared.team"""
+        if registry := self.get_resource_registry():
+            # duplicates logic in ansible_base/resource_registry/apps.py
+            try:
+                resource_config = registry.get_config_for_model(cls)
+                if resource_config.managed_serializer:
+                    return "shared"  # shared model
+            except KeyError:
+                pass  # unregistered model
+
+            # Fallback for unregistered and non-shared models
+            return registry.api_config.service_type
+        else:
+            return 'local'
+
+    def get_resource_registry(self):
+        if 'ansible_base.resource_registry' not in settings.INSTALLED_APPS:
+            return None
+
+        from ansible_base.resource_registry.registry import get_registry
+
+        return get_registry()
 
     def call_when_apps_ready(self, apps, app_config):
         from ansible_base.rbac import triggers
