@@ -120,57 +120,64 @@ def create_system_user() -> AbstractUser:
     # Creating a system user using ORM is near impossible because it needs to reference itself for created/modified _by
     #
 
-    # Build our own user but do not call save
-    system_user = get_user_model()(username=get_system_username()[0], is_active=False)
-    system_user.set_unusable_password()
+    system_user = get_user_model().objects.create(username=get_system_username()[0], is_active=False, modified_by=None, created_by=None)
     if hasattr(get_user_model(), 'managed'):
         system_user.managed = True
+    system_user.created_by = system_user
+    system_user.save()
+    system_user.refresh_from_db()
 
-    # Generate the SQL queries through the ORM
-    from django.db import connection
-    from django.db.models import sql
-
-    values = system_user._meta.local_fields[1:]
-    query = sql.InsertQuery(system_user)
-    query.insert_values(values, [system_user])
-    compiler = query.get_compiler('default')
-    statements = compiler.as_sql()
-
-    # Do one last check to make sure someone didn't sneak in on us....
-    system_user = get_user_model().objects.filter(username=get_system_username()[0]).first()
-
-    if not system_user:
-        # Execute the insert statement to create the user without calling save
-        with connection.cursor() as cursor:
-            for statement in statements:
-                cursor.execute(statement[0], statement[1])
-
-        # Reload the user object from the DB "formally"
-        system_user = get_user_model().objects.get(username=get_system_username()[0])
-
-        logger.info(f"Created system user {system_user.username} as {system_user.pk}")
-
-        # Update the system user created/modified _by
-        system_user.created_by = system_user
-        system_user.modified_by = system_user
-
-        values = system_user._meta.local_fields
-        query = sql.UpdateQuery(system_user)
-        query.add_related_update(system_user, 'modified_by', system_user)
-        query.add_update_values(
-            {
-                'created_by': system_user,
-                'modified_by': system_user,
-            }
-        )
-        compiler = query.get_compiler('default')
-        statements = compiler.as_sql()
-
-        # Execute the insert statement to create the user without calling save
-        with connection.cursor() as cursor:
-            cursor.execute(statements[0], statements[1])
-
-        system_user.refresh_from_db()
+    #    # Build our own user but do not call save
+    #    system_user = get_user_model()(username=get_system_username()[0], is_active=False)
+    #    system_user.set_unusable_password()
+    #    if hasattr(get_user_model(), 'managed'):
+    #        system_user.managed = True
+    #
+    #    # Generate the SQL queries through the ORM
+    #    from django.db import connection
+    #    from django.db.models import sql
+    #
+    #    values = system_user._meta.local_fields[1:]
+    #    query = sql.InsertQuery(system_user)
+    #    query.insert_values(values, [system_user])
+    #    compiler = query.get_compiler('default')
+    #    statements = compiler.as_sql()
+    #
+    #    # Do one last check to make sure someone didn't sneak in on us....
+    #    system_user = get_user_model().objects.filter(username=get_system_username()[0]).first()
+    #
+    #    if not system_user:
+    #        # Execute the insert statement to create the user without calling save
+    #        with connection.cursor() as cursor:
+    #            for statement in statements:
+    #                cursor.execute(statement[0], statement[1])
+    #
+    #        # Reload the user object from the DB "formally"
+    #        system_user = get_user_model().objects.get(username=get_system_username()[0])
+    #
+    #        logger.info(f"Created system user {system_user.username} as {system_user.pk}")
+    #
+    #        # Update the system user created/modified _by
+    #        system_user.created_by = system_user
+    #        system_user.modified_by = system_user
+    #
+    #        values = system_user._meta.local_fields
+    #        query = sql.UpdateQuery(system_user)
+    #        query.add_related_update(system_user, 'modified_by', system_user)
+    #        query.add_update_values(
+    #            {
+    #                'created_by': system_user,
+    #                'modified_by': system_user,
+    #            }
+    #        )
+    #        compiler = query.get_compiler('default')
+    #        statements = compiler.as_sql()
+    #
+    #        # Execute the insert statement to create the user without calling save
+    #        with connection.cursor() as cursor:
+    #            cursor.execute(statements[0], statements[1])
+    #
+    #        system_user.refresh_from_db()
 
     return system_user
 
