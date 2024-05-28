@@ -38,7 +38,6 @@ class RADIUSBackend(_RADIUSBackend):
 
 
 class RADIUSConfiguration(BaseAuthenticatorConfiguration):
-
     SERVER = CharField(
         label=_("RADIUS Server"),
         help_text="Hostname of RADIUS server.",
@@ -73,7 +72,10 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         super().__init__(database_instance, *args, **kwargs)
         self.set_logger(logger)
 
-    def authenticate(self, request, username, password, **kwargs):
+    def authenticate(self, request, username=None, password=None):
+        if not username or not password:
+            return None
+
         settings = SimpleNamespace(
             RADIUS_SERVER=self.settings["SERVER"],
             RADIUS_PORT=self.settings["PORT"],
