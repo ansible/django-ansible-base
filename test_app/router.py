@@ -80,7 +80,6 @@ router.register(
     related_views={
         'organizations': (views.OrganizationViewSet, 'organizations'),
         'teams': (views.TeamViewSet, 'teams'),
-        'tokens': (oauth2_provider_views.OAuth2TokenViewSet, 'access_tokens'),
         'applications': (oauth2_provider_views.OAuth2ApplicationViewSet, 'applications'),
     },
     basename='user',

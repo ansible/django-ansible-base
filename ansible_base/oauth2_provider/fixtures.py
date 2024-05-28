@@ -15,6 +15,10 @@ __all__ = [  # noqa: F822, the additional _pat_X are unknown so we need this her
     'oauth2_user_pat_1',
     'oauth2_user_pat_2',
     'oauth2_user_pat_3',
+    'oauth2_user_application_token',
+    'oauth2_user_application_token_1',
+    'oauth2_user_application_token_2',
+    'oauth2_user_application_token_3',
 ]
 
 
@@ -73,4 +77,17 @@ def oauth2_user_pat(user, randname):
         # This has to be timezone aware
         expires=datetime(2088, 1, 1, tzinfo=timezone.utc),
         token=generate_token(),
+    )[0]
+
+
+@copy_fixture(copies=3)
+@pytest.fixture
+def oauth2_user_application_token(user, randname, oauth2_application):
+    return OAuth2AccessToken.objects.get_or_create(
+        user=user,
+        description=randname("Application Access Token for 'user'"),
+        # This has to be timezone aware
+        expires=datetime(2088, 1, 1, tzinfo=timezone.utc),
+        token=generate_token(),
+        application=oauth2_application[0],
     )[0]
