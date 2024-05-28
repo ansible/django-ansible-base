@@ -1,3 +1,8 @@
+import logging
+
+from django.apps import apps
+from django.core.exceptions import ObjectDoesNotExist
+from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.models import AuthenticatorMap
@@ -5,11 +10,13 @@ from ansible_base.authentication.utils.trigger_definition import TRIGGER_DEFINIT
 from ansible_base.lib.serializers.common import NamedCommonModelSerializer
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 
+logger = logging.getLogger('ansible_base.authentication.serializers.authenticator_map')
+
 
 class AuthenticatorMapSerializer(NamedCommonModelSerializer):
     class Meta:
         model = AuthenticatorMap
-        fields = NamedCommonModelSerializer.Meta.fields + ['authenticator', 'map_type', 'organization', 'team', 'role', 'revoke', 'triggers', 'order']
+        fields = NamedCommonModelSerializer.Meta.fields + ['authenticator', 'map_type', 'role', 'organization', 'team', 'revoke', 'triggers', 'order']
 
     def validate(self, data) -> dict:
         errors = {}
@@ -20,37 +27,64 @@ class AuthenticatorMapSerializer(NamedCommonModelSerializer):
         org = data.get('organization', None)
         role = data.get('role', None)
 
-        if map_type == 'team' and (not team or team == ''):
-            errors["team"] = "You must specify a team with the selected map type"
-        if map_type in ['team', 'organization'] and (not org or org == ''):
-            errors["organization"] = "You must specify an organization with the selected map type"
-        if map_type in ['team', 'organization', 'role'] and role is None:
-            errors["role"] = "You must specify a role with the selected map type"
-        if map_type in ['allow', 'is_superuser'] and role is not None:
-            errors["role"] = "You cannot specify role with the selected map type"
+        if map_type == 'team' and not team:
+            errors["team"] = _("You must specify a team with the selected map type")
+        if map_type in ['team', 'organization'] and not org:
+            errors["organization"] = _("You must specify an organization with the selected map type")
+        if map_type in ['team', 'organization', 'role'] and not role:
+            errors["role"] = _("You must specify a role with the selected map type")
+        if map_type in ['allow', 'is_superuser'] and role:
+            errors["role"] = _("You cannot specify role with the selected map type")
 
-        if role is not None:
-            errors.update(self.validate_role_data(role, org, team))
+        if role:
+            errors.update(self.validate_role_data(map_type, role, org, team))
 
         if errors:
             raise ValidationError(errors)
         return data
 
-    def validate_role_data(self, role, org, team):
+    def validate_role_data(self, map_type, role, org, team):
         errors = {}
 
-        if not role.content_type:
+        # Validation is possible only if RBAC is installed
+        if not apps.is_installed('ansible_base.rbac'):
+            logger.warning(_("You specified a role without RBAC installed "))
             return errors
 
-        model_class = role.content_type.model_class()
-        is_org_role = model_class == get_organization_model()
-        is_team_role = model_class == get_team_model()
+        from ansible_base.rbac.models import RoleDefinition
 
-        if (is_org_role or is_team_role) and (not org or org == ''):
-            errors["organization"] = "You must specify an organization with the selected role"
+        try:
+            rbac_role = RoleDefinition.objects.get(name=role)
+            is_system_role = rbac_role.content_type is None
 
-        if is_team_role and (not team or team == ''):
-            errors["team"] = "You must specify a team with the selected role"
+            # system role is allowed for map type == role without further conditions
+            if is_system_role and map_type == 'role':
+                return errors
+
+            if is_system_role:
+                is_org_role, is_team_role = False, False
+            else:
+                model_class = rbac_role.content_type.model_class()
+                is_org_role = issubclass(model_class, get_organization_model())
+                is_team_role = issubclass(model_class, get_team_model())
+
+            # role type and map type must correspond
+            if map_type == 'organization' and (is_system_role or is_team_role):
+                errors['role'] = _("For an organization map type you must specify an organization based role")
+
+            if map_type == 'team' and (is_system_role or is_org_role):
+                errors['role'] = _("For a team map type you must specify a team based role")
+
+            # org/team role needs organization field
+            if (is_org_role or is_team_role) and (not org or org == ''):
+                errors["organization"] = _("You must specify an organization with the selected role")
+
+            # team role needs team field
+            if is_team_role and (not team or team == ''):
+                errors["team"] = _("You must specify a team with the selected role")
+
+        except ObjectDoesNotExist:
+            errors['role'] = _("RoleDefinition {role} doesn't exist").format(role=role)
 
         return errors
 
