@@ -1,6 +1,7 @@
 import logging
 
 from django.utils.encoding import smart_str
+from drf_spectacular.authentication import BasicScheme
 from rest_framework import authentication
 
 logger = logging.getLogger('test_app.authentication.logged_basic_auth')
@@ -20,3 +21,8 @@ class LoggedBasicAuthentication(authentication.BasicAuthentication):
 
 # NOTE: This file is common to many of the services and will allow DRF to return a 401 instead of a 403 on failed login.
 #       This is the expected behavior we want so we need this file in test_app to mimic other applications
+
+
+class MyAuthenticationScheme(BasicScheme):
+    target_class = LoggedBasicAuthentication
+    name = 'LoggedBasicAuthentication'  # name used in the schema
