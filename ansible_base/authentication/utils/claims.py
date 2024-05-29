@@ -380,7 +380,7 @@ class ReconcileUser:
             if org is None:
                 logger.info("Skipping organization '%s', because the organization does not exist", org_name)
                 continue
-            if is_member:
+            if is_member and org_member_rd:
                 logger.info("Adding user '%s' to organization '%s'", user.username, org_name)
                 RoleDefinition.objects.managed.org_member.give_permission(user, org)
             elif not remove_users:
@@ -402,7 +402,7 @@ class ReconcileUser:
                 if team is None:
                     logger.info("Skipping team '%s' in organization '%s', because the team does not exist", team_name, org_name)
                     continue
-                if is_member:
+                if is_member and team_member_rd:
                     logger.info("Adding user '%s' to team '%s'", user.username, team_name)
                     RoleDefinition.objects.managed.team_member.give_permission(user, team)
                 elif not remove_users:
