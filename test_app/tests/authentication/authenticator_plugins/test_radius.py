@@ -80,7 +80,7 @@ def test_authenticator_plugin(backend_cls, unauthenticated_api_client, radius_co
         "RADIUS_PORT": radius_configuration["PORT"],
         "RADIUS_SECRET": radius_configuration["SECRET"],
     }
-    assert backend.authenticate.called_once_with(username="user", password="password")
+    backend.authenticate.called_once_with(username="user", password="password")
     assert AuthenticatorUser.objects.filter(uid="user", provider=radius_authenticator).exists()
     assert User.objects.filter(username="user").exists()
 
