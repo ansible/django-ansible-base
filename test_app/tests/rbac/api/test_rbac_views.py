@@ -197,6 +197,14 @@ def test_remove_team_assignment(user_api_client, user, inv_rd, team, inventory):
 
 
 @pytest.mark.django_db
+def test_team_assignment_validation_error(admin_api_client, team, organization, org_member_rd):
+    url = reverse('roleteamassignment-list')
+    response = admin_api_client.post(url, data={'team': team.id, 'object_id': organization.id, 'role_definition': org_member_rd.id})
+    assert response.status_code == 400, response.data
+    assert 'Assigning organization member permission to teams is not allowed' in str(response.data)
+
+
+@pytest.mark.django_db
 def test_remove_user_assignment_with_global_role(user_api_client, user, inv_rd, global_inv_rd, rando, inventory):
     assignment = inv_rd.give_permission(rando, inventory)
     url = reverse('roleuserassignment-detail', kwargs={'pk': assignment.pk})
