@@ -55,6 +55,7 @@ class StaticResourceAPIClient(ResourceAPIClient):
 
     def _make_request(self, method, path, data=None, params=None, stream=False):
         response = Response()
+        response.status_code = 200
         response.encoding = "utf-8"
 
         if path in self.router:
@@ -63,9 +64,10 @@ class StaticResourceAPIClient(ResourceAPIClient):
             return response
 
         content_file_path = Path(self.base_url) / path / "response"
-        response._content = content_file_path.read_bytes()
-        if response._content.strip() == b"404":
+
+        try:
+            response._content = content_file_path.read_bytes()
+        except FileNotFoundError:
             response.status_code = 404
-        else:
-            response.status_code = 200
+
         return response

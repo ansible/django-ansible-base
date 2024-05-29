@@ -25,14 +25,14 @@ Optional parameters::
 
 from django.core.management.base import BaseCommand, CommandError
 
-from ansible_base.resource_registry.tasks.sync import ResourceTypeName, SyncExecutor
+from ansible_base.resource_registry.tasks.sync import ResourceSyncHTTPError, SyncExecutor, get_resource_type_names
 
 
 def valid_resource_type(resource_type):  # pragma: no cover
     resource_type = resource_type.strip()
     if not resource_type.startswith("shared."):
         resource_type = f"shared.{resource_type}"
-    valid_options = [item.value for item in ResourceTypeName]
+    valid_options = get_resource_type_names()
     if resource_type not in valid_options:
         raise CommandError(f"Invalid resource_type {resource_type}, options are {valid_options}")
     return resource_type
@@ -75,4 +75,10 @@ class Command(BaseCommand):  # pragma: no cover
         """Handle RESOURCE_PROVIDER sync"""
         arguments = ["resource_type_names", "retries", "retrysleep", "retain_seconds", "asyncio"]
         options = {k: v for k, v in options.items() if k in arguments}
-        SyncExecutor(**options, stdout=self.stdout).run()
+        try:
+            executor = SyncExecutor(**options, stdout=self.stdout)
+            executor.run()
+        except ResourceSyncHTTPError as exc:
+            raise CommandError(f"Error accessing Resource Server: {str(exc)}")
+
+        # NOTE: Can optionally take --report-json and then serialize executor.results

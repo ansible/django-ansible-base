@@ -508,14 +508,16 @@ celery = Celery('your_app_name', broker='redis://localhost:6379/0')
 # Define Celery task
 @celery.task
 def execute_sync_executor():
-    SyncExecutor(
+    executor = SyncExecutor(
         asyncio=False,
         api_client=ResourceAPIClient(....),  # Omit to have a default client created
         retries=3,
         retrysleep=60,
         retain_seconds=300,  # Avoid delete resources created in the latest 5 minutes
         stdout=sys.stdout  # omit to silence it
-    ).run()
+    )
+    executor.run()
+    # NOTE: Can serialize executor.results to JSON and persist it for auditing
 
 # Schedule the task to run every 15 minutes
 celery.conf.beat_schedule = {
@@ -554,5 +556,5 @@ Objects and types:
 - `SyncStatus` enum with variantes for `CREATED,UPDATED,NOOP,UNAVAILABLE,CONFLICT`
 - `SyncResult` type containing status and item
 - `ManifestItem` - Serializer for resource manifest CSV containing ansible_id and resource_hash
-- `ResourceTypeName` - Iterable enum containing variants `shared.{organization,team,user}`
+- `get_resource_type_names` - List str of `shared.{organization,team,user}`
 - `ManifestNotFound` - Custom exception for when manifest is not served

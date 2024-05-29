@@ -3,6 +3,7 @@ from __future__ import annotations  # support python<3.10
 import asyncio
 import csv
 import time
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import timedelta
 from enum import Enum
@@ -17,6 +18,7 @@ from django.utils import timezone
 from requests import HTTPError
 
 from ansible_base.resource_registry.models import Resource, ResourceType
+from ansible_base.resource_registry.registry import get_registry
 from ansible_base.resource_registry.rest_client import ResourceAPIClient, get_resource_server_client
 
 
@@ -32,19 +34,6 @@ class ResourceSyncHTTPError(HTTPError):
     """Custom catchall error"""
 
 
-ResourcePK = AnsibleID = ResourceHash = ServiceID = str
-
-
-class ResourceTypeName(str, Enum):
-    # keep the order
-    ORGANIZATION = "shared.organization"
-    TEAM = "shared.team"
-    USER = "shared.user"
-
-    def __str__(self):
-        return self.value
-
-
 class SyncStatus(str, Enum):
     CREATED = "created"
     UPDATED = "updated"
@@ -55,9 +44,9 @@ class SyncStatus(str, Enum):
 
 @dataclass
 class ManifestItem:
-    ansible_id: AnsibleID
-    resource_hash: ResourceHash
-    service_id: ServiceID | None = None
+    ansible_id: str
+    resource_hash: str
+    service_id: str | None = None
     resource_data: dict | None = None
 
     def __hash__(self):
@@ -66,8 +55,6 @@ class ManifestItem:
 
 @dataclass
 class SyncResult:
-    __match_args__ = ('status', 'item')
-
     status: SyncStatus
     item: ManifestItem
 
@@ -87,7 +74,7 @@ def create_api_client() -> ResourceAPIClient:
 
 
 def fetch_manifest(
-    resource_type_name: ResourceTypeName,
+    resource_type_name: str,
     api_client: ResourceAPIClient | None = None,
 ) -> list[ManifestItem]:
     """Fetch RESOURCE_SERVER manifest, parses the CSV and returns a list."""
@@ -113,7 +100,7 @@ def fetch_manifest(
 
 
 def get_orphan_resources(
-    resource_type_name: ResourceTypeName,
+    resource_type_name: str,
     manifest_list: list[ManifestItem],
 ) -> QuerySet:
     """QuerySet with orphaned managed resources to be deleted."""
@@ -140,6 +127,13 @@ def get_managed_resource(manifest_item: ManifestItem) -> Resource | None:
         ansible_id=manifest_item.ansible_id,
         service_id=manifest_item.service_id,
     ).first()
+
+
+def get_resource_type_names() -> list[str]:
+    """Ordered list of registered resource types."""
+    registry = get_registry()
+    resources = registry.get_resources()
+    return [f"shared.{rt.model._meta.model_name}" for _, rt in sorted(resources.items())]
 
 
 def _attempt_update_resource(
@@ -227,7 +221,7 @@ class SyncExecutor:
     """Public Executor Implementing Sync and Async process."""
 
     api_client: ResourceAPIClient = field(default_factory=create_api_client)
-    resource_type_names: list[ResourceTypeName] | None = None
+    resource_type_names: list[str] | None = None
     retries: int = 0
     retrysleep: int = 30
     retain_seconds: int = 120
@@ -236,13 +230,15 @@ class SyncExecutor:
     attempts: int = 0
     deleted_count: int = 0
     asyncio: bool = False
+    results: dict = field(default_factory=lambda: defaultdict(list))
 
     def write(self, text: str = ""):
         """Write to assigned IO or simply ignores the text."""
-        self.stdout and self.stdout.write(text)
+        if self.stdout:
+            self.stdout.write(text)
 
     def _report_manifest_item(self, result: SyncResult):
-        """Write status for each single resource in the manifest."""
+        """Record status for each single resource of the manifest."""
         msg = f"{result.status.value.upper()} {result.item.ansible_id}"
         if result.item.resource_data:
             details = result.item.resource_data.get(
@@ -256,6 +252,7 @@ class SyncExecutor:
         """Grouped results report at the end of the execution."""
         created_count = updated_count = conflicted_count = skipped_count = 0
         for status, manifest_item in results:
+            self.results[status.value].append(manifest_item)
             self.unavailable.discard(manifest_item)
             # when python>3.10 replace with match
             if status == SyncStatus.UNAVAILABLE:  # pragma: no cover
@@ -318,10 +315,15 @@ class SyncExecutor:
                 if orphan.content_object.created >= timezone.now() - timedelta(seconds=self.retain_seconds):
                     continue
                 try:
+                    _sc = orphan.content_type.resource_type.serializer_class
+                    data = _sc(orphan.content_object).data
+                    data.update(orphan.summary_fields())
                     with transaction.atomic():
                         delete_resource(orphan)
                 except ResourceDeletionError as exc:
                     self.write(f"Error deleting orphaned resources {str(exc)}")
+                else:  # persist in the report
+                    self.results["deleted"].append(data)
 
     def _handle_retries(self):  # pragma: no cover
         """Check if there are unavailable resources to re-try."""
@@ -360,21 +362,19 @@ class SyncExecutor:
         self.write("----- RESOURCE SYNC STARTED -----")
         self.write()
 
-        # This iteration cannot be async, order here matters, this must be
-        # sequential so orgs are created before teams and teams before users.
-        for resource_type in ResourceTypeName:  # (shared.org, .team, .user)
-            if self.resource_type_names and resource_type.value not in self.resource_type_names:
+        for resource_type_name in get_resource_type_names():
+            if self.resource_type_names and resource_type_name not in self.resource_type_names:
                 # Skip types that are filtered out
                 continue
 
-            self.write(f">>> {resource_type}")
+            self.write(f">>> {resource_type_name}")
             try:
-                manifest_list = fetch_manifest(resource_type, api_client=self.api_client)
+                manifest_list = fetch_manifest(resource_type_name, api_client=self.api_client)
             except ManifestNotFound as ex:
                 self.write(str(ex))
                 continue
 
-            self._cleanup_orphans(resource_type, manifest_list)
+            self._cleanup_orphans(resource_type_name, manifest_list)
             self._dispatch_sync_process(manifest_list)
             self._handle_retries()
 

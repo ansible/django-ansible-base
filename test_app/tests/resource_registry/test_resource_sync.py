@@ -127,5 +127,6 @@ def test_noop_existing_resource(admin_api_client, static_api_client, stdout):
     # The previously created user must be skipped
     executor = SyncExecutor(api_client=static_api_client, stdout=stdout, retain_seconds=0)
     executor.run()
+    assert len(executor.results["noop"]) == 1
     assert 'NOOP 97447387-8596-404f-b0d0-6429b04c8d22' in stdout.lines
     assert any('Skipped 1' in line for line in stdout.lines)
