@@ -3,7 +3,6 @@ from django.test.utils import override_settings
 from rest_framework.exceptions import ValidationError
 from rest_framework.reverse import reverse
 
-from ansible_base.authentication.utils.claims import ReconcileUser
 from ansible_base.rbac.models import RoleDefinition
 from ansible_base.rbac.permission_registry import permission_registry
 from test_app.models import Inventory, Organization
