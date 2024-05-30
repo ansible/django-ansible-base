@@ -7,8 +7,6 @@ from django.contrib.auth import get_user_model
 
 from ansible_base.authentication.utils.claims import ReconcileUser, create_organizations_and_teams
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
-from ansible_base.rbac import permission_registry
-from ansible_base.rbac.models import RoleDefinition
 
 Organization = get_organization_model()
 Team = get_team_model()
@@ -17,28 +15,6 @@ User = get_user_model()
 
 def random_name(length: int = 10) -> str:
     return ''.join(random.choices(string.ascii_lowercase, k=length))
-
-
-# NOTE(cutwater): Thiese fixtures partially duplicate ones defined in test_app/tests/rbac/conftest.py
-#   We should unify this in future refactoring iterations.
-@pytest.fixture(autouse=True)
-def org_member_rd():
-    return RoleDefinition.objects.create_from_permissions(
-        permissions=['view_organization', 'member_organization'],
-        name=ReconcileUser.ORGANIZATION_MEMBER_ROLE_NAME,
-        content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
-        managed=True,
-    )
-
-
-@pytest.fixture(autouse=True)
-def team_member_rd():
-    return RoleDefinition.objects.create_from_permissions(
-        permissions=['view_team', 'member_team'],
-        name=ReconcileUser.TEAM_MEMBER_ROLE_NAME,
-        content_type=permission_registry.content_type_model.objects.get_for_model(Team),
-        managed=True,
-    )
 
 
 @pytest.mark.django_db
@@ -61,7 +37,7 @@ def test_create_organizations_and_teams():
 
 
 @pytest.mark.django_db
-def test_add_user_to_org():
+def test_add_user_to_org(org_member_rd):
     org = Organization.objects.create(name='test-org-01')
     user = User.objects.create(username='test-user-01')
 
@@ -78,7 +54,7 @@ def test_add_user_to_org():
 
 
 @pytest.mark.django_db
-def test_add_user_to_team():
+def test_add_user_to_team(member_rd):
     org = Organization.objects.create(name='test-org-02')
     team = Team.objects.create(name='test-team-02', organization=org)
     user = User.objects.create(username='test-user-02')
@@ -117,11 +93,11 @@ def test_remove_user_from_org(org_member_rd):
 
 
 @pytest.mark.django_db
-def test_remove_user_from_team(team_member_rd):
+def test_remove_user_from_team(member_rd):
     org = Organization.objects.create(name='test-org-02')
     team = Team.objects.create(name='test-team-02', organization=org)
     user = User.objects.create(username='test-user-02')
-    team_member_rd.give_permission(user, team)
+    member_rd.give_permission(user, team)
 
     authenticator_user = mock.Mock()
     authenticator_user.provider.remove_users = False
@@ -137,7 +113,7 @@ def test_remove_user_from_team(team_member_rd):
 
 @pytest.mark.django_db
 @pytest.mark.parametrize('remove_users', [True, False])
-def test_remove_users_setting_set(remove_users, org_member_rd, team_member_rd):
+def test_remove_users_setting_set(remove_users, org_member_rd, member_rd):
     org = Organization.objects.create(name='test-org')
     external_org = Organization.objects.create(name='test-ext-org')
 
@@ -147,7 +123,7 @@ def test_remove_users_setting_set(remove_users, org_member_rd, team_member_rd):
     user = User.objects.create(username='test-user')
 
     org_member_rd.give_permission(user, external_org)
-    team_member_rd.give_permission(user, external_team)
+    member_rd.give_permission(user, external_team)
 
     authenticator_user = mock.Mock()
     authenticator_user.provider.remove_users = remove_users

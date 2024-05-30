@@ -615,6 +615,7 @@ role_manager = type(RoleDefinition.objects.managed)
 def org_admin_rd():
     """Give all permissions possible for an organization"""
     perm_list = combine_values(permissions_allowed_for_role(models.Organization))
+    RoleDefinition.objects.managed.clear()
     return RoleDefinition.objects.create_from_permissions(
         permissions=perm_list,
         name=role_manager.org_admin.role_name,
@@ -625,6 +626,7 @@ def org_admin_rd():
 
 @pytest.fixture
 def org_member_rd():
+    RoleDefinition.objects.managed.clear()
     return RoleDefinition.objects.create_from_permissions(
         permissions=['view_organization', 'member_organization'],
         name=role_manager.org_member.role_name,
@@ -636,6 +638,7 @@ def org_member_rd():
 @pytest.fixture
 def member_rd():
     "Member role for a team, place in root conftest because it is needed for the team users tracked relationship"
+    RoleDefinition.objects.managed.clear()
     return RoleDefinition.objects.create_from_permissions(
         permissions=[permission_registry.team_permission, f'view_{permission_registry.team_model._meta.model_name}'],
         name=role_manager.team_member.role_name,
@@ -647,6 +650,7 @@ def member_rd():
 @pytest.fixture
 def admin_rd():
     "Member role for a team, place in root conftest because it is needed for the team users tracked relationship"
+    RoleDefinition.objects.managed.clear()
     return RoleDefinition.objects.create_from_permissions(
         permissions=[
             permission_registry.team_permission,
