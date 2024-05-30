@@ -51,7 +51,7 @@ def test_oidc_auth_failed(authenticate, unauthenticated_api_client, radius_authe
 
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
 @mock.patch("ansible_base.authentication.authenticator_plugins.radius.RADIUSBackend")
-def test_authenticator_plugin(backend_cls, unauthenticated_api_client, radius_configuration, radius_authenticator, user):
+def test_authenticator_plugin(backend_cls, unauthenticated_api_client, radius_configuration, radius_authenticator, randname):
     """
     Test RADIUS authenticator logic.
 
@@ -59,16 +59,21 @@ def test_authenticator_plugin(backend_cls, unauthenticated_api_client, radius_co
     Test that login credentials are passed to the backend's authenticate() method call.
     Test that associated AuthenticatorUser record is created.
     """
+
+    # Login with random info so the local authenticator won't auth the user if its configured
+    random_password = randname("radius_password")
+    random_username = randname("user")
+
     backend = backend_cls.return_value
     backend.authenticate.return_value = RADIUSUser(
-        username="user",
+        username=random_username,
         groups=["users", "managers"],
         is_staff=False,
         is_superuser=False,
     )
 
     client = unauthenticated_api_client
-    client.login(username="user", password="password")
+    client.login(username=random_username, password=random_password)
 
     url = reverse(authenticated_test_page)
     response = client.get(url)
@@ -80,9 +85,9 @@ def test_authenticator_plugin(backend_cls, unauthenticated_api_client, radius_co
         "RADIUS_PORT": radius_configuration["PORT"],
         "RADIUS_SECRET": radius_configuration["SECRET"],
     }
-    backend.authenticate.called_once_with(username="user", password="password")
-    assert AuthenticatorUser.objects.filter(uid="user", provider=radius_authenticator).exists()
-    assert User.objects.filter(username="user").exists()
+    backend.authenticate.called_once_with(username=random_username, password=random_password)
+    assert AuthenticatorUser.objects.filter(uid=random_username, provider=radius_authenticator).exists()
+    assert User.objects.filter(username=random_username).exists()
 
 
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
