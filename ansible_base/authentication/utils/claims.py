@@ -352,7 +352,6 @@ def create_organizations_and_teams(results) -> None:
 #  this class and transforming it into a reconciliation use case class. This implies either
 #  removal or update of a pluggable interface.
 class ReconcileUser:
-
     @classmethod
     def _remove_role_from_user(cls, user: AbstractUser, rd: Optional[RoleDefinition]):
         if rd is None:
@@ -380,7 +379,7 @@ class ReconcileUser:
             if org is None:
                 logger.info("Skipping organization '%s', because the organization does not exist", org_name)
                 continue
-            if is_member and org_member_rd:
+            if is_member:
                 logger.info("Adding user '%s' to organization '%s'", user.username, org_name)
                 RoleDefinition.objects.managed.org_member.give_permission(user, org)
             elif not remove_users:
@@ -402,7 +401,7 @@ class ReconcileUser:
                 if team is None:
                     logger.info("Skipping team '%s' in organization '%s', because the team does not exist", team_name, org_name)
                     continue
-                if is_member and team_member_rd:
+                if is_member:
                     logger.info("Adding user '%s' to team '%s'", user.username, team_name)
                     RoleDefinition.objects.managed.team_member.give_permission(user, team)
                 elif not remove_users:
