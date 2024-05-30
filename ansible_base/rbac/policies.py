@@ -1,6 +1,7 @@
 from django.apps import apps
 from django.conf import settings
 from django.db.models.query import QuerySet
+from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import PermissionDenied
 
 from ansible_base.lib.utils.settings import get_setting
@@ -74,4 +75,4 @@ def check_content_obj_permission(request_user, obj) -> None:
         cls = type(obj)
         for codename in permissions_allowed_for_role(cls)[cls]:
             if not request_user.has_obj_perm(obj, codename):
-                raise PermissionDenied({'detail': f'You do not have {codename} permission the object'})
+                raise PermissionDenied({'detail': _('You do not have {codename} permission the object').format(codename=codename)})
