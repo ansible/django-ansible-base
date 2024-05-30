@@ -89,7 +89,7 @@ class TestProhibitedRoleDefinitions:
         )
         with pytest.raises(ValidationError) as exc:
             RoleDefinition.objects.create_from_permissions(
-                name=ReconcileUser.TEAM_MEMBER_ROLE_NAME,
+                name=type(RoleDefinition.objects.managed).team_member.role_name,
                 permissions=['member_team', 'view_team'],
                 content_type=permission_registry.content_type_model.objects.get_for_model(permission_registry.team_model),
             )
