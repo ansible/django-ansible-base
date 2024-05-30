@@ -44,7 +44,38 @@ class DABPermission(models.Model):
         return f"<{self.__class__.__name__}: {self.codename}>"
 
 
+class ManagedRoleFromSetting:
+    def __init__(self, role_name):
+        super().__init__()
+        self.role_name = role_name
+
+    def __get__(self, obj, objtype=None):
+        if obj is None:
+            return self
+        if self.role_name not in obj._cache:
+            obj._cache[self.role_name] = RoleDefinition.objects.filter(name=self.role_name).first()
+        return obj._cache[self.role_name]
+
+
+class ManagedRoleManager:
+    def __init__(self):
+        self._cache = {}
+
+    def clear(self) -> None:
+        "Clear any managed roles already loaded into the cache"
+        self._cache = {}
+
+    org_admin = ManagedRoleFromSetting('Organization Admin')
+    org_member = ManagedRoleFromSetting('Organization Member')
+    team_admin = ManagedRoleFromSetting('Team Admin')
+    team_member = ManagedRoleFromSetting('Team Member')
+
+
 class RoleDefinitionManager(models.Manager):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.managed = ManagedRoleManager()
+
     def give_creator_permissions(self, user, obj) -> Optional['RoleUserAssignment']:
         # If the user is a superuser, no need to bother giving the creator permissions
         for super_flag in settings.ANSIBLE_BASE_BYPASS_SUPERUSER_FLAGS:
