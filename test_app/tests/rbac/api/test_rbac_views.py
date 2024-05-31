@@ -250,3 +250,12 @@ def test_role_metadata_view(user_api_client):
     assert response.status_code == 200
     allowed_permissions = response.data['allowed_permissions']
     assert 'aap.change_collectionimport' in allowed_permissions['aap.namespace']
+
+
+@override_settings(ANSIBLE_BASE_ALLOW_CUSTOM_ROLES=False)
+def test_role_definitions_post_disabled_by_settings(admin_api_client):
+    url = reverse('roledefinition-list')
+    response = admin_api_client.options(url)
+    assert response.status_code == 200, response.data
+    print(response.data)
+    assert 'POST' not in response.data.get('actions', {})

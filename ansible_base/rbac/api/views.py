@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
-from ansible_base.rbac.api.permissions import AuthenticatedReadAdminChange
+from ansible_base.rbac.api.permissions import RoleDefinitionPermissions
 from ansible_base.rbac.api.serializers import (
     RoleDefinitionDetailSerializer,
     RoleDefinitionSerializer,
@@ -88,7 +88,7 @@ class RoleDefinitionViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
 
     queryset = RoleDefinition.objects.prefetch_related('created_by', 'modified_by', 'content_type', 'permissions')
     serializer_class = RoleDefinitionSerializer
-    permission_classes = [AuthenticatedReadAdminChange]
+    permission_classes = [RoleDefinitionPermissions]
 
     def get_serializer_class(self):
         if self.action == 'update':
