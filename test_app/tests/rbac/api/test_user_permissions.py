@@ -142,6 +142,22 @@ class TestUserDetailView:
         response = user_api_client.patch(url, data={'email': 'foo@foo.invalid'})
         assert response.status_code == 200
 
+    @pytest.mark.parametrize('is_superuser', [False, True])
+    def test_superuser_can_delete_new_user(self, admin_api_client, is_superuser):
+        alice = User.objects.create(username='alice', is_superuser=is_superuser)
+        url = reverse('user-detail', kwargs={'pk': alice.pk})
+
+        response = admin_api_client.delete(url)
+        assert response.status_code == 204
+
+    def test_user_can_not_delete_themselves(self, user, user_api_client, admin_user, admin_api_client):
+        data = {user_api_client: reverse('user-detail', kwargs={'pk': user.pk}), admin_api_client: reverse('user-detail', kwargs={'pk': admin_user.pk})}
+
+        for api_client, url in data.items():
+            response = api_client.delete(url)
+            assert response.status_code == 403
+            assert response.data['detail'] == "You can't delete yourself", user.username
+
 
 @pytest.mark.django_db
 class TestRoleBasedAssignment:

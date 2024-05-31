@@ -246,14 +246,23 @@ class AssociationResourceRouter(routers.SimpleRouter):
     def associated_viewset_cls_factory(self, viewset: Type[ViewSetMixin]) -> Type[ViewSetMixin]:
         """Given viewset (as a class) return a subclass containing all its actions except for list"""
 
+        custom_methods = chain.from_iterable(action.mapping.values() for action in viewset.get_extra_actions())
+
+        exclude_list = ('retrieve', 'update', 'partial_update', 'destroy') + tuple(custom_methods)
+
         class AssociatedViewSetType(type(viewset)):
             """Metaclass that turns off viewset methods other than list"""
 
-            pass
+            method_excludes = exclude_list
 
-        custom_methods = chain.from_iterable(action.mapping.values() for action in viewset.get_extra_actions())
+            def __dir__(self):
+                ret = list(super().__dir__())
+                for method in self.method_excludes:
+                    if method in ret:
+                        ret.remove(method)
+                return ret
 
-        for method in ('retrieve', 'update', 'partial_update', 'destroy') + tuple(custom_methods):
+        for method in exclude_list:
             setattr(AssociatedViewSetType, method, attribute_raiser)
 
         class AssociatedViewSet(viewset, AssociationViewSetMethodsMixin, metaclass=AssociatedViewSetType):

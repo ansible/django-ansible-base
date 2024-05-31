@@ -10,7 +10,7 @@ from pyrad.packet import AccessAccept, AccessReject, AccessRequest
 
 from ansible_base.authentication.authenticator_plugins._radiusauth import RADIUSBackend as BaseRADIUSBackend
 from ansible_base.authentication.authenticator_plugins._radiusauth import RADIUSRealmBackend
-from ansible_base.authentication.authenticator_plugins.radius import RADIUSBackend, RADIUSUser
+from ansible_base.authentication.authenticator_plugins.radius import AuthenticatorPlugin, RADIUSBackend, RADIUSUser
 from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.authentication.session import SessionAuthentication
 from test_app.models import User
@@ -273,3 +273,11 @@ def test_radius_backend_access_timeout(pyrad_client_cls):
 
     client.CreateAuthPacket.assert_called_with(code=AccessRequest, User_Name="user")
     client.SendPacket.assert_called_once_with(auth_packet)
+
+
+def test_radius_authenticate_returns_none_if_no_username_or_password_is_set():
+    radius_plugin = AuthenticatorPlugin()
+    requeest_factory = RequestFactory()
+    get_request = requeest_factory.get('/api')
+    assert radius_plugin.authenticate(get_request, username=None) is None
+    assert radius_plugin.authenticate(get_request, password=None) is None

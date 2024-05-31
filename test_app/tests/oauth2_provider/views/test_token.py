@@ -406,3 +406,22 @@ def test_oauth2_refresh_token_expiration_is_respected(oauth2_application, oauth2
     assert OAuth2RefreshToken.objects.filter(token=refresh_token).exists()
     assert OAuth2AccessToken.objects.count() == 1
     assert OAuth2RefreshToken.objects.count() == 1
+
+
+def test_oauth2_tokens_list_for_user(
+    oauth2_user_pat,
+    oauth2_user_pat_1,
+    oauth2_user_application_token,
+    oauth2_user_application_token_1,
+    oauth2_user_application_token_2,
+    oauth2_user_application_token_3,
+    user,
+    admin_api_client,
+):
+    """
+    Tests that we can list a user's tokens via user endpoint.
+    """
+    url = reverse('user-tokens-list', kwargs={"pk": user.pk})
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    assert len(response.data['results']) == 6

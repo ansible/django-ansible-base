@@ -166,6 +166,7 @@ if 'ansible_base.rbac' in INSTALLED_APPS:
     # For assignments
     ANSIBLE_BASE_ALLOW_TEAM_PARENTS = True
     ANSIBLE_BASE_ALLOW_TEAM_ORG_PERMS = True
+    ANSIBLE_BASE_ALLOW_TEAM_ORG_MEMBER = False
     ANSIBLE_BASE_ALLOW_TEAM_ORG_ADMIN = True
     # For role definitions
     ANSIBLE_BASE_ALLOW_CUSTOM_ROLES = True
@@ -174,6 +175,12 @@ if 'ansible_base.rbac' in INSTALLED_APPS:
     ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES = False
     ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES = False
     ANSIBLE_BASE_ALLOW_SINGLETON_ROLES_API = True
+
+    # Pass ignore_conflicts=True for bulk_create calls for role evaluations
+    # this should be fine to resolve cross-process conflicts as long as
+    # directionality is the same - adding or removing permissions
+    # A value of False would result in more errors but be more conservative
+    ANSIBLE_BASE_EVALUATIONS_IGNORE_CONFLICTS = True
 
     # User flags that can grant permission before consulting roles
     ANSIBLE_BASE_BYPASS_SUPERUSER_FLAGS = ['is_superuser']

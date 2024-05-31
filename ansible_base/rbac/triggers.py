@@ -12,7 +12,7 @@ from ansible_base.rbac.caching import compute_object_role_permissions, compute_t
 from ansible_base.rbac.migrations._managed_definitions import setup_managed_role_definitions
 from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation, get_evaluation_model
 from ansible_base.rbac.permission_registry import permission_registry
-from ansible_base.rbac.validators import validate_assignment_enabled
+from ansible_base.rbac.validators import validate_team_assignment_enabled
 
 logger = logging.getLogger('ansible_base.rbac.triggers')
 
@@ -47,12 +47,15 @@ def needed_updates_on_assignment(role_definition, actor, object_role, created=Fa
         to_update.add(object_role)
 
     has_team_perm = role_definition.permissions.filter(codename=permission_registry.team_permission).exists()
-    changes_team_owners = False
 
-    # Raise exception if settings prohibits this assignment
-    validate_assignment_enabled(actor, object_role.content_type, has_team_perm=has_team_perm)
+    if actor._meta.model_name == permission_registry.team_model._meta.model_name:
+        has_org_member = role_definition.permissions.filter(codename='member_organization').exists()
+
+        # Raise exception if settings prohibits this assignment
+        validate_team_assignment_enabled(object_role.content_type, has_team_perm=has_team_perm, has_org_member=has_org_member)
 
     # If permissions for team are changed. That tends to affect a lot.
+    changes_team_owners = False
     if actor._meta.model_name != 'user':
         to_update.update(team_ancestor_roles(actor))
         if not giving:
@@ -317,8 +320,12 @@ class TrackedRelationship:
             return
 
         if actor._meta.model_name == permission_registry.team_model._meta.model_name:
+            if self.team_relationship is None:
+                return
             manager = getattr(content_object, self.team_relationship)
         elif actor._meta.model_name == permission_registry.user_model._meta.model_name:
+            if self.user_relationship is None:
+                return
             manager = getattr(content_object, self.user_relationship)
 
         if giving:
