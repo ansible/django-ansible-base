@@ -42,8 +42,8 @@ def get_fields_from_path(model, path, treat_jsonfield_as_text=True):
         else:
             new_parts.append(name)
 
-        if name in getattr(model, 'PASSWORD_FIELDS', ()) or name in getattr(model, 'encrypted_fields', ()):
-            raise PermissionDenied(_('Filtering on field %(name)s is not allowed.') % {'name': name})
+        if name in getattr(model, 'PASSWORD_FIELDS', ()):
+            raise PermissionDenied(_('Filtering on password fields is not allowed.'))
         elif name == 'pk':
             field = model._meta.pk
         else:
