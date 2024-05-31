@@ -9,6 +9,7 @@ from ansible_base.authentication.models import AuthenticatorMap
 from ansible_base.authentication.utils.trigger_definition import TRIGGER_DEFINITION
 from ansible_base.lib.serializers.common import NamedCommonModelSerializer
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
+from ansible_base.lib.utils.string import is_empty
 
 logger = logging.getLogger('ansible_base.authentication.serializers.authenticator_map')
 
@@ -27,13 +28,13 @@ class AuthenticatorMapSerializer(NamedCommonModelSerializer):
         org = data.get('organization', None)
         role = data.get('role', None)
 
-        if map_type == 'team' and not team:
+        if map_type == 'team' and is_empty(team):
             errors["team"] = _("You must specify a team with the selected map type")
-        if map_type in ['team', 'organization'] and not org:
+        if map_type in ['team', 'organization'] and is_empty(org):
             errors["organization"] = _("You must specify an organization with the selected map type")
-        if map_type in ['team', 'organization', 'role'] and not role:
+        if map_type in ['team', 'organization', 'role'] and is_empty(role):
             errors["role"] = _("You must specify a role with the selected map type")
-        if map_type in ['allow', 'is_superuser'] and role:
+        if map_type in ['allow', 'is_superuser'] and not is_empty(role):
             errors["role"] = _("You cannot specify role with the selected map type")
 
         if role:
@@ -69,18 +70,18 @@ class AuthenticatorMapSerializer(NamedCommonModelSerializer):
                 is_team_role = issubclass(model_class, get_team_model())
 
             # role type and map type must correspond
-            if map_type == 'organization' and (is_system_role or is_team_role):
+            if map_type == 'organization' and not is_org_role:
                 errors['role'] = _("For an organization map type you must specify an organization based role")
 
-            if map_type == 'team' and (is_system_role or is_org_role):
+            if map_type == 'team' and not is_team_role:
                 errors['role'] = _("For a team map type you must specify a team based role")
 
             # org/team role needs organization field
-            if (is_org_role or is_team_role) and (not org or org == ''):
+            if (is_org_role or is_team_role) and is_empty(org):
                 errors["organization"] = _("You must specify an organization with the selected role")
 
             # team role needs team field
-            if is_team_role and (not team or team == ''):
+            if is_team_role and is_empty(team):
                 errors["team"] = _("You must specify a team with the selected role")
 
         except ObjectDoesNotExist:

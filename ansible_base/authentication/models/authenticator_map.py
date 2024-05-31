@@ -27,13 +27,13 @@ class AuthenticatorMap(NamedCommonModel):
         Authenticator,
         null=False,
         on_delete=models.CASCADE,
-        help_text=(_("The authenticator this mapping belongs to")),
+        help_text=_("The authenticator this mapping belongs to"),
         related_name="authenticator_maps",
     )
     revoke = models.BooleanField(
         null=False,
         default=False,
-        help_text=(_("If a user does not meet this rule should we revoke the permission")),
+        help_text=_("If a user does not meet this rule should we revoke the permission"),
     )
 
     map_type = models.CharField(
@@ -47,7 +47,7 @@ class AuthenticatorMap(NamedCommonModel):
             ('organization', 'organization'),
             ('team', 'team'),
         ],
-        help_text=(_('What does the map work on, a team, organization, a user flag or is this an allow rule')),
+        help_text=_('What will the map grant the user? System access (allow) a team or organization membership, the superuser flag or a role in the system'),
     )
 
     role = models.CharField(
@@ -55,7 +55,7 @@ class AuthenticatorMap(NamedCommonModel):
         null=True,
         default=None,
         blank=True,
-        help_text=(_("The role this map will grant the authenticating user to the targeted object")),
+        help_text=_("The role this map will grant the authenticating user to the targeted object"),
     )
 
     team = models.CharField(
@@ -63,7 +63,7 @@ class AuthenticatorMap(NamedCommonModel):
         null=True,
         default=None,
         blank=True,
-        help_text=(_('A team name this rule works on')),
+        help_text=_('A team name this rule works on'),
     )
     organization = models.CharField(
         max_length=512,
@@ -76,7 +76,7 @@ class AuthenticatorMap(NamedCommonModel):
         null=False,
         default=dict,
         blank=True,
-        help_text=(_("Trigger information for this rule")),
+        help_text=_("Trigger information for this rule"),
     )
     order = models.PositiveIntegerField(
         null=False,
