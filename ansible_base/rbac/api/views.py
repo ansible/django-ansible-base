@@ -119,9 +119,15 @@ class BaseAssignmentViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
 
     def get_queryset(self):
         model = self.serializer_class.Meta.model
+        return model.prefetch_related(*self.prefetch_related, *assignment_prefetch_base)
+
+    def filter_queryset(self, qs):
+        model = self.serializer_class.Meta.model
         if has_super_permission(self.request.user, 'view'):
-            return model.objects.all()
-        return model.visible_items(self.request.user).prefetch_related(*self.prefetch_related, *assignment_prefetch_base)
+            new_qs = qs
+        else:
+            new_qs = model.visible_items(self.request.user, qs)
+        return super().filter_queryset(new_qs)
 
     def perform_create(self, serializer):
         return super().perform_create(serializer)
