@@ -248,6 +248,21 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAML
     def add_related_fields(self, request, authenticator):
         return {"metadata": reverse('authenticator-metadata', kwargs={'pk': authenticator.id})}
 
+    def extra_data(self, user, backend, response, *args, **kwargs):
+        attrs = response["attributes"] if "attributes" in response else {}
+        for perm in ["is_superuser", "is_system_auditor"]:
+            if perm in attrs:
+                kwargs["social"].extra_data[perm] = attrs[perm]
+
+        # Move group spec up a level if present
+        if "Group" in attrs:
+            response["Group"] = attrs["Group"]
+        data = super().extra_data(user, backend, response, *args, **kwargs)
+        return data
+
+    def get_user_groups(self, extra_groups=[]):
+        return extra_groups
+
 
 class SAMLMetadataView(View):
     def get(self, request, pk=None, format=None):
