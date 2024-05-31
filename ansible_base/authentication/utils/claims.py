@@ -353,13 +353,11 @@ def create_organizations_and_teams(results) -> None:
 #  removal or update of a pluggable interface.
 class ReconcileUser:
 
-    TEAM_MEMBER_ROLE_NAME = "Team Member"
-    TEAM_ADMIN_ROLE_NAME = "Team Admin"
-    ORGANIZATION_MEMBER_ROLE_NAME = "Organization Member"
-    ORGANIZATION_ADMIN_ROLE_NAME = "Organization Admin"
-
     @classmethod
-    def _remove_role_from_user(cls, user: AbstractUser, rd: RoleDefinition):
+    def _remove_role_from_user(cls, user: AbstractUser, rd: Optional[RoleDefinition]):
+        if rd is None:
+            # If there is no role definition created, then nothing to do
+            return
         for role in user.has_roles.filter(role_definition=rd):
             rd.remove_permission(user, role.content_object)
 
@@ -368,13 +366,11 @@ class ReconcileUser:
         logger.info("Reconciling user claims")
 
         claims = getattr(user, 'claims', authenticator_user.claims)
-        org_member_rd = RoleDefinition.objects.get(name=cls.ORGANIZATION_MEMBER_ROLE_NAME)
-        team_member_rd = RoleDefinition.objects.get(name=cls.TEAM_MEMBER_ROLE_NAME)
 
         remove_users = authenticator_user.provider.remove_users
         if remove_users:
-            cls._remove_role_from_user(user, org_member_rd)
-            cls._remove_role_from_user(user, team_member_rd)
+            cls._remove_role_from_user(user, RoleDefinition.objects.managed.org_member)
+            cls._remove_role_from_user(user, RoleDefinition.objects.managed.team_member)
 
         org_names = claims['organization_membership'].keys() | claims['team_membership'].keys()
         orgs_by_name = {org.name: org for org in Organization.objects.filter(name__in=org_names)}
@@ -386,10 +382,10 @@ class ReconcileUser:
                 continue
             if is_member:
                 logger.info("Adding user '%s' to organization '%s'", user.username, org_name)
-                org_member_rd.give_permission(user, org)
+                RoleDefinition.objects.managed.org_member.give_permission(user, org)
             elif not remove_users:
                 logger.info("Removing '%s' from organization '%s'", user.username, org_name)
-                org_member_rd.remove_permission(user, org)
+                RoleDefinition.objects.managed.org_member.remove_permission(user, org)
 
         for org_name, team_info in claims['team_membership'].items():
             org = orgs_by_name.get(org_name)
@@ -408,7 +404,7 @@ class ReconcileUser:
                     continue
                 if is_member:
                     logger.info("Adding user '%s' to team '%s'", user.username, team_name)
-                    team_member_rd.give_permission(user, team)
+                    RoleDefinition.objects.managed.team_member.give_permission(user, team)
                 elif not remove_users:
                     logger.info("Removing user '%s' from team '%s'", user.username, team_name)
-                    team_member_rd.remove_permission(user, team)
+                    RoleDefinition.objects.managed.team_member.remove_permission(user, team)
