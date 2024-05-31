@@ -119,7 +119,7 @@ class BaseAssignmentViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
 
     def get_queryset(self):
         model = self.serializer_class.Meta.model
-        return model.prefetch_related(*self.prefetch_related, *assignment_prefetch_base)
+        return model.objects.prefetch_related(*self.prefetch_related, *assignment_prefetch_base)
 
     def filter_queryset(self, qs):
         model = self.serializer_class.Meta.model
