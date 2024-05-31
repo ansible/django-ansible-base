@@ -16,7 +16,7 @@ urllib3.disable_warnings()
 logger = logging.getLogger('ansible_base.resources_api.rest_client')
 
 
-def get_resource_server_client(user_id, service_path, **kwargs):
+def get_resource_server_client(service_path, **kwargs):
     config = get_resource_server_config()
 
     return ResourceAPIClient(
@@ -81,7 +81,14 @@ class ResourceAPIClient:
     def requests_auth_kwargs(self):
         return {"headers": {self.header_name: self.jwt}}
 
-    def _make_request(self, method: str, path: str, data: Optional[dict] = None, params: Optional[dict] = None) -> requests.Response:
+    def _make_request(
+        self,
+        method: str,
+        path: str,
+        data: Optional[dict] = None,
+        params: Optional[dict] = None,
+        stream: bool = False,
+    ) -> requests.Response:
         url = self.base_url + path.lstrip("/")
         logger.info(f"Making {method} request to {url}.")
 
@@ -91,6 +98,8 @@ class ResourceAPIClient:
             kwargs["json"] = data
         if params:
             kwargs["params"] = params
+        if stream:
+            kwargs["stream"] = stream
 
         resp = requests.request(**kwargs)
         if self.raise_if_bad_request:
@@ -139,3 +148,6 @@ class ResourceAPIClient:
 
     def list_resource_types(self, filters: Optional[dict] = None):
         return self._make_request("get", "resource-types/", params=filters)
+
+    def get_resource_type_manifest(self, name):
+        return self._make_request("get", f"resource-types/{name}/manifest/", stream=True)

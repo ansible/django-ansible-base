@@ -1,0 +1,12 @@
+{
+  "object_id": "1",
+  "name": "Serious Company",
+  "ansible_id": "3e3cc6a4-72fa-43ec-9e17-76ae5a3846ca",
+  "service_id": "57592fbc-7ecb-405f-9f5f-ebad20932d38",
+  "resource_type": "shared.organization",
+  "has_serializer": true,
+  "resource_data": {
+    "name": "Serious Company"
+  },
+  "url": "/api/server/v1/service-index/resources/3e3cc6a4-72fa-43ec-9e17-76ae5a3846ca/"
+}
