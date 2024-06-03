@@ -1,5 +1,5 @@
 from functools import partial
-from unittest.mock import MagicMock
+from unittest import mock
 
 import pytest
 from crum import impersonate
@@ -41,7 +41,7 @@ def test_get_all_field_names_reverse_accessors(user):
 
 
 def test_get_type_for_model():
-    dummy_model = MagicMock()
+    dummy_model = mock.MagicMock()
     dummy_model._meta.concrete_model._meta.object_name = 'SnakeCaseString'
 
     assert models.get_type_for_model(dummy_model) == 'snake_case_string'
@@ -356,3 +356,12 @@ def test_is_system_user_no_system_user_setting(username, system_user, random_use
 
     with override_settings(SYSTEM_USERNAME=None):
         assert not models.is_system_user(user)
+
+
+@pytest.mark.django_db
+def test_get_system_user_create_raises_exception():
+    from ansible_base.resource_registry.models import ResourceType
+
+    with override_settings(SYSTEM_USERNAME='not_system'):
+        with mock.patch('ansible_base.lib.utils.models.create_system_user', side_effect=ResourceType.DoesNotExist("Failing on purpose")):
+            assert models.get_system_user() is None

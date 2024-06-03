@@ -13,6 +13,7 @@ from inflection import underscore
 from ansible_base.lib.utils.create_system_user import create_system_user, get_system_username
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.lib.utils.string import make_json_safe
+from ansible_base.resource_registry.models import ResourceType
 
 logger = logging.getLogger('ansible_base.lib.utils.models')
 
@@ -101,7 +102,12 @@ def get_system_user() -> Optional[AbstractUser]:
                 )
             )
         )
-        system_user = create_system_user(user_model=get_user_model())
+        try:
+            # There are issues in the tests where, during teardown the system user can not be created
+            # In this case we will catch whatever exception we are given and just return None
+            system_user = create_system_user(user_model=get_user_model())
+        except ResourceType.DoesNotExist:
+            system_user = None
     return system_user
 
 
