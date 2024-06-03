@@ -181,7 +181,13 @@ if 'ansible_base.rbac' in INSTALLED_APPS:
     ANSIBLE_BASE_BYPASS_SUPERUSER_FLAGS = ['is_superuser']
     ANSIBLE_BASE_BYPASS_ACTION_FLAGS = {}
 
+    # Save RoleEvaluation entries for child permissions on parent models
+    # ex: organization roles giving view_inventory permission will save
+    # entries mapping that permission to the assignment's organization
     ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS = False
+
+    # API clients can assign users and teams roles for shared resources
+    ANSIBLE_BASE_DIRECT_SHARED_RESOURCE_MANAGEMENT_ENABLED = True
 
     try:
         MANAGE_ORGANIZATION_AUTH
