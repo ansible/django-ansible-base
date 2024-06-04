@@ -1,16 +1,20 @@
 import importlib
 import logging
 import re
-from typing import Optional
+from typing import Optional, Iterator, Union, Tuple
 
 from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractUser
 from django.utils.timezone import now
+from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import DateTimeField
 
 from ansible_base.authentication.models import Authenticator, AuthenticatorMap, AuthenticatorUser
+from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
+from ansible_base.lib.utils.string import is_empty
 from ansible_base.rbac.models import RoleDefinition
 
 from .trigger_definition import TRIGGER_DEFINITION
@@ -29,6 +33,8 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
     # Assume we are not going to change our flags
     is_superuser = None
     is_system_auditor = None
+
+    rbac_role_mapping = {'system': {'roles': {}}, 'organizations': {'roles': {}}}
     # Assume we start with no mappings
     org_team_mapping = {}
     # Assume we are not members of any orgs (direct members)
@@ -79,12 +85,17 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
             is_superuser = has_permission
         elif auth_map.map_type == 'is_system_auditor':
             is_system_auditor = has_permission
-        elif auth_map.map_type == 'team':
+        elif auth_map.map_type in ['team', 'role'] and not is_empty(auth_map.organization) and not is_empty(auth_map.team) and not is_empty(auth_map.role):
             if auth_map.organization not in org_team_mapping:
                 org_team_mapping[auth_map.organization] = {}
             org_team_mapping[auth_map.organization][auth_map.team] = has_permission
-        elif auth_map.map_type == 'organization':
+            _add_rbac_role_mapping(has_permission, rbac_role_mapping, auth_map.role, auth_map.organization, auth_map.team)
+        elif auth_map.map_type in ['organization', 'role'] and not is_empty(auth_map.organization) and not is_empty(auth_map.role):
             organization_membership[auth_map.organization] = has_permission
+            _add_rbac_role_mapping(has_permission, rbac_role_mapping, auth_map.role, auth_map.organization)
+        elif auth_map.map_type == 'role' and not is_empty(auth_map.role) and is_empty(auth_map.organization) and is_empty(auth_map.team):
+            _add_rbac_role_mapping(has_permission, rbac_role_mapping, auth_map.role)
+
         else:
             logger.error(f"Map type {auth_map.map_type} of rule {auth_map.name} does not know how to be processed")
 
@@ -95,9 +106,48 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
         "claims": {
             "team_membership": org_team_mapping,
             "organization_membership": organization_membership,
+            "rbac_roles": rbac_role_mapping,
         },
         "last_login_map_results": rule_responses,
     }
+
+
+def _add_rbac_role_mapping(has_permission, role_mapping, role, organization=None, team=None):
+    """
+    Example of RBAC roles mapping dict:
+    {
+      'system': {'roles': {'System Auditor': true}},
+      'organizations': {
+        'Organization 1': {
+            'roles': {'Organization Member': true, 'Organization Admin': false},
+            'teams': {}
+         },
+        'Organization 2': {
+            'roles': {'Organization Admin': true},
+            'teams': {
+                'Team 1': {
+                    'roles': {'Team Member': true},
+                },
+                'Team 2': {
+                    'roles': {'Team Admin': false},
+                }
+            }
+        }
+    """
+    # System role
+    if organization is None and team is None:
+        role_mapping['system']['roles'][role] = has_permission
+    else:
+        if organization not in role_mapping['organizations']:
+            role_mapping['organizations'][organization] = {'roles': {}, 'teams': {}}
+        # Organization role
+        if organization and not team:
+            role_mapping['organizations'][organization]['roles'][role] = has_permission
+        # Team role
+        elif organization and team:
+            if team not in role_mapping['organizations'][organization]['teams']:
+                role_mapping['organizations'][organization]['teams'][team] = {'roles': {}}
+            role_mapping['organizations'][organization]['teams'][team]['roles'][role] = has_permission
 
 
 def process_groups(trigger_condition: dict, groups: list, authenticator_id: int) -> Optional[bool]:
@@ -320,6 +370,7 @@ def create_organizations_and_teams(results) -> None:
                 org_list.add(org_name)
                 team_list.add((org_name, team_name))
                 if org_name not in membership_map:
+                    # TODO: this might be changed
                     # team membership doesn't imply org membership, right?
                     membership_map[org_name] = {'id': None, 'member': False, 'teams': {}}
                 membership_map[org_name]['teams'][team_name] = True
@@ -365,45 +416,127 @@ class ReconcileUser:
         logger.info("Reconciling user claims")
 
         claims = getattr(user, 'claims', authenticator_user.claims)
+        cls(claims, user, authenticator_user).manage_permissions()
 
-        remove_users = authenticator_user.provider.remove_users
-        if remove_users:
-            cls._remove_role_from_user(user, RoleDefinition.objects.managed.org_member)
-            cls._remove_role_from_user(user, RoleDefinition.objects.managed.team_member)
+    def __init__(self, claims, user, authenticator_user):
+        self.authenticator_user = authenticator_user
+        self.claims = claims
+        self.rebuild_user_permissions = self.authenticator_user.provider.remove_users
+        self.role_definitions = {}
+        self.user = user
 
-        org_names = claims['organization_membership'].keys() | claims['team_membership'].keys()
+    def manage_permissions(self) -> None:
+        # Remove previous permissions
+        if self.rebuild_user_permissions:
+            self._remove_roles_from_user(self.user)
+
+        # System roles
+        for role_name, has_permission in self.claims['rbac_roles'].get('system', {}).get('roles', {}).items():
+            self._manage_system_permission(role_name, has_permission)
+
+        # Organization roles
+        for org, org_teams_dict in self._manage_organization_permissions():
+            # Team roles
+            self._manage_team_permissions(org, org_teams_dict)
+
+    def _remove_roles_from_user(self, user: AbstractUser):
+        # TODO: Finish in next commit
+        pass
+
+    def _manage_system_permission(self, role_name: str, has_permission: bool) -> None:
+        if self._get_role_definition(role_name):
+            self._give_or_remove_permission(self.role_definitions[role_name], has_permission)
+
+    def _manage_organization_permissions(self) -> Iterator[Tuple[AbstractOrganization, dict]]:
+        orgs_by_name = self._get_orgs_by_name(self.claims['rbac_roles']['organizations'].keys())
+
+        for org_name, org_details in self.claims['rbac_roles'].get('organizations', {}).items():
+            if (org := orgs_by_name.get(org_name)) is None:
+                logger.info(_("Skipping organization '{organization}', because the organization does not exist").format(organization=org_name))
+                continue
+
+            for role_name, has_permission in org_details['roles'].items():
+                if self._get_role_definition(role_name):
+                    self._give_or_remove_permission(self.role_definitions[role_name], has_permission, organization=org)
+
+            yield org, org_details['teams']
+
+    def _manage_team_permissions(self, org: AbstractOrganization, teams_dict: dict[str, dict]) -> None:
+        teams_by_name = self._get_teams_by_name(org.id, teams_dict.keys())
+
+        for team_name, team_details in teams_dict.items():
+            if (team := teams_by_name.get(team_name)) is None:
+                logger.info(
+                    _("Skipping team '{team}' in organization '{organization}', because the team does not exist").format(team=team_name, organization=org.name)
+                )
+                continue
+
+            for role_name, has_permission in team_details['roles'].items():
+                if self._get_role_definition(role_name):
+                    self._give_or_remove_permission(self.role_definitions[role_name], has_permission, organization=org, team=team)
+
+    def _get_role_definition(self, role_name: str) -> Optional[RoleDefinition]:
+        try:
+            if self.role_definitions.get(role_name) is None:
+                self.role_definitions[role_name] = RoleDefinition.objects.get(name=role_name)
+        except ObjectDoesNotExist:
+            logger.warning(_("Skipping role '{role_name}', because the role does not exist").format(role_name=role_name))
+            self.role_definitions[role_name] = False  # skips multiple db queries
+
+        return self.role_definitions.get(role_name)
+
+    @staticmethod
+    def _get_orgs_by_name(org_names) -> dict[str, AbstractOrganization]:
         orgs_by_name = {org.name: org for org in Organization.objects.filter(name__in=org_names)}
+        return orgs_by_name
 
-        for org_name, is_member in claims['organization_membership'].items():
-            org = orgs_by_name.get(org_name)
-            if org is None:
-                logger.info("Skipping organization '%s', because the organization does not exist", org_name)
-                continue
-            if is_member:
-                logger.info("Adding user '%s' to organization '%s'", user.username, org_name)
-                RoleDefinition.objects.managed.org_member.give_permission(user, org)
-            elif not remove_users:
-                logger.info("Removing '%s' from organization '%s'", user.username, org_name)
-                RoleDefinition.objects.managed.org_member.remove_permission(user, org)
+    @staticmethod
+    def _get_teams_by_name(org_id, team_names) -> dict[str, AbstractTeam]:
+        # FIXME(cutwater): Load all teams in all organizations at once.
+        #       This will require raw query to filter by tuples of (org id, team name).
+        teams_by_name = {team.name: team for team in Team.objects.filter(organization__pk=org_id, name__in=team_names)}
+        return teams_by_name
 
-        for org_name, team_info in claims['team_membership'].items():
-            org = orgs_by_name.get(org_name)
-            if org is None:
-                logger.info("Skipping all teams in organization '%s', because the organization does not exist", org_name)
-                continue
+    def _give_or_remove_permission(
+        self, role_definition: RoleDefinition, has_permission: bool, organization: Optional[AbstractOrganization] = None, team: Optional[AbstractTeam] = None
+    ):
+        obj = None
+        if organization and team:
+            obj = team
+        elif organization:
+            obj = organization
 
-            # FIXME(cutwater): Load all teams in all organizations at once.
-            #       This will require raw query to filter by tuples of (org id, team name).
-            teams_by_name = {team.name: team for team in Team.objects.filter(organization=org, name__in=team_info.keys())}
+        if has_permission:
+            self._give_permission(role_definition, obj)
+        elif not self.rebuild_user_permissions:
+            self._remove_permission(role_definition, obj)
 
-            for team_name, is_member in team_info.items():
-                team = teams_by_name.get(team_name)
-                if team is None:
-                    logger.info("Skipping team '%s' in organization '%s', because the team does not exist", team_name, org_name)
-                    continue
-                if is_member:
-                    logger.info("Adding user '%s' to team '%s'", user.username, team_name)
-                    RoleDefinition.objects.managed.team_member.give_permission(user, team)
-                elif not remove_users:
-                    logger.info("Removing user '%s' from team '%s'", user.username, team_name)
-                    RoleDefinition.objects.managed.team_member.remove_permission(user, team)
+    def _give_permission(self, role_definition: RoleDefinition, obj: Union[AbstractOrganization, AbstractTeam, None] = None) -> None:
+        if obj:
+            logger.info(
+                _("Assigning role '{rd}' to user '{username}' in '{object}").format(
+                    rd=role_definition.name, username=self.user.username, object=object.__class__.__name__
+                )
+            )
+        else:
+            logger.info(_("Assigning role '{rd}' to user '{username}'").format(rd=role_definition.name, username=self.user.username))
+
+        if obj:
+            role_definition.give_permission(self.user, object)
+        else:
+            role_definition.give_global_permission(self.user)
+
+    def _remove_permission(self, role_definition: RoleDefinition, obj: Union[AbstractOrganization, AbstractTeam, None] = None) -> None:
+        if obj:
+            logger.info(
+                _("Removing role '{rd}' from user '{username}' in '{object}").format(
+                    rd=role_definition.name, username=self.user.username, object=object.__class__.__name__
+                )
+            )
+        else:
+            logger.info(_("Removing role '{rd}' to user '{username}'").format(rd=role_definition.name, username=self.user.username))
+
+        if obj:
+            role_definition.remove_permission(self.user, object)
+        else:
+            role_definition.remove_global_permission(self.user)
