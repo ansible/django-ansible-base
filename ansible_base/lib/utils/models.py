@@ -4,6 +4,7 @@ from itertools import chain
 from typing import Optional
 
 from crum import get_current_user
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractUser
 from django.db import models
@@ -13,7 +14,6 @@ from inflection import underscore
 from ansible_base.lib.utils.create_system_user import create_system_user, get_system_username
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.lib.utils.string import make_json_safe
-from ansible_base.resource_registry.models import ResourceType
 
 logger = logging.getLogger('ansible_base.lib.utils.models')
 
@@ -90,6 +90,10 @@ def is_system_user(user: Optional[models.Model]) -> bool:
     return user.username == system_username
 
 
+class NotARealException(Exception):
+    pass
+
+
 def get_system_user() -> Optional[AbstractUser]:
     system_username, setting_name = get_system_username()
     system_user = get_user_model().objects.filter(username=system_username).first()
@@ -102,12 +106,20 @@ def get_system_user() -> Optional[AbstractUser]:
                 )
             )
         )
+        caught_exception = NotARealException
+        if 'ansible_base.resource_registry' in settings.INSTALLED_APPS:
+            from ansible_base.resource_registry.models import ResourceType
+
+            caught_exception = ResourceType.DoesNotExist
+            # If resource registry is installed we hit issues here during test tear downs
+            # For an unidentified reason, during teardown, the tests are calling the post_migration signals from resource_registry
+            # These eventually call get_or_create on models which then try and call current_or_system_user which eventually leads here
+            # But the system is in a weird state here because its being torn down, so the creation of system_user fails
         try:
-            # There are issues in the tests where, during teardown the system user can not be created
-            # In this case we will catch whatever exception we are given and just return None
             system_user = create_system_user(user_model=get_user_model())
-        except ResourceType.DoesNotExist:
+        except caught_exception:
             system_user = None
+
     return system_user
 
 
