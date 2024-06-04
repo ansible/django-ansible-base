@@ -359,9 +359,28 @@ def test_is_system_user_no_system_user_setting(username, system_user, random_use
 
 
 @pytest.mark.django_db
-def test_get_system_user_create_raises_exception():
+@pytest.mark.parametrize(
+    "resource_registry_in_installed_apps",
+    [
+        True,
+        False,
+    ],
+)
+def test_get_system_user_create_raises_exception(resource_registry_in_installed_apps):
+    from django.conf import settings
+
     from ansible_base.resource_registry.models import ResourceType
+
+    rr_app_name = 'ansible_base.resource_registry'
+    if resource_registry_in_installed_apps and rr_app_name not in settings.INSTALLED_APPS:
+        settings.INSTALLED_APPS.append(rr_app_name)
+    elif not resource_registry_in_installed_apps and rr_app_name in settings.INSTALLED_APPS:
+        settings.INSTALLED_APPS.remove(rr_app_name)
 
     with override_settings(SYSTEM_USERNAME='not_system'):
         with mock.patch('ansible_base.lib.utils.models.create_system_user', side_effect=ResourceType.DoesNotExist("Failing on purpose")):
-            assert models.get_system_user() is None
+            try:
+                assert models.get_system_user() is None
+            except ResourceType.DoesNotExist:
+                if resource_registry_in_installed_apps:
+                    assert False, "We should not handled the exception since resource_registry is in the installed apps"
