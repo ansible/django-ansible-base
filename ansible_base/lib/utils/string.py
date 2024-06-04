@@ -1,3 +1,5 @@
+from typing import Optional
+
 from django.utils.encoding import smart_str
 
 
@@ -8,8 +10,6 @@ def make_json_safe(value):
     return smart_str(value)
 
 
-def is_empty(value, check_stripped=True):
-    if check_stripped:
-        return value is None or str(value).strip() == ''
-    else:
-        return value is None or str(value) == ''
+def is_empty(value: Optional[str]) -> bool:
+    """Checks if the value is an empty string (stripping whitespaces)"""
+    return value is None or str(value).strip() == ''

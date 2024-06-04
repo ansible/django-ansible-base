@@ -1,6 +1,6 @@
 import logging
 
-from django.apps import apps
+from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import ValidationError
@@ -44,11 +44,15 @@ class AuthenticatorMapSerializer(NamedCommonModelSerializer):
             raise ValidationError(errors)
         return data
 
+    @staticmethod
+    def _is_rbac_installed():
+        return 'ansible_base.rbac' in settings.INSTALLED_APPS
+
     def validate_role_data(self, map_type, role, org, team):
         errors = {}
 
         # Validation is possible only if RBAC is installed
-        if not apps.is_installed('ansible_base.rbac'):
+        if not self._is_rbac_installed():
             logger.warning(_("You specified a role without RBAC installed "))
             return errors
 
