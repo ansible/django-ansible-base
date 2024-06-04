@@ -425,3 +425,33 @@ def test_oauth2_tokens_list_for_user(
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert len(response.data['results']) == 6
+
+
+@pytest.mark.parametrize(
+    'given,error',
+    [
+        ('read write', None),
+        ('read', None),
+        ('write', None),
+        ('read write foo', 'Invalid scope: foo'),
+        ('foo', 'Invalid scope: foo'),
+        ('', None),  # default scope is 'write'
+    ],
+)
+@pytest.mark.django_db
+def test_oauth2_token_scope_validator(user_api_client, given, error):
+    """
+    Ensure that the scope validator works as expected.
+    """
+
+    url = reverse("token-list")
+
+    # Create PAT
+    data = {
+        'description': 'new PAT',
+        'scope': given,
+    }
+    response = user_api_client.post(url, data=data)
+    assert response.status_code == 400 if error else 201
+    if error:
+        assert error in str(response.data['scope'][0])

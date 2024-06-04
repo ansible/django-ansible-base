@@ -3,13 +3,13 @@ from datetime import timedelta
 from django.utils.timezone import now
 from oauth2_provider import views as oauth_views
 from oauthlib import oauth2
-from rest_framework import permissions
 from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.oauth2_provider.models import OAuth2AccessToken, OAuth2RefreshToken
 from ansible_base.oauth2_provider.serializers import OAuth2TokenSerializer
+from ansible_base.oauth2_provider.views.permissions import OAuth2TokenPermission
 
 
 class TokenView(oauth_views.TokenView, AnsibleBaseDjangoAppApiView):
@@ -54,4 +54,4 @@ class TokenView(oauth_views.TokenView, AnsibleBaseDjangoAppApiView):
 class OAuth2TokenViewSet(ModelViewSet, AnsibleBaseDjangoAppApiView):
     queryset = OAuth2AccessToken.objects.all()
     serializer_class = OAuth2TokenSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [OAuth2TokenPermission]
