@@ -1,21 +1,21 @@
 import importlib
 import logging
 import re
-from typing import Optional, Iterator, Union, Tuple
+from typing import Iterator, Optional, Tuple, Union
 
 from django.conf import settings
-from django.core.exceptions import ObjectDoesNotExist
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractUser
+from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ObjectDoesNotExist
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import DateTimeField
 
 from ansible_base.authentication.models import Authenticator, AuthenticatorMap, AuthenticatorUser
-from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam
+from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam, CommonModel
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 from ansible_base.lib.utils.string import is_empty
-from ansible_base.rbac.models import RoleDefinition
 
 from .trigger_definition import TRIGGER_DEFINITION
 
@@ -404,50 +404,44 @@ def create_organizations_and_teams(results) -> None:
 #  removal or update of a pluggable interface.
 class ReconcileUser:
     @classmethod
-    def _remove_role_from_user(cls, user: AbstractUser, rd: Optional[RoleDefinition]):
-        if rd is None:
-            # If there is no role definition created, then nothing to do
-            return
-        for role in user.has_roles.filter(role_definition=rd):
-            rd.remove_permission(user, role.content_object)
-
-    @classmethod
     def reconcile_user_claims(cls, user: AbstractUser, authenticator_user: AuthenticatorUser) -> None:
         logger.info("Reconciling user claims")
 
         claims = getattr(user, 'claims', authenticator_user.claims)
+
+        # if 'ansible_base.rbac' in settings.INSTALLED_APPS:
         cls(claims, user, authenticator_user).manage_permissions()
+        # else:
+        #     logger.info(_("Skipping user claims with RBAC roles, because RBAC app is not installed"))
 
     def __init__(self, claims, user, authenticator_user):
         self.authenticator_user = authenticator_user
         self.claims = claims
+        self.permissions_cache = RoleUserAssignmentsCache()
         self.rebuild_user_permissions = self.authenticator_user.provider.remove_users
-        self.role_definitions = {}
         self.user = user
 
     def manage_permissions(self) -> None:
-        # Remove previous permissions
-        if self.rebuild_user_permissions:
-            self._remove_roles_from_user(self.user)
+        self.permissions_cache.cache_existing(self.user.role_assignments.all())
 
         # System roles
-        for role_name, has_permission in self.claims['rbac_roles'].get('system', {}).get('roles', {}).items():
-            self._manage_system_permission(role_name, has_permission)
+        self._compute_system_permissions()
 
         # Organization roles
-        for org, org_teams_dict in self._manage_organization_permissions():
+        for org, org_teams_dict in self._compute_organization_permissions():
             # Team roles
-            self._manage_team_permissions(org, org_teams_dict)
+            self._compute_team_permissions(org, org_teams_dict)
 
-    def _remove_roles_from_user(self, user: AbstractUser):
-        # TODO: Finish in next commit
-        pass
+        self.apply_permissions()
 
-    def _manage_system_permission(self, role_name: str, has_permission: bool) -> None:
-        if self._get_role_definition(role_name):
-            self._give_or_remove_permission(self.role_definitions[role_name], has_permission)
+    def _compute_system_permissions(self) -> None:
+        for role_name, has_permission in self.claims['rbac_roles'].get('system', {}).get('roles', {}).items():
+            if has_permission:
+                self.permissions_cache.add(role_name, organization=None, team=None)
+            else:
+                self.permissions_cache.remove(role_name, organization=None, team=None)
 
-    def _manage_organization_permissions(self) -> Iterator[Tuple[AbstractOrganization, dict]]:
+    def _compute_organization_permissions(self) -> Iterator[Tuple[AbstractOrganization, dict]]:
         orgs_by_name = self._get_orgs_by_name(self.claims['rbac_roles']['organizations'].keys())
 
         for org_name, org_details in self.claims['rbac_roles'].get('organizations', {}).items():
@@ -456,12 +450,14 @@ class ReconcileUser:
                 continue
 
             for role_name, has_permission in org_details['roles'].items():
-                if self._get_role_definition(role_name):
-                    self._give_or_remove_permission(self.role_definitions[role_name], has_permission, organization=org)
+                if has_permission:
+                    self.permissions_cache.add(role_name, organization=org)
+                else:
+                    self.permissions_cache.remove(role_name, organization=org)
 
             yield org, org_details['teams']
 
-    def _manage_team_permissions(self, org: AbstractOrganization, teams_dict: dict[str, dict]) -> None:
+    def _compute_team_permissions(self, org: AbstractOrganization, teams_dict: dict[str, dict]) -> None:
         teams_by_name = self._get_teams_by_name(org.id, teams_dict.keys())
 
         for team_name, team_details in teams_dict.items():
@@ -472,18 +468,30 @@ class ReconcileUser:
                 continue
 
             for role_name, has_permission in team_details['roles'].items():
-                if self._get_role_definition(role_name):
-                    self._give_or_remove_permission(self.role_definitions[role_name], has_permission, organization=org, team=team)
+                if has_permission:
+                    self.permissions_cache.add(role_name, team=team)
+                else:
+                    self.permissions_cache.remove(role_name, team=team)
 
-    def _get_role_definition(self, role_name: str) -> Optional[RoleDefinition]:
-        try:
-            if self.role_definitions.get(role_name) is None:
-                self.role_definitions[role_name] = RoleDefinition.objects.get(name=role_name)
-        except ObjectDoesNotExist:
-            logger.warning(_("Skipping role '{role_name}', because the role does not exist").format(role_name=role_name))
-            self.role_definitions[role_name] = False  # skips multiple db queries
+    def apply_permissions(self) -> None:
+        """See RoleUserAssignmentsCache for more details."""
+        for role_name, role_permissions in self.permissions_cache.items():
+            if self.permissions_cache.rd_by_name(role_name):
 
-        return self.role_definitions.get(role_name)
+                for content_type_id, content_type_permissions in role_permissions.items():
+                    for _object_id, object_with_status in content_type_permissions.items():
+                        self._apply_permission(object_with_status, role_name)
+
+    def _apply_permission(self, object_with_status, role_name):
+        status = object_with_status['status']
+        obj = object_with_status['object']
+
+        if status == self.permissions_cache.STATUS_ADD:
+            self._give_permission(self.permissions_cache.rd_by_name(role_name), obj)
+        elif status == self.permissions_cache.STATUS_REMOVE:
+            self._remove_permission(self.permissions_cache.rd_by_name(role_name), obj)
+        elif status == self.permissions_cache.STATUS_EXISTING and self.rebuild_user_permissions:
+            self._remove_permission(self.permissions_cache.rd_by_name(role_name), obj)
 
     @staticmethod
     def _get_orgs_by_name(org_names) -> dict[str, AbstractOrganization]:
@@ -497,46 +505,139 @@ class ReconcileUser:
         teams_by_name = {team.name: team for team in Team.objects.filter(organization__pk=org_id, name__in=team_names)}
         return teams_by_name
 
-    def _give_or_remove_permission(
-        self, role_definition: RoleDefinition, has_permission: bool, organization: Optional[AbstractOrganization] = None, team: Optional[AbstractTeam] = None
-    ):
-        obj = None
-        if organization and team:
-            obj = team
-        elif organization:
-            obj = organization
-
-        if has_permission:
-            self._give_permission(role_definition, obj)
-        elif not self.rebuild_user_permissions:
-            self._remove_permission(role_definition, obj)
-
-    def _give_permission(self, role_definition: RoleDefinition, obj: Union[AbstractOrganization, AbstractTeam, None] = None) -> None:
+    def _give_permission(self, role_definition: CommonModel, obj: Union[AbstractOrganization, AbstractTeam, None] = None) -> None:
         if obj:
             logger.info(
                 _("Assigning role '{rd}' to user '{username}' in '{object}").format(
-                    rd=role_definition.name, username=self.user.username, object=object.__class__.__name__
+                    rd=role_definition.name, username=self.user.username, object=obj.__class__.__name__
                 )
             )
         else:
             logger.info(_("Assigning role '{rd}' to user '{username}'").format(rd=role_definition.name, username=self.user.username))
 
         if obj:
-            role_definition.give_permission(self.user, object)
+            role_definition.give_permission(self.user, obj)
         else:
             role_definition.give_global_permission(self.user)
 
-    def _remove_permission(self, role_definition: RoleDefinition, obj: Union[AbstractOrganization, AbstractTeam, None] = None) -> None:
+    def _remove_permission(self, role_definition: CommonModel, obj: Union[AbstractOrganization, AbstractTeam, None] = None) -> None:
         if obj:
             logger.info(
                 _("Removing role '{rd}' from user '{username}' in '{object}").format(
-                    rd=role_definition.name, username=self.user.username, object=object.__class__.__name__
+                    rd=role_definition.name, username=self.user.username, object=obj.__class__.__name__
                 )
             )
         else:
             logger.info(_("Removing role '{rd}' to user '{username}'").format(rd=role_definition.name, username=self.user.username))
 
         if obj:
-            role_definition.remove_permission(self.user, object)
+            role_definition.remove_permission(self.user, obj)
         else:
             role_definition.remove_global_permission(self.user)
+
+
+class RoleUserAssignmentsCache:
+    STATUS_NOOP = 'noop'
+    STATUS_EXISTING = 'existing'
+    STATUS_ADD = 'add'
+    STATUS_REMOVE = 'remove'
+
+    def __init__(self):
+        self.cache = {}
+        self.content_types = {
+            'organization': ContentType.objects.get_for_model(get_organization_model()),
+            'team': ContentType.objects.get_for_model(get_team_model()),
+        }
+        self.role_definitions = {}
+
+    def items(self):
+        """Structure:
+        {
+          <role_name:str>: {
+              <content_type_id:Optional[int]>: {
+                  <object_id:Optional[int]>: {
+                      {'object': Union[Organization,Team,None],
+                       'status': Union[STATUS_NOOP,STATUS_EXISTING,STATUS_ADD,STATUS_REMOVE]
+                      }
+                  }
+              }
+          }
+        """
+        return self.cache.items()
+
+    def cache_existing(self, role_assignments):
+        for role_assignment in role_assignments:
+            # Cache role definition
+            if (role_definition := self._rd_by_id(role_assignment)) is None:
+                role_definition = role_assignment.role_definition
+                self.role_definitions[role_definition.name] = role_definition
+
+            # Cache Role User Assignment
+            self._init_key(role_definition.name, content_type_id=role_assignment.content_type_id)
+            self.cache[role_definition.name][role_assignment.content_type_id][role_assignment.object_id] = {'object': None, 'status': self.STATUS_EXISTING}
+
+    def rd_by_name(self, role_name: str) -> Optional[CommonModel]:
+        """Returns RoleDefinition by its name. Caches it if requested for first time"""
+        from ansible_base.rbac.models import RoleDefinition
+
+        try:
+            if self.role_definitions.get(role_name) is None:
+                self.role_definitions[role_name] = RoleDefinition.objects.get(name=role_name)
+        except ObjectDoesNotExist:
+            logger.warning(_("Skipping role '{role_name}', because the role does not exist").format(role_name=role_name))
+            self.role_definitions[role_name] = False  # skips multiple db queries
+
+        return self.role_definitions.get(role_name)
+
+    def _rd_by_id(self, role_assignment: CommonModel) -> Optional[CommonModel]:
+        """Tries to find cached role definitions by id, saving SQL queries"""
+        for rd in self.role_definitions.values():
+            if rd.id == role_assignment.role_definition_id:
+                return rd
+        return None
+
+    def add(self, role_name: str, organization: Optional[AbstractOrganization] = None, team: Optional[AbstractTeam] = None) -> None:
+        content_type_id = self._get_content_type_id(organization, team)
+        object_id = self._get_object_id(organization, team)
+
+        self._init_key(role_name, content_type_id=content_type_id)
+
+        # If the permission haven't existed, mark it to ADD, otherwise noop
+        current_status = self.cache[role_name][content_type_id].get(object_id)
+        if current_status in [self.STATUS_EXISTING, self.STATUS_NOOP]:
+            self.cache[role_name][content_type_id][object_id] = {'object': organization or team, 'status': self.STATUS_NOOP}
+        elif current_status is None:
+            self.cache[role_name][content_type_id][object_id] = {'object': organization or team, 'status': self.STATUS_ADD}
+
+    def remove(self, role_name: str, organization: Optional[AbstractOrganization] = None, team: Optional[AbstractTeam] = None) -> None:
+        content_type_id = self._get_content_type_id(organization, team)
+        object_id = self._get_object_id(organization, team)
+
+        self._init_key(role_name, content_type_id=content_type_id)
+
+        current_status = self.cache[role_name][content_type_id].get(object_id)
+        if current_status is None or current_status == self.STATUS_NOOP:
+            self.cache[role_name][content_type_id][object_id] = {'object': organization or team, 'status': self.STATUS_NOOP}
+        elif current_status == self.STATUS_EXISTING:
+            self.cache[role_name][content_type_id][object_id] = {'object': organization or team, 'status': self.STATUS_REMOVE}
+
+    def _get_content_type_id(self, organization, team) -> Optional[int]:
+        content_type = None
+        if organization:
+            content_type = self.content_types['organization']
+        elif team:
+            content_type = self.content_types['team']
+
+        return content_type.id if content_type is not None else None
+
+    def _get_object_id(self, organization, team) -> Optional[int]:
+        object_id = None
+        if organization:
+            object_id = organization.id
+        elif team:
+            object_id = team.id
+        return object_id
+
+    def _init_key(self, role_name: str, content_type_id: Optional[int]) -> None:
+        self.cache[role_name] = self.cache.get(role_name, {})
+        self.cache[role_name][content_type_id] = self.cache[role_name].get(content_type_id, {})
