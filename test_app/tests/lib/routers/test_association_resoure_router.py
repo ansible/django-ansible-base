@@ -267,6 +267,22 @@ def test_related_custom_actions_get_scrubed(organization, method, admin_api_clie
     assert response.status_code == 404
 
 
+def test_associated_view_description(admin_api_client, organization):
+    Cow.objects.create(organization=organization)
+    url = reverse('organization-cows-list', kwargs={'pk': organization.id})
+    response = admin_api_client.options(url)
+    assert response.status_code == 200, response.data
+    assert 'GET /:id/cows/ to show cows currently in the relationship' in response.data.get('description', '')
+    assert 'POST' not in response.data.get('description', '')
+
+
+def test_associated_modifications_description(admin_api_client, organization):
+    url = reverse('organization-users-list', kwargs={'pk': organization.id})
+    response = admin_api_client.options(url)
+    assert response.status_code == 200, response.data
+    assert 'POST a list of instances to /:id/users/associate/ to add those users to the relationship' in response.data.get('description', '')
+
+
 def test_autogen_viewset_attributes():
     sublist_viewset = None
     for url, viewset, view_name in router.registry:
