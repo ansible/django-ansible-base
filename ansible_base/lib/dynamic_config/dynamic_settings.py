@@ -153,6 +153,9 @@ if 'ansible_base.rbac' in INSTALLED_APPS:
         'special': '{cls._meta.model_name}-{action}',
     }
 
+    # The settings-based specification of managed roles from DAB RBAC vendored ones
+    ANSIBLE_BASE_MANAGED_ROLE_REGISTRY = {}
+
     # Permissions a user will get when creating a new item
     ANSIBLE_BASE_CREATOR_DEFAULTS = ['add', 'change', 'delete', 'view']
     # Permissions API will check for related items, think PATCH/PUT

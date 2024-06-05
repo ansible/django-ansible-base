@@ -8,6 +8,8 @@ from django.db.models.base import ModelBase  # post_migrate may call with phony 
 from django.db.models.signals import post_delete, post_migrate
 from django.utils.functional import cached_property
 
+from ansible_base.rbac.managed import get_managed_role_entries, ManagedRoleDefinition
+
 """
 This will record the models that the RBAC system in this app will follow
 Other apps should register models with this pattern
@@ -22,9 +24,10 @@ logger = logging.getLogger('ansible_base.rbac.permission_registry')
 
 class PermissionRegistry:
     def __init__(self):
-        self._registry = set()
+        self._registry = set()  # model registry
         self._name_to_model = dict()
         self._parent_fields = dict()
+        self._managed_roles = dict()  # code-defined role definitions, managed=True
         self.apps_ready = False
         self._tracked_relationships = set()
         self._trackers = dict()
@@ -108,6 +111,29 @@ class PermissionRegistry:
 
         return get_registry()
 
+    def register_managed_role(self, shortname: str, managed_role: ManagedRoleDefinition) -> None:
+        """Add the given managed role to the managed role registry"""
+        self._managed_roles[shortname] = managed_role
+
+    def register_managed_roles(self) -> None:
+        """Adds the data in setting ANSIBLE_BASE_MANAGED_ROLE_REGISTRY to the managed role registry"""
+        managed_defs = get_managed_role_entries(self.apps, settings.ANSIBLE_BASE_MANAGED_ROLE_REGISTRY)
+        for shortname, managed_role in managed_defs.items():
+            self.register_managed_role(shortname, managed_role)
+
+    def create_managed_roles(self, apps) -> list[tuple[Model, bool]]:
+        """Safe-ish method to create managed roles inside of a migration
+
+        Returns a list with all the managed RoleDefinition objects and whether they were created
+        in case you have to make decisions based on that"""
+        if not self.apps_ready:
+            raise RuntimeError('Cannot create managed roles before apps are ready')
+        ret = []
+        for managed_role in self._managed_roles.values():
+            rd, created = managed_role.get_or_create(apps)
+            ret.append((rd, created))
+        return ret
+
     def call_when_apps_ready(self, apps, app_config):
         from ansible_base.rbac import triggers
         from ansible_base.rbac.evaluations import bound_has_obj_perm, bound_singleton_permissions, connect_rbac_methods
@@ -146,6 +172,8 @@ class PermissionRegistry:
                 tracker = triggers.TrackedRelationship(cls, role_name)
                 self._trackers[role_name] = tracker
             tracker.initialize(relationship)
+
+        self.register_managed_roles()
 
     @property
     def team_model(self):

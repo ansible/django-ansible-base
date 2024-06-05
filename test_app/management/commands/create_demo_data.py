@@ -84,45 +84,21 @@ class Command(BaseCommand):
         with impersonate(bull_bot):
             Team.objects.get_or_create(name='community.general maintainers', defaults={'organization': galaxy})
 
-        # NOTE: managed role definitions are turned off, you could turn them on and get rid of these
-        org_perms = combine_values(permissions_allowed_for_role(Organization))
-        role_manager = type(RoleDefinition.objects.managed)
-        org_admin, _ = RoleDefinition.objects.get_or_create(
-            name=role_manager.org_admin.role_name,
-            permissions=org_perms,
-            defaults={'content_type': ContentType.objects.get_for_model(Organization), 'managed': True},
-        )
-        RoleDefinition.objects.get_or_create(
-            name=role_manager.org_member.role_name,
-            permissions=['member_organization', 'view_organization'],
-            defaults={'content_type': ContentType.objects.get_for_model(Organization), 'managed': True},
-        )
         ig_admin, _ = RoleDefinition.objects.get_or_create(
             name='AWX InstanceGroup admin',
             permissions=['change_instancegroup', 'delete_instancegroup', 'view_instancegroup'],
             defaults={'content_type': ContentType.objects.get_for_model(InstanceGroup)},
         )
-        team_perms = combine_values(permissions_allowed_for_role(Team))
-        RoleDefinition.objects.get_or_create(
-            name=role_manager.team_admin.role_name,
-            permissions=team_perms,
-            defaults={'content_type': ContentType.objects.get_for_model(Team), 'managed': True},
-        )
-        team_member, _ = RoleDefinition.objects.get_or_create(
-            name=role_manager.team_member.role_name,
-            permissions=['view_team', 'member_team'],
-            defaults={'content_type': ContentType.objects.get_for_model(Team), 'managed': True},
-        )
 
         org_admin_user, _ = User.objects.get_or_create(username='org_admin')
         ig_admin_user, _ = User.objects.get_or_create(username='instance_group_admin')
-        org_admin.give_permission(org_admin_user, awx)
+        RoleDefinition.objects.managed.org_admin.give_permission(org_admin_user, awx)
         ig_admin.give_permission(ig_admin_user, isolated_group)
         for user in (org_admin_user, ig_admin_user, spud):
             user.set_password('password')
             user.save()
 
-        team_member.give_permission(spud, awx_devs)
+        RoleDefinition.objects.managed.team_member.give_permission(spud, awx_devs)
 
         OAuth2Application.objects.get_or_create(
             name="Demo OAuth2 Application",
