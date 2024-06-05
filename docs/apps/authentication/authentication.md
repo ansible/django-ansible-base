@@ -171,3 +171,10 @@ ANSIBLE_BASE_AUTHENTICATOR_RECONCILE_MODULE = "path.to.my.module"
 Doing this will cause your custom module to run in place of the default module in django-ansible-base.
 
 In this function the user claims will be a dictionary defined by the authentication_maps. You need to update the users permissions in your application based on this.
+
+
+## Optional RBAC dependency
+
+Authentication maps can use RBAC (role-based access control) role names for updating users permissions using roles `Organization Member`, `Organization Admin`, `Team Member`, `Team Admin` etc. 
+These Roles are handled during [reconcile_user_claims](#reconciling-user-attributes) process described above.
+To use the functionality of Authentication Map roles, add a dependency `ansible_base.rbac` to the INSTALLED_APPS (see [RBAC doc](/docs/apps/rbac.md))

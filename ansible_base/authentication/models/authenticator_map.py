@@ -27,46 +27,56 @@ class AuthenticatorMap(NamedCommonModel):
         Authenticator,
         null=False,
         on_delete=models.CASCADE,
-        help_text=(_("The authenticator this mapping belongs to")),
+        help_text=_("The authenticator this mapping belongs to"),
         related_name="authenticator_maps",
     )
     revoke = models.BooleanField(
         null=False,
         default=False,
-        help_text=(_("If a user does not meet this rule should we revoke the permission")),
+        help_text=_("If a user does not meet this rule should we revoke the permission"),
     )
+
     map_type = models.CharField(
         max_length=17,
         null=False,
         default="team",
         choices=[
-            ('team', 'team'),
-            ('is_superuser', 'is_superuser'),
-            ('is_system_auditor', 'is_system_auditor'),
             ('allow', 'allow'),
+            ('is_superuser', 'is_superuser'),
+            ('role', 'role'),
             ('organization', 'organization'),
+            ('team', 'team'),
         ],
-        help_text=(_('What does the map work on, a team, a user flag or is this an allow rule')),
+        help_text=_('What will the map grant the user? System access (allow) a team or organization membership, the superuser flag or a role in the system'),
     )
+
+    role = models.CharField(
+        max_length=512,
+        null=True,
+        default=None,
+        blank=True,
+        help_text=_("The role this map will grant the authenticating user to the targeted object"),
+    )
+
     team = models.CharField(
         max_length=512,
         null=True,
         default=None,
         blank=True,
-        help_text='A team name this rule works on',
+        help_text=_('A team name this rule works on'),
     )
     organization = models.CharField(
         max_length=512,
         null=True,
         default=None,
         blank=True,
-        help_text='An organization name this rule works on',
+        help_text=(_('An organization name this rule works on')),
     )
     triggers = models.JSONField(
         null=False,
         default=dict,
         blank=True,
-        help_text="Trigger information for this rule",
+        help_text=_("Trigger information for this rule"),
     )
     order = models.PositiveIntegerField(
         null=False,
