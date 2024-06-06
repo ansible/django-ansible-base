@@ -81,7 +81,7 @@ class TestAuthenticatorMapSerializerRole:
             serializer.validate(dict(name="authentication_map_5", map_type="organization", role=SYSTEM_ROLE_NAME, organization='test_org'))
         assert str(e.value) == "{'role': ErrorDetail(string='For an organization map type you must specify an organization based role', code='invalid')}"
 
-    def test_validate_role_team_role(self, serializer, team_member_role):
+    def test_validate_role_team_role(self, serializer, member_rd):
         with pytest.raises(ValidationError) as e:
             serializer.validate(dict(name="authentication_map_1", map_type="role", role=TEAM_MEMBER_ROLE_NAME))
         assert set(e.value.detail.keys()) == {'organization', 'team'}
@@ -106,7 +106,7 @@ class TestAuthenticatorMapSerializerRole:
             )
         assert str(e.value) == "{'role': ErrorDetail(string='For an organization map type you must specify an organization based role', code='invalid')}"
 
-    def test_validate_role_organization_role(self, serializer, organization_member_role):
+    def test_validate_role_organization_role(self, serializer, org_member_rd):
         with pytest.raises(ValidationError) as e:
             serializer.validate(dict(name="authentication_map_1", map_type="role", role=ORG_MEMBER_ROLE_NAME))
         assert str(e.value) == "{'organization': ErrorDetail(string='You must specify an organization with the selected role', code='invalid')}"
