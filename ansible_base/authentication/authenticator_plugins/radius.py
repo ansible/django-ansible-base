@@ -72,7 +72,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         super().__init__(database_instance, *args, **kwargs)
         self.set_logger(logger)
 
-    def authenticate(self, request, username=None, password=None):
+    def authenticate(self, request, username=None, password=None, **kwargs):
         if not username or not password:
             return None
 
