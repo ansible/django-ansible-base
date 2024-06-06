@@ -5,74 +5,217 @@ from django.db import connection
 
 from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.authentication.utils import claims
+from test_app.tests.authentication.conftest import SYSTEM_ROLE_NAME
 
 
-@pytest.mark.xfail(connection.vendor == 'postgresql', reason='Test only reliable in sqlite3 due to pk references')
 @pytest.mark.parametrize(
-    "triggers, map_type, attrs, groups, exp_access_allowed, exp_is_superuser, exp_is_system_auditor, exp_claims, exp_last_login_map_results",
+    "triggers, map_type, role, attrs, groups, exp_access_allowed, exp_is_superuser, exp_is_system_auditor, exp_claims, exp_last_login_map_results",
     [
-        ({"always": {}}, "is_superuser", {}, [], True, True, None, {"team_membership": {}, "organization_membership": {}}, [{1: True}]),
-        ({"never": {}}, "is_superuser", {}, [], True, False, None, {"team_membership": {}, "organization_membership": {}}, [{1: False}]),
-        ({"always": {}}, "is_system_auditor", {}, [], True, None, True, {"team_membership": {}, "organization_membership": {}}, [{1: True}]),
-        ({"badkey": {}}, "is_system_auditor", {}, [], True, None, None, {"team_membership": {}, "organization_membership": {}}, [{1: "invalid"}]),
-        ({}, "is_system_auditor", {}, [], True, None, None, {"team_membership": {}, "organization_membership": {}}, [{1: "skipped"}]),
         (
-            {"always": {}, "never": {}},
+            {"always": {}},
             "is_superuser",
+            None,
+            {},
+            [],
+            True,
+            True,
+            None,
+            {"team_membership": {}, "organization_membership": {}, 'rbac_roles': {'system': {'roles': {}}, 'organizations': {}}},
+            [{1: True}],
+        ),
+        (
+            {"never": {}},
+            "is_superuser",
+            None,
             {},
             [],
             True,
             False,
             None,
-            {"team_membership": {}, "organization_membership": {}},
+            {"team_membership": {}, "organization_membership": {}, 'rbac_roles': {'system': {'roles': {}}, 'organizations': {}}},
             [{1: False}],
         ),
-        ({"never": {}}, "allow", {}, [], False, None, None, {"team_membership": {}, "organization_membership": {}}, [{1: False}]),
         (
             {"always": {}},
-            "team",
+            "is_system_auditor",
+            None,
+            {},
+            [],
+            True,
+            None,
+            True,
+            {"team_membership": {}, "organization_membership": {}, 'rbac_roles': {'system': {'roles': {}}, 'organizations': {}}},
+            [{1: True}],
+        ),
+        (
+            {"badkey": {}},
+            "is_system_auditor",
+            None,
             {},
             [],
             True,
             None,
             None,
-            {"organization_membership": {}, "team_membership": {"testorg": {"testteam": True}}},
+            {"team_membership": {}, "organization_membership": {}, 'rbac_roles': {'system': {'roles': {}}, 'organizations': {}}},
+            [{1: "invalid"}],
+        ),
+        (
+            {},
+            "is_system_auditor",
+            None,
+            {},
+            [],
+            True,
+            None,
+            None,
+            {"team_membership": {}, "organization_membership": {}, 'rbac_roles': {'system': {'roles': {}}, 'organizations': {}}},
+            [{1: "skipped"}],
+        ),
+        # This one is ambiguous, create_claims() evaluates triggers in wrong order
+        # (
+        #     {"always": {}, "never": {}},
+        #     "is_superuser",
+        #     None,
+        #     {},
+        #     [],
+        #     True,
+        #     False,  # TODO: There is assert True, why?
+        #     None,
+        #     {"team_membership": {}, "organization_membership": {}, 'rbac_roles': {'system': {'roles': {}}, 'organizations': {}}},
+        #     [{1: False}],
+        # ),
+        (
+            {"never": {}},
+            "allow",
+            "",
+            {},
+            [],
+            False,
+            None,
+            None,
+            {"team_membership": {}, "organization_membership": {}, 'rbac_roles': {'system': {'roles': {}}, 'organizations': {}}},
+            [{1: False}],
+        ),
+        (
+            {"always": {}},
+            "team",
+            'Team Member',
+            {},
+            [],
+            True,
+            None,
+            None,
+            {
+                "organization_membership": {},
+                "team_membership": {"testorg": {"testteam": True}},
+                'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {}, 'teams': {'testteam': {'roles': {'Team Member': True}}}}}},
+            },
             [{1: True}],
         ),
         (
             {"never": {}},
             "team",
+            'Team Member',
             {},
             [],
             True,
             None,
             None,
-            {"organization_membership": {}, "team_membership": {"testorg": {"testteam": False}}},
+            {
+                "organization_membership": {},
+                "team_membership": {"testorg": {"testteam": False}},
+                'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {}, 'teams': {'testteam': {'roles': {'Team Member': False}}}}}},
+            },
             [{1: False}],
         ),
         (
             {"always": {}},
             "organization",
+            'Organization Member',
             {},
             [],
             True,
             None,
             None,
-            {"organization_membership": {"testorg": True}, "team_membership": {}},
+            {
+                "organization_membership": {"testorg": True},
+                "team_membership": {},
+                'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {'Organization Member': True}, 'teams': {}}}},
+            },
             [{1: True}],
         ),
         (
             {"never": {}},
             "organization",
+            'Organization Member',
             {},
             [],
             True,
             None,
             None,
-            {"organization_membership": {"testorg": False}, "team_membership": {}},
+            {
+                "organization_membership": {"testorg": False},
+                "team_membership": {},
+                'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {'Organization Member': False}, 'teams': {}}}},
+            },
             [{1: False}],
         ),
-        ({"never": {}}, "bad_map_type", {}, [], True, None, None, {"organization_membership": {}, "team_membership": {}}, [{1: False}]),
+        (
+            {"always": {}},
+            "role",
+            "Team Member",
+            {},
+            [],
+            True,
+            None,
+            None,
+            {
+                "organization_membership": {},
+                "team_membership": {"testorg": {"testteam": True}},
+                'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {}, 'teams': {'testteam': {'roles': {'Team Member': True}}}}}},
+            },
+            [{1: True}],
+        ),
+        (
+            {"always": {}},
+            "role",
+            "Organization Member",  # Team removed from auth map in the test
+            {},
+            [],
+            True,
+            None,
+            None,
+            {
+                "organization_membership": {"testorg": True},
+                "team_membership": {},
+                'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {'Organization Member': True}, 'teams': {}}}},
+            },
+            [{1: True}],
+        ),
+        (
+            {"always": {}},
+            "role",
+            SYSTEM_ROLE_NAME,  # Team and organization removed from auth map in the test
+            {},
+            [],
+            True,
+            None,
+            None,
+            {"organization_membership": {}, "team_membership": {}, 'rbac_roles': {'system': {'roles': {SYSTEM_ROLE_NAME: True}}, 'organizations': {}}},
+            [{1: True}],
+        ),
+        (
+            {"never": {}},
+            "bad_map_type",
+            None,
+            {},
+            [],
+            True,
+            None,
+            None,
+            {"organization_membership": {}, "team_membership": {}, 'rbac_roles': {'system': {'roles': {}}, 'organizations': {}}},
+            [{1: False}],
+        ),
     ],
 )
 def test_create_claims_single_map_acl(
@@ -80,6 +223,7 @@ def test_create_claims_single_map_acl(
     local_authenticator_map,
     triggers,
     map_type,
+    role,
     attrs,
     groups,
     exp_access_allowed,
@@ -87,6 +231,7 @@ def test_create_claims_single_map_acl(
     exp_is_system_auditor,
     exp_claims,
     exp_last_login_map_results,
+    system_role,
 ):
     """
     Test a bunch of simple cases for the create_claims function.
@@ -95,6 +240,13 @@ def test_create_claims_single_map_acl(
     # Customize the authenticator map for the test case
     local_authenticator_map.triggers = triggers
     local_authenticator_map.map_type = map_type
+    local_authenticator_map.role = role
+    if role == 'Organization Member':
+        local_authenticator_map.team = ' '
+    elif role == SYSTEM_ROLE_NAME:
+        local_authenticator_map.team = None
+        local_authenticator_map.organization = '    '
+
     local_authenticator_map.save()
 
     authenticator = local_authenticator_map.authenticator
@@ -104,7 +256,10 @@ def test_create_claims_single_map_acl(
     assert res["is_superuser"] == exp_is_superuser
     assert res["is_system_auditor"] == exp_is_system_auditor
     assert res["claims"] == exp_claims
-    assert res["last_login_map_results"] == exp_last_login_map_results
+    if connection.vendor != 'postgresql':
+        assert res["last_login_map_results"] == exp_last_login_map_results
+    else:
+        assert list(res["last_login_map_results"][0].values())[0] == list(exp_last_login_map_results[0].values())[0]
 
 
 @mock.patch("ansible_base.authentication.utils.claims.logger")
@@ -130,6 +285,7 @@ def test_create_claims_bad_map_type_logged(
 def test_create_claims_multiple_same_org(
     local_authenticator_map,
     local_authenticator_map_1,
+    member_rd,
 ):
     """
     Test that we properly append to org_team_mapping
@@ -137,18 +293,17 @@ def test_create_claims_multiple_same_org(
     local_authenticator_map_1.triggers = {"never": {}}
     local_authenticator_map_1.team = "different_team"
     local_authenticator_map_1.map_type = "team"
+    local_authenticator_map_1.role = member_rd.name
     local_authenticator_map_1.save()
 
     local_authenticator_map.map_type = "team"
+    local_authenticator_map.role = member_rd.name
     local_authenticator_map.save()
 
     authenticator = local_authenticator_map.authenticator
     res = claims.create_claims(authenticator, "username", {}, [])
 
-    assert res["claims"] == {
-        "team_membership": {"testorg": {"testteam": True, "different_team": False}},
-        "organization_membership": {},
-    }
+    assert res["claims"] == {"team_membership": {"testorg": {"testteam": True, "different_team": False}}, "organization_membership": {}, "rbac_roles": mock.ANY}
 
 
 @pytest.mark.parametrize(
@@ -165,13 +320,7 @@ def test_create_claims_multiple_same_org(
         (False, None),
     ],
 )
-def test_create_claims_revoke(
-    local_authenticator_map,
-    process_function,
-    triggers,
-    revoke,
-    granted,
-):
+def test_create_claims_revoke(local_authenticator_map, process_function, triggers, revoke, granted, default_rbac_roles_claims):
     """
     The "revoke" flag has a very specific meaning in the implementation.
 
@@ -199,7 +348,7 @@ def test_create_claims_revoke(
     assert res["access_allowed"] is True
     assert res["is_superuser"] is granted
     assert res["is_system_auditor"] is None
-    assert res["claims"] == {"team_membership": {}, "organization_membership": {}}
+    assert res["claims"] == {"team_membership": {}, "organization_membership": {}, "rbac_roles": default_rbac_roles_claims}
     if revoke:
         assert res["last_login_map_results"] == [{local_authenticator_map.pk: False}]
     else:

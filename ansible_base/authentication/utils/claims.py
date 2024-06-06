@@ -8,6 +8,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractUser
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ObjectDoesNotExist
+from django.db import models
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import DateTimeField
@@ -34,7 +35,7 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
     is_superuser = None
     is_system_auditor = None
 
-    rbac_role_mapping = {'system': {'roles': {}}, 'organizations': {'roles': {}}}
+    rbac_role_mapping = {'system': {'roles': {}}, 'organizations': {}}
     # Assume we start with no mappings
     org_team_mapping = {}
     # Assume we are not members of any orgs (direct members)
@@ -67,7 +68,6 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
                 has_permission = True
             if trigger_type == 'never':
                 has_permission = False
-
         # If we didn't get permission and we are set to revoke permission we can set has_permission to False
         if auth_map.revoke and not has_permission:
             has_permission = False
@@ -83,7 +83,7 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
             access_allowed = False
         elif auth_map.map_type == 'is_superuser':
             is_superuser = has_permission
-        elif auth_map.map_type == 'is_system_auditor':
+        elif auth_map.map_type == 'is_system_auditor':  # TODO: remove?
             is_system_auditor = has_permission
         elif auth_map.map_type in ['team', 'role'] and not is_empty(auth_map.organization) and not is_empty(auth_map.team) and not is_empty(auth_map.role):
             if auth_map.organization not in org_team_mapping:
@@ -102,7 +102,7 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
     return {
         "access_allowed": access_allowed,
         "is_superuser": is_superuser,
-        "is_system_auditor": is_system_auditor,
+        "is_system_auditor": is_system_auditor,  # TODO: remove
         "claims": {
             "team_membership": org_team_mapping,
             "organization_membership": organization_membership,
@@ -361,7 +361,7 @@ def create_organizations_and_teams(results) -> None:
     for org_name, is_member in results['claims']['organization_membership'].items():
         if is_member:
             org_list.add(org_name)
-            membership_map[org_name] = {'id': None, 'member': True, 'teams': {}}
+            membership_map[org_name] = {'id': None, 'teams': {}}
 
     # fill in the team membership data ...
     for org_name, teams in results['claims']['team_membership'].items():
@@ -370,9 +370,7 @@ def create_organizations_and_teams(results) -> None:
                 org_list.add(org_name)
                 team_list.add((org_name, team_name))
                 if org_name not in membership_map:
-                    # TODO: this might be changed
-                    # team membership doesn't imply org membership, right?
-                    membership_map[org_name] = {'id': None, 'member': False, 'teams': {}}
+                    membership_map[org_name] = {'id': None, 'teams': {}}
                 membership_map[org_name]['teams'][team_name] = True
 
     # make a map or org name to org id to reduce calls and data sent over the wire
@@ -409,12 +407,15 @@ class ReconcileUser:
 
         claims = getattr(user, 'claims', authenticator_user.claims)
 
-        # if 'ansible_base.rbac' in settings.INSTALLED_APPS:
-        cls(claims, user, authenticator_user).manage_permissions()
-        # else:
-        #     logger.info(_("Skipping user claims with RBAC roles, because RBAC app is not installed"))
+        if 'ansible_base.rbac' in settings.INSTALLED_APPS:
+            cls(claims, user, authenticator_user).manage_permissions()
+        else:
+            logger.info(_("Skipping user claims with RBAC roles, because RBAC app is not installed"))
 
-    def __init__(self, claims, user, authenticator_user):
+    def __init__(self, claims: dict, user: AbstractUser, authenticator_user: AuthenticatorUser):
+        """
+        :param claims: initialized by method create_claims()
+        """
         self.authenticator_user = authenticator_user
         self.claims = claims
         self.permissions_cache = RoleUserAssignmentsCache()
@@ -422,6 +423,9 @@ class ReconcileUser:
         self.user = user
 
     def manage_permissions(self) -> None:
+        """Processes the user claims (key `rbac_roles`)
+        and adds/removes RBAC permissions (a.k.a. role_user_assignments)
+        """
         self.permissions_cache.cache_existing(self.user.role_assignments.all())
 
         # System roles
@@ -442,7 +446,7 @@ class ReconcileUser:
                 self.permissions_cache.remove(role_name, organization=None, team=None)
 
     def _compute_organization_permissions(self) -> Iterator[Tuple[AbstractOrganization, dict]]:
-        orgs_by_name = self._get_orgs_by_name(self.claims['rbac_roles']['organizations'].keys())
+        orgs_by_name = self._get_orgs_by_name(self.claims['rbac_roles'].get('organizations', {}).keys())
 
         for org_name, org_details in self.claims['rbac_roles'].get('organizations', {}).items():
             if (org := orgs_by_name.get(org_name)) is None:
@@ -454,7 +458,6 @@ class ReconcileUser:
                     self.permissions_cache.add(role_name, organization=org)
                 else:
                     self.permissions_cache.remove(role_name, organization=org)
-
             yield org, org_details['teams']
 
     def _compute_team_permissions(self, org: AbstractOrganization, teams_dict: dict[str, dict]) -> None:
@@ -551,7 +554,16 @@ class RoleUserAssignmentsCache:
         self.role_definitions = {}
 
     def items(self):
-        """Structure:
+        """
+        Caches role_user_assignments in form of parameters:
+        - role_name: role_user_assignment.role_definition.name
+        - content_type_id: role_user_assignment.content_type_id
+        - object_id: role_user_assignment.object_id
+
+        When content_type_id is None, it means it's a system role (i.e. System Auditor)
+        When content_type_id is None, then object_id is None.
+
+        Structure:
         {
           <role_name:str>: {
               <content_type_id:Optional[int]>: {
@@ -566,6 +578,7 @@ class RoleUserAssignmentsCache:
         return self.cache.items()
 
     def cache_existing(self, role_assignments):
+        """Caches given role_assignments associated with one user in form of dict (see method `items()`)"""
         for role_assignment in role_assignments:
             # Cache role definition
             if (role_definition := self._rd_by_id(role_assignment)) is None:
@@ -574,7 +587,12 @@ class RoleUserAssignmentsCache:
 
             # Cache Role User Assignment
             self._init_key(role_definition.name, content_type_id=role_assignment.content_type_id)
-            self.cache[role_definition.name][role_assignment.content_type_id][role_assignment.object_id] = {'object': None, 'status': self.STATUS_EXISTING}
+
+            # object_id is TEXT db type
+            object_id = int(role_assignment.object_id) if role_assignment.object_id is not None else None
+            obj = role_assignment.content_object if object_id else None
+
+            self.cache[role_definition.name][role_assignment.content_type_id][object_id] = {'object': obj, 'status': self.STATUS_EXISTING}
 
     def rd_by_name(self, role_name: str) -> Optional[CommonModel]:
         """Returns RoleDefinition by its name. Caches it if requested for first time"""
@@ -589,33 +607,39 @@ class RoleUserAssignmentsCache:
 
         return self.role_definitions.get(role_name)
 
-    def _rd_by_id(self, role_assignment: CommonModel) -> Optional[CommonModel]:
-        """Tries to find cached role definitions by id, saving SQL queries"""
+    def _rd_by_id(self, role_assignment: models.Model) -> Optional[CommonModel]:
+        """Tries to find cached role definition by id, saving SQL queries"""
         for rd in self.role_definitions.values():
             if rd.id == role_assignment.role_definition_id:
                 return rd
         return None
 
     def add(self, role_name: str, organization: Optional[AbstractOrganization] = None, team: Optional[AbstractTeam] = None) -> None:
+        """Marks role assignment's params and (optionally) associated object in the cache.
+        If role_user_assignment (a.k.a. permission) existed before, marks it to do nothing
+        """
         content_type_id = self._get_content_type_id(organization, team)
         object_id = self._get_object_id(organization, team)
 
         self._init_key(role_name, content_type_id=content_type_id)
 
         # If the permission haven't existed, mark it to ADD, otherwise noop
-        current_status = self.cache[role_name][content_type_id].get(object_id)
+        current_status = self.cache[role_name][content_type_id].get(object_id, {}).get('status')
         if current_status in [self.STATUS_EXISTING, self.STATUS_NOOP]:
             self.cache[role_name][content_type_id][object_id] = {'object': organization or team, 'status': self.STATUS_NOOP}
         elif current_status is None:
             self.cache[role_name][content_type_id][object_id] = {'object': organization or team, 'status': self.STATUS_ADD}
 
     def remove(self, role_name: str, organization: Optional[AbstractOrganization] = None, team: Optional[AbstractTeam] = None) -> None:
+        """Marks role assignment's params and (optionally) associated object in the cache.
+        If role_user_assignment (a.k.a. permission) didn't exist before, marks it to do nothing
+        """
         content_type_id = self._get_content_type_id(organization, team)
         object_id = self._get_object_id(organization, team)
 
         self._init_key(role_name, content_type_id=content_type_id)
 
-        current_status = self.cache[role_name][content_type_id].get(object_id)
+        current_status = self.cache[role_name][content_type_id].get(object_id, {}).get('status')
         if current_status is None or current_status == self.STATUS_NOOP:
             self.cache[role_name][content_type_id][object_id] = {'object': organization or team, 'status': self.STATUS_NOOP}
         elif current_status == self.STATUS_EXISTING:
