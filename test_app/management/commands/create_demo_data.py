@@ -9,7 +9,6 @@ from django.core.management.base import BaseCommand
 from ansible_base.authentication.models import Authenticator, AuthenticatorUser
 from ansible_base.oauth2_provider.models import OAuth2Application
 from ansible_base.rbac.models import RoleDefinition
-from ansible_base.rbac.validators import combine_values, permissions_allowed_for_role
 from test_app.models import EncryptionModel, InstanceGroup, Inventory, Organization, Team, User
 
 

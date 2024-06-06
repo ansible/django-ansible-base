@@ -21,9 +21,7 @@ from rest_framework.test import force_authenticate
 from ansible_base.lib.testing.fixtures import *  # noqa: F403, F401
 from ansible_base.lib.testing.util import copy_fixture, delete_authenticator
 from ansible_base.oauth2_provider.fixtures import *  # noqa: F403, F401
-from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
-from ansible_base.rbac.validators import combine_values, permissions_allowed_for_role
 from test_app import models
 
 

@@ -6,7 +6,7 @@ from ansible_base.rbac.managed import courtesy_registry
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import DABPermission
 
-from ansible_base.rbac.validators import validate_assignment, validate_permissions_for_model
+from ansible_base.rbac.validators import validate_permissions_for_model
 
 
 @pytest.mark.django_db
