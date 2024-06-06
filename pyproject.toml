@@ -110,8 +110,11 @@ legacy_tox_ini = """
 
     [testenv:check]
     deps =
-         -r{toxinidir}/requirements/requirements_all.txt
-    commands = python3 manage.py check
+        -r{toxinidir}/requirements/requirements_all.txt
+        -r{toxinidir}/requirements/requirements_dev.txt
+    commands =
+        python3 manage.py check
+        python3 manage.py makemigrations --check
 
     [testenv:flake8]
     deps =
