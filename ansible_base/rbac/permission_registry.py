@@ -8,7 +8,7 @@ from django.db.models.base import ModelBase  # post_migrate may call with phony 
 from django.db.models.signals import post_delete, post_migrate
 from django.utils.functional import cached_property
 
-from ansible_base.rbac.managed import get_managed_role_entries, ManagedRoleDefinition
+from ansible_base.rbac.managed import ManagedRoleDefinition, get_managed_role_entries
 
 """
 This will record the models that the RBAC system in this app will follow
