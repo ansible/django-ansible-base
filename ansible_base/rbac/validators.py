@@ -26,9 +26,10 @@ def permissions_allowed_for_system_role() -> dict[type, list[str]]:
     "Permission codenames useable in system-wide roles, which have content_type set to None"
     permissions_by_model = defaultdict(list)
     for cls in sorted(permission_registry.all_registered_models, key=lambda cls: cls._meta.model_name):
-        if cls._meta.model_name == 'team':
-            continue  # special exclusion of team object permissions from system-wide roles
+        is_team = bool(cls._meta.model_name == 'team')
         for codename in codenames_for_cls(cls):
+            if is_team and (not codename.startswith('view')):
+                continue  # special exclusion of team object permissions from system-wide roles
             permissions_by_model[cls].append(codename)
     return permissions_by_model
 
