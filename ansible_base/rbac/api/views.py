@@ -23,7 +23,7 @@ from ansible_base.rbac.evaluations import has_super_permission
 from ansible_base.rbac.models import RoleDefinition
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.policies import check_content_obj_permission
-from ansible_base.rbac.validators import permissions_allowed_for_role, system_roles_enabled
+from ansible_base.rbac.validators import check_locally_managed, permissions_allowed_for_role, system_roles_enabled
 
 
 def list_combine_values(data: dict[Type[Model], list[str]]) -> list[str]:
@@ -130,6 +130,7 @@ class BaseAssignmentViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
         obj = instance.content_object
         if obj:
             check_content_obj_permission(self.request.user, obj)
+            check_locally_managed(instance.role_definition)
             with transaction.atomic():
                 instance.role_definition.remove_permission(instance.actor, obj)
         else:

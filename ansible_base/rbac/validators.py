@@ -26,9 +26,10 @@ def permissions_allowed_for_system_role() -> dict[type, list[str]]:
     "Permission codenames useable in system-wide roles, which have content_type set to None"
     permissions_by_model = defaultdict(list)
     for cls in sorted(permission_registry.all_registered_models, key=lambda cls: cls._meta.model_name):
-        if cls._meta.model_name == 'team':
-            continue  # special exclusion of team object permissions from system-wide roles
+        is_team = bool(cls._meta.model_name == 'team')
         for codename in codenames_for_cls(cls):
+            if is_team and (not codename.startswith('view')):
+                continue  # special exclusion of team object permissions from system-wide roles
             permissions_by_model[cls].append(codename)
     return permissions_by_model
 
@@ -187,3 +188,19 @@ def validate_assignment(rd, actor, obj) -> None:
     if obj_ct.id != rd.content_type_id:
         rd_model = getattr(rd.content_type, "model", "global")
         raise ValidationError(f'Role type {rd_model} does not match object {obj_ct.model}')
+
+
+def check_locally_managed(rd: Model) -> None:
+    """Can the given role definition be managed here, or is it externally managed
+
+    If the role definition manages permissions on any shared resources, then
+    those should be locked down locally.
+    This rule is a bridge solution until the RoleDefinition model declares
+    explicitly whether it is managed locally or by a remote system.
+    """
+    if settings.ANSIBLE_BASE_DIRECT_SHARED_RESOURCE_MANAGEMENT_ENABLED is True:
+        return
+    for perm in rd.permissions.prefetch_related('content_type'):
+        model = perm.content_type.model_class()
+        if permission_registry.get_resource_prefix(model) == 'shared':
+            raise ValidationError('Not managed locally, use the resource server instead')

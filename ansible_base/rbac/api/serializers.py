@@ -14,7 +14,7 @@ from ansible_base.lib.serializers.common import CommonModelSerializer, Immutable
 from ansible_base.rbac.models import RoleDefinition, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry  # careful for circular imports
 from ansible_base.rbac.policies import check_content_obj_permission, visible_users
-from ansible_base.rbac.validators import validate_permissions_for_model
+from ansible_base.rbac.validators import check_locally_managed, validate_permissions_for_model
 
 
 class ChoiceLikeMixin(serializers.ChoiceField):
@@ -248,6 +248,7 @@ class BaseAssignmentSerializer(CommonModelSerializer):
                 raise ValidationError({'object_id': _('Object must be specified for this role assignment')})
 
             check_content_obj_permission(requesting_user, obj)
+            check_locally_managed(rd)
 
             try:
                 with transaction.atomic():

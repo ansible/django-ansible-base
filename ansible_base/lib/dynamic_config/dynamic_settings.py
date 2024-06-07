@@ -145,13 +145,8 @@ if 'ansible_base.rest_pagination' in INSTALLED_APPS:
 
 
 if 'ansible_base.rbac' in INSTALLED_APPS:
-    # Settings for the RBAC system, override as necessary in app
-    ANSIBLE_BASE_ROLE_PRECREATE = {
-        'object_admin': '{cls._meta.model_name}-admin',
-        'org_admin': 'organization-admin',
-        'org_children': 'organization-{cls._meta.model_name}-admin',
-        'special': '{cls._meta.model_name}-{action}',
-    }
+    # The settings-based specification of managed roles from DAB RBAC vendored ones
+    ANSIBLE_BASE_MANAGED_ROLE_REGISTRY = {}
 
     # Permissions a user will get when creating a new item
     ANSIBLE_BASE_CREATOR_DEFAULTS = ['add', 'change', 'delete', 'view']
@@ -186,7 +181,13 @@ if 'ansible_base.rbac' in INSTALLED_APPS:
     ANSIBLE_BASE_BYPASS_SUPERUSER_FLAGS = ['is_superuser']
     ANSIBLE_BASE_BYPASS_ACTION_FLAGS = {}
 
+    # Save RoleEvaluation entries for child permissions on parent models
+    # ex: organization roles giving view_inventory permission will save
+    # entries mapping that permission to the assignment's organization
     ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS = False
+
+    # API clients can assign users and teams roles for shared resources
+    ANSIBLE_BASE_DIRECT_SHARED_RESOURCE_MANAGEMENT_ENABLED = True
 
     try:
         MANAGE_ORGANIZATION_AUTH

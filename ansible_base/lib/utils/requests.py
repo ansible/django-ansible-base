@@ -3,7 +3,7 @@ from typing import Optional
 
 from django.http import HttpRequest
 
-from ansible_base.lib.utils.encryption import SharedSecretNotFound, validate_hmac_sha256_shared_secret
+from ansible_base.jwt_consumer.common.util import validate_x_trusted_proxy_header
 from ansible_base.lib.utils.settings import get_setting
 
 logger = logging.getLogger('ansible_base.lib.uitls.requests')
@@ -29,13 +29,11 @@ def get_remote_hosts(request: HttpRequest, get_first_only: bool = False) -> list
     # If we are connected to from a trusted proxy then we can add some additional headers
     try:
         if 'HTTP_X_TRUSTED_PROXY' in request.META:
-            if validate_hmac_sha256_shared_secret(request.META['HTTP_X_TRUSTED_PROXY']):
+            if validate_x_trusted_proxy_header(request.META['HTTP_X_TRUSTED_PROXY']):
                 headers.insert(0, 'HTTP_X_FORWARDED_FOR')
                 headers.insert(0, 'HTTP_X_ENVOY_EXTERNAL_ADDRESS')
             else:
                 logger.error("Unable to use headers from trusted proxy because shared secret was invalid!")
-    except SharedSecretNotFound:
-        logger.warning("Unable to use headers from trusted proxy because the shared secret was not set.")
     except Exception:
         logger.exception("Failed to validate HTTP_X_TRUSTED_PROXY")
 

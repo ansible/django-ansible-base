@@ -1,5 +1,6 @@
 import oauth2_provider.models as oauth2_models
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import connection, models
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
@@ -9,6 +10,18 @@ from ansible_base.lib.abstract_models.common import CommonModel
 from ansible_base.lib.utils.models import prevent_search
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.oauth2_provider.utils import is_external_account
+
+SCOPES = ['read', 'write']
+
+
+def validate_scope(value):
+    given_scopes = value.split(' ')
+    if not given_scopes:
+        raise ValidationError(_('Scope must be a simple space-separated string with allowed scopes: %(scopes)s') % {'scopes': ', '.join(SCOPES)})
+    for scope in given_scopes:
+        if scope not in SCOPES:
+            raise ValidationError(_('Invalid scope: %(scope)s. Must be one of: %(scopes)s') % {'scope': scope, 'scopes': ', '.join(SCOPES)})
+
 
 activitystream = object
 if 'ansible_base.activitystream' in settings.INSTALLED_APPS:
@@ -25,11 +38,6 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
         verbose_name = _('access token')
         ordering = ('id',)
         swappable = "OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL"
-
-    SCOPE_CHOICES = [
-        ('read', _('Read')),
-        ('write', _('Write')),
-    ]
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -57,11 +65,10 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
         editable=False,
     )
     scope = models.CharField(
-        blank=True,
         default='write',
         max_length=32,
-        choices=SCOPE_CHOICES,
         help_text=_("Allowed scopes, further restricts user's permissions. Must be a simple space-separated string with allowed scopes ['read', 'write']."),
+        validators=[validate_scope],
     )
     token = prevent_search(
         models.CharField(

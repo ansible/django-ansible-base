@@ -1,6 +1,6 @@
 import logging
 from collections.abc import Iterable
-from typing import Optional
+from typing import Optional, Type
 
 # Django
 from django.conf import settings
@@ -58,23 +58,28 @@ class ManagedRoleFromSetting:
 
 
 class ManagedRoleManager:
-    def __init__(self):
+    def __init__(self, apps):
         self._cache = {}
+        self.apps = apps
 
     def clear(self) -> None:
         "Clear any managed roles already loaded into the cache"
         self._cache = {}
 
-    org_admin = ManagedRoleFromSetting('Organization Admin')
-    org_member = ManagedRoleFromSetting('Organization Member')
-    team_admin = ManagedRoleFromSetting('Team Admin')
-    team_member = ManagedRoleFromSetting('Team Member')
+    def __getattr__(self, attr):
+        if attr in self._cache:
+            return self._cache[attr]
+        code_definition = permission_registry.get_managed_role_constructor(attr)
+        if code_definition:
+            rd, _ = code_definition.get_or_create(self.apps)
+            return rd
 
 
 class RoleDefinitionManager(models.Manager):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.managed = ManagedRoleManager()
+    def contribute_to_class(self, cls: Type[models.Model], name: str) -> None:
+        """After Django populates the model for the manager, attach the manager role manager"""
+        super().contribute_to_class(cls, name)
+        self.managed = ManagedRoleManager(self.model._meta.apps)
 
     def give_creator_permissions(self, user, obj) -> Optional['RoleUserAssignment']:
         # If the user is a superuser, no need to bother giving the creator permissions

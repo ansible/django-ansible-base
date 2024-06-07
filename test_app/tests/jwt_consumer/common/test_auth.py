@@ -3,15 +3,14 @@ import re
 from datetime import datetime, timedelta
 from functools import partial
 from unittest import mock
-from urllib.parse import urlparse
 
 import pytest
-import requests
 from django.test.utils import override_settings
 from jwt.exceptions import DecodeError
 from rest_framework.exceptions import AuthenticationFailed
 
 from ansible_base.jwt_consumer.common.auth import JWTAuthentication, JWTCommonAuth, default_mapped_user_fields
+from ansible_base.jwt_consumer.common.cert import JWTCert, JWTCertException
 from ansible_base.lib.utils.translations import translatableConditionally as _
 
 
@@ -72,155 +71,6 @@ class TestJWTCommonAuth:
             with expected_log("error", message % expansion_values):
                 with pytest.raises(AuthenticationFailed, match=translated_message % expansion_values):
                     common_auth.log_and_raise(_(message), expansion_values)
-
-    def test_get_decryption_key_absolute_junk(self):
-        common_auth = JWTCommonAuth()
-        with pytest.raises(AuthenticationFailed, match="Unable to determine how to handle  to get key"):
-            common_auth.get_decryption_key("", ignore_cache=True)
-
-    def test_get_decryption_key_invalid_scheme(self):
-        common_auth = JWTCommonAuth()
-        url = "ftp://www.ansible.com"
-        with pytest.raises(
-            AuthenticationFailed,
-            match=f"Unable to determine how to handle {url} to get key",
-        ):
-            common_auth.get_decryption_key(url, ignore_cache=True)
-
-    @pytest.mark.parametrize(
-        "error, exception_class",
-        [
-            ("The specified file {0} does not exist", FileNotFoundError()),
-            ("The specified file {0} is not a file", IsADirectoryError()),
-            ("Permission error when reading {0}", PermissionError()),
-            ("Failed reading {0}: argh", IOError('argh')),
-        ],
-    )
-    def test_get_decryption_key_file_exceptions(self, error, exception_class, tmp_path_factory):
-        common_auth = JWTCommonAuth()
-        url = 'file:///gibberish'
-        url_parts = urlparse(url)
-        with mock.patch("builtins.open", mock.mock_open()) as mock_file:
-            mock_file.side_effect = exception_class
-            with pytest.raises(AuthenticationFailed, match=error.format(url_parts.path)):
-                common_auth.get_decryption_key(url, ignore_cache=True)
-
-    # This would test any method returning junk instead of an RSA key
-    def test_get_decryption_key_invalid_input(self):
-        common_auth = JWTCommonAuth()
-        with pytest.raises(AuthenticationFailed, match="Returned key does not start and end with BEGIN/END PUBLIC KEY"):
-            common_auth.get_decryption_key("absolute_junk", ignore_cache=True)
-
-    @pytest.mark.parametrize(
-        "remove_newlines",
-        [(False), (True)],
-    )
-    def test_get_decryption_key_file_read(self, remove_newlines, tmp_path_factory, test_encryption_public_key):
-        common_auth = JWTCommonAuth()
-        temp_dir = tmp_path_factory.mktemp("ansible_base.jwt_consumer.common.auth")
-        temp_file_name = f"{temp_dir}/test.file"
-        if remove_newlines:
-            cert_data = test_encryption_public_key.replace("\n", "")
-        else:
-            cert_data = test_encryption_public_key
-        with open(temp_file_name, "w") as f:
-            f.write(cert_data)
-        key, _ = common_auth.get_decryption_key(f"file:{temp_file_name}", ignore_cache=True)
-        assert key == cert_data
-
-    def test_get_decryption_key_file_read_with_cache(self, tmp_path_factory, test_encryption_public_key):
-        common_auth = JWTCommonAuth()
-        temp_dir = tmp_path_factory.mktemp("ansible_base.jwt_consumer.common.auth")
-        temp_file_name = f"{temp_dir}/test.file"
-        cert_data = test_encryption_public_key
-        with open(temp_file_name, "w") as f:
-            f.write(cert_data)
-        key, cached = common_auth.get_decryption_key(f"file:{temp_file_name}", ignore_cache=True)
-        assert key == cert_data
-        assert cached is False
-        key, cached = common_auth.get_decryption_key(f"file:{temp_file_name}")
-        assert key == cert_data
-        assert cached is True
-
-    @mock.patch('requests.get', mock.Mock(side_effect=requests.exceptions.ConnectionError))
-    def test_get_decryption_key_connection_error(self):
-        common_auth = JWTCommonAuth()
-        url = "http://dne.cuz.junk.redhat.com"
-        with pytest.raises(AuthenticationFailed, match=rf"Failed to connect to {url}.*"):
-            common_auth.get_decryption_key(url, ignore_cache=True)
-
-    @mock.patch('requests.get', mock.Mock(side_effect=requests.exceptions.Timeout))
-    def test_get_decryption_key_url_timeout(self):
-        common_auth = JWTCommonAuth()
-        url = "http://dne.cuz.junk.redhat.com"
-        timeout = 1
-        with pytest.raises(AuthenticationFailed, match=rf"Timed out after {timeout} secs when connecting to {url}.*"):
-            common_auth.get_decryption_key(url, timeout=timeout, ignore_cache=True)
-
-    @mock.patch('requests.get', mock.Mock(side_effect=requests.exceptions.RequestException))
-    def test_get_decryption_key_url_random_exception(self):
-        common_auth = JWTCommonAuth()
-        url = "http://dne.cuz.junk.redhat.com"
-        with pytest.raises(AuthenticationFailed, match=r"Failed to get JWT decryption key from JWT server: \(RequestException\).*"):
-            common_auth.get_decryption_key(url, ignore_cache=True)
-
-    @pytest.mark.parametrize("status_code", ['302', '504'])
-    def test_get_decryption_key_url_bad_status_codes(self, status_code, mocked_http):
-        with mock.patch('requests.get') as requests_get:
-            requests_get.side_effect = mocked_http.mocked_get_decryption_key_get_request
-            common_auth = JWTCommonAuth()
-            with pytest.raises(AuthenticationFailed, match=f"Failed to get 200 response from the issuer: {status_code}"):
-                common_auth.get_decryption_key(f"http://someotherurl.com/{status_code}", ignore_cache=True)
-
-    def test_get_decryption_key_url_bad_200(self, mocked_http):
-        common_auth = JWTCommonAuth()
-        with mock.patch('requests.get') as requests_get:
-            requests_get.side_effect = mocked_http.mocked_get_decryption_key_get_request
-            with pytest.raises(AuthenticationFailed, match="Returned key does not start and end with BEGIN/END PUBLIC KEY"):
-                common_auth.get_decryption_key("http://someotherurl.com/200_junk", ignore_cache=True)
-
-    def test_get_decryption_key_url_good_200(self, mocked_http, test_encryption_public_key):
-        common_auth = JWTCommonAuth()
-        with mock.patch('requests.get') as requests_get:
-            requests_get.side_effect = mocked_http.mocked_get_decryption_key_get_request
-            try:
-                cert, _ = common_auth.get_decryption_key("http://someotherurl.com/200_good", ignore_cache=True)
-            except Exception as e:
-                assert False, f"Got unexpected exception {e}"
-            assert cert == test_encryption_public_key
-
-    def test_get_decryption_key_url_cache(self, mocked_http, test_encryption_public_key):
-        common_auth = JWTCommonAuth()
-        with mock.patch('requests.get') as requests_get:
-            requests_get.side_effect = mocked_http.mocked_get_decryption_key_get_request
-            try:
-                cert, cached = common_auth.get_decryption_key("http://someotherurl.com/200_good", ignore_cache=True)
-            except Exception as e:
-                assert False, f"Got unexpected exception {e}"
-            assert cert == test_encryption_public_key
-            assert cached is False
-            cert, cached = common_auth.get_decryption_key("http://someotherurl.com/200_good")
-            assert cert == test_encryption_public_key
-            assert cached is True
-
-    # If other tests are running at the same time there is a chance that they might set the key in the cache.
-    # Since we don't mock the response intentionally we are going to tell this test to use a different cache key
-    @mock.patch('ansible_base.jwt_consumer.common.auth.cache_key', 'expiration_test_jwt_key')
-    def test_cache_expiring(self, mocked_http, test_encryption_public_key):
-        with mock.patch('requests.get') as requests_get:
-            # Setting the cache timeout to 0 effectively says don't cache.
-            with override_settings(ANSIBLE_BASE_JWT_CACHE_TIMEOUT_SECONDS=0):
-                common_auth = JWTCommonAuth()
-                requests_get.side_effect = mocked_http.mocked_get_decryption_key_get_request
-                try:
-                    cert, cached = common_auth.get_decryption_key("http://someotherurl.com/200_good")
-                except Exception as e:
-                    assert False, f"Got unexpected exception {e}"
-                assert cert == test_encryption_public_key
-                assert cached is False
-                cert, cached = common_auth.get_decryption_key("http://someotherurl.com/200_good")
-                assert cert == test_encryption_public_key
-                assert cached is False
 
     @pytest.mark.parametrize(
         'user_fields,token,should_save',
@@ -327,6 +177,52 @@ class TestJWTCommonAuth:
         parsed_token = common_auth.validate_token(jwt_token.encrypt_token(), test_encryption_public_key)
         assert parsed_token == jwt_token.unencrypted_token
 
+    @mock.patch('ansible_base.jwt_consumer.common.auth.JWTCert.get_decryption_key', side_effect=JWTCertException('testing'))
+    def test_cert_exception_converts_to_AuthenticationFailed(self, get_decryption_key, mocked_http):
+        with pytest.raises(AuthenticationFailed):
+            common_auth = JWTCommonAuth()
+            request = mocked_http.mocked_parse_jwt_token_get_request('with_headers')
+            common_auth.parse_jwt_token(request)
+
+    # If other tests are running at the same time there is a chance that they might set the key in the cache.
+    # Since we don't mock the response intentionally we are going to tell this test to use a different cache key
+    @mock.patch('ansible_base.jwt_consumer.common.cache.cache_key', 'test_cert_fails_decryption_from_uncached_key')
+    def test_cert_fails_decryption_from_uncached_key(self, mocked_http, expected_log, test_encryption_public_key):
+        with override_settings(ANSIBLE_BASE_JWT_KEY=test_encryption_public_key):
+            with mock.patch('ansible_base.jwt_consumer.common.auth.JWTCommonAuth.validate_token', side_effect=DecodeError('validation always fails')):
+                common_auth = JWTCommonAuth()
+                request = mocked_http.mocked_parse_jwt_token_get_request('with_headers')
+                expected_log = partial(expected_log, "ansible_base.jwt_consumer.common.auth.logger")
+                with expected_log("error", 'check your key and generated token'):
+                    with pytest.raises(AuthenticationFailed):
+                        common_auth.parse_jwt_token(request)
+
+    @pytest.mark.django_db
+    def test_cert_fails_decryption_first_key_bad_second_key_good(self, mocked_http, expected_log, test_encryption_public_key, random_public_key):
+        with override_settings(ANSIBLE_BASE_JWT_KEY=random_public_key):
+            # Get the bad decryption key into the cache
+            cert = JWTCert()
+            cert.get_decryption_key()
+        with override_settings(ANSIBLE_BASE_JWT_KEY=test_encryption_public_key):
+            common_auth = JWTCommonAuth()
+            request = mocked_http.mocked_parse_jwt_token_get_request('with_headers')
+            common_auth.parse_jwt_token(request)
+
+    def test_cert_fails_decryption_from_cached_key_but_key_is_invalid(self, mocked_http, expected_log, test_encryption_public_key):
+        with override_settings(ANSIBLE_BASE_JWT_KEY=test_encryption_public_key):
+            # Get the decryption key into the cache
+            cert = JWTCert()
+            cert.get_decryption_key()
+
+            # Same test as above
+            with mock.patch('ansible_base.jwt_consumer.common.auth.JWTCommonAuth.validate_token', side_effect=DecodeError('validation always fails')):
+                common_auth = JWTCommonAuth()
+                request = mocked_http.mocked_parse_jwt_token_get_request('with_headers')
+                expected_log = partial(expected_log, "ansible_base.jwt_consumer.common.auth.logger")
+                with expected_log("error", 'cached key was correct'):
+                    with pytest.raises(AuthenticationFailed):
+                        common_auth.parse_jwt_token(request)
+
 
 class TestJWTAuthentication:
     def test_authenticate(self, jwt_token, django_user_model, mocked_http, test_encryption_public_key):
@@ -359,11 +255,15 @@ class TestJWTAuthentication:
             jwt_auth.process_permissions(None, None, None)
             assert "process_permissions was not overridden for JWTAuthentication" in caplog.text
 
-    def test_raise_an_exception_if_the_key_is_not_cached(self, random_public_key, mocked_http):
+    def test_raise_an_exception_if_the_key_is_not_cached(self, random_public_key, mocked_http, create_mock_method):
+        mock_field_dicts = [
+            {"key": random_public_key, "cached": False},
+        ]
+
         # We are going to return a key which will not work with jwt_token provided by mocked_http
         # Because its not cached the call to parse_jwt_token should raise the exception
         with override_settings(ANSIBLE_BASE_JWT_KEY=random_public_key):
-            with mock.patch('ansible_base.jwt_consumer.common.auth.JWTCommonAuth.get_decryption_key', return_value=(random_public_key, False)):
+            with mock.patch('ansible_base.jwt_consumer.common.auth.JWTCert.get_decryption_key', create_mock_method(mock_field_dicts)):
                 request = mocked_http.mocked_parse_jwt_token_get_request('with_headers')
                 jwt_auth = JWTAuthentication()
                 with pytest.raises(AuthenticationFailed) as af:
@@ -371,7 +271,12 @@ class TestJWTAuthentication:
                     assert 'check your key and generated token' in af
                     assert 'cached key was correct' not in af
 
-    def test_raise_an_exception_if_the_key_is_cached_but_the_new_key_is_the_same(self, random_public_key, mocked_http):
+    def test_raise_an_exception_if_the_key_is_cached_but_the_new_key_is_the_same(self, random_public_key, mocked_http, create_mock_method):
+        mock_field_dicts = [
+            {"key": random_public_key, "cached": True},
+            {"key": random_public_key, "cached": False},
+        ]
+
         # We are going to:
         #     1. return a key which will not work with jwt_token provided by mocked_http
         #     2. Cache a key that is invalid
@@ -381,7 +286,7 @@ class TestJWTAuthentication:
         url = 'https://example.com'
         with override_settings(ANSIBLE_BASE_JWT_KEY=url):
             # 1. Make the get_decryption_key always return the random key (which is invalid) && 2. pretend the key is cached
-            with mock.patch('ansible_base.jwt_consumer.common.auth.JWTCommonAuth.get_decryption_key', return_value=(random_public_key, True)):
+            with mock.patch('ansible_base.jwt_consumer.common.auth.JWTCert.get_decryption_key', create_mock_method(mock_field_dicts)):
                 # 3. Make the call.
                 # This will attempt to use the cached key, recognize that its invalid, load the key again (which will be the same) and then error out
                 request = mocked_http.mocked_parse_jwt_token_get_request('with_headers')
@@ -392,16 +297,17 @@ class TestJWTAuthentication:
                     assert 'cached key was correct' in af
 
     def test_correctly_authenticate_if_the_cached_key_is_invalid_but_the_new_key_is_correct(
-        self, random_public_key, mocked_http, test_encryption_public_key, django_user_model, jwt_token
+        self, random_public_key, mocked_http, test_encryption_public_key, django_user_model, jwt_token, create_mock_method
     ):
         # Pretend the key is coming from a URL
         url = 'https://example.com'
         with override_settings(ANSIBLE_BASE_JWT_KEY=url):
-            return_values = [
-                (random_public_key, True),
-                (test_encryption_public_key, False),
+            jwt_cert_field_changes = [
+                {"key": random_public_key, "cached": True},
+                {"key": test_encryption_public_key, "cached": False},
             ]
-            with mock.patch('ansible_base.jwt_consumer.common.auth.JWTCommonAuth.get_decryption_key', side_effect=return_values):
+
+            with mock.patch('ansible_base.jwt_consumer.common.auth.JWTCert.get_decryption_key', create_mock_method(jwt_cert_field_changes)):
                 request = mocked_http.mocked_parse_jwt_token_get_request('with_headers')
                 jwt_auth = JWTAuthentication()
                 user = django_user_model.objects.create_user(username=jwt_token.unencrypted_token['sub'], password="password")
@@ -425,3 +331,20 @@ class TestJWTAuthentication:
             user_object, _ = jwt_auth.authenticate(request)
             assert user_object.username == user.username
             assert user_object.id != user.id
+
+    def test_failure_when_cached_key_incorrect_and_actual_key_raises_exception(self, random_public_key, mocked_http, django_user_model, jwt_token, caplog):
+        with override_settings(ANSIBLE_BASE_JWT_KEY=random_public_key):
+
+            def change_cert_key_value(self, ignore_cache=False):
+                if ignore_cache:
+                    raise JWTCertException()
+
+                self.key = random_public_key
+                self.cached = not ignore_cache
+                return None
+
+            with mock.patch('ansible_base.jwt_consumer.common.auth.JWTCert.get_decryption_key', change_cert_key_value):
+                with pytest.raises(AuthenticationFailed):
+                    request = mocked_http.mocked_parse_jwt_token_get_request('with_headers')
+                    jwt_auth = JWTAuthentication()
+                    jwt_auth.authenticate(request)

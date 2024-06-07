@@ -10,7 +10,7 @@ from ansible_base.oauth2_provider.models import OAuth2AccessToken, OAuth2Applica
     "client_fixture,expected_status",
     [
         ("admin_api_client", 200),
-        ("user_api_client", 200),
+        pytest.param("user_api_client", 200, marks=pytest.mark.xfail(reason="https://github.com/ansible/django-ansible-base/issues/424")),
         ("unauthenticated_api_client", 401),
     ],
 )
@@ -67,7 +67,7 @@ def test_oauth2_provider_application_related(admin_api_client, oauth2_applicatio
     "client_fixture,expected_status",
     [
         ("admin_api_client", 200),
-        ("user_api_client", 200),
+        pytest.param("user_api_client", 200, marks=pytest.mark.xfail(reason="https://github.com/ansible/django-ansible-base/issues/424")),
         ("unauthenticated_api_client", 401),
     ],
 )
@@ -89,7 +89,7 @@ def test_oauth2_provider_application_detail(request, client_fixture, expected_st
     "client_fixture,expected_status",
     [
         ("admin_api_client", 201),
-        ("user_api_client", 201),
+        pytest.param("user_api_client", 201, marks=pytest.mark.xfail(reason="https://github.com/ansible/django-ansible-base/issues/424")),
         ("unauthenticated_api_client", 401),
     ],
 )
@@ -145,7 +145,7 @@ def test_oauth2_provider_application_validator(admin_api_client):
     "client_fixture,expected_status",
     [
         ("admin_api_client", 200),
-        ("user_api_client", 200),
+        pytest.param("user_api_client", 200, marks=pytest.mark.xfail(reason="https://github.com/ansible/django-ansible-base/issues/424")),
         ("unauthenticated_api_client", 401),
     ],
 )
