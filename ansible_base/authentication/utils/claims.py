@@ -438,6 +438,9 @@ class ReconcileUser:
 
         self.apply_permissions()
 
+        # Superuser "role"
+        self.apply_superuser_permission()
+
     def _compute_system_permissions(self) -> None:
         for role_name, has_permission in self.claims['rbac_roles'].get('system', {}).get('roles', {}).items():
             if has_permission:
@@ -475,6 +478,15 @@ class ReconcileUser:
                     self.permissions_cache.add(role_name, team=team)
                 else:
                     self.permissions_cache.remove(role_name, team=team)
+
+    def apply_superuser_permission(self) -> None:
+        is_superuser = self.claims.get('is_superuser')
+        if is_superuser is not None and is_superuser != self.user.is_superuser:
+            self.user.is_superuser = is_superuser
+            self.user.save()
+        elif is_superuser is None and self.rebuild_user_permissions and self.user.is_superuser:
+            self.user.is_superuser = False
+            self.user.save()
 
     def apply_permissions(self) -> None:
         """See RoleUserAssignmentsCache for more details."""

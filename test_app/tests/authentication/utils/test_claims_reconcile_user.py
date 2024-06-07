@@ -37,6 +37,39 @@ def test_create_organizations_and_teams():
 
 
 @pytest.mark.django_db
+def test_add_superuser(user, default_rbac_roles_claims):
+    assert user.is_superuser is False
+
+    authenticator_user = mock.Mock()
+    authenticator_user.claims = {'rbac_roles': default_rbac_roles_claims, 'is_superuser': True}
+
+    authenticator_user.provider.remove_users = False
+    ReconcileUser.reconcile_user_claims(user, authenticator_user)
+    assert user.is_superuser is True
+
+
+@pytest.mark.parametrize("remove_users", [True, False])
+@pytest.mark.django_db
+def test_remove_superuser(remove_users, default_rbac_roles_claims):
+    admin1 = User.objects.create(username='test-admin-1', is_superuser=True)
+    admin2 = User.objects.create(username='test-admin-2', is_superuser=True)
+
+    authenticator_user1 = mock.Mock()
+    authenticator_user2 = mock.Mock()
+    authenticator_user1.provider.remove_users = remove_users
+    authenticator_user2.provider.remove_users = remove_users
+
+    authenticator_user1.claims = {'rbac_roles': default_rbac_roles_claims, 'is_superuser': False}
+    authenticator_user2.claims = {'rbac_roles': default_rbac_roles_claims, 'is_superuser': None}
+
+    ReconcileUser.reconcile_user_claims(admin1, authenticator_user1)
+    ReconcileUser.reconcile_user_claims(admin2, authenticator_user2)
+
+    assert admin1.is_superuser is False
+    assert admin2.is_superuser is not remove_users
+
+
+@pytest.mark.django_db
 def test_add_user_to_org(org_member_rd, org_admin_rd, default_rbac_roles_claims):
     org = Organization.objects.create(name='test-org-01')
     org2 = Organization.objects.create(name='test-org-02')
