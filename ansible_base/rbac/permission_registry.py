@@ -8,7 +8,7 @@ from django.db.models.base import ModelBase  # post_migrate may call with phony 
 from django.db.models.signals import post_delete, post_migrate
 from django.utils.functional import cached_property
 
-from ansible_base.rbac.managed import ManagedRoleDefinition, get_managed_role_entries
+from ansible_base.rbac.managed import ManagedRoleConstructor, get_managed_role_constructors
 
 """
 This will record the models that the RBAC system in this app will follow
@@ -111,15 +111,18 @@ class PermissionRegistry:
 
         return get_registry()
 
-    def register_managed_role(self, shortname: str, managed_role: ManagedRoleDefinition) -> None:
+    def get_managed_role_constructor(self, shortname):
+        return self._managed_roles.get(shortname)
+
+    def register_managed_role_constructor(self, shortname: str, managed_role: ManagedRoleConstructor) -> None:
         """Add the given managed role to the managed role registry"""
         self._managed_roles[shortname] = managed_role
 
-    def register_managed_roles(self) -> None:
+    def register_managed_role_constructors(self) -> None:
         """Adds the data in setting ANSIBLE_BASE_MANAGED_ROLE_REGISTRY to the managed role registry"""
-        managed_defs = get_managed_role_entries(self.apps, settings.ANSIBLE_BASE_MANAGED_ROLE_REGISTRY)
-        for shortname, managed_role in managed_defs.items():
-            self.register_managed_role(shortname, managed_role)
+        managed_defs = get_managed_role_constructors(self.apps, settings.ANSIBLE_BASE_MANAGED_ROLE_REGISTRY)
+        for shortname, constructor in managed_defs.items():
+            self.register_managed_role_constructor(shortname, constructor)
 
     def create_managed_roles(self, apps) -> list[tuple[Model, bool]]:
         """Safe-ish method to create managed roles inside of a migration
@@ -173,7 +176,7 @@ class PermissionRegistry:
                 self._trackers[role_name] = tracker
             tracker.initialize(relationship)
 
-        self.register_managed_roles()
+        self.register_managed_role_constructors()
 
     @property
     def team_model(self):

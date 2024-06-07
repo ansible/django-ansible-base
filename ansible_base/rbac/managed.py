@@ -9,7 +9,7 @@ from django.utils.translation import gettext_noop
 logger = logging.getLogger('ansible_base.rbac.managed')
 
 
-class ManagedRoleDefinition:
+class ManagedRoleConstructor:
     """Subclasses must define attributes, or override methods that use attribues
     - name
     - description
@@ -68,7 +68,7 @@ class ManagedRoleDefinition:
         return combine_values(permissions_allowed_for_role(model))
 
 
-class ManagedAdminBase(ManagedRoleDefinition):
+class ManagedAdminBase(ManagedRoleConstructor):
     description = gettext_noop("Has all permissions to a single {model_name_verbose}")
 
     def get_permissions(self, apps) -> set[str]:
@@ -76,17 +76,17 @@ class ManagedAdminBase(ManagedRoleDefinition):
         return self.allowed_permissions(self.get_model(apps))
 
 
-class ManagedActionBase(ManagedRoleDefinition):
+class ManagedActionBase(ManagedRoleConstructor):
     description = gettext_noop("Can take specified action for a single {model_name_verbose}")
     action = None
 
-    def get_permissions(self, apps) -> list[str]:
+    def get_permissions(self, apps) -> set[str]:
         """Gives permission for one special action and includes view permission as well"""
         model_name = self.get_model(apps)._meta.model_name
-        return [f'view_{model_name}', self.action]
+        return {f'view_{model_name}', self.action}
 
 
-class ManagedReadOnlyBase(ManagedRoleDefinition):
+class ManagedReadOnlyBase(ManagedRoleConstructor):
     """Given a certain type this managed role includes all possible view permissions for that type
 
     The type is defined in the subclass, so this is an abstract class
@@ -94,8 +94,8 @@ class ManagedReadOnlyBase(ManagedRoleDefinition):
 
     description = gettext_noop("Has all viewing related permissions that can be delegated via {model_name_verbose}")
 
-    def get_permissions(self, apps):
-        return [codename for codename in self.allowed_permissions(self.get_model(apps)) if codename.startswith('view')]
+    def get_permissions(self, apps) -> set[str]:
+        return {codename for codename in self.allowed_permissions(self.get_model(apps)) if codename.startswith('view')}
 
 
 class OrganizationMixin:
@@ -122,18 +122,18 @@ class OrganizationAdmin(OrganizationMixin, ManagedAdminBase):
 
 class OrganizationMember(OrganizationMixin, ManagedActionBase):
     name = gettext_noop("Organization Member")
-    description = gettext_noop("Has all permissions given to a single team")
+    description = gettext_noop("Has member permission to a single organization")
     action = 'member_organization'
 
 
 class TeamAdmin(TeamMixin, ManagedAdminBase):
     name = gettext_noop("Team Admin")
-    description = gettext_noop("Can manage a single team and has all permissions given the team")
+    description = gettext_noop("Can manage a single team and inherits all role assignments to the team")
 
 
 class TeamMember(TeamMixin, ManagedActionBase):
     name = gettext_noop("Team Member")
-    description = gettext_noop("Has all permissions given to a single team")
+    description = gettext_noop("Inherits all role assignments to a single team")
     action = 'member_team'
 
 
@@ -152,7 +152,7 @@ managed_role_templates = {
 }
 
 
-def get_managed_role_entries(apps, setting_value: dict[str, dict]) -> dict[str, ManagedRoleDefinition]:
+def get_managed_role_constructors(apps, setting_value: dict[str, dict]) -> dict[str, ManagedRoleConstructor]:
     """Constructs managed role definition (instructions for creating a managed role definition)
 
     from the entries in setting_value, expected to be from settings.ANSIBLE_BASE_MANAGED_ROLE_REGISTRY"""

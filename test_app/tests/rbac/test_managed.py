@@ -13,11 +13,11 @@ def test_courtesy_roles_pass_validation():
     for template_name, cls in managed_role_templates.items():
         if '_base' in template_name:
             continue  # abstract, not intended to be used
-        rd = cls()
-        perm_list = [DABPermission.objects.get(codename=str_perm) for str_perm in rd.get_permissions(apps)]
-        model_cls = rd.get_model(apps)
+        constructor = cls()
+        perm_list = [DABPermission.objects.get(codename=str_perm) for str_perm in constructor.get_permissions(apps)]
+        model_cls = constructor.get_model(apps)
         if model_cls is not None:
-            ct = permission_registry.content_type_model.objects.get_for_model(rd.get_model(apps))
+            ct = permission_registry.content_type_model.objects.get_for_model(constructor.get_model(apps))
         else:
             ct = None  # system role
         validate_permissions_for_model(perm_list, ct, managed=True)

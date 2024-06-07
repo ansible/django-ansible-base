@@ -69,7 +69,7 @@ class ManagedRoleManager:
     def __getattr__(self, attr):
         if attr in self._cache:
             return self._cache[attr]
-        code_definition = permission_registry._managed_roles.get(attr)
+        code_definition = permission_registry.get_managed_role_constructor(attr)
         if code_definition:
             rd, _ = code_definition.get_or_create(self.apps)
             return rd
