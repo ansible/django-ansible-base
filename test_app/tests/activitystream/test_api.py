@@ -63,12 +63,18 @@ def test_activitystream_api_permission_classes(admin_api_client, user_api_client
     """
     url = reverse("activitystream-list")
 
+    # We *cannot* modify the list in place, pytest-django can't undo that change
+    # at the end of the test.
+    installed_apps = settings.INSTALLED_APPS.copy()
+
     if 'ansible_base.rbac' in settings.INSTALLED_APPS:
         if not has_rbac_app:
-            settings.INSTALLED_APPS.remove('ansible_base.rbac')
+            installed_apps.remove('ansible_base.rbac')
     else:
         if has_rbac_app:
-            settings.INSTALLED_APPS.append('ansible_base.rbac')
+            installed_apps.append('ansible_base.rbac')
+
+    settings.INSTALLED_APPS = installed_apps
 
     # Admin can always access
     response = admin_api_client.get(url)
