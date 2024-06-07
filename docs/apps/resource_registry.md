@@ -346,11 +346,14 @@ to `SyncExecutor` or automatically created based on the configuration from
 the `django.conf.settings` that looks like.
 
 ```python
+# Required
 RESOURCE_SERVER = {
     "URL": "https://localhost",
     "SECRET_KEY": "<VERY-SECRET-KEY-HERE>",
     "VALIDATE_HTTPS": False,
 }
+
+# Optional
 RESOURCE_JWT_USER_ID = "97447387-8596-404f-b0d0-6429b04c8d22"
 RESOURCE_SERVICE_PATH = "/api/server/v1/service-index/"
 ```
