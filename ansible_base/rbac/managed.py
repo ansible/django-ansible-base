@@ -1,5 +1,8 @@
 import logging
+from typing import Optional, Type
 
+from django.conf import settings
+from django.db.models import Model
 from django.utils.translation import gettext_lazy as _
 from django.utils.translation import gettext_noop
 
@@ -7,23 +10,37 @@ logger = logging.getLogger('ansible_base.rbac.managed')
 
 
 class ManagedRoleDefinition:
-    def __init__(self, apps, overrides=None):
+    """Subclasses must define attributes, or override methods that use attribues
+    - name
+    - description
+    - model_name
+    - permission_list
+    """
+
+    def __init__(self, overrides=None):
         if overrides:
             for key, value in overrides.items():
                 setattr(self, key, value)
 
-    def get_model(self):
-        raise NotImplementedError
+    def get_model(self, apps):
+        "It is intended that this will error if subclass did not set model_name"
+        if self.model_name is None:
+            return None
+        return apps.get_model(self.model_name)
 
-    def get_permissions(self) -> set[str]:
-        raise NotImplementedError
+    def get_permissions(self, apps) -> set[str]:
+        "It is intended that this will error if subclass did not set permission_list"
+        return self.permission_list
 
     def get_translated_name(self) -> str:
         return _(self.name)
 
     def get_content_type(self, apps):
+        model = self.get_model(apps)
+        if model is None:
+            return None
         content_type_cls = apps.get_model('contenttypes', 'ContentType')
-        return content_type_cls.objects.get_for_model(self.get_model())
+        return content_type_cls.objects.get_for_model(model)
 
     def get_or_create(self, apps):
         "Create from a list of text-type permissions and do validation"
@@ -36,7 +53,7 @@ class ManagedRoleDefinition:
         rd, created = role_definition_cls.objects.get_or_create(name=self.name, defaults=defaults)
 
         if created:
-            permissions = self.get_permissions()
+            permissions = self.get_permissions(apps)
             permission_cls = apps.get_model('dab_rbac', 'DABPermission')
             perm_list = [permission_cls.objects.get(codename=str_perm) for str_perm in permissions]
             rd.permissions.add(*perm_list)
@@ -45,92 +62,94 @@ class ManagedRoleDefinition:
             logger.debug(f'Permissions of {self.name} role definition: {permissions}')
         return rd, created
 
-
-class AdminMixin:
-    def get_permissions(self) -> set[str]:
-        """All permissions possible for the associated model"""
+    def allowed_permissions(self, model: Optional[Type[Model]]) -> set[str]:
         from ansible_base.rbac.validators import combine_values, permissions_allowed_for_role
 
-        return combine_values(permissions_allowed_for_role(self.get_model()))
+        return combine_values(permissions_allowed_for_role(model))
+
+
+class ManagedAdminBase(ManagedRoleDefinition):
+    description = gettext_noop("Has all permissions to a single {model_name_verbose}")
+
+    def get_permissions(self, apps) -> set[str]:
+        """All permissions possible for the associated model"""
+        return self.allowed_permissions(self.get_model(apps))
+
+
+class ManagedActionBase(ManagedRoleDefinition):
+    description = gettext_noop("Can take specified action for a single {model_name_verbose}")
+    action = None
+
+    def get_permissions(self, apps) -> list[str]:
+        """Gives permission for one special action and includes view permission as well"""
+        model_name = self.get_model(apps)._meta.model_name
+        return [f'view_{model_name}', f'{self.action}_{model_name}']
+
+
+class ManagedReadOnlyBase(ManagedRoleDefinition):
+    """Given a certain type this managed role includes all possible view permissions for that type
+
+    The type is defined in the subclass, so this is an abstract class
+    """
+
+    description = gettext_noop("Has all viewing related permissions that can be delegated via {model_name_verbose}")
+
+    def get_permissions(self, apps):
+        return [codename for codename in self.allowed_permissions(self.get_model(apps)) if codename.startswith('view')]
 
 
 class OrganizationMixin:
-    def get_model(self):
-        from ansible_base.lib.utils.auth import get_organization_model
-
-        return get_organization_model()
+    model_name = settings.ANSIBLE_BASE_ORGANIZATION_MODEL
 
 
 class TeamMixin:
-    def get_model(self):
-        from ansible_base.lib.utils.auth import get_team_model
-
-        return get_team_model()
+    model_name = settings.ANSIBLE_BASE_TEAM_MODEL
 
 
-# Start shared role definitions
+# Start concrete shared role definitions
 
 
-class SystemAuditor(ManagedRoleDefinition):
+class SystemAuditor(ManagedReadOnlyBase):
     name = gettext_noop("System Auditor")
     description = gettext_noop("Has view permissions to all objects")
-    shortname = 'system_auditor'
-
-    def get_model(self):
-        return None
-
-    def get_permissions(self):
-        from ansible_base.rbac.permission_registry import permission_registry
-
-        perm_list = []
-        for cls in permission_registry.all_registered_models:
-            if 'view' in cls._meta.default_permissions:
-                perm_list.append(f'view_{cls._meta.model_name}')
-            else:
-                logger.warning(f'Model {cls._meta.model_name} lacks view permission for auditor role')
-        return perm_list
+    model_name = None
 
 
-class OrganizationAdmin(AdminMixin, OrganizationMixin, ManagedRoleDefinition):
+class OrganizationAdmin(OrganizationMixin, ManagedAdminBase):
     name = gettext_noop("Organization Admin")
     description = gettext_noop("Has all permissions to a single organization and all objects inside of it")
-    shortname = 'org_admin'
 
 
-class OrganizationMember(OrganizationMixin, ManagedRoleDefinition):
+class OrganizationMember(OrganizationMixin, ManagedActionBase):
     name = gettext_noop("Organization Member")
     description = gettext_noop("Has all permissions given to a single team")
-    shortname = 'org_member'
-
-    def get_permissions(self) -> list[str]:
-        """All permissions possible for the associated model"""
-        org_model_name = self.get_model()._meta.model_name  # should be "organization"
-        return [f'view_{org_model_name}', f'member_{org_model_name}']
+    action = 'member'
 
 
-class TeamAdmin(AdminMixin, TeamMixin, ManagedRoleDefinition):
+class TeamAdmin(TeamMixin, ManagedAdminBase):
     name = gettext_noop("Team Admin")
     description = gettext_noop("Can manage a single team and has all permissions given the team")
-    shortname = 'team_admin'
 
 
-class TeamMember(TeamMixin, ManagedRoleDefinition):
+class TeamMember(TeamMixin, ManagedActionBase):
     name = gettext_noop("Team Member")
     description = gettext_noop("Has all permissions given to a single team")
-    shortname = 'team_member'
-
-    def get_permissions(self) -> list[str]:
-        """All permissions possible for the associated model"""
-        team_model_name = self.get_model()._meta.model_name  # should be "team"
-        return [f'view_{team_model_name}', f'member_{team_model_name}']
+    action = 'member'
 
 
 # Setup for registry, ultimately exists inside of permission_registry
 
 
-courtesy_registry = {}
-for cls in (SystemAuditor, OrganizationAdmin, OrganizationMember, TeamAdmin, TeamMember):
-    courtesy_registry[cls.shortname] = cls
+managed_role_templates = {
+    'sys_auditor': SystemAuditor,
+    'org_admin': OrganizationAdmin,
+    'org_member': OrganizationMember,
+    'team_admin': TeamAdmin,
+    'team_member': TeamMember,
+    # These are not fully functional on their own, but can be easily subclassed
+    'admin_base': ManagedAdminBase,
+    'action_base': ManagedActionBase,
+}
 
 
 def get_managed_role_entries(apps, setting_value: dict[str, dict]) -> dict[str, ManagedRoleDefinition]:
@@ -138,8 +157,11 @@ def get_managed_role_entries(apps, setting_value: dict[str, dict]) -> dict[str, 
 
     from the entries in setting_value, expected to be from settings.ANSIBLE_BASE_MANAGED_ROLE_REGISTRY"""
     ret = {}
-    for final_shortname, role_data in setting_value.items():
-        lookup_shortname = role_data.get('shortname', final_shortname)
-        cls = courtesy_registry[lookup_shortname]
-        ret[final_shortname] = cls(apps=apps, overrides=role_data)
+    for shortname, role_data in setting_value.items():
+        lookup_shortname = role_data.get('shortname', shortname)
+        cls = managed_role_templates[lookup_shortname]
+        overrides = role_data.copy()
+        overrides['template_shortname'] = lookup_shortname
+        overrides['shortname'] = shortname
+        ret[shortname] = cls(overrides=overrides)
     return ret
