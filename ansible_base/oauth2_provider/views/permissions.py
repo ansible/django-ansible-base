@@ -46,4 +46,5 @@ class OAuth2TokenPermission(BasePermission):
                 logger.error("obj check worked")
                 return True
         logger.error(f"Defaulting to am I the user {request.user} {obj.user}")
+        logger.error(f"settings.INSTALLED_APPS: {settings.INSTALLED_APPS}")
         return request.user == obj.user
