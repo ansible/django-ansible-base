@@ -1,5 +1,9 @@
+import logging
+
 from django.conf import settings
 from rest_framework.permissions import SAFE_METHODS, BasePermission
+
+logger = logging.getLogger('ansible_base.oauth2_provider.views.permissions')
 
 
 class OAuth2TokenPermission(BasePermission):
@@ -27,11 +31,19 @@ class OAuth2TokenPermission(BasePermission):
         return request.user.is_authenticated
 
     def has_object_permission(self, request, view, obj):
+        logger.error(f"Checking object permissions for {request.user}")
         if request.method in SAFE_METHODS and getattr(request.user, 'is_system_auditor', False):
+            logger.error("Is system auditor and safe method")
             return True
         if request.user.is_superuser:
+            logger.error("Is super user")
             return True
         if 'ansible_base.rbac' in settings.INSTALLED_APPS:
+            logger.error(f"RBAC INSTALLED {obj.application}")
+            if obj.application:
+                logger.error(obj.application.organization.access_qs(request.user, "change").exists())
             if obj.application and obj.application.organization.access_qs(request.user, "change").exists():
+                logger.error("obj check worked")
                 return True
+        logger.error(f"Defaulting to am I the user {request.user} {obj.user}")
         return request.user == obj.user
