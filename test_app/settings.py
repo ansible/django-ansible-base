@@ -154,7 +154,14 @@ ANSIBLE_BASE_RESOURCE_CONFIG_MODULE = "test_app.resource_api"
 
 SYSTEM_USERNAME = '_system'
 
-ANSIBLE_BASE_ROLE_PRECREATE = {}  # tested in individual tests
+ANSIBLE_BASE_MANAGED_ROLE_REGISTRY = {
+    'team_member': {},
+    'team_admin': {},
+    'org_admin': {},
+    'org_member': {},
+    'cow_admin': {'shortname': 'admin_base', 'model_name': 'test_app.cow', 'name': 'Cow Admin'},
+    'cow_moo': {'shortname': 'action_base', 'model_name': 'test_app.cow', 'name': 'Cow Mooer', 'action': 'say_cow'},
+}
 ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES = True
 ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES = True
 

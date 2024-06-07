@@ -317,23 +317,6 @@ ANSIBLE_BASE_ORGANIZATION_MODEL = 'main.Organization'
 
 The organization model is only used for pre-created role definitions.
 
-### Managed Pre-Created Role Definitions
-
-In a post_migrate signal, certain RoleDefinitions are pre-created.
-You can customize that with the following setting.
-
-```
-ANSIBLE_BASE_ROLE_PRECREATE = {
-    'object_admin': '{cls._meta.model_name}-admin',
-    'org_admin': 'organization-admin',
-    'org_children': 'organization-{cls._meta.model_name}-admin',
-    'special': '{cls._meta.model_name}-{action}',
-}
-```
-
-Set this to `{}` if you will create role definitions in your own data migration,
-or if you want all roles to be user-defined.
-
 ### RBAC vs User Flag Responsibilities
 
 With some user flags, like the standard `is_superuser` flag, the RBAC system does not

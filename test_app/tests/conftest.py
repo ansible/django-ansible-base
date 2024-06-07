@@ -21,9 +21,7 @@ from rest_framework.test import force_authenticate
 from ansible_base.lib.testing.fixtures import *  # noqa: F403, F401
 from ansible_base.lib.testing.util import copy_fixture, delete_authenticator
 from ansible_base.oauth2_provider.fixtures import *  # noqa: F403, F401
-from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
-from ansible_base.rbac.validators import combine_values, permissions_allowed_for_role
 from test_app import models
 
 
@@ -610,56 +608,32 @@ def disable_activity_stream():
         yield
 
 
-role_manager = type(RoleDefinition.objects.managed)
-
-
 @pytest.fixture
 def org_admin_rd():
     """Give all permissions possible for an organization"""
-    perm_list = combine_values(permissions_allowed_for_role(models.Organization))
     RoleDefinition.objects.managed.clear()
-    return RoleDefinition.objects.create_from_permissions(
-        permissions=perm_list,
-        name=role_manager.org_admin.role_name,
-        content_type=permission_registry.content_type_model.objects.get_for_model(models.Organization),
-        managed=True,
-    )
+    yield RoleDefinition.objects.managed.org_admin
+    RoleDefinition.objects.managed.clear()
 
 
 @pytest.fixture
 def org_member_rd():
     RoleDefinition.objects.managed.clear()
-    return RoleDefinition.objects.create_from_permissions(
-        permissions=['view_organization', 'member_organization'],
-        name=role_manager.org_member.role_name,
-        content_type=permission_registry.content_type_model.objects.get_for_model(models.Organization),
-        managed=True,
-    )
+    yield RoleDefinition.objects.managed.org_member
+    RoleDefinition.objects.managed.clear()
 
 
 @pytest.fixture
 def member_rd():
     "Member role for a team, place in root conftest because it is needed for the team users tracked relationship"
     RoleDefinition.objects.managed.clear()
-    return RoleDefinition.objects.create_from_permissions(
-        permissions=[permission_registry.team_permission, f'view_{permission_registry.team_model._meta.model_name}'],
-        name=role_manager.team_member.role_name,
-        content_type=permission_registry.content_type_model.objects.get_for_model(permission_registry.team_model),
-        managed=True,
-    )
+    yield RoleDefinition.objects.managed.team_member
+    RoleDefinition.objects.managed.clear()
 
 
 @pytest.fixture
 def admin_rd():
     "Member role for a team, place in root conftest because it is needed for the team users tracked relationship"
     RoleDefinition.objects.managed.clear()
-    return RoleDefinition.objects.create_from_permissions(
-        permissions=[
-            permission_registry.team_permission,
-            f'view_{permission_registry.team_model._meta.model_name}',
-            f'change_{permission_registry.team_model._meta.model_name}',
-        ],
-        name=role_manager.team_admin.role_name,
-        content_type=permission_registry.content_type_model.objects.get_for_model(permission_registry.team_model),
-        managed=True,
-    )
+    yield RoleDefinition.objects.managed.team_admin
+    RoleDefinition.objects.managed.clear()
