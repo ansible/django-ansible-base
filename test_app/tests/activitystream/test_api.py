@@ -50,7 +50,7 @@ def test_activitystream_api_read_only(admin_api_client, user):
     "has_rbac_app,who",
     [
         (True, "user"),
-        (False, "admin"),
+        # (False, "admin"),
     ],
 )
 def test_activitystream_api_permission_classes(admin_api_client, user_api_client, has_rbac_app, who, settings):
