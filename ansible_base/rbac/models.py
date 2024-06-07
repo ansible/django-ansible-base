@@ -6,6 +6,7 @@ from typing import Optional, Type
 from django.conf import settings
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import connection, models, transaction
 from django.db.models.functions import Cast
 from django.db.models.query import QuerySet
@@ -225,6 +226,19 @@ class RoleDefinition(CommonModel):
     def remove_permission(self, actor, content_object):
         return self.give_or_remove_permission(actor, content_object, giving=False)
 
+    def get_object_role(self, **kwargs):
+        """Downselects kwargs to the lookup_fields we want to use and does lookup"""
+        lookup_fields = {'object_id', 'content_type', 'role_definition'}
+        lookup_data = {}
+        defaults = {}
+        for field_name, field_value in kwargs.items():
+            if field_name in lookup_fields:
+                lookup_data[field_name] = field_value
+            else:
+                defaults[field_name] = field_value
+
+        return ObjectRole.objects.filter(**lookup_data).first()
+
     def get_or_create_object_role(self, **kwargs):
         """Transaction-safe method to create ObjectRole
 
@@ -233,17 +247,24 @@ class RoleDefinition(CommonModel):
         postgres constraints will still be violated by other active transactions
         which gives us a way to gracefully handle this.
         """
-        if transaction.get_connection().in_atomic_block:
-            try:
-                with transaction.atomic():
-                    object_role = ObjectRole.objects.create(**kwargs)
-                    return (object_role, True)
-            except IntegrityError:
-                object_role = ObjectRole.objects.get(**kwargs)
-                return (object_role, False)
+        object_role = self.get_object_role(**kwargs)
+        if object_role:
+            return (object_role, False)
         else:
-            object_role = ObjectRole.objects.create(**kwargs)
-            return (object_role, True)
+            if transaction.get_connection().in_atomic_block:
+                try:
+                    with transaction.atomic():
+                        object_role = ObjectRole.objects.create(**kwargs)
+                        return (object_role, True)
+                except IntegrityError:
+                    object_role = ObjectRole.objects.get(**kwargs)
+                    if object_role:
+                        return (object_role, False)
+                    # Should not really happen, but we will give up here
+                    raise ObjectRole.DoesNotExist
+            else:
+                object_role = ObjectRole.objects.create(**kwargs)
+                return (object_role, True)
 
     def give_or_remove_permission(self, actor, content_object, giving=True, sync_action=False):
         "Shortcut method to do whatever needed to give user or team these permissions"
@@ -253,11 +274,19 @@ class RoleDefinition(CommonModel):
         object_id = content_object._meta.pk.get_db_prep_value(content_object.pk, connection)
         kwargs = dict(role_definition=self, content_type=obj_ct, object_id=object_id)
 
+        try:
+            if hasattr(content_object, 'resource'):
+                if resource := content_object.resource:
+                    kwargs['resource'] = resource
+        except ObjectDoesNotExist:
+            pass
+
         created = False
-        object_role = ObjectRole.objects.filter(**kwargs).first()
-        if object_role is None:
-            if not giving:
-                return  # nothing to do
+        if not giving:
+            object_role = self.get_object_role(**kwargs)
+            if not object_role:
+                return
+        else:
             object_role, created = self.get_or_create_object_role(**kwargs)
 
         from ansible_base.rbac.triggers import needed_updates_on_assignment, update_after_assignment
@@ -372,10 +401,20 @@ class AssignmentBase(ImmutableCommonModel, ObjectRoleFields):
     """
 
     object_role = models.ForeignKey('dab_rbac.ObjectRole', on_delete=models.CASCADE, editable=False, null=True)
+    # Resource link fields are duplicated from object_role, for serializer purposes
     object_id = models.TextField(
         null=True, blank=True, help_text=_('Primary key of the object this assignment applies to, null value indicates system-wide assignment')
     )
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, null=True)
+    resource = models.ForeignKey(
+        'dab_resource_registry.Resource',
+        on_delete=models.CASCADE,
+        null=True,
+        related_name='%(class)s_object_assignments',
+        help_text=_(
+            'A UUID identifier of the object this role assignment applies to, null value may indicate system-wide role or a model that has no ansible_id'
+        ),
+    )
 
     # object_role is internal, and not shown in serializer
     # content_type does not have a link, and ResourceType will be used in lieu sometime
@@ -393,6 +432,10 @@ class AssignmentBase(ImmutableCommonModel, ObjectRoleFields):
             self.object_id = self.object_role.object_id
             self.content_type_id = self.object_role.content_type_id
             self.role_definition_id = self.object_role.role_definition_id
+        if self.object_role_id and not self.resource_id:
+            # ObjectRole may not have a linked resource, if not tracked in resource registry
+            if resource_id := self.object_role.resource_id:
+                self.resource_id = resource_id
 
 
 class RoleUserAssignment(AssignmentBase):
@@ -403,6 +446,14 @@ class RoleUserAssignment(AssignmentBase):
         related_name='user_assignments',
     )
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='role_assignments')
+    user_resource = models.ForeignKey(
+        'dab_resource_registry.Resource',
+        on_delete=models.CASCADE,
+        null=True,
+        related_name='role_user_assignments',
+        help_text=_('A UUID identifier of the user given permission defined by this assignment'),
+    )
+
     router_basename = 'roleuserassignment'
 
     class Meta:
@@ -427,6 +478,14 @@ class RoleTeamAssignment(AssignmentBase):
         related_name='team_assignments',
     )
     team = models.ForeignKey(settings.ANSIBLE_BASE_TEAM_MODEL, on_delete=models.CASCADE, related_name='role_assignments')
+    user_resource = models.ForeignKey(
+        'dab_resource_registry.Resource',
+        on_delete=models.CASCADE,
+        null=True,
+        related_name='role_team_assignments',
+        help_text=_('A UUID identifier of the team given permission defined by this assignment'),
+    )
+
     router_basename = 'roleteamassignment'
 
     class Meta:
@@ -487,6 +546,16 @@ class ObjectRole(ObjectRoleFields):
         related_name='member_roles',
         editable=False,
         help_text=_("Users who have this role obtain member access to these teams, and inherit all their permissions"),
+    )
+    # Not really computed, but cached just to have around
+    resource = models.ForeignKey(
+        'dab_resource_registry.Resource',
+        on_delete=models.CASCADE,
+        null=True,
+        related_name='%(class)s_object_assignments',
+        help_text=_(
+            'A UUID identifier of the object this role assignment applies to, null value may indicate system-wide role or a model that has no ansible_id'
+        ),
     )
 
     def __str__(self):
