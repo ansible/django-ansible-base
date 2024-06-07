@@ -14,6 +14,7 @@ import pytest
 from django.urls import reverse
 
 from ansible_base.oauth2_provider.models import OAuth2AccessToken
+from ansible_base.rbac.models import RoleDefinition
 
 
 @pytest.mark.parametrize(
@@ -56,12 +57,11 @@ def test_oauth2_application_read_change_delete(
         second_org = request.getfixturevalue('organization_1')
         if user_case == 'admin_of_app_user_org':
             # - I am the admin of the organization of the user of the application.
-            second_org.users.add(app.user)  # Add the app owner user to the org
-            second_org.users.add(user)  # Add me to the org
-            second_org.admins.add(user)  # And make me an admin of the org
+            RoleDefinition.objects.managed.org_admin.give_permission(user, second_org)  # And make me an admin of the org
+            RoleDefinition.objects.managed.org_member.give_permission(app.user, second_org)  # Add the app owner user to the org
         elif user_case == 'user_in_org':
             # - I am a user in the organization of the application.
-            organization.users.add(user)  # Add me to the org
+            RoleDefinition.objects.managed.org_member.give_permission(user, organization)  # Add me to the org
         elif user_case == 'user':
             # Negative case, do nothing, the user is just some random user
             pass
@@ -126,11 +126,10 @@ def test_oauth2_application_create(
         user = request.getfixturevalue('random_user_1')
         if user_case == 'admin_of_app_org':
             # - I am the admin of the organization of the application.
-            organization.users.add(user)  # Add me to the org
-            organization.admins.add(user)  # And make me an admin of the org
+            RoleDefinition.objects.managed.org_admin.give_permission(user, organization)  # And make me an admin of the org
         elif user_case == 'user_in_org':
             # - I am a user in the organization of the application.
-            organization.users.add(user)  # Add me to the org
+            RoleDefinition.objects.managed.org_member.give_permission(user, organization)  # Add me to the org
         elif user_case == 'user':
             # Negative case, do nothing, the user is just some random user
             pass
@@ -204,14 +203,13 @@ def test_oauth2_application_token_read_change_delete(
         user = request.getfixturevalue('random_user_1')
         if user_case == 'admin_of_token_app_org':
             # - I am the admin of the organization of the application of the token.
-            organization.users.add(user)  # Add me to the org
-            organization.admins.add(user)  # And make me an admin of the org
+            RoleDefinition.objects.managed.org_admin.give_permission(user, organization)  # Make me an admin of the org
         elif user_case == 'user_of_token':
             # - I am the user of the token.
             user = oauth2_user_application_token.user
         elif user_case == 'user_in_app_org':
             # Negative case, user is in the org but not an admin or the token user
-            organization.users.add(user)  # Add me to the org
+            RoleDefinition.objects.managed.org_member.give_permission(user, organization)  # Add me to the org
         elif user_case == 'user':
             # Negative case, do nothing, the user is just some random user
             pass
@@ -283,12 +281,12 @@ def test_oauth2_application_token_create(
         second_org = request.getfixturevalue('organization_1')
         if user_case == 'admin_of_app_user_org':
             # - I am the admin of the organization of the user of the application.
-            second_org.users.add(app.user)  # Add the app owner user to the org
-            second_org.users.add(user)  # Add me to the org
-            second_org.admins.add(user)  # And make me an admin of the org
+            RoleDefinition.objects.managed.org_member.give_permission(user, second_org)  # Add me to the org
+            RoleDefinition.objects.managed.org_admin.give_permission(user, second_org)  # And make me an admin of the org
+            RoleDefinition.objects.managed.org_member.give_permission(app.user, second_org)  # Add the app owner user to the org
         elif user_case == 'user_in_app_org':
             # - I am a user in the organization of the application.
-            organization.users.add(user)  # Add me to the org
+            RoleDefinition.objects.managed.org_member.give_permission(user, organization)  # Add me to the org
         elif user_case == 'user':
             # Negative case, do nothing, the user is just some random user
             pass
