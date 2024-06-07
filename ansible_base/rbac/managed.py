@@ -83,7 +83,7 @@ class ManagedActionBase(ManagedRoleDefinition):
     def get_permissions(self, apps) -> list[str]:
         """Gives permission for one special action and includes view permission as well"""
         model_name = self.get_model(apps)._meta.model_name
-        return [f'view_{model_name}', f'{self.action}_{model_name}']
+        return [f'view_{model_name}', self.action]
 
 
 class ManagedReadOnlyBase(ManagedRoleDefinition):
@@ -123,7 +123,7 @@ class OrganizationAdmin(OrganizationMixin, ManagedAdminBase):
 class OrganizationMember(OrganizationMixin, ManagedActionBase):
     name = gettext_noop("Organization Member")
     description = gettext_noop("Has all permissions given to a single team")
-    action = 'member'
+    action = 'member_organization'
 
 
 class TeamAdmin(TeamMixin, ManagedAdminBase):
@@ -134,7 +134,7 @@ class TeamAdmin(TeamMixin, ManagedAdminBase):
 class TeamMember(TeamMixin, ManagedActionBase):
     name = gettext_noop("Team Member")
     description = gettext_noop("Has all permissions given to a single team")
-    action = 'member'
+    action = 'member_team'
 
 
 # Setup for registry, ultimately exists inside of permission_registry

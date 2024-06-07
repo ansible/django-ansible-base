@@ -36,3 +36,10 @@ def test_cow_mooer():
     perm_list = [perm.codename for perm in rd.permissions.all()]
     assert set(perm_list) == {'view_cow', 'say_cow'}
     assert rd.name == 'Cow Mooer'
+
+
+@pytest.mark.django_db
+def test_create_all_managed_roles():
+    "This is a method that may be called in migrations, etc."
+    assert not RoleDefinition.objects.filter(name='Cow Mooer').exists()
+    permission_registry.create_managed_roles(apps)
