@@ -7,7 +7,6 @@ from crum import get_current_user
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractUser
-from django.db import models
 from django.utils.translation import gettext_lazy as _
 from inflection import underscore
 
@@ -19,6 +18,8 @@ logger = logging.getLogger('ansible_base.lib.utils.models')
 
 
 def get_all_field_names(model, concrete_only=False, include_attnames=True):
+    from django.db import models
+
     # Implements compatibility with _meta.get_all_field_names
     # See: https://docs.djangoproject.com/en/1.11/ref/models/meta/#migrating-from-the-old-api
     return list(
@@ -35,6 +36,8 @@ def get_all_field_names(model, concrete_only=False, include_attnames=True):
 
 
 def get_type_for_model(model):
+    from django.db import models
+
     """
     Return type name for a given model class.
     """
@@ -95,6 +98,9 @@ class NotARealException(Exception):
 
 
 def get_system_user() -> Optional[AbstractUser]:
+    from django.contrib.auth import get_user_model  # Import get_user_model here to prevent circular imports
+    from django.contrib.auth.models import AbstractUser
+
     system_username, setting_name = get_system_username()
     system_user = get_user_model().objects.filter(username=system_username).first()
     # We are using a global variable to try and track if this thread has already spit out the message, if so ignore
@@ -124,6 +130,7 @@ def get_system_user() -> Optional[AbstractUser]:
 
 
 def current_user_or_system_user() -> Optional[AbstractUser]:
+    from django.contrib.auth.models import AbstractUser
     """
     Attempt to get the current user. If there is none or it is anonymous,
     try to return the system user instead.
@@ -135,6 +142,8 @@ def current_user_or_system_user() -> Optional[AbstractUser]:
 
 
 def is_encrypted_field(model, field_name):
+    from django.db import models  # Import models here to prevent circular imports
+    from django.contrib.auth.models import AbstractUser 
     if model is None:
         return False
 
@@ -176,6 +185,7 @@ def diff(
     sanitize_encrypted=True,
     all_values_as_strings=False,
 ):
+    from django.db import models 
     """
     Diff two instances of models (which do not have to be the same type of model
     if given require_type_match=False).
