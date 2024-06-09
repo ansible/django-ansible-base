@@ -1,9 +1,7 @@
 import base64
 import hashlib
 import logging
-import time
 import re
-from typing import Optional
 
 from cryptography.fernet import Fernet
 from cryptography.hazmat.backends import default_backend
@@ -58,37 +56,30 @@ class Fernet256(Fernet):
     def is_encrypted_string(self, value: str, invalid_algo_is_fatal: bool) -> bool:
         # Ensure input is a string already encrypted by our algorithm
         # by comparing with the decrypted and re-encrypted values
-
-        if type(value) is not str:
-            raise ValueError("is_encrypted_string can only accept string")
-
         if not value.startswith(ENCRYPTED_STRING):
             return False
 
         try:
             data = self.extract_data(value)
         except ValueError as ve:
+            # value error is raised when algorithm is unsupported
             if invalid_algo_is_fatal:
                 raise ve
 
-            print('Data is not in the correct format')
-            return False
-
         # Check if data is base64 encoded
-        # Note: this can fail because some strings resemble base 64 encoded ones. **important**
-        # first check: if length is multiple of 4
-        if len(data.strip()) % 4 != 0:
-            return False
-
-        # second check: use regex pattern
-        reg = r'^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$'
+        # **important** Note: this can fail because some strings resemble base 64 encoded ones
+        # **important** for instance, if user's secret is $encrypted$UTF8$AESCBC$junk, the code will break
+        # use regex pattern: ^([A-Za-z0-9+/]{4})* means the string starts with 0 or more base64 groups.
+        # ([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$ means
+        # the string ends in one of three forms: [A-Za-z0-9+/]{4}, [A-Za-z0-9+/]{3}= or [A-Za-z0-9+/]{2}==.
+        reg = r'^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)?$'
 
         return re.match(reg, data) is not None
 
     def encrypt_string(self, value: str) -> str:
 
         # Its possible for a serializer to accept a number for a CharField (like 5). In the serializer its "5" but when we get here it might be 5
-        if type(value) is not str:
+        if not isinstance(value, str):
             value = str(value)
 
         if self.is_encrypted_string(value, invalid_algo_is_fatal=False):
