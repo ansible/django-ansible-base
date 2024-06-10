@@ -1,9 +1,12 @@
+import http
 import logging
 
+import jwt
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.utils.translation import gettext_lazy as _
 from jwt.algorithms import get_default_algorithms
+from jwt.exceptions import PyJWTError
 from social_core.backends.open_id_connect import OpenIdConnectAuth
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
@@ -221,3 +224,28 @@ class AuthenticatorPlugin(SocialAuthMixin, OpenIdConnectAuth, AbstractAuthentica
         # This is a copy of super without caching, which avoids data
         # from one OIDC based authenticator showing up in another
         return self.get_json(self.oidc_endpoint() + "/.well-known/openid-configuration")
+
+    def public_key(self):
+        return "\n".join(
+            [
+                "-----BEGIN PUBLIC KEY-----",
+                self.setting("PUBLIC_KEY"),
+                "-----END PUBLIC KEY-----",
+            ]
+        )
+
+    def user_data(self, access_token, *args, **kwargs):
+        user_data = self.request(self.userinfo_url(), headers={"Authorization": f"Bearer {access_token}"})
+        if user_data.headers["Content-Type"] == "application/jwt":
+            try:
+                data = jwt.decode(
+                    access_token,
+                    key=self.public_key(),
+                    algorithms=self.setting("JWT_ALGORITHMS"),
+                    audience=self.setting("KEY"),
+                )
+                return data
+            except PyJWTError as e:
+                logger.error(_(f"Unable to decode user info response JWT: {e}"))
+                return None
+        return user_data.json()
