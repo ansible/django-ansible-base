@@ -58,6 +58,10 @@ class OrganizationType(SharedResourceTypeSerializer):
     RESOURCE_TYPE = "organization"
 
     name = serializers.CharField()
+    description = serializers.CharField(
+        default="",
+        allow_blank=True,
+    )
 
 
 class TeamType(SharedResourceTypeSerializer):
