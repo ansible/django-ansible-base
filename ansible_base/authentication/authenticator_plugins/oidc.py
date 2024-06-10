@@ -1,4 +1,3 @@
-import http
 import logging
 
 import jwt
