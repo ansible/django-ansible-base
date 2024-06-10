@@ -33,7 +33,6 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
 
     # Assume we are not going to change our flags
     is_superuser = None
-    is_system_auditor = None
 
     rbac_role_mapping = {'system': {'roles': {}}, 'organizations': {}}
     # Assume we start with no mappings
@@ -83,8 +82,6 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
             access_allowed = False
         elif auth_map.map_type == 'is_superuser':
             is_superuser = has_permission
-        elif auth_map.map_type == 'is_system_auditor':  # TODO: remove?
-            is_system_auditor = has_permission
         elif auth_map.map_type in ['team', 'role'] and not is_empty(auth_map.organization) and not is_empty(auth_map.team) and not is_empty(auth_map.role):
             if auth_map.organization not in org_team_mapping:
                 org_team_mapping[auth_map.organization] = {}
@@ -102,7 +99,6 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
     return {
         "access_allowed": access_allowed,
         "is_superuser": is_superuser,
-        "is_system_auditor": is_system_auditor,  # TODO: remove
         "claims": {
             "team_membership": org_team_mapping,
             "organization_membership": organization_membership,
@@ -148,6 +144,8 @@ def _add_rbac_role_mapping(has_permission, role_mapping, role, organization=None
             if team not in role_mapping['organizations'][organization]['teams']:
                 role_mapping['organizations'][organization]['teams'][team] = {'roles': {}}
             role_mapping['organizations'][organization]['teams'][team]['roles'][role] = has_permission
+        else:
+            logger.warning(f"Role mapping is not possible, organization for team '{team}' is missing")
 
 
 def process_groups(trigger_condition: dict, groups: list, authenticator_id: int) -> Optional[bool]:
@@ -443,24 +441,22 @@ class ReconcileUser:
 
     def _compute_system_permissions(self) -> None:
         for role_name, has_permission in self.claims['rbac_roles'].get('system', {}).get('roles', {}).items():
-            if has_permission:
-                self.permissions_cache.add(role_name, organization=None, team=None)
-            else:
-                self.permissions_cache.remove(role_name, organization=None, team=None)
+            self.permissions_cache.add_or_remove(role_name, has_permission, organization=None, team=None)
 
     def _compute_organization_permissions(self) -> Iterator[Tuple[AbstractOrganization, dict]]:
         orgs_by_name = self._get_orgs_by_name(self.claims['rbac_roles'].get('organizations', {}).keys())
 
         for org_name, org_details in self.claims['rbac_roles'].get('organizations', {}).items():
             if (org := orgs_by_name.get(org_name)) is None:
-                logger.info(_("Skipping organization '{organization}', because the organization does not exist").format(organization=org_name))
+                logger.error(
+                    _("Skipping organization '{organization}', because the organization does not exist but it should already have been created").format(
+                        organization=org_name
+                    )
+                )
                 continue
 
             for role_name, has_permission in org_details['roles'].items():
-                if has_permission:
-                    self.permissions_cache.add(role_name, organization=org)
-                else:
-                    self.permissions_cache.remove(role_name, organization=org)
+                self.permissions_cache.add_or_remove(role_name, has_permission, organization=org)
             yield org, org_details['teams']
 
     def _compute_team_permissions(self, org: AbstractOrganization, teams_dict: dict[str, dict]) -> None:
@@ -468,16 +464,15 @@ class ReconcileUser:
 
         for team_name, team_details in teams_dict.items():
             if (team := teams_by_name.get(team_name)) is None:
-                logger.info(
-                    _("Skipping team '{team}' in organization '{organization}', because the team does not exist").format(team=team_name, organization=org.name)
+                logger.error(
+                    _(
+                        "Skipping team '{team}' in organization '{organization}', because the team does not exist but it should already have been created"
+                    ).format(team=team_name, organization=org.name)
                 )
                 continue
 
             for role_name, has_permission in team_details['roles'].items():
-                if has_permission:
-                    self.permissions_cache.add(role_name, team=team)
-                else:
-                    self.permissions_cache.remove(role_name, team=team)
+                self.permissions_cache.add_or_remove(role_name, has_permission, team=team)
 
     def apply_superuser_permission(self) -> None:
         is_superuser = self.claims.get('is_superuser')
@@ -491,11 +486,14 @@ class ReconcileUser:
     def apply_permissions(self) -> None:
         """See RoleUserAssignmentsCache for more details."""
         for role_name, role_permissions in self.permissions_cache.items():
-            if self.permissions_cache.rd_by_name(role_name):
+            if not self.permissions_cache.rd_by_name(role_name):
+                # If we failed to load this role for some reason
+                # we can't continue setting the permissions, log message was already emitted
+                continue
 
-                for content_type_id, content_type_permissions in role_permissions.items():
-                    for _object_id, object_with_status in content_type_permissions.items():
-                        self._apply_permission(object_with_status, role_name)
+            for content_type_id, content_type_permissions in role_permissions.items():
+                for _object_id, object_with_status in content_type_permissions.items():
+                    self._apply_permission(object_with_status, role_name)
 
     def _apply_permission(self, object_with_status, role_name):
         status = object_with_status['status']
@@ -543,7 +541,7 @@ class ReconcileUser:
                 )
             )
         else:
-            logger.info(_("Removing role '{rd}' to user '{username}'").format(rd=role_definition.name, username=self.user.username))
+            logger.info(_("Removing role '{rd}' from user '{username}'").format(rd=role_definition.name, username=self.user.username))
 
         if obj:
             role_definition.remove_permission(self.user, obj)
@@ -560,8 +558,7 @@ class RoleUserAssignmentsCache:
     def __init__(self):
         self.cache = {}
         self.content_types = {
-            'organization': ContentType.objects.get_for_model(get_organization_model()),
-            'team': ContentType.objects.get_for_model(get_team_model()),
+            content_type.model: content_type for content_type in ContentType.objects.get_for_models(get_organization_model(), get_team_model()).values()
         }
         self.role_definitions = {}
 
@@ -598,7 +595,7 @@ class RoleUserAssignmentsCache:
                 self.role_definitions[role_definition.name] = role_definition
 
             # Cache Role User Assignment
-            self._init_key(role_definition.name, content_type_id=role_assignment.content_type_id)
+            self._init_cache_key(role_definition.name, content_type_id=role_assignment.content_type_id)
 
             # object_id is TEXT db type
             object_id = int(role_assignment.object_id) if role_assignment.object_id is not None else None
@@ -626,32 +623,53 @@ class RoleUserAssignmentsCache:
                 return rd
         return None
 
-    def add(self, role_name: str, organization: Optional[AbstractOrganization] = None, team: Optional[AbstractTeam] = None) -> None:
+    def add_or_remove(
+        self, role_name: str, has_permission: bool, organization: Optional[AbstractOrganization] = None, team: Optional[AbstractTeam] = None
+    ) -> None:
+        """
+        Marks role assignment's params and (optionally) associated object in the cache.
+        Either marks it as STATUS_ADD, STATUS_REMOVE or STATUS_NOOP.
+        """
+        content_type_id = self._get_content_type_id(organization, team)
+        self._init_cache_key(role_name, content_type_id=content_type_id)
+
+        object_id = self._get_object_id(organization, team)
+        current_status = self.cache[role_name][content_type_id].get(object_id, {}).get('status')
+
+        if has_permission:
+            self._add(role_name, content_type_id, object_id, current_status, organization, team)
+        else:
+            self._remove(role_name, content_type_id, object_id, current_status, organization, team)
+
+    def _add(
+        self,
+        role_name: str,
+        content_type_id: Optional[int],
+        object_id: Optional[int],
+        current_status: Optional[str],
+        organization: Optional[AbstractOrganization] = None,
+        team: Optional[AbstractTeam] = None,
+    ) -> None:
         """Marks role assignment's params and (optionally) associated object in the cache.
         If role_user_assignment (a.k.a. permission) existed before, marks it to do nothing
         """
-        content_type_id = self._get_content_type_id(organization, team)
-        object_id = self._get_object_id(organization, team)
-
-        self._init_key(role_name, content_type_id=content_type_id)
-
-        # If the permission haven't existed, mark it to ADD, otherwise noop
-        current_status = self.cache[role_name][content_type_id].get(object_id, {}).get('status')
         if current_status in [self.STATUS_EXISTING, self.STATUS_NOOP]:
             self.cache[role_name][content_type_id][object_id] = {'object': organization or team, 'status': self.STATUS_NOOP}
         elif current_status is None:
             self.cache[role_name][content_type_id][object_id] = {'object': organization or team, 'status': self.STATUS_ADD}
 
-    def remove(self, role_name: str, organization: Optional[AbstractOrganization] = None, team: Optional[AbstractTeam] = None) -> None:
+    def _remove(
+        self,
+        role_name: str,
+        content_type_id: Optional[int],
+        object_id: Optional[int],
+        current_status: Optional[str],
+        organization: Optional[AbstractOrganization] = None,
+        team: Optional[AbstractTeam] = None,
+    ) -> None:
         """Marks role assignment's params and (optionally) associated object in the cache.
         If role_user_assignment (a.k.a. permission) didn't exist before, marks it to do nothing
         """
-        content_type_id = self._get_content_type_id(organization, team)
-        object_id = self._get_object_id(organization, team)
-
-        self._init_key(role_name, content_type_id=content_type_id)
-
-        current_status = self.cache[role_name][content_type_id].get(object_id, {}).get('status')
         if current_status is None or current_status == self.STATUS_NOOP:
             self.cache[role_name][content_type_id][object_id] = {'object': organization or team, 'status': self.STATUS_NOOP}
         elif current_status == self.STATUS_EXISTING:
@@ -666,14 +684,21 @@ class RoleUserAssignmentsCache:
 
         return content_type.id if content_type is not None else None
 
-    def _get_object_id(self, organization, team) -> Optional[int]:
-        object_id = None
+    def _get_object_id(self, organization: Optional[AbstractOrganization], team: Optional[AbstractTeam]) -> Optional[int]:
+        """
+        Returns an object id of either organization or team.
+        If both items are set organization will take priority over a team id.
+        """
         if organization:
-            object_id = organization.id
+            return organization.id
         elif team:
-            object_id = team.id
-        return object_id
+            return team.id
+        else:
+            return None
 
-    def _init_key(self, role_name: str, content_type_id: Optional[int]) -> None:
+    def _init_cache_key(self, role_name: str, content_type_id: Optional[int]) -> None:
+        """
+        Initialize a key in the cache for later use
+        """
         self.cache[role_name] = self.cache.get(role_name, {})
         self.cache[role_name][content_type_id] = self.cache[role_name].get(content_type_id, {})
