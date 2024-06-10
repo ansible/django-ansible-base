@@ -1,3 +1,4 @@
+import logging
 from collections import OrderedDict
 
 from django.http import HttpResponseNotFound
@@ -19,6 +20,8 @@ from ansible_base.rest_filters.rest_framework.field_lookup_backend import FieldL
 from ansible_base.rest_filters.rest_framework.order_backend import OrderByBackend
 from ansible_base.rest_filters.rest_framework.type_filter_backend import TypeFilterBackend
 
+logger = logging.getLogger('ansible_base.resource_registry.views')
+
 
 class HasResourceRegistryPermissions(permissions.BasePermission):
     def has_permission(self, request, view):
@@ -31,7 +34,12 @@ class HasResourceRegistryPermissions(permissions.BasePermission):
             if allowed_actions == "*":
                 return True
             else:
-                return view.action in allowed_actions
+                if hasattr(view, 'action'):
+                    return view.action in allowed_actions
+                elif hasattr(view, 'custom_action_label'):
+                    return view.custom_action_label in allowed_actions
+                else:
+                    logger.warning(f'View {view} denied request because view action can not be identified')
 
         return False
 
@@ -146,6 +154,9 @@ class ServiceMetadataView(
         HasResourceRegistryPermissions,
     ]
 
+    # Corresponds to viewset action but given a different name so schema generators are not messed up
+    custom_action_label = "service-metadata"
+
     def get(self, request, **kwargs):
         registry = get_registry()
         return Response({"service_id": service_id(), "service_type": registry.api_config.service_type})
@@ -172,6 +183,8 @@ class ValidateLocalUserView(AnsibleBaseDjangoAppApiView):
     permission_classes = [
         HasResourceRegistryPermissions,
     ]
+
+    custom_action_label = "validate-local-user"
 
     def post(self, request, **kwargs):
         serializer = UserAuthenticationSerializer(data=request.data)
