@@ -6,6 +6,7 @@ from unittest import mock
 from uuid import uuid4
 
 import pytest
+from django.conf import settings
 from django.test.utils import override_settings
 from jwt.exceptions import DecodeError
 from rest_framework.exceptions import AuthenticationFailed
@@ -14,6 +15,7 @@ from ansible_base.jwt_consumer.common.auth import JWTAuthentication, JWTCommonAu
 from ansible_base.jwt_consumer.common.cert import JWTCert, JWTCertException
 from ansible_base.lib.utils.translations import translatableConditionally as _
 from ansible_base.rbac.models import RoleDefinition
+from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.resource_registry.models import Resource
 from test_app.models import Organization, Team
 
@@ -22,7 +24,6 @@ default_logger = 'ansible_base.jwt_consumer.common.auth.logger'
 
 @pytest.fixture
 def organization_admin_role():
-    from ansible_base.rbac.permission_registry import permission_registry
     from test_app.models import Organization
 
     role = RoleDefinition.objects.create_from_permissions(
@@ -37,6 +38,17 @@ def organization_admin_role():
         managed=True,
     )
     return role
+
+
+@pytest.fixture
+def external_auditor_constructor():
+    data = settings.ANSIBLE_BASE_MANAGED_ROLE_REGISTRY.copy()
+    data['ext_aud'] = {'shortname': 'sys_auditor', 'name': 'Ext Auditor'}
+    with override_settings(ANSIBLE_BASE_MANAGED_ROLE_REGISTRY=data):
+        # Extra setup needed for external auditor
+        permission_registry.register_managed_role_constructors()
+        yield permission_registry.get_managed_role_constructor('ext_aud')
+        permission_registry._managed_roles.pop('ext_aud')
 
 
 class TestJWTCommonAuth:
@@ -285,10 +297,11 @@ class TestJWTCommonAuth:
         [
             ({}, None),
             ({"global_roles": ['System Auditor']}, False),
+            ({"global_roles": ['Ext Auditor']}, False),  # must dynamically create
             ({"global_roles": ['Junk']}, True),
         ],
     )
-    def test_process_rbac_permissions_system_roles(self, token, logs_error, admin_user, expected_log):
+    def test_process_rbac_permissions_system_roles(self, token, logs_error, admin_user, expected_log, external_auditor_constructor):
         authentication = JWTCommonAuth()
         authentication.user = admin_user
         authentication.token = token
