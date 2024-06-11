@@ -178,31 +178,46 @@ class JWTCommonAuth:
 
         return validated_body
 
+    def get_role_definition(self, name: str) -> Optional[Model]:
+        """Simply get the RoleDefinition from the database if it exists and handler corner cases
+
+        If this is the name of a managed role for which we have a corresponding definition in code,
+        and that role can not be found in the database, it may be created here
+        """
+        from ansible_base.rbac.models import RoleDefinition
+
+        try:
+            return RoleDefinition.objects.get(name=name)
+        except RoleDefinition.DoesNotExist:
+            from ansible_base.rbac.permission_registry import permission_registry
+
+            constructor = permission_registry.get_managed_role_constructor_by_name(name)
+            if constructor:
+                rd, _ = constructor.get_or_create(apps)
+                return rd
+        return None
+
     def process_rbac_permissions(self):
         """
         This is a default process_permissions which should be usable if you are using RBAC from DAB
         """
-        from ansible_base.rbac.models import RoleDefinition
-
         if self.token is None or self.user is None:
             logger.error("Unable to process rbac permissions because user or token is not defined, please call authenticate first")
             return
 
         for system_role_name in self.token.get("global_roles", []):
             logger.debug(f"Processing system role {system_role_name} for {self.user.username}")
-            try:
-                rd = RoleDefinition.objects.get(name=system_role_name)
+            rd = self.get_role_definition(system_role_name)
+            if rd:
                 rd.give_global_permission(self.user)
                 logger.info(f"Granted user {self.user.username} global role {system_role_name}")
-            except RoleDefinition.DoesNotExist:
+            else:
                 logger.error(f"Unable to grant {self.user.username} system level role {system_role_name} because it does not exist")
                 continue
 
         for object_role_name in self.token.get('object_roles', {}).keys():
-            rd = None
-            try:
-                rd = RoleDefinition.objects.get(name=object_role_name)
-            except RoleDefinition.DoesNotExist:
+            rd = self.get_role_definition(object_role_name)
+            if rd is None:
                 logger.error(f"Unable to grant {self.user.username} object role {object_role_name} because it does not exist")
                 continue
 
