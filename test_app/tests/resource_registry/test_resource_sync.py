@@ -32,12 +32,6 @@ def stdout():
     return Stdout()
 
 
-def test_config_is_required():
-    with pytest.raises(AttributeError) as exc:
-        SyncExecutor()
-    assert "'Settings' object has no attribute 'RESOURCE_JWT_USER_ID'" in str(exc)
-
-
 def test_manifest_not_found(static_api_client, stdout):
     executor = SyncExecutor(api_client=static_api_client, resource_type_names=["shared.team"], stdout=stdout)
     executor.run()

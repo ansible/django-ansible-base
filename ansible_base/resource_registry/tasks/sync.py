@@ -65,11 +65,12 @@ class SyncResult:
 
 def create_api_client() -> ResourceAPIClient:
     """Factory for pre-configured ResourceAPIClient."""
-    client = get_resource_server_client(
-        jwt_user_id=settings.RESOURCE_JWT_USER_ID,
-        service_path=settings.RESOURCE_SERVICE_PATH,
-        raise_if_bad_request=False,
-    )
+    params = {"raise_if_bad_request": False, "service_path": "/api/gateway/v1/service-index/"}
+    if jwt_user_id := getattr(settings, "RESOURCE_JWT_USER_ID", None):
+        params["jwt_user_id"] = jwt_user_id
+    if service_path := getattr(settings, "RESOURCE_SERVICE_PATH", None):
+        params["service_path"] = service_path
+    client = get_resource_server_client(**params)
     return client
 
 
