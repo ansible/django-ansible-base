@@ -56,11 +56,13 @@ class ResourceAPIClient:
         jwt_user_id (UUID): ansible ID of the user to make the request as.
         jwt_expiration (int): number of seconds that the JWT token is valid.
         """
+        if jwt_user_id is not None:
+            jwt_user_id = str(jwt_user_id)
 
         self.base_url = f"{service_url}/{service_path.strip('/')}/"
         self.verify_https = verify_https
         self.raise_if_bad_request = raise_if_bad_request
-        self.jwt_user_id = str(jwt_user_id)
+        self.jwt_user_id = jwt_user_id
         self.jwt_expiration = jwt_expiration
         self._jwt = None
         self._jwt_timeout = None
