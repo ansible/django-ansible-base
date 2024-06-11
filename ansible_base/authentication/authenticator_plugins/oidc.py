@@ -225,17 +225,22 @@ class AuthenticatorPlugin(SocialAuthMixin, OpenIdConnectAuth, AbstractAuthentica
         return self.get_json(self.oidc_endpoint() + "/.well-known/openid-configuration")
 
     def public_key(self):
+        key = self.setting("PUBLIC_KEY")
         return "\n".join(
             [
                 "-----BEGIN PUBLIC KEY-----",
-                self.setting("PUBLIC_KEY"),
+                key,
                 "-----END PUBLIC KEY-----",
             ]
-        )
+        ) if key else None
 
     def user_data(self, access_token, *args, **kwargs):
         user_data = self.request(self.userinfo_url(), headers={"Authorization": f"Bearer {access_token}"})
         if user_data.headers["Content-Type"] == "application/jwt":
+            pk = self.public_key()
+            if not pk:
+                logger.error(_("OIDC client sent encrypted user info response, but no public key found."))
+                return None
             try:
                 data = jwt.decode(
                     access_token,
