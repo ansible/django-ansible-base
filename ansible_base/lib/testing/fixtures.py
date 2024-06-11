@@ -50,7 +50,7 @@ def local_authenticator(db):
         name="Test Local Authenticator",
         enabled=True,
         create_objects=True,
-        remove_users=True,
+        remove_users=False,
         type="ansible_base.authentication.authenticator_plugins.local",
         configuration={},
     )
