@@ -7,13 +7,13 @@ from ansible_base.rbac.models import RoleDefinition
 
 @pytest.mark.django_db
 class TestSharedAssignmentsDisabled:
-    @override_settings(ANSIBLE_BASE_DIRECT_SHARED_RESOURCE_MANAGEMENT_ENABLED=False)
+    @override_settings(ALLOW_LOCAL_RESOURCE_MANAGEMENT=False)
     def test_team_member_role_not_assignable(self, member_rd, team, rando, admin_api_client):
         url = reverse('roleuserassignment-list')
         response = admin_api_client.post(url, data={'object_id': team.id, 'role_definition': member_rd.id, 'user': rando.id})
         assert response.status_code == 400, response.data
 
-    @override_settings(ANSIBLE_BASE_DIRECT_SHARED_RESOURCE_MANAGEMENT_ENABLED=False)
+    @override_settings(ALLOW_LOCAL_RESOURCE_MANAGEMENT=False)
     def test_resource_roles_still_assignable(self, org_inv_rd, organization, rando, admin_api_client):
         url = reverse('roleuserassignment-list')
         response = admin_api_client.post(url, data={'object_id': organization.id, 'role_definition': org_inv_rd.id, 'user': rando.id})
