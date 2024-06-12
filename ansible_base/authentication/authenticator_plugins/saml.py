@@ -250,7 +250,7 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAML
 
     def extra_data(self, user, backend, response, *args, **kwargs):
         attrs = response["attributes"] if "attributes" in response else {}
-        for perm in ["is_superuser", "is_system_auditor"]:
+        for perm in ["is_superuser", "is_platform_auditor"]:
             if perm in attrs:
                 kwargs["social"].extra_data[perm] = attrs[perm]
 

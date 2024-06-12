@@ -207,7 +207,7 @@ class AuthenticatorPlugin(SocialAuthMixin, OpenIdConnectAuth, AbstractAuthentica
     configuration_encrypted_fields = ['SECRET']
 
     def extra_data(self, user, backend, response, *args, **kwargs):
-        for perm in ["is_superuser", "is_system_auditor"]:
+        for perm in ["is_superuser", "is_platform_auditor"]:
             if perm in response:
                 kwargs["social"].extra_data[perm] = response[perm]
         data = super().extra_data(user, backend, response, *args, **kwargs)

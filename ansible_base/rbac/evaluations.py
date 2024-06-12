@@ -35,7 +35,7 @@ def has_super_permission(user, full_codename=None) -> bool:
         if full_codename:
             for action, super_flag in settings.ANSIBLE_BASE_BYPASS_ACTION_FLAGS.items():
                 if full_codename == action and getattr(user, super_flag):
-                    return True  # User has action-specific flag like is_system_auditor
+                    return True  # User has action-specific flag like is_platform_auditor
     elif user._meta.model_name != permission_registry.team_model._meta.model_name:
         raise RuntimeError(f'Evaluation methods are for users or teams, got {user._meta.model_name}: {user}')
 
