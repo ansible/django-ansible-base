@@ -1,6 +1,7 @@
 import logging
 from typing import Optional, Tuple
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractUser
 from django.utils.translation import gettext as _
@@ -32,6 +33,9 @@ def determine_username_from_uid_social(**kwargs: dict) -> dict:
     uid = kwargs.get('details', {}).get('username', None)
     if not uid:
         raise AuthException(_('Unable to get associated username from: %(details)s') % {'details': kwargs.get("details", None)})
+
+    if uid.casefold() == settings.SYSTEM_USERNAME.casefold():
+        raise AuthException(_('System user is not allowed to log in from external authentication sources.'))
 
     authenticator = kwargs.get('backend')
     if not authenticator:
