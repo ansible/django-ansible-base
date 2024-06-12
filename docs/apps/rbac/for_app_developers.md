@@ -205,7 +205,7 @@ like `access_qs` or `has_obj_perm`. That can be controlled with these.
 
 ```
 ANSIBLE_BASE_BYPASS_SUPERUSER_FLAGS = ['is_superuser']
-ANSIBLE_BASE_BYPASS_ACTION_FLAGS = {'view': 'is_system_auditor'}
+ANSIBLE_BASE_BYPASS_ACTION_FLAGS = {'view': 'is_platform_auditor'}
 ```
 
 You can blank these with values `[]` and `{}`. In these cases, the querysets

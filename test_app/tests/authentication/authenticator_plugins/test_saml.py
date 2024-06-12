@@ -202,10 +202,10 @@ def test_extra_data(mockedsuper):
 
     rDict = {}
     rDict["attributes"] = {}
-    rDict["attributes"]["is_system_auditor"] = "True"
+    rDict["attributes"]["is_platform_auditor"] = "True"
     rDict["attributes"]["Group"] = ["mygroup"]
     social = SocialUser()
     ap.extra_data(None, None, response=rDict, social=social)
     assert mockedsuper.called
-    assert "is_system_auditor" in social.extra_data
+    assert "is_platform_auditor" in social.extra_data
     assert "mygroup" in rDict["Group"]
