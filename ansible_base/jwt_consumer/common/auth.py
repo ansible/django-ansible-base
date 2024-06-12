@@ -40,14 +40,6 @@ class JWTCommonAuth:
         if hasattr(settings, 'ANSIBLE_BASE_ORGANIZATION_MODEL'):
             self.org_content_type = ContentType.objects.get_for_model(apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL))
 
-    @property
-    def resource_cls(self):
-        return apps.get_model('dab_resource_registry', 'Resource')
-
-    @property
-    def role_definition_cls(self):
-        return apps.get_model('dab_rbac', 'RoleDefinition')
-
     def parse_jwt_token(self, request):
         """
         parses the given request setting self.user and self.token
@@ -192,9 +184,10 @@ class JWTCommonAuth:
         If this is the name of a managed role for which we have a corresponding definition in code,
         and that role can not be found in the database, it may be created here
         """
+        role_definition_cls = apps.get_model('dab_rbac', 'RoleDefinition')
         try:
-            return self.role_definition_cls.objects.get(name=name)
-        except self.role_definition_cls.DoesNotExist:
+            return role_definition_cls.objects.get(name=name)
+        except role_definition_cls.DoesNotExist:
             from ansible_base.rbac.permission_registry import permission_registry
 
             constructor = permission_registry.get_managed_role_constructor_by_name(name)
@@ -244,11 +237,12 @@ class JWTCommonAuth:
         This can only build or get organizations or teams
         """
         object_ansible_id = data['ansible_id']
+        resource_cls = apps.get_model('dab_resource_registry', 'Resource')
         try:
-            resource = self.resource_cls.objects.get(ansible_id=object_ansible_id)
+            resource = resource_cls.objects.get(ansible_id=object_ansible_id)
             logger.debug(f"Resource {object_ansible_id} already exists")
             return resource, resource.content_object
-        except self.resource_cls.DoesNotExist:
+        except resource_cls.DoesNotExist:
             pass
 
         # The resource was missing so we need to create its stub
