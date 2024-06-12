@@ -185,11 +185,11 @@ class JWTCommonAuth:
         If this is the name of a managed role for which we have a corresponding definition in code,
         and that role can not be found in the database, it may be created here
         """
-        from ansible_base.rbac.models import RoleDefinition
+        role_definition_cls = apps.get_model('dab_rbac', 'RoleDefinition')
 
         try:
-            return RoleDefinition.objects.get(name=name)
-        except RoleDefinition.DoesNotExist:
+            return role_definition_cls.objects.get(name=name)
+        except role_definition_cls.DoesNotExist:
             from ansible_base.rbac.permission_registry import permission_registry
 
             constructor = permission_registry.get_managed_role_constructor_by_name(name)
@@ -238,12 +238,14 @@ class JWTCommonAuth:
 
         This can only build or get organizations or teams
         """
+        resource_cls = apps.get_model('dab_resource_registry', 'Resource')
+
         object_ansible_id = data['ansible_id']
         try:
-            resource = Resource.objects.get(ansible_id=object_ansible_id)
+            resource = resource_cls.objects.get(ansible_id=object_ansible_id)
             logger.debug(f"Resource {object_ansible_id} already exists")
             return resource, resource.content_object
-        except Resource.DoesNotExist:
+        except resource_cls.DoesNotExist:
             pass
 
         # The resource was missing so we need to create its stub
