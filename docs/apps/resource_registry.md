@@ -77,12 +77,12 @@ class UserProcessor(ResourceTypeProcessor):
         # Set any non standardized attributes on the resource before serialization.
         # This gets called before the resource type serializer serializes the instance.
 
-        setattr(self.instance, "is_platform_auditor", self.instance.has_role("system_auditor"))
+        setattr(self.instance, "is_platform_auditor", self.instance.has_role("platform_auditor"))
         return self.instance
 
     def pre_save(self, validated_data, is_new=False):
         if validated_data["is_platform_auditor"]:
-            self.instance.add_role("system_auditor")
+            self.instance.add_role("platform_auditor")
         super().save(validated_data, is_new=is_new)
 
 class APIConfig(ServiceAPIConfig):
