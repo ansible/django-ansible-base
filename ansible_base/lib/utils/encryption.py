@@ -2,6 +2,7 @@ import base64
 import hashlib
 import logging
 import re
+from typing import Any, Optional, Tuple
 
 from cryptography.fernet import Fernet
 from cryptography.hazmat.backends import default_backend
@@ -19,6 +20,41 @@ logger = logging.getLogger('ansible_base.lib.utils.encryption')
 
 ENCRYPTED_STRING = '$encrypted$'
 ENCRYPTION_METHOD = 'AESCBC'
+
+regex = '^(?:' + re.escape(ENCRYPTED_STRING) + ')(?:UTF8\\$)?([^(UTF8)]+)\\$((?:[A-Za-z0-9+/]{4})+(?:[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)?)$'
+"""
+Explaining this regex, you're welcome :)
+
+Our encrypted strings contain the following segments:
+    $encrypted$ - our encrypted marker in the variable ENCRYPTED_STRING
+    UTF8$ - an Optional UTF-8 marker
+    AESCBC$ - The encryption algorithm specified by ENCRYPTION_METHOD
+    <base64 encoded data>
+
+Note base64 encoded data is "tuples" of 4 characters where characters are defined as [a-zA-Z0-9+/]; with the last tuple either being:
+  * 4 characters
+  * 3 characters + '='
+  * 2 characters + '=='
+
+In a regex we can group things together with () this will cause a matched group.
+If we don't need to retrieve the matched group we can use (?:...)
+
+Here is the breakdown of the regex:
+  * ^ - The beginning of the string
+  * (?:'+ re.escape(ENCRYPTED_STRING) +') - our ENCRYPTED_STRING value (we use re.escape on it because it has $ in it), don't retrieve group
+  * (?:UTF8\\$)? - an optional UTF8$ string, don't retrieve group
+  * ([^(UTF8)]+)\\$ - One or more group of characters that are not 'UTF8' followed by $, retrieve the group (this is the algorithm)
+  * ( - open a group that will contain all of the base64 encoded data
+      * (?:[A-Za-z0-9+/]{4})+ - One or more group of 4 base64 characters, don't retrieve group
+      * (?:[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)? - 0 or 1 ending tuples in the following formats, don't retrieve group:
+          * 3 base64 characters + '='
+          * 2 base64 characters + '=='
+  * ) - the close of the retrieved base64 group
+  * $ - the end of the string
+
+credit: the mastermind behind this regex is John Westcott aka CodeCaptainAwesome. Thank you John :)
+"""
+ENCRYPTED_REGEX = re.compile(regex)
 
 
 class Fernet256(Fernet):
@@ -38,51 +74,30 @@ class Fernet256(Fernet):
         self._encryption_key = self.key[32:]
         self._backend = default_backend()
 
-    def extract_data(self, raw_data: str) -> str:
-        # Sequential data extract for code reuse in is_encrypted_string and decrypt_string
-        raw_data = raw_data[len(ENCRYPTED_STRING) :]
+    def is_encrypted_string(self, value: Any) -> Tuple[bool, Optional[str], Optional[str]]:
+        """
+        Performs a partial test to see if the string is encrypted by our algorithm
+        Note: this can fail because some strings resemble base 64 encoded ones
+            for instance, if user's secret is $encrypted$UTF8$AESCBC$junk, the code will break
+        Returns the Tuple(is_encrypted, encryption_algorithm, data)
+        """
+        if not isinstance(value, str):
+            value = str(value)
 
-        # If the encrypted string contains a UTF8 marker, discard it
-        if raw_data.startswith('UTF8$'):
-            raw_data = raw_data[len('UTF8$') :]
-
-        # Extract the algorithm and ensure its what we expect
-        algo, data = raw_data.split('$', 1)
-        if algo != ENCRYPTION_METHOD:
-            raise ValueError(f'Unsupported algorithm: {algo}')
-
-        return data
-
-    def is_encrypted_string(self, value: str, invalid_algo_is_fatal: bool) -> bool:
-        # Ensure input is a string already encrypted by our algorithm
-        # by comparing with the decrypted and re-encrypted values
-        if not value.startswith(ENCRYPTED_STRING):
-            return False
-
-        try:
-            data = self.extract_data(value)
-        except ValueError as ve:
-            # value error is raised when algorithm is unsupported
-            if invalid_algo_is_fatal:
-                raise ve
-
-        # Check if data is base64 encoded
-        # **important** Note: this can fail because some strings resemble base 64 encoded ones
-        # **important** for instance, if user's secret is $encrypted$UTF8$AESCBC$junk, the code will break
-        # use regex pattern: ^([A-Za-z0-9+/]{4})* means the string starts with 0 or more base64 groups.
-        # ([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$ means
-        # the string ends in one of three forms: [A-Za-z0-9+/]{4}, [A-Za-z0-9+/]{3}= or [A-Za-z0-9+/]{2}==.
-        reg = r'^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)?$'
-
-        return re.match(reg, data) is not None
+        # Use the precompiled regex to check for encrypted string format
+        if encrypted_match := ENCRYPTED_REGEX.match(value):
+            return True, encrypted_match.group(1), encrypted_match.group(2)
+        else:
+            return False, None, None
 
     def encrypt_string(self, value: str) -> str:
-
         # Its possible for a serializer to accept a number for a CharField (like 5). In the serializer its "5" but when we get here it might be 5
         if not isinstance(value, str):
             value = str(value)
 
-        if self.is_encrypted_string(value, invalid_algo_is_fatal=False):
+        is_encrypted = self.is_encrypted_string(value)[0]
+
+        if is_encrypted:
             return value
 
         encrypted = self.encrypt(smart_bytes(value))
@@ -90,13 +105,20 @@ class Fernet256(Fernet):
         return f'{ENCRYPTED_STRING}UTF8${ENCRYPTION_METHOD}${b64data}'
 
     def decrypt_string(self, value: str) -> str:
-        if not self.is_encrypted_string(value, invalid_algo_is_fatal=True):
+        if not isinstance(value, str):
+            raise ValueError("decrypt_string can only accept string")
+
+        is_encrypted, algo, data = self.is_encrypted_string(value)
+
+        if not is_encrypted:
             return value
 
-        b64data = self.extract_data(value)
+        # Ensure the algorithm is what we expect
+        if algo != ENCRYPTION_METHOD:
+            raise ValueError(f'Unsupported algorithm: {algo}')
 
         # Finally decode the value
-        encrypted = base64.b64decode(b64data)
+        encrypted = base64.b64decode(data)
 
         return smart_str(self.decrypt(encrypted))
 
