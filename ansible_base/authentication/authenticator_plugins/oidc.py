@@ -226,13 +226,17 @@ class AuthenticatorPlugin(SocialAuthMixin, OpenIdConnectAuth, AbstractAuthentica
 
     def public_key(self):
         key = self.setting("PUBLIC_KEY")
-        return "\n".join(
-            [
-                "-----BEGIN PUBLIC KEY-----",
-                key,
-                "-----END PUBLIC KEY-----",
-            ]
-        ) if key else None
+        return (
+            "\n".join(
+                [
+                    "-----BEGIN PUBLIC KEY-----",
+                    key,
+                    "-----END PUBLIC KEY-----",
+                ]
+            )
+            if key
+            else None
+        )
 
     def user_data(self, access_token, *args, **kwargs):
         user_data = self.request(self.userinfo_url(), headers={"Authorization": f"Bearer {access_token}"})
