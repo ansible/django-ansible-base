@@ -15,7 +15,6 @@ from ansible_base.jwt_consumer.common.cache import JWTCache
 from ansible_base.jwt_consumer.common.cert import JWTCert, JWTCertException
 from ansible_base.lib.utils.auth import get_user_by_ansible_id
 from ansible_base.lib.utils.translations import translatableConditionally as _
-from ansible_base.resource_registry.models import Resource
 
 logger = logging.getLogger("ansible_base.jwt_consumer.common.auth")
 
@@ -40,6 +39,14 @@ class JWTCommonAuth:
             self.team_content_type = ContentType.objects.get_for_model(apps.get_model(settings.ANSIBLE_BASE_TEAM_MODEL))
         if hasattr(settings, 'ANSIBLE_BASE_ORGANIZATION_MODEL'):
             self.org_content_type = ContentType.objects.get_for_model(apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL))
+
+    @property
+    def resource_cls(self):
+        return apps.get_model('dab_resource_registry', 'Resource')
+
+    @property
+    def role_definition_cls(self):
+        return apps.get_model('dab_rbac', 'RoleDefinition')
 
     def parse_jwt_token(self, request):
         """
@@ -185,11 +192,9 @@ class JWTCommonAuth:
         If this is the name of a managed role for which we have a corresponding definition in code,
         and that role can not be found in the database, it may be created here
         """
-        role_definition_cls = apps.get_model('dab_rbac', 'RoleDefinition')
-
         try:
-            return role_definition_cls.objects.get(name=name)
-        except role_definition_cls.DoesNotExist:
+            return self.role_definition_cls.objects.get(name=name)
+        except self.role_definition_cls.DoesNotExist:
             from ansible_base.rbac.permission_registry import permission_registry
 
             constructor = permission_registry.get_managed_role_constructor_by_name(name)
@@ -232,20 +237,18 @@ class JWTCommonAuth:
                     rd.give_permission(self.user, obj)
                     logger.info(f"Granted user {self.user.username} role {object_role_name} to object {obj.name} with ansible_id {object_data['ansible_id']}")
 
-    def get_or_create_resource(self, content_type: str, data: dict) -> Tuple[Optional[Resource], Optional[Model]]:
+    def get_or_create_resource(self, content_type: str, data: dict) -> Tuple[Optional[Model], Optional[Model]]:
         """
         Gets or creates a resource from a content type and its default data
 
         This can only build or get organizations or teams
         """
-        resource_cls = apps.get_model('dab_resource_registry', 'Resource')
-
         object_ansible_id = data['ansible_id']
         try:
-            resource = resource_cls.objects.get(ansible_id=object_ansible_id)
+            resource = self.resource_cls.objects.get(ansible_id=object_ansible_id)
             logger.debug(f"Resource {object_ansible_id} already exists")
             return resource, resource.content_object
-        except resource_cls.DoesNotExist:
+        except self.resource_cls.DoesNotExist:
             pass
 
         # The resource was missing so we need to create its stub
