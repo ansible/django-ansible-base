@@ -1,5 +1,6 @@
 import logging
 
+from django.apps import apps
 from django.contrib.contenttypes.models import ContentType
 
 from ansible_base.jwt_consumer.common.auth import JWTAuthentication
@@ -25,9 +26,11 @@ class HubJWTAuth(JWTAuthentication):
                 for object_index in self.common_auth.token['object_roles'][role_name]['objects']:
                     team_data = self.common_auth.token['objects']['team'][object_index]
                     ansible_id = team_data['ansible_id']
+                    resource_cls = apps.get_model('dab_resource_registry', 'Resource')
+
                     try:
-                        resource = Resource.objects.get(ansible_id=ansible_id)
-                    except Resource.DoesNotExist:
+                        resource = resource_cls.objects.get(ansible_id=ansible_id)
+                    except resource_cls.DoesNotExist:
                         try:
                             resource = self.get_or_create_resource('team', team_data)
                         except Exception as e:
