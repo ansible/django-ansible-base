@@ -96,7 +96,7 @@ class JWTCommonAuth:
         self.user = None
         if is_cached:
             try:
-                self.user = get_user_by_ansible_id()
+                self.user = get_user_by_ansible_id(self.token['sub'])
             except ObjectDoesNotExist:
                 # ooofff... I'm sorry, you user was in the cache but deleted from the database?
                 # but now you have to pay the price to continue logging in
