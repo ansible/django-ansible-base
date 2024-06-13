@@ -226,29 +226,41 @@ class AuthenticatorPlugin(SocialAuthMixin, OpenIdConnectAuth, AbstractAuthentica
 
     def public_key(self):
         key = self.setting("PUBLIC_KEY")
-        return (
-            "\n".join(
-                [
-                    "-----BEGIN PUBLIC KEY-----",
-                    key,
-                    "-----END PUBLIC KEY-----",
-                ]
+        if key:
+            head = "-----BEGIN PUBLIC KEY-----"
+            foot = "-----END PUBLIC KEY-----"
+            return (
+                "\n".join(
+                    [
+                        head,
+                        key,
+                        foot,
+                    ]
+                )
+                if head not in key
+                else key
             )
-            if key
-            else None
-        )
+        return None
 
     def user_data(self, access_token, *args, **kwargs):
+        """
+        This function overrides the one in social auth class OpenIdConnectAuth, since
+        it assumes the user info endpoint response returns plain json. Depending on
+        server config it may instead be a JWT. This function notices the JWT via the
+        content type header and if found, attempts to decode it using the configured
+        public key and algorithm(s). None is returned to signify a failed login in the
+        case of improper config or other decoding failure.
+        """
         user_data = self.request(self.userinfo_url(), headers={"Authorization": f"Bearer {access_token}"})
         if user_data.headers["Content-Type"] == "application/jwt":
-            pk = self.public_key()
-            if not pk:
+            pubkey = self.public_key()
+            if not pubkey:
                 logger.error(_("OIDC client sent encrypted user info response, but no public key found."))
                 return None
             try:
                 data = jwt.decode(
                     access_token,
-                    key=self.public_key(),
+                    key=pubkey,
                     algorithms=self.setting("JWT_ALGORITHMS"),
                     audience=self.setting("KEY"),
                 )
