@@ -1,8 +1,13 @@
+import logging
+
 from django.contrib.auth import BACKEND_SESSION_KEY
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.deprecation import MiddlewareMixin
+from social_django.middleware import SocialAuthExceptionMiddleware
 
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugins
+
+logger = logging.getLogger('ansible_base.authentication.middleware')
 
 
 def get_authenticator_module_paths() -> list:
@@ -36,3 +41,16 @@ class AuthenticatorBackendMiddleware(MiddlewareMixin):
         if backend := request.session.get(BACKEND_SESSION_KEY, None):
             if backend in self.plugins:
                 request.session[BACKEND_SESSION_KEY] = "ansible_base.authentication.backend.AnsibleBaseAuth"
+
+
+class SocialExceptionHandlerMiddleware(SocialAuthExceptionMiddleware):
+    def get_redirect_uri(self, request, exception):
+        strategy = getattr(request, "social_strategy", None)
+        url = strategy.setting("LOGIN_ERROR_URL")
+        backend = getattr(request, "backend", None)
+        backend_name = getattr(backend, "name", "unknown-backend")
+        logger.error(f"Auth failure for backend {backend_name} - {exception}")
+        # The redirect URL can be customized as necessary for consumption by UI
+        # to display message or send user to an error page
+        logger.info(f"Redirecting user to {url}")
+        return url

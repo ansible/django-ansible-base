@@ -100,7 +100,10 @@ if 'ansible_base.authentication' in INSTALLED_APPS:
     if "ansible_base.authentication.backend.AnsibleBaseAuth" not in AUTHENTICATION_BACKENDS:
         AUTHENTICATION_BACKENDS.append("ansible_base.authentication.backend.AnsibleBaseAuth")
 
-    middleware_classes = ['social_django.middleware.SocialAuthExceptionMiddleware', 'ansible_base.authentication.middleware.AuthenticatorBackendMiddleware']
+    middleware_classes = [
+        'ansible_base.authentication.middleware.SocialExceptionHandlerMiddleware',
+        'ansible_base.authentication.middleware.AuthenticatorBackendMiddleware',
+    ]
     for mw in middleware_classes:
         try:
             MIDDLEWARE  # noqa: F821
