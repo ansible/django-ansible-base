@@ -6,12 +6,14 @@ from django.apps import apps
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Model
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
 from ansible_base.jwt_consumer.common.cache import JWTCache
 from ansible_base.jwt_consumer.common.cert import JWTCert, JWTCertException
+from ansible_base.lib.utils.auth import get_user_by_ansible_id
 from ansible_base.lib.utils.translations import translatableConditionally as _
 from ansible_base.resource_registry.models import Resource
 
@@ -91,19 +93,18 @@ class JWTCommonAuth:
         # Let's see if we have the same user info in the cache already
         is_cached, user_defaults = self.cache.check_user_in_cache(self.token)
 
-        user_model = get_user_model()
         self.user = None
         if is_cached:
             try:
-                self.user = user_model.objects.get(resource__ansible_id=self.token['sub'])
-            except user_model.DoesNotExist:
+                self.user = get_user_by_ansible_id()
+            except ObjectDoesNotExist:
                 # ooofff... I'm sorry, you user was in the cache but deleted from the database?
                 # but now you have to pay the price to continue logging in
                 pass
 
         if not self.user:
             # Either the user wasn't cached or the requested user was not in the DB so we need to make a new one
-            self.user, created = user_model.objects.update_or_create(
+            self.user, created = get_user_model().objects.update_or_create(
                 username=self.token["user_data"]['username'],
                 defaults=user_defaults,
             )
