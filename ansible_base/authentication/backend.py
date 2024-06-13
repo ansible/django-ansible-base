@@ -28,6 +28,7 @@ def get_authentication_backends(last_updated):
 class AnsibleBaseAuth(ModelBackend):
     def authenticate(self, request, *args, **kwargs):
         from ansible_base.authentication.social_auth import SOCIAL_AUTH_PIPELINE_FAILED_STATUS
+
         logger.debug("Starting AnsibleBaseAuth authentication")
 
         # Query the database for the most recently last modified timestamp.
@@ -38,7 +39,7 @@ class AnsibleBaseAuth(ModelBackend):
         for authenticator_id, authenticator_object in get_authentication_backends(last_modified).items():
             user = authenticator_object.authenticate(request, *args, **kwargs)
 
-            # Social Auth pipeline can return False when update_user_claims fails (authentication maps deny access)
+            # Social Auth pipeline can return status string when update_user_claims fails (authentication maps deny access)
             if user == SOCIAL_AUTH_PIPELINE_FAILED_STATUS:
                 continue
 

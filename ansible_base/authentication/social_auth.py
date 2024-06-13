@@ -15,7 +15,6 @@ from social_django.strategy import DjangoStrategy
 from ansible_base.authentication.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_class, get_authenticator_plugins
 from ansible_base.authentication.models import Authenticator, AuthenticatorUser
 
-
 logger = logging.getLogger('ansible_base.authentication.social_auth')
 
 
