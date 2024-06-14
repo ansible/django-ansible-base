@@ -49,6 +49,7 @@ def external_auditor_constructor():
         permission_registry.register_managed_role_constructors()
         yield permission_registry.get_managed_role_constructor('ext_aud')
         permission_registry._managed_roles.pop('ext_aud')
+        RoleDefinition.objects.managed.clear()
 
 
 class TestJWTCommonAuth:
@@ -338,6 +339,19 @@ class TestJWTCommonAuth:
         }
         with expected_log(default_logger, 'info', 'with ansible_id'):
             authentication.process_rbac_permissions()
+
+    @pytest.mark.django_db
+    def test_get_role_definition_existing(self, org_admin_rd):
+        authentication = JWTCommonAuth()
+        assert authentication.get_role_definition(org_admin_rd.name) == org_admin_rd
+
+    @pytest.mark.django_db
+    def test_get_role_definition_on_demand(self, org_admin_rd, external_auditor_constructor):
+        authentication = JWTCommonAuth()
+        assert not RoleDefinition.objects.filter(name=external_auditor_constructor.name).exists()
+        rd = authentication.get_role_definition(external_auditor_constructor.name)
+        assert isinstance(rd, RoleDefinition)
+        assert rd.name == external_auditor_constructor.name
 
     @pytest.mark.django_db
     def test_get_or_create_resource_invalid_content_type(self):
