@@ -161,6 +161,15 @@ several related objects and each of those related objects require "use" permissi
 Those cases are expected to make multiple calls to methods like `has_obj_perm` within the
 API code, including views, permission classes, serializer classes, templates, forms, etc.
 
+#### Models Without View Permission
+
+Your model's `Meta` can exclude the "view" permission by not listing it in
+the `default_permissions` property.
+These cases are considered "public" models, and methods like `MyModel.access_qs(user)`
+will return a queryset that include _all_ objects, regardless of the `user` passed in.
+However, the "view_mymodel" permission is still considered invalid if passed into
+an evaluation method, because that permission does not exist.
+
 ### Creator Permissions
 
 You can give a user "add" permission to a parent model, like "add_mymodel".
