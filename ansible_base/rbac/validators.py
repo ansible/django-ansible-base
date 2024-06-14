@@ -106,9 +106,9 @@ def validate_permissions_for_model(permissions, content_type: Optional[Model], m
         print_model = role_model._meta.model_name if role_model else 'global roles'
         raise ValidationError({'permissions': f'Permissions {print_codenames} are not valid for {print_model} roles'})
 
-    if role_model and 'view' in role_model._meta.default_permissions:
-        # Check that view permission is given for every model that has update/delete/special actions listed
-        for cls, valid_model_permissions in permissions_by_model.items():
+    # Check that view permission is given for every model that has update/delete/special actions listed
+    for cls, valid_model_permissions in permissions_by_model.items():
+        if 'view' in cls._meta.default_permissions:
             model_permissions = set(valid_model_permissions) & codename_list
             non_add_model_permissions = {codename for codename in model_permissions if not is_add_perm(codename)}
             if non_add_model_permissions and not any('view' in codename for codename in non_add_model_permissions):

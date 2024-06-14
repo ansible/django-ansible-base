@@ -4,7 +4,7 @@ from django.urls import reverse
 from ansible_base.rbac.models import DABPermission, RoleDefinition
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.validators import validate_permissions_for_model
-from test_app.models import PublicData
+from test_app.models import Organization, PublicData
 
 
 @pytest.fixture
@@ -30,6 +30,13 @@ def test_role_definition_validator_without_view():
     pd_ct = permission_registry.content_type_model.objects.get_for_model(PublicData)
     permission = DABPermission.objects.get(codename='delete_publicdata')
     validate_permissions_for_model(permissions=[permission], content_type=pd_ct)  # does not raise error
+
+
+@pytest.mark.django_db
+def test_org_level_validator_without_view():
+    org_ct = permission_registry.content_type_model.objects.get_for_model(Organization)
+    permissions = [DABPermission.objects.get(codename='delete_publicdata'), DABPermission.objects.get(codename='view_organization')]
+    validate_permissions_for_model(permissions=permissions, content_type=org_ct)  # does not raise error
 
 
 @pytest.mark.django_db
