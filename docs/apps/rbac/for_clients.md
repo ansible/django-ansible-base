@@ -38,7 +38,7 @@ Name can be any string that's not blank. Description can be any string.
 Select a role definition from `/api/v1/role_definitions/`, use the id as `role_definition`
 and a user from `/api/v1/users/` and use the id as `user`.
 Given the type of the role definition, check the available objects of that type,
-in this case `/api/v2/inventories/` and obtain the desired id, this will become `object_id`.
+in this case `/api/v1/inventories/` and obtain the desired id, this will become `object_id`.
 
 With all 3 ids ready, POST to http://127.0.0.1:8000/api/v1/role_user_assignments/
 
