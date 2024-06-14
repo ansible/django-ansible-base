@@ -5,7 +5,8 @@ what requests to make and how to build request data.
 
 You need a server running a Django project that uses this system.
 Use test_app in this repo for a demo, see `test_app/README.md` for bootstrap.
-http://127.0.0.1:8000/admin/ allows login as admin user (password is "password").
+The server runs at http://127.0.0.1:8000, and links within that will be referenced here.
+Default password for admin user is "admin".
 
 ### Create Custom Role (Definition)
 
