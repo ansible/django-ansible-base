@@ -75,6 +75,9 @@ class AccessibleObjectsDescriptor(BaseEvaluationDescriptor):
             queryset = self.cls.objects.all()
         if isinstance(actor, AnonymousUser):
             return queryset.model.objects.none()
+        if codename == 'view' and ('view' not in self.cls._meta.default_permissions):
+            # Model does not track view permissions
+            return queryset
         full_codename = validate_codename_for_model(codename, self.cls)
         if actor._meta.model_name == 'user' and has_super_permission(actor, full_codename):
             return queryset

@@ -180,6 +180,11 @@ class MultipleFieldsViewSet(TestAppViewSet):
     serializer_class = serializers.MultipleFieldsModelSerializer
 
 
+class PublicDataViewSet(TestAppViewSet):
+    serializer_class = serializers.PublicDataSerializer
+    queryset = models.PublicData.objects.all()
+
+
 class AnimalViewSet(TestAppViewSet):
     serializer_class = serializers.AnimalSerializer
     queryset = models.Animal.objects.all()
