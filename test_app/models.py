@@ -260,6 +260,7 @@ class Proxy2(Original2):
 
 class PublicData(NamedCommonModel):
     "Example of model with access controls for editing, but visible publically"
+
     class Meta:
         default_permissions = ('add', 'change', 'delete')  # does not list view
         ordering = ['id']
