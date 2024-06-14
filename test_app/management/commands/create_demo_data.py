@@ -4,7 +4,7 @@ from os import environ
 from crum import impersonate
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 from ansible_base.authentication.models import Authenticator, AuthenticatorUser
 from ansible_base.oauth2_provider.models import OAuth2Application
@@ -34,17 +34,16 @@ class Command(BaseCommand):
         self.stdout.write(f'Finished creating large demo data in {time.time() - start:.2f} seconds')
 
     def handle(self, *args, **kwargs):
+        try:
+            admin = User.objects.get(username='admin')
+        except User.DoesNotExist:
+            raise CommandError('Must create admin user before create_demo_data')
         (awx, _) = Organization.objects.get_or_create(name='AWX_community')
         (galaxy, _) = Organization.objects.get_or_create(name='Galaxy_community')
 
         (spud, _) = User.objects.get_or_create(username='angry_spud')
         (bull_bot, _) = User.objects.get_or_create(username='ansibullbot')
         (admin, _) = User.objects.get_or_create(username='admin')
-        admin.is_staff = True
-        admin.is_superuser = True
-        admin_password = environ.get('DJANGO_SUPERUSER_PASSWORD', 'admin')
-        admin.set_password(admin_password)
-        admin.save()
         spud.set_password('password')
         spud.save()
         with impersonate(spud):
@@ -108,7 +107,6 @@ class Command(BaseCommand):
         )
 
         self.stdout.write('Finished creating demo data!')
-        self.stdout.write(f'Admin user password: {admin_password}')
 
         if environ.get('LARGE') and not Organization.objects.filter(name__startswith='large').exists():
             self.create_large(settings.DEMO_DATA_COUNTS)

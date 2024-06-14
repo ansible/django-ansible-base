@@ -43,11 +43,16 @@ for i in $(seq 1 $MAX_ATTEMPTS); do
     sleep 1
 done
 
+admin_password='admin'
+
 if [ "${migrate_needed}" -ne 0 ]
 then
     echo "Migrating database"
     python3 manage.py migrate
-    DJANGO_SUPERUSER_PASSWORD=password DJANGO_SUPERUSER_USERNAME=admin DJANGO_SUPERUSER_EMAIL=admin@stuff.invalid python3 manage.py createsuperuser --noinput
+    if [ "${DJANGO_SUPERUSER_PASSWORD}" ]; then
+        admin_password=${DJANGO_SUPERUSER_PASSWORD}
+    fi
+    DJANGO_SUPERUSER_PASSWORD=$admin_password DJANGO_SUPERUSER_USERNAME=admin DJANGO_SUPERUSER_EMAIL=admin@stuff.invalid python3 manage.py createsuperuser --noinput
     python3 manage.py authenticators --initialize
     python3 manage.py create_demo_data
 fi

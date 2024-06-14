@@ -5,7 +5,7 @@ from test_app.models import Organization
 
 
 @pytest.mark.django_db
-def test_demo_data_with_existing_data():
+def test_demo_data_with_existing_data(admin_user):
     Organization.objects.create(name='stub')
     Command().handle()
     assert Organization.objects.filter(name='AWX_community').exists()
@@ -13,13 +13,13 @@ def test_demo_data_with_existing_data():
 
 
 @pytest.mark.django_db
-def test_demo_data_create_data():
+def test_demo_data_create_data(admin_user):
     Command().handle()
     assert Organization.objects.filter(name='AWX_community').exists()
 
 
 @pytest.mark.django_db
-def test_demo_data_idempotent():
+def test_demo_data_idempotent(admin_user):
     Command().handle()
     assert Organization.objects.filter(name='AWX_community').exists()
     Command().handle()
