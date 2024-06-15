@@ -24,6 +24,7 @@ logger = logging.getLogger('ansible_base.rbac.permission_registry')
 
 class ModelPermissionInfo:
     """Container of RBAC registration information for a model in permission_registry"""
+
     def __init__(self, model, parent_field_name='organization', allow_object_roles=True):
         self.model_name = model._meta.model_name
         self.app_label = model._meta.app_label
