@@ -105,7 +105,7 @@ Removing permission will delete the object role if no other assignments exist.
 Any Django Model (except your user model) can
 be made into a resource in the RBAC system by registering that resource in the registry.
 
-```
+```python
 from ansible_base.rbac.permission_registry import permission_registry
 
 permission_registry.register(MyModel, parent_field_name='organization')
@@ -132,6 +132,19 @@ then no other _registered_ model should list that permission.
 
 This rules out things like registering a model, and also registering a proxy
 model _of that model_.
+
+#### Disabling Object-level Permissions
+
+You can specifically disable giving object-level permissions at registration of a model.
+
+```python
+permission_registry.register(MyModel, allow_object_roles=False)
+```
+
+This will not allow creating any role_definitions with a `content_type` for that model.
+Users will still be able to get permission to `MyModel` objects by either
+obtaining an organization-level (or other parent object) role, or by a system-level role.
+This just prevents using object-level roles through the API.
 
 ### Parent Resources
 

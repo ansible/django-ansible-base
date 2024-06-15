@@ -60,7 +60,11 @@ class RoleMetadataView(AnsibleBaseDjangoAppApiView, GenericAPIView):
             if cls is None:
                 cls_repr = 'system'
             else:
+                info = permission_registry.get_info(cls)
+                if not info.allow_object_roles:
+                    continue
                 cls_repr = f"{permission_registry.get_resource_prefix(cls)}.{cls._meta.model_name}"
+
             allowed_permissions[cls_repr] = []
             for codename in list_combine_values(permissions_allowed_for_role(cls)):
                 perm = permission_registry.permission_qs.get(codename=codename)

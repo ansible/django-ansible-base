@@ -20,7 +20,7 @@ def create_dab_permissions(app_config, verbosity=2, interactive=True, using=DEFA
 
     # exit early if nothing is registered for this app
     app_label = app_config.label
-    if not any(cls._meta.app_label == app_label for cls in permission_registry._registry):
+    if not any(info.app_label == app_label for info in permission_registry._registry.values()):
         return
 
     # Ensure that contenttypes are created for this app. Needed if

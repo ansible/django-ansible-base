@@ -22,43 +22,58 @@ permission_registry.register(MyModel, AnotherModel)
 logger = logging.getLogger('ansible_base.rbac.permission_registry')
 
 
+class ModelPermissionInfo:
+    """Container of RBAC registration information for a model in permission_registry"""
+    def __init__(self, model, parent_field_name='organization', allow_object_roles=True):
+        self.model_name = model._meta.model_name
+        self.app_label = model._meta.app_label
+        if parent_field_name == self.model_name:
+            # model can not be its own parent
+            self.parent_field_name = None
+        else:
+            self.parent_field_name = parent_field_name
+        self.allow_object_roles = allow_object_roles
+        self.model = model
+
+
 class PermissionRegistry:
     def __init__(self):
-        self._registry = set()  # model registry
-        self._name_to_model = dict()
-        self._parent_fields = dict()
+        self._registry = dict()  # model registry
         self._managed_roles = dict()  # code-defined role definitions, managed=True
         self.apps_ready = False
         self._tracked_relationships = set()
         self._trackers = dict()
 
-    def register(self, *args, parent_field_name='organization'):
+    def register(self, *args, **kwargs):
         if self.apps_ready:
             raise RuntimeError('Cannot register model to permission_registry after apps are ready')
-        for cls in args:
-            if cls not in self._registry:
-                self._registry.add(cls)
-                model_name = cls._meta.model_name
-                if model_name in self._name_to_model:
-                    raise RuntimeError(f'Two models registered with same name {model_name}')
-                self._name_to_model[model_name] = cls
-                if model_name != 'organization':
-                    self._parent_fields[model_name] = parent_field_name
+        for model in args:
+            if model._meta.model_name not in self._registry:
+                info = ModelPermissionInfo(model, **kwargs)
+                self._registry[info.model_name] = info
+            elif self._registry[model._meta.model_name] is model:
+                logger.debug(f'Model {model._meta.model_name} registered to permission registry more than once')
             else:
-                logger.debug(f'Model {cls._meta.model_name} registered to permission registry more than once')
+                raise RuntimeError(f'Two models registered with same name {model._meta.model_name}')
+
+    def get_info(self, obj: Union[ModelBase, Model]) -> ModelPermissionInfo:
+        return self._registry[obj._meta.model_name]
 
     def track_relationship(self, cls, relationship, role_name):
         self._tracked_relationships.add((cls, relationship, role_name))
 
     def get_parent_model(self, model) -> Optional[type]:
-        model = self._name_to_model[model._meta.model_name]
-        parent_field_name = self.get_parent_fd_name(model)
-        if parent_field_name is None:
+        info = self._registry[model._meta.model_name]
+        if info.parent_field_name is None:
             return None
-        return model._meta.get_field(parent_field_name).related_model
+        return model._meta.get_field(info.parent_field_name).related_model
 
     def get_parent_fd_name(self, model) -> Optional[str]:
-        return self._parent_fields.get(model._meta.model_name)
+        model_name = model._meta.model_name
+        if model_name not in self._registry:
+            return None
+        info = self._registry[model_name]
+        return info.parent_field_name
 
     def get_child_models(self, parent_model, seen=None) -> list[tuple[str, Type[Model]]]:
         """Returns child models and the filter relationship to the parent
@@ -72,19 +87,18 @@ class PermissionRegistry:
             seen = set()
         child_filters = []
         parent_model_name = parent_model._meta.model_name
-        for model_name, parent_field_name in self._parent_fields.items():
-            if parent_field_name is None:
+        for model_name, info in self._registry.items():
+            if info.parent_field_name is None:
                 continue
-            child_model = self._name_to_model[model_name]
-            this_parent_name = child_model._meta.get_field(parent_field_name).related_model._meta.model_name
+            this_parent_name = info.model._meta.get_field(info.parent_field_name).related_model._meta.model_name
             if this_parent_name == parent_model_name:
                 if model_name in seen:
                     continue
                 seen.add(model_name)
 
-                child_filters.append((parent_field_name, child_model))
-                for next_parent_filter, grandchild_model in self.get_child_models(child_model, seen=seen):
-                    child_filters.append((f'{next_parent_filter}__{parent_field_name}', grandchild_model))
+                child_filters.append((info.parent_field_name, info.model))
+                for next_parent_filter, grandchild_model in self.get_child_models(info.model, seen=seen):
+                    child_filters.append((f'{next_parent_filter}__{info.parent_field_name}', grandchild_model))
         return child_filters
 
     def get_resource_prefix(self, cls: Type[Model]) -> str:
@@ -150,8 +164,8 @@ class PermissionRegistry:
         self.apps = apps
         self.apps_ready = True
 
-        if self.team_model not in self._registry:
-            self._registry.add(self.team_model)
+        if self.team_model._meta.model_name not in self._registry:
+            self.register(self.team_model)
 
         # Do no specify sender for create_dab_permissions, because that is passed as app_config
         # and we want to create permissions for external apps, not the dab_rbac app
@@ -169,9 +183,9 @@ class PermissionRegistry:
         self.user_model.add_to_class('singleton_permissions', bound_singleton_permissions)
         post_delete.connect(triggers.rbac_post_user_delete, sender=self.user_model, dispatch_uid='permission-registry-user-delete')
 
-        for cls in self._registry:
-            triggers.connect_rbac_signals(cls)
-            connect_rbac_methods(cls)
+        for cls in self._registry.values():
+            triggers.connect_rbac_signals(cls.model)
+            connect_rbac_methods(cls.model)
 
         for cls, relationship, role_name in self._tracked_relationships:
             if role_name in self._trackers:
@@ -221,12 +235,12 @@ class PermissionRegistry:
         return f'member_{self.team_model._meta.model_name}'
 
     @property
-    def all_registered_models(self):
-        return list(self._registry)
+    def all_registered_models(self) -> list[Type[Model]]:
+        return [info.model for info in self._registry.values()]
 
     def is_registered(self, obj: Union[ModelBase, Model]) -> bool:
         """Tells if the given object or class is a type tracked by DAB RBAC"""
-        return any(obj._meta.model_name == cls._meta.model_name for cls in self._registry)
+        return bool(obj._meta.model_name in self._registry)
 
 
 permission_registry = PermissionRegistry()
