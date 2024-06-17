@@ -145,7 +145,8 @@ class FieldLookupBackend(BaseFilterBackend):
         """The names in query_params to ignore given the current settings and current view"""
         from django.conf import settings
 
-        reserved_set = set(settings.ANSIBLE_BASE_REST_FILTERS_RESERVED_NAMES)
+        filters_reserved_names = getattr(settings, "ANSIBLE_BASE_REST_FILTERS_RESERVED_NAMES", [])
+        reserved_set = set(filters_reserved_names)
 
         if hasattr(view, 'rest_filters_reserved_names'):
             reserved_set |= set(view.rest_filters_reserved_names)
