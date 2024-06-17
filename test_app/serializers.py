@@ -110,6 +110,12 @@ class UUIDModelSerializer(RelatedAccessMixin, ModelSerializer):
         fields = '__all__'
 
 
+class MemberGuideSerializer(RelatedAccessMixin, ModelSerializer):
+    class Meta:
+        model = models.MemberGuide
+        fields = '__all__'
+
+
 class ImmutableLogEntrySerializer(ImmutableCommonModelSerializer):
     class Meta:
         model = models.ImmutableLogEntry

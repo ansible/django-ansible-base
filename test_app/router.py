@@ -61,6 +61,7 @@ router.register(
         'positionmodels': (views.PositionModelViewSet, 'positionmodels'),
         'weirdperms': (views.WeirdPermViewSet, 'weirdperms'),
         'publicdata': (views.PublicDataViewSet, 'public_data'),
+        'member_guides': (views.MemberGuideViewSet, 'member_guides'),
     },
 )
 

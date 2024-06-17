@@ -34,7 +34,7 @@ def permissions_allowed_for_system_role() -> dict[type, list[str]]:
     return permissions_by_model
 
 
-def permissions_allowed_for_role(cls) -> dict[type, list[str]]:
+def permissions_allowed_for_role(cls: Union[Model, Type[Model], None]) -> dict[type, list[str]]:
     "Permission codenames valid for a RoleDefinition of given class, organized by permission class"
     if cls is None:
         return permissions_allowed_for_system_role()
@@ -42,8 +42,13 @@ def permissions_allowed_for_role(cls) -> dict[type, list[str]]:
     if not permission_registry.is_registered(cls):
         raise ValidationError(f'Django-ansible-base RBAC does not track permissions for model {cls._meta.model_name}')
 
-    # Include direct model permissions (except for add permission)
     permissions_by_model = defaultdict(list)
+
+    info = permission_registry.get_info(cls)
+    if not info.allow_object_roles:
+        return permissions_by_model
+
+    # Include direct model permissions (except for add permission)
     permissions_by_model[cls] = [codename for codename in codenames_for_cls(cls) if not is_add_perm(codename)]
 
     # Include model permissions for all child models, including the add permission
@@ -99,6 +104,10 @@ def validate_permissions_for_model(permissions, content_type: Optional[Model], m
     if content_type:
         role_model = content_type.model_class()
     permissions_by_model = permissions_allowed_for_role(role_model)
+
+    if not permissions_by_model:
+        print_model = role_model._meta.verbose_name if role_model else 'global roles'
+        raise ValidationError({'content_type': f'Creating roles for the {print_model} model is disabled'})
 
     invalid_codenames = codename_list - combine_values(permissions_by_model)
     if invalid_codenames:

@@ -284,4 +284,20 @@ class Migration(migrations.Migration):
             },
             bases=('test_app.original2',),
         ),
+        migrations.CreateModel(
+            name='MemberGuide',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('modified', models.DateTimeField(auto_now=True, help_text='The date/time this resource was created')),
+                ('created', models.DateTimeField(auto_now_add=True, help_text='The date/time this resource was created')),
+                ('name', models.CharField(help_text='The name of this resource', max_length=512)),
+                ('article', models.TextField(default='-- Help article stub --')),
+                ('created_by', models.ForeignKey(default=None, editable=False, help_text='The user who created this resource', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='%(app_label)s_%(class)s_created+', to=settings.AUTH_USER_MODEL)),
+                ('modified_by', models.ForeignKey(default=None, editable=False, help_text='The user who last modified this resource', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='%(app_label)s_%(class)s_modified+', to=settings.AUTH_USER_MODEL)),
+                ('organization', models.ForeignKey(help_text='Docs for all org members', on_delete=django.db.models.deletion.CASCADE, related_name='member_guides', to='test_app.organization')),
+            ],
+            options={
+                'abstract': False,
+            },
+        ),
     ]

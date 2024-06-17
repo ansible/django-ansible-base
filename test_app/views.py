@@ -176,6 +176,10 @@ def api_root(request, format=None):
     return Response(list_endpoints)
 
 
+class MemberGuideViewSet(TestAppViewSet):
+    serializer_class = serializers.MemberGuideSerializer
+
+
 class MultipleFieldsViewSet(TestAppViewSet):
     serializer_class = serializers.MultipleFieldsModelSerializer
 

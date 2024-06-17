@@ -190,6 +190,20 @@ class UUIDModel(models.Model):
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name='uuidmodels')
 
 
+class MemberGuide(NamedCommonModel):
+    """Demonstrates use case for hypothetical model with no object-level roles
+
+    The pretend use-case is that this saves articles for documentation, which is intended to
+    be available for all members of the organization.
+    Since this tracks so closely with organization member permission, object-level roles
+    would be overkill and confusing.
+    Our intent is that permissions are only delegated at the organization level.
+    """
+
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name='member_guides', help_text='Docs for all org members')
+    article = models.TextField(default='-- Help article stub --')
+
+
 class ImmutableTask(models.Model):
     "Hypothetical immutable task-like thing, can be created and canceled but not edited"
 
@@ -273,6 +287,7 @@ permission_registry.register(Organization, Inventory, Credential, Namespace, Tea
 permission_registry.register(ParentName, parent_field_name='my_organization')
 permission_registry.register(CollectionImport, parent_field_name='namespace')
 permission_registry.register(InstanceGroup, ImmutableTask, parent_field_name=None)
+permission_registry.register(MemberGuide, allow_object_roles=False)
 
 # NOTE(cutwater): Using hard coded role names instead of ones defined in ReconcileUser class,
 #   to avoid circular dependency between models and claims modules. This is a temporary workarond,
