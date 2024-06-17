@@ -250,7 +250,9 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAML
 
     def extra_data(self, user, backend, response, *args, **kwargs):
         attrs = response["attributes"] if "attributes" in response else {}
-        for perm in ["is_superuser", "is_platform_auditor"]:
+        from ansible_base.lib.utils.settings import get_setting
+
+        for perm in ["is_superuser", get_setting('ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG')]:
             if perm in attrs:
                 kwargs["social"].extra_data[perm] = attrs[perm]
 

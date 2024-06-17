@@ -207,7 +207,9 @@ class AuthenticatorPlugin(SocialAuthMixin, OpenIdConnectAuth, AbstractAuthentica
     configuration_encrypted_fields = ['SECRET']
 
     def extra_data(self, user, backend, response, *args, **kwargs):
-        for perm in ["is_superuser", "is_platform_auditor"]:
+        from ansible_base.lib.utils.settings import get_setting
+
+        for perm in ["is_superuser", get_setting('ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG')]:
             if perm in response:
                 kwargs["social"].extra_data[perm] = response[perm]
         data = super().extra_data(user, backend, response, *args, **kwargs)
