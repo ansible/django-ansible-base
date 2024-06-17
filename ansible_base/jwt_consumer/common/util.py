@@ -37,9 +37,9 @@ def validate_x_trusted_proxy_header(header_value: str, ignore_cache=False) -> bo
         return False
 
     try:
-        timestamp, signature = header_value.split('-')
+        timestamp, signature = header_value.split('-', maxsplit=1)
     except ValueError:
-        logger.warning("Failed to validate x-trusted-proxy-header, malformed, expected value to contain a - and it did not")
+        logger.warning("Failed to validate x-trusted-proxy-header, malformed, expected value to contain a -")
         return False
 
     try:
