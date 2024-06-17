@@ -50,7 +50,7 @@ def validate_x_trusted_proxy_header(header_value: str, ignore_cache=False) -> bo
 
     try:
         public_key.verify(
-            bytes.fromhex(signature),
+            signature_bytes,
             bytes(f'{_SHARED_SECRET}-{timestamp}', 'utf-8'),
             padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
             hashes.SHA256(),
