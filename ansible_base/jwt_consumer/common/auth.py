@@ -3,9 +3,7 @@ from typing import Optional, Tuple
 
 import jwt
 from django.apps import apps
-from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Model
 from rest_framework.authentication import BaseAuthentication
@@ -15,7 +13,7 @@ from ansible_base.jwt_consumer.common.cache import JWTCache
 from ansible_base.jwt_consumer.common.cert import JWTCert, JWTCertException
 from ansible_base.lib.utils.auth import get_user_by_ansible_id
 from ansible_base.lib.utils.translations import translatableConditionally as _
-from ansible_base.resource_registry.models import Resource
+from ansible_base.resource_registry.models import Resource, ResourceType
 
 logger = logging.getLogger("ansible_base.jwt_consumer.common.auth")
 
@@ -36,10 +34,6 @@ class JWTCommonAuth:
         self.cache = JWTCache()
         self.user = None
         self.token = None
-        if hasattr(settings, 'ANSIBLE_BASE_TEAM_MODEL'):
-            self.team_content_type = ContentType.objects.get_for_model(apps.get_model(settings.ANSIBLE_BASE_TEAM_MODEL))
-        if hasattr(settings, 'ANSIBLE_BASE_ORGANIZATION_MODEL'):
-            self.org_content_type = ContentType.objects.get_for_model(apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL))
 
     def parse_jwt_token(self, request):
         """
@@ -250,26 +244,27 @@ class JWTCommonAuth:
         if content_type == 'team':
             # For a team we first have to make sure the org is there
             org_id = data['org']
-            organization_data = self.token['objects'][self.org_content_type.model][org_id]
+            organization_data = self.token['objects']["organization"][org_id]
 
             # Now that we have the org we can build a team
-            resource, org = self.get_or_create_resource(self.org_content_type.model, organization_data)
-            team, created = self.team_content_type.model_class().objects.get_or_create(
-                name=data['name'], organization=org, defaults={'description': 'Waiting for resource sync'}
+            org_resource, _ = self.get_or_create_resource("organization", organization_data)
+
+            resource = Resource.create_resource(
+                ResourceType.objects.get(name="shared.team"),
+                {"name": data["name"], "organization": org_resource.ansible_id},
+                ansible_id=data["ansible_id"],
             )
-            team.save()
-            if created:
-                logger.warning(f"Created team {data['name']}")
-            team.resource.ansible_id = object_ansible_id
-            team.resource.save()
-            return team.resource, team
+
+            return resource, resource.content_object
+
         elif content_type == 'organization':
-            org, created = self.org_content_type.model_class().objects.get_or_create(name=data['name'], defaults={'description': 'Waiting for resource sync'})
-            org.save()
-            logger.warning(f"Created organization {data['name']}")
-            org.resource.ansible_id = object_ansible_id
-            org.resource.save()
-            return org.resource, org
+            resource = Resource.create_resource(
+                ResourceType.objects.get(name="shared.organization"),
+                {"name": data["name"]},
+                ansible_id=data["ansible_id"],
+            )
+
+            return resource, resource.content_object
         else:
             logger.error(f"build_resource_stub does not know how to build an object of type {type}")
             return None, None
