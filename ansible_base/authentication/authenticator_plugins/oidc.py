@@ -9,6 +9,7 @@ from social_core.backends.open_id_connect import OpenIdConnectAuth
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.social_auth import SocialAuthMixin
 from ansible_base.lib.serializers.fields import BooleanField, CharField, ChoiceField, DictField, IntegerField, ListField, URLField
+from ansible_base.lib.utils.settings import get_setting
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.oidc')
 
@@ -207,7 +208,7 @@ class AuthenticatorPlugin(SocialAuthMixin, OpenIdConnectAuth, AbstractAuthentica
     configuration_encrypted_fields = ['SECRET']
 
     def extra_data(self, user, backend, response, *args, **kwargs):
-        for perm in ["is_superuser", "is_system_auditor"]:
+        for perm in ["is_superuser", get_setting('ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG')]:
             if perm in response:
                 kwargs["social"].extra_data[perm] = response[perm]
         data = super().extra_data(user, backend, response, *args, **kwargs)

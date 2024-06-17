@@ -27,7 +27,7 @@ class OAuth2TokenPermission(BasePermission):
         return request.user.is_authenticated
 
     def has_object_permission(self, request, view, obj):
-        if request.method in SAFE_METHODS and getattr(request.user, 'is_system_auditor', False):
+        if request.method in SAFE_METHODS and getattr(request.user, 'is_platform_auditor', False):
             return True
         if request.user.is_superuser:
             return True
