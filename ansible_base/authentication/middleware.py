@@ -1,4 +1,5 @@
 import logging
+from urllib.parse import urljoin
 
 from django.contrib.auth import BACKEND_SESSION_KEY
 from django.core.exceptions import ImproperlyConfigured
@@ -46,11 +47,11 @@ class AuthenticatorBackendMiddleware(MiddlewareMixin):
 class SocialExceptionHandlerMiddleware(SocialAuthExceptionMiddleware):
     def get_redirect_uri(self, request, exception):
         strategy = getattr(request, "social_strategy", None)
-        url = strategy.setting("LOGIN_ERROR_URL")
+        error_url = strategy.setting("LOGIN_ERROR_URL")
         backend = getattr(request, "backend", None)
         backend_name = getattr(backend, "name", "unknown-backend")
         logger.error(f"Auth failure for backend {backend_name} - {exception}")
-        # The redirect URL can be customized as necessary for consumption by UI
-        # to display message or send user to an error page
+        # UI expects auth_failed flag
+        url = urljoin(error_url, "/?auth_failed")
         logger.info(f"Redirecting user to {url}")
         return url

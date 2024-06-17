@@ -19,4 +19,4 @@ def test_social_exception_handler_mw():
 
     mw = SocialExceptionHandlerMiddleware(None)
     url = mw.get_redirect_uri(Request(), AuthException("test"))
-    assert url == "/"
+    assert url == "/?auth_failed"
