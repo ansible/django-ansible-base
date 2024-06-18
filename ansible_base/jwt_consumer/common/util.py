@@ -54,4 +54,3 @@ def validate_x_trusted_proxy_header(header_value: str, ignore_cache=False) -> bo
         if ignore_cache or not cert.cached:
             return False
         return validate_x_trusted_proxy_header(header_value, ignore_cache=True)
-
