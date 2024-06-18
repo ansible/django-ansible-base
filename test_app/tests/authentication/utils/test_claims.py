@@ -334,53 +334,53 @@ def test_create_claims_revoke(local_authenticator_map, process_function, trigger
     [
         # has_or
         ({"has_or": ["foo"]}, ["foo"], True),
-        ({"has_or": ["foo"]}, ["bar"], False),
+        ({"has_or": ["foo"]}, ["bar"], None),
         ({"has_or": ["foo", "bar"]}, ["foo"], True),
         ({"has_or": ["foo", "bar"]}, ["bar"], True),
-        ({"has_or": ["foo", "bar"]}, ["baz"], False),
+        ({"has_or": ["foo", "bar"]}, ["baz"], None),
         ({"has_or": ["foo", "bar"]}, ["foo", "bar"], True),
         ({"has_or": ["foo", "bar"]}, ["foo", "baz"], True),
         ({"has_or": ["foo", "bar"]}, ["bar", "baz"], True),
         ({"has_or": ["foo"]}, ["baz", "foo", "qux"], True),
         # has_and
         ({"has_and": ["foo"]}, ["foo"], True),
-        ({"has_and": ["foo"]}, ["bar"], False),
+        ({"has_and": ["foo"]}, ["bar"], None),
         ({"has_and": ["foo", "bar"]}, ["foo", "bar"], True),
         ({"has_and": ["foo", "bar"]}, ["bar", "foo"], True),
-        ({"has_and": ["foo", "bar"]}, ["foo"], False),
-        ({"has_and": ["foo", "bar"]}, ["bar"], False),
-        ({"has_and": ["foo", "bar"]}, ["baz"], False),
-        ({"has_and": ["foo", "bar"]}, ["foo", "baz"], False),
-        ({"has_and": ["foo", "bar"]}, ["bar", "baz"], False),
+        ({"has_and": ["foo", "bar"]}, ["foo"], None),
+        ({"has_and": ["foo", "bar"]}, ["bar"], None),
+        ({"has_and": ["foo", "bar"]}, ["baz"], None),
+        ({"has_and": ["foo", "bar"]}, ["foo", "baz"], None),
+        ({"has_and": ["foo", "bar"]}, ["bar", "baz"], None),
         # has_not
-        ({"has_not": ["foo"]}, ["foo"], False),
+        ({"has_not": ["foo"]}, ["foo"], None),
         ({"has_not": ["foo"]}, ["bar"], True),
-        ({"has_not": ["foo", "bar"]}, ["foo"], False),
-        ({"has_not": ["foo", "bar"]}, ["bar"], False),
+        ({"has_not": ["foo", "bar"]}, ["foo"], None),
+        ({"has_not": ["foo", "bar"]}, ["bar"], None),
         ({"has_not": ["foo", "bar"]}, ["baz"], True),
-        ({"has_not": ["foo", "bar"]}, ["foo", "bar"], False),
-        ({"has_not": ["foo", "bar"]}, ["foo", "baz"], False),
-        ({"has_not": ["foo", "bar"]}, ["bar", "baz"], False),
-        ({"has_not": ["foo"]}, ["baz", "foo", "qux"], False),
+        ({"has_not": ["foo", "bar"]}, ["foo", "bar"], None),
+        ({"has_not": ["foo", "bar"]}, ["foo", "baz"], None),
+        ({"has_not": ["foo", "bar"]}, ["bar", "baz"], None),
+        ({"has_not": ["foo"]}, ["baz", "foo", "qux"], None),
         # has_or and has_and (only has_or has effect)
         ({"has_or": ["foo"], "has_and": ["bar"]}, ["foo"], True),
-        ({"has_or": ["foo"], "has_and": ["bar"]}, ["bar"], False),
+        ({"has_or": ["foo"], "has_and": ["bar"]}, ["bar"], None),
         ({"has_or": ["foo"], "has_and": ["bar"]}, ["foo", "bar"], True),
         ({"has_or": ["foo"], "has_and": ["bar"]}, ["foo", "baz"], True),
         # has_or and has_not (only has_or has effect)
         ({"has_or": ["foo"], "has_not": ["bar"]}, ["foo"], True),
-        ({"has_or": ["foo"], "has_not": ["bar"]}, ["bar"], False),
+        ({"has_or": ["foo"], "has_not": ["bar"]}, ["bar"], None),
         ({"has_or": ["foo"], "has_not": ["bar"]}, ["foo", "bar"], True),
         ({"has_or": ["foo"], "has_not": ["bar"]}, ["foo", "baz"], True),
         # has_and and has_not (only has_and has effect)
         ({"has_and": ["foo"], "has_not": ["bar"]}, ["foo"], True),
-        ({"has_and": ["foo"], "has_not": ["bar"]}, ["bar"], False),
+        ({"has_and": ["foo"], "has_not": ["bar"]}, ["bar"], None),
         ({"has_and": ["foo"], "has_not": ["bar"]}, ["foo", "bar"], True),
         ({"has_and": ["foo"], "has_not": ["bar"]}, ["baz", "foo"], True),
         # has_or, has_and, and has_not (only has_or has effect)
         ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["foo"], True),
-        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["bar"], False),
-        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["baz"], False),
+        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["bar"], None),
+        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["baz"], None),
         ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["foo", "bar"], True),
         ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["foo", "baz"], True),
         # None of has_or, has_and, or has_not
@@ -435,7 +435,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
         pytest.param(
             {"email": {"equals": "foo@example.com"}},
             {"email": "foo@example.org"},
-            False,
+            None,
             id="equals, negative",
         ),
         pytest.param(
@@ -453,13 +453,13 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
         pytest.param(
             {"email": {"matches": "foo@.*"}},
             {"email": "bar@example.com"},
-            False,
+            None,
             id="matches, negative",
         ),
         pytest.param(
             {"email": {"matches": "^foo@.*"}},
             {"email": "bar@example.com"},
-            False,
+            None,
             id="matches, start of line, negative",
         ),
         pytest.param(
@@ -471,7 +471,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
         pytest.param(
             {"email": {"contains": "@example.com"}},
             {"email": "foo@example.org"},
-            False,
+            None,
             id="contains, negative",
         ),
         pytest.param(
@@ -483,7 +483,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
         pytest.param(
             {"email": {"ends_with": "@example.com"}},
             {"email": "foo@example.org"},
-            False,
+            None,
             id="ends_with, negative",
         ),
         pytest.param(
@@ -495,7 +495,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
         pytest.param(
             {"email": {"in": "omg hey foo@example.com bye"}},
             {"email": "foo@example.org"},
-            False,
+            None,
             id="in, negative",
         ),
         pytest.param(
@@ -507,7 +507,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "foo@example.org"},
-            False,
+            None,
             id="'and' join_condition, missing one attribute, negative",
         ),
         pytest.param(
@@ -519,7 +519,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "foo@example.org", "favorite_color": "red"},
-            False,
+            None,
             id="'and' join_condition, two false conditions, negative",
         ),
         pytest.param(
@@ -531,7 +531,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "foo@example.org", "favorite_color": "teal"},
-            False,
+            None,
             id="'and' join_condition, one false condition, negative",
         ),
         pytest.param(
@@ -589,7 +589,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "foo@example.org", "favorite_color": "red"},
-            False,
+            None,
             id="implicit 'or' join_condition, both conditions false, negative",
         ),
         pytest.param(
@@ -601,7 +601,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "foo@example.org", "favorite_color": "red"},
-            False,
+            None,
             id="'or' join_condition, both conditions false, negative",
         ),
         pytest.param(
@@ -619,13 +619,13 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
         pytest.param(
             {"email": {}},
             {"favorite_color": "teal"},
-            False,
+            None,
             id="trigger dict attribute has empty dict, becomes 'exists', negative",
         ),
         pytest.param(
             {"email": {}},
             {},
-            False,
+            None,
             id="trigger dict attribute has empty dict, becomes 'exists', empty attributes, negative",
         ),
         pytest.param(
@@ -643,7 +643,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
         pytest.param(
             {"email": {}, "favorite_color": {}, "join_condition": "and"},
             {"favorite_color": "teal"},
-            False,
+            None,
             id="trigger dict attributes have empty dicts, becomes 'exists', explicit 'and', negative",
         ),
         pytest.param(
@@ -668,7 +668,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
         pytest.param(
             {"email": {"equals": "foo@example.com"}},
             {"email": ["bar@example.com", "baz@example.com"]},
-            False,
+            None,
             id="user attribute is list, no matches, negative",
         ),
         pytest.param(
@@ -680,7 +680,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
         pytest.param(
             {"email": {"equals": "foo@example.com"}, "join_condition": "and"},
             {"email": ["bar@example.com", "foo@example.com"]},
-            False,
+            None,
             id="user attribute is list, one match, explicit 'and', negative",
         ),
         pytest.param(
@@ -718,6 +718,12 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
             {"email": ["foo@example.com", "bar@example.com"]},
             True,
             id="join condition is invalid, defaults to or",
+        ),
+        pytest.param(
+            {"username": {"equals": "alice"}, "join_condition": "or"},
+            {"username": "bob", "email": ""},
+            None,
+            id="user attribute is string, condition equals, join condition or, negative",
         ),
     ],
 )

@@ -150,7 +150,7 @@ def _add_rbac_role_mapping(has_permission, role_mapping, role, organization=None
 
 def process_groups(trigger_condition: dict, groups: list, authenticator_id: int) -> Optional[bool]:
     """
-    Looks at a maps trigger for a group and users groups and determines if the trigger True or False
+    Looks at a maps trigger for a group and users groups and determines if the trigger True or None
     """
 
     invalid_conditions = set(trigger_condition.keys()) - set(TRIGGER_DEFINITION['groups']['keys'].keys())
@@ -178,7 +178,7 @@ def process_groups(trigger_condition: dict, groups: list, authenticator_id: int)
         else:
             has_access = True
 
-    return has_access
+    return True if has_access else None
 
 
 def has_access_with_join(current_access: Optional[bool], new_access: bool, condition: str = 'or') -> Optional[bool]:
@@ -263,7 +263,7 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, authentic
             elif "in" in trigger_condition[attribute]:
                 has_access = has_access_with_join(has_access, a_user_value in trigger_condition[attribute]['in'], join_condition)
 
-    return has_access
+    return True if has_access else None
 
 
 def update_user_claims(user: Optional[AbstractUser], database_authenticator: Authenticator, groups: list[str]) -> Optional[AbstractUser]:
