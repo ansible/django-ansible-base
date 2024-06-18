@@ -48,14 +48,14 @@ class Authenticator(UniqueNamedCommonModel):
 
     @classmethod
     def from_db(cls, db, field_names, values):
-        from ansible_base.lib.utils.encryption import ENCRYPTED_STRING, ansible_encryption
+        from ansible_base.lib.utils.encryption import ansible_encryption
 
         instance = super().from_db(db, field_names, values)
 
         try:
             authenticator = get_authenticator_plugin(instance.type)
             for field in getattr(authenticator, 'configuration_encrypted_fields', []):
-                if field in instance.configuration and instance.configuration[field].startswith(ENCRYPTED_STRING):
+                if field in instance.configuration:
                     instance.configuration[field] = ansible_encryption.decrypt_string(instance.configuration[field])
         except ImportError:
             # A log message will already be displayed if this fails
