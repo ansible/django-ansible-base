@@ -139,6 +139,8 @@ if 'ansible_base.authentication' in INSTALLED_APPS:
     SOCIAL_AUTH_STRATEGY = "ansible_base.authentication.social_auth.AuthenticatorStrategy"
     SOCIAL_AUTH_LOGIN_REDIRECT_URL = "/"
 
+    ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG = "is_system_auditor"
+
 
 if 'ansible_base.rest_pagination' in INSTALLED_APPS:
     REST_FRAMEWORK['DEFAULT_PAGINATION_CLASS'] = 'ansible_base.rest_pagination.DefaultPaginator'

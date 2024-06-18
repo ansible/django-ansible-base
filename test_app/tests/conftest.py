@@ -11,6 +11,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from django.apps import apps
+from django.contrib.contenttypes.models import ContentType
 from django.db.migrations.recorder import MigrationRecorder
 from django.db.models.signals import post_migrate
 from django.test.client import RequestFactory
@@ -63,6 +64,14 @@ def test_migrations_okay(*args, **kwargs):
 
 
 post_migrate.connect(test_migrations_okay)
+
+
+@pytest.fixture(autouse=True)
+def clear_content_type_cache():
+    """This enforces determinism between tests by deleting cached ContentType items from old tests"""
+    ContentType.objects.clear_cache()
+    yield
+    ContentType.objects.clear_cache()
 
 
 @pytest.fixture
