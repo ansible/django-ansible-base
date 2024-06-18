@@ -253,6 +253,7 @@ class AuthenticatorPlugin(SocialAuthMixin, OpenIdConnectAuth, AbstractAuthentica
         """
         user_data = self.request(self.userinfo_url(), headers={"Authorization": f"Bearer {access_token}"})
         if user_data.headers["Content-Type"] == "application/jwt":
+            # If the content type is application/jwt than we can assume that the token is encrypted. Otherwise it should be application/json
             pubkey = self.public_key()
             if not pubkey:
                 logger.error(_("OIDC client sent encrypted user info response, but no public key found."))
