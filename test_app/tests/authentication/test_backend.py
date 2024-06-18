@@ -5,6 +5,7 @@ import pytest
 
 import ansible_base.authentication.backend as backend
 from ansible_base.authentication.models import Authenticator
+from ansible_base.authentication.social_auth import SOCIAL_AUTH_PIPELINE_FAILED_STATUS
 
 
 @pytest.mark.django_db
@@ -113,3 +114,42 @@ def test_authenticator_order_cached(
     # Bust the cache
     cached_authenticators = backend.get_authentication_backends(1)
     assert cached_authenticators != backends
+
+
+@pytest.mark.parametrize(
+    "github_auth_retval, is_active, expected",
+    [
+        ("random_user", None, "random_user"),
+        ("random_user", False, None),
+        ("random_user", True, "random_user"),
+        (None, None, "random_user_1"),
+        (None, False, "random_user_1"),
+        (None, True, "random_user_1"),
+        (SOCIAL_AUTH_PIPELINE_FAILED_STATUS, None, "random_user_1"),
+        (SOCIAL_AUTH_PIPELINE_FAILED_STATUS, False, "random_user_1"),
+        (SOCIAL_AUTH_PIPELINE_FAILED_STATUS, True, "random_user_1"),
+    ],
+)
+def test_authenticate(request, local_authenticator, github_enterprise_authenticator, random_user, random_user_1, github_auth_retval, is_active, expected):
+    with mock.patch(
+        "ansible_base.authentication.backend.get_authentication_backends",
+        return_value={github_enterprise_authenticator.id: github_enterprise_authenticator, local_authenticator.id: local_authenticator},
+    ):
+        # Set is_active flag for 1st authenticator's user
+        if is_active is not None:
+            setattr(random_user, "is_active", is_active)
+
+        # Set response for 1st authenticator
+        if github_auth_retval == "random_user":
+            github_auth_retval = request.getfixturevalue(github_auth_retval)
+        github_enterprise_authenticator.authenticate = mock.MagicMock(return_value=github_auth_retval)
+
+        # If GitHub authenticator fails, next one always fits
+        local_authenticator.authenticate = mock.MagicMock(return_value=random_user_1)
+
+        auth_return = backend.AnsibleBaseAuth().authenticate(None)
+
+        if expected is not None:
+            expected = request.getfixturevalue(expected)
+
+        assert auth_return == expected
