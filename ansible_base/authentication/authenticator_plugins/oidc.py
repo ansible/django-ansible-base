@@ -216,3 +216,8 @@ class AuthenticatorPlugin(SocialAuthMixin, OpenIdConnectAuth, AbstractAuthentica
 
     def get_user_groups(self, extra_groups=[]):
         return extra_groups
+
+    def oidc_config(self):
+        # This is a copy of super without caching, which avoids data
+        # from one OIDC based authenticator showing up in another
+        return self.get_json(self.oidc_endpoint() + "/.well-known/openid-configuration")
