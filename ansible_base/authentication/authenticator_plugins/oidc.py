@@ -1,9 +1,11 @@
 import logging
 
+import jwt
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.utils.translation import gettext_lazy as _
 from jwt.algorithms import get_default_algorithms
+from jwt.exceptions import PyJWTError
 from social_core.backends.open_id_connect import OpenIdConnectAuth
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
@@ -216,3 +218,55 @@ class AuthenticatorPlugin(SocialAuthMixin, OpenIdConnectAuth, AbstractAuthentica
 
     def get_user_groups(self, extra_groups=[]):
         return extra_groups
+
+    def oidc_config(self):
+        # This is a copy of super without caching, which avoids data
+        # from one OIDC based authenticator showing up in another
+        return self.get_json(self.oidc_endpoint() + "/.well-known/openid-configuration")
+
+    def public_key(self):
+        key = self.setting("PUBLIC_KEY")
+        if key:
+            head = "-----BEGIN PUBLIC KEY-----"
+            foot = "-----END PUBLIC KEY-----"
+            return (
+                "\n".join(
+                    [
+                        head,
+                        key,
+                        foot,
+                    ]
+                )
+                if head not in key
+                else key
+            )
+        return None
+
+    def user_data(self, access_token, *args, **kwargs):
+        """
+        This function overrides the one in social auth class OpenIdConnectAuth, since
+        it assumes the user info endpoint response returns plain json. Depending on
+        server config it may instead be a JWT. This function notices the JWT via the
+        content type header and if found, attempts to decode it using the configured
+        public key and algorithm(s). None is returned to signify a failed login in the
+        case of improper config or other decoding failure.
+        """
+        user_data = self.request(self.userinfo_url(), headers={"Authorization": f"Bearer {access_token}"})
+        if user_data.headers["Content-Type"] == "application/jwt":
+            # If the content type is application/jwt than we can assume that the token is encrypted. Otherwise it should be application/json
+            pubkey = self.public_key()
+            if not pubkey:
+                logger.error(_("OIDC client sent encrypted user info response, but no public key found."))
+                return None
+            try:
+                data = jwt.decode(
+                    access_token,
+                    key=pubkey,
+                    algorithms=self.setting("JWT_ALGORITHMS"),
+                    audience=self.setting("KEY"),
+                )
+                return data
+            except PyJWTError as e:
+                logger.error(_(f"Unable to decode user info response JWT: {e}"))
+                return None
+        return user_data.json()

@@ -25,7 +25,9 @@ class JWTCert:
     def __init__(self):
         self.cached = None
         self.key = None
-        self.jwt_key_setting = get_setting(self.key_name, None)
+        # Attempt to locate the cert using ANSIBLE_BASE_JWT_KEY.  If we are running on a service that houses the JWT key
+        #  we should not have that setting set and instead should have that setting in jwt_public_key so fallback to that
+        self.jwt_key_setting = get_setting(self.key_name, get_setting('jwt_public_key', None))
         self.cache = JWTCache()
 
     def _get_decryption_key_from_url(self) -> None:

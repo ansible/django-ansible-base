@@ -14,29 +14,29 @@ class HubJWTAuth(JWTAuthentication):
         # Map teams in the JWT to Automation Hub groups.
         try:
             from galaxy_ng.app.models import Organization, Team
+            from pulpcore.plugin.util import assign_role, remove_role
 
             self.team_content_type = ContentType.objects.get_for_model(Team)
             self.org_content_type = ContentType.objects.get_for_model(Organization)
         except ImportError:
             raise InvalidService("automation-hub")
 
+        groups = []
         for role_name in self.common_auth.token.get('object_roles', {}).keys():
             if role_name.startswith('Team'):
                 for object_index in self.common_auth.token['object_roles'][role_name]['objects']:
                     team_data = self.common_auth.token['objects']['team'][object_index]
                     ansible_id = team_data['ansible_id']
                     try:
-                        resource = Resource.objects.get(ansible_id=ansible_id)
+                        team = Resource.objects.get(ansible_id=ansible_id).content_object
                     except Resource.DoesNotExist:
-                        try:
-                            resource = self.get_or_create_resource('team', team_data)
-                        except Exception as e:
-                            logger.error(f"Failed to request object {ansible_id} from gateway to grant permissions to {self.common_auth.user.username}: {e}")
+                        team = self.common_auth.get_or_create_resource('team', team_data)[1]
 
-                    # Because RoleDefinition, Team and Group are all linked we don't have to go through individual lookups nor do we need to catch DoesNotExist
-                    team = Team.objects.get(id=resource.object_id)
-                    team.group.user_set.add(self.common_auth.user)
+                    groups.append(team.group)
+
+        self.common_auth.user.groups.set(groups)
 
         if "Platform Auditor" in self.common_auth.token.get('global_roles', []):
-            # Add platform operator here
-            pass
+            assign_role("galaxy.auditor", self.common_auth.user)
+        else:
+            remove_role("galaxy.auditor", self.common_auth.user)

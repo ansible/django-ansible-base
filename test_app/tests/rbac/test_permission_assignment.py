@@ -4,7 +4,7 @@ from rest_framework.exceptions import ValidationError
 
 from ansible_base.rbac.models import RoleDefinition, RoleEvaluation, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry
-from test_app.models import Inventory, Organization
+from test_app.models import Inventory, Organization, Team, User
 
 
 @pytest.mark.django_db
@@ -261,3 +261,37 @@ class TestOrgTeamMemberAssignment:
         member_rd.remove_permission(rando, team)
         assert set(RoleEvaluation.accessible_objects(Organization, rando, 'view_organization')) == set([])
         assert set(RoleEvaluation.accessible_objects(Inventory, rando, 'view_inventory')) == set([])
+
+
+@pytest.mark.django_db
+def test_change_team_organization(org_admin_rd, inv_rd):
+    orgs = []
+    teams = []
+    admins = []
+    objs = []
+    for i in range(2):
+        loop_name = f'thing-from-loop-{i}'
+        orgs.append(Organization.objects.create(name=loop_name))
+        teams.append(Team.objects.create(name=loop_name, organization=orgs[i]))
+        admins.append(User.objects.create(username=loop_name))
+
+        # Object / team setup, org admin gets admin to inventory via the team
+        aux_org = Organization.objects.create(name=f'{loop_name}_aux_org')
+        objs.append(Inventory.objects.create(name=loop_name, organization=aux_org))
+        org_admin_rd.give_permission(admins[i], orgs[i])
+        assert not admins[i].has_obj_perm(objs[i], 'change')  # sanity, admin does not have native permission
+        inv_rd.give_permission(teams[i], objs[i])
+
+    # sanity, org admins have permission to separate inventories
+    for i in range(2):
+        assert not admins[i].has_obj_perm(objs[0 if i == 1 else 1], 'change'), i
+        assert admins[i].has_obj_perm(objs[i], 'change'), i
+
+    teams[0].organization = orgs[1]
+    teams[0].save(update_fields=['organization'])
+
+    # due to the move of team to 2nd org, first org admin loses all inventory permission
+    # the second organization admin gives permission to both
+    for i in range(2):
+        assert not admins[0].has_obj_perm(objs[i], 'change'), i
+        assert admins[1].has_obj_perm(objs[i], 'change'), i
