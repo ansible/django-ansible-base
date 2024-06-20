@@ -392,11 +392,15 @@ class AssignmentBase(ImmutableCommonModel, ObjectRoleFields):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # Cache fields from the associated object_role
-        if self.object_role_id and not self.object_id:
-            self.object_id = self.object_role.object_id
-            self.content_type_id = self.object_role.content_type_id
-            self.role_definition_id = self.object_role.role_definition_id
+        # Fields from object_role are cached onto assignment objects, only when creating new assignments
+        # we must be very careful to avoid referencing deferred attributes to avoid RecursionError
+        def_fields = self.get_deferred_fields()
+        if not ({'id', 'object_id', 'object_role_id'} & def_fields):
+            if self.object_role_id and not self.object_id:
+                # Cache fields from the associated object_role
+                self.object_id = self.object_role.object_id
+                self.content_type_id = self.object_role.content_type_id
+                self.role_definition_id = self.object_role.role_definition_id
 
 
 class RoleUserAssignment(AssignmentBase):
