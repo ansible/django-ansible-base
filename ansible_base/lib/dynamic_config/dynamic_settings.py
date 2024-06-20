@@ -139,10 +139,16 @@ if 'ansible_base.authentication' in INSTALLED_APPS:
     SOCIAL_AUTH_STRATEGY = "ansible_base.authentication.social_auth.AuthenticatorStrategy"
     SOCIAL_AUTH_LOGIN_REDIRECT_URL = "/"
 
+    ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG = "is_system_auditor"
+
 
 if 'ansible_base.rest_pagination' in INSTALLED_APPS:
     REST_FRAMEWORK['DEFAULT_PAGINATION_CLASS'] = 'ansible_base.rest_pagination.DefaultPaginator'
 
+
+if 'ansible_base.jwt_consumer' in INSTALLED_APPS:
+    if 'ansible_base.rbac' not in INSTALLED_APPS:
+        INSTALLED_APPS.append('ansible_base.rbac')
 
 if 'ansible_base.rbac' in INSTALLED_APPS:
     # The settings-based specification of managed roles from DAB RBAC vendored ones
@@ -187,7 +193,7 @@ if 'ansible_base.rbac' in INSTALLED_APPS:
     ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS = False
 
     # API clients can assign users and teams roles for shared resources
-    ANSIBLE_BASE_DIRECT_SHARED_RESOURCE_MANAGEMENT_ENABLED = True
+    ALLOW_LOCAL_RESOURCE_MANAGEMENT = True
 
     try:
         MANAGE_ORGANIZATION_AUTH

@@ -111,8 +111,13 @@ class PermissionRegistry:
 
         return get_registry()
 
-    def get_managed_role_constructor(self, shortname):
+    def get_managed_role_constructor(self, shortname: str) -> Optional[ManagedRoleConstructor]:
         return self._managed_roles.get(shortname)
+
+    def get_managed_role_constructor_by_name(self, name: str) -> Optional[ManagedRoleConstructor]:
+        for managed_role in self._managed_roles.values():
+            if managed_role.name == name:
+                return managed_role
 
     def register_managed_role_constructor(self, shortname: str, managed_role: ManagedRoleConstructor) -> None:
         """Add the given managed role to the managed role registry"""

@@ -143,7 +143,7 @@ def test_cascade_behavior_for_created_by(user, user_api_client):
     rd.give_global_permission(user)
     url = reverse('organization-list')
     r = user_api_client.post(url, data={'name': 'foo'})
-    assert r.status_code == 201
+    assert r.status_code == 201, r.data
     org = Organization.objects.get(id=r.data['id'])
     assert org.created_by == user
     connection.check_constraints()  # issue replication - show constraint violation introduced

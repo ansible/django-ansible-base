@@ -1,7 +1,9 @@
+import json
 from unittest import mock
 
 import pytest
 from django.urls import reverse
+from jwt.exceptions import PyJWTError
 
 from ansible_base.authentication.authenticator_plugins.oidc import AuthenticatorPlugin
 from ansible_base.authentication.session import SessionAuthentication
@@ -111,3 +113,42 @@ def test_extra_data(mockedsuper):
     ap.extra_data(None, None, response=rDict, social=social)
     assert mockedsuper.called
     assert "is_superuser" in social.extra_data
+
+
+@mock.patch("social_core.backends.base.BaseAuth.setting")
+@mock.patch("jwt.decode")
+@mock.patch("social_core.backends.base.BaseAuth.request")
+def test_user_data(mockedrequest, mockeddecode, mocksetting):
+    class MockResponse:
+        def encrypted(self, isEncrypted):
+            self.headers = {"Content-Type": "application/jwt"} if isEncrypted else {"Content-Type": "application/json"}
+
+        def json(self):
+            return json.dumps({"key": "value"})
+
+    mocksetting.return_value = "VALUE"
+
+    ap = AuthenticatorPlugin()
+
+    # No decode
+    mr = MockResponse()
+    mr.encrypted(False)
+    mockedrequest.return_value = mr
+    data = ap.user_data("token")
+
+    assert not mockeddecode.called
+    assert "key" in data
+
+    # With decode
+    mr = MockResponse()
+    mr.encrypted(True)
+    mockedrequest.return_value = mr
+    mockeddecode.return_value = mr.json()
+    data = ap.user_data("token")
+
+    assert mockeddecode.called_with("token", "VALUE", "VALUE", "VALUE")
+    assert "key" in data
+
+    # Decode failure
+    mockeddecode.side_effect = PyJWTError()
+    assert ap.user_data("token") is None

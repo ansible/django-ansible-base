@@ -1,6 +1,7 @@
 from unittest import mock
 
 import pytest
+from django.conf import settings
 from django.urls import reverse
 
 from ansible_base.authentication.authenticator_plugins.saml import AuthenticatorPlugin
@@ -202,10 +203,10 @@ def test_extra_data(mockedsuper):
 
     rDict = {}
     rDict["attributes"] = {}
-    rDict["attributes"]["is_system_auditor"] = "True"
+    rDict["attributes"][settings.ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG] = "True"
     rDict["attributes"]["Group"] = ["mygroup"]
     social = SocialUser()
     ap.extra_data(None, None, response=rDict, social=social)
     assert mockedsuper.called
-    assert "is_system_auditor" in social.extra_data
+    assert settings.ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG in social.extra_data
     assert "mygroup" in rDict["Group"]

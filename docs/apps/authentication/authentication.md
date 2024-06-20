@@ -94,6 +94,7 @@ SOCIAL_AUTH_PIPELINE = (
 SOCIAL_AUTH_STORAGE = "ansible_base.authentication.social_auth.AuthenticatorStorage"
 SOCIAL_AUTH_STRATEGY = "ansible_base.authentication.social_auth.AuthenticatorStrategy"
 SOCIAL_AUTH_LOGIN_REDIRECT_URL = "/"
+ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG = "is_system_auditor"
 ```
 
 If you have additional steps for the social pipeline you should extend this variable after including the ansible_base settings.
@@ -113,6 +114,9 @@ def load_social_auth_settings():
 ```
 
 Any additional settings supplied by this function will be applied to out default SocialAuth strategy strategy(ansible_base.authentication.social_auth.AuthenticatorStrategy) and will thus be available to the social-core libraries at runtime.
+
+The setting `ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG` can allow changing the field that some plugins
+(right now oidc and saml) look for to map to the auditor role.
 
 
 ## URLs

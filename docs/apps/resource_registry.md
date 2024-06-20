@@ -77,12 +77,12 @@ class UserProcessor(ResourceTypeProcessor):
         # Set any non standardized attributes on the resource before serialization.
         # This gets called before the resource type serializer serializes the instance.
 
-        setattr(self.instance, "is_system_auditor", self.instance.has_role("system_auditor"))
+        setattr(self.instance, "is_platform_auditor", self.instance.has_role("platform_auditor"))
         return self.instance
 
     def pre_save(self, validated_data, is_new=False):
-        if validated_data["is_system_auditor"]:
-            self.instance.add_role("system_auditor")
+        if validated_data["is_platform_auditor"]:
+            self.instance.add_role("platform_auditor")
         super().save(validated_data, is_new=is_new)
 
 class APIConfig(ServiceAPIConfig):
@@ -346,11 +346,14 @@ to `SyncExecutor` or automatically created based on the configuration from
 the `django.conf.settings` that looks like.
 
 ```python
+# Required
 RESOURCE_SERVER = {
     "URL": "https://localhost",
     "SECRET_KEY": "<VERY-SECRET-KEY-HERE>",
     "VALIDATE_HTTPS": False,
 }
+
+# Optional
 RESOURCE_JWT_USER_ID = "97447387-8596-404f-b0d0-6429b04c8d22"
 RESOURCE_SERVICE_PATH = "/api/server/v1/service-index/"
 ```

@@ -125,7 +125,7 @@ class KeycloakConfiguration(BaseAuthenticatorConfiguration):
         allow_null=False,
     )
     KEY = serializers.CharField(help_text=_("Keycloak Client ID."), allow_null=False)
-    PUBLIC_KEY = serializers.CharField(help_text=_("RS256 public key provided by your Keycloak ream."), allow_null=False)
+    PUBLIC_KEY = serializers.CharField(help_text=_("RS256 public key provided by your Keycloak realm."), allow_null=False)
     SECRET = serializers.CharField(help_text=_("Keycloak Client secret."), allow_null=True)
 
 

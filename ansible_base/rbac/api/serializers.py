@@ -157,6 +157,7 @@ class BaseAssignmentSerializer(CommonModelSerializer):
     object_ansible_id = serializers.UUIDField(
         required=False,
         help_text=_('Resource id of the object this role applies to. Alternative to the object_id field.'),
+        allow_null=True,  # for ease of use of the browseable API
     )
 
     def __init__(self, *args, **kwargs):
@@ -288,6 +289,7 @@ class RoleUserAssignmentSerializer(BaseAssignmentSerializer):
     user_ansible_id = serializers.UUIDField(
         required=False,
         help_text=_('Resource id of the user who will receive permissions from this assignment. Alternative to user field.'),
+        allow_null=True,  # for ease of use of the browseable API
     )
 
     class Meta:

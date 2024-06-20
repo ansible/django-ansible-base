@@ -60,6 +60,7 @@ router.register(
         'parentnames': (views.ParentNameViewSet, 'parentnames'),
         'positionmodels': (views.PositionModelViewSet, 'positionmodels'),
         'weirdperms': (views.WeirdPermViewSet, 'weirdperms'),
+        'publicdata': (views.PublicDataViewSet, 'public_data'),
     },
 )
 
@@ -88,6 +89,7 @@ router.register(r'inventories', views.InventoryViewSet)
 router.register(r'instance_groups', views.InstanceGroupViewSet)
 router.register(r'cows', views.CowViewSet)
 router.register(r'uuidmodels', views.UUIDModelViewSet)
+router.register(r'public_data', views.PublicDataViewSet)
 router.register(r'cities', views.CityViewSet)
 router.register(r'animals', views.AnimalViewSet)
 router.register(r'namespaces', views.NamespaceViewSet, related_views={'collections': (views.CollectionImportViewSet, 'collections')})

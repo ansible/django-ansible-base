@@ -35,7 +35,7 @@ def has_super_permission(user, full_codename=None) -> bool:
         if full_codename:
             for action, super_flag in settings.ANSIBLE_BASE_BYPASS_ACTION_FLAGS.items():
                 if full_codename == action and getattr(user, super_flag):
-                    return True  # User has action-specific flag like is_system_auditor
+                    return True  # User has action-specific flag like is_platform_auditor
     elif user._meta.model_name != permission_registry.team_model._meta.model_name:
         raise RuntimeError(f'Evaluation methods are for users or teams, got {user._meta.model_name}: {user}')
 
@@ -75,6 +75,9 @@ class AccessibleObjectsDescriptor(BaseEvaluationDescriptor):
             queryset = self.cls.objects.all()
         if isinstance(actor, AnonymousUser):
             return queryset.model.objects.none()
+        if codename == 'view' and ('view' not in self.cls._meta.default_permissions):
+            # Model does not track view permissions
+            return queryset
         full_codename = validate_codename_for_model(codename, self.cls)
         if actor._meta.model_name == 'user' and has_super_permission(actor, full_codename):
             return queryset

@@ -22,6 +22,7 @@ from ansible_base.authentication.social_auth import (
 )
 from ansible_base.lib.serializers.fields import CharField, JSONField, ListField, PrivateKey, PublicCert, URLField
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
+from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.validation import validate_cert_with_key
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.saml')
@@ -250,7 +251,7 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAML
 
     def extra_data(self, user, backend, response, *args, **kwargs):
         attrs = response["attributes"] if "attributes" in response else {}
-        for perm in ["is_superuser", "is_system_auditor"]:
+        for perm in ["is_superuser", get_setting('ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG')]:
             if perm in attrs:
                 kwargs["social"].extra_data[perm] = attrs[perm]
 
