@@ -68,7 +68,6 @@ class ChoiceLikeMixin(serializers.ChoiceField):
 
 
 class ContentTypeField(ChoiceLikeMixin):
-
     def __init__(self, **kwargs):
         kwargs['help_text'] = _('The type of resource this applies to')
         super().__init__(**kwargs)
