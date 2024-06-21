@@ -14,7 +14,7 @@ from rest_framework.exceptions import AuthenticationFailed
 from ansible_base.jwt_consumer.common.auth import JWTAuthentication, JWTCommonAuth, default_mapped_user_fields
 from ansible_base.jwt_consumer.common.cert import JWTCert, JWTCertException
 from ansible_base.lib.utils.translations import translatableConditionally as _
-from ansible_base.rbac.models import RoleDefinition
+from ansible_base.rbac.models import RoleDefinition, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.resource_registry.models import Resource
 from test_app.models import Organization, Team
@@ -44,11 +44,24 @@ def organization_admin_role():
 def external_auditor_constructor():
     data = settings.ANSIBLE_BASE_MANAGED_ROLE_REGISTRY.copy()
     data['ext_aud'] = {'shortname': 'sys_auditor', 'name': 'Ext Auditor'}
-    with override_settings(ANSIBLE_BASE_MANAGED_ROLE_REGISTRY=data):
+    jwt_roles = settings.ANSIBLE_BASE_JWT_MANAGED_ROLES.copy()
+    jwt_roles.append('Ext Auditor')
+    with override_settings(ANSIBLE_BASE_MANAGED_ROLE_REGISTRY=data, ANSIBLE_BASE_JWT_MANAGED_ROLES=jwt_roles):
         # Extra setup needed for external auditor
         permission_registry.register_managed_role_constructors()
         yield permission_registry.get_managed_role_constructor('ext_aud')
         permission_registry._managed_roles.pop('ext_aud')
+
+
+@pytest.fixture
+def unmanaged_external_auditor_constructor():
+    data = settings.ANSIBLE_BASE_MANAGED_ROLE_REGISTRY.copy()
+    data['bad_aud'] = {'shortname': 'sys_auditor', 'name': 'Unmanaged Auditor'}
+    with override_settings(ANSIBLE_BASE_MANAGED_ROLE_REGISTRY=data):
+        # Extra setup needed for external auditor
+        permission_registry.register_managed_role_constructors()
+        yield permission_registry.get_managed_role_constructor('bad_aud')
+        permission_registry._managed_roles.pop('bad_aud')
 
 
 class TestJWTCommonAuth:
@@ -299,10 +312,13 @@ class TestJWTCommonAuth:
             ({}, None),
             ({"global_roles": ['System Auditor']}, False),
             ({"global_roles": ['Ext Auditor']}, False),  # must dynamically create
+            ({"global_roles": ['Unmanaged Auditor']}, True),  # must dynamically create
             ({"global_roles": ['Junk']}, True),
         ],
     )
-    def test_process_rbac_permissions_system_roles(self, token, logs_error, admin_user, expected_log, external_auditor_constructor):
+    def test_process_rbac_permissions_system_roles(
+        self, token, logs_error, admin_user, expected_log, external_auditor_constructor, unmanaged_external_auditor_constructor
+    ):
         authentication = JWTCommonAuth()
         authentication.user = admin_user
         authentication.token = token
@@ -330,15 +346,53 @@ class TestJWTCommonAuth:
         with expected_log(default_logger, 'error', 'Unable to grant'):
             authentication.process_rbac_permissions()
 
-    def test_process_rbac_permissions_object_role_exists_object_exists(self, expected_log, admin_user, organization, organization_admin_role):
+    @pytest.mark.parametrize(
+        "object_roles,log_level,log_substring",
+        [
+            ({"Organization Admin": {'content_type': 'organization', 'objects': [0]}}, "info", "with ansible_id"),
+            ({"Cow Admin": {'content_type': 'organization', 'objects': [0]}}, "error", "Unable to grant"),
+        ],
+    )
+    def test_process_rbac_permissions_object_role_exists_object_exists(
+        self, object_roles, log_level, log_substring, expected_log, admin_user, organization, organization_admin_role
+    ):
+        authentication = JWTCommonAuth()
+        authentication.user = admin_user
+        authentication.token = {
+            'objects': {'organization': [{'ansible_id': organization.resource.ansible_id, 'name': organization.name}]},
+            'object_roles': object_roles,
+        }
+        if log_level:
+            with expected_log(default_logger, log_level, log_substring):
+                authentication.process_rbac_permissions()
+
+    def test_process_rbac_permissions_removed_when_removed_from_jwt(self, admin_user, organization, organization_admin_role):
+        # Make sure we have a System Auditor role
+        RoleDefinition.objects.get_or_create(
+            name='System Auditor',
+            defaults={
+                'description': 'Migrated singleton role giving read permission to everything',
+                'managed': True,
+            },
+        )
+
         authentication = JWTCommonAuth()
         authentication.user = admin_user
         authentication.token = {
             'objects': {'organization': [{'ansible_id': organization.resource.ansible_id, 'name': organization.name}]},
             'object_roles': {organization_admin_role.name: {'content_type': 'organization', 'objects': [0]}},
+            'global_roles': ["Platform Auditor"],
         }
-        with expected_log(default_logger, 'info', 'with ansible_id'):
-            authentication.process_rbac_permissions()
+
+        authentication.process_rbac_permissions()
+
+        assert RoleUserAssignment.objects.filter(user=admin_user).count() == 2
+
+        authentication.token = {}
+
+        authentication.process_rbac_permissions()
+
+        assert RoleUserAssignment.objects.filter(user=admin_user).count() == 0
 
     @pytest.mark.django_db
     def test_get_or_create_resource_invalid_content_type(self):
