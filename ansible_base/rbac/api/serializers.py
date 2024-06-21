@@ -246,6 +246,8 @@ class BaseAssignmentSerializer(CommonModelSerializer):
             # Object role assignment
             if not obj:
                 raise ValidationError({'object_id': _('Object must be specified for this role assignment')})
+            elif not permission_registry.object_roles_enabled(obj):
+                raise ValidationError({'role_definition': _('Roles are not assignable through the API for this model')})
 
             check_content_obj_permission(requesting_user, obj)
             check_locally_managed(rd)

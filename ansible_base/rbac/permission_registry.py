@@ -243,5 +243,10 @@ class PermissionRegistry:
         """Tells if the given object or class is a type tracked by DAB RBAC"""
         return bool(obj._meta.model_name in self._registry)
 
+    def object_roles_enabled(self, obj: Union[ModelBase, Model]) -> bool:
+        """For given model tells if object roles are enabled on that model"""
+        info = self.get_info(obj)
+        return bool(info.allow_object_roles)
+
 
 permission_registry = PermissionRegistry()

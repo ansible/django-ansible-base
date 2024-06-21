@@ -178,6 +178,7 @@ def api_root(request, format=None):
 
 class MemberGuideViewSet(TestAppViewSet):
     serializer_class = serializers.MemberGuideSerializer
+    queryset = models.MemberGuide.objects.all()
 
 
 class MultipleFieldsViewSet(TestAppViewSet):
