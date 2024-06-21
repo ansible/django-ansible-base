@@ -4,7 +4,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.reverse import reverse
 
 from ansible_base.rbac.models import DABPermission, RoleDefinition
-from ansible_base.rbac.validators import permissions_allowed_for_role, validate_permissions_for_model
+from ansible_base.rbac.validators import validate_permissions_for_model
 from test_app.models import MemberGuide, User
 
 
