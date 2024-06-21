@@ -146,7 +146,7 @@ if 'ansible_base.authentication' in INSTALLED_APPS:
     ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG = "is_system_auditor"
 
     # URL to send users when social auth login fails
-    LOGIN_ERROR_URL = "/"
+    LOGIN_ERROR_URL = "/?auth_failed"
 
 if 'ansible_base.rest_pagination' in INSTALLED_APPS:
     REST_FRAMEWORK['DEFAULT_PAGINATION_CLASS'] = 'ansible_base.rest_pagination.DefaultPaginator'
