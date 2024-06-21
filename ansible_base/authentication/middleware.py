@@ -1,5 +1,4 @@
 import logging
-from urllib.parse import urljoin
 
 from django.contrib.auth import BACKEND_SESSION_KEY
 from django.core.exceptions import ImproperlyConfigured
