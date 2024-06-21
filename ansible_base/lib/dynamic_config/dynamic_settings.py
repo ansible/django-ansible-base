@@ -155,6 +155,7 @@ if 'ansible_base.rest_pagination' in INSTALLED_APPS:
 if 'ansible_base.jwt_consumer' in INSTALLED_APPS:
     if 'ansible_base.rbac' not in INSTALLED_APPS:
         INSTALLED_APPS.append('ansible_base.rbac')
+    ANSIBLE_BASE_JWT_MANAGED_ROLES = ["Platform Auditor", "Organization Admin", "Organization Member", "Team Admin", "Team Member"]
 
 if 'ansible_base.rbac' in INSTALLED_APPS:
     # The settings-based specification of managed roles from DAB RBAC vendored ones
