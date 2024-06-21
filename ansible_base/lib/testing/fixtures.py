@@ -103,6 +103,26 @@ def user_api_client(db, user, local_authenticator):
 
 
 @pytest.fixture
+def platform_auditor_user(db, django_user_model, local_authenticator):
+    user = django_user_model.objects.create_user(username="platform_auditor", password="password")
+    user.set_is_platform_auditor(True)
+    user.save()
+    return user
+
+
+@pytest.fixture
+def platform_auditor_api_client(db, platform_auditor_user, local_authenticator):
+    client = APIClient()
+    client.login(username="platform_auditor", password="password")
+    yield client
+    try:
+        client.logout()
+    except AttributeError:
+        # The test might have logged the user out already (e.g. to test the logout signal)
+        pass
+
+
+@pytest.fixture
 def no_log_messages():
     """
     This fixture returns a function (a context manager) which allows you to disable
