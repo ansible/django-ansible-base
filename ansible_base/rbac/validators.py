@@ -199,7 +199,7 @@ def check_locally_managed(rd: Model) -> None:
     This rule is a bridge solution until the RoleDefinition model declares
     explicitly whether it is managed locally or by a remote system.
     """
-    if settings.ALLOW_LOCAL_RESOURCE_MANAGEMENT is True:
+    if settings.ANSIBLE_BASE_ALLOW_LOCAL_RESOURCE_ASSIGNMENTS is True:
         return
     for perm in rd.permissions.prefetch_related('content_type'):
         model = perm.content_type.model_class()

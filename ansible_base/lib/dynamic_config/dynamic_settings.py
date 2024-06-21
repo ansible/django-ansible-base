@@ -199,7 +199,7 @@ if 'ansible_base.rbac' in INSTALLED_APPS:
     ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS = False
 
     # API clients can assign users and teams roles for shared resources
-    ALLOW_LOCAL_RESOURCE_MANAGEMENT = True
+    ANSIBLE_BASE_ALLOW_LOCAL_RESOURCE_ASSIGNMENTS = True
 
     try:
         MANAGE_ORGANIZATION_AUTH
