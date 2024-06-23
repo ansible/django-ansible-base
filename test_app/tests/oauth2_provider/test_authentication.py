@@ -2,6 +2,8 @@ import pytest
 from django.urls import reverse
 from oauthlib.common import generate_token
 
+from ansible_base.oauth2_provider.models import OAuth2AccessToken
+
 
 def test_oauth2_bearer_get_user_correct(unauthenticated_api_client, oauth2_admin_access_token):
     """
@@ -116,3 +118,22 @@ def test_oauth2_bearer_put(unauthenticated_api_client, oauth2_admin_access_token
     assert response.status_code == expected
     if expected != 401:
         assert response.data['name'] == 'Fido'
+
+
+def test_oauth2_bearer_no_activitystream(unauthenticated_api_client, oauth2_admin_access_token, animal):
+    """
+    Ensure no activitystream entries for bearer token based auth
+    """
+    url = reverse("animal-detail", kwargs={"pk": animal.pk})
+    token = oauth2_admin_access_token.token
+    existing_as_count = len(oauth2_admin_access_token.activity_stream_entries)
+
+    response = unauthenticated_api_client.get(
+        url,
+        headers={'Authorization': f'Bearer {token}'},
+    )
+    assert response.status_code == 200
+    assert response.data['name'] == animal.name
+
+    updated_token = OAuth2AccessToken.objects.get(token=token)
+    assert len(updated_token.activity_stream_entries) == existing_as_count
