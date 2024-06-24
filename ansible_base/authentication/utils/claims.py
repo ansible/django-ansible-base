@@ -150,35 +150,28 @@ def _add_rbac_role_mapping(has_permission, role_mapping, role, organization=None
 
 def process_groups(trigger_condition: dict, groups: list, authenticator_id: int) -> Optional[bool]:
     """
-    Looks at a maps trigger for a group and users groups and determines if the trigger True or None
+    Looks at a maps trigger for a group and users groups and determines if the trigger is True or None.
     """
 
     invalid_conditions = set(trigger_condition.keys()) - set(TRIGGER_DEFINITION['groups']['keys'].keys())
     if invalid_conditions:
         logger.warning(f"The conditions {', '.join(invalid_conditions)} for groups in mapping {authenticator_id} are invalid and won't be processed")
 
-    has_access = None
     set_of_user_groups = set(groups)
 
     if "has_or" in trigger_condition:
         if set_of_user_groups.intersection(set(trigger_condition["has_or"])):
-            has_access = True
-        else:
-            has_access = False
+            return True
 
     elif "has_and" in trigger_condition:
         if set(trigger_condition["has_and"]).issubset(set_of_user_groups):
-            has_access = True
-        else:
-            has_access = False
+            return True
 
     elif "has_not" in trigger_condition:
-        if set(trigger_condition["has_not"]).intersection(set_of_user_groups):
-            has_access = False
-        else:
-            has_access = True
+        if not set(trigger_condition["has_not"]).intersection(set_of_user_groups):
+            return True
 
-    return True if has_access else None
+    return None
 
 
 def has_access_with_join(current_access: Optional[bool], new_access: bool, condition: str = 'or') -> Optional[bool]:
@@ -197,7 +190,7 @@ def has_access_with_join(current_access: Optional[bool], new_access: bool, condi
 
 def process_user_attributes(trigger_condition: dict, attributes: dict, authenticator_id: int) -> Optional[bool]:
     """
-    Looks at a maps trigger for an attribute and the users attributes and determines if the trigger is True, False or None
+    Looks at a maps trigger for an attribute and the users attributes and determines if the trigger is True or None.
     """
 
     has_access = None
