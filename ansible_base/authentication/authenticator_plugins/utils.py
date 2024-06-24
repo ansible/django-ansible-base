@@ -52,6 +52,6 @@ def get_authenticator_urls(authenticator_type: str) -> list:
     return []
 
 
-def generate_authenticator_slug(type: str, name: str, suffix: str = None) -> str:
+def generate_authenticator_slug(type: str, name: str, suffix: str = "") -> str:
     slug = slugify(f"{type.replace('.', ' ')}__{name}")
     return slug if not suffix else f"{slug}__{suffix}"
