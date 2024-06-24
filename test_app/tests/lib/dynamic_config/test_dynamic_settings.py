@@ -87,7 +87,7 @@ def test_insert_middleware():
     '''
     )
     updated_settings = get_updated_settings(additional_config)
-    assert 'ansible_base.authentication.middleware.AuthenticatorBackendMiddleware' == updated_settings['MIDDLEWARE'][1]
+    assert 'ansible_base.authentication.middleware.AuthenticatorBackendMiddleware' == updated_settings['MIDDLEWARE'][2]
 
 
 def test_dont_update_class_prefixes():
