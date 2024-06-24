@@ -7,6 +7,12 @@ from ansible_base.lib.utils.collection import first_matching
 
 class RequestIdFilter(logging.Filter):
     def filter(self, record):
+        """
+        This "filter" is used to add the request id to the log record.
+        It will always return True, so that the message is always logged,
+        even if there is no request id.
+        """
+
         # Always a default so we can use it in the logging formatter.
         record.request_id = ""
 
