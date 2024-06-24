@@ -1,3 +1,4 @@
+import io
 import logging
 
 import pytest
@@ -58,3 +59,47 @@ def test_request_id_filter_missing_request_id(thread_local_request, request_id, 
         }
     assert filter.filter(record)
     assert record.request_id == expected_request_id
+
+
+@pytest.mark.parametrize(
+    "request_id, valid",
+    [
+        ("6621b67a-9088-4513-8f58-35989472c6d0", True),
+        ("invalid", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_request_id_flow(request_id, valid, admin_api_client):
+    """
+    Test the whole flow, through the middleware, and ensure the request id shows
+    up when expected, in the logging output.
+
+    This is derived from https://stackoverflow.com/a/61614082
+    """
+
+    stream = io.StringIO()
+    root_logger = logging.getLogger()
+    handler = logging.StreamHandler(stream)
+    formatter = logging.Formatter('(test_request_id_flow) %(asctime)s %(levelname)-8s [%(request_id)s]  %(name)s %(message)s')
+    handler.setFormatter(formatter)
+    root_logger.addHandler(handler)
+
+    if request_id is not None:
+        admin_api_client.get("/", HTTP_X_REQUEST_ID=request_id)
+    else:
+        admin_api_client.get("/")
+
+    handler.flush()
+    handler.close()
+
+    log_output = stream.getvalue()
+
+    # Sanity, ensure we are using the correct formatter
+    assert "(test_request_id_flow)" in log_output
+
+    # Ensure the request id is in the log output, if it was valid
+    if valid:
+        assert f"[{request_id}] " in log_output
+    else:
+        assert "[] " in log_output
