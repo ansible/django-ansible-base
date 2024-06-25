@@ -424,7 +424,9 @@ class ReconcileUser:
         """Processes the user claims (key `rbac_roles`)
         and adds/removes RBAC permissions (a.k.a. role_user_assignments)
         """
-        self.permissions_cache.cache_existing(self.user.role_assignments.all())
+        # NOTE(cutwater): Here `prefetch_related` is used to prevent N+1 problem when accessing `content_object`
+        #  attribute in `RoleUserAssignmentsCache.cache_existing` method.
+        self.permissions_cache.cache_existing(self.user.role_assignments.prefetch_related('content_object').all())
 
         # System roles
         self._compute_system_permissions()
