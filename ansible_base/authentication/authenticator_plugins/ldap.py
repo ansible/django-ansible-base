@@ -13,7 +13,7 @@ from django_auth_ldap.config import LDAPGroupType
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, Authenticator, BaseAuthenticatorConfiguration
-from ansible_base.authentication.utils.authentication import get_or_create_authenticator_user
+from ansible_base.authentication.utils.authentication import determine_username_from_uid, get_or_create_authenticator_user
 from ansible_base.authentication.utils.claims import update_user_claims
 from ansible_base.lib.serializers.fields import BooleanField, CharField, ChoiceField, DictField, ListField, URLListField, UserAttrMap
 from ansible_base.lib.utils.validation import VALID_STRING
@@ -410,7 +410,9 @@ class AuthenticatorPlugin(LDAPBackend, AbstractAuthenticatorPlugin):
             # In unit testing there were cases where the function we are in was being called before get_or_build_user.
             # Its unclear if that was just a byproduct of mocking or a real scenario.
             # Since this call is idempotent we are just going to call it again to ensure the AuthenticatorUser is created for update_user_claims
-            get_or_create_authenticator_user(username, self.database_instance, user_details={}, extra_data=user_from_ldap.ldap_user.attrs.data)
+            uid_from_ldap = username
+            gateway_username = determine_username_from_uid(uid_from_ldap, self.database_instance)
+            get_or_create_authenticator_user(gateway_username, self.database_instance, user_details={}, extra_data=user_from_ldap.ldap_user.attrs.data)
             return update_user_claims(user_from_ldap, self.database_instance, users_groups)
         except Exception:
             logger.exception(f"Encountered an error authenticating to LDAP {self.database_instance.name}")
@@ -437,8 +439,10 @@ class AuthenticatorPlugin(LDAPBackend, AbstractAuthenticatorPlugin):
         """
         This gets called by _LDAPUser to create the user in the database.
         """
+        uid_from_ldap = username
+        gateway_username = determine_username_from_uid(uid_from_ldap, self.database_instance)
         user, _authenticator_user, created = get_or_create_authenticator_user(
-            username,
+            gateway_username,
             self.database_instance,
             user_details={
                 "username": username,
