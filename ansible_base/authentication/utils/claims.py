@@ -1,7 +1,7 @@
 import importlib
 import logging
 import re
-from typing import Iterator, Optional, Tuple, Union
+from typing import Iterator, Literal, Optional, Tuple, Union
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -148,7 +148,7 @@ def _add_rbac_role_mapping(has_permission, role_mapping, role, organization=None
             logger.warning(f"Role mapping is not possible, organization for team '{team}' is missing")
 
 
-def process_groups(trigger_condition: dict, groups: list, authenticator_id: int) -> Optional[bool]:
+def process_groups(trigger_condition: dict, groups: list, authenticator_id: int) -> Optional[Literal[True]]:
     """
     Looks at a maps trigger for a group and users groups and determines if the trigger is True or None.
     """
@@ -188,7 +188,7 @@ def has_access_with_join(current_access: Optional[bool], new_access: bool, condi
         return current_access and new_access
 
 
-def process_user_attributes(trigger_condition: dict, attributes: dict, authenticator_id: int) -> Optional[bool]:
+def process_user_attributes(trigger_condition: dict, attributes: dict, authenticator_id: int) -> Optional[Literal[True]]:
     """
     Looks at a maps trigger for an attribute and the users attributes and determines if the trigger is True or None.
     """
