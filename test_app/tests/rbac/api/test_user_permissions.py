@@ -345,3 +345,9 @@ class TestRelationshipBasedAssignment:
         response = user_api_client.get(url)
         assert response.status_code == 200
         assert 'rando' in set(item['username'] for item in response.data['results'])
+
+    @override_settings(ORG_ADMINS_CAN_SEE_ALL_USERS=False)
+    def test_visible_users_flags(self, admin_user, user, team, member_rd):
+        assert set(visible_users(user).values_list('id', flat=True)) == {admin_user.id, user.id}
+        assert set(visible_users(user, always_show_superusers=False).values_list('id', flat=True)) == {user.id}
+        assert set(visible_users(user, always_show_self=False).values_list('id', flat=True)) == {admin_user.id}
