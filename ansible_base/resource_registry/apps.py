@@ -3,6 +3,7 @@ import logging
 from django.apps import AppConfig
 from django.db.models import TextField, signals
 from django.db.models.functions import Cast
+from django.db.utils import IntegrityError
 
 import ansible_base.lib.checks  # noqa: F401 - register checks
 
@@ -50,7 +51,20 @@ def initialize_resources(sender, **kwargs):
             else:
                 resource_type = f"{registry.api_config.service_type}.{content.model}"
             defaults = {"externally_managed": resource_config.externally_managed, "name": resource_type}
-            ResourceType.objects.update_or_create(content_type=content, defaults=defaults)
+
+            try:
+                ResourceType.objects.update_or_create(content_type=content, defaults=defaults)
+            except IntegrityError as e:
+                # if previous DAB migrations used the wrong content type id, we need to correct that now
+                # to eliminate integrity errors at the end of the migration process when this function
+                # gets called.
+                if not ResourceType.objects.filter(name=resource_type).exists():
+                    raise e
+                rt = ResourceType.objects.get(name=resource_type)
+                rt.content_type = content
+                for k, v in defaults.items():
+                    setattr(rt, k, v)
+                rt.save()
 
         # Create resources
         for r_type in ResourceType.objects.all():
