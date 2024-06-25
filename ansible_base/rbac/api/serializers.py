@@ -4,6 +4,8 @@ from django.db import transaction
 from django.db.utils import IntegrityError
 from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
+from django.core.exceptions import ValidationError as DjangoValidationError, PermissionDenied as DjangoPermissionDenied
+
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.fields import flatten_choices_dict, to_choices_dict
@@ -241,6 +243,13 @@ class BaseAssignmentSerializer(CommonModelSerializer):
 
         # Resolve object
         obj = self.get_object_from_data(validated_data, rd, requesting_user)
+
+        # model-level callback to further validate the assignment
+        # can be optionally implemented by the model
+        # the callback should raise DRF exceptions directly if
+        # necessary
+        if getattr(obj, 'validate_role_assignment', None):
+            obj.validate_role_assignment(actor, rd)
 
         if rd.content_type:
             # Object role assignment
