@@ -61,6 +61,7 @@ def initialize_resources(sender, **kwargs):
                 if not ResourceType.objects.filter(name=resource_type).exists():
                     raise e
                 rt = ResourceType.objects.get(name=resource_type)
+                logger.warn(f"changing content_type for '{resource_type}' from '{rt.content_type.model}' to '{content.model}'")
                 rt.content_type = content
                 for k, v in defaults.items():
                     setattr(rt, k, v)
