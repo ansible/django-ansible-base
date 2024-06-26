@@ -40,3 +40,62 @@ jobs:
         run: |
           cd awx
           DEVEL_IMAGE_NAME=awx-with-dab:latest AWX_DOCKER_CMD=/start_tests.sh make docker-runner
+
+  eda-server:
+    name: eda-server
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    strategy:
+      fail-fast: false
+    env:
+      EDA_SECRET_KEY: 'test'
+      EDA_DB_PASSWORD: 'secret'
+    services:
+      postgres:
+        image: 'quay.io/sclorg/postgresql-15-c9s:latest'
+        env:
+          POSTGRESQL_USER: eda
+          POSTGRESQL_PASSWORD: secret
+          POSTGRESQL_ADMIN_PASSWORD: secret
+          POSTGRESQL_DATABASE: eda
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - '5432:5432'
+      redis:
+        image: 'quay.io/fedora/redis-6:latest'
+        ports:
+          - '6379:6379'
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ansible/eda-server
+          path: eda-server
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run eda-server tests
+        run: |
+          DAB_PATH="$PWD"
+          mv eda-server /tmp
+          cd /tmp/eda-server
+          pipx install poetry
+          poetry install -E all --only main,test
+          poetry run pip install -e "$DAB_PATH"
+          poetry run pytest
