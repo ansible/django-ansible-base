@@ -23,4 +23,13 @@ The signature of this callback is
 
 `validate_role_assignment(self, actor, role_definition)`
 
-This method is reponsible for raising the appropriate exception if necessary (e.g. DRF ValidationError or DRF PermissionDenied).
+This method is reponsible for raising the appropriate exception if necessary, for example,
+
+```python
+from rest_framework.exceptions import ValidationError
+class MyDjangoModel:
+    def validate_role_assignment(self, actor, role_definition):
+        raise ValidationError({'detail': 'Role assignment not allowed.'})
+```
+
+Note, if you want the exception to result in a HTTP 400 or 403 response, you can raise django rest framework exceptions instead of django exceptions.
