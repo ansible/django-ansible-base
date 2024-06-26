@@ -124,6 +124,24 @@ def test_remove_user_assignment(user_api_client, user, inv_rd, rando, inventory)
     assert not type(assignment).objects.filter(pk=assignment.pk).exists()
 
 
+@pytest.mark.django_db
+def test_filtering_related_assignments(user_api_client, user, rando, inventory, inv_rd):
+    rando_assignment = inv_rd.give_permission(rando, inventory)
+    url = reverse('roledefinition-user_assignments-list', kwargs={'pk': inv_rd.id})
+    response = user_api_client.get(url)
+    assert response.status_code == 200, response.data
+    assert response.data['count'] == 0
+
+    user_assignment = inv_rd.give_permission(user, inventory)
+    response = user_api_client.get(url)
+    assert response.status_code == 200, response.data
+    # Make sure this does not return duplicate items
+    assignment_ids = [item['id'] for item in response.data['results']]
+    assert sorted(list(set(assignment_ids))) == sorted(assignment_ids)
+    # Now assure we have the expected content
+    assert set(assignment_ids) == {rando_assignment.id, user_assignment.id}
+
+
 @pytest.fixture
 def task_admin_rd():
     return RoleDefinition.objects.create_from_permissions(
