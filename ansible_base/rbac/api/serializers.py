@@ -4,8 +4,6 @@ from django.db import transaction
 from django.db.utils import IntegrityError
 from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
-from django.core.exceptions import ValidationError as DjangoValidationError, PermissionDenied as DjangoPermissionDenied
-
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.fields import flatten_choices_dict, to_choices_dict
