@@ -98,4 +98,5 @@ jobs:
           pipx install poetry
           poetry install -E all --only main,test
           poetry run pip install -e "$DAB_PATH"
+          poetry run pip show django-ansible-base
           poetry run pytest
