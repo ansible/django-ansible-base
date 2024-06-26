@@ -335,7 +335,7 @@ class ObjectRoleFields(models.Model):
     content_object = GenericForeignKey('content_type', 'object_id')
 
     @classmethod
-    def _visible_items(cls, eval_cls, user):
+    def _visible_items(cls, eval_cls, user, qs=None):
         permission_qs = eval_cls.objects.filter(
             role__in=user.has_roles.all(),
             content_type_id=models.OuterRef('content_type_id'),
@@ -347,16 +347,19 @@ class ObjectRoleFields(models.Model):
         if not hasattr(user, '_singleton_permission_objs'):
             user._singleton_permission_objs = RoleDefinition.user_global_permissions(user)
 
+        if qs is None:
+            qs = cls.objects.all()
+
         if user._singleton_permission_objs:
             super_ct_ids = set(perm.content_type_id for perm in user._singleton_permission_objs)
             # content_type=None condition: A good-enough rule - you can see other global assignments if you have any yourself
-            return cls.objects.filter(obj_filter | models.Q(content_type__in=super_ct_ids) | models.Q(content_type=None))
-        return cls.objects.filter(obj_filter)
+            return qs.filter(obj_filter | models.Q(content_type__in=super_ct_ids) | models.Q(content_type=None))
+        return qs.filter(obj_filter)
 
     @classmethod
-    def visible_items(cls, user):
+    def visible_items(cls, user, qs=None):
         "This ORs querysets to show assignments to both UUID and integer pk models"
-        return cls._visible_items(RoleEvaluation, user) | cls._visible_items(RoleEvaluationUUID, user)
+        return cls._visible_items(RoleEvaluation, user, qs) | cls._visible_items(RoleEvaluationUUID, user, qs)
 
     @property
     def cache_id(self):
