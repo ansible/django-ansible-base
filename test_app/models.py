@@ -84,6 +84,18 @@ class ResourceMigrationTestModel(models.Model):
     name = models.CharField(max_length=255)
 
 
+class EncryptionJSONModel(CommonModel):
+    router_basename = 'encryption_json_test_model'
+
+    class Meta:
+        app_label = "test_app"
+        ordering = ['id']
+
+    encrypted_fields = ['testing1']
+
+    testing1 = JSONField(null=True, default=dict)
+
+
 class EncryptionModel(NamedCommonModel):
     router_basename = 'encryption_test_model'
 

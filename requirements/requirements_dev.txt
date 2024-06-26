@@ -1,7 +1,10 @@
 ansible  # Used in build process to generate some configs
 build
-django-extensions
+Django>=4.2.5,<4.3.0
 django-debug-toolbar
+django-extensions
+djangorestframework
+django-split-settings
 ipython
 tox
 typeguard

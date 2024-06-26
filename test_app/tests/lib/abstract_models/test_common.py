@@ -259,3 +259,45 @@ def test_related_view_ignore_m2m_relations(ignore_relation, admin_user):
 
         related = admin_user.related_fields(request)
         assert ('member_of_organizations' not in related) is ignore_relation
+
+
+def test_jsonfield_can_be_encrypted(admin_user, local_authenticator):
+    extra_data = {}
+
+    from ansible_base.lib.utils.encryption import Fernet256
+
+    encryptor = Fernet256()
+    encrypted_extra_data = encryptor.encrypt_string(extra_data)
+
+    with patch('ansible_base.lib.utils.encryption.ansible_encryption.encrypt_string', return_value=encrypted_extra_data) as m:
+        from ansible_base.authentication.models import AuthenticatorUser
+
+        AuthenticatorUser.objects.create(
+            uid=admin_user.username,
+            user=admin_user,
+            provider=local_authenticator,
+            extra_data=extra_data,
+        )
+
+    m.assert_called_with(extra_data)
+
+
+@pytest.mark.parametrize(
+    "input",
+    [
+        "test",
+        None,
+        {},
+        [],
+        True,
+        False,
+        {"value": 1, "value2": True, "value3": ["a", "b", "c"]},
+        ["a", "list"],
+    ],
+)
+def test_compare_data_types_after_decryption(input):
+    from ansible_base.lib.utils.encryption import Fernet256
+
+    decryptor = Fernet256()
+    results = decryptor.decrypt_string(decryptor.encrypt_string(input))
+    assert type(results) is type(input)
