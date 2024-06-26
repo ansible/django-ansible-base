@@ -100,17 +100,21 @@ if 'ansible_base.authentication' in INSTALLED_APPS:
     if "ansible_base.authentication.backend.AnsibleBaseAuth" not in AUTHENTICATION_BACKENDS:
         AUTHENTICATION_BACKENDS.append("ansible_base.authentication.backend.AnsibleBaseAuth")
 
-    middleware_class = 'ansible_base.authentication.middleware.AuthenticatorBackendMiddleware'
-    try:
-        MIDDLEWARE  # noqa: F821
-        if middleware_class not in MIDDLEWARE:  # noqa: F821
-            try:
-                index = MIDDLEWARE.index('django.contrib.auth.middleware.AuthenticationMiddleware')  # noqa: F821
-                MIDDLEWARE.insert(index, middleware_class)  # noqa: F821
-            except ValueError:
-                MIDDLEWARE.append(middleware_class)  # noqa: F821
-    except NameError:
-        MIDDLEWARE = [middleware_class]
+    middleware_classes = [
+        'ansible_base.authentication.middleware.SocialExceptionHandlerMiddleware',
+        'ansible_base.authentication.middleware.AuthenticatorBackendMiddleware',
+    ]
+    for mw in middleware_classes:
+        try:
+            MIDDLEWARE  # noqa: F821
+            if mw not in MIDDLEWARE:  # noqa: F821
+                try:
+                    index = MIDDLEWARE.index('django.contrib.auth.middleware.AuthenticationMiddleware')  # noqa: F821
+                    MIDDLEWARE.insert(index, mw)  # noqa: F821
+                except ValueError:
+                    MIDDLEWARE.append(mw)  # noqa: F821
+        except NameError:
+            MIDDLEWARE = [mw]
 
     drf_authentication_class = 'ansible_base.authentication.session.SessionAuthentication'
     if 'DEFAULT_AUTHENTICATION_CLASSES' not in REST_FRAMEWORK:  # noqa: F821
@@ -139,6 +143,10 @@ if 'ansible_base.authentication' in INSTALLED_APPS:
     SOCIAL_AUTH_STRATEGY = "ansible_base.authentication.social_auth.AuthenticatorStrategy"
     SOCIAL_AUTH_LOGIN_REDIRECT_URL = "/"
 
+    ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG = "is_system_auditor"
+
+    # URL to send users when social auth login fails
+    LOGIN_ERROR_URL = "/?auth_failed"
 
 if 'ansible_base.rest_pagination' in INSTALLED_APPS:
     REST_FRAMEWORK['DEFAULT_PAGINATION_CLASS'] = 'ansible_base.rest_pagination.DefaultPaginator'

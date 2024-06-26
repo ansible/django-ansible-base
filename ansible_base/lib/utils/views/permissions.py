@@ -22,5 +22,5 @@ class IsSuperuserOrAuditor(BasePermission):
         if request.user.is_superuser:
             return True
         if request.method in SAFE_METHODS:
-            return getattr(request.user, 'is_system_auditor', False)
+            return getattr(request.user, 'is_platform_auditor', False)
         return False

@@ -424,7 +424,9 @@ class ReconcileUser:
         """Processes the user claims (key `rbac_roles`)
         and adds/removes RBAC permissions (a.k.a. role_user_assignments)
         """
-        self.permissions_cache.cache_existing(self.user.role_assignments.all())
+        # NOTE(cutwater): Here `prefetch_related` is used to prevent N+1 problem when accessing `content_object`
+        #  attribute in `RoleUserAssignmentsCache.cache_existing` method.
+        self.permissions_cache.cache_existing(self.user.role_assignments.prefetch_related('content_object').all())
 
         # System roles
         self._compute_system_permissions()
@@ -435,9 +437,6 @@ class ReconcileUser:
             self._compute_team_permissions(org, org_teams_dict)
 
         self.apply_permissions()
-
-        # Superuser "role"
-        self.apply_superuser_permission()
 
     def _compute_system_permissions(self) -> None:
         for role_name, has_permission in self.claims['rbac_roles'].get('system', {}).get('roles', {}).items():
@@ -474,15 +473,6 @@ class ReconcileUser:
             for role_name, has_permission in team_details['roles'].items():
                 self.permissions_cache.add_or_remove(role_name, has_permission, team=team)
 
-    def apply_superuser_permission(self) -> None:
-        is_superuser = self.claims.get('is_superuser')
-        if is_superuser is not None and is_superuser != self.user.is_superuser:
-            self.user.is_superuser = is_superuser
-            self.user.save()
-        elif is_superuser is None and self.rebuild_user_permissions and self.user.is_superuser:
-            self.user.is_superuser = False
-            self.user.save()
-
     def apply_permissions(self) -> None:
         """See RoleUserAssignmentsCache for more details."""
         for role_name, role_permissions in self.permissions_cache.items():
@@ -508,11 +498,15 @@ class ReconcileUser:
 
     @staticmethod
     def _get_orgs_by_name(org_names) -> dict[str, AbstractOrganization]:
+        if not org_names:
+            return {}
         orgs_by_name = {org.name: org for org in Organization.objects.filter(name__in=org_names)}
         return orgs_by_name
 
     @staticmethod
     def _get_teams_by_name(org_id, team_names) -> dict[str, AbstractTeam]:
+        if not team_names:
+            return {}
         # FIXME(cutwater): Load all teams in all organizations at once.
         #       This will require raw query to filter by tuples of (org id, team name).
         teams_by_name = {team.name: team for team in Team.objects.filter(organization__pk=org_id, name__in=team_names)}

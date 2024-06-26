@@ -11,28 +11,38 @@ from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.validators import permissions_allowed_for_role
 
 
-def visible_users(request_user, queryset=None) -> QuerySet:
-    "Gives a queryset of users that another user should be able to view"
+def visible_users(request_user, queryset=None, always_show_superusers=True, always_show_self=True) -> QuerySet:
+    """Gives a queryset of users that another user should be able to view"""
     user_cls = permission_registry.user_model
     org_cls = apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL)
 
-    if has_super_permission(request_user, 'view') or (
-        get_setting('ORG_ADMINS_CAN_SEE_ALL_USERS', False) and org_cls.access_ids_qs(request_user, 'change').exists()
-    ):
+    if can_view_all_users(request_user):
         if queryset is not None:
             return queryset
         else:
             return user_cls.objects.all()
 
     object_id_fd = ObjectRole._meta.get_field('object_id')
-    members_of_visble_orgs = ObjectRole.objects.filter(
+    members_of_visible_orgs = ObjectRole.objects.filter(
         role_definition__permissions__codename='member_organization', object_id__in=org_cls.access_ids_qs(request_user, 'view', cast_field=object_id_fd)
     ).values('users')
     if queryset is None:
         queryset = user_cls.objects
-    return (
-        queryset.filter(pk__in=members_of_visble_orgs) | user_cls.objects.filter(pk=request_user.id) | user_cls.objects.filter(is_superuser=True)
-    ).distinct()
+
+    queryset = queryset.filter(pk__in=members_of_visible_orgs)
+    if always_show_superusers:
+        queryset = queryset | user_cls.objects.filter(is_superuser=True)
+    if always_show_self:
+        queryset = queryset | user_cls.objects.filter(pk=request_user.id)
+    return queryset.distinct()
+
+
+def can_view_all_users(request_user):
+    org_cls = apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL)
+
+    return has_super_permission(request_user, 'view') or (
+        get_setting('ORG_ADMINS_CAN_SEE_ALL_USERS', False) and org_cls.access_ids_qs(request_user, 'change').exists()
+    )
 
 
 def can_change_user(request_user, target_user) -> bool:

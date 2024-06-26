@@ -33,6 +33,7 @@ if 'ansible_base.activitystream' in settings.INSTALLED_APPS:
 class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activitystream):
     router_basename = 'token'
     ignore_relations = ['refresh_token']
+    activity_stream_excluded_field_names = ['last_used']
 
     class Meta(oauth2_models.AbstractAccessToken.Meta):
         verbose_name = _('access token')

@@ -36,7 +36,11 @@ def validate_x_trusted_proxy_header(header_value: str, ignore_cache=False) -> bo
         logger.exception("Failed to load public key")
         return False
 
-    timestamp, signature = header_value.split('-')
+    try:
+        timestamp, signature = header_value.split('-', maxsplit=1)
+    except ValueError:
+        logger.warning("Failed to validate x-trusted-proxy-header, malformed, expected value to contain a -")
+        return False
 
     try:
         public_key.verify(

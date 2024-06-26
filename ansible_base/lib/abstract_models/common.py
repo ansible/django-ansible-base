@@ -10,7 +10,7 @@ from inflection import underscore
 from rest_framework.reverse import reverse
 
 from ansible_base.lib.abstract_models.immutable import ImmutableModel
-from ansible_base.lib.utils.encryption import ENCRYPTED_STRING, ansible_encryption
+from ansible_base.lib.utils.encryption import ansible_encryption
 from ansible_base.lib.utils.models import current_user_or_system_user, is_system_user
 
 logger = logging.getLogger('ansible_base.lib.abstract_models.common')
@@ -161,7 +161,7 @@ class AbstractCommonModel(models.Model):
 
         for field in self.encrypted_fields:
             field_value = getattr(instance, field, None)
-            if field_value and field_value.startswith(ENCRYPTED_STRING):
+            if field_value:
                 setattr(instance, field, ansible_encryption.decrypt_string(field_value))
 
         return instance

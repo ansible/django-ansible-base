@@ -1,4 +1,7 @@
+import base64
+
 import pytest
+from django.utils.encoding import smart_str
 
 from ansible_base.lib.utils.encryption import ENCRYPTION_METHOD, Fernet256
 
@@ -43,3 +46,56 @@ def test_fernet256_unsupported_algorithm():
     with pytest.raises(ValueError) as e:
         fernet.decrypt_string(encrypted_string)
     assert str(e.value) == "Unsupported algorithm: monkey"
+
+
+# Define the parameterized test function
+@pytest.mark.parametrize(
+    "input_value, expected",
+    [
+        ('asdf1234', (False, None, None)),
+        ('$encrypted', (False, None, None)),
+        ('$encrypted$something', (False, None, None)),
+        ('$encrypted$UTF8$', (False, None, None)),
+        ('$encrypted$UTF8$asdf1234', (False, None, None)),
+        ('$encrypted$asdf1234', (False, None, None)),
+        ('$encrypted$UTF8$AESCBC$', (False, None, None)),
+        ('$encrypted$AESCBC$', (False, None, None)),
+        ('$encrypted$AESCBC$not4characters', (False, None, None)),
+        ('$encrypted$UTF8$AESCBC$junk', (True, 'AESCBC', 'junk')),
+        ('$encrypted$UTF8$AESCBC$junk12==', (True, 'AESCBC', 'junk12==')),
+        ('$encrypted$UTF8$AESCBC$junk123=', (True, 'AESCBC', 'junk123=')),
+        ('$encrypted$UTF8$AESCBC$junk123=asdf', (False, None, None)),
+        ('$encrypted$UTF8$AESCBC$junk123a', (True, 'AESCBC', 'junk123a')),
+        (smart_str(base64.b64encode(b"This is a test")), (False, None, None)),
+        (f'$encrypted$UTF8$AESCBC${smart_str(base64.b64encode(b"This is a test"))}', (True, 'AESCBC', smart_str(base64.b64encode(b"This is a test")))),
+        (f'$encrypted$AESCBC${smart_str(base64.b64encode(b"This is a test"))}', (True, 'AESCBC', smart_str(base64.b64encode(b"This is a test")))),
+        (
+            f'$encrypted$some_other_algo${smart_str(base64.b64encode(b"This is a test"))}',
+            (True, 'some_other_algo', smart_str(base64.b64encode(b"This is a test"))),
+        ),
+        (
+            f'$encrypted$UTF8$some_other_algo${smart_str(base64.b64encode(b"This is a test"))}',
+            (True, 'some_other_algo', smart_str(base64.b64encode(b"This is a test"))),
+        ),
+    ],
+)
+def test_is_encrypted_string(input_value, expected):
+    """
+    Note: is_encrypted_string can only perform a partial test to check if the
+    input string is encrypted by our algorithm
+    The test can't guarantee 100% accuracy due to the nature of base 64 encoding
+    """
+    fernet = Fernet256()
+    assert fernet.is_encrypted_string(input_value) == expected
+
+
+def test_encrypt_decrypt_string():
+    """
+    Ensure that the decrypted string is equal to the original plain text string.
+    """
+    fernet = Fernet256()
+    input_string = "test"
+
+    encrypted = fernet.encrypt_string(input_string)
+    decrypted_string = fernet.decrypt_string(encrypted)
+    assert decrypted_string == input_string

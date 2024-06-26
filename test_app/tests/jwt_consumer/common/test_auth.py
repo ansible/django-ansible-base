@@ -277,6 +277,7 @@ class TestJWTCommonAuth:
             request = mocked_http.mocked_parse_jwt_token_get_request('with_headers')
             common_auth.parse_jwt_token(request)
 
+    @pytest.mark.django_db
     def test_cert_fails_decryption_from_cached_key_but_key_is_invalid(self, mocked_http, expected_log, test_encryption_public_key):
         with override_settings(ANSIBLE_BASE_JWT_KEY=test_encryption_public_key):
             # Get the decryption key into the cache
@@ -435,6 +436,7 @@ class TestJWTAuthentication:
                     assert 'check your key and generated token' in af
                     assert 'cached key was correct' not in af
 
+    @pytest.mark.django_db
     def test_raise_an_exception_if_the_key_is_cached_but_the_new_key_is_the_same(self, random_public_key, mocked_http, create_mock_method):
         # We are going to:
         #     1. return a key which will not work with jwt_token provided by mocked_http

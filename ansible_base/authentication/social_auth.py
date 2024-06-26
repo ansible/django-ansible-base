@@ -18,6 +18,9 @@ from ansible_base.authentication.models import Authenticator, AuthenticatorUser
 logger = logging.getLogger('ansible_base.authentication.social_auth')
 
 
+SOCIAL_AUTH_PIPELINE_FAILED_STATUS = "pipeline-failed"
+
+
 class AuthenticatorStorage(BaseDjangoStorage):
     user = AuthenticatorUser
     nonce = Nonce
@@ -188,4 +191,6 @@ def create_user_claims_pipeline(*args, backend, response, **kwargs):
     from ansible_base.authentication.utils.claims import update_user_claims
 
     extra_groups = response["Group"] if "Group" in response else None
-    update_user_claims(kwargs["user"], backend.database_instance, backend.get_user_groups(extra_groups))
+    user = update_user_claims(kwargs["user"], backend.database_instance, backend.get_user_groups(extra_groups))
+    if user is None:
+        return SOCIAL_AUTH_PIPELINE_FAILED_STATUS

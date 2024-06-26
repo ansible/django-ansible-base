@@ -60,7 +60,6 @@ class RoleDefinitionPermissions(AuthenticatedReadAdminChange):
 
 
 class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
-
     def has_create_permission(self, request, model_cls) -> bool:
         "Does the request user absolutely have permission to create an object via superuser or system role"
         full_codename = f'add_{model_cls._meta.model_name}'
@@ -156,7 +155,6 @@ class AnsibleBaseObjectPermissions(DjangoObjectPermissions):
 
 
 class AnsibleBaseUserPermissions(AnsibleBaseObjectPermissions):
-
     def model_is_valid(self, model_cls):
         return bool(model_cls._meta.model_name == 'user')
 
