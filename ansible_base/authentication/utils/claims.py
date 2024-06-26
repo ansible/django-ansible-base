@@ -498,11 +498,15 @@ class ReconcileUser:
 
     @staticmethod
     def _get_orgs_by_name(org_names) -> dict[str, AbstractOrganization]:
+        if not org_names:
+            return {}
         orgs_by_name = {org.name: org for org in Organization.objects.filter(name__in=org_names)}
         return orgs_by_name
 
     @staticmethod
     def _get_teams_by_name(org_id, team_names) -> dict[str, AbstractTeam]:
+        if not team_names:
+            return {}
         # FIXME(cutwater): Load all teams in all organizations at once.
         #       This will require raw query to filter by tuples of (org id, team name).
         teams_by_name = {team.name: team for team in Team.objects.filter(organization__pk=org_id, name__in=team_names)}
