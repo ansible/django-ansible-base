@@ -51,7 +51,7 @@ class GithubTeamConfiguration(GithubConfiguration):
     SCOPE = ListField(
         help_text=_('The authorization scope for users. Defaults to "read:org".'),
         allow_null=False,
-        ui_field_label=_('GitHub OAuth2 Secret'),
+        ui_field_label=_('GitHub OAuth2 Scope'),
         default=['read:org'],
     )
 
