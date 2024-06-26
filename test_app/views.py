@@ -191,6 +191,7 @@ class PublicDataViewSet(TestAppViewSet):
 class AnimalViewSet(TestAppViewSet):
     serializer_class = serializers.AnimalSerializer
     queryset = models.Animal.objects.all()
+    permission_classes = []
 
 
 class CityViewSet(TestAppViewSet):
