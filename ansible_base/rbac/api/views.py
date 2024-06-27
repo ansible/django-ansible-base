@@ -5,7 +5,7 @@ from django.db import transaction
 from django.db.models import Model
 from django.utils.translation import gettext_lazy as _
 from rest_framework import permissions
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import ValidationError
 from rest_framework.generics import GenericAPIView
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
@@ -22,7 +22,7 @@ from ansible_base.rbac.api.serializers import (
 from ansible_base.rbac.evaluations import has_super_permission
 from ansible_base.rbac.models import RoleDefinition
 from ansible_base.rbac.permission_registry import permission_registry
-from ansible_base.rbac.policies import check_content_obj_permission
+from ansible_base.rbac.policies import check_can_remove_assignment
 from ansible_base.rbac.validators import check_locally_managed, permissions_allowed_for_role, system_roles_enabled
 
 
@@ -133,16 +133,13 @@ class BaseAssignmentViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
         return super().perform_create(serializer)
 
     def perform_destroy(self, instance):
-        obj = instance.content_object
-        if obj:
-            check_content_obj_permission(self.request.user, obj)
-            check_locally_managed(instance.role_definition.permissions.prefetch_related('content_type'))
+        check_can_remove_assignment(self.request.user, instance)
+        check_locally_managed(instance.role_definition.permissions.prefetch_related('content_type'), role_content_type=instance.content_type)
+
+        if instance.content_type_id:
             with transaction.atomic():
-                instance.role_definition.remove_permission(instance.actor, obj)
+                instance.role_definition.remove_permission(instance.actor, instance.content_object)
         else:
-            for permission in instance.role_definition.permissions.all():
-                if not has_super_permission(self.request.user, permission.codename):
-                    raise PermissionDenied
             with transaction.atomic():
                 instance.role_definition.remove_global_permission(instance.actor)
 

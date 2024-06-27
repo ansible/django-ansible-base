@@ -192,7 +192,7 @@ def validate_assignment(rd, actor, obj) -> None:
         raise ValidationError(f'Role type {rd_model} does not match object {obj_ct.model}')
 
 
-def check_locally_managed(permissions_qs: Iterable[Model]) -> None:
+def check_locally_managed(permissions_qs: Iterable[Model], role_content_type: Optional[Model]) -> None:
     """Can the given role definition be managed here, or is it externally managed
 
     If the role definition manages permissions on any shared resources, then
@@ -203,9 +203,10 @@ def check_locally_managed(permissions_qs: Iterable[Model]) -> None:
     if settings.ALLOW_LOCAL_RESOURCE_MANAGEMENT is True:
         return
     for perm in permissions_qs:
-        # View permission for shared resources is interpreted as permission to view
+        # View permission for shared objects is interpreted as permission to view
         # the resource locally, which is needed to be able to view parent objects
-        if perm.codename.startswith('view'):
+        # For system roles, this exception is not allowed
+        if role_content_type and perm.codename.startswith('view'):
             continue
         model = perm.content_type.model_class()
         if permission_registry.get_resource_prefix(model) == 'shared':

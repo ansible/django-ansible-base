@@ -6,7 +6,6 @@ from unittest import mock
 from uuid import uuid4
 
 import pytest
-from django.conf import settings
 from django.test.utils import override_settings
 from jwt.exceptions import DecodeError
 from rest_framework.exceptions import AuthenticationFailed
@@ -38,30 +37,6 @@ def organization_admin_role():
         managed=True,
     )
     return role
-
-
-@pytest.fixture
-def external_auditor_constructor():
-    data = settings.ANSIBLE_BASE_MANAGED_ROLE_REGISTRY.copy()
-    data['ext_aud'] = {'shortname': 'sys_auditor', 'name': 'Ext Auditor'}
-    jwt_roles = settings.ANSIBLE_BASE_JWT_MANAGED_ROLES.copy()
-    jwt_roles.append('Ext Auditor')
-    with override_settings(ANSIBLE_BASE_MANAGED_ROLE_REGISTRY=data, ANSIBLE_BASE_JWT_MANAGED_ROLES=jwt_roles):
-        # Extra setup needed for external auditor
-        permission_registry.register_managed_role_constructors()
-        yield permission_registry.get_managed_role_constructor('ext_aud')
-        permission_registry._managed_roles.pop('ext_aud')
-
-
-@pytest.fixture
-def unmanaged_external_auditor_constructor():
-    data = settings.ANSIBLE_BASE_MANAGED_ROLE_REGISTRY.copy()
-    data['bad_aud'] = {'shortname': 'sys_auditor', 'name': 'Unmanaged Auditor'}
-    with override_settings(ANSIBLE_BASE_MANAGED_ROLE_REGISTRY=data):
-        # Extra setup needed for external auditor
-        permission_registry.register_managed_role_constructors()
-        yield permission_registry.get_managed_role_constructor('bad_aud')
-        permission_registry._managed_roles.pop('bad_aud')
 
 
 class TestJWTCommonAuth:

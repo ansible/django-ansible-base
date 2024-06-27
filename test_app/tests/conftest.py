@@ -11,10 +11,12 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from django.apps import apps
+from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from django.db.migrations.recorder import MigrationRecorder
 from django.db.models.signals import post_migrate
 from django.test.client import RequestFactory
+from django.test.utils import override_settings
 from drf_spectacular.generators import SchemaGenerator
 from rest_framework.request import Request
 from rest_framework.test import force_authenticate
@@ -22,6 +24,7 @@ from rest_framework.test import force_authenticate
 from ansible_base.lib.testing.fixtures import *  # noqa: F403, F401
 from ansible_base.lib.testing.util import copy_fixture, delete_authenticator
 from ansible_base.oauth2_provider.fixtures import *  # noqa: F403, F401
+from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
 from test_app import models
 
@@ -651,3 +654,25 @@ def admin_rd():
     RoleDefinition.objects.managed.clear()
     yield RoleDefinition.objects.managed.team_admin
     RoleDefinition.objects.managed.clear()
+
+
+@pytest.fixture
+def external_auditor_constructor():
+    data = settings.ANSIBLE_BASE_MANAGED_ROLE_REGISTRY.copy()
+    data['ext_aud'] = {'shortname': 'sys_auditor', 'name': 'Ext Auditor'}
+    with override_settings(ANSIBLE_BASE_MANAGED_ROLE_REGISTRY=data):
+        # Extra setup needed for external auditor
+        permission_registry.register_managed_role_constructors()
+        yield permission_registry.get_managed_role_constructor('ext_aud')
+        permission_registry._managed_roles.pop('ext_aud')
+
+
+@pytest.fixture
+def unmanaged_external_auditor_constructor():
+    data = settings.ANSIBLE_BASE_MANAGED_ROLE_REGISTRY.copy()
+    data['bad_aud'] = {'shortname': 'sys_auditor', 'name': 'Unmanaged Auditor'}
+    with override_settings(ANSIBLE_BASE_MANAGED_ROLE_REGISTRY=data):
+        # Extra setup needed for external auditor
+        permission_registry.register_managed_role_constructors()
+        yield permission_registry.get_managed_role_constructor('bad_aud')
+        permission_registry._managed_roles.pop('bad_aud')
