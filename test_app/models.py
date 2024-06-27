@@ -4,6 +4,8 @@ from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.db.models import JSONField
+from rest_framework.exceptions import PermissionDenied as DRFPermissionDenied
+from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from ansible_base.activitystream.models import AuditableModel
 from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam, CommonModel, ImmutableCommonModel, ImmutableModel, NamedCommonModel
@@ -148,6 +150,16 @@ class Inventory(models.Model):
 
     def summary_fields(self):
         return {"id": self.id, "name": self.name}
+
+    def validate_role_assignment(self, actor, role_definition):
+        if isinstance(actor, User):
+            name = actor.username
+        if isinstance(actor, Team):
+            name = actor.name
+        if name == 'test-400':
+            raise DRFValidationError({'detail': 'Role assignment not allowed 400'})
+        if name == 'test-403':
+            raise DRFPermissionDenied('Role assignment not allowed 403')
 
 
 class Credential(models.Model):

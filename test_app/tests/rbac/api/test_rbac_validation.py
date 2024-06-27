@@ -1,8 +1,13 @@
 import pytest
+from django.contrib.auth import get_user_model
 from django.test.utils import override_settings
 from django.urls import reverse
 
+from ansible_base.lib.utils.auth import get_team_model
 from ansible_base.rbac.models import RoleDefinition
+
+Team = get_team_model()
+User = get_user_model()
 
 
 @pytest.mark.django_db
@@ -86,3 +91,39 @@ def test_can_not_make_global_role_with_member_permission(admin_api_client):
     )
     assert response.status_code == 400
     assert 'member_team permission can not be used in global roles' in str(response.data['permissions'])
+
+
+@pytest.mark.django_db
+def test_callback_validate_role_user_assignment(admin_api_client, inventory, inv_rd):
+    url = reverse('roleuserassignment-list')
+    user = User.objects.create(username='user-allowed')
+    response = admin_api_client.post(url, data={'object_id': inventory.id, 'user': user.id, 'role_definition': inv_rd.id})
+    assert response.status_code == 201
+
+    user = User.objects.create(username='test-400')
+    response = admin_api_client.post(url, data={'object_id': inventory.id, 'user': user.id, 'role_definition': inv_rd.id})
+    assert response.status_code == 400
+    assert "Role assignment not allowed 400" in str(response.data)
+
+    user = User.objects.create(username='test-403')
+    response = admin_api_client.post(url, data={'object_id': inventory.id, 'user': user.id, 'role_definition': inv_rd.id})
+    assert response.status_code == 403
+    assert "Role assignment not allowed 403" in str(response.data)
+
+
+@pytest.mark.django_db
+def test_callback_validate_role_team_assignment(admin_api_client, inventory, organization, inv_rd):
+    url = reverse('roleteamassignment-list')
+    team = Team.objects.create(name='team-allowed', organization=organization)
+    response = admin_api_client.post(url, data={'object_id': inventory.id, 'team': team.id, 'role_definition': inv_rd.id})
+    assert response.status_code == 201
+
+    team = Team.objects.create(name='test-400', organization=organization)
+    response = admin_api_client.post(url, data={'object_id': inventory.id, 'team': team.id, 'role_definition': inv_rd.id})
+    assert response.status_code == 400
+    assert "Role assignment not allowed 400" in str(response.data)
+
+    team = Team.objects.create(name='test-403', organization=organization)
+    response = admin_api_client.post(url, data={'object_id': inventory.id, 'team': team.id, 'role_definition': inv_rd.id})
+    assert response.status_code == 403
+    assert "Role assignment not allowed 403" in str(response.data)

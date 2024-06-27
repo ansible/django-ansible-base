@@ -279,3 +279,10 @@ and `Team.tracked_parents` ManyToMany relationships, respectively.
 So if you have a team object, `team.users.add(user)` will also give that
 user _member permission_ to that team, where those permissions are defined by the
 role definition with the name "team-member".
+
+
+### Role assignment callback
+
+Apps that utilize django-ansible-base may wish to add extra validation when assigning roles to actors (users or teams).
+
+see [Validation callback for role assignment](../../lib/validation.md)
