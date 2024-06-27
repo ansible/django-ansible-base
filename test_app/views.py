@@ -11,6 +11,7 @@ from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from ansible_base.oauth2_provider.views import DABOAuth2UserViewsetMixin
+from ansible_base.oauth2_provider.views.permissions import OAuth2ScopePermission
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.api.permissions import AnsibleBaseObjectPermissions, AnsibleBaseUserPermissions
 from ansible_base.rbac.policies import visible_users
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class TestAppViewSet(ModelViewSet, AnsibleBaseView):
-    permission_classes = [AnsibleBaseObjectPermissions]
+    permission_classes = [OAuth2ScopePermission, AnsibleBaseObjectPermissions]
     prefetch_related = ()
     select_related = ()
 
@@ -191,7 +192,6 @@ class PublicDataViewSet(TestAppViewSet):
 class AnimalViewSet(TestAppViewSet):
     serializer_class = serializers.AnimalSerializer
     queryset = models.Animal.objects.all()
-    permission_classes = []
 
 
 class CityViewSet(TestAppViewSet):

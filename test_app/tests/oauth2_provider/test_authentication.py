@@ -149,31 +149,22 @@ def test_oauth2_bearer_no_activitystream(unauthenticated_api_client, oauth2_admi
     ],
 )
 @pytest.mark.django_db
-def test_oauth2_pat_scope(request, org_member_rd, org_admin_rd, user, user_api_client, scope, status):
+def test_oauth2_pat_scope(request, org_member_rd, org_admin_rd, admin_user, oauth2_admin_access_token, unauthenticated_api_client, scope, status):
     """
     Ensure that scopes are adhered to for PATs
     """
 
-    url = reverse("token-list")
+    oauth2_admin_access_token.scope = scope
+    oauth2_admin_access_token.save()
 
-    # Create PAT, read only
-    data = {
-        'description': 'new PAT',
-        'scope': scope,
-    }
-    response = user_api_client.post(url, data=data)
-    assert response.status_code == 201
-    token = response.data['token']
-
-    # Ensure read only PAT can't create
     url = reverse("animal-list")
     data = {
         "name": "Fido",
-        "owner": user.pk,
+        "owner": admin_user.pk,
     }
-    response = user_api_client.post(
+    response = unauthenticated_api_client.post(
         url,
         data=data,
-        headers={'Authorization': f'Bearer {token}'},
+        headers={'Authorization': f'Bearer {oauth2_admin_access_token.token}'},
     )
     assert response.status_code == status, response.status_code
