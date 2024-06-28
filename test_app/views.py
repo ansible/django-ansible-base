@@ -1,3 +1,4 @@
+import logging
 from itertools import chain
 
 from django.shortcuts import render
@@ -14,6 +15,8 @@ from ansible_base.rbac import permission_registry
 from ansible_base.rbac.api.permissions import AnsibleBaseObjectPermissions, AnsibleBaseUserPermissions
 from ansible_base.rbac.policies import visible_users
 from test_app import models, serializers
+
+logger = logging.getLogger(__name__)
 
 
 class TestAppViewSet(ModelViewSet, AnsibleBaseView):
@@ -201,5 +204,6 @@ class CityViewSet(TestAppViewSet):
 
 
 def index_view(request):
+    logger.debug('Rendering index view')
     context = {}
     return render(request, 'index.html', context)

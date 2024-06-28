@@ -20,14 +20,20 @@ ALLOWED_HOSTS = ["*"]
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'filters': {
+        'request_id_filter': {
+            '()': 'ansible_base.lib.logging.filters.RequestIdFilter',
+        },
+    },
     'formatters': {
-        'simple': {'format': '%(asctime)s %(levelname)-8s %(name)s %(message)s'},
+        'simple': {'format': '%(asctime)s %(levelname)-8s [%(request_id)s]  %(name)s %(message)s'},
     },
     'handlers': {
         'console': {
             '()': 'logging.StreamHandler',
             'level': 'DEBUG',
             'formatter': 'simple',
+            'filters': ['request_id_filter'],
         },
     },
     'loggers': {
@@ -79,6 +85,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'crum.CurrentRequestUserMiddleware',
+    'ansible_base.lib.middleware.logging.LogRequestMiddleware',
 ]
 
 REST_FRAMEWORK = {
