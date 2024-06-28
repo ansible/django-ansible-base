@@ -84,13 +84,13 @@ def test_delete_signals_object(organization, inventory, rando, inv_rd, what_to_d
 @pytest.mark.django_db
 @pytest.mark.parametrize('what_to_delete', ['user', 'org', 'object'])
 @pytest.mark.parametrize('cache_org', [True, False])
-def test_delete_signals_organization(organization, inventory, rando, inv_rd, org_inv_rd, what_to_delete, cache_org):
+def test_delete_signals_organization(organization, inventory, rando, org_inv_change_rd, what_to_delete, cache_org):
     user_id = rando.id
     inv_gfk = gfk_filter(inventory)
     org_gfk = gfk_filter(organization)
 
     with override_settings(ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS=cache_org):
-        assignment = org_inv_rd.give_permission(rando, organization)
+        assignment = org_inv_change_rd.give_permission(rando, organization)
         assert RoleEvaluation.objects.filter(**org_gfk).count() == (4 if cache_org else 2)
         assert RoleEvaluation.objects.filter(**inv_gfk).count() == 2
 
