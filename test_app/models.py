@@ -64,6 +64,8 @@ class Team(AbstractTeam):
         ordering = ['id']
         abstract = False
         unique_together = [('organization', 'name')]
+        # TODO(cutwater): Remove ordering by default on a model level and fix corresponding tests failures.
+        #   This doesn't match the behavior of the AAP gateway and produces SQL queries that are not identical to AAP gateway.
         ordering = ('organization__name', 'name')
         permissions = [('member_team', 'Has all roles assigned to this team')]
 
