@@ -204,7 +204,7 @@ def check_locally_managed(rd: Model) -> None:
     for perm in rd.permissions.prefetch_related('content_type'):
         # View permission for shared resources is interpreted as permission to view
         # the resource locally, which is needed to be able to view parent objects
-        if perm.codname.startswith('view'):
+        if perm.codename.startswith('view'):
             continue
         model = perm.content_type.model_class()
         if permission_registry.get_resource_prefix(model) == 'shared':
