@@ -202,6 +202,10 @@ def check_locally_managed(rd: Model) -> None:
     if settings.ALLOW_LOCAL_RESOURCE_MANAGEMENT is True:
         return
     for perm in rd.permissions.prefetch_related('content_type'):
+        # View permission for shared resources is interpreted as permission to view
+        # the resource locally, which is needed to be able to view parent objects
+        if perm.codname.startswith('view'):
+            continue
         model = perm.content_type.model_class()
         if permission_registry.get_resource_prefix(model) == 'shared':
             raise ValidationError('Not managed locally, use the resource server instead')
