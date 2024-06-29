@@ -34,9 +34,6 @@ def determine_username_from_uid_social(**kwargs: dict) -> dict:
     if not uid:
         raise AuthException(_('Unable to get associated username from: %(details)s') % {'details': kwargs.get("details", None)})
 
-    if uid.casefold() == settings.SYSTEM_USERNAME.casefold():
-        raise AuthException(_('System user is not allowed to log in from external authentication sources.'))
-
     authenticator = kwargs.get('backend')
     if not authenticator:
         raise AuthException(_('Unable to get backend from kwargs'))
@@ -52,6 +49,10 @@ def determine_username_from_uid(uid: str = None, authenticator: Authenticator = 
         bella<hash> - if there is already a bella user in AuthenticatorUser but its not from the given authenticator
         <User.username> - If there is already a user associated with bella for this authenticator (could be bella or bella<hash> or even something else)
     """
+    if uid.casefold() == settings.SYSTEM_USERNAME.casefold():
+        logger.warning(f'{settings.SYSTEM_USERNAME} cannot log in from an authenticator!')
+        raise AuthException(_('System user is not allowed to log in from external authentication sources.'))
+
     # If we have an AuthenticatorUser with the exact uid and provider than we have a match
     exact_match = AuthenticatorUser.objects.filter(uid=uid, provider=authenticator)
     if exact_match.count() == 1:
@@ -93,6 +94,10 @@ def get_or_create_authenticator_user(
                 For example, LDAP might return sn, location, phone_number, etc
     """
 
+    if username.casefold() == settings.SYSTEM_USERNAME.casefold():
+        logger.info(f'{settings.SYSTEM_USERNAME} cannot be associated with an external authenticator.')
+        raise AuthException(_('System user cannot be associated with an external authenticator'))
+
     created = None
     try:
         # First see if we have an auth user and if so update it
@@ -101,7 +106,7 @@ def get_or_create_authenticator_user(
         auth_user.save()
         created = False
     except AuthenticatorUser.DoesNotExist:
-        # Ensure that this username is not already tired to another authenticator
+        # Ensure that this username is not already tied to another authenticator
         auth_user = AuthenticatorUser.objects.filter(uid=username).first()
         if auth_user is not None:
             logger.error(
