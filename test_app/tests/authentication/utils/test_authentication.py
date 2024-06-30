@@ -26,7 +26,7 @@ class TestAuthenticationUtilsAuthentication:
     @pytest.mark.parametrize(
         "related_authenticator,info_message,expected_username",
         [
-            (None, 'is is able to authenticate user', True),
+            (None, 'is able to authenticate user', True),
             ('local', 'already authenticated', True),
             ('ldap', 'username is already in use by another authenticator', False),
             ('multiple', 'already authenticated', True),

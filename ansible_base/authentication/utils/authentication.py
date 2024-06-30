@@ -72,7 +72,7 @@ def determine_username_from_uid(uid: str = None, authenticator: Authenticator = 
         return new_username
 
     # We didn't have an exact match but no other provider is servicing this uid so lets return that for usage
-    logger.info(f"Authenticator {authenticator.name} is is able to authenticate user {uid} as {uid}")
+    logger.info(f"Authenticator {authenticator.name} is able to authenticate user {uid} as {uid}")
     return uid
 
 
