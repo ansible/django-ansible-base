@@ -1,4 +1,5 @@
 import pytest
+from django.conf import settings
 from social_core.exceptions import AuthException
 
 from ansible_base.authentication.models import AuthenticatorUser
@@ -46,6 +47,26 @@ class TestAuthenticationUtilsAuthentication:
                 assert new_username == random_user.username
             else:
                 assert len(new_username) > len(random_user.username)
+
+    @pytest.mark.parametrize(
+        "auth_fixture",
+        [
+            "local_authenticator",
+            "ldap_authenticator",
+            "keycloak_authenticator",
+            "saml_authenticator",
+            "oidc_authenticator",
+            "tacacs_authenticator",
+            "radius_authenticator",
+        ],
+    )
+    def test_external_system_user_login(self, request, auth_fixture):
+        uid = settings.SYSTEM_USERNAME
+        authenticator = request.getfixturevalue(auth_fixture)
+        with pytest.raises(AuthException):
+            authentication.determine_username_from_uid(uid, authenticator)
+        with pytest.raises(AuthException):
+            authentication.get_or_create_authenticator_user(uid, authenticator, {}, {})
 
     #
     # Tests for get_or_create_authenticator_user (gocau)
