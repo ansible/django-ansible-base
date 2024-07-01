@@ -6,11 +6,11 @@ from django.apps import apps
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Model
-from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
 from ansible_base.jwt_consumer.common.cache import JWTCache
 from ansible_base.jwt_consumer.common.cert import JWTCert, JWTCertException
+from ansible_base.lib.authentication import AnsibleBaseAuthentication
 from ansible_base.lib.utils.auth import get_user_by_ansible_id
 from ansible_base.lib.utils.translations import translatableConditionally as _
 from ansible_base.resource_registry.models import Resource, ResourceType
@@ -270,7 +270,7 @@ class JWTCommonAuth:
             return None, None
 
 
-class JWTAuthentication(BaseAuthentication):
+class JWTAuthentication(AnsibleBaseAuthentication):
     map_fields = default_mapped_user_fields
     use_rbac_permissions = False
 
@@ -281,6 +281,7 @@ class JWTAuthentication(BaseAuthentication):
         self.common_auth.parse_jwt_token(request)
 
         if self.common_auth.user:
+            self.enforce_csrf(request)
             self.process_user_data()
             self.process_permissions()
 
