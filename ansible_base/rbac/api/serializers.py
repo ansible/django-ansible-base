@@ -145,6 +145,7 @@ class RoleDefinitionSerializer(CommonModelSerializer):
         else:
             content_type = self.instance.content_type
         validate_permissions_for_model(permissions, content_type)
+        check_locally_managed(permissions)
         return super().validate(validated_data)
 
 
@@ -255,7 +256,7 @@ class BaseAssignmentSerializer(CommonModelSerializer):
                 raise ValidationError({'object_id': _('Object must be specified for this role assignment')})
 
             check_content_obj_permission(requesting_user, obj)
-            check_locally_managed(rd)
+            check_locally_managed(rd.permissions.prefetch_related('content_type'))
 
             try:
                 with transaction.atomic():

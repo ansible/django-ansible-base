@@ -21,10 +21,21 @@ def global_inv_rd():
 
 
 @pytest.fixture
-def org_inv_rd():
+def org_inv_change_rd():
+    """Strange custom role, kept around because older tests used it"""
     return RoleDefinition.objects.create_from_permissions(
-        permissions=['change_organization', 'view_organization', 'change_inventory', 'view_inventory'],
-        name='org-inv-rd',
+        permissions=['view_organization', 'change_organization', 'change_inventory', 'view_inventory'],
+        name='org-inv-change-and-view-rd',
+        content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
+    )
+
+
+@pytest.fixture
+def org_inv_rd():
+    """Typical example of an organization-level role that gives admin permissions to a child object"""
+    return RoleDefinition.objects.create_from_permissions(
+        permissions=['view_organization', 'add_inventory', 'change_inventory', 'delete_inventory', 'view_inventory'],
+        name='org-inv-admin-rd',
         content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
     )
 

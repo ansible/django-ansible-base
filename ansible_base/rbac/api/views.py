@@ -136,7 +136,7 @@ class BaseAssignmentViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
         obj = instance.content_object
         if obj:
             check_content_obj_permission(self.request.user, obj)
-            check_locally_managed(instance.role_definition)
+            check_locally_managed(instance.role_definition.permissions.prefetch_related('content_type'))
             with transaction.atomic():
                 instance.role_definition.remove_permission(instance.actor, obj)
         else:

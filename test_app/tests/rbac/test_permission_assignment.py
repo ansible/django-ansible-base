@@ -15,14 +15,14 @@ def test_invalid_actor(inventory, org_inv_rd):
 
 
 @pytest.mark.django_db
-def test_child_object_permission(rando, organization, inventory, org_inv_rd, admin_user):
+def test_child_object_permission(rando, organization, inventory, org_inv_change_rd, admin_user):
     assert inventory.organization == organization
 
     assert set(RoleEvaluation.accessible_objects(Organization, rando, 'change')) == set()
     assert set(RoleEvaluation.accessible_objects(Inventory, rando, 'change')) == set()
 
     with impersonate(admin_user):
-        assignment = org_inv_rd.give_permission(rando, organization)
+        assignment = org_inv_change_rd.give_permission(rando, organization)
 
     assert set(RoleEvaluation.accessible_objects(Organization, rando, 'change_organization')) == set([organization])
     assert set(RoleEvaluation.accessible_objects(Inventory, rando, 'change_inventory')) == set([inventory])
@@ -60,16 +60,16 @@ def test_organization_permission_change(org_inv_rd):
 
 @pytest.mark.django_db
 @pytest.mark.parametrize('order', ['role_first', 'obj_first'])
-def test_later_created_child_object_permission(rando, organization, order, org_inv_rd):
+def test_later_created_child_object_permission(rando, organization, order, org_inv_change_rd):
     assert set(RoleEvaluation.accessible_objects(Organization, rando, 'change')) == set()
     assert set(RoleEvaluation.accessible_objects(Inventory, rando, 'change')) == set()
 
     if order == 'role_first':
-        org_inv_rd.give_permission(rando, organization)
+        org_inv_change_rd.give_permission(rando, organization)
         inventory = Inventory.objects.create(name='for-test', organization=organization)
     else:
         inventory = Inventory.objects.create(name='for-test', organization=organization)
-        org_inv_rd.give_permission(rando, organization)
+        org_inv_change_rd.give_permission(rando, organization)
 
     assert set(RoleEvaluation.accessible_objects(Organization, rando, 'change_organization')) == set([organization])
     assert set(RoleEvaluation.accessible_objects(Inventory, rando, 'change_inventory')) == set([inventory])
