@@ -7,11 +7,11 @@ from django.db import models
 from django.urls.exceptions import NoReverseMatch
 from django.utils.translation import gettext_lazy as _
 from inflection import underscore
-from rest_framework.reverse import reverse
 
 from ansible_base.lib.abstract_models.immutable import ImmutableModel
 from ansible_base.lib.utils.encryption import ansible_encryption
 from ansible_base.lib.utils.models import current_user_or_system_user, is_system_user
+from ansible_base.lib.utils.response import get_relative_url
 
 logger = logging.getLogger('ansible_base.lib.abstract_models.common')
 
@@ -31,7 +31,7 @@ def get_url_for_object(obj, request=None, pk=None):
     basename = get_cls_view_basename(obj.__class__)
 
     try:
-        return reverse(f'{basename}-detail', kwargs={'pk': pk or obj.pk})
+        return get_relative_url(f'{basename}-detail', kwargs={'pk': pk or obj.pk})
     except NoReverseMatch:
         logger.debug(f"Tried to reverse {basename}-detail for model {obj.__class__.__name__} but said view is not defined")
         return ''
@@ -201,7 +201,7 @@ class AbstractCommonModel(models.Model):
                 continue
             reverse_view = f"{basename}-{field_name}-list"
             try:
-                response[field_name] = reverse(reverse_view, kwargs={'pk': self.pk})
+                response[field_name] = get_relative_url(reverse_view, kwargs={'pk': self.pk})
             except NoReverseMatch:
                 missing_relations.append(reverse_view)
 

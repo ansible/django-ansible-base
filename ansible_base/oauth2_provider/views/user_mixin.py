@@ -1,9 +1,9 @@
 from django.contrib.auth import get_user_model
-from django.urls import reverse
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from ansible_base.lib.abstract_models.common import get_cls_view_basename
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.oauth2_provider.models import OAuth2AccessToken
 from ansible_base.oauth2_provider.serializers import OAuth2TokenSerializer
 
@@ -16,9 +16,9 @@ class DABOAuth2UserViewsetMixin:
     def extra_related_fields(self, obj) -> dict[str, str]:
         fields = super().extra_related_fields(obj)
         user_basename = get_cls_view_basename(get_user_model())
-        fields['personal_tokens'] = reverse(f'{user_basename}-personal-tokens-list', kwargs={"pk": obj.pk})
-        fields['authorized_tokens'] = reverse(f'{user_basename}-authorized-tokens-list', kwargs={"pk": obj.pk})
-        fields['tokens'] = reverse(f'{user_basename}-tokens-list', kwargs={"pk": obj.pk})
+        fields['personal_tokens'] = get_relative_url(f'{user_basename}-personal-tokens-list', kwargs={"pk": obj.pk})
+        fields['authorized_tokens'] = get_relative_url(f'{user_basename}-authorized-tokens-list', kwargs={"pk": obj.pk})
+        fields['tokens'] = get_relative_url(f'{user_basename}-tokens-list', kwargs={"pk": obj.pk})
         return fields
 
     def _user_token_response(self, request, filters, pk):

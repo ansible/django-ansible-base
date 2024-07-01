@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
 
 import pytest
-from django.urls import reverse
 from oauthlib.common import generate_token
 
 from ansible_base.lib.testing.fixtures import copy_fixture
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.oauth2_provider.models import OAuth2AccessToken, OAuth2Application
 
 __all__ = [  # noqa: F822, the additional _pat_X are unknown so we need this here
@@ -62,7 +62,7 @@ def oauth2_application_password(randname):
 
 @pytest.fixture
 def oauth2_admin_access_token(oauth2_application, admin_api_client, admin_user):
-    url = reverse('token-list')
+    url = get_relative_url('token-list')
     response = admin_api_client.post(url, {'application': oauth2_application[0].pk})
     assert response.status_code == 201
     return OAuth2AccessToken.objects.get(token=response.data['token'])

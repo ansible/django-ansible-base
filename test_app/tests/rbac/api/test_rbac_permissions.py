@@ -1,8 +1,8 @@
 import pytest
 from django.contrib.contenttypes.models import ContentType
 from django.test import override_settings
-from django.urls import reverse
 
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition, RoleUserAssignment
 from test_app.models import Cow, Credential, Inventory, Organization
@@ -43,10 +43,10 @@ def unauthenticated_url_check(unauthenticated_api_client):
 def test_unauthenticated_resource_requests(unauthenticated_url_check, inventory, organization):
     cow = Cow.objects.create(organization=organization)
     urls = [
-        reverse('inventory-list'),
-        reverse('inventory-detail', kwargs={'pk': inventory.id}),
-        reverse('inventory-detail', kwargs={'pk': 9000}),
-        reverse('cow-cowsay', kwargs={'pk': cow.id}),  # test action endpoint
+        get_relative_url('inventory-list'),
+        get_relative_url('inventory-detail', kwargs={'pk': inventory.id}),
+        get_relative_url('inventory-detail', kwargs={'pk': 9000}),
+        get_relative_url('cow-cowsay', kwargs={'pk': cow.id}),  # test action endpoint
     ]
     for url in urls:
         unauthenticated_url_check(url)
@@ -56,12 +56,12 @@ def test_unauthenticated_resource_requests(unauthenticated_url_check, inventory,
 def test_unauthenticated_role_management_requests(unauthenticated_url_check, inventory, inv_rd, user):
     assignment = inv_rd.give_permission(user, inventory)
     urls = [
-        reverse('roledefinition-list'),
-        reverse('roledefinition-detail', kwargs={'pk': inv_rd.id}),
-        reverse('roledefinition-detail', kwargs={'pk': 9000}),
-        reverse('roleuserassignment-list'),
-        reverse('roleuserassignment-detail', kwargs={'pk': assignment.id}),
-        reverse('roleuserassignment-detail', kwargs={'pk': 9000}),
+        get_relative_url('roledefinition-list'),
+        get_relative_url('roledefinition-detail', kwargs={'pk': inv_rd.id}),
+        get_relative_url('roledefinition-detail', kwargs={'pk': 9000}),
+        get_relative_url('roleuserassignment-list'),
+        get_relative_url('roleuserassignment-detail', kwargs={'pk': assignment.id}),
+        get_relative_url('roleuserassignment-detail', kwargs={'pk': 9000}),
     ]
     for url in urls:
         unauthenticated_url_check(url)
@@ -72,21 +72,21 @@ def test_gain_organization_inventory_view(user_api_client, user, org_inv_rd):
     org = Organization.objects.create(name='foo')
     Inventory.objects.create(name='bar', organization=org)
 
-    r = user_api_client.get(reverse('organization-list'))
+    r = user_api_client.get(get_relative_url('organization-list'))
     assert r.status_code == 200, r.data
     assert r.data['results'] == []
 
-    r = user_api_client.get(reverse('inventory-list'))
+    r = user_api_client.get(get_relative_url('inventory-list'))
     assert r.status_code == 200, r.data
     assert r.data['results'] == []
 
     org_inv_rd.give_permission(user, org)
 
-    r = user_api_client.get(reverse('organization-list'))
+    r = user_api_client.get(get_relative_url('organization-list'))
     assert r.status_code == 200, r.data
     assert len(r.data['results']) == 1
 
-    r = user_api_client.get(reverse('inventory-list'))
+    r = user_api_client.get(get_relative_url('inventory-list'))
     assert r.status_code == 200, r.data
     assert len(r.data['results']) == 1
 
@@ -95,7 +95,7 @@ def test_gain_organization_inventory_view(user_api_client, user, org_inv_rd):
 def test_change_permission(user_api_client, user, org_inv_rd, view_inv_rd, inventory):
     view_inv_rd.give_permission(user, inventory.organization)
 
-    inv_detail = reverse('inventory-detail', kwargs={'pk': inventory.id})
+    inv_detail = get_relative_url('inventory-detail', kwargs={'pk': inventory.id})
     r = user_api_client.patch(inv_detail, {})
     assert r.status_code == 403, r.data
 
@@ -109,7 +109,7 @@ def test_change_permission(user_api_client, user, org_inv_rd, view_inv_rd, inven
 def test_revoke_a_permission(admin_api_client, user, org_inv_rd, view_inv_rd, organization):
     assignment = view_inv_rd.give_permission(user, organization)
 
-    assignment_detail = reverse('roleuserassignment-detail', kwargs={'pk': assignment.id})
+    assignment_detail = get_relative_url('roleuserassignment-detail', kwargs={'pk': assignment.id})
     r = admin_api_client.delete(assignment_detail, {})
     assert r.status_code == 204, r.data
 
@@ -119,11 +119,11 @@ def test_revoke_a_permission(admin_api_client, user, org_inv_rd, view_inv_rd, or
 @pytest.mark.django_db
 def test_add_permission(user_api_client, user, view_inv_rd, org_inv_add, organization):
     view_inv_rd.give_permission(user, organization)
-    r = user_api_client.post(reverse('inventory-list'), {'name': 'test', 'organization': organization.id})
+    r = user_api_client.post(get_relative_url('inventory-list'), {'name': 'test', 'organization': organization.id})
     assert r.status_code == 403, r.data
 
     org_inv_add.give_permission(user, organization)
-    r = user_api_client.post(reverse('inventory-list'), {'name': 'test', 'organization': organization.id})
+    r = user_api_client.post(get_relative_url('inventory-list'), {'name': 'test', 'organization': organization.id})
     assert r.status_code == 201, r.data
 
     inventory = Inventory.objects.get(id=r.data['id'])
@@ -133,7 +133,7 @@ def test_add_permission(user_api_client, user, view_inv_rd, org_inv_add, organiz
 @pytest.mark.django_db
 def test_change_organization(user_api_client, user, inv_rd, org_inv_add, inventory):
     org2 = Organization.objects.create(name='another-org')
-    url = reverse('inventory-detail', kwargs={'pk': inventory.pk})
+    url = get_relative_url('inventory-detail', kwargs={'pk': inventory.pk})
     inv_rd.give_permission(user, inventory)
 
     # Inventory object admin can change superficial things like the name
@@ -152,7 +152,7 @@ def test_change_organization(user_api_client, user, inv_rd, org_inv_add, invento
 @pytest.mark.django_db
 def test_remove_organization(user_api_client, user, inv_rd, inventory):
     """You should not be able to null out an organization field unless you have global role"""
-    url = reverse('inventory-detail', kwargs={'pk': inventory.pk})
+    url = get_relative_url('inventory-detail', kwargs={'pk': inventory.pk})
     inv_rd.give_permission(user, inventory)
 
     # Inventory object admin can not null its organization
@@ -174,11 +174,11 @@ def test_custom_action(user_api_client, user, organization):
     cow = Cow.objects.create(organization=organization)
     rd.give_permission(user, cow)
 
-    cow_url = reverse('cow-detail', kwargs={'pk': cow.id})
+    cow_url = get_relative_url('cow-detail', kwargs={'pk': cow.id})
     r = user_api_client.patch(cow_url, {})
     assert r.status_code == 200
 
-    cow_say_url = reverse('cow-cowsay', kwargs={'pk': cow.id})
+    cow_say_url = get_relative_url('cow-cowsay', kwargs={'pk': cow.id})
     r = user_api_client.post(cow_say_url, {})
     assert r.status_code == 403
 
@@ -187,7 +187,7 @@ def test_custom_action(user_api_client, user, organization):
     )
     say_rd.give_permission(user, cow)
 
-    cow_say_url = reverse('cow-cowsay', kwargs={'pk': cow.id})
+    cow_say_url = get_relative_url('cow-cowsay', kwargs={'pk': cow.id})
     r = user_api_client.post(cow_say_url, {})
     assert r.status_code == 200
 
@@ -207,7 +207,7 @@ def test_related_view_permissions(inventory, organization, user, user_api_client
     assert not inventory.credential  # sanity
     inv_rd.give_permission(user, inventory)
     cred_view_rd.give_permission(user, credential)
-    url = reverse('inventory-detail', kwargs={'pk': inventory.pk})
+    url = get_relative_url('inventory-detail', kwargs={'pk': inventory.pk})
 
     response = user_api_client.patch(url, data={'credential': credential.pk})
     assert response.status_code == 403
@@ -227,7 +227,7 @@ def test_related_no_permissions(inventory, organization, user, user_api_client, 
     credential = Credential.objects.create(name='foo-cred', organization=organization)
     assert not inventory.credential  # sanity
     inv_rd.give_permission(user, inventory)
-    url = reverse('inventory-detail', kwargs={'pk': inventory.pk})
+    url = get_relative_url('inventory-detail', kwargs={'pk': inventory.pk})
 
     # No permissions to related credential needed, YOLO
     response = user_api_client.patch(url, data={'credential': credential.pk})
@@ -241,7 +241,7 @@ def test_related_use_permission(inventory, organization, user, user_api_client, 
     credential = Credential.objects.create(name='foo-cred', organization=organization)
     inv_rd.give_permission(user, inventory)
     cred_view_rd.give_permission(user, credential)
-    url = reverse('inventory-detail', kwargs={'pk': inventory.pk})
+    url = get_relative_url('inventory-detail', kwargs={'pk': inventory.pk})
 
     # without needed permissions to the credential, user can not apply this credential
     response = user_api_client.patch(url, data={'credential': credential.pk})

@@ -11,8 +11,8 @@ conditions are not met).
 """
 
 import pytest
-from django.urls import reverse
 
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.oauth2_provider.models import OAuth2AccessToken
 from ansible_base.rbac.models import RoleDefinition
 
@@ -75,7 +75,7 @@ def test_oauth2_application_read_change_delete(
 
     if user is not None:
         unauthenticated_api_client.force_login(user)
-    url = reverse("application-detail", args=[app.id])
+    url = get_relative_url("application-detail", args=[app.id])
 
     # Read
     response = unauthenticated_api_client.get(url)
@@ -141,7 +141,7 @@ def test_oauth2_application_create(
 
     if user is not None:
         unauthenticated_api_client.force_login(user)
-    url = reverse("application-list")
+    url = get_relative_url("application-list")
     data = {
         'name': 'new app',
         'organization': organization.id,
@@ -223,7 +223,7 @@ def test_oauth2_application_token_read_change_delete(
 
     if user is not None:
         unauthenticated_api_client.force_login(user)
-    url = reverse("token-detail", args=[oauth2_user_application_token.id])
+    url = get_relative_url("token-detail", args=[oauth2_user_application_token.id])
 
     # Read
     response = unauthenticated_api_client.get(url)
@@ -298,7 +298,7 @@ def test_oauth2_application_token_create(
 
     if user is not None:
         unauthenticated_api_client.force_login(user)
-    url = reverse("token-list")
+    url = get_relative_url("token-list")
 
     # Create
     data = {
@@ -319,7 +319,7 @@ def test_oauth2_pat_create(request, org_member_rd, org_admin_rd, user, random_us
      - I am a user.  But I can only create a PAT for myself.
     """
 
-    url = reverse("token-list")
+    url = get_relative_url("token-list")
 
     # Create PAT
     data = {
@@ -388,7 +388,7 @@ def test_oauth2_pat_read_change_delete(request, user_case, has_access, org_membe
 
     if user is not None:
         unauthenticated_api_client.force_login(user)
-    url = reverse("token-detail", args=[oauth2_user_pat.id])
+    url = get_relative_url("token-detail", args=[oauth2_user_pat.id])
 
     # Read
     response = unauthenticated_api_client.get(url)

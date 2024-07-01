@@ -1,7 +1,7 @@
 import pytest
 from django.test.utils import override_settings
-from django.urls import reverse
 
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.models import DABPermission, RoleDefinition
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.validators import validate_permissions_for_model
@@ -20,7 +20,7 @@ def test_unprivledged_user_can_view(public_item, rando):
 
 
 def test_unprivledged_user_can_view_api(public_item, user_api_client):
-    url = reverse('publicdata-detail', kwargs={'pk': public_item.pk})
+    url = get_relative_url('publicdata-detail', kwargs={'pk': public_item.pk})
     response = user_api_client.get(url)
     assert response.status_code == 200, response.data
     assert response.data['id'] == public_item.id
@@ -44,7 +44,7 @@ def test_org_level_validator_without_view():
 
 @pytest.mark.django_db
 def test_custom_role_for_public_model(admin_api_client, rando, public_item):
-    url = reverse('roledefinition-list')
+    url = get_relative_url('roledefinition-list')
     data = {'name': 'Public data editor', 'permissions': ['local.change_publicdata'], 'content_type': 'local.publicdata'}
     response = admin_api_client.post(url, data=data, format="json")
     assert response.status_code == 201, response.data

@@ -6,9 +6,9 @@ from django.urls.exceptions import NoReverseMatch
 from django.urls.resolvers import URLPattern
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
-from rest_framework.reverse import reverse
 from rest_framework.viewsets import ModelViewSet
 
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from ansible_base.oauth2_provider.views import DABOAuth2UserViewsetMixin
 from ansible_base.rbac import permission_registry
@@ -160,7 +160,7 @@ def api_root(request, format=None):
         # want '^users/$' [name='user-list']
         # do not want '^users/(?P<pk>[^/.]+)/organizations/$' [name='user-organizations-list'],
         if '-list' in url.name and url.pattern._regex.count('/') == 1:
-            list_endpoints[url.name.removesuffix('-list')] = reverse(url.name, request=request, format=format)
+            list_endpoints[url.name.removesuffix('-list')] = get_relative_url(url.name, request=request, format=format)
 
     from ansible_base.api_documentation.urls import api_version_urls as docs_urls
     from ansible_base.authentication.urls import api_version_urls as authentication_urls
@@ -168,12 +168,12 @@ def api_root(request, format=None):
     for url in docs_urls + authentication_urls[1:]:
         if isinstance(url, URLPattern):
             try:
-                list_endpoints[url.name] = reverse(url.name, request=request, format=format)
+                list_endpoints[url.name] = get_relative_url(url.name, request=request, format=format)
             except NoReverseMatch:
                 pass
 
-    list_endpoints['service-index'] = reverse('service-index-root', request=request, format=format)
-    list_endpoints['role-metadata'] = reverse('role-metadata', request=request, format=format)
+    list_endpoints['service-index'] = get_relative_url('service-index-root', request=request, format=format)
+    list_endpoints['role-metadata'] = get_relative_url('role-metadata', request=request, format=format)
 
     return Response(list_endpoints)
 

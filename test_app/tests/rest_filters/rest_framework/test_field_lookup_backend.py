@@ -4,12 +4,12 @@ import pytest
 from django.conf import settings
 from django.core.exceptions import FieldDoesNotExist, FieldError, ValidationError
 from django.test.utils import override_settings
-from django.urls import reverse
 from django.utils.http import urlencode
 from rest_framework.exceptions import ParseError, PermissionDenied
 
 from ansible_base.authentication.models import Authenticator, AuthenticatorMap
 from ansible_base.authentication.views import AuthenticatorViewSet
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rest_filters.rest_framework.field_lookup_backend import FieldLookupBackend
 from test_app import models
 
@@ -161,7 +161,7 @@ def test_filter_queryset(query):
 
 def test_filter_jsonfield_as_text(admin_api_client):
     models.City.objects.create(name='city', extra_data={'mayor': 'John Doe', 'radius': 10, 'elevation': 1000, 'is_capital': True})
-    url = reverse('city-list')
+    url = get_relative_url('city-list')
 
     # negative test, backwards compatibility doesn't allow this case
     # JSONField isn't treated as structured data, but as a text blob
@@ -178,7 +178,7 @@ def test_filter_jsonfield_as_text(admin_api_client):
 
 
 def test_filter_unexpected_field(admin_api_client):
-    url = reverse('organization-list')
+    url = get_relative_url('organization-list')
     response = admin_api_client.get(url, data={'foofield': 'bar'})
     assert response.status_code == 400, response.data
 
@@ -186,14 +186,14 @@ def test_filter_unexpected_field(admin_api_client):
 def test_app_ignore_field(admin_api_client):
     base_list = tuple(settings.ANSIBLE_BASE_REST_FILTERS_RESERVED_NAMES)
     with override_settings(ANSIBLE_BASE_REST_FILTERS_RESERVED_NAMES=base_list + ('foofield',)):
-        url = reverse('organization-list')
+        url = get_relative_url('organization-list')
         response = admin_api_client.get(url, data={'foofield': 'bar'})
         assert response.status_code == 200, response.data
 
 
 def test_view_level_ignore_field(admin_api_client):
     """See CowViewSet definition which corresponds to expectations of this test"""
-    url = reverse('cow-list')
+    url = get_relative_url('cow-list')
     response = admin_api_client.get(url, data={'cud': 'chew'})
     assert response.status_code == 200, response.data
 

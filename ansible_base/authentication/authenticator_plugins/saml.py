@@ -5,7 +5,6 @@ from django.urls import re_path
 from django.utils.translation import gettext_lazy as _
 from onelogin.saml2.errors import OneLogin_Saml2_Error
 from onelogin.saml2.settings import OneLogin_Saml2_Settings
-from rest_framework.reverse import reverse
 from rest_framework.serializers import ValidationError
 from rest_framework.views import View
 from social_core.backends.saml import SAMLAuth, SAMLIdentityProvider
@@ -22,6 +21,7 @@ from ansible_base.authentication.social_auth import (
 )
 from ansible_base.lib.serializers.fields import CharField, JSONField, ListField, PrivateKey, PublicCert, URLField
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.validation import validate_cert_with_key
 
@@ -243,11 +243,11 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAML
     configuration_encrypted_fields = ['SP_PRIVATE_KEY']
 
     def get_login_url(self, authenticator):
-        url = reverse('social:begin', kwargs={'backend': authenticator.slug})
+        url = get_relative_url('social:begin', kwargs={'backend': authenticator.slug})
         return f'{url}?idp={idp_string}'
 
     def add_related_fields(self, request, authenticator):
-        return {"metadata": reverse('authenticator-metadata', kwargs={'pk': authenticator.id})}
+        return {"metadata": get_relative_url('authenticator-metadata', kwargs={'pk': authenticator.id})}
 
     def extra_data(self, user, backend, response, *args, **kwargs):
         attrs = response["attributes"] if "attributes" in response else {}

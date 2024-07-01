@@ -1,6 +1,6 @@
 import pytest
-from django.urls import reverse
 
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.api.serializers import RoleDefinitionSerializer
 
 
@@ -26,11 +26,11 @@ def test_invalid_permission(admin_api_client):
 
 @pytest.mark.django_db
 def test_parity_with_resource_registry(admin_api_client):
-    types_resp = admin_api_client.get(reverse("resourcetype-list"))
+    types_resp = admin_api_client.get(get_relative_url("resourcetype-list"))
     assert types_resp.status_code == 200
     res_types = set(r['name'] for r in types_resp.data['results'])
 
-    role_types = admin_api_client.options(reverse("roledefinition-list"))
+    role_types = admin_api_client.options(get_relative_url("roledefinition-list"))
     role_types = set(item['value'] for item in role_types.data['actions']['POST']['content_type']['choices'])
 
     # Check the types in both registries

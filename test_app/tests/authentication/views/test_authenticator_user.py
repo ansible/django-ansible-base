@@ -3,10 +3,10 @@ from functools import partial
 import pytest
 from django.http import Http404
 from django.test.utils import override_settings
-from django.urls import reverse
 
 from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.authentication.views.authenticator_users import get_authenticator_user_view
+from ansible_base.lib.utils.response import get_relative_url
 
 
 def test_authenticator_user_view_get_parent_view_unset_value(expected_log):
@@ -75,7 +75,7 @@ def test_authenticator_related_users_view(request, client_fixture, local_authent
     """
     AuthenticatorUser.objects.get_or_create(uid=user.username, user=user, provider=local_authenticator)
     client = request.getfixturevalue(client_fixture)
-    url = reverse("authenticator-users-list", kwargs={"pk": local_authenticator.pk})
+    url = get_relative_url("authenticator-users-list", kwargs={"pk": local_authenticator.pk})
     response = client.get(url)
 
     if client_fixture == "unauthenticated_api_client":
@@ -89,6 +89,6 @@ def test_authenticator_related_users_view(request, client_fixture, local_authent
 
 
 def test_authenticator_users_bad_pk(admin_api_client):
-    url = reverse("authenticator-users-list", kwargs={"pk": 10397})
+    url = get_relative_url("authenticator-users-list", kwargs={"pk": 10397})
     response = admin_api_client.get(url)
     assert response.status_code == 404

@@ -1,8 +1,16 @@
 import csv
+import logging
 from dataclasses import dataclass
 from typing import Optional, Sequence
+from urllib.parse import urlparse
 
 from django.http import StreamingHttpResponse
+from django.urls import reverse as django_reverse
+from rest_framework.reverse import reverse as drf_reverse
+
+from ansible_base.lib.utils.settings import get_setting
+
+logger = logging.getLogger('ansible_base.lib.utils.response')
 
 
 class CSVBuffer:
@@ -31,3 +39,24 @@ class CSVStreamResponse:
             headers["Content-Disposition"] = f"attachment; filename={self.filename}"
 
         return StreamingHttpResponse((writer.writerow(line) for line in self.lines), status=200, content_type=self.content_type, headers=headers)
+
+
+def get_fully_qualified_url(view_name: str, *args, **kwargs) -> str:
+    '''
+    Returns a fully qualified URL from the setting FRONT_END_URL or a DRF reverse if the setting is undefined
+    NOTE: a DRF reverse could be relative or not depending on the request coming in
+    '''
+    url = drf_reverse(view_name, *args, **kwargs)
+    front_end_url = get_setting('FRONT_END_URL', None)
+    if not front_end_url:
+        return url
+
+    url_pieces = urlparse(url)
+    return f"{front_end_url.rstrip('/')}{url_pieces.path}"
+
+
+def get_relative_url(view_name: str, *args, **kwargs) -> str:
+    '''
+    Returns a relative URL to the specified view_name
+    '''
+    return django_reverse(view_name, *args, **kwargs)

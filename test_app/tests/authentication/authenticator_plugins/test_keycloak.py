@@ -1,9 +1,8 @@
 from unittest import mock
 
-from django.urls import reverse
-
 from ansible_base.authentication.authenticator_plugins.keycloak import AuthenticatorPlugin
 from ansible_base.authentication.session import SessionAuthentication
+from ansible_base.lib.utils.response import get_relative_url
 
 authenticated_test_page = "authenticator-list"
 
@@ -21,7 +20,7 @@ def test_keycloak_auth_successful(authenticate, unauthenticated_api_client, keyc
     did_login = client.login()
     assert did_login, "Failed to login"
 
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     response = client.get(url)
     assert response.status_code == 200
 
@@ -38,7 +37,7 @@ def test_keycloak_auth_failure(authenticate, unauthenticated_api_client, keycloa
     authenticate.return_value = None
     client.login()
 
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     response = client.get(url)
     assert response.status_code == 401
 

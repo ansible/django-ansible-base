@@ -3,8 +3,8 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.contenttypes.models import ContentType
-from django.urls import reverse
 
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.resource_registry.models import Resource
 from ansible_base.resource_registry.utils.resource_type_processor import ResourceTypeProcessor
 from test_app.models import EncryptionModel, Organization
@@ -12,7 +12,7 @@ from test_app.resource_api import APIConfig, UserProcessor
 
 
 def test_service_index_root(user_api_client):
-    resp = user_api_client.get(reverse('service-index-root'))
+    resp = user_api_client.get(get_relative_url('service-index-root'))
     assert resp.status_code == 200
     assert 'metadata' in resp.data
     assert 'resources' in resp.data
@@ -21,7 +21,7 @@ def test_service_index_root(user_api_client):
 
 def test_resources_list(admin_api_client):
     """Test that the resource list is working."""
-    url = reverse("resource-list")
+    url = get_relative_url("resource-list")
     resp = admin_api_client.get(url + "?content_type__resource_type__name=aap.resourcemigrationtestmodel")
 
     assert resp.status_code == 200
@@ -31,7 +31,7 @@ def test_resources_list(admin_api_client):
 
 
 def test_resource_list_all_types(organization, user, team, admin_api_client):
-    resp = admin_api_client.get(reverse("resource-list"))
+    resp = admin_api_client.get(get_relative_url("resource-list"))
     assert resp.status_code == 200, resp.data
 
     # lazy way of checking that objects are in the output
@@ -58,7 +58,7 @@ def test_resources_delete_api(admin_api_client, django_user_model):
     assert Resource.objects.filter(name=user.username, object_id=user.pk, content_type=c_type.pk).exists()
 
     ansible_id = Resource.objects.get(object_id=user.pk, content_type=c_type.pk).ansible_id
-    admin_api_client.delete(reverse("resource-detail", kwargs={"ansible_id": ansible_id}))
+    admin_api_client.delete(get_relative_url("resource-detail", kwargs={"ansible_id": ansible_id}))
 
     assert not Resource.objects.filter(object_id=user.pk, content_type=c_type.pk).exists()
     assert not django_user_model.objects.filter(pk=user.pk).exists()
@@ -69,7 +69,7 @@ def test_resources_api_invalid_delete(admin_api_client, local_authenticator):
 
     # Authenticator is not allowed to be managed by the resources api
     ansible_id = Resource.get_resource_for_object(local_authenticator).ansible_id
-    resp = admin_api_client.delete(reverse("resource-detail", kwargs={"ansible_id": ansible_id}))
+    resp = admin_api_client.delete(get_relative_url("resource-detail", kwargs={"ansible_id": ansible_id}))
 
     assert resp.status_code == 400
     assert "resource_type" in resp.data
@@ -89,7 +89,7 @@ def test_resource_update(
     c_type = ContentType.objects.get_for_model(user)
     resource = Resource.objects.get(object_id=user.pk, content_type=c_type.pk)
 
-    url = reverse("resource-detail", kwargs={"ansible_id": resource.ansible_id})
+    url = get_relative_url("resource-detail", kwargs={"ansible_id": resource.ansible_id})
 
     data = {"resource_type": "shared.user", "resource_data": {"username": user.username}}
 
@@ -117,7 +117,7 @@ def test_resource_update_ansible_id(admin_api_client, user):
     ansible_id = Resource.objects.get(object_id=user.pk, content_type=c_type.pk).ansible_id
     new_ansible_id = str(uuid.uuid4())
 
-    url = reverse("resource-detail", kwargs={"ansible_id": ansible_id})
+    url = get_relative_url("resource-detail", kwargs={"ansible_id": ansible_id})
 
     data = {"ansible_id": new_ansible_id}
     resp = admin_api_client.patch(url, data, format="json")
@@ -126,7 +126,7 @@ def test_resource_update_ansible_id(admin_api_client, user):
 
     assert admin_api_client.get(url).status_code == 404
 
-    resp = admin_api_client.get(reverse("resource-detail", kwargs={"ansible_id": new_ansible_id}))
+    resp = admin_api_client.get(get_relative_url("resource-detail", kwargs={"ansible_id": new_ansible_id}))
 
     assert resp.status_code == 200
     assert resp.data["ansible_id"] == new_ansible_id
@@ -138,7 +138,7 @@ def test_resource_update_service_id(admin_api_client, user):
     ansible_id = Resource.objects.get(object_id=user.pk, content_type=c_type.pk).ansible_id
     new_service_id = str(uuid.uuid4())
 
-    url = reverse("resource-detail", kwargs={"ansible_id": ansible_id})
+    url = get_relative_url("resource-detail", kwargs={"ansible_id": ansible_id})
 
     data = {"service_id": new_service_id}
     resp = admin_api_client.patch(url, data, format="json")
@@ -151,7 +151,7 @@ def test_resource_partial_update(admin_api_client, user):
     c_type = ContentType.objects.get_for_model(user)
     ansible_id = Resource.objects.get(object_id=user.pk, content_type=c_type.pk).ansible_id
 
-    url = reverse("resource-detail", kwargs={"ansible_id": ansible_id})
+    url = get_relative_url("resource-detail", kwargs={"ansible_id": ansible_id})
 
     resp = admin_api_client.patch(url, {"resource_data": {"first_name": "foo", "is_superuser": True}}, format="json")
     assert resp.status_code == 200
@@ -199,7 +199,7 @@ def test_resource_partial_update(admin_api_client, user):
 def test_resources_api_crd(admin_api_client, resource):
     """Test create, read, delete."""
     # create resource
-    url = reverse("resource-list")
+    url = get_relative_url("resource-list")
     response = admin_api_client.post(url, resource, format="json")
     assert response.status_code == 201
 
@@ -215,7 +215,7 @@ def test_resources_api_crd(admin_api_client, resource):
         assert response.data["resource_data"][key] == resource["resource_data"][key]
 
     # read resource
-    detail_url = reverse("resource-detail", kwargs={"ansible_id": response.data["ansible_id"]})
+    detail_url = get_relative_url("resource-detail", kwargs={"ansible_id": response.data["ansible_id"]})
     detail_response = admin_api_client.get(detail_url)
     assert detail_response.status_code == 200
     assert detail_response.data["ansible_id"] == response.data["ansible_id"]
@@ -270,7 +270,7 @@ def test_resources_api_crd(admin_api_client, resource):
 def test_resources_create_invalid(admin_api_client, resource):
     """Test validation on resource API for resource creation."""
     # create resource
-    url = reverse("resource-list")
+    url = get_relative_url("resource-list")
     response = admin_api_client.post(url, resource["data"], format="json")
     assert response.status_code == 400
     assert resource["field_name"] in response.data
@@ -282,7 +282,7 @@ def test_resource_summary_fields(
 ):
     resource = Resource.get_resource_for_object(organization)
 
-    url = reverse("organization-detail", kwargs={"pk": organization.pk})
+    url = get_relative_url("organization-detail", kwargs={"pk": organization.pk})
 
     resp = admin_api_client.get(url)
     assert resp.status_code == 200
@@ -299,7 +299,7 @@ def test_team_organization_field(admin_api_client, organization, organization_1,
     org0_id = str(organization.resource.ansible_id)
     org1_id = str(organization_1.resource.ansible_id)
 
-    url = reverse("resource-detail", kwargs={"ansible_id": team_id})
+    url = get_relative_url("resource-detail", kwargs={"ansible_id": team_id})
 
     # Test that organization field exists
     resp = admin_api_client.get(url)
@@ -321,7 +321,7 @@ def test_team_organization_field_does_not_exist(admin_api_client, team):
     bad_id = str(uuid.uuid4())
     team_id = str(team.resource.ansible_id)
 
-    url = reverse("resource-detail", kwargs={"ansible_id": team_id})
+    url = get_relative_url("resource-detail", kwargs={"ansible_id": team_id})
 
     data = {"resource_data": {"organization": bad_id}}
     resp = admin_api_client.patch(url, data, format="json")
@@ -338,7 +338,7 @@ def test_processor_pre_serialize(admin_api_client, organization):
     class PatchedConfig(APIConfig):
         custom_resource_processors = {"shared.organization": CustomProcessor}
 
-    url = reverse("resource-detail", kwargs={"ansible_id": str(organization.resource.ansible_id)})
+    url = get_relative_url("resource-detail", kwargs={"ansible_id": str(organization.resource.ansible_id)})
 
     with patch("test_app.resource_api.APIConfig", PatchedConfig):
         resp = admin_api_client.get(url)
@@ -354,7 +354,7 @@ def test_processor_pre_serialize_additional(admin_api_client, admin_user):
     class PatchedConfig(APIConfig):
         custom_resource_processors = {"shared.user": CustomProcessor}
 
-    url = reverse("resource-additional-data", kwargs={"ansible_id": str(admin_user.resource.ansible_id)})
+    url = get_relative_url("resource-additional-data", kwargs={"ansible_id": str(admin_user.resource.ansible_id)})
 
     with patch("test_app.resource_api.APIConfig", PatchedConfig):
         resp = admin_api_client.get(url)
@@ -373,13 +373,13 @@ def test_processor_save(admin_api_client):
 
     with patch("test_app.resource_api.APIConfig", PatchedConfig):
         # Test creating an organization
-        url = reverse("resource-list")
+        url = get_relative_url("resource-list")
         resp = admin_api_client.post(url, {"resource_type": "shared.organization", "resource_data": {"name": "my_name"}}, format="json")
         assert resp.data["name"] == "HELLO my_name"
         assert Organization.objects.filter(name="HELLO my_name").exists()
 
         # Test updating an organization
-        url = reverse("resource-detail", kwargs={"ansible_id": resp.data["ansible_id"]})
+        url = get_relative_url("resource-detail", kwargs={"ansible_id": resp.data["ansible_id"]})
         resp = admin_api_client.put(url, {"resource_data": {"name": "my_name2"}}, format="json")
         assert resp.data["name"] == "HELLO my_name2"
         assert Organization.objects.filter(name="HELLO my_name2").exists()

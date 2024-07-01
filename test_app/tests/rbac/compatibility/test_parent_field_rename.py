@@ -1,7 +1,7 @@
 import pytest
 from django.contrib.contenttypes.models import ContentType
-from django.urls import reverse
 
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.models import RoleDefinition
 from ansible_base.rbac.permission_registry import permission_registry
 from test_app.models import Organization, ParentName
@@ -63,7 +63,7 @@ def test_give_user_organization_wide_permission(user, org_pn_rd, pn_obj, organiz
 
 @pytest.mark.django_db
 def test_make_org_api_assignment(admin_api_client, org_pn_rd, organization, pn_obj, user):
-    url = reverse('roleuserassignment-list')
+    url = get_relative_url('roleuserassignment-list')
     assert not user.has_obj_perm(pn_obj, 'change')
     data = dict(role_definition=org_pn_rd.id, user=user.id, content_type='aap.parentname', object_id=organization.id)
     response = admin_api_client.post(url, data=data, format="json")

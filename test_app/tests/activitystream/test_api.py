@@ -3,17 +3,17 @@ from datetime import timedelta
 import pytest
 from crum import impersonate
 from django.contrib.contenttypes.models import ContentType
-from django.urls import reverse
 from django.utils.http import urlencode
 
 from ansible_base.activitystream.models import Entry
+from ansible_base.lib.utils.response import get_relative_url
 
 
 def test_activitystream_api_read(admin_api_client, user):
     """
     Test that we can read activity stream events via the API.
     """
-    url = reverse("activitystream-list")
+    url = get_relative_url("activitystream-list")
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert response.data["count"] > 0
@@ -35,7 +35,7 @@ def test_activitystream_api_read_only(admin_api_client, user):
     """
     Test that we can *only* read activity stream events via the API.
     """
-    url = reverse("activitystream-list")
+    url = get_relative_url("activitystream-list")
     response = admin_api_client.post(url)
     assert response.status_code == 405
     response = admin_api_client.put(url)
@@ -61,7 +61,7 @@ def test_activitystream_api_permission_classes(admin_api_client, user_api_client
     If RBAC is enabled, then it locks down permissions on its own, so we allow IsAuthenticated.
     If RBAC is not enabled, then we require IsSuperuser.
     """
-    url = reverse("activitystream-list")
+    url = get_relative_url("activitystream-list")
 
     # We *cannot* modify the list in place, pytest-django can't undo that change
     # at the end of the test.
@@ -89,7 +89,7 @@ def test_activitystream_api_permission_classes(admin_api_client, user_api_client
 
 
 def test_activitystream_api_filtering(admin_api_client, user):
-    url = reverse("activitystream-list")
+    url = get_relative_url("activitystream-list")
     query_params = {
         'operation__exact': 'create',
         'content_type__model__exact': 'user',
@@ -131,7 +131,7 @@ def test_activitystream_api_deleted_model(admin_api_client):
             "removed_fields": {},
         },
     )
-    url = reverse("activitystream-detail", args=[entry.id])
+    url = get_relative_url("activitystream-detail", args=[entry.id])
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert response.data["content_type"] == ct.id
@@ -151,7 +151,7 @@ def test_activitystream_api_deleted_related_model(admin_api_client, animal):
         related_object_id=1337,
         changes=None,
     )
-    url = reverse("activitystream-detail", args=[entry.id])
+    url = get_relative_url("activitystream-detail", args=[entry.id])
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert response.data["related_content_type"] == ct.id
@@ -159,7 +159,7 @@ def test_activitystream_api_deleted_related_model(admin_api_client, animal):
 
 
 def test_activitystream_api_ordering(admin_api_client, animal, user, random_user):
-    url = reverse("activitystream-list")
+    url = get_relative_url("activitystream-list")
     query_params = {
         'order_by': '-id',
     }
@@ -175,7 +175,7 @@ def test_activitystream_api_related_fks_not_in_list_view(admin_api_client, anima
     """
     animal.owner = random_user
     animal.save()
-    url = reverse("activitystream-list")
+    url = get_relative_url("activitystream-list")
     response = admin_api_client.get(url)
     assert response.status_code == 200
     entry = response.data["results"][0]
@@ -190,7 +190,7 @@ def test_activitystream_api_related_fks_in_detail_view(admin_api_client, animal,
     """
     animal.owner = random_user
     animal.save()
-    url = reverse("activitystream-detail", args=[animal.activity_stream_entries.last().id])
+    url = get_relative_url("activitystream-detail", args=[animal.activity_stream_entries.last().id])
     response = admin_api_client.get(url)
     assert response.status_code == 200
     entry = response.data
@@ -210,7 +210,7 @@ def test_activitystream_api_related_fks_refused_for_bad_time_delta(admin_api_cli
     random_user.created = last_entry.created + timedelta(days=1)
     random_user.save()
 
-    url = reverse("activitystream-detail", args=[last_entry.id])
+    url = get_relative_url("activitystream-detail", args=[last_entry.id])
     response = admin_api_client.get(url)
     assert response.status_code == 200
     entry = response.data
@@ -223,12 +223,12 @@ def test_activitystream_api_related_content_object(admin_api_client, animal):
     """
     Ensure that we can link to the thing we're an entry for.
     """
-    url = reverse("activitystream-detail", args=[animal.activity_stream_entries.last().id])
+    url = get_relative_url("activitystream-detail", args=[animal.activity_stream_entries.last().id])
     response = admin_api_client.get(url)
     assert response.status_code == 200
     entry = response.data
     assert entry["operation"] == "create"
-    expected_url = reverse("animal-detail", args=[animal.id])
+    expected_url = get_relative_url("animal-detail", args=[animal.id])
     assert entry["related"]["content_object"] == expected_url
 
 
@@ -245,12 +245,12 @@ def test_activitystream_api_related_related_content_object(admin_api_client, ani
     assert db_entry.related_content_type == ContentType.objects.get_for_model(random_user)
     assert db_entry.content_type == ContentType.objects.get_for_model(animal)
 
-    url = reverse("activitystream-detail", args=[db_entry.id])
+    url = get_relative_url("activitystream-detail", args=[db_entry.id])
     response = admin_api_client.get(url)
     assert response.status_code == 200
     entry = response.data
     assert entry["operation"] == "associate"
-    expected_url = reverse("user-detail", args=[random_user.id])
+    expected_url = get_relative_url("user-detail", args=[random_user.id])
     assert entry["related"]["related_content_object"] == expected_url
     assert entry["changes"] is None
     assert entry["content_type_model"] == 'animal'
@@ -277,7 +277,7 @@ def test_activitystream_api_summary_fields(admin_api_client, animal, admin_user,
     with impersonate(user):
         animal.save()
 
-    url = reverse("activitystream-detail", args=[animal.activity_stream_entries.last().id])
+    url = get_relative_url("activitystream-detail", args=[animal.activity_stream_entries.last().id])
     query_params = {
         'page_size': 100,
     }
@@ -298,22 +298,22 @@ def test_activitystream_api_summary_fields_after_patch(admin_api_client, animal,
     animal.save()
     animal.refresh_from_db()
 
-    url = reverse("animal-detail", args=[animal.id])
+    url = get_relative_url("animal-detail", args=[animal.id])
     response = admin_api_client.patch(url, data={"owner": random_user.id})
     assert response.status_code == 200
 
     stream_id = animal.activity_stream_entries.last().id
-    url = reverse("activitystream-detail", args=[stream_id])
+    url = get_relative_url("activitystream-detail", args=[stream_id])
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert response.data["summary_fields"]["changes.owner"]["username"] == random_user.username
     assert response.data["summary_fields"]["changes.owner"]["id"] == random_user.id
 
-    url = reverse("animal-detail", args=[animal.id])
+    url = get_relative_url("animal-detail", args=[animal.id])
     response = admin_api_client.patch(url, data={"owner": random_user_1.id})
     assert response.status_code == 200
 
-    url = reverse("activitystream-detail", args=[stream_id])
+    url = get_relative_url("activitystream-detail", args=[stream_id])
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert response.data["summary_fields"]["changes.owner"]["username"] == random_user.username
@@ -329,7 +329,7 @@ def test_activitystream_api_no_fatal_with_invalid_fks(admin_api_client, animal):
     entry.object_id = '31337'
     entry.changes['changed_fields']['owner'] = ['31337', '99999']
     Entry.objects.bulk_update([entry], ['object_id', 'changes'])
-    url = reverse("activitystream-detail", args=[entry.id])
+    url = get_relative_url("activitystream-detail", args=[entry.id])
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert "changes.owner" not in response.data["summary_fields"]
@@ -347,7 +347,7 @@ def test_activitystream_api_deleted_object(admin_api_client, animal, user):
     animal.delete()
     entry = entries.last()
     assert entry.operation == "delete"
-    url = reverse("activitystream-detail", args=[entry.id])
+    url = get_relative_url("activitystream-detail", args=[entry.id])
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert response.data["operation"] == "delete"

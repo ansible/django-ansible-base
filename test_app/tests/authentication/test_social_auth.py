@@ -49,7 +49,7 @@ class SubstringMatcher:
         ({'type': 'foo', 'name': 'bar', 'configuration': {}}, False, False, {'type': 'foo', 'name': 'bar', 'configuration': {'CALLBACK_URL': '/foo/bar'}}),
     ],
 )
-@mock.patch("ansible_base.authentication.social_auth.reverse")
+@mock.patch("ansible_base.authentication.social_auth.get_fully_qualified_url")
 @mock.patch("ansible_base.authentication.social_auth.generate_authenticator_slug")
 def test_social_auth_validate_callback_mixin(mocked_generate_slug, mocked_reverse, test_data, has_instance, has_slug, expected_result):
     mocked_reverse.return_value = '/foo/bar'

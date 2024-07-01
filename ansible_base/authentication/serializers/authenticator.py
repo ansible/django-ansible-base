@@ -1,13 +1,13 @@
 from collections import OrderedDict
 
 from django.utils.translation import gettext_lazy as _
-from rest_framework.reverse import reverse
 from rest_framework.serializers import ChoiceField, ValidationError
 
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin, get_authenticator_plugins
 from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.serializers.common import NamedCommonModelSerializer
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
+from ansible_base.lib.utils.response import get_relative_url
 
 
 class AuthenticatorSerializer(NamedCommonModelSerializer):
@@ -115,6 +115,6 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
         from ansible_base.authentication.views.authenticator_users import get_authenticator_user_view
 
         if get_authenticator_user_view():
-            related['users'] = reverse('authenticator-users-list', kwargs={'pk': obj.pk})
+            related['users'] = get_relative_url('authenticator-users-list', kwargs={'pk': obj.pk})
 
         return related

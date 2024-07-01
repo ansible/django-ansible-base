@@ -1,9 +1,9 @@
 from pathlib import Path
 
 import pytest
-from django.urls import reverse
 
 from ansible_base.lib.testing.util import StaticResourceAPIClient
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.resource_registry.tasks.sync import ResourceSyncHTTPError, SyncExecutor
 
 
@@ -58,9 +58,8 @@ def test_resource_sync(static_api_client, stdout):
 
 @pytest.mark.django_db
 def test_delete_orphans(admin_api_client, static_api_client, stdout):
-
     # Create a local user that is managed by resource_server but not returned from the manifest
-    url = reverse("resource-list")
+    url = get_relative_url("resource-list")
     resource = {
         "service_id": "57592fbc-7ecb-405f-9f5f-ebad20932d38",  # from fixtures/static/metadata
         "resource_type": "shared.user",
@@ -78,9 +77,8 @@ def test_delete_orphans(admin_api_client, static_api_client, stdout):
 
 @pytest.mark.django_db
 def test_update_existing_resource(admin_api_client, static_api_client, stdout):
-
     # Create a local user with different resource_data than the one manifest returns
-    url = reverse("resource-list")
+    url = get_relative_url("resource-list")
     resource = {
         "resource_type": "shared.user",
         "service_id": "57592fbc-7ecb-405f-9f5f-ebad20932d38",  # from fixtures/static/metadata
@@ -105,9 +103,8 @@ def test_update_existing_resource(admin_api_client, static_api_client, stdout):
 
 @pytest.mark.django_db
 def test_noop_existing_resource(admin_api_client, static_api_client, stdout):
-
     # Create a local user with EXACT resource_data of the one manifest returns
-    url = reverse("resource-list")
+    url = get_relative_url("resource-list")
     resource = {
         "resource_type": "shared.user",
         "service_id": "57592fbc-7ecb-405f-9f5f-ebad20932d38",  # from fixtures/static/metadata

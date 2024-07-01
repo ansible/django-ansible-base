@@ -1,7 +1,7 @@
 import pytest
 from django.test import override_settings
-from django.urls import reverse
 
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.policies import visible_users
 from test_app.models import Organization, Team, User
 
@@ -11,7 +11,7 @@ class TestUserListView:
     CREATE_DATA = {'username': 'created-user', 'email': 'foo@foo.invalid', 'password': '$$$@@AAzzzz'}
 
     def test_user_list_superuser(self, admin_api_client, rando):
-        url = reverse('user-list')
+        url = get_relative_url('user-list')
         response = admin_api_client.get(url)
         assert response.status_code == 200
         assert response.data['count'] >= 2  # Count needs to be fixed due to duplicated user issue
@@ -21,7 +21,7 @@ class TestUserListView:
         assert User.objects.filter(username='created-user').exists()
 
     def test_org_admin_can_create_user(self, user, user_api_client, organization, org_admin_rd):
-        url = reverse('user-list')
+        url = get_relative_url('user-list')
         response = user_api_client.get(url)
         assert response.status_code == 200
         assert response.data['count'] >= 1
@@ -39,7 +39,7 @@ class TestUserListView:
 
     def test_superuser_create_permission(self, user, user_api_client, organization, org_admin_rd):
         "Only superusers can create other superusers"
-        url = reverse('user-list')
+        url = get_relative_url('user-list')
         create_data = self.CREATE_DATA.copy()
         create_data['is_superuser'] = True
 
@@ -63,7 +63,7 @@ class TestUserListView:
     def test_org_admin_setting(self, user, user_api_client, org_admin_rd, organization, admin_setting):
         org_admin_rd.give_permission(user, organization)
         User.objects.create(username='rando')  # not in organization
-        url = reverse('user-list')
+        url = get_relative_url('user-list')
         with override_settings(ORG_ADMINS_CAN_SEE_ALL_USERS=admin_setting):
             response = user_api_client.get(url)
             response_usernames = set(item['username'] for item in response.data['results'])
@@ -75,7 +75,7 @@ class TestUserListView:
     def test_org_members_can_view_users(self, user, user_api_client, organization, org_member_rd):
         rando = User.objects.create(username='rando')
         admin = User.objects.create(username='an-admin', is_superuser=True)
-        url = reverse('user-list')
+        url = get_relative_url('user-list')
 
         org_member_rd.give_permission(rando, organization)
 
@@ -99,7 +99,7 @@ class TestUserListView:
         assert response.status_code == 403
 
     def test_user_list_non_admin(self, user_api_client, rando):
-        url = reverse('user-list')
+        url = get_relative_url('user-list')
         response = user_api_client.get(url)
         assert response.status_code == 200
         assert response.data['count'] >= 1  # user can still see themselves
@@ -112,7 +112,7 @@ class TestUserListView:
 @pytest.mark.django_db
 class TestUserDetailView:
     def test_user_detail_works_superuser(self, admin_api_client, rando):
-        url = reverse('user-detail', kwargs={'pk': rando.pk})
+        url = get_relative_url('user-detail', kwargs={'pk': rando.pk})
         response = admin_api_client.get(url)
         assert response.status_code == 200
 
@@ -121,7 +121,7 @@ class TestUserDetailView:
 
     def test_org_admin_can_edit_user(self, user, user_api_client, organization, org_member_rd, org_admin_rd):
         rando = User.objects.create(username='rando')
-        url = reverse('user-detail', kwargs={'pk': rando.pk})
+        url = get_relative_url('user-detail', kwargs={'pk': rando.pk})
 
         response = user_api_client.get(url)
         assert response.status_code == 404
@@ -145,13 +145,16 @@ class TestUserDetailView:
     @pytest.mark.parametrize('is_superuser', [False, True])
     def test_superuser_can_delete_new_user(self, admin_api_client, is_superuser):
         alice = User.objects.create(username='alice', is_superuser=is_superuser)
-        url = reverse('user-detail', kwargs={'pk': alice.pk})
+        url = get_relative_url('user-detail', kwargs={'pk': alice.pk})
 
         response = admin_api_client.delete(url)
         assert response.status_code == 204
 
     def test_user_can_not_delete_themselves(self, user, user_api_client, admin_user, admin_api_client):
-        data = {user_api_client: reverse('user-detail', kwargs={'pk': user.pk}), admin_api_client: reverse('user-detail', kwargs={'pk': admin_user.pk})}
+        data = {
+            user_api_client: get_relative_url('user-detail', kwargs={'pk': user.pk}),
+            admin_api_client: get_relative_url('user-detail', kwargs={'pk': admin_user.pk}),
+        }
 
         for api_client, url in data.items():
             response = api_client.delete(url)
@@ -165,7 +168,7 @@ class TestRoleBasedAssignment:
         rando = User.objects.create(username='rando')
         unrelated_org = Organization.objects.create(name='another-org')
         org_admin_rd.give_permission(user, unrelated_org)  # setup permissions so user can see rando
-        url = reverse('roleuserassignment-list')
+        url = get_relative_url('roleuserassignment-list')
 
         org_member_rd.give_permission(user, organization)
 
@@ -182,7 +185,7 @@ class TestRoleBasedAssignment:
         assert rando.has_obj_perm(organization, 'member')
 
     def test_team_admins_can_add_children(self, user, user_api_client, organization, inventory, inv_rd, admin_rd, member_rd):
-        url = reverse('roleteamassignment-list')
+        url = get_relative_url('roleteamassignment-list')
 
         parent_team = Team.objects.create(name='parent', organization=organization)
         child_team = Team.objects.create(name='child', organization=organization)
@@ -232,7 +235,7 @@ class TestRelatedUserListView:
     def test_org_admin_list_org_members(self, user, user_api_client, organization, org_member_rd, org_admin_rd):
         org_admin_rd.give_permission(user, organization)
 
-        url = reverse('organization-users-list', kwargs={'pk': organization.pk})
+        url = get_relative_url('organization-users-list', kwargs={'pk': organization.pk})
         self._initial_check(url, user_api_client)
         self._assign_users(org_member_rd, organization)
 
@@ -243,7 +246,7 @@ class TestRelatedUserListView:
     def test_org_member_list_org_members(self, user, user_api_client, organization, org_member_rd):
         org_member_rd.give_permission(user, organization)
 
-        url = reverse('organization-users-list', kwargs={'pk': organization.pk})
+        url = get_relative_url('organization-users-list', kwargs={'pk': organization.pk})
         self._initial_check(url, user_api_client, 1)
         self._assign_users(org_member_rd, organization)
 
@@ -255,7 +258,7 @@ class TestRelatedUserListView:
         user.is_superuser = True
         user.save()
 
-        url = reverse('organization-users-list', kwargs={'pk': organization.pk})
+        url = get_relative_url('organization-users-list', kwargs={'pk': organization.pk})
         self._initial_check(url, user_api_client)
         self._assign_users(org_member_rd, organization)
 
@@ -274,11 +277,11 @@ class TestRelationshipBasedAssignment:
     """
 
     def test_parent_object_view_permission(self, user, user_api_client, organization, org_member_rd):
-        url = reverse('organization-list')
+        url = get_relative_url('organization-list')
         response = user_api_client.get(url)
         assert response.data['count'] == 0
 
-        url = reverse('organization-users-list', kwargs={'pk': organization.pk})
+        url = get_relative_url('organization-users-list', kwargs={'pk': organization.pk})
         response = user_api_client.get(url)
         assert response.status_code == 404, response.data
 
@@ -289,7 +292,7 @@ class TestRelationshipBasedAssignment:
 
     def test_org_admins_can_add_members(self, user, user_api_client, organization, org_member_rd, org_admin_rd):
         rando = User.objects.create(username='rando')
-        url = reverse('organization-users-associate', kwargs={'pk': organization.pk})
+        url = get_relative_url('organization-users-associate', kwargs={'pk': organization.pk})
 
         org_member_rd.give_permission(user, organization)
 
@@ -311,7 +314,7 @@ class TestRelationshipBasedAssignment:
         org_admin_rd.give_permission(user, organization)
         rando = User.objects.create(username='rando')
         assert not visible_users(user).filter(pk=rando.id).exists()  # sanity
-        url = reverse('organization-admins-associate', kwargs={'pk': organization.pk})
+        url = get_relative_url('organization-admins-associate', kwargs={'pk': organization.pk})
 
         data = {'instances': [rando.id]}
 
@@ -329,7 +332,7 @@ class TestRelationshipBasedAssignment:
         assert rando.has_obj_perm(organization, 'change')  # action took full effect
 
     def test_sublist_visibility(self, user, user_api_client, team, member_rd, admin_rd):
-        url = reverse('team-users-list', kwargs={'pk': team.pk})
+        url = get_relative_url('team-users-list', kwargs={'pk': team.pk})
 
         # with no permissions, user should not be able to make a GET to members list
         response = user_api_client.get(url)

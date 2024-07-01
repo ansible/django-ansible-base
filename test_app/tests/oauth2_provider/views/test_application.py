@@ -1,8 +1,8 @@
 import pytest
 from django.contrib.auth.hashers import check_password
-from django.urls import reverse
 
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.oauth2_provider.models import OAuth2AccessToken, OAuth2Application, OAuth2RefreshToken
 
 
@@ -20,7 +20,7 @@ def test_oauth2_provider_application_list(request, client_fixture, expected_stat
     Test that we can view the list of OAuth2 applications iff we are authenticated.
     """
     client = request.getfixturevalue(client_fixture)
-    url = reverse("application-list")
+    url = get_relative_url("application-list")
     response = client.get(url)
     assert response.status_code == expected_status
     if expected_status == 200:
@@ -44,23 +44,23 @@ def test_oauth2_provider_application_related(admin_api_client, oauth2_applicatio
     """
     oauth2_application = oauth2_application[0]
     if view == "application-list":
-        url = reverse(view)
+        url = get_relative_url(view)
     else:
-        url = reverse(view, args=[oauth2_application.pk])
+        url = get_relative_url(view, args=[oauth2_application.pk])
 
     oauth2_application.organization = None
     oauth2_application.save()
     response = admin_api_client.get(url)
     assert response.status_code == 200
-    assert path(response.data)['related']['access_tokens'] == reverse("application-access_tokens-list", args=[oauth2_application.pk])
+    assert path(response.data)['related']['access_tokens'] == get_relative_url("application-access_tokens-list", args=[oauth2_application.pk])
     assert 'organization' not in path(response.data)['related']
 
     oauth2_application.organization = organization
     oauth2_application.save()
     response = admin_api_client.get(url)
     assert response.status_code == 200
-    assert path(response.data)['related']['access_tokens'] == reverse("application-access_tokens-list", args=[oauth2_application.pk])
-    assert path(response.data)['related']['organization'] == reverse("organization-detail", args=[organization.pk])
+    assert path(response.data)['related']['access_tokens'] == get_relative_url("application-access_tokens-list", args=[oauth2_application.pk])
+    assert path(response.data)['related']['organization'] == get_relative_url("organization-detail", args=[organization.pk])
 
 
 @pytest.mark.parametrize(
@@ -78,7 +78,7 @@ def test_oauth2_provider_application_detail(request, client_fixture, expected_st
     """
     oauth2_application = oauth2_application[0]
     client = request.getfixturevalue(client_fixture)
-    url = reverse("application-detail", args=[oauth2_application.pk])
+    url = get_relative_url("application-detail", args=[oauth2_application.pk])
     response = client.get(url)
     assert response.status_code == expected_status
     if expected_status == 200:
@@ -98,7 +98,7 @@ def test_oauth2_provider_application_create(request, client_fixture, expected_st
     As an admin, I should be able to create an OAuth2 application.
     """
     client = request.getfixturevalue(client_fixture)
-    url = reverse("application-list")
+    url = get_relative_url("application-list")
     name = randname("Test Application")
     response = client.post(
         url,
@@ -129,7 +129,7 @@ def test_oauth2_provider_application_validator(admin_api_client):
     """
     If we don't get enough information in the request, we should 400
     """
-    url = reverse("application-list")
+    url = get_relative_url("application-list")
     response = admin_api_client.post(
         url,
         data={
@@ -156,7 +156,7 @@ def test_oauth2_provider_application_update(request, client_fixture, expected_st
     """
     oauth2_application = oauth2_application[0]
     client = request.getfixturevalue(client_fixture)
-    url = reverse("application-detail", args=[oauth2_application.pk])
+    url = get_relative_url("application-detail", args=[oauth2_application.pk])
     response = client.patch(
         url,
         data={
@@ -184,7 +184,7 @@ def test_oauth2_provider_application_client_secret_encrypted(admin_api_client, o
     The client_secret should be encrypted in the database.
     We only show it to the user once, on creation. All other requests should show the encrypted value.
     """
-    url = reverse("application-list")
+    url = get_relative_url("application-list")
 
     # POST
     response = admin_api_client.post(
@@ -218,13 +218,13 @@ def test_oauth2_provider_application_client_secret_encrypted(admin_api_client, o
     assert check_password(response.data['client_secret'], application.client_secret)
 
     # GET
-    response = admin_api_client.get(reverse("application-detail", args=[application.pk]))
+    response = admin_api_client.get(get_relative_url("application-detail", args=[application.pk]))
     assert response.status_code == 200
     assert response.data['client_secret'] == ENCRYPTED_STRING, response.data
 
     # PATCH
     response = admin_api_client.patch(
-        reverse("application-detail", args=[application.pk]),
+        get_relative_url("application-detail", args=[application.pk]),
         data={'name': 'Updated Name'},
     )
     assert response.status_code == 200
@@ -232,7 +232,7 @@ def test_oauth2_provider_application_client_secret_encrypted(admin_api_client, o
 
     # PUT
     response = admin_api_client.put(
-        reverse("application-detail", args=[application.pk]),
+        get_relative_url("application-detail", args=[application.pk]),
         data={
             'name': 'Updated Name',
             'description': 'Updated Description',
@@ -246,7 +246,7 @@ def test_oauth2_provider_application_client_secret_encrypted(admin_api_client, o
     assert 'client_secret' not in response.data
 
     # DELETE
-    response = admin_api_client.delete(reverse("application-detail", args=[application.pk]))
+    response = admin_api_client.delete(get_relative_url("application-detail", args=[application.pk]))
     assert response.status_code == 204
     assert response.data is None, response.data
 
@@ -257,7 +257,7 @@ def test_oauth2_application_delete(oauth2_application, admin_api_client):
     Test that we can delete an OAuth2 application.
     """
     oauth2_application = oauth2_application[0]
-    url = reverse("application-detail", args=[oauth2_application.pk])
+    url = get_relative_url("application-detail", args=[oauth2_application.pk])
     response = admin_api_client.delete(url)
     assert response.status_code == 204
     assert OAuth2Application.objects.filter(client_id=oauth2_application.client_id).count() == 0
@@ -267,7 +267,7 @@ def test_oauth2_application_delete(oauth2_application, admin_api_client):
 
 @pytest.mark.django_db
 def test_oauth2_application_prevent_search_client_secret(oauth2_application, admin_api_client):
-    url = reverse("application-list")
+    url = get_relative_url("application-list")
     query_params = {
         'client_secret__isnull': False,
     }

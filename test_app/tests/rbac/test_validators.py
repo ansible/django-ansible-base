@@ -1,8 +1,8 @@
 import pytest
 from django.test.utils import override_settings
 from rest_framework.exceptions import ValidationError
-from rest_framework.reverse import reverse
 
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.models import RoleDefinition
 from ansible_base.rbac.permission_registry import permission_registry
 from test_app.models import Credential, Inventory, Organization
@@ -27,7 +27,7 @@ def test_custom_role_rules_do_not_apply_to_managed_roles():
 @pytest.mark.django_db
 @override_settings(ANSIBLE_BASE_ALLOW_CUSTOM_ROLES=False)
 def test_role_definition_enablement_validation_in_api(admin_api_client):
-    url = reverse('roledefinition-list')
+    url = get_relative_url('roledefinition-list')
     r = admin_api_client.post(url, data={'name': 'foo', 'permissions': ['view_inventory'], 'content_type': 'aap.inventory'})
     assert r.status_code == 400, r.data
     assert 'Creating custom roles is disabled' in str(r.data)

@@ -4,7 +4,6 @@ from unittest.mock import MagicMock
 
 import ldap
 import pytest
-from django.urls import reverse
 from rest_framework.serializers import ValidationError
 from typeguard import suppress_type_checks
 
@@ -12,6 +11,7 @@ from ansible_base.authentication.authenticator_plugins.ldap import Authenticator
 from ansible_base.authentication.models import Authenticator
 from ansible_base.authentication.session import SessionAuthentication
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
+from ansible_base.lib.utils.response import get_relative_url
 
 authenticated_test_page = "authenticator-list"
 
@@ -28,7 +28,7 @@ def test_ldap_auth_successful(authenticate, unauthenticated_api_client, ldap_aut
     authenticate.return_value = user
     client.login()
 
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     response = client.get(url)
     assert response.status_code == 200
 
@@ -42,7 +42,7 @@ def test_ldap_auth_failed(authenticate, unauthenticated_api_client, ldap_authent
     client = unauthenticated_api_client
     client.login()
 
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     response = client.get(url)
     assert response.status_code == 401
 
@@ -60,7 +60,7 @@ def test_ldap_search_exception(
     """
     Test handling if config.LDAPSearch raises an exception.
     """
-    url = reverse("authenticator-list")
+    url = get_relative_url("authenticator-list")
     data = {
         "name": "LDAP authenticator (should not get created)",
         "enabled": True,
@@ -155,7 +155,7 @@ def test_ldap_create_authenticator_error_handling(
         else:
             ldap_configuration[key] = value
 
-    url = reverse("authenticator-list")
+    url = get_relative_url("authenticator-list")
     data = {
         "name": "LDAP authenticator (should not get created)",
         "enabled": True,
@@ -180,7 +180,7 @@ def test_ldap_create_authenticator_error_handling(
 
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
 def test_ldap_backend_authenticate_encrypted_fields_update(admin_api_client, ldap_authenticator, shut_up_logging):
-    url = reverse("authenticator-detail", kwargs={"pk": ldap_authenticator.pk})
+    url = get_relative_url("authenticator-detail", kwargs={"pk": ldap_authenticator.pk})
     # BIND_PASSWORD is encrypted
     config = ldap_authenticator.configuration
     config["BIND_PASSWORD"] = 'foo'
@@ -210,7 +210,7 @@ def test_ldap_backend_validate_configuration_warn_specific_fields(
     config = ldap_authenticator.configuration
     config["DENY_GROUP"] = "cn=deniedgroup,ou=groups,dc=example,dc=org"
 
-    url = reverse("authenticator-detail", kwargs={"pk": ldap_authenticator.pk})
+    url = get_relative_url("authenticator-detail", kwargs={"pk": ldap_authenticator.pk})
     response = admin_api_client.patch(url, data={"configuration": config}, format="json")
     assert response.status_code == 200
     assert "better to use the authenticator field" in response.data["warnings"]["DENY_GROUP"]
@@ -247,7 +247,7 @@ def test_ldap_backend_authenticate_invalid_user(
     ldap_authenticator.configuration.update(extra_settings)
     ldap_authenticator.save()
     unauthenticated_api_client.login(username="foo", password="bar")
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     response = unauthenticated_api_client.get(url)
     assert response.status_code == 401
     logger.info.assert_any_call(f"User foo could not be authenticated by LDAP {ldap_authenticator.name}")
@@ -282,7 +282,7 @@ def test_ldap_backend_authenticate_empty_username_password(
     Test login flow when authenticate() gets a blank username/password.
     """
     unauthenticated_api_client.login(username=username, password=password)
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     response = unauthenticated_api_client.get(url)
     assert response.status_code == 401
 
@@ -309,7 +309,7 @@ def test_ldap_backend_authenticate_valid_user(
     authenticate.return_value = user
     client = unauthenticated_api_client
     client.login(username=user.username, password="bar")
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     response = client.get(url)
     logger.debug.assert_any_call(f"Forcing LDAP connection to close for {ldap_authenticator.name}")
     logger.info.assert_any_call(f"User {user.username} authenticated by LDAP {ldap_authenticator.name}")
@@ -343,7 +343,7 @@ def test_ldap_backend_authenticate_unbind_exception(
     authenticate.return_value = user
     client = unauthenticated_api_client
     client.login(username=user.username, password="bar")
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     response = client.get(url)
     logger.exception.assert_any_call(f"Got unexpected LDAP exception when forcing LDAP disconnect for user {user.username}, login will still proceed")
     assert response.status_code == 200
@@ -366,7 +366,7 @@ def test_ldap_backend_authenticate_exception(
     authenticate.side_effect = Exception("Something went wrong")
     client = unauthenticated_api_client
     client.login(username="someuser", password="bar")
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     response = client.get(url)
     logger.exception.assert_called_with(f"Encountered an error authenticating to LDAP {ldap_authenticator.name}")
     assert response.status_code == 401
