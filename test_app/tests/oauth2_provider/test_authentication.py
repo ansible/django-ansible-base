@@ -1,9 +1,9 @@
 from unittest import mock
 
 import pytest
-from django.urls import reverse
 from oauthlib.common import generate_token
 
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.oauth2_provider.models import OAuth2AccessToken
 
 
@@ -19,7 +19,7 @@ def test_oauth2_bearer_get_user_correct(unauthenticated_api_client, oauth2_admin
     """
     Perform a GET with a bearer token and ensure the authed user is correct.
     """
-    url = reverse("user-me")
+    url = get_relative_url("user-me")
     response = unauthenticated_api_client.get(
         url,
         headers={'Authorization': f'Bearer {oauth2_admin_access_token.token}'},
@@ -39,7 +39,7 @@ def test_oauth2_bearer_get(unauthenticated_api_client, oauth2_admin_access_token
     """
     GET an animal with a bearer token.
     """
-    url = reverse("animal-detail", kwargs={"pk": animal.pk})
+    url = get_relative_url("animal-detail", kwargs={"pk": animal.pk})
     token = oauth2_admin_access_token.token if token == 'fixture' else generate_token()
     response = unauthenticated_api_client.get(
         url,
@@ -61,7 +61,7 @@ def test_oauth2_bearer_post(unauthenticated_api_client, oauth2_admin_access_toke
     """
     POST an animal with a bearer token.
     """
-    url = reverse("animal-list")
+    url = get_relative_url("animal-list")
     token = oauth2_admin_access_token.token if token == 'fixture' else generate_token()
     data = {
         "name": "Fido",
@@ -88,7 +88,7 @@ def test_oauth2_bearer_patch(unauthenticated_api_client, oauth2_admin_access_tok
     """
     PATCH an animal with a bearer token.
     """
-    url = reverse("animal-detail", kwargs={"pk": animal.pk})
+    url = get_relative_url("animal-detail", kwargs={"pk": animal.pk})
     token = oauth2_admin_access_token.token if token == 'fixture' else generate_token()
     data = {
         "name": "Fido",
@@ -114,7 +114,7 @@ def test_oauth2_bearer_put(unauthenticated_api_client, oauth2_admin_access_token
     """
     PUT an animal with a bearer token.
     """
-    url = reverse("animal-detail", kwargs={"pk": animal.pk})
+    url = get_relative_url("animal-detail", kwargs={"pk": animal.pk})
     token = oauth2_admin_access_token.token if token == 'fixture' else generate_token()
     data = {
         "name": "Fido",
@@ -134,7 +134,7 @@ def test_oauth2_bearer_no_activitystream(unauthenticated_api_client, oauth2_admi
     """
     Ensure no activitystream entries for bearer token based auth
     """
-    url = reverse("animal-detail", kwargs={"pk": animal.pk})
+    url = get_relative_url("animal-detail", kwargs={"pk": animal.pk})
     token = oauth2_admin_access_token.token
     existing_as_count = len(oauth2_admin_access_token.activity_stream_entries)
 
@@ -166,7 +166,7 @@ def test_oauth2_scope_permission(request, admin_user, oauth2_admin_access_token,
     oauth2_admin_access_token.scope = scope
     oauth2_admin_access_token.save()
 
-    url = reverse("animal-list")
+    url = get_relative_url("animal-list")
     data = {
         "name": "Fido",
         "owner": admin_user.pk,
@@ -184,7 +184,7 @@ def test_oauth2_scope_permission_not_oauth(user, user_api_client, only_oauth_sco
     Ensure that non-OAuth (but still authenticated) requests pass through.
     """
 
-    url = reverse("animal-list")
+    url = get_relative_url("animal-list")
     data = {
         "name": "Fido",
         "owner": user.pk,
@@ -198,7 +198,7 @@ def test_oauth2_scope_permission_not_authenticated(user, unauthenticated_api_cli
     Ensure that non-authenticated are blocked.
     """
 
-    url = reverse("animal-list")
+    url = get_relative_url("animal-list")
     data = {
         "name": "Fido",
         "owner": user.pk,

@@ -3,11 +3,11 @@ import functools
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
-from django.urls import reverse
 from django.utils.http import urlencode
 from django.utils.translation import gettext_lazy as _
 
 from ansible_base.lib.abstract_models import ImmutableCommonModel
+from ansible_base.lib.utils.response import get_relative_url
 
 
 class Entry(ImmutableCommonModel):
@@ -107,7 +107,7 @@ class AuditableModel(models.Model):
             'content_type': content_type.pk,
             'object_id': self.pk,
         }
-        activity_stream_url = reverse('activitystream-list') + '?' + urlencode(query_kwargs)
+        activity_stream_url = get_relative_url('activitystream-list') + '?' + urlencode(query_kwargs)
         return {
             'activity_stream': activity_stream_url,
         }

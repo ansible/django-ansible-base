@@ -1,13 +1,13 @@
 import pytest
 from django.test.utils import override_settings
-from rest_framework.reverse import reverse
 
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.models import RoleDefinition
 
 
 @pytest.mark.django_db
 def test_get_role_definition(admin_api_client, inv_rd):
-    url = reverse('roledefinition-detail', kwargs={'pk': inv_rd.pk})
+    url = get_relative_url('roledefinition-detail', kwargs={'pk': inv_rd.pk})
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert set(response.data['permissions']) == set(['aap.change_inventory', 'aap.view_inventory'])
@@ -18,7 +18,7 @@ def test_create_role_definition(admin_api_client):
     """
     Test creation of a custom role definition.
     """
-    url = reverse("roledefinition-list")
+    url = get_relative_url("roledefinition-list")
     data = dict(name='foo-role-def', description='bar', permissions=['aap.view_organization', 'aap.change_organization'], content_type='shared.organization')
     response = admin_api_client.post(url, data=data, format="json")
     assert response.status_code == 201, response.data
@@ -27,7 +27,7 @@ def test_create_role_definition(admin_api_client):
 
 @pytest.mark.django_db
 def test_create_global_role_definition(admin_api_client):
-    url = reverse("roledefinition-list")
+    url = get_relative_url("roledefinition-list")
     data = dict(name='global_view_org', description='bar', permissions=['aap.view_organization'])
     response = admin_api_client.post(url, data=data, format="json")
     assert response.status_code == 201, response.data
@@ -36,7 +36,7 @@ def test_create_global_role_definition(admin_api_client):
 
 @pytest.mark.django_db
 def test_delete_role_definition(admin_api_client, inv_rd):
-    url = reverse('roledefinition-detail', kwargs={'pk': inv_rd.pk})
+    url = get_relative_url('roledefinition-detail', kwargs={'pk': inv_rd.pk})
     response = admin_api_client.delete(url)
     assert response.status_code == 204, response.data
     assert not RoleDefinition.objects.filter(pk=inv_rd.pk).exists()
@@ -45,7 +45,7 @@ def test_delete_role_definition(admin_api_client, inv_rd):
 @pytest.mark.django_db
 def test_get_user_assignment(system_user, admin_api_client, inv_rd, rando, inventory):
     assignment = inv_rd.give_permission(rando, inventory)
-    url = reverse('roleuserassignment-detail', kwargs={'pk': assignment.pk})
+    url = get_relative_url('roleuserassignment-detail', kwargs={'pk': assignment.pk})
     response = admin_api_client.get(url)
     assert response.data['content_type'] == 'aap.inventory'
     assert int(response.data['object_id']) == inventory.id
@@ -63,14 +63,14 @@ def test_get_user_assignment(system_user, admin_api_client, inv_rd, rando, inven
 def test_get_user_assignment_no_system_user(admin_api_client, inv_rd, rando, inventory):
     with override_settings(SYSTEM_USERNAME=None):
         assignment = inv_rd.give_permission(rando, inventory)
-    url = reverse('roleuserassignment-detail', kwargs={'pk': assignment.pk})
+    url = get_relative_url('roleuserassignment-detail', kwargs={'pk': assignment.pk})
     response = admin_api_client.get(url)
     assert response.data['created_by'] is None
 
 
 @pytest.mark.django_db
 def test_make_user_assignment(admin_api_client, inv_rd, rando, inventory):
-    url = reverse('roleuserassignment-list')
+    url = get_relative_url('roleuserassignment-list')
     data = dict(role_definition=inv_rd.id, user=rando.id, object_id=inventory.id)
     response = admin_api_client.post(url, data=data, format="json")
     assert response.status_code == 201, response.data
@@ -83,7 +83,7 @@ def test_make_user_assignment(admin_api_client, inv_rd, rando, inventory):
 
 @pytest.mark.django_db
 def test_invalid_user_assignment(admin_api_client, inv_rd, inventory):
-    url = reverse('roleuserassignment-list')
+    url = get_relative_url('roleuserassignment-list')
     data = dict(role_definition=inv_rd.id, user=12345, object_id=inventory.id)
     response = admin_api_client.post(url, data=data, format="json")
     assert response.status_code == 400, response.data
@@ -97,7 +97,7 @@ def test_make_global_user_assignment(admin_api_client, rando, inventory):
         name='global-change-inv',
         content_type=None,
     )
-    url = reverse('roleuserassignment-list')
+    url = get_relative_url('roleuserassignment-list')
     data = dict(role_definition=rd.id, user=rando.id, object_id=None)
     response = admin_api_client.post(url, data=data, format="json")
     assert response.status_code == 201, response.data
@@ -111,7 +111,7 @@ def test_make_global_user_assignment(admin_api_client, rando, inventory):
 @pytest.mark.django_db
 def test_remove_user_assignment(user_api_client, user, inv_rd, rando, inventory):
     assignment = inv_rd.give_permission(rando, inventory)
-    url = reverse('roleuserassignment-detail', kwargs={'pk': assignment.pk})
+    url = get_relative_url('roleuserassignment-detail', kwargs={'pk': assignment.pk})
     response = user_api_client.delete(url)
     assert response.status_code == 404, response.data
 
@@ -125,7 +125,7 @@ def test_remove_user_assignment(user_api_client, user, inv_rd, rando, inventory)
 @pytest.mark.django_db
 def test_filtering_related_assignments(user_api_client, user, rando, inventory, inv_rd):
     rando_assignment = inv_rd.give_permission(rando, inventory)
-    url = reverse('roledefinition-user_assignments-list', kwargs={'pk': inv_rd.id})
+    url = get_relative_url('roledefinition-user_assignments-list', kwargs={'pk': inv_rd.id})
     response = user_api_client.get(url)
     assert response.status_code == 200, response.data
     assert response.data['count'] == 0
@@ -143,7 +143,7 @@ def test_filtering_related_assignments(user_api_client, user, rando, inventory, 
 @pytest.mark.django_db
 def test_remove_team_assignment(user_api_client, user, inv_rd, team, inventory):
     assignment = inv_rd.give_permission(team, inventory)
-    url = reverse('roleteamassignment-detail', kwargs={'pk': assignment.pk})
+    url = get_relative_url('roleteamassignment-detail', kwargs={'pk': assignment.pk})
     response = user_api_client.delete(url)
     assert response.status_code == 404, response.data
 
@@ -156,7 +156,7 @@ def test_remove_team_assignment(user_api_client, user, inv_rd, team, inventory):
 
 @pytest.mark.django_db
 def test_team_assignment_validation_error(admin_api_client, team, organization, org_member_rd):
-    url = reverse('roleteamassignment-list')
+    url = get_relative_url('roleteamassignment-list')
     response = admin_api_client.post(url, data={'team': team.id, 'object_id': organization.id, 'role_definition': org_member_rd.id})
     assert response.status_code == 400, response.data
     assert 'Assigning organization member permission to teams is not allowed' in str(response.data)
@@ -165,7 +165,7 @@ def test_team_assignment_validation_error(admin_api_client, team, organization, 
 @pytest.mark.django_db
 def test_filter_queryset(user_api_client, user, inventory, inv_rd):
     "This tests that filter_queryset usage in test_app is effective"
-    url = reverse("inventory-list")
+    url = get_relative_url("inventory-list")
     response = user_api_client.get(url, format="json")
     assert response.data['count'] == 0
 
@@ -176,7 +176,7 @@ def test_filter_queryset(user_api_client, user, inventory, inv_rd):
 
 @pytest.mark.django_db
 def test_role_metadata_view(user_api_client):
-    response = user_api_client.get(reverse('role-metadata'))
+    response = user_api_client.get(get_relative_url('role-metadata'))
     assert response.status_code == 200
     allowed_permissions = response.data['allowed_permissions']
     assert 'aap.change_collectionimport' in allowed_permissions['aap.namespace']
@@ -184,7 +184,7 @@ def test_role_metadata_view(user_api_client):
 
 @override_settings(ANSIBLE_BASE_ALLOW_CUSTOM_ROLES=False)
 def test_role_definitions_post_disabled_by_settings(admin_api_client):
-    url = reverse('roledefinition-list')
+    url = get_relative_url('roledefinition-list')
     response = admin_api_client.options(url)
     assert response.status_code == 200, response.data
     print(response.data)

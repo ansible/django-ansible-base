@@ -1,6 +1,6 @@
 import pytest
-from rest_framework.reverse import reverse
 
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.models import RoleDefinition
 from test_app.models import Inventory, User
 
@@ -37,7 +37,7 @@ def test_singleton_role_via_team(rando, organization, team, inventory, global_in
 @pytest.mark.django_db
 @pytest.mark.parametrize("model", ["organization", "instancegroup"])
 def test_add_root_resource_admin(organization, admin_api_client, model):
-    url = reverse(f"{model}-list")
+    url = get_relative_url(f"{model}-list")
     response = admin_api_client.post(url, data={"name": "new"}, format="json")
     assert response.status_code == 201, response.data
 
@@ -45,7 +45,7 @@ def test_add_root_resource_admin(organization, admin_api_client, model):
 @pytest.mark.django_db
 @pytest.mark.parametrize("model", ["organization", "instancegroup"])
 def test_add_root_resource_global_role(organization, user_api_client, user, model):
-    url = reverse(f"{model}-list")
+    url = get_relative_url(f"{model}-list")
     response = user_api_client.post(url, data={"name": "new"}, format="json")
     assert response.status_code == 403, response.data
 
@@ -70,7 +70,7 @@ def test_view_assignments_with_global_role(inventory, user, user_api_client, inv
     assignment = inv_rd.give_permission(rando, inventory)
 
     # you should be able to view that assignment if you are a global inventory viewer
-    response = user_api_client.get(reverse('roleuserassignment-list'), format="json")
+    response = user_api_client.get(get_relative_url('roleuserassignment-list'), format="json")
     assert response.status_code == 200, response.data
     returned_assignments = set(entry['id'] for entry in response.data['results'])
     expected_assignments = {global_assignment.id, assignment.id}
@@ -91,7 +91,7 @@ def test_view_assignments_with_global_and_org_role(inventory, organization, user
     assignment2 = org_inv_rd.give_permission(user, organization)
 
     # you should be able to view that assignment if you are a global inventory viewer
-    response = user_api_client.get(reverse('roleuserassignment-list'), format="json")
+    response = user_api_client.get(get_relative_url('roleuserassignment-list'), format="json")
     assert response.status_code == 200, response.data
     returned_assignments = set(entry['id'] for entry in response.data['results'])
     expected_assignments = {global_assignment.id, assignment1.id, assignment2.id}

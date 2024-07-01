@@ -8,10 +8,9 @@ from rest_framework import permissions
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
-from rest_framework.reverse import reverse
 from rest_framework.viewsets import GenericViewSet, mixins
 
-from ansible_base.lib.utils.response import CSVStreamResponse
+from ansible_base.lib.utils.response import CSVStreamResponse, get_relative_url
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.resource_registry.models import Resource, ResourceType, service_id
 from ansible_base.resource_registry.models.resource import resource_type_cache
@@ -174,9 +173,9 @@ class ServiceIndexRootView(AnsibleBaseDjangoAppApiView):
         '''Link other resource registry endpoints'''
 
         data = OrderedDict()
-        data['metadata'] = reverse('service-metadata')
-        data['resources'] = reverse('resource-list')
-        data['resource-types'] = reverse('resourcetype-list')
+        data['metadata'] = get_relative_url('service-metadata')
+        data['resources'] = get_relative_url('resource-list')
+        data['resource-types'] = get_relative_url('resourcetype-list')
         return Response(data)
 
 

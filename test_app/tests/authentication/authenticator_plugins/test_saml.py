@@ -2,11 +2,11 @@ from unittest import mock
 
 import pytest
 from django.conf import settings
-from django.urls import reverse
 
 from ansible_base.authentication.authenticator_plugins.saml import AuthenticatorPlugin
 from ansible_base.authentication.session import SessionAuthentication
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
+from ansible_base.lib.utils.response import get_relative_url
 
 authenticated_test_page = "authenticator-list"
 
@@ -23,7 +23,7 @@ def test_saml_auth_successful(authenticate, unauthenticated_api_client, saml_aut
     authenticate.return_value = user
     client.login()
 
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     response = client.get(url)
     assert response.status_code == 200
 
@@ -74,7 +74,7 @@ def test_saml_create_authenticator_error_handling(
         else:
             saml_configuration[key] = value
 
-    url = reverse("authenticator-list")
+    url = get_relative_url("authenticator-list")
     data = {
         "name": "SAML authenticator (should not get created)",
         "enabled": True,
@@ -105,7 +105,7 @@ def test_saml_create_authenticator_does_not_leak_private_key_on_error(
     """
     Tests that the private key is not leaked in an error response when creating a SAML authenticator.
     """
-    url = reverse("authenticator-list")
+    url = get_relative_url("authenticator-list")
     saml_configuration["SP_PRIVATE_KEY"] = "not a real private key"
     data = {
         "name": "SAML authenticator (should not get created)",
@@ -128,7 +128,7 @@ def test_saml_create_authenticator_does_not_leak_private_key_on_success(
     """
     Tests that the private key is not leaked in a success response when creating a SAML authenticator.
     """
-    url = reverse("authenticator-list")
+    url = get_relative_url("authenticator-list")
     data = {
         "name": "SAML authenticator",
         "enabled": True,
@@ -150,7 +150,7 @@ def test_saml_create_authenticator_errors_with_cert_key_mismatch(
     """
     Tests that the private key is not leaked in an error response when creating a SAML authenticator.
     """
-    url = reverse("authenticator-list")
+    url = get_relative_url("authenticator-list")
     saml_configuration["SP_PUBLIC_CERT"] = rsa_keypair_with_cert_1.certificate
     data = {
         "name": "SAML authenticator (should not get created)",
@@ -167,14 +167,14 @@ def test_saml_create_authenticator_errors_with_cert_key_mismatch(
 
 @pytest.mark.django_db
 def test_saml_metadata_on_ldap_authenticator(admin_api_client, ldap_authenticator):
-    url = reverse('authenticator-metadata', kwargs={'pk': ldap_authenticator.id})
+    url = get_relative_url('authenticator-metadata', kwargs={'pk': ldap_authenticator.id})
     response = admin_api_client.get(url)
     assert response.status_code == 404
 
 
 @pytest.mark.django_db
 def test_saml_metadata_on_good_saml_authenticator(admin_api_client, saml_authenticator):
-    url = reverse('authenticator-metadata', kwargs={'pk': saml_authenticator.id})
+    url = get_relative_url('authenticator-metadata', kwargs={'pk': saml_authenticator.id})
     response = admin_api_client.get(url)
     assert response.status_code == 200
     headers = response.headers
@@ -185,7 +185,7 @@ def test_saml_metadata_on_good_saml_authenticator(admin_api_client, saml_authent
 def test_saml_metadata_on_bad_saml_authenticator(admin_api_client, saml_authenticator):
     saml_authenticator.configuration['CALLBACK_URL'] = ''
     saml_authenticator.save()
-    url = reverse('authenticator-metadata', kwargs={'pk': saml_authenticator.id})
+    url = get_relative_url('authenticator-metadata', kwargs={'pk': saml_authenticator.id})
     response = admin_api_client.get(url)
     assert response.status_code == 200
     headers = response.headers

@@ -2,11 +2,11 @@ import json
 from unittest import mock
 
 import pytest
-from django.urls import reverse
 from jwt.exceptions import PyJWTError
 
 from ansible_base.authentication.authenticator_plugins.oidc import AuthenticatorPlugin
 from ansible_base.authentication.session import SessionAuthentication
+from ansible_base.lib.utils.response import get_relative_url
 
 authenticated_test_page = "authenticator-list"
 
@@ -23,7 +23,7 @@ def test_oidc_auth_successful(authenticate, unauthenticated_api_client, oidc_aut
     authenticate.return_value = user
     client.login()
 
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     response = client.get(url)
     assert response.status_code == 200
 
@@ -37,7 +37,7 @@ def test_oidc_auth_failed(authenticate, unauthenticated_api_client, oidc_authent
     client = unauthenticated_api_client
     client.login()
 
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     response = client.get(url)
     assert response.status_code == 401
 
@@ -89,7 +89,7 @@ def test_oidc_endpoint_url_validation(
         "type": "ansible_base.authentication.authenticator_plugins.oidc",
     }
 
-    url = reverse("authenticator-list")
+    url = get_relative_url("authenticator-list")
     response = admin_api_client.post(url, data=data, format="json")
     assert response.status_code == expected_status_code
     if expected_error:

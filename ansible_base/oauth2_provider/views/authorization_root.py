@@ -3,8 +3,8 @@ from collections import OrderedDict
 from django.utils.translation import gettext_lazy as _
 from rest_framework import permissions
 from rest_framework.response import Response
-from rest_framework.reverse import _reverse
 
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 
 
@@ -16,7 +16,7 @@ class ApiOAuthAuthorizationRootView(AnsibleBaseDjangoAppApiView):
 
     def get(self, request, format=None):
         data = OrderedDict()
-        data['authorize'] = _reverse('authorize')
-        data['revoke_token'] = _reverse('revoke-token')
-        data['token'] = _reverse('token')
+        data['authorize'] = get_relative_url('authorize')
+        data['revoke_token'] = get_relative_url('revoke-token')
+        data['token'] = get_relative_url('token')
         return Response(data)

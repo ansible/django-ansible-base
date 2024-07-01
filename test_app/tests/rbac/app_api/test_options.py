@@ -1,6 +1,6 @@
 import pytest
-from django.urls import reverse
 
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
 from ansible_base.rbac.policies import can_change_user, visible_users
@@ -18,7 +18,7 @@ def org_inv_admin():
 
 @pytest.mark.django_db
 def test_inventory_creator_options(user, user_api_client, organization, org_inv_admin):
-    url = reverse('inventory-list')
+    url = get_relative_url('inventory-list')
 
     # User has no ability to add an inventory, OPTIONS should not show POST
     r = user_api_client.options(url)
@@ -33,7 +33,7 @@ def test_inventory_creator_options(user, user_api_client, organization, org_inv_
 
 @pytest.mark.django_db
 def test_organization_creator_options(user, user_api_client, admin_api_client):
-    url = reverse('organization-list')
+    url = get_relative_url('organization-list')
 
     r = user_api_client.options(url)
     assert r.status_code == 200, r.data
@@ -46,7 +46,7 @@ def test_organization_creator_options(user, user_api_client, admin_api_client):
 
 @pytest.mark.django_db
 def test_object_change_permission(user, user_api_client, inventory, inv_rd, view_inv_rd):
-    url = reverse('inventory-detail', kwargs={'pk': inventory.pk})
+    url = get_relative_url('inventory-detail', kwargs={'pk': inventory.pk})
     view_inv_rd.give_permission(user, inventory)
 
     r = user_api_client.options(url)
@@ -63,7 +63,7 @@ def test_object_change_permission(user, user_api_client, inventory, inv_rd, view
 @pytest.mark.django_db
 def test_user_change_permission(user_api_client, user, organization, org_member_rd, org_admin_rd):
     other_user = User.objects.create(username='another-user')
-    url = reverse('user-detail', kwargs={'pk': other_user.pk})
+    url = get_relative_url('user-detail', kwargs={'pk': other_user.pk})
 
     # Give user ability to view other user, and OPTIONS should indicate PUT not possible
     for u in (user, other_user):
@@ -85,7 +85,7 @@ def test_user_change_permission(user_api_client, user, organization, org_member_
 
 @pytest.mark.django_db
 def test_user_creator_options(user, user_api_client, organization, org_admin_rd):
-    url = reverse('user-list')
+    url = get_relative_url('user-list')
 
     # Normal users can not create new users
     r = user_api_client.options(url)
@@ -101,7 +101,7 @@ def test_user_creator_options(user, user_api_client, organization, org_admin_rd)
 
 @pytest.mark.django_db
 def test_no_parent_objects(admin_api_client):
-    url = reverse('collectionimport-list')
+    url = get_relative_url('collectionimport-list')
 
     assert Namespace.objects.count() == 0  # sanity
 

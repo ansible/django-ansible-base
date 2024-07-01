@@ -1,6 +1,6 @@
 import pytest
-from rest_framework.reverse import reverse
 
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
 from test_app.models import ImmutableTask
@@ -28,7 +28,7 @@ def task_view_rd():
 def test_create_user_assignment_immutable(user_api_client, user, rando, task_admin_rd, task_view_rd, org_admin_rd, organization):
     task = ImmutableTask.objects.create()
     org_admin_rd.give_permission(user, organization)  # setup so that user can see rando
-    url = reverse('roleuserassignment-list')
+    url = get_relative_url('roleuserassignment-list')
     request_data = {"user": rando.pk, "role_definition": task_admin_rd.pk, "object_id": task.pk}
 
     response = user_api_client.post(url, data=request_data)
@@ -50,7 +50,7 @@ def test_create_user_assignment_immutable(user_api_client, user, rando, task_adm
 def test_remove_user_assignment_immutable(user_api_client, user, rando, task_admin_rd, task_view_rd):
     task = ImmutableTask.objects.create()
     assignment = task_admin_rd.give_permission(rando, task)
-    url = reverse('roleuserassignment-detail', kwargs={'pk': assignment.pk})
+    url = get_relative_url('roleuserassignment-detail', kwargs={'pk': assignment.pk})
 
     response = user_api_client.delete(url)
     assert response.status_code == 404, response.data
@@ -71,7 +71,7 @@ def test_remove_user_assignment_immutable(user_api_client, user, rando, task_adm
 @pytest.mark.django_db
 def test_remove_user_assignment_with_global_role(user_api_client, user, inv_rd, global_inv_rd, rando, inventory):
     assignment = inv_rd.give_permission(rando, inventory)
-    url = reverse('roleuserassignment-detail', kwargs={'pk': assignment.pk})
+    url = get_relative_url('roleuserassignment-detail', kwargs={'pk': assignment.pk})
     response = user_api_client.delete(url)
     assert response.status_code == 404, response.data
 
@@ -85,7 +85,7 @@ def test_remove_user_assignment_with_global_role(user_api_client, user, inv_rd, 
 @pytest.mark.django_db
 def test_remove_global_role_assignment(user_api_client, admin_api_client, user, global_inv_rd, rando):
     assignment = global_inv_rd.give_global_permission(rando)
-    url = reverse('roleuserassignment-detail', kwargs={'pk': assignment.pk})
+    url = get_relative_url('roleuserassignment-detail', kwargs={'pk': assignment.pk})
     response = user_api_client.delete(url)
     assert response.status_code == 404, response.data
 
@@ -108,7 +108,7 @@ def test_remove_global_assignment_yourself(user_api_client, global_inv_rd, user,
     assignment = global_inv_rd.give_global_permission(user)
     assert user.has_obj_perm(inventory, 'change')
 
-    url = reverse('roleuserassignment-detail', kwargs={'pk': assignment.pk})
+    url = get_relative_url('roleuserassignment-detail', kwargs={'pk': assignment.pk})
     response = user_api_client.delete(url)
     # Manually delete cache, because view operates on a User instance loaded anew from DB
     delattr(user, '_singleton_permissions')
@@ -126,7 +126,7 @@ def test_remove_object_assignment_yourself(user_api_client, user, inventory):
     assignment = rd.give_permission(user, inventory)
     assert user.has_obj_perm(inventory, 'view')
 
-    url = reverse('roleuserassignment-detail', kwargs={'pk': assignment.pk})
+    url = get_relative_url('roleuserassignment-detail', kwargs={'pk': assignment.pk})
     response = user_api_client.delete(url)
     assert response.status_code == 204, response.data
     assert not user.has_obj_perm(inventory, 'change')

@@ -1,6 +1,7 @@
 import pytest
 from django.contrib.contenttypes.models import ContentType
-from django.urls import reverse
+
+from ansible_base.lib.utils.response import get_relative_url
 
 
 def test_activitystream_entry_immutable(system_user, animal):
@@ -16,7 +17,7 @@ def test_activitystream_entry_immutable(system_user, animal):
 
 
 def test_activitystream_auditablemodel_related(admin_api_client, user, organization):
-    url = reverse('user-detail', kwargs={'pk': user.pk})
+    url = get_relative_url('user-detail', kwargs={'pk': user.pk})
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert 'activity_stream' in response.data['related']
@@ -26,7 +27,7 @@ def test_activitystream_auditablemodel_related(admin_api_client, user, organizat
     assert f'content_type={content_type.pk}' in activity_stream_url
 
     # organization isn't an AuditableModel, so it shouldn't show AS in related
-    url = reverse('organization-detail', kwargs={'pk': organization.pk})
+    url = get_relative_url('organization-detail', kwargs={'pk': organization.pk})
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert 'activity_stream' not in response.data['related']

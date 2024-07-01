@@ -1,6 +1,5 @@
-from django.urls import reverse
-
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugins
+from ansible_base.lib.utils.response import get_relative_url
 
 
 def test_plugin_authenticator_view(admin_api_client):
@@ -8,7 +7,7 @@ def test_plugin_authenticator_view(admin_api_client):
     Test the authenticator plugin view. It should show all available plugins
     (which exist on the system as python files, not database entries).
     """
-    url = reverse("authenticator_plugin-view")
+    url = get_relative_url("authenticator_plugin-view")
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert 'authenticators' in response.data
@@ -31,7 +30,7 @@ def test_plugin_authenticator_view_import_error(admin_api_client, shut_up_loggin
 
     get_authenticator_plugins.cache_clear()
 
-    url = reverse("authenticator_plugin-view")
+    url = get_relative_url("authenticator_plugin-view")
     response = admin_api_client.get(url)
 
     assert response.status_code == 200
@@ -58,7 +57,7 @@ def test_plugin_authenticator_plugin_from_custom_module(admin_user, unauthentica
         fixture_module,
     ]
 
-    url = reverse("authenticator-detail", kwargs={'pk': custom_authenticator.pk})
+    url = get_relative_url("authenticator-detail", kwargs={'pk': custom_authenticator.pk})
 
     client = unauthenticated_api_client
     client.login(username=admin_user.username, password="wrongpw")

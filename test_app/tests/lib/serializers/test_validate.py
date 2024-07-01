@@ -1,5 +1,6 @@
 import pytest
-from django.urls import reverse
+
+from ansible_base.lib.utils.response import get_relative_url
 
 authenticator_data = {
     "name": "Local Database Authenticator",
@@ -61,9 +62,9 @@ def test_validation_mixin_validate(
     local_authenticator, admin_api_client, reverse_name, method, query_params, same_name, configuration, response_code, response_body
 ):
     if reverse_name == 'authenticator-detail':
-        url = reverse(reverse_name, kwargs={'pk': local_authenticator.pk})
+        url = get_relative_url(reverse_name, kwargs={'pk': local_authenticator.pk})
     else:
-        url = reverse(reverse_name)
+        url = get_relative_url(reverse_name)
 
     if query_params:
         url = f'{url}?{query_params}'

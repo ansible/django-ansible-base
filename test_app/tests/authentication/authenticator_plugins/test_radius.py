@@ -4,7 +4,6 @@ from unittest import mock
 import pytest
 from django.contrib.auth.models import Group
 from django.test import RequestFactory
-from django.urls import reverse
 from pyrad.client import Timeout
 from pyrad.packet import AccessAccept, AccessReject, AccessRequest
 
@@ -13,6 +12,7 @@ from ansible_base.authentication.authenticator_plugins._radiusauth import RADIUS
 from ansible_base.authentication.authenticator_plugins.radius import AuthenticatorPlugin, RADIUSBackend, RADIUSUser
 from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.authentication.session import SessionAuthentication
+from ansible_base.lib.utils.response import get_relative_url
 from test_app.models import User
 
 authenticated_test_page = "authenticator-list"
@@ -30,7 +30,7 @@ def test_oidc_auth_successful(authenticate, unauthenticated_api_client, radius_a
     authenticate.return_value = user
     client.login()
 
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     response = client.get(url)
     assert response.status_code == 200
 
@@ -44,7 +44,7 @@ def test_oidc_auth_failed(authenticate, unauthenticated_api_client, radius_authe
     client = unauthenticated_api_client
     client.login()
 
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     response = client.get(url)
     assert response.status_code == 401
 
@@ -75,7 +75,7 @@ def test_authenticator_plugin(backend_cls, unauthenticated_api_client, radius_co
     client = unauthenticated_api_client
     client.login(username=random_username, password=random_password)
 
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     response = client.get(url)
     assert response.status_code == 200
 
@@ -102,7 +102,7 @@ def test_authenticator_plugin_failed(backend_cls, unauthenticated_api_client, ra
     client = unauthenticated_api_client
     client.login(username="invalid", password="password")
 
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     response = client.get(url)
     assert response.status_code == 401
 
@@ -133,7 +133,7 @@ def test_base_radius_backend(pyrad_client_cls):
     )
     client.SendPacket.return_value = reply
 
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     requeest_factory = RequestFactory()
     request = requeest_factory.get(url)
 
@@ -175,7 +175,7 @@ def test_radius_realm_backend(pyrad_client_cls):
     )
     client.SendPacket.return_value = reply
 
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     requeest_factory = RequestFactory()
     request = requeest_factory.get(url)
 
@@ -216,7 +216,7 @@ def test_radius_backend(pyrad_client_cls):
     )
     client.SendPacket.return_value = reply
 
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     requeest_factory = RequestFactory()
     request = requeest_factory.get(url)
 
@@ -244,7 +244,7 @@ def test_radius_backend_access_reject(pyrad_client_cls):
     auth_packet = client.CreateAuthPacket.return_value
     client.SendPacket.return_value.code = AccessReject
 
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     requeest_factory = RequestFactory()
     request = requeest_factory.get(url)
 
@@ -266,7 +266,7 @@ def test_radius_backend_access_timeout(pyrad_client_cls):
     auth_packet = client.CreateAuthPacket.return_value
     client.SendPacket.side_effect = Timeout
 
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     requeest_factory = RequestFactory()
     request = requeest_factory.get(url)
 

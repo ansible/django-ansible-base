@@ -1,7 +1,7 @@
 import pytest
 from django.test import override_settings
-from rest_framework.reverse import reverse
 
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.rest_pagination.default_paginator import DefaultPaginator
 from test_app.models import Organization
@@ -43,7 +43,7 @@ def test_default_paginator_ensure_proper_result_length(num_orgs, page_size_query
     assert get_setting('MAX_PAGE_SIZE', None) == max_page_size
 
     # Request with the page_size equal to the max with the variation
-    url = f"{reverse('organization-list')}?page_size={page_size_query_param}"
+    url = f"{get_relative_url('organization-list')}?page_size={page_size_query_param}"
     response = admin_api_client.get(url)
 
     # If we variation was not negative than we expect the max_page_size, if its less than we should get less
@@ -52,7 +52,7 @@ def test_default_paginator_ensure_proper_result_length(num_orgs, page_size_query
 
 @pytest.mark.parametrize("with_page_size", [(True), (False)])
 def test_default_paginator_count_disabled(with_page_size, admin_api_client):
-    url = f"{reverse('organization-list')}?count_disabled=True"
+    url = f"{get_relative_url('organization-list')}?count_disabled=True"
     if with_page_size:
         url = f'{url}&page_size=10'
     response = admin_api_client.get(url)
@@ -74,7 +74,7 @@ def test_default_paginator_next_and_previous_pages(page_index, admin_api_client)
     for org_index in range(num_orgs):
         Organization.objects.create(name=f"Test Organization {org_index}")
 
-    base_url = f"{reverse('organization-list')}"
+    base_url = f"{get_relative_url('organization-list')}"
     page_url = f"{base_url}?page={page_index}&page_size=1"
     next_page = f"{base_url}?page={page_index+1}&page_size=1"
     previous_page = f"{base_url}?page={page_index-1}&page_size=1"

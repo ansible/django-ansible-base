@@ -6,7 +6,6 @@ from django.contrib.auth import get_user_model
 from django.db import models
 from django.db.utils import IntegrityError
 from django.http import HttpResponseNotFound
-from rest_framework.reverse import reverse
 from social_core.utils import setting_name
 from social_django.models import Association, Code, Nonce, Partial
 from social_django.storage import BaseDjangoStorage
@@ -14,6 +13,7 @@ from social_django.strategy import DjangoStrategy
 
 from ansible_base.authentication.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_class, get_authenticator_plugins
 from ansible_base.authentication.models import Authenticator, AuthenticatorUser
+from ansible_base.lib.utils.response import get_fully_qualified_url
 
 logger = logging.getLogger('ansible_base.authentication.social_auth')
 
@@ -182,7 +182,7 @@ class SocialAuthValidateCallbackMixin:
             else:
                 slug = serializer.instance.slug
 
-            configuration['CALLBACK_URL'] = reverse('social:complete', request=serializer.context['request'], kwargs={'backend': slug})
+            configuration['CALLBACK_URL'] = get_fully_qualified_url('social:complete', kwargs={'backend': slug})
 
         return data
 

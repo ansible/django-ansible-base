@@ -3,8 +3,8 @@ from typing import Optional
 
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
-from rest_framework.reverse import reverse_lazy
 
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.resource_registry.models import Resource, ResourceType
 
 logger = logging.getLogger('ansible_base.serializers')
@@ -51,7 +51,7 @@ class ResourceSerializer(serializers.ModelSerializer):
 
     def get_url(self, obj) -> str:
         # conversion to string is done to satisfy type checking and OpenAPI schema generator
-        return str(reverse_lazy('resource-detail', kwargs={"ansible_id": obj.ansible_id}))
+        return get_relative_url('resource-detail', kwargs={"ansible_id": obj.ansible_id})
 
     def get_has_serializer(self, obj) -> bool:
         return bool(obj.content_type.resource_type.get_resource_config().managed_serializer)
@@ -108,7 +108,7 @@ class ResourceTypeSerializer(serializers.ModelSerializer):
             return None
 
     def get_url(self, obj) -> str:
-        return str(reverse_lazy('resourcetype-detail', kwargs={"name": obj.name}))
+        return get_relative_url('resourcetype-detail', kwargs={"name": obj.name})
 
 
 class UserAuthenticationSerializer(serializers.Serializer):

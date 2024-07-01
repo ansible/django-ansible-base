@@ -1,12 +1,12 @@
 import oauth2_provider.models as oauth2_models
 from django.conf import settings
 from django.db import models
-from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from oauth2_provider.generators import generate_client_secret
 
 from ansible_base.lib.abstract_models.common import NamedCommonModel
 from ansible_base.lib.utils.models import prevent_search
+from ansible_base.lib.utils.response import get_relative_url
 
 activitystream = object
 if 'ansible_base.activitystream' in settings.INSTALLED_APPS:
@@ -87,4 +87,4 @@ class OAuth2Application(NamedCommonModel, oauth2_models.AbstractApplication, act
     def get_absolute_url(self):
         # This is kind of annoying. This method lives on the superclass and we check for it in CommonModel.
         # But better would be to not have this method and let the CommonModel logic fall back to the "right" way of finding this.
-        return reverse(f'{self.router_basename}-detail', kwargs={'pk': self.pk})
+        return get_relative_url(f'{self.router_basename}-detail', kwargs={'pk': self.pk})

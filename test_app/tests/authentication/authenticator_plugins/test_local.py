@@ -2,10 +2,10 @@ from unittest import mock
 
 import pytest
 from django.test.client import RequestFactory
-from django.urls import reverse
 
 from ansible_base.authentication.authenticator_plugins.local import AuthenticatorPlugin
 from ansible_base.authentication.session import SessionAuthentication
+from ansible_base.lib.utils.response import get_relative_url
 
 authenticated_test_page = "authenticator-list"
 
@@ -18,7 +18,7 @@ def test_local_auth_successful(unauthenticated_api_client, local_authenticator, 
     client = unauthenticated_api_client
     client.login(username="user", password="password")
 
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     response = client.get(url)
     assert response.status_code == 200
 
@@ -41,7 +41,7 @@ def test_local_auth_failure(unauthenticated_api_client, local_authenticator, use
     client = unauthenticated_api_client
     client.login(username=username, password=password)
 
-    url = reverse(authenticated_test_page)
+    url = get_relative_url(authenticated_test_page)
     response = client.get(url)
     assert response.status_code == 401
 
@@ -58,7 +58,7 @@ def test_local_auth_create_configuration_must_be_empty(admin_api_client, configu
     Attempt to create a local authenticator with invalid configuration and test
     that it fails.
     """
-    url = reverse("authenticator-list")
+    url = get_relative_url("authenticator-list")
     data = {
         "name": "Test local authenticator created via API",
         "configuration": configuration,

@@ -7,8 +7,8 @@ from django.contrib.auth.models import AnonymousUser
 from django.db import connection
 from django.test import override_settings
 from django.test.client import RequestFactory
-from rest_framework.reverse import reverse
 
+from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.models import RoleDefinition
 from test_app.models import City, EncryptionModel, Organization, RelatedFieldsTestModel, User
 
@@ -93,7 +93,7 @@ def test_save_attribution_created_by_set_manually_and_retained(django_user_model
 def test_related_fields_view_resolution(shut_up_logging):
     model = RelatedFieldsTestModel.objects.create()
 
-    with patch('ansible_base.lib.abstract_models.common.reverse') as reverse:
+    with patch('ansible_base.lib.abstract_models.common.get_relative_url') as reverse:
         model.related_fields(None)
 
     # First off, we should never have 'teams_with_no_view' as an arg to reverse
@@ -141,7 +141,7 @@ def test_attributable_user_anonymous_user(system_user):
 def test_cascade_behavior_for_created_by(user, user_api_client):
     rd = RoleDefinition.objects.create_from_permissions(name='global-add-org', permissions=['add_organization'], content_type=None)
     rd.give_global_permission(user)
-    url = reverse('organization-list')
+    url = get_relative_url('organization-list')
     r = user_api_client.post(url, data={'name': 'foo'})
     assert r.status_code == 201, r.data
     org = Organization.objects.get(id=r.data['id'])
@@ -209,7 +209,7 @@ def test_modified_by_gets_saved_even_if_not_in_update_fields(system_user, user, 
 
 
 def test_ignore_relations_in_summary_fields_and_related(team, admin_api_client):
-    url = reverse('team-detail', kwargs={'pk': team.pk})
+    url = get_relative_url('team-detail', kwargs={'pk': team.pk})
     response = admin_api_client.get(url)
     summary_fields = response.data.get('summary_fields', {})
     assert summary_fields['organization']['name'] == team.organization.name
@@ -251,7 +251,7 @@ def test_related_view_log_message(debug_mode, not_called, expected_log):
 def test_related_view_ignore_m2m_relations(ignore_relation, admin_user):
     rf = RequestFactory()
     request = rf.get('/')
-    with patch('ansible_base.lib.abstract_models.common.reverse', return_value='https://www.example.com/user'):
+    with patch('ansible_base.lib.abstract_models.common.get_relative_url', return_value='https://www.example.com/user'):
         if ignore_relation:
             admin_user.ignore_relations = ['member_of_organizations']
         else:

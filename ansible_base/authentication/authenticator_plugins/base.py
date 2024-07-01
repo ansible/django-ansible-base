@@ -3,11 +3,11 @@ import logging
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from rest_framework.fields import empty
-from rest_framework.reverse import reverse
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.serializers.fields import JSONField
+from ansible_base.lib.utils.response import get_relative_url
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.base')
 
@@ -127,7 +127,7 @@ class AbstractAuthenticatorPlugin:
 
     def get_login_url(self, authenticator):
         if authenticator.category == 'sso':
-            return reverse('social:begin', kwargs={'backend': authenticator.slug})
+            return get_relative_url('social:begin', kwargs={'backend': authenticator.slug})
 
     def add_related_fields(self, request, authenticator):
         return {}

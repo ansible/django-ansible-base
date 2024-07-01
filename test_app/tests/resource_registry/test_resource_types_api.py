@@ -1,14 +1,14 @@
 import csv
 from io import StringIO
 
-from django.urls import reverse
+from ansible_base.lib.utils.response import get_relative_url
 
 
 def test_resource_type_list(admin_api_client):
     """
     Test list api view for resource types
     """
-    url = reverse("resourcetype-list")
+    url = get_relative_url("resourcetype-list")
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert set([x["name"] for x in response.data['results']]) == set(
@@ -20,7 +20,7 @@ def test_resource_type_detail(admin_api_client):
     """
     Test get api view for resource types
     """
-    url = reverse("resourcetype-detail", kwargs={"name": "shared.user"})
+    url = get_relative_url("resourcetype-detail", kwargs={"name": "shared.user"})
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert response.data["name"] == "shared.user"
@@ -30,7 +30,7 @@ def test_resource_type_manifest(admin_api_client):
     """
     Test get the csv for resource type manifest
     """
-    url = reverse("resourcetype-manifest", kwargs={"name": "shared.user"})
+    url = get_relative_url("resourcetype-manifest", kwargs={"name": "shared.user"})
     response = admin_api_client.get(url)
     assert response.status_code == 200
     response_data = list(response.streaming_content)
@@ -41,6 +41,6 @@ def test_resource_type_manifest(admin_api_client):
 
 
 def test_resource_type_manifest_404(admin_api_client):
-    url = reverse("resourcetype-manifest", kwargs={"name": "doesnt.exist"})
+    url = get_relative_url("resourcetype-manifest", kwargs={"name": "doesnt.exist"})
     response = admin_api_client.get(url)
     assert response.status_code == 404
