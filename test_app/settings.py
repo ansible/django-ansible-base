@@ -93,7 +93,10 @@ REST_FRAMEWORK = {
         'test_app.authentication.logged_basic_auth.LoggedBasicAuthentication',
         'test_app.authentication.service_token_auth.ServiceTokenAuthentication',
     ],
-    'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.IsAuthenticated'],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'ansible_base.oauth2_provider.permissions.OAuth2ScopePermission',
+        'ansible_base.rbac.api.permissions.AnsibleBaseObjectPermissions',
+    ],
 }
 
 DATABASES = {

@@ -1,8 +1,18 @@
+from unittest import mock
+
 import pytest
 from django.urls import reverse
 from oauthlib.common import generate_token
 
 from ansible_base.oauth2_provider.models import OAuth2AccessToken
+
+
+@pytest.fixture
+def only_oauth_scope_permission(settings):
+    from ansible_base.oauth2_provider.permissions import OAuth2ScopePermission
+
+    with mock.patch('rest_framework.views.APIView.permission_classes', [OAuth2ScopePermission]):
+        yield
 
 
 def test_oauth2_bearer_get_user_correct(unauthenticated_api_client, oauth2_admin_access_token):
@@ -149,11 +159,10 @@ def test_oauth2_bearer_no_activitystream(unauthenticated_api_client, oauth2_admi
     ],
 )
 @pytest.mark.django_db
-def test_oauth2_pat_scope(request, org_member_rd, org_admin_rd, admin_user, oauth2_admin_access_token, unauthenticated_api_client, scope, status):
+def test_oauth2_scope_permission(request, admin_user, oauth2_admin_access_token, unauthenticated_api_client, scope, status, only_oauth_scope_permission):
     """
     Ensure that scopes are adhered to for PATs
     """
-
     oauth2_admin_access_token.scope = scope
     oauth2_admin_access_token.save()
 
@@ -168,3 +177,31 @@ def test_oauth2_pat_scope(request, org_member_rd, org_admin_rd, admin_user, oaut
         headers={'Authorization': f'Bearer {oauth2_admin_access_token.token}'},
     )
     assert response.status_code == status, response.status_code
+
+
+def test_oauth2_scope_permission_not_oauth(user, user_api_client, only_oauth_scope_permission):
+    """
+    Ensure that non-OAuth (but still authenticated) requests pass through.
+    """
+
+    url = reverse("animal-list")
+    data = {
+        "name": "Fido",
+        "owner": user.pk,
+    }
+    response = user_api_client.post(url, data=data)
+    assert response.status_code == 201, response.status_code
+
+
+def test_oauth2_scope_permission_not_authenticated(user, unauthenticated_api_client, only_oauth_scope_permission):
+    """
+    Ensure that non-authenticated are blocked.
+    """
+
+    url = reverse("animal-list")
+    data = {
+        "name": "Fido",
+        "owner": user.pk,
+    }
+    response = unauthenticated_api_client.post(url, data=data)
+    assert response.status_code == 401, response.status_code
