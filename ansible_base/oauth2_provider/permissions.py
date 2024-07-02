@@ -19,6 +19,7 @@ class OAuth2ScopePermission(BasePermission):
     def has_permission(self, request, view):
         is_authenticated = IsAuthenticated().has_permission(request, view)
         is_oauth = False
+        has_oauth_permission = False
         if is_authenticated and request.auth and isinstance(request.auth, oauth2_models.AbstractAccessToken):
             is_oauth = True
             scopes = request.auth.scope.split()
