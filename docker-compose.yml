@@ -16,9 +16,12 @@ services:
     build:
       context: .
     working_dir: /src
-    command: 'test_app/scripts/container_startup.sh'
+    #command: 'test_app/scripts/container_startup.sh'
+    command: './test_app/scripts/container_startup_uwsgi.sh'
     volumes:
       - '.:/src:z'
+    ports:
+      - '8000:8000'
     depends_on:
       postgres:
         condition: service_healthy
@@ -27,3 +30,25 @@ services:
       DB_PORT: 5432
       DB_USER: dab
       DB_PASSWORD: dabing
+
+  # This is the intermediate application reverse proxy without ssl
+  nginx:
+    image: nginx
+    volumes:
+      - './compose/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:z'
+    ports:
+      - '80:80'
+    depends_on:
+      - test_app
+
+  # This is the ssl terminated "ingress" reverse proxy
+  ingress:
+    build: ./compose/ingress
+    command: './entrypoint.sh'
+    volumes:
+      - './compose/ingress/certs:/etc/nginx/ssl:z'
+    ports:
+      - "443:443"
+    depends_on:
+      - test_app
+      - nginx
