@@ -33,7 +33,7 @@ services:
 
   # This is the intermediate application reverse proxy without ssl
   nginx:
-    image: nginx
+    image: "nginx:latest"
     volumes:
       - './compose/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:z'
     ports:
