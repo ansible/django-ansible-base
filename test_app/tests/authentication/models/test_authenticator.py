@@ -29,5 +29,5 @@ def test_dupe_slug(ldap_authenticator):
     ldap_auth.save()
 
     dupe.save()
-    pattern = ldap_slug + '[a-z0-9_]{6}'
+    pattern = ldap_slug + '[a-z0-9_]{8}'
     assert re.match(pattern, dupe.slug) is not None

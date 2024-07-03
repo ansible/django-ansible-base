@@ -42,7 +42,7 @@ class Authenticator(UniqueNamedCommonModel):
         if not self.slug:
             self.slug = generate_authenticator_slug(self.type, self.name)
             if Authenticator.objects.filter(slug=self.slug).count() > 0:
-                self.slug = generate_authenticator_slug(self.type, self.name, secrets.token_hex(2))
+                self.slug = generate_authenticator_slug(self.type, self.name, secrets.token_hex(4))
         super().save(*args, **kwargs)
 
     def __str__(self):
