@@ -284,6 +284,8 @@ class JWTAuthentication(AnsibleBaseAuthentication):
             token_from_header = request.headers.get("X-DAB-JW-TOKEN", None)
             if not token_from_header:
                 self.enforce_csrf(request)
+            else:
+                logger.warning("X-DAB-JW-TOKEN found, moving forward without csrf protections")
             self.process_user_data()
             self.process_permissions()
 
