@@ -281,7 +281,9 @@ class JWTAuthentication(AnsibleBaseAuthentication):
         self.common_auth.parse_jwt_token(request)
 
         if self.common_auth.user:
-            self.enforce_csrf(request)
+            token_from_header = request.headers.get("X-DAB-JW-TOKEN", None)
+            if not token_from_header:
+                self.enforce_csrf(request)
             self.process_user_data()
             self.process_permissions()
 

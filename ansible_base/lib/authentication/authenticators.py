@@ -1,6 +1,10 @@
 # Contains extensions for DRF authenticator classes
+import logging
+
 from rest_framework.authentication import BaseAuthentication, CSRFCheck
 from rest_framework.exceptions import PermissionDenied
+
+logger = logging.getLogger("ansible_base.lib.authentication.authenticators")
 
 
 class AnsibleBaseAuthentication(BaseAuthentication):
@@ -22,4 +26,6 @@ class AnsibleBaseAuthentication(BaseAuthentication):
         reason = check.process_view(request, None, (), {})
         if reason:
             # CSRF failed, bail with explicit error message
+            logger.error('CSRF Failed: %s' % reason)
+
             raise PermissionDenied('CSRF Failed: %s' % reason)
