@@ -29,6 +29,16 @@ def get_local_username(user_details: dict) -> str:
     return username['username']
 
 
+def check_system_username(uid: str) -> None:
+    """
+    Determine if a username is identical with SYSTEM_USERNAME
+    Raise AuthException if system user attempts to login via an external authentication source
+    """
+    if uid.casefold() == settings.SYSTEM_USERNAME.casefold():
+        logger.warning(f'{settings.SYSTEM_USERNAME} cannot log in from an authenticator!')
+        raise AuthException(_('System user is not allowed to log in from external authentication sources.'))
+
+
 def determine_username_from_uid_social(**kwargs: dict) -> dict:
     uid = kwargs.get('details', {}).get('username', None)
     if not uid:
@@ -49,9 +59,11 @@ def determine_username_from_uid(uid: str = None, authenticator: Authenticator = 
         bella<hash> - if there is already a bella user in AuthenticatorUser but its not from the given authenticator
         <User.username> - If there is already a user associated with bella for this authenticator (could be bella or bella<hash> or even something else)
     """
-    if uid.casefold() == settings.SYSTEM_USERNAME.casefold():
-        logger.warning(f'{settings.SYSTEM_USERNAME} cannot log in from an authenticator!')
-        raise AuthException(_('System user is not allowed to log in from external authentication sources.'))
+    try:
+        check_system_username(uid)
+    except AuthException as e:
+        logger.warning(f"AuthException: {e}")
+        raise
 
     # If we have an AuthenticatorUser with the exact uid and provider than we have a match
     exact_match = AuthenticatorUser.objects.filter(uid=uid, provider=authenticator)
@@ -93,10 +105,11 @@ def get_or_create_authenticator_user(
     extra_data: Any additional information about the user provided by the source.
                 For example, LDAP might return sn, location, phone_number, etc
     """
-
-    if username.casefold() == settings.SYSTEM_USERNAME.casefold():
-        logger.info(f'{settings.SYSTEM_USERNAME} cannot be associated with an external authenticator.')
-        raise AuthException(_('System user cannot be associated with an external authenticator'))
+    try:
+        check_system_username(username)
+    except AuthException as e:
+        logger.warning(f"AuthException: {e}")
+        raise
 
     created = None
     try:
