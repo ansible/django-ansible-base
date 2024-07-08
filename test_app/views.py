@@ -12,7 +12,7 @@ from rest_framework.viewsets import ModelViewSet
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from ansible_base.oauth2_provider.views import DABOAuth2UserViewsetMixin
 from ansible_base.rbac import permission_registry
-from ansible_base.rbac.api.permissions import AnsibleBaseObjectPermissions, AnsibleBaseUserPermissions
+from ansible_base.rbac.api.permissions import AnsibleBaseUserPermissions
 from ansible_base.rbac.policies import visible_users
 from test_app import models, serializers
 
@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 
 
 class TestAppViewSet(ModelViewSet, AnsibleBaseView):
-    permission_classes = [AnsibleBaseObjectPermissions]
     prefetch_related = ()
     select_related = ()
 
