@@ -48,4 +48,4 @@ def DrfAuthMiddlewareStack(inner):  # noqa: N802
 
 
 def _http_key(key: str) -> str:
-    return f"HTTP_{key.replace('-','_').upper()}"
+    return f"HTTP_{key.replace('-', '_').upper()}"
