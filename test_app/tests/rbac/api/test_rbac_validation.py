@@ -12,17 +12,48 @@ User = get_user_model()
 
 @pytest.mark.django_db
 class TestSharedAssignmentsDisabled:
+    NON_LOCAL_MESSAGE = 'Not managed locally, use the resource server instead'
+
     @override_settings(ALLOW_LOCAL_RESOURCE_MANAGEMENT=False)
     def test_team_member_role_not_assignable(self, member_rd, team, rando, admin_api_client):
         url = reverse('roleuserassignment-list')
         response = admin_api_client.post(url, data={'object_id': team.id, 'role_definition': member_rd.id, 'user': rando.id})
         assert response.status_code == 400, response.data
+        assert self.NON_LOCAL_MESSAGE in str(response.data)
+
+    @override_settings(ALLOW_LOCAL_RESOURCE_MANAGEMENT=False)
+    def test_custom_roles_for_shared_stuff_not_allowed(self, admin_api_client):
+        url = reverse('roledefinition-list')
+        response = admin_api_client.post(
+            url,
+            data={
+                'name': 'Alternative Organization Admin Role in Local Server',
+                'content_type': 'aap.organization',
+                'permissions': ['aap.view_organization', 'local.change_organization'],
+            },
+        )
+        assert response.status_code == 400, response.data
+        assert self.NON_LOCAL_MESSAGE in str(response.data)
 
     @override_settings(ALLOW_LOCAL_RESOURCE_MANAGEMENT=False)
     def test_resource_roles_still_assignable(self, org_inv_rd, organization, rando, admin_api_client):
         url = reverse('roleuserassignment-list')
         response = admin_api_client.post(url, data={'object_id': organization.id, 'role_definition': org_inv_rd.id, 'user': rando.id})
-        assert response.status_code == 400, response.data
+        assert response.status_code == 201, response.data
+
+    @override_settings(ALLOW_LOCAL_RESOURCE_MANAGEMENT=False)
+    def test_org_resource_roles_creatable(self, admin_api_client):
+        url = reverse('roledefinition-list')
+        # This only contains shared view_organization, which is necessary to create custom org-level roles for child resources
+        response = admin_api_client.post(
+            url,
+            data={
+                'name': 'Custom Organization Inventory Admin Role',
+                'content_type': 'aap.organization',
+                'permissions': ['aap.view_organization', 'local.change_inventory', 'local.view_inventory'],
+            },
+        )
+        assert response.status_code == 201, response.data
 
 
 @pytest.mark.django_db

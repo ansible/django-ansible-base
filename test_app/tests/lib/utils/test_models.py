@@ -372,12 +372,13 @@ def test_get_system_user_create_raises_exception(resource_registry_in_installed_
     from ansible_base.resource_registry.models import ResourceType
 
     rr_app_name = 'ansible_base.resource_registry'
+    installed_apps = settings.INSTALLED_APPS.copy()
     if resource_registry_in_installed_apps and rr_app_name not in settings.INSTALLED_APPS:
-        settings.INSTALLED_APPS.append(rr_app_name)
+        installed_apps.append(rr_app_name)
     elif not resource_registry_in_installed_apps and rr_app_name in settings.INSTALLED_APPS:
-        settings.INSTALLED_APPS.remove(rr_app_name)
+        installed_apps.remove(rr_app_name)
 
-    with override_settings(SYSTEM_USERNAME='not_system'):
+    with override_settings(SYSTEM_USERNAME='not_system', INSTALLED_APPS=installed_apps):
         with mock.patch('ansible_base.lib.utils.models.create_system_user', side_effect=ResourceType.DoesNotExist("Failing on purpose")):
             try:
                 assert models.get_system_user() is None
