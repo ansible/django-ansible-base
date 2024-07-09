@@ -106,3 +106,11 @@ class TestProhibitedRoleDefinitions:
         with pytest.raises(ValidationError) as exc:
             RoleDefinition.objects.create_from_permissions(name='system-inventory-viewer', permissions=['view_inventory'], content_type=None)
         assert 'System-wide roles are not enabled' in str(exc)
+
+@pytest.mark.django_db
+def test_no_delete_capability_without_change():
+    with pytest.raises(ValidationError) as exc:
+        RoleDefinition.objects.create_from_permissions(
+            name='anything', permissions=['view_credential', 'delete_credential'], content_type=permission_registry.content_type_model.objects.get_for_model(Credential)
+        )
+    assert 'Role definitions must have change permission' in str(exc)
