@@ -7,6 +7,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Model
+from django.db.utils import IntegrityError
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
@@ -111,12 +112,18 @@ class JWTCommonAuth:
 
         if not self.user:
             # Either the user wasn't cached or the requested user was not in the DB so we need to make a new one
-            self.user, created = get_user_model().objects.update_or_create(
-                username=self.token["user_data"]['username'],
-                defaults=user_defaults,
-            )
-            if created:
+            try:
+                resource = Resource.create_resource(
+                    ResourceType.objects.get(name="shared.user"), resource_data=self.token["user_data"], ansible_id=self.token["sub"]
+                )
+                self.user = resource.content_object
                 logger.warn(f"New user {self.user.username} created from JWT auth")
+            except IntegrityError as exc:
+                logger.warning(f'Existing user {self.token["user_data"]} is a conflict with local user, error: {exc}')
+                self.user, created = get_user_model().objects.update_or_create(
+                    username=self.token["user_data"]['username'],
+                    defaults=user_defaults,
+                )
 
         setattr(self.user, "resource_api_actions", self.token.get("resource_api_actions", None))
 

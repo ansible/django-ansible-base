@@ -491,8 +491,9 @@ class TestJWTAuthentication:
                     assert 'check your key and generated token' in af
                     assert 'cached key was correct' in af
 
+    @pytest.mark.parametrize('new_user', [True, False])
     def test_correctly_authenticate_if_the_cached_key_is_invalid_but_the_new_key_is_correct(
-        self, random_public_key, mocked_http, test_encryption_public_key, django_user_model, jwt_token, create_mock_method
+        self, random_public_key, mocked_http, test_encryption_public_key, django_user_model, jwt_token, create_mock_method, new_user
     ):
         # Pretend the key is coming from a URL
         url = 'https://example.com'
@@ -505,9 +506,14 @@ class TestJWTAuthentication:
             with mock.patch('ansible_base.jwt_consumer.common.auth.JWTCert.get_decryption_key', create_mock_method(jwt_cert_field_changes)):
                 request = mocked_http.mocked_parse_jwt_token_get_request('with_headers')
                 jwt_auth = JWTAuthentication()
-                user = django_user_model.objects.create_user(username=jwt_token.unencrypted_token['user_data']['username'], password="password")
+                if not new_user:
+                    user = django_user_model.objects.create_user(username=jwt_token.unencrypted_token['user_data']['username'], password="password")
                 created_user, _ = jwt_auth.authenticate(request)
-                assert created_user == user
+                if not new_user:
+                    assert created_user == user
+                else:
+                    assert created_user.username == jwt_token.unencrypted_token['user_data']['username']
+                    assert str(created_user.resource.ansible_id) == jwt_token.unencrypted_token['sub']
 
     def test_user_logging_in_and_in_cache_but_deleted_in_db(self, mocked_http, django_user_model, jwt_token, test_encryption_public_key):
         user = django_user_model.objects.create_user(username=jwt_token.unencrypted_token['user_data']['username'], password="password")
