@@ -1,6 +1,7 @@
 import importlib
 import logging
 import re
+from enum import Enum, auto
 from typing import Iterator, Optional, Tuple, Union
 
 from django.conf import settings
@@ -24,6 +25,12 @@ logger = logging.getLogger('ansible_base.authentication.utils.claims')
 Organization = get_organization_model()
 Team = get_team_model()
 User = get_user_model()
+
+
+class TriggerResult(Enum):
+    ALLOW = auto()
+    DENY = auto()
+    SKIP = auto()
 
 
 def create_claims(authenticator: Authenticator, username: str, attrs: dict, groups: list[str]) -> dict:
@@ -51,6 +58,7 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
     maps = AuthenticatorMap.objects.filter(authenticator=authenticator.id).order_by("order")
     for auth_map in maps:
         has_permission = None
+        trigger_result = TriggerResult.SKIP
         allowed_keys = TRIGGER_DEFINITION.keys()
         invalid_keys = set(auth_map.triggers.keys()) - set(allowed_keys)
         if invalid_keys:
@@ -60,20 +68,28 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
 
         for trigger_type, trigger in auth_map.triggers.items():
             if trigger_type == 'groups':
-                has_permission = process_groups(trigger, groups, authenticator.pk)
+                trigger_result = process_groups(trigger, groups, authenticator.pk)
             if trigger_type == 'attributes':
-                has_permission = process_user_attributes(trigger, attrs, authenticator.pk)
+                trigger_result = process_user_attributes(trigger, attrs, authenticator.pk)
             if trigger_type == 'always':
-                has_permission = True
+                trigger_result = TriggerResult.ALLOW
             if trigger_type == 'never':
-                has_permission = False
-        # If we didn't get permission and we are set to revoke permission we can set has_permission to False
-        if auth_map.revoke and not has_permission:
-            has_permission = False
+                trigger_result = TriggerResult.DENY
 
-        if has_permission is None:
+        # If the trigger result is SKIP, auth map is not defined for this user.
+        # Together with "revoke" flag => change permission to DENY
+        if auth_map.revoke and trigger_result is TriggerResult.SKIP:
+            trigger_result = TriggerResult.DENY
+
+        # If the trigger result is still SKIP, this auth map is not applicable to this user => no action needed
+        if trigger_result is TriggerResult.SKIP:
             rule_responses.append({auth_map.id: 'skipped'})
             continue
+
+        if trigger_result is TriggerResult.ALLOW:
+            has_permission = True
+        elif trigger_result is TriggerResult.DENY:
+            has_permission = False
 
         rule_responses.append({auth_map.id: has_permission})
 
@@ -148,37 +164,30 @@ def _add_rbac_role_mapping(has_permission, role_mapping, role, organization=None
             logger.warning(f"Role mapping is not possible, organization for team '{team}' is missing")
 
 
-def process_groups(trigger_condition: dict, groups: list, authenticator_id: int) -> Optional[bool]:
+def process_groups(trigger_condition: dict, groups: list, authenticator_id: int) -> TriggerResult:
     """
-    Looks at a maps trigger for a group and users groups and determines if the trigger True or False
+    Looks at a maps trigger for a group and users groups and determines if the trigger is defined for this user.
     """
 
     invalid_conditions = set(trigger_condition.keys()) - set(TRIGGER_DEFINITION['groups']['keys'].keys())
     if invalid_conditions:
         logger.warning(f"The conditions {', '.join(invalid_conditions)} for groups in mapping {authenticator_id} are invalid and won't be processed")
 
-    has_access = None
     set_of_user_groups = set(groups)
 
     if "has_or" in trigger_condition:
         if set_of_user_groups.intersection(set(trigger_condition["has_or"])):
-            has_access = True
-        else:
-            has_access = False
+            return TriggerResult.ALLOW
 
     elif "has_and" in trigger_condition:
         if set(trigger_condition["has_and"]).issubset(set_of_user_groups):
-            has_access = True
-        else:
-            has_access = False
+            return TriggerResult.ALLOW
 
     elif "has_not" in trigger_condition:
-        if set(trigger_condition["has_not"]).intersection(set_of_user_groups):
-            has_access = False
-        else:
-            has_access = True
+        if not set(trigger_condition["has_not"]).intersection(set_of_user_groups):
+            return TriggerResult.ALLOW
 
-    return has_access
+    return TriggerResult.SKIP
 
 
 def has_access_with_join(current_access: Optional[bool], new_access: bool, condition: str = 'or') -> Optional[bool]:
@@ -195,11 +204,10 @@ def has_access_with_join(current_access: Optional[bool], new_access: bool, condi
         return current_access and new_access
 
 
-def process_user_attributes(trigger_condition: dict, attributes: dict, authenticator_id: int) -> Optional[bool]:
+def process_user_attributes(trigger_condition: dict, attributes: dict, authenticator_id: int) -> TriggerResult:
     """
-    Looks at a maps trigger for an attribute and the users attributes and determines if the trigger is True, False or None
+    Looks at a maps trigger for an attribute and the users attributes and determines if the trigger is defined for this user.
     """
-
     has_access = None
     join_condition = trigger_condition.get('join_condition', 'or')
     if join_condition not in TRIGGER_DEFINITION['attributes']['keys']['join_condition']['choices']:
@@ -263,7 +271,7 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, authentic
             elif "in" in trigger_condition[attribute]:
                 has_access = has_access_with_join(has_access, a_user_value in trigger_condition[attribute]['in'], join_condition)
 
-    return has_access
+    return TriggerResult.ALLOW if has_access else TriggerResult.SKIP
 
 
 def update_user_claims(user: Optional[AbstractUser], database_authenticator: Authenticator, groups: list[str]) -> Optional[AbstractUser]:
