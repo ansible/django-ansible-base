@@ -64,9 +64,12 @@ def test_authenticator_validate_import_error(shut_up_logging):
             )
 
 
-# system_user, admin_user, live_server, local_authenticator, transactional_db
 @pytest.mark.django_db
 def test_disable_last_enabled_authenticator(system_user, local_authenticator):
+    # NOTE: The serializer is only used for PUT/POST/PATCH. A DELETE
+    # is only processed at the view and model level and would be tested
+    # there instead.
+
     # Instantiate a serializer
     serializer = AuthenticatorSerializer()
 
