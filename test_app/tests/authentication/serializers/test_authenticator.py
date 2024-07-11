@@ -4,7 +4,6 @@ import pytest
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.serializers import AuthenticatorSerializer
-from ansible_base.authentication.models import Authenticator
 
 
 @pytest.mark.django_db
