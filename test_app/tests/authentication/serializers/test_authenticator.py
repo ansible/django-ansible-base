@@ -63,6 +63,7 @@ def test_authenticator_validate_import_error(shut_up_logging):
                 }
             )
 
+
 # system_user, admin_user, live_server, local_authenticator, transactional_db
 @pytest.mark.django_db
 def test_disable_last_enabled_authenticator(system_user, local_authenticator):
@@ -75,20 +76,20 @@ def test_disable_last_enabled_authenticator(system_user, local_authenticator):
     serializer.instance = local_authenticator
 
     # we have mock out the request method so that it doesn't bomb out on an empty config
-    with (
-        mock.patch(
-            "ansible_base.authentication.serializers.authenticator.AuthenticatorSerializer.context",
-            return_value={'request': {'method': 'PATCH'}},
-        )
+    with mock.patch(
+        "ansible_base.authentication.serializers.authenticator.AuthenticatorSerializer.context",
+        return_value={'request': {'method': 'PATCH'}},
     ):
         # validation should fail ...
         with pytest.raises(ValidationError) as exc_info:
-            serializer.validate({
-                'id': local_authenticator.id,
-                'type': local_authenticator.type,
-                'name': local_authenticator.name,
-                'enabled': False,
-                'configuration': {},
-            })
-    
+            serializer.validate(
+                {
+                    'id': local_authenticator.id,
+                    'type': local_authenticator.type,
+                    'name': local_authenticator.name,
+                    'enabled': False,
+                    'configuration': {},
+                }
+            )
+
     assert "At least one authenticator must be enabled" in str(exc_info.value)
