@@ -19,17 +19,6 @@ class AuthenticatorViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
     queryset = Authenticator.objects.all()
     serializer_class = AuthenticatorSerializer
 
-    def update(self, request, *args, **kwargs):
-        instance = self.get_object()
-        if request.data.get("enabled") == False and instance.enabled == True:
-            if  Authenticator.objects.filter(enabled=True).count() <= 1:
-                logger.warning("Preventing user from disabling the last enabled authenticator.")
-                return Response(
-                    status=status.HTTP_400_BAD_REQUEST,
-                    data={"details": "Authenticator cannot be disabled, as no other authenticators would be enabled."}
-                )
-        return super().update(request, *args, **kwargs)
-
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         users_exist = AuthenticatorUser.objects.filter(provider_id=instance.slug).exists()

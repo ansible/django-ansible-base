@@ -78,6 +78,14 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
         return parsed_data
 
     def validate(self, data) -> dict:
+        # prevent disabling the last enabled authenticator
+        if data.get('enabled') is False:
+            if self.instance and self.instance.enabled:
+                # count how many other authenticators are enabled ...
+                qs = Authenticator.objects.filter(enabled=True).exclude(id=self.instance.id)
+                if not qs.exists():
+                    raise ValidationError(_("At least one authenticator must be enabled"))
+
         validator_type = data.get('type', None)
         # if we didn't have a type, try to get the type of the existing object (if we have one)
         if not validator_type and self.instance:
