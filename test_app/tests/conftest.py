@@ -660,7 +660,9 @@ def admin_rd():
 def external_auditor_constructor():
     data = settings.ANSIBLE_BASE_MANAGED_ROLE_REGISTRY.copy()
     data['ext_aud'] = {'shortname': 'sys_auditor', 'name': 'Ext Auditor'}
-    with override_settings(ANSIBLE_BASE_MANAGED_ROLE_REGISTRY=data):
+    jwt_roles = settings.ANSIBLE_BASE_JWT_MANAGED_ROLES.copy()
+    jwt_roles.append('Ext Auditor')
+    with override_settings(ANSIBLE_BASE_MANAGED_ROLE_REGISTRY=data, ANSIBLE_BASE_JWT_MANAGED_ROLES=jwt_roles):
         # Extra setup needed for external auditor
         permission_registry.register_managed_role_constructors()
         yield permission_registry.get_managed_role_constructor('ext_aud')
