@@ -26,6 +26,9 @@ jobs:
           - env: py311
             python-version: "3.11"
             sonar: true
+          - env: py311sqlite
+            python-version: "3.11"
+            sonar: false
     steps:
       - uses: actions/checkout@v4
         with:
