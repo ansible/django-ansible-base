@@ -81,6 +81,23 @@ class Authenticator(UniqueNamedCommonModel):
 
     @property
     def is_last_enabled(self):
+        """
+        Is this the -only- "enabled" authenticator?
+
+        If used in a conditional statement, this property provides the combination
+        of two conditions:
+            A) is this enabled?
+            B) is this the only authenticator enabled?
+
+        Use this to gate deletion or disabling of authenticators so that the system
+        will always have at least one enabled.
+
+        Given that, if the authenticator is NOT enabled, this will always return false
+        and could be misleading if no other authenticators are enabled. If you need to
+        check if any authenticator is enabled, you should explicitly check with a
+        queryset including a filter and an exists call. Do not rely on this property
+        alone when making decisions about what can be deleted or disabled.
+        """
         if self.enabled and not self.__class__.objects.filter(enabled=True).exclude(id=self.id).exists():
             return True
         return False
