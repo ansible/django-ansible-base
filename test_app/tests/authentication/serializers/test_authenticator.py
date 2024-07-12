@@ -61,3 +61,37 @@ def test_authenticator_validate_import_error(shut_up_logging):
                     "order": 497,
                 }
             )
+
+
+@pytest.mark.django_db
+def test_disable_last_enabled_authenticator(system_user, local_authenticator):
+    # NOTE: The serializer is only used for PUT/POST/PATCH. A DELETE
+    # is only processed at the view and model level and would be tested
+    # there instead.
+
+    # Instantiate a serializer
+    serializer = AuthenticatorSerializer()
+
+    # the serializer won't have an object instance to check
+    # for the current state of the enabled field unless we
+    # manually set it here ...
+    serializer.instance = local_authenticator
+
+    # we have mock out the request method so that it doesn't bomb out on an empty config
+    with mock.patch(
+        "ansible_base.authentication.serializers.authenticator.AuthenticatorSerializer.context",
+        return_value={'request': {'method': 'PATCH'}},
+    ):
+        # validation should fail ...
+        with pytest.raises(ValidationError) as exc_info:
+            serializer.validate(
+                {
+                    'id': local_authenticator.id,
+                    'type': local_authenticator.type,
+                    'name': local_authenticator.name,
+                    'enabled': False,
+                    'configuration': {},
+                }
+            )
+
+    assert "At least one authenticator must be enabled" in str(exc_info.value)
