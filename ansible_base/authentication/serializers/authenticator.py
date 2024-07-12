@@ -80,7 +80,7 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
     def validate(self, data) -> dict:
         # prevent disabling the last enabled authenticator
         if data.get('enabled') is False:
-            if self.instance and self.instance.enabled and self.instance.is_last_enabled:
+            if self.instance and self.instance.is_last_enabled:
                 raise ValidationError(_("At least one authenticator must be enabled"))
 
         validator_type = data.get('type', None)
