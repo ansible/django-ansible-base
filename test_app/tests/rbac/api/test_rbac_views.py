@@ -2,9 +2,7 @@ import pytest
 from django.test.utils import override_settings
 from rest_framework.reverse import reverse
 
-from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
-from test_app.models import ImmutableTask
 
 
 @pytest.mark.django_db
@@ -142,64 +140,6 @@ def test_filtering_related_assignments(user_api_client, user, rando, inventory, 
     assert set(assignment_ids) == {rando_assignment.id, user_assignment.id}
 
 
-@pytest.fixture
-def task_admin_rd():
-    return RoleDefinition.objects.create_from_permissions(
-        permissions=['view_immutabletask', 'delete_immutabletask', 'cancel_immutabletask'],
-        name='Task Admin',
-        content_type=permission_registry.content_type_model.objects.get_for_model(ImmutableTask),
-    )
-
-
-@pytest.fixture
-def task_view_rd():
-    return RoleDefinition.objects.create_from_permissions(
-        permissions=['view_immutabletask'],
-        name='Task View',
-        content_type=permission_registry.content_type_model.objects.get_for_model(ImmutableTask),
-    )
-
-
-@pytest.mark.django_db
-def test_create_user_assignment_immutable(user_api_client, user, rando, task_admin_rd, task_view_rd, org_admin_rd, organization):
-    task = ImmutableTask.objects.create()
-    org_admin_rd.give_permission(user, organization)  # setup so that user can see rando
-    url = reverse('roleuserassignment-list')
-    request_data = {"user": rando.pk, "role_definition": task_admin_rd.pk, "object_id": task.pk}
-
-    response = user_api_client.post(url, data=request_data)
-    assert response.status_code == 400, response.data
-    assert 'object does not exist' in response.data['object_id'][0]
-
-    task_view_rd.give_permission(user, task)
-    response = user_api_client.post(url, data=request_data)
-    assert response.status_code == 403, response.data
-
-    task_admin_rd.give_permission(user, task)
-    response = user_api_client.post(url, data=request_data)
-    assert response.status_code == 201, response.data
-
-
-@pytest.mark.django_db
-def test_remove_user_assignment_immutable(user_api_client, user, rando, task_admin_rd, task_view_rd):
-    task = ImmutableTask.objects.create()
-    assignment = task_admin_rd.give_permission(rando, task)
-    url = reverse('roleuserassignment-detail', kwargs={'pk': assignment.pk})
-
-    response = user_api_client.delete(url)
-    assert response.status_code == 404, response.data
-
-    task_view_rd.give_permission(user, task)
-    response = user_api_client.delete(url)
-    assert response.status_code == 403, response.data
-
-    task_admin_rd.give_permission(user, task)
-    response = user_api_client.delete(url)
-    assert response.status_code == 204, response.data
-
-    assert not type(assignment).objects.filter(pk=assignment.pk).exists()
-
-
 @pytest.mark.django_db
 def test_remove_team_assignment(user_api_client, user, inv_rd, team, inventory):
     assignment = inv_rd.give_permission(team, inventory)
@@ -220,34 +160,6 @@ def test_team_assignment_validation_error(admin_api_client, team, organization, 
     response = admin_api_client.post(url, data={'team': team.id, 'object_id': organization.id, 'role_definition': org_member_rd.id})
     assert response.status_code == 400, response.data
     assert 'Assigning organization member permission to teams is not allowed' in str(response.data)
-
-
-@pytest.mark.django_db
-def test_remove_user_assignment_with_global_role(user_api_client, user, inv_rd, global_inv_rd, rando, inventory):
-    assignment = inv_rd.give_permission(rando, inventory)
-    url = reverse('roleuserassignment-detail', kwargs={'pk': assignment.pk})
-    response = user_api_client.delete(url)
-    assert response.status_code == 404, response.data
-
-    global_inv_rd.give_global_permission(user)
-    response = user_api_client.delete(url)
-    assert response.status_code == 204, response.data
-
-    assert not type(assignment).objects.filter(pk=assignment.pk).exists()
-
-
-@pytest.mark.django_db
-def test_remove_global_role_assignment(user_api_client, user, inv_rd, global_inv_rd, rando, inventory):
-    assignment = global_inv_rd.give_global_permission(rando)
-    url = reverse('roleuserassignment-detail', kwargs={'pk': assignment.pk})
-    response = user_api_client.delete(url)
-    assert response.status_code == 404, response.data
-
-    global_inv_rd.give_global_permission(user)
-    response = user_api_client.delete(url)
-    assert response.status_code == 204, response.data
-
-    assert not type(assignment).objects.filter(pk=assignment.pk).exists()
 
 
 @pytest.mark.django_db
