@@ -78,3 +78,9 @@ class Authenticator(UniqueNamedCommonModel):
             pass
 
         return response
+
+    @property
+    def is_last_enabled(self):
+        if self.enabled and not self.__class__.objects.filter(enabled=True).exclude(id=self.id).exists():
+            return True
+        return False
