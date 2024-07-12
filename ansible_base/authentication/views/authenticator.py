@@ -23,7 +23,7 @@ class AuthenticatorViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
         instance = self.get_object()
 
         # check if there is at least one other enabled authenticator...
-        if not Authenticator.objects.filter(enabled=True).exclude(id=instance.id).exists():
+        if instance.enabled and not Authenticator.objects.filter(enabled=True).exclude(id=instance.id).exists():
             logger.warning("Preventing deletion of last enabled authenticator")
             return Response(status=status.HTTP_400_BAD_REQUEST, data={"details": "Authenticator cannot be deleted, as no authenticators would be enabled"})
 
