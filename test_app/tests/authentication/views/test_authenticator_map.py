@@ -1,7 +1,6 @@
 import pytest
-from django.urls import reverse
-
 from django.db import connection
+from django.urls import reverse
 
 
 def test_authenticator_map_list_empty_by_default(admin_api_client):
