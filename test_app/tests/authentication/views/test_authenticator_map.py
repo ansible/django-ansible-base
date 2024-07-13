@@ -1,6 +1,8 @@
 import pytest
 from django.urls import reverse
 
+from django.db import connection
+
 
 def test_authenticator_map_list_empty_by_default(admin_api_client):
     """
@@ -84,6 +86,9 @@ def test_authenticator_map_invalid_map_type(admin_api_client, local_authenticato
     assert '"invalid" is not a valid choice.' in response.data['map_type'][0]
 
 
+@pytest.mark.skipif(
+    connection.vendor == 'sqlite', reason='PositiveIntegerField min_value was not discovered but fixed in Django 5 https://github.com/django/django/pull/16601'
+)
 @pytest.mark.parametrize(
     'map_type, params, error_field, error_message',
     [
