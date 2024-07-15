@@ -5,7 +5,7 @@ from rest_framework.reverse import reverse
 
 from ansible_base.rbac.models import RoleDefinition
 from ansible_base.rbac.permission_registry import permission_registry
-from test_app.models import Inventory, Organization
+from test_app.models import Credential, Inventory, Organization
 
 
 @pytest.mark.django_db
@@ -107,10 +107,13 @@ class TestProhibitedRoleDefinitions:
             RoleDefinition.objects.create_from_permissions(name='system-inventory-viewer', permissions=['view_inventory'], content_type=None)
         assert 'System-wide roles are not enabled' in str(exc)
 
+
 @pytest.mark.django_db
 def test_no_delete_capability_without_change():
     with pytest.raises(ValidationError) as exc:
         RoleDefinition.objects.create_from_permissions(
-            name='anything', permissions=['view_credential', 'delete_credential'], content_type=permission_registry.content_type_model.objects.get_for_model(Credential)
+            name='anything',
+            permissions=['view_credential', 'delete_credential'],
+            content_type=permission_registry.content_type_model.objects.get_for_model(Credential),
         )
-    assert 'Role definitions must have change permission' in str(exc)
+    assert 'Permissions for model credential needs to include change, got:' in str(exc)
