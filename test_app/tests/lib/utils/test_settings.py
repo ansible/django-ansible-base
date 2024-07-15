@@ -3,7 +3,7 @@ from unittest import mock
 import pytest
 from django.test import override_settings
 
-from ansible_base.lib.utils.settings import SettingNotSetException, get_setting
+from ansible_base.lib.utils.settings import SettingNotSetException, get_setting, is_aoc_instance
 
 
 @pytest.mark.django_db
@@ -47,3 +47,24 @@ def setting_getter_function(setting_name):
 def test_settings_from_function(setting_name, default, expected_value):
     value = get_setting(setting_name, default)
     assert value == expected_value
+
+
+@pytest.mark.parametrize(
+    "setting_value,expected_value,expected_log_output",
+    [
+        (None, False, True),
+        (True, True, False),
+        (False, False, False),
+        (1, True, False),
+        ('a', False, True),
+    ],
+)
+def test_is_aoc_instance(setting_value, expected_value, expected_log_output, expected_log):
+    with override_settings(ANSIBLE_BASE_MANAGED_CLOUD_INSTALL=setting_value):
+        with expected_log(
+            'ansible_base.lib.utils.settings.logger',
+            'error',
+            'was set but could not be converted to a boolean, assuming false',
+            assert_not_called=(not expected_log_output),
+        ):
+            assert expected_value == is_aoc_instance()

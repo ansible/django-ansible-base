@@ -1,13 +1,12 @@
 import logging
 
-from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from rest_framework.response import Response
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.models import Authenticator
-from ansible_base.lib.utils.settings import get_setting
-from ansible_base.lib.utils.validation import to_python_boolean, validate_image_data, validate_url
+from ansible_base.lib.utils.settings import get_setting, is_aoc_instance
+from ansible_base.lib.utils.validation import validate_image_data, validate_url
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 
 logger = logging.getLogger('ansible_base.authentication.views.ui_auth')
@@ -82,10 +81,6 @@ def generate_ui_auth_data():
         logger.error("custom_logo was set but was not a valid image data, ignoring")
 
     # The cloud managed setting is not customizable outside of a conf file
-    managed_cloud_setting = 'ANSIBLE_BASE_MANAGED_CLOUD_INSTALL'
-    try:
-        response['managed_cloud_install'] = to_python_boolean(getattr(settings, managed_cloud_setting, False))
-    except ValueError:
-        logger.error(f'{managed_cloud_setting} was set but could not be converted to a boolean, assuming false')
+    response['managed_cloud_install'] = is_aoc_instance()
 
     return response

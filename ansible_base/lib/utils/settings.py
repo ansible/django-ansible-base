@@ -5,6 +5,8 @@ from typing import Any
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 
+from ansible_base.lib.utils.validation import to_python_boolean
+
 logger = logging.getLogger('ansible_base.lib.utils.settings')
 
 
@@ -51,3 +53,12 @@ def get_from_import(module_name, attr):
     "Thin wrapper around importlib.import_module, mostly exists so that we can safely mock this in tests"
     module = importlib.import_module(module_name, package=attr)
     return getattr(module, attr)
+
+
+def is_aoc_instance():
+    managed_cloud_setting = 'ANSIBLE_BASE_MANAGED_CLOUD_INSTALL'
+    try:
+        return to_python_boolean(getattr(settings, managed_cloud_setting, False))
+    except ValueError:
+        logger.error(f'{managed_cloud_setting} was set but could not be converted to a boolean, assuming false')
+        return False
