@@ -3,6 +3,7 @@ from typing import Optional, Tuple
 
 import jwt
 from django.apps import apps
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Model
@@ -26,6 +27,18 @@ default_mapped_user_fields = [
     "email",
     "is_superuser",
 ]
+
+_permission_registry = None
+
+
+def permission_registry():
+    global _permission_registry
+
+    if not _permission_registry:
+        from ansible_base.rbac.permission_registry import permission_registry as permission_registry_singleton
+
+        _permission_registry = permission_registry_singleton
+    return _permission_registry
 
 
 class JWTCommonAuth:
@@ -184,9 +197,8 @@ class JWTCommonAuth:
         try:
             return RoleDefinition.objects.get(name=name)
         except RoleDefinition.DoesNotExist:
-            from ansible_base.rbac.permission_registry import permission_registry
 
-            constructor = permission_registry.get_managed_role_constructor_by_name(name)
+            constructor = permission_registry().get_managed_role_constructor_by_name(name)
             if constructor:
                 rd, _ = constructor.get_or_create(apps)
                 return rd
@@ -200,12 +212,20 @@ class JWTCommonAuth:
             logger.error("Unable to process rbac permissions because user or token is not defined, please call authenticate first")
             return
 
+        from ansible_base.rbac.models import RoleUserAssignment
+
+        role_diff = RoleUserAssignment.objects.filter(user=self.user, role_definition__name__in=settings.ANSIBLE_BASE_JWT_MANAGED_ROLES)
+
         for system_role_name in self.token.get("global_roles", []):
             logger.debug(f"Processing system role {system_role_name} for {self.user.username}")
             rd = self.get_role_definition(system_role_name)
             if rd:
-                rd.give_global_permission(self.user)
-                logger.info(f"Granted user {self.user.username} global role {system_role_name}")
+                if rd.name in settings.ANSIBLE_BASE_JWT_MANAGED_ROLES:
+                    assignment = rd.give_global_permission(self.user)
+                    role_diff = role_diff.exclude(pk=assignment.pk)
+                    logger.info(f"Granted user {self.user.username} global role {system_role_name}")
+                else:
+                    logger.error(f"Unable to grant {self.user.username} system level role {system_role_name} because it is not a JWT managed role")
             else:
                 logger.error(f"Unable to grant {self.user.username} system level role {system_role_name} because it does not exist")
                 continue
@@ -215,6 +235,9 @@ class JWTCommonAuth:
             if rd is None:
                 logger.error(f"Unable to grant {self.user.username} object role {object_role_name} because it does not exist")
                 continue
+            elif rd.name not in settings.ANSIBLE_BASE_JWT_MANAGED_ROLES:
+                logger.error(f"Unable to grant {self.user.username} object role {object_role_name} because it is not a JWT managed role")
+                continue
 
             object_type = self.token['object_roles'][object_role_name]['content_type']
             object_indexes = self.token['object_roles'][object_role_name]['objects']
@@ -223,8 +246,18 @@ class JWTCommonAuth:
                 object_data = self.token['objects'][object_type][index]
                 resource, obj = self.get_or_create_resource(object_type, object_data)
                 if resource is not None:
-                    rd.give_permission(self.user, obj)
+                    assignment = rd.give_permission(self.user, obj)
+                    role_diff = role_diff.exclude(pk=assignment.pk)
                     logger.info(f"Granted user {self.user.username} role {object_role_name} to object {obj.name} with ansible_id {object_data['ansible_id']}")
+
+        # Remove all permissions not authorized by the JWT
+        for role_assignment in role_diff:
+            rd = role_assignment.role_definition
+            content_object = role_assignment.content_object
+            if content_object:
+                rd.remove_permission(self.user, content_object)
+            else:
+                rd.remove_global_permission(self.user)
 
     def get_or_create_resource(self, content_type: str, data: dict) -> Tuple[Optional[Resource], Optional[Model]]:
         """

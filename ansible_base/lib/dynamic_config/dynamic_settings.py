@@ -155,6 +155,7 @@ if 'ansible_base.rest_pagination' in INSTALLED_APPS:
 if 'ansible_base.jwt_consumer' in INSTALLED_APPS:
     if 'ansible_base.rbac' not in INSTALLED_APPS:
         INSTALLED_APPS.append('ansible_base.rbac')
+    ANSIBLE_BASE_JWT_MANAGED_ROLES = ["Platform Auditor", "Organization Admin", "Organization Member", "Team Admin", "Team Member"]
 
 if 'ansible_base.rbac' in INSTALLED_APPS:
     # The settings-based specification of managed roles from DAB RBAC vendored ones
@@ -227,6 +228,10 @@ if 'ansible_base.oauth2_provider' in INSTALLED_APPS:  # noqa: F821
         OAUTH2_PROVIDER['AUTHORIZATION_CODE_EXPIRE_SECONDS'] = 600
     if 'REFRESH_TOKEN_EXPIRE_SECONDS' not in OAUTH2_PROVIDER:
         OAUTH2_PROVIDER['REFRESH_TOKEN_EXPIRE_SECONDS'] = 2628000
+    if 'PKCE_REQUIRED' not in OAUTH2_PROVIDER:
+        # For compat with awx, we don't require PKCE, but the new version
+        # of DOT that we are using requires it by default.
+        OAUTH2_PROVIDER['PKCE_REQUIRED'] = False
 
     OAUTH2_PROVIDER['APPLICATION_MODEL'] = 'dab_oauth2_provider.OAuth2Application'
     OAUTH2_PROVIDER['ACCESS_TOKEN_MODEL'] = 'dab_oauth2_provider.OAuth2AccessToken'
