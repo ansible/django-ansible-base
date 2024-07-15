@@ -3,7 +3,7 @@ import importlib
 import logging
 import re
 from enum import Enum, auto
-from typing import Iterator, Optional, Tuple, Union
+from typing import Optional, Union
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -430,20 +430,24 @@ class ReconcileUser:
         self.user = user
 
     def manage_permissions(self) -> None:
-        """Processes the user claims (key `rbac_roles`)
+        """
+        Processes the user claims (key `rbac_roles`)
         and adds/removes RBAC permissions (a.k.a. role_user_assignments)
         """
         # NOTE(cutwater): Here `prefetch_related` is used to prevent N+1 problem when accessing `content_object`
         #  attribute in `RoleUserAssignmentsCache.cache_existing` method.
-        self.permissions_cache.cache_existing(self.user.role_assignments.prefetch_related('content_object').all())
+        role_assignments = self.user.role_assignments.prefetch_related('content_object').all()
+        self.permissions_cache.cache_existing(role_assignments)
 
         # System roles
         self._compute_system_permissions()
 
         # Organization roles
-        for org, org_teams_dict in self._compute_organization_permissions():
-            # Team roles
-            self._compute_team_permissions(org, org_teams_dict)
+        org_info = self._compute_organization_permissions()
+        org_teams = self._get_org_teams([org.id for (org, _) in org_info])
+        # Team roles
+        for org, org_teams_dict in org_info:
+            self._compute_team_permissions(org, org_teams_dict, org_teams)
 
         self.apply_permissions()
 
@@ -451,8 +455,10 @@ class ReconcileUser:
         for role_name, has_permission in self.claims['rbac_roles'].get('system', {}).get('roles', {}).items():
             self.permissions_cache.add_or_remove(role_name, has_permission, organization=None, team=None)
 
-    def _compute_organization_permissions(self) -> Iterator[Tuple[AbstractOrganization, dict]]:
+    def _compute_organization_permissions(self) -> list[tuple[AbstractOrganization, dict[str, dict]]]:
         orgs_by_name = self._get_orgs_by_name(self.claims['rbac_roles'].get('organizations', {}).keys())
+
+        org_info = []
 
         for org_name, org_details in self.claims['rbac_roles'].get('organizations', {}).items():
             if (org := orgs_by_name.get(org_name)) is None:
@@ -466,13 +472,12 @@ class ReconcileUser:
             for role_name, has_permission in org_details['roles'].items():
                 self.permissions_cache.add_or_remove(role_name, has_permission, organization=org)
 
-            yield org, org_details['teams']
+            org_info.append((org, org_details['teams']))
+        return org_info
 
-    def _compute_team_permissions(self, org: AbstractOrganization, teams_dict: dict[str, dict]) -> None:
-        teams_by_name = self._get_teams_by_name(org.id, teams_dict.keys())
-
+    def _compute_team_permissions(self, org: AbstractOrganization, teams_dict: dict[str, dict], org_teams_cache: dict[tuple[int, str], AbstractTeam]) -> None:
         for team_name, team_details in teams_dict.items():
-            if (team := teams_by_name.get(team_name)) is None:
+            if (team := org_teams_cache.get((org.id, team_name))) is None:
                 logger.error(
                     _(
                         "Skipping team '{team}' in organization '{organization}', because the team does not exist but it should already have been created"
@@ -514,13 +519,11 @@ class ReconcileUser:
         return orgs_by_name
 
     @staticmethod
-    def _get_teams_by_name(org_id, team_names) -> dict[str, AbstractTeam]:
-        if not team_names:
+    def _get_org_teams(org_ids: list[int]) -> dict[tuple[int, str], AbstractTeam]:
+        if not org_ids:
             return {}
-        # FIXME(cutwater): Load all teams in all organizations at once.
-        #       This will require raw query to filter by tuples of (org id, team name).
-        teams_by_name = {team.name: team for team in Team.objects.filter(organization__pk=org_id, name__in=team_names)}
-        return teams_by_name
+        teams = Team.objects.filter(organization_id__in=org_ids).order_by()
+        return {(team.organization_id, team.name): team for team in teams}
 
     def _give_permission(self, role_definition: CommonModel, obj: Union[AbstractOrganization, AbstractTeam, None] = None) -> None:
         if obj:
@@ -561,6 +564,7 @@ class RoleUserAssignmentsCache:
 
     def __init__(self):
         self.cache = {}
+        # NOTE(cutwater): We may probably execute this query once and cache the query results.
         self.content_types = {content_type.model: content_type for content_type in ContentType.objects.get_for_models(Organization, Team).values()}
         self.role_definitions = {}
 
