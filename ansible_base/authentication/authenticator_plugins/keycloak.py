@@ -31,7 +31,7 @@ class KeycloakConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('Keycloak OIDC Key'),
     )
     PUBLIC_KEY = CharField(
-        help_text=_("RS256 public key provided by your Keycloak ream."),
+        help_text=_("RS256 public key provided by your Keycloak realm."),
         allow_null=False,
         ui_field_label=_('Keycloak Public Key'),
     )
