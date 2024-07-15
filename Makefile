@@ -57,7 +57,7 @@ check_isort:
 #  -q, --quiet: Surpress the pull output, mainly to condence output in CI
 #  --rm: automatically remove the container when it is stopped
 postgres:
-	docker start dab_postgres || docker run -dq --rm --name dab_postgres -p 55432:5432 -e POSTGRES_USER=dab -e POSTGRES_PASSWORD=dabing -e POSTGRES_DB=dab_db postgres:15
+	docker start dab_postgres || docker compose up -d postgres --quiet-pull
 
 ## Stops the postgres container started with 'make postgres'
 stop-postgres:

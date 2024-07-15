@@ -1,3 +1,4 @@
+import contextlib
 import importlib
 import logging
 import re
@@ -9,7 +10,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractUser
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import models
+from django.db import IntegrityError, models
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import DateTimeField
@@ -69,11 +70,11 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
         for trigger_type, trigger in auth_map.triggers.items():
             if trigger_type == 'groups':
                 trigger_result = process_groups(trigger, groups, authenticator.pk)
-            if trigger_type == 'attributes':
+            elif trigger_type == 'attributes':
                 trigger_result = process_user_attributes(trigger, attrs, authenticator.pk)
-            if trigger_type == 'always':
+            elif trigger_type == 'always':
                 trigger_result = TriggerResult.ALLOW
-            if trigger_type == 'never':
+            elif trigger_type == 'never':
                 trigger_result = TriggerResult.DENY
 
         # If the trigger result is SKIP, auth map is not defined for this user.
@@ -108,7 +109,6 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
             _add_rbac_role_mapping(has_permission, rbac_role_mapping, auth_map.role, auth_map.organization)
         elif auth_map.map_type == 'role' and not is_empty(auth_map.role) and is_empty(auth_map.organization) and is_empty(auth_map.team):
             _add_rbac_role_mapping(has_permission, rbac_role_mapping, auth_map.role)
-
         else:
             logger.error(f"Map type {auth_map.map_type} of rule {auth_map.name} does not know how to be processed")
 
@@ -329,7 +329,6 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
             reconcile_user_class.reconcile_user_claims(user, authenticator_user)
         except Exception as e:
             logger.exception("Failed to reconcile user claims: %s", e)
-
     return user
 
 
@@ -354,52 +353,54 @@ def create_organizations_and_teams(results) -> None:
     Use the results data from 'create_claims' to make the Organization
     and Team objects necessary for the user if they do not exist.
     """
-
     # a flat list of relevant org names
-    org_list = set()
+    all_orgs = set()
     # a flat list of relevant org:team names
-    team_list = set()
-
+    team_orgs = set()
     # a structure for caching org+team,member info
     membership_map = {}
 
     # fill in the top level org membership data ...
     for org_name, is_member in results['claims']['organization_membership'].items():
-        if is_member:
-            org_list.add(org_name)
-            membership_map[org_name] = {'id': None, 'teams': {}}
+        if not is_member:
+            continue
+        all_orgs.add(org_name)
+        membership_map[org_name] = {'id': None, 'teams': []}
 
     # fill in the team membership data ...
     for org_name, teams in results['claims']['team_membership'].items():
         for team_name, is_member in teams.items():
-            if is_member:
-                org_list.add(org_name)
-                team_list.add((org_name, team_name))
-                if org_name not in membership_map:
-                    membership_map[org_name] = {'id': None, 'teams': {}}
-                membership_map[org_name]['teams'][team_name] = True
+            if not is_member:
+                continue
+            all_orgs.add(org_name)
+            team_orgs.add(org_name)
+            if org_name not in membership_map:
+                membership_map[org_name] = {'id': None, 'teams': []}
+            membership_map[org_name]['teams'].append(team_name)
 
-    # make a map or org name to org id to reduce calls and data sent over the wire
-    existing_orgs = {org.name: org.id for org in Organization.objects.filter(name__in=org_list)}
+    # Create organizations
+    existing_orgs = dict(Organization.objects.filter(name__in=all_orgs).values_list("name", "id"))
+    for org_name in all_orgs:
+        org_id = existing_orgs.get(org_name)
+        if org_id is None:
+            try:
+                org_id = Organization.objects.create(name=org_name).id
+            except IntegrityError:
+                org_id = Organization.objects.filter(name=org_name).values_list("id", flat=True).first()
+                if org_id is None:
+                    raise
+        membership_map[org_name]['id'] = org_id
 
-    # make each org as necessary or simply store the id
-    for org_name in org_list:
-        if org_name not in existing_orgs:
-            new_org, _ = Organization.objects.get_or_create(name=org_name)
-            membership_map[org_name]['id'] = new_org.id
-        else:
-            membership_map[org_name]['id'] = existing_orgs[org_name]
-
+    # Create teams
     # make a map or org id, team name to reduce calls and data sent over the wire
-    # NOTE(cutwater): This doesn't seem to work
-    existing_teams = [x for x in Team.objects.filter(name__in=team_list).values_list('organization', 'name')]
-
-    # make each team as necessary
+    team_org_ids = [membership_map[org_name]['id'] for org_name in team_orgs]
+    existing_teams = set(Team.objects.filter(organization__in=team_org_ids).order_by().values_list('organization', 'name'))
     for org_name, org_data in membership_map.items():
         org_id = org_data['id']
-        for team_name, is_member in org_data['teams'].items():
+        for team_name in org_data['teams']:
             if (org_id, team_name) not in existing_teams:
-                new_team, _ = Team.objects.get_or_create(name=team_name, organization_id=org_id)
+                with contextlib.suppress(IntegrityError):
+                    Team.objects.create(name=team_name, organization_id=org_id)
 
 
 # NOTE(cutwater): Current class is sub-optimal, since it loads the data that has been already loaded

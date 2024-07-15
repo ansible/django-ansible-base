@@ -146,7 +146,7 @@ def test_user_data(mockedrequest, mockeddecode, mocksetting):
     mockeddecode.return_value = mr.json()
     data = ap.user_data("token")
 
-    assert mockeddecode.called_with("token", "VALUE", "VALUE", "VALUE")
+    mockeddecode.assert_called_once_with('token', key='-----BEGIN PUBLIC KEY-----\nVALUE\n-----END PUBLIC KEY-----', algorithms='VALUE', audience='VALUE')
     assert "key" in data
 
     # Decode failure
