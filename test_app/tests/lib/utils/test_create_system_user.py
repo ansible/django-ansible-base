@@ -59,3 +59,5 @@ class TestCreateSystemUser:
         create_system_user(user_model=User)
         create_system_user(user_model=User)
         create_system_user(user_model=User)
+
+        assert User.objects.filter(username=get_system_username()[0]).count() == 1

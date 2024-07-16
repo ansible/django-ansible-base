@@ -23,7 +23,7 @@ def create_system_user(user_model: Type[models.Model]) -> models.Model:  # Note:
         return None
 
     # First create a User object for the system user
-    system_user, created = user_model.objects.get_or_create(username=get_system_username()[0])
+    system_user, created = user_model.all_objects.get_or_create(username=get_system_username()[0])
 
     if created:
         logger.info(f"Created system user {system_user.username}")

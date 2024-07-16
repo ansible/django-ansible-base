@@ -11,6 +11,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from inflection import underscore
 
+from ansible_base.lib.abstract_models.user import AbstractDABUser
 from ansible_base.lib.utils.create_system_user import create_system_user, get_system_username
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.lib.utils.string import make_json_safe
@@ -94,9 +95,9 @@ class NotARealException(Exception):
     pass
 
 
-def get_system_user() -> Optional[AbstractUser]:
+def get_system_user() -> Optional[AbstractDABUser]:
     system_username, setting_name = get_system_username()
-    system_user = get_user_model().objects.filter(username=system_username).first()
+    system_user = get_user_model().all_objects.filter(username=system_username).first()
     # We are using a global variable to try and track if this thread has already spit out the message, if so ignore
     if system_username is not None and system_user is None:
         logger.error(
@@ -123,7 +124,7 @@ def get_system_user() -> Optional[AbstractUser]:
     return system_user
 
 
-def current_user_or_system_user() -> Optional[AbstractUser]:
+def current_user_or_system_user() -> Optional[AbstractDABUser]:
     """
     Attempt to get the current user. If there is none or it is anonymous,
     try to return the system user instead.
