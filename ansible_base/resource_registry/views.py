@@ -143,8 +143,7 @@ class ResourceTypeViewSet(
 
         resources = Resource.objects.filter(content_type__resource_type=resource_type).prefetch_related("content_object")
 
-        if name == "shared.user":
-            system_user = getattr(settings, "SYSTEM_USERNAME", "_system")
+        if name == "shared.user" and (system_user := getattr(settings, "SYSTEM_USERNAME", None)):
             resources = resources.exclude(name=system_user)
 
         if not resources:
