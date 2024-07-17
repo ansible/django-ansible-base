@@ -119,7 +119,7 @@ def validate_permissions_for_model(permissions, content_type: Optional[Model], m
     # check change edit permissions is given for every model that has update/delete/special actions listed
     if settings.ANSIBLE_BASE_DELETE_REQUIRE_CHANGE:
         for cls, valid_model_permissions in permissions_by_model.items():
-            if 'delete' and 'change' in cls._meta.default_permissions:
+            if 'delete' in cls._meta.default_permissions and 'change' in cls._meta.default_permissions:
                 model_permissions = set(valid_model_permissions) & codename_list
                 non_add_model_permissions = {codename for codename in model_permissions if not is_add_perm(codename)}
                 if any('delete' in codename for codename in non_add_model_permissions) and not any(
