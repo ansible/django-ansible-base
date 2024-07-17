@@ -29,3 +29,15 @@ class TestValidateTrustedProxy:
     def test_validate_trusted_proxy_header_bad_public_key(self, random_public_key):
         with override_settings(ANSIBLE_BASE_JWT_KEY=random_public_key):
             assert not validate_x_trusted_proxy_header("0-12345123451234512345")
+
+    def test_validate_x_trusted_proxy_header_invalid_signature(self, random_public_key, expected_log):
+        with override_settings(ANSIBLE_BASE_JWT_KEY=random_public_key):
+            # Idealy we would mock match bytes.fromhex but I couldn't get that to work
+            # with mock.patch('ansible_base.jwt_consumer.common.util.validate_x_trusted_proxy_header.bytes.fromhex', side_effect=ValueError()):
+            with expected_log(
+                'ansible_base.jwt_consumer.common.util.logger',
+                'warning',
+                'Failed to validate x-trusted-proxy-header, malformed, expected signature to well-formed base64',
+            ):
+                # 0 is invalid bytes
+                assert validate_x_trusted_proxy_header("0-0") is False
