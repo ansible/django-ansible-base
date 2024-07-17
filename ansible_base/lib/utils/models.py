@@ -95,9 +95,14 @@ class NotARealException(Exception):
     pass
 
 
-def get_system_user() -> Optional[AbstractDABUser]:
+def get_system_user() -> Optional[AbstractUser]:
     system_username, setting_name = get_system_username()
-    system_user = get_user_model().all_objects.filter(username=system_username).first()
+    user_model = get_user_model()
+
+    # If we use subclass of AbstractDABUser ensure we use manager for unfiltered queryset
+    user_manager = user_model.all_objects if issubclass(user_model, AbstractDABUser) else user_model.objects
+
+    system_user = user_manager.filter(username=system_username).first()
     # We are using a global variable to try and track if this thread has already spit out the message, if so ignore
     if system_username is not None and system_user is None:
         logger.error(
@@ -124,7 +129,7 @@ def get_system_user() -> Optional[AbstractDABUser]:
     return system_user
 
 
-def current_user_or_system_user() -> Optional[AbstractDABUser]:
+def current_user_or_system_user() -> Optional[AbstractUser]:
     """
     Attempt to get the current user. If there is none or it is anonymous,
     try to return the system user instead.

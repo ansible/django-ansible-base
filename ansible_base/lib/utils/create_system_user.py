@@ -5,6 +5,7 @@ from django.core.exceptions import ImproperlyConfigured
 from django.db import models
 from django.utils.translation import gettext as _
 
+from ansible_base.lib.abstract_models.user import AbstractDABUser
 from ansible_base.lib.utils.settings import get_setting
 
 logger = logging.getLogger('ansible_base.lib.utils.create_system_user')
@@ -23,7 +24,10 @@ def create_system_user(user_model: Type[models.Model]) -> models.Model:  # Note:
         return None
 
     # First create a User object for the system user
-    system_user, created = user_model.all_objects.get_or_create(username=get_system_username()[0])
+
+    # If we use subclass of AbstractDABUser ensure we use manager for unfiltered queryset
+    user_manager = user_model.all_objects if issubclass(user_model, AbstractDABUser) else user_model.objects
+    system_user, created = user_manager.get_or_create(username=get_system_username()[0])
 
     if created:
         logger.info(f"Created system user {system_user.username}")

@@ -19,7 +19,6 @@ from ansible_base.lib.abstract_models import (
 from ansible_base.lib.utils.models import prevent_search, user_summary_fields
 from ansible_base.rbac import permission_registry
 from ansible_base.resource_registry.fields import AnsibleResourceField
-from test_app.managers import UserUnmanagedManager
 
 
 class Organization(AbstractOrganization):
@@ -57,9 +56,6 @@ class User(AbstractDABUser, CommonModel, AuditableModel):
 
 class ManagedUser(User):
     managed = models.BooleanField(default=False)
-
-    # By default, skip managed users (use all_objects for all users queryset)
-    objects = UserUnmanagedManager()
 
 
 class Team(AbstractTeam):
