@@ -5,7 +5,6 @@ from django.core.exceptions import ImproperlyConfigured
 from django.db import models
 from django.utils.translation import gettext as _
 
-from ansible_base.lib.abstract_models.user import AbstractDABUser
 from ansible_base.lib.utils.settings import get_setting
 
 logger = logging.getLogger('ansible_base.lib.utils.create_system_user')
@@ -16,6 +15,8 @@ These functions are in its own file because it is loaded during migrations so it
 
 
 def create_system_user(user_model: Type[models.Model]) -> models.Model:  # Note: We can't load models here so we can typecast to anything better than Model
+    from ansible_base.lib.abstract_models.user import AbstractDABUser
+
     #
     # Creating the system user is a little tricky because we need to reference ourselves
     #

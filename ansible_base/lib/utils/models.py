@@ -11,7 +11,6 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from inflection import underscore
 
-from ansible_base.lib.abstract_models.user import AbstractDABUser
 from ansible_base.lib.utils.create_system_user import create_system_user, get_system_username
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.lib.utils.string import make_json_safe
@@ -96,6 +95,8 @@ class NotARealException(Exception):
 
 
 def get_system_user() -> Optional[AbstractUser]:
+    from ansible_base.lib.abstract_models.user import AbstractDABUser
+
     system_username, setting_name = get_system_username()
     user_model = get_user_model()
 
