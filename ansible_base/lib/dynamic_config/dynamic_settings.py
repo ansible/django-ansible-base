@@ -170,6 +170,8 @@ if 'ansible_base.rbac' in INSTALLED_APPS:
     # then the system must create one, this is used for naming the auto-created role
     ANSIBLE_BASE_ROLE_CREATOR_NAME = '{obj._meta.model_name}-creator-permission'
 
+    # Require change permission to get delete permission
+    ANSIBLE_BASE_DELETE_REQUIRE_CHANGE = True
     # Specific feature enablement bits
     # For assignments
     ANSIBLE_BASE_ALLOW_TEAM_PARENTS = True
