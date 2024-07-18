@@ -16,7 +16,6 @@ services:
     build:
       context: .
     working_dir: /src
-    #command: 'test_app/scripts/container_startup.sh'
     command: './test_app/scripts/container_startup_uwsgi.sh'
     volumes:
       - '.:/src:z'
