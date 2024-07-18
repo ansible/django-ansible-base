@@ -26,6 +26,7 @@ def test_unprivledged_user_can_view_api(public_item, user_api_client):
     assert response.data['id'] == public_item.id
 
 
+@override_settings(ANSIBLE_BASE_DELETE_REQUIRE_CHANGE=False)
 @pytest.mark.django_db
 def test_role_definition_validator_without_view():
     pd_ct = permission_registry.content_type_model.objects.get_for_model(PublicData)
