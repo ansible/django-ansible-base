@@ -45,3 +45,6 @@ tools/generated/*
 
 # Gets created when testing sonar-scanner locally
 .scannerwork
+
+# generated ssl certs
+compose/ingress/certs/*
