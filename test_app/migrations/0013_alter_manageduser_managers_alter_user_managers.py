@@ -2,6 +2,7 @@
 
 import django.contrib.auth.models
 from django.db import migrations
+import test_app.managers
 
 
 class Migration(migrations.Migration):
@@ -14,8 +15,8 @@ class Migration(migrations.Migration):
         migrations.AlterModelManagers(
             name='manageduser',
             managers=[
+                ('objects', test_app.managers.UserUnmanagedManager()),
                 ('all_objects', django.contrib.auth.models.UserManager()),
-                ('objects', django.contrib.auth.models.UserManager()),
             ],
         ),
         migrations.AlterModelManagers(
