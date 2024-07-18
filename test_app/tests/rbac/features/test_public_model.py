@@ -1,4 +1,5 @@
 import pytest
+from django.test.utils import override_settings
 from django.urls import reverse
 
 from ansible_base.rbac.models import DABPermission, RoleDefinition
@@ -32,6 +33,7 @@ def test_role_definition_validator_without_view():
     validate_permissions_for_model(permissions=[permission], content_type=pd_ct)  # does not raise error
 
 
+@override_settings(ANSIBLE_BASE_DELETE_REQUIRE_CHANGE=False)
 @pytest.mark.django_db
 def test_org_level_validator_without_view():
     org_ct = permission_registry.content_type_model.objects.get_for_model(Organization)
