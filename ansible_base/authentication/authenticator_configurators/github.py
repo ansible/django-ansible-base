@@ -12,6 +12,7 @@ class GithubConfiguration(BaseAuthenticatorConfiguration):
             'Provide this URL as the callback URL for your application as part of your registration process. Refer to the documentation for more detail.'
         ),
         allow_null=False,
+        required=False,
         ui_field_label=_('Github Oauth2 Callback URL'),
     )
 

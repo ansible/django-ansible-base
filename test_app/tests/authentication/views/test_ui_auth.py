@@ -76,35 +76,20 @@ def test_generate_ui_auth_data_bad_logo_image_data(logger):
 
 
 @pytest.mark.parametrize(
-    "setting,expected_result",
+    "is_cloud",
     [
-        (None, None),
-        (True, True),
-        (False, False),
-        ('a', None),
+        (True),
+        (False),
     ],
 )
 @pytest.mark.django_db
-def test_generate_ui_auth_data_managed_cloud(expected_log, setting, expected_result):
-    with override_settings(ANSIBLE_BASE_MANAGED_CLOUD_INSTALL=setting):
-        expect_log_called = False
-        if expected_result is None:
-            expect_log_called = True
-            expected_result = False
-        with expected_log(
-            'ansible_base.authentication.views.ui_auth.logger',
-            'error',
-            'was set but could not be converted to a boolean, assuming false',
-            assert_not_called=(not expect_log_called),
-        ):
-            result = generate_ui_auth_data()
-            assert result['managed_cloud_install'] == expected_result
+def test_generate_ui_auth_data_managed_cloud(is_cloud):
+    with override_settings(ANSIBLE_BASE_MANAGED_CLOUD_INSTALL=is_cloud):
+        result = generate_ui_auth_data()
+        assert result['managed_cloud_install'] == is_cloud
 
 
 @pytest.mark.django_db
-def test_generate_ui_auth_data_managed_cloud_no_setting(expected_log):
-    with expected_log(
-        'ansible_base.authentication.views.ui_auth.logger', 'error', 'was set but could not be converted to a boolean, assuming false', assert_not_called=True
-    ):
-        result = generate_ui_auth_data()
-        assert result['managed_cloud_install'] is False
+def test_generate_ui_auth_data_managed_cloud_no_setting():
+    result = generate_ui_auth_data()
+    assert result['managed_cloud_install'] is False

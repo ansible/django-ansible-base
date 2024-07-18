@@ -29,13 +29,20 @@ def get_local_username(user_details: dict) -> str:
     return username['username']
 
 
+def check_system_username(uid: str) -> None:
+    """
+    Determine if a username is identical with SYSTEM_USERNAME
+    Raise AuthException if system user attempts to login via an external authentication source
+    """
+    if uid.casefold() == settings.SYSTEM_USERNAME.casefold():
+        logger.warning(f'{settings.SYSTEM_USERNAME} cannot log in from an authenticator!')
+        raise AuthException(_('System user is not allowed to log in from external authentication sources.'))
+
+
 def determine_username_from_uid_social(**kwargs: dict) -> dict:
     uid = kwargs.get('details', {}).get('username', None)
     if not uid:
         raise AuthException(_('Unable to get associated username from: %(details)s') % {'details': kwargs.get("details", None)})
-
-    if uid.casefold() == settings.SYSTEM_USERNAME.casefold():
-        raise AuthException(_('System user is not allowed to log in from external authentication sources.'))
 
     authenticator = kwargs.get('backend')
     if not authenticator:
@@ -52,6 +59,12 @@ def determine_username_from_uid(uid: str = None, authenticator: Authenticator = 
         bella<hash> - if there is already a bella user in AuthenticatorUser but its not from the given authenticator
         <User.username> - If there is already a user associated with bella for this authenticator (could be bella or bella<hash> or even something else)
     """
+    try:
+        check_system_username(uid)
+    except AuthException as e:
+        logger.warning(f"AuthException: {e}")
+        raise
+
     # If we have an AuthenticatorUser with the exact uid and provider than we have a match
     exact_match = AuthenticatorUser.objects.filter(uid=uid, provider=authenticator)
     if exact_match.count() == 1:
@@ -71,7 +84,7 @@ def determine_username_from_uid(uid: str = None, authenticator: Authenticator = 
         return new_username
 
     # We didn't have an exact match but no other provider is servicing this uid so lets return that for usage
-    logger.info(f"Authenticator {authenticator.name} is is able to authenticate user {uid} as {uid}")
+    logger.info(f"Authenticator {authenticator.name} is able to authenticate user {uid} as {uid}")
     return uid
 
 
@@ -92,6 +105,11 @@ def get_or_create_authenticator_user(
     extra_data: Any additional information about the user provided by the source.
                 For example, LDAP might return sn, location, phone_number, etc
     """
+    try:
+        check_system_username(username)
+    except AuthException as e:
+        logger.warning(f"AuthException: {e}")
+        raise
 
     created = None
     try:
@@ -101,7 +119,7 @@ def get_or_create_authenticator_user(
         auth_user.save()
         created = False
     except AuthenticatorUser.DoesNotExist:
-        # Ensure that this username is not already tired to another authenticator
+        # Ensure that this username is not already tied to another authenticator
         auth_user = AuthenticatorUser.objects.filter(uid=username).first()
         if auth_user is not None:
             logger.error(

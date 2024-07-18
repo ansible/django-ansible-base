@@ -1,14 +1,16 @@
+import contextlib
 import importlib
 import logging
 import re
-from typing import Iterator, Optional, Tuple, Union
+from enum import Enum, auto
+from typing import Optional, Union
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractUser
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import models
+from django.db import IntegrityError, models
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import DateTimeField
@@ -24,6 +26,12 @@ logger = logging.getLogger('ansible_base.authentication.utils.claims')
 Organization = get_organization_model()
 Team = get_team_model()
 User = get_user_model()
+
+
+class TriggerResult(Enum):
+    ALLOW = auto()
+    DENY = auto()
+    SKIP = auto()
 
 
 def create_claims(authenticator: Authenticator, username: str, attrs: dict, groups: list[str]) -> dict:
@@ -51,6 +59,7 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
     maps = AuthenticatorMap.objects.filter(authenticator=authenticator.id).order_by("order")
     for auth_map in maps:
         has_permission = None
+        trigger_result = TriggerResult.SKIP
         allowed_keys = TRIGGER_DEFINITION.keys()
         invalid_keys = set(auth_map.triggers.keys()) - set(allowed_keys)
         if invalid_keys:
@@ -60,20 +69,28 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
 
         for trigger_type, trigger in auth_map.triggers.items():
             if trigger_type == 'groups':
-                has_permission = process_groups(trigger, groups, authenticator.pk)
-            if trigger_type == 'attributes':
-                has_permission = process_user_attributes(trigger, attrs, authenticator.pk)
-            if trigger_type == 'always':
-                has_permission = True
-            if trigger_type == 'never':
-                has_permission = False
-        # If we didn't get permission and we are set to revoke permission we can set has_permission to False
-        if auth_map.revoke and not has_permission:
-            has_permission = False
+                trigger_result = process_groups(trigger, groups, authenticator.pk)
+            elif trigger_type == 'attributes':
+                trigger_result = process_user_attributes(trigger, attrs, authenticator.pk)
+            elif trigger_type == 'always':
+                trigger_result = TriggerResult.ALLOW
+            elif trigger_type == 'never':
+                trigger_result = TriggerResult.DENY
 
-        if has_permission is None:
+        # If the trigger result is SKIP, auth map is not defined for this user.
+        # Together with "revoke" flag => change permission to DENY
+        if auth_map.revoke and trigger_result is TriggerResult.SKIP:
+            trigger_result = TriggerResult.DENY
+
+        # If the trigger result is still SKIP, this auth map is not applicable to this user => no action needed
+        if trigger_result is TriggerResult.SKIP:
             rule_responses.append({auth_map.id: 'skipped'})
             continue
+
+        if trigger_result is TriggerResult.ALLOW:
+            has_permission = True
+        elif trigger_result is TriggerResult.DENY:
+            has_permission = False
 
         rule_responses.append({auth_map.id: has_permission})
 
@@ -92,7 +109,6 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
             _add_rbac_role_mapping(has_permission, rbac_role_mapping, auth_map.role, auth_map.organization)
         elif auth_map.map_type == 'role' and not is_empty(auth_map.role) and is_empty(auth_map.organization) and is_empty(auth_map.team):
             _add_rbac_role_mapping(has_permission, rbac_role_mapping, auth_map.role)
-
         else:
             logger.error(f"Map type {auth_map.map_type} of rule {auth_map.name} does not know how to be processed")
 
@@ -148,37 +164,30 @@ def _add_rbac_role_mapping(has_permission, role_mapping, role, organization=None
             logger.warning(f"Role mapping is not possible, organization for team '{team}' is missing")
 
 
-def process_groups(trigger_condition: dict, groups: list, authenticator_id: int) -> Optional[bool]:
+def process_groups(trigger_condition: dict, groups: list, authenticator_id: int) -> TriggerResult:
     """
-    Looks at a maps trigger for a group and users groups and determines if the trigger True or False
+    Looks at a maps trigger for a group and users groups and determines if the trigger is defined for this user.
     """
 
     invalid_conditions = set(trigger_condition.keys()) - set(TRIGGER_DEFINITION['groups']['keys'].keys())
     if invalid_conditions:
         logger.warning(f"The conditions {', '.join(invalid_conditions)} for groups in mapping {authenticator_id} are invalid and won't be processed")
 
-    has_access = None
     set_of_user_groups = set(groups)
 
     if "has_or" in trigger_condition:
         if set_of_user_groups.intersection(set(trigger_condition["has_or"])):
-            has_access = True
-        else:
-            has_access = False
+            return TriggerResult.ALLOW
 
     elif "has_and" in trigger_condition:
         if set(trigger_condition["has_and"]).issubset(set_of_user_groups):
-            has_access = True
-        else:
-            has_access = False
+            return TriggerResult.ALLOW
 
     elif "has_not" in trigger_condition:
-        if set(trigger_condition["has_not"]).intersection(set_of_user_groups):
-            has_access = False
-        else:
-            has_access = True
+        if not set(trigger_condition["has_not"]).intersection(set_of_user_groups):
+            return TriggerResult.ALLOW
 
-    return has_access
+    return TriggerResult.SKIP
 
 
 def has_access_with_join(current_access: Optional[bool], new_access: bool, condition: str = 'or') -> Optional[bool]:
@@ -195,11 +204,10 @@ def has_access_with_join(current_access: Optional[bool], new_access: bool, condi
         return current_access and new_access
 
 
-def process_user_attributes(trigger_condition: dict, attributes: dict, authenticator_id: int) -> Optional[bool]:
+def process_user_attributes(trigger_condition: dict, attributes: dict, authenticator_id: int) -> TriggerResult:
     """
-    Looks at a maps trigger for an attribute and the users attributes and determines if the trigger is True, False or None
+    Looks at a maps trigger for an attribute and the users attributes and determines if the trigger is defined for this user.
     """
-
     has_access = None
     join_condition = trigger_condition.get('join_condition', 'or')
     if join_condition not in TRIGGER_DEFINITION['attributes']['keys']['join_condition']['choices']:
@@ -263,7 +271,7 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, authentic
             elif "in" in trigger_condition[attribute]:
                 has_access = has_access_with_join(has_access, a_user_value in trigger_condition[attribute]['in'], join_condition)
 
-    return has_access
+    return TriggerResult.ALLOW if has_access else TriggerResult.SKIP
 
 
 def update_user_claims(user: Optional[AbstractUser], database_authenticator: Authenticator, groups: list[str]) -> Optional[AbstractUser]:
@@ -321,7 +329,6 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
             reconcile_user_class.reconcile_user_claims(user, authenticator_user)
         except Exception as e:
             logger.exception("Failed to reconcile user claims: %s", e)
-
     return user
 
 
@@ -346,52 +353,54 @@ def create_organizations_and_teams(results) -> None:
     Use the results data from 'create_claims' to make the Organization
     and Team objects necessary for the user if they do not exist.
     """
-
     # a flat list of relevant org names
-    org_list = set()
+    all_orgs = set()
     # a flat list of relevant org:team names
-    team_list = set()
-
+    team_orgs = set()
     # a structure for caching org+team,member info
     membership_map = {}
 
     # fill in the top level org membership data ...
     for org_name, is_member in results['claims']['organization_membership'].items():
-        if is_member:
-            org_list.add(org_name)
-            membership_map[org_name] = {'id': None, 'teams': {}}
+        if not is_member:
+            continue
+        all_orgs.add(org_name)
+        membership_map[org_name] = {'id': None, 'teams': []}
 
     # fill in the team membership data ...
     for org_name, teams in results['claims']['team_membership'].items():
         for team_name, is_member in teams.items():
-            if is_member:
-                org_list.add(org_name)
-                team_list.add((org_name, team_name))
-                if org_name not in membership_map:
-                    membership_map[org_name] = {'id': None, 'teams': {}}
-                membership_map[org_name]['teams'][team_name] = True
+            if not is_member:
+                continue
+            all_orgs.add(org_name)
+            team_orgs.add(org_name)
+            if org_name not in membership_map:
+                membership_map[org_name] = {'id': None, 'teams': []}
+            membership_map[org_name]['teams'].append(team_name)
 
-    # make a map or org name to org id to reduce calls and data sent over the wire
-    existing_orgs = {org.name: org.id for org in Organization.objects.filter(name__in=org_list)}
+    # Create organizations
+    existing_orgs = dict(Organization.objects.filter(name__in=all_orgs).values_list("name", "id"))
+    for org_name in all_orgs:
+        org_id = existing_orgs.get(org_name)
+        if org_id is None:
+            try:
+                org_id = Organization.objects.create(name=org_name).id
+            except IntegrityError:
+                org_id = Organization.objects.filter(name=org_name).values_list("id", flat=True).first()
+                if org_id is None:
+                    raise
+        membership_map[org_name]['id'] = org_id
 
-    # make each org as necessary or simply store the id
-    for org_name in org_list:
-        if org_name not in existing_orgs:
-            new_org, _ = Organization.objects.get_or_create(name=org_name)
-            membership_map[org_name]['id'] = new_org.id
-        else:
-            membership_map[org_name]['id'] = existing_orgs[org_name]
-
+    # Create teams
     # make a map or org id, team name to reduce calls and data sent over the wire
-    # NOTE(cutwater): This doesn't seem to work
-    existing_teams = [x for x in Team.objects.filter(name__in=team_list).values_list('organization', 'name')]
-
-    # make each team as necessary
+    team_org_ids = [membership_map[org_name]['id'] for org_name in team_orgs]
+    existing_teams = set(Team.objects.filter(organization__in=team_org_ids).order_by().values_list('organization', 'name'))
     for org_name, org_data in membership_map.items():
         org_id = org_data['id']
-        for team_name, is_member in org_data['teams'].items():
+        for team_name in org_data['teams']:
             if (org_id, team_name) not in existing_teams:
-                new_team, _ = Team.objects.get_or_create(name=team_name, organization_id=org_id)
+                with contextlib.suppress(IntegrityError):
+                    Team.objects.create(name=team_name, organization_id=org_id)
 
 
 # NOTE(cutwater): Current class is sub-optimal, since it loads the data that has been already loaded
@@ -421,20 +430,24 @@ class ReconcileUser:
         self.user = user
 
     def manage_permissions(self) -> None:
-        """Processes the user claims (key `rbac_roles`)
+        """
+        Processes the user claims (key `rbac_roles`)
         and adds/removes RBAC permissions (a.k.a. role_user_assignments)
         """
         # NOTE(cutwater): Here `prefetch_related` is used to prevent N+1 problem when accessing `content_object`
         #  attribute in `RoleUserAssignmentsCache.cache_existing` method.
-        self.permissions_cache.cache_existing(self.user.role_assignments.prefetch_related('content_object').all())
+        role_assignments = self.user.role_assignments.prefetch_related('content_object').all()
+        self.permissions_cache.cache_existing(role_assignments)
 
         # System roles
         self._compute_system_permissions()
 
         # Organization roles
-        for org, org_teams_dict in self._compute_organization_permissions():
-            # Team roles
-            self._compute_team_permissions(org, org_teams_dict)
+        org_info = self._compute_organization_permissions()
+        org_teams = self._get_org_teams([org.id for (org, _) in org_info])
+        # Team roles
+        for org, org_teams_dict in org_info:
+            self._compute_team_permissions(org, org_teams_dict, org_teams)
 
         self.apply_permissions()
 
@@ -442,8 +455,10 @@ class ReconcileUser:
         for role_name, has_permission in self.claims['rbac_roles'].get('system', {}).get('roles', {}).items():
             self.permissions_cache.add_or_remove(role_name, has_permission, organization=None, team=None)
 
-    def _compute_organization_permissions(self) -> Iterator[Tuple[AbstractOrganization, dict]]:
+    def _compute_organization_permissions(self) -> list[tuple[AbstractOrganization, dict[str, dict]]]:
         orgs_by_name = self._get_orgs_by_name(self.claims['rbac_roles'].get('organizations', {}).keys())
+
+        org_info = []
 
         for org_name, org_details in self.claims['rbac_roles'].get('organizations', {}).items():
             if (org := orgs_by_name.get(org_name)) is None:
@@ -456,13 +471,13 @@ class ReconcileUser:
 
             for role_name, has_permission in org_details['roles'].items():
                 self.permissions_cache.add_or_remove(role_name, has_permission, organization=org)
-            yield org, org_details['teams']
 
-    def _compute_team_permissions(self, org: AbstractOrganization, teams_dict: dict[str, dict]) -> None:
-        teams_by_name = self._get_teams_by_name(org.id, teams_dict.keys())
+            org_info.append((org, org_details['teams']))
+        return org_info
 
+    def _compute_team_permissions(self, org: AbstractOrganization, teams_dict: dict[str, dict], org_teams_cache: dict[tuple[int, str], AbstractTeam]) -> None:
         for team_name, team_details in teams_dict.items():
-            if (team := teams_by_name.get(team_name)) is None:
+            if (team := org_teams_cache.get((org.id, team_name))) is None:
                 logger.error(
                     _(
                         "Skipping team '{team}' in organization '{organization}', because the team does not exist but it should already have been created"
@@ -504,13 +519,11 @@ class ReconcileUser:
         return orgs_by_name
 
     @staticmethod
-    def _get_teams_by_name(org_id, team_names) -> dict[str, AbstractTeam]:
-        if not team_names:
+    def _get_org_teams(org_ids: list[int]) -> dict[tuple[int, str], AbstractTeam]:
+        if not org_ids:
             return {}
-        # FIXME(cutwater): Load all teams in all organizations at once.
-        #       This will require raw query to filter by tuples of (org id, team name).
-        teams_by_name = {team.name: team for team in Team.objects.filter(organization__pk=org_id, name__in=team_names)}
-        return teams_by_name
+        teams = Team.objects.filter(organization_id__in=org_ids).order_by()
+        return {(team.organization_id, team.name): team for team in teams}
 
     def _give_permission(self, role_definition: CommonModel, obj: Union[AbstractOrganization, AbstractTeam, None] = None) -> None:
         if obj:
@@ -551,9 +564,8 @@ class RoleUserAssignmentsCache:
 
     def __init__(self):
         self.cache = {}
-        self.content_types = {
-            content_type.model: content_type for content_type in ContentType.objects.get_for_models(get_organization_model(), get_team_model()).values()
-        }
+        # NOTE(cutwater): We may probably execute this query once and cache the query results.
+        self.content_types = {content_type.model: content_type for content_type in ContentType.objects.get_for_models(Organization, Team).values()}
         self.role_definitions = {}
 
     def items(self):

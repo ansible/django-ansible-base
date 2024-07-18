@@ -93,7 +93,10 @@ REST_FRAMEWORK = {
         'test_app.authentication.logged_basic_auth.LoggedBasicAuthentication',
         'test_app.authentication.service_token_auth.ServiceTokenAuthentication',
     ],
-    'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.IsAuthenticated'],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'ansible_base.oauth2_provider.permissions.OAuth2ScopePermission',
+        'ansible_base.rbac.api.permissions.AnsibleBaseObjectPermissions',
+    ],
 }
 
 DATABASES = {
@@ -162,6 +165,7 @@ ANSIBLE_BASE_RESOURCE_CONFIG_MODULE = "test_app.resource_api"
 SYSTEM_USERNAME = '_system'
 
 ANSIBLE_BASE_MANAGED_ROLE_REGISTRY = {
+    'sys_auditor': {'name': "Platform Auditor"},
     'team_member': {},
     'team_admin': {},
     'org_admin': {},
@@ -169,6 +173,7 @@ ANSIBLE_BASE_MANAGED_ROLE_REGISTRY = {
     'cow_admin': {'shortname': 'admin_base', 'model_name': 'test_app.cow', 'name': 'Cow Admin'},
     'cow_moo': {'shortname': 'action_base', 'model_name': 'test_app.cow', 'name': 'Cow Mooer', 'action': 'say_cow'},
 }
+ANSIBLE_BASE_JWT_MANAGED_ROLES.append("System Auditor")  # noqa: F821 this is set by dynamic settings for jwt_consumer
 ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES = True
 ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES = True
 

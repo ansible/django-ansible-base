@@ -6,7 +6,6 @@ from unittest import mock
 from uuid import uuid4
 
 import pytest
-from django.conf import settings
 from django.test.utils import override_settings
 from jwt.exceptions import DecodeError
 from rest_framework.exceptions import AuthenticationFailed
@@ -14,7 +13,7 @@ from rest_framework.exceptions import AuthenticationFailed
 from ansible_base.jwt_consumer.common.auth import JWTAuthentication, JWTCommonAuth, default_mapped_user_fields
 from ansible_base.jwt_consumer.common.cert import JWTCert, JWTCertException
 from ansible_base.lib.utils.translations import translatableConditionally as _
-from ansible_base.rbac.models import RoleDefinition
+from ansible_base.rbac.models import RoleDefinition, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.resource_registry.models import Resource
 from test_app.models import Organization, Team
@@ -38,17 +37,6 @@ def organization_admin_role():
         managed=True,
     )
     return role
-
-
-@pytest.fixture
-def external_auditor_constructor():
-    data = settings.ANSIBLE_BASE_MANAGED_ROLE_REGISTRY.copy()
-    data['ext_aud'] = {'shortname': 'sys_auditor', 'name': 'Ext Auditor'}
-    with override_settings(ANSIBLE_BASE_MANAGED_ROLE_REGISTRY=data):
-        # Extra setup needed for external auditor
-        permission_registry.register_managed_role_constructors()
-        yield permission_registry.get_managed_role_constructor('ext_aud')
-        permission_registry._managed_roles.pop('ext_aud')
 
 
 class TestJWTCommonAuth:
@@ -299,10 +287,13 @@ class TestJWTCommonAuth:
             ({}, None),
             ({"global_roles": ['System Auditor']}, False),
             ({"global_roles": ['Ext Auditor']}, False),  # must dynamically create
+            ({"global_roles": ['Unmanaged Auditor']}, True),  # must dynamically create
             ({"global_roles": ['Junk']}, True),
         ],
     )
-    def test_process_rbac_permissions_system_roles(self, token, logs_error, admin_user, expected_log, external_auditor_constructor):
+    def test_process_rbac_permissions_system_roles(
+        self, token, logs_error, admin_user, expected_log, external_auditor_constructor, unmanaged_external_auditor_constructor
+    ):
         authentication = JWTCommonAuth()
         authentication.user = admin_user
         authentication.token = token
@@ -330,15 +321,53 @@ class TestJWTCommonAuth:
         with expected_log(default_logger, 'error', 'Unable to grant'):
             authentication.process_rbac_permissions()
 
-    def test_process_rbac_permissions_object_role_exists_object_exists(self, expected_log, admin_user, organization, organization_admin_role):
+    @pytest.mark.parametrize(
+        "object_roles,log_level,log_substring",
+        [
+            ({"Organization Admin": {'content_type': 'organization', 'objects': [0]}}, "info", "with ansible_id"),
+            ({"Cow Admin": {'content_type': 'organization', 'objects': [0]}}, "error", "Unable to grant"),
+        ],
+    )
+    def test_process_rbac_permissions_object_role_exists_object_exists(
+        self, object_roles, log_level, log_substring, expected_log, admin_user, organization, organization_admin_role
+    ):
+        authentication = JWTCommonAuth()
+        authentication.user = admin_user
+        authentication.token = {
+            'objects': {'organization': [{'ansible_id': organization.resource.ansible_id, 'name': organization.name}]},
+            'object_roles': object_roles,
+        }
+        if log_level:
+            with expected_log(default_logger, log_level, log_substring):
+                authentication.process_rbac_permissions()
+
+    def test_process_rbac_permissions_removed_when_removed_from_jwt(self, admin_user, organization, organization_admin_role):
+        # Make sure we have a System Auditor role
+        RoleDefinition.objects.get_or_create(
+            name='System Auditor',
+            defaults={
+                'description': 'Migrated singleton role giving read permission to everything',
+                'managed': True,
+            },
+        )
+
         authentication = JWTCommonAuth()
         authentication.user = admin_user
         authentication.token = {
             'objects': {'organization': [{'ansible_id': organization.resource.ansible_id, 'name': organization.name}]},
             'object_roles': {organization_admin_role.name: {'content_type': 'organization', 'objects': [0]}},
+            'global_roles': ["Platform Auditor"],
         }
-        with expected_log(default_logger, 'info', 'with ansible_id'):
-            authentication.process_rbac_permissions()
+
+        authentication.process_rbac_permissions()
+
+        assert RoleUserAssignment.objects.filter(user=admin_user).count() == 2
+
+        authentication.token = {}
+
+        authentication.process_rbac_permissions()
+
+        assert RoleUserAssignment.objects.filter(user=admin_user).count() == 0
 
     @pytest.mark.django_db
     def test_get_or_create_resource_invalid_content_type(self):
@@ -462,8 +491,9 @@ class TestJWTAuthentication:
                     assert 'check your key and generated token' in af
                     assert 'cached key was correct' in af
 
+    @pytest.mark.parametrize('new_user', [True, False])
     def test_correctly_authenticate_if_the_cached_key_is_invalid_but_the_new_key_is_correct(
-        self, random_public_key, mocked_http, test_encryption_public_key, django_user_model, jwt_token, create_mock_method
+        self, random_public_key, mocked_http, test_encryption_public_key, django_user_model, jwt_token, create_mock_method, new_user
     ):
         # Pretend the key is coming from a URL
         url = 'https://example.com'
@@ -476,9 +506,14 @@ class TestJWTAuthentication:
             with mock.patch('ansible_base.jwt_consumer.common.auth.JWTCert.get_decryption_key', create_mock_method(jwt_cert_field_changes)):
                 request = mocked_http.mocked_parse_jwt_token_get_request('with_headers')
                 jwt_auth = JWTAuthentication()
-                user = django_user_model.objects.create_user(username=jwt_token.unencrypted_token['user_data']['username'], password="password")
+                if not new_user:
+                    user = django_user_model.objects.create_user(username=jwt_token.unencrypted_token['user_data']['username'], password="password")
                 created_user, _ = jwt_auth.authenticate(request)
-                assert created_user == user
+                if not new_user:
+                    assert created_user == user
+                else:
+                    assert created_user.username == jwt_token.unencrypted_token['user_data']['username']
+                    assert str(created_user.resource.ansible_id) == jwt_token.unencrypted_token['sub']
 
     def test_user_logging_in_and_in_cache_but_deleted_in_db(self, mocked_http, django_user_model, jwt_token, test_encryption_public_key):
         user = django_user_model.objects.create_user(username=jwt_token.unencrypted_token['user_data']['username'], password="password")

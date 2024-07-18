@@ -1,5 +1,6 @@
 from django.apps import apps
 from django.conf import settings
+from django.db.models import Model
 from django.db.models.query import QuerySet
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import PermissionDenied
@@ -55,7 +56,7 @@ def can_change_user(request_user, target_user) -> bool:
     if not get_setting('MANAGE_ORGANIZATION_AUTH', False):
         return False
 
-    # All users can chang their own password and other details
+    # All users can change their own password and other details
     if request_user.pk == target_user.pk:
         return True
 
@@ -86,3 +87,31 @@ def check_content_obj_permission(request_user, obj) -> None:
         for codename in permissions_allowed_for_role(cls)[cls]:
             if not request_user.has_obj_perm(obj, codename):
                 raise PermissionDenied({'detail': _('You do not have {codename} permission the object').format(codename=codename)})
+
+
+def check_can_remove_assignment(request_user: Model, assignment: Model):
+    """Removing a role assignment will OR checks for the actor and the object
+
+    You can remove a permission if you can manage the user or team given the role
+    OR, if you have change permission to the content object targeted by the assignment.
+    """
+    if request_user.is_superuser:
+        return
+
+    assignment_model_name = assignment._meta.model_name
+    if assignment_model_name == 'roleuserassignment':
+        if can_change_user(request_user, assignment.user):
+            return
+    elif assignment_model_name == 'roleteamassignment':
+        if request_user.has_obj_perm(assignment.team, 'change'):
+            return
+    else:
+        raise RuntimeError(f'Assignment model {assignment_model_name} not recognized as a role assignment model')
+
+    # request user is not a manager of the actor of the assignment
+    # but can still remove the assignment if they manage the content object it applies to
+    if assignment.content_type_id:
+        check_content_obj_permission(request_user, assignment.content_object)
+    else:
+        # Case of a system role with a non-superuser user
+        raise PermissionDenied

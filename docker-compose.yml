@@ -1,7 +1,8 @@
 ---
 services:
   postgres:
-    image: "postgres:latest"
+    image: "postgres:15"
+    container_name: dab_postgres
     environment:
       POSTGRES_DB: dab_db
       POSTGRES_USER: dab
@@ -11,6 +12,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    ports:
+      - "55432:5432"
 
   test_app:
     build:

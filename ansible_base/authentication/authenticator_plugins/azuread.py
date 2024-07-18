@@ -22,6 +22,7 @@ class AzureADConfiguration(BaseAuthenticatorConfiguration):
             'Provide this URL as the callback URL for your application as part of your registration process. Refer to the documentation for more detail. '
         ),
         ui_field_label=_('Azure AD OAuth2 Callback URL'),
+        required=False,
     )
 
     KEY = CharField(

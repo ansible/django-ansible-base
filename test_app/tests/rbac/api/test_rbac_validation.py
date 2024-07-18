@@ -1,4 +1,5 @@
 import pytest
+from django.apps import apps
 from django.contrib.auth import get_user_model
 from django.test.utils import override_settings
 from django.urls import reverse
@@ -32,6 +33,14 @@ class TestSharedAssignmentsDisabled:
                 'permissions': ['aap.view_organization', 'local.change_organization'],
             },
         )
+        assert response.status_code == 400, response.data
+        assert self.NON_LOCAL_MESSAGE in str(response.data)
+
+    @override_settings(ALLOW_LOCAL_RESOURCE_MANAGEMENT=False)
+    def test_auditor_for_external_models(self, admin_api_client, rando, external_auditor_constructor):
+        rd, created = external_auditor_constructor.get_or_create(apps)
+        url = reverse('roleuserassignment-list')
+        response = admin_api_client.post(url, data={'role_definition': rd.id, 'user': rando.id})
         assert response.status_code == 400, response.data
         assert self.NON_LOCAL_MESSAGE in str(response.data)
 

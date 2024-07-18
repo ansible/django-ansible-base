@@ -97,8 +97,9 @@ legacy_tox_ini = """
         py39
         py310
         py311
+        py311sqlite
     labels =
-        test = py39, py310, py311, check
+        test = py39, py310, py311, py311sqlite, check
         lint = flake8, black, isort
 
     [testenv]
@@ -115,6 +116,10 @@ legacy_tox_ini = """
     commands =
         python3 manage.py check
         python3 manage.py makemigrations --check
+
+    [testenv:py311sqlite]
+    setenv =
+        DJANGO_SETTINGS_MODULE = test_app.sqlite3settings
 
     [testenv:flake8]
     deps =
