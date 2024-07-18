@@ -1,6 +1,7 @@
 import logging
 from collections import OrderedDict
 
+from django.conf import settings
 from django.http import HttpResponseNotFound
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions
@@ -141,6 +142,10 @@ class ResourceTypeViewSet(
             return HttpResponseNotFound()
 
         resources = Resource.objects.filter(content_type__resource_type=resource_type).prefetch_related("content_object")
+
+        if name == "shared.user" and (system_user := getattr(settings, "SYSTEM_USERNAME", None)):
+            resources = resources.exclude(name=system_user)
+
         if not resources:
             return HttpResponseNotFound()
 

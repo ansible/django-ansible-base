@@ -53,7 +53,6 @@ def test_resource_sync(static_api_client, stdout):
     assert executor.deleted_count == 0
     assert len(stdout.lines) > 0
     assert 'CREATED 3e3cc6a4-72fa-43ec-9e17-76ae5a3846ca Serious Company' in stdout.lines
-    assert 'CONFLICT 31daab14-cb67-4c62-8dcd-39f411c82242 _system' in stdout.lines
     assert 'CREATED 97447387-8596-404f-b0d0-6429b04c8d22 theceo' in stdout.lines
 
 
