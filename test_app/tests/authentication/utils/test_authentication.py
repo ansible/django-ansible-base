@@ -4,6 +4,7 @@ from social_core.exceptions import AuthException
 
 from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.authentication.utils import authentication
+from ansible_base.lib.utils.response import get_relative_url
 from test_app.models import User
 
 
@@ -48,6 +49,114 @@ class TestAuthenticationUtilsAuthentication:
             else:
                 assert len(new_username) > len(random_user.username)
 
+    def test_determine_username_from_uid_behavior(self, local_authenticator, saml_authenticator):
+        # Test when there's no collision
+        new_username = authentication.determine_username_from_uid(uid="new-user", authenticator=saml_authenticator)
+        assert new_username == "new-user"
+
+        # Create a different user tied to the same authenticator to force a collision
+        existing_user = User.objects.create(username="existing-user")
+        AuthenticatorUser.objects.create(
+            user=existing_user,
+            provider=saml_authenticator,
+            uid="existing-user"
+        )
+
+        # Test when there is a match (same uid and authenticator)
+        new_username = authentication.determine_username_from_uid(uid="existing-user", authenticator=saml_authenticator)
+        assert new_username == "existing-user", "There should not have been a collision "
+
+        # Test with a different authenticator (should return a new username)
+        new_username = authentication.determine_username_from_uid(uid="existing-user", authenticator=local_authenticator)
+        assert new_username != "existing-user"
+        assert new_username.startswith("existing-user")  # It should be "existing-user" followed by a hash
+
+    def test_username_collision_scenario(self, admin_user, admin_api_client, saml_authenticator):
+        # Ensure admin user is authenticated
+        admin_api_client.force_authenticate(user=admin_user)
+
+        # We are going to play around with two uids
+        user1_uid = 'user-1'
+        user2_uid = "user-2"
+
+        # Step 1: Create an external user with username 'user-1' through the API
+        user1, _, user1_created = authentication.get_or_create_authenticator_user(
+            user1_uid, saml_authenticator, {}, {}
+        )
+        # This should now succeed because we're using a unique username
+        assert user1.get_authenticator_uids() == [user1_uid]
+        assert user1_created is True
+        # In AuthenticatorUser table we now have: uid: user-1, username: user-1, authentciator: saml
+
+        # Step 2: Change the username locally to 'user-2'
+        url = get_relative_url("user-detail", kwargs={"pk": user1.pk})
+        response = admin_api_client.patch(url, {"username": user2_uid})
+        assert response.status_code == 200
+        user1.refresh_from_db()
+        assert user1.username == user2_uid, "Username did not properly get updated"
+        assert user1.get_authenticator_uids() == [user1_uid], "The external UID changed!"  # The UID should not change for external authenticators
+        # In AuthenticatorUser table we now have: uid: user-1, username: user-2, authentciator: saml
+
+        # Step 3: Get the ID of a new user whose uid is "user-2"
+        # We want to end up with: uid: user-1, username: user2<hash>, authenticator: local
+        # The function should now return a different username due to collision
+        throw_away_user2_username = authentication.determine_username_from_uid(uid=user2_uid, authenticator=saml_authenticator)
+        assert throw_away_user2_username != user2_uid, "Newly selected username matches conflicting username"
+        assert throw_away_user2_username.startswith(user2_uid)  # It should be "user-2" followed by a hash
+        # We have not changed the AuthenticatorUser table here, just confirmed that if we try
+        #    to authenticate with user-2 we will end up with a different user name because
+        #    there is already a user in the system with username user-2
+
+        # Attempt to create the new user
+        user2_user, _, user2_created = authentication.get_or_create_authenticator_user(
+            user2_uid, saml_authenticator, {}, {}
+        )
+        assert user2_user.username != user2_uid
+        assert user2_user.get_authenticator_uids() == [user2_uid]
+        assert user2_created is True
+
+        # Verify that two users exist with usernames starting with "user-2"
+        assert User.objects.filter(username__startswith=user2_uid).count() == 2
+
+        # Verify the state of AuthenticatorUser entries
+        assert AuthenticatorUser.objects.filter(uid=user1_uid, user__username=user2_uid).exists(), "Missing renamed user"
+        assert AuthenticatorUser.objects.filter(uid=user2_uid, user__username=user2_user.username).exists(), "Missing newly created user"
+
+    def test_username_change_local_auth(self, admin_user, admin_api_client, local_authenticator):
+        # Ensure admin user is authenticated
+        admin_api_client.force_authenticate(user=admin_user)
+
+        # Create a local user
+        local_user_data = {"username": "local-user", "password": "password789", "authenticators": [local_authenticator.id], "authenticator_uid": "local-user"}
+        url = get_relative_url("user-list")
+        response = admin_api_client.post(url, local_user_data)
+        assert response.status_code == 201
+
+        user = User.objects.get(username="local-user")
+        assert user.get_authenticator_uids() == ['local-user']
+
+        # Change username
+        url = get_relative_url("user-detail", kwargs={'pk': user.id})
+        response = admin_api_client.patch(url, {'username': 'new-local-user'})
+        assert response.status_code == 200
+
+        user.refresh_from_db()
+        assert user.username == 'new-local-user'
+
+        # Check if AuthenticatorUser UID is updated
+        assert user.get_authenticator_uids() == ['new-local-user']
+
+        # Try to create another local user with the original username
+        new_local_user_data = {
+            "username": "local-user",
+            "password": "password101",
+            "authenticators": [local_authenticator.id],
+            "authenticator_uid": "local-user",
+        }
+        url = get_relative_url("user-list")
+        response = admin_api_client.post(url, new_local_user_data)
+        assert response.status_code == 201  # This should succeed as the original username is now available
+
     @pytest.mark.parametrize(
         "auth_fixture",
         [
@@ -80,13 +189,13 @@ class TestAuthenticationUtilsAuthentication:
         assert auth_user == au
 
     def test_gocau_auth_user_exists_from_another_provider(self, random_user, local_authenticator, ldap_authenticator):
-        AuthenticatorUser.objects.create(uid=random_user.username, provider=ldap_authenticator, user=random_user)
+        orig_au = AuthenticatorUser.objects.create(uid=random_user.username, provider=ldap_authenticator, user=random_user)
         local_user, auth_user, created = authentication.get_or_create_authenticator_user(
             random_user.username, local_authenticator, {'username': random_user.username}, {}
         )
-        assert created is None
-        assert local_user is None
-        assert auth_user is None
+        assert created is True, "New AuthenticatorUser should have been created"
+        assert local_user != random_user, "A new user should have been created"
+        assert auth_user != orig_au, "Returned AuthenticatorUser matches the old"
 
     @pytest.mark.parametrize(
         "user_exists",

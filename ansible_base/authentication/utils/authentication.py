@@ -4,6 +4,7 @@ from typing import Optional, Tuple
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractUser
+from django.db.models import Q
 from django.utils.translation import gettext as _
 from social_core.exceptions import AuthException
 from social_core.pipeline.user import get_username
@@ -58,6 +59,12 @@ def determine_username_from_uid(uid: str = None, authenticator: Authenticator = 
         bella - if there is no bella user in AuthenticatorUser
         bella<hash> - if there is already a bella user in AuthenticatorUser but its not from the given authenticator
         <User.username> - If there is already a user associated with bella for this authenticator (could be bella or bella<hash> or even something else)
+
+    NOTE: This should not be called directly. This will either be called from:
+             1. The social auth pipeline
+             2. The get_or_create_authenticator_user method below
+          With one exception of the local authenticator. This is because we can't allow local authenticator to have maps between a uid of timmy and
+          a username of timmy<hash>.  This literally does not make sense for the local authenticator because the DB is its own source of truth.
     """
     try:
         check_system_username(uid)
@@ -73,7 +80,7 @@ def determine_username_from_uid(uid: str = None, authenticator: Authenticator = 
         return new_username
 
     # We didn't get an exact match. If any other provider is using this uid our id will be uid<hash>
-    if AuthenticatorUser.objects.filter(uid=uid).count() != 0:
+    if AuthenticatorUser.objects.filter(Q(uid=uid) | Q(user__username=uid)).count() != 0:
         # Some other provider is providing this username so we need to create our own username
         new_username = get_local_username({'username': uid})
         logger.info(
@@ -89,13 +96,11 @@ def determine_username_from_uid(uid: str = None, authenticator: Authenticator = 
 
 
 def get_or_create_authenticator_user(
-    username: str, authenticator: Authenticator, user_details: dict = dict, extra_data: dict = dict
+    uid: str, authenticator: Authenticator, user_details: dict = dict, extra_data: dict = dict
 ) -> Tuple[Optional[AbstractUser], Optional[AuthenticatorUser], Optional[bool]]:
     """
     Create the user object in the database along with it's associated AuthenticatorUser class.
     In some cases, the user may already be created in the database.
-    This assumes that the given user_name has already been resolved using the determine_username_from_uid but will do a quick double check
-
     This should be called any non-social auth plugins.
 
     Inputs
@@ -106,21 +111,22 @@ def get_or_create_authenticator_user(
                 For example, LDAP might return sn, location, phone_number, etc
     """
     try:
-        check_system_username(username)
+        check_system_username(uid)
     except AuthException as e:
         logger.warning(f"AuthException: {e}")
         raise
 
+    username = determine_username_from_uid(uid, authenticator)
     created = None
     try:
         # First see if we have an auth user and if so update it
-        auth_user = AuthenticatorUser.objects.get(uid=username, provider=authenticator)
+        auth_user = AuthenticatorUser.objects.get(uid=uid, provider=authenticator)
         auth_user.extra_data = extra_data
         auth_user.save()
         created = False
     except AuthenticatorUser.DoesNotExist:
         # Ensure that this username is not already tied to another authenticator
-        auth_user = AuthenticatorUser.objects.filter(uid=username).first()
+        auth_user = AuthenticatorUser.objects.filter(user__username=username).first()
         if auth_user is not None:
             logger.error(
                 f'Authenticator {authenticator.name} attempted to create an AuthenticatorUser for {username}'
@@ -139,7 +145,7 @@ def get_or_create_authenticator_user(
         # Create or get the user object. The get shouldn't happen but just incase something snuck in on us
         auth_user, created = AuthenticatorUser.objects.get_or_create(
             user=local_user,
-            uid=username,
+            uid=uid,
             provider=authenticator,
             defaults={'extra_data': extra_data},
         )

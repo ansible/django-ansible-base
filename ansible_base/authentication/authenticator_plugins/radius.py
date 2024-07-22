@@ -7,7 +7,7 @@ from django.utils.translation import gettext_lazy as _
 
 from ansible_base.authentication.authenticator_plugins._radiusauth import RADIUSBackend as _RADIUSBackend
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
-from ansible_base.authentication.utils.authentication import determine_username_from_uid, get_or_create_authenticator_user
+from ansible_base.authentication.utils.authentication import get_or_create_authenticator_user
 from ansible_base.authentication.utils.claims import update_user_claims
 from ansible_base.lib.serializers.fields import CharField, IntegerField
 
@@ -86,9 +86,8 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         if radius_user is None:
             return None
 
-        new_username = determine_username_from_uid(username, self.database_instance)
         user, _authenticator_user, _is_created = get_or_create_authenticator_user(
-            new_username,
+            username,
             authenticator=self.database_instance,
             user_details={},
             extra_data={"username": username},
