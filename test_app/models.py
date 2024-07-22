@@ -1,17 +1,25 @@
 import uuid
 
 from django.conf import settings
-from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.db.models import JSONField
 from rest_framework.exceptions import PermissionDenied as DRFPermissionDenied
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from ansible_base.activitystream.models import AuditableModel
-from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam, CommonModel, ImmutableCommonModel, ImmutableModel, NamedCommonModel
+from ansible_base.lib.abstract_models import (
+    AbstractDABUser,
+    AbstractOrganization,
+    AbstractTeam,
+    CommonModel,
+    ImmutableCommonModel,
+    ImmutableModel,
+    NamedCommonModel,
+)
 from ansible_base.lib.utils.models import prevent_search, user_summary_fields
 from ansible_base.rbac import permission_registry
 from ansible_base.resource_registry.fields import AnsibleResourceField
+from test_app.managers import UserUnmanagedManager
 
 
 class Organization(AbstractOrganization):
@@ -36,8 +44,8 @@ class Organization(AbstractOrganization):
     )
 
 
-class User(AbstractUser, CommonModel, AuditableModel):
-    class Meta(AbstractUser.Meta):
+class User(AbstractDABUser, CommonModel, AuditableModel):
+    class Meta(AbstractDABUser.Meta):
         ordering = ['id']
 
     resource = AnsibleResourceField(primary_key_field="id")
@@ -49,6 +57,9 @@ class User(AbstractUser, CommonModel, AuditableModel):
 
 class ManagedUser(User):
     managed = models.BooleanField(default=False)
+
+    # By default, skip managed users (use .all_objects for all users queryset)
+    objects = UserUnmanagedManager()
 
 
 class Team(AbstractTeam):

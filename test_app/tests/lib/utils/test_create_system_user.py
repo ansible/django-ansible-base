@@ -59,3 +59,21 @@ class TestCreateSystemUser:
         create_system_user(user_model=User)
         create_system_user(user_model=User)
         create_system_user(user_model=User)
+
+        assert User.objects.filter(username=get_system_username()[0]).count() == 1
+
+
+class TestGetSystemUser:
+    @pytest.mark.django_db
+    def test_get_system_user_from_basic_model(self):
+        create_system_user(user_model=User)
+
+        assert User.objects.filter(username=get_system_username()[0]).count() == 1
+        assert User.all_objects.filter(username=get_system_username()[0]).count() == 1
+
+    @pytest.mark.django_db
+    def test_get_system_user_from_managed_model(self):
+        create_system_user(user_model=ManagedUser)
+
+        assert ManagedUser.objects.filter(username=get_system_username()[0]).count() == 0
+        assert ManagedUser.all_objects.filter(username=get_system_username()[0]).count() == 1

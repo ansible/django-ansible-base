@@ -15,6 +15,8 @@ These functions are in its own file because it is loaded during migrations so it
 
 
 def create_system_user(user_model: Type[models.Model]) -> models.Model:  # Note: We can't load models here so we can typecast to anything better than Model
+    from ansible_base.lib.abstract_models.user import AbstractDABUser
+
     #
     # Creating the system user is a little tricky because we need to reference ourselves
     #
@@ -23,7 +25,10 @@ def create_system_user(user_model: Type[models.Model]) -> models.Model:  # Note:
         return None
 
     # First create a User object for the system user
-    system_user, created = user_model.objects.get_or_create(username=get_system_username()[0])
+
+    # If we use subclass of AbstractDABUser ensure we use manager for unfiltered queryset
+    user_manager = user_model.all_objects if issubclass(user_model, AbstractDABUser) else user_model.objects
+    system_user, created = user_manager.get_or_create(username=get_system_username()[0])
 
     if created:
         logger.info(f"Created system user {system_user.username}")

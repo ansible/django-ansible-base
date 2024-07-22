@@ -95,8 +95,15 @@ class NotARealException(Exception):
 
 
 def get_system_user() -> Optional[AbstractUser]:
+    from ansible_base.lib.abstract_models.user import AbstractDABUser
+
     system_username, setting_name = get_system_username()
-    system_user = get_user_model().objects.filter(username=system_username).first()
+    user_model = get_user_model()
+
+    # If we use subclass of AbstractDABUser ensure we use manager for unfiltered queryset
+    user_manager = user_model.all_objects if issubclass(user_model, AbstractDABUser) else user_model.objects
+
+    system_user = user_manager.filter(username=system_username).first()
     # We are using a global variable to try and track if this thread has already spit out the message, if so ignore
     if system_username is not None and system_user is None:
         logger.error(
