@@ -130,7 +130,7 @@ legacy_tox_ini = """
     [testenv:black]
     deps =
         black
-    commands = black {posargs:.}
+    commands = black --version && black {posargs:.}
 
     [testenv:isort]
     deps =
