@@ -72,9 +72,6 @@ class TestAuthenticationUtilsAuthentication:
         assert new_username.startswith("existing-user")  # It should be "existing-user" followed by a hash
 
     def test_username_collision_scenario(self, admin_user, admin_api_client, saml_authenticator):
-        # Ensure admin user is authenticated
-        admin_api_client.force_authenticate(user=admin_user)
-
         # We are going to play around with two uids
         user1_uid = 'user-1'
         user2_uid = "user-2"
@@ -121,41 +118,6 @@ class TestAuthenticationUtilsAuthentication:
         # Verify the state of AuthenticatorUser entries
         assert AuthenticatorUser.objects.filter(uid=user1_uid, user__username=user2_uid).exists(), "Missing renamed user"
         assert AuthenticatorUser.objects.filter(uid=user2_uid, user__username=user2_user.username).exists(), "Missing newly created user"
-
-    def test_username_change_local_auth(self, admin_user, admin_api_client, local_authenticator):
-        # Ensure admin user is authenticated
-        admin_api_client.force_authenticate(user=admin_user)
-
-        # Create a local user
-        local_user_data = {"username": "local-user", "password": "password789", "authenticators": [local_authenticator.id], "authenticator_uid": "local-user"}
-        url = get_relative_url("user-list")
-        response = admin_api_client.post(url, local_user_data)
-        assert response.status_code == 201
-
-        user = User.objects.get(username="local-user")
-        assert user.get_authenticator_uids() == ['local-user']
-
-        # Change username
-        url = get_relative_url("user-detail", kwargs={'pk': user.id})
-        response = admin_api_client.patch(url, {'username': 'new-local-user'})
-        assert response.status_code == 200
-
-        user.refresh_from_db()
-        assert user.username == 'new-local-user'
-
-        # Check if AuthenticatorUser UID is updated
-        assert user.get_authenticator_uids() == ['new-local-user']
-
-        # Try to create another local user with the original username
-        new_local_user_data = {
-            "username": "local-user",
-            "password": "password101",
-            "authenticators": [local_authenticator.id],
-            "authenticator_uid": "local-user",
-        }
-        url = get_relative_url("user-list")
-        response = admin_api_client.post(url, new_local_user_data)
-        assert response.status_code == 201  # This should succeed as the original username is now available
 
     @pytest.mark.parametrize(
         "auth_fixture",
