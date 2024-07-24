@@ -242,6 +242,22 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAML
     category = "sso"
     configuration_encrypted_fields = ['SP_PRIVATE_KEY']
 
+    def generate_saml_config(self, idp=None):
+        """
+        SP Assertion Consumer Service URL (ACS URL) is where the IdP should send the login response (the URL back to the SP)
+
+        tl; dr;
+        This is a "super function" to fix setting the ACS URL
+
+        The SP ACS URL is pulled form the config['sp']['assertionConsumerService']['url']
+        This defaults to self.redirect_uri which, I believe, is made from inspecting the request.
+        This became an issue when doing SSL offloading.
+        Ideally, we want this to come from CALLBACK_URL which we expose as the ACS URL.
+        This function overrides the default function setting the redirect_uri to our CALLBACK_URL
+        """
+        self.redirect_uri = self.strategy.get_setting('CALLBACK_URL', self)
+        return super().generate_saml_config(idp=idp)
+
     def get_login_url(self, authenticator):
         url = get_relative_url('social:begin', kwargs={'backend': authenticator.slug})
         return f'{url}?idp={idp_string}'
