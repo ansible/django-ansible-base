@@ -210,3 +210,45 @@ def test_extra_data(mockedsuper):
     assert mockedsuper.called
     assert settings.ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG in social.extra_data
     assert "mygroup" in rDict["Group"]
+
+
+@pytest.mark.django_db
+def test_callback_url_is_acs_url(rsa_keypair_with_cert):
+    """
+    Create a new authenticator of type SAML and validate that the CALLBACK_URL we set is the assertion consumer service url
+    """
+    from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
+    from ansible_base.authentication.models import Authenticator
+
+    callback_url = "https://example.com/some/random/path"
+    authenticator = Authenticator.objects.create(
+        name="Test SAML Authenticator",
+        enabled=True,
+        create_objects=True,
+        remove_users=True,
+        type="ansible_base.authentication.authenticator_plugins.saml",
+        configuration={
+            "CALLBACK_URL": callback_url,
+            "SP_ENTITY_ID": "saml_entity",
+            "SP_PUBLIC_CERT": rsa_keypair_with_cert.certificate,
+            "SP_PRIVATE_KEY": rsa_keypair_with_cert.private,
+            "ORG_INFO": {"en-US": {"url": "http://localhost", "name": "test app", "displayname": "Test App"}},
+            "TECHNICAL_CONTACT": {'givenName': "Technical Doe", 'emailAddress': "tdoe@example.com"},
+            "SUPPORT_CONTACT": {'givenName': "Support Doe", 'emailAddress': "sdoe@example.com"},
+            "SP_EXTRA": {"requestedAuthnContext": False},
+            "SECURITY_CONFIG": {},
+            "EXTRA_DATA": [],
+            "IDP_URL": "https://idp.example.com/idp/profile/SAML2/Redirect/SSO",
+            "IDP_X509_CERT": rsa_keypair_with_cert.certificate,
+            "IDP_ENTITY_ID": "https://idp.example.com/idp/shibboleth",
+            "IDP_GROUPS": "groups",
+            "IDP_ATTR_EMAIL": "email",
+            "IDP_ATTR_USERNAME": "username",
+            "IDP_ATTR_LAST_NAME": "last_name",
+            "IDP_ATTR_FIRST_NAME": "first_name",
+            "IDP_ATTR_USER_PERMANENT_ID": "user_permanent_id",
+        },
+    )
+    authenticator_object = get_authenticator_plugin(authenticator.type)
+    authenticator_object.update_if_needed(authenticator)
+    assert authenticator_object.generate_saml_config()['sp']['assertionConsumerService']['url'] == callback_url
