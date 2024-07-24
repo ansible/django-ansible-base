@@ -104,7 +104,7 @@ def get_or_create_authenticator_user(
     This should be called any non-social auth plugins.
 
     Inputs
-    username: The username we are going to be created
+    uid: The unique id that identifies the user (this comes from the source authenticator, e.g. github or ldap).
     user_details: Any details about the user from the source (first name, last name, email, etc)
     authenticator: The authenticator authenticating the user
     extra_data: Any additional information about the user provided by the source.
