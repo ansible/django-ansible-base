@@ -54,6 +54,12 @@ class User(AbstractDABUser, CommonModel, AuditableModel):
     def summary_fields(self):
         return user_summary_fields(self)
 
+    def get_authenticator_ids(self) -> list[int]:
+        return list(self.authenticator_users.values_list('provider__id', flat=True))
+
+    def get_authenticator_uids(self) -> list[str]:
+        return list(self.authenticator_users.values_list('uid', flat=True).distinct())
+
 
 class ManagedUser(User):
     managed = models.BooleanField(default=False)
