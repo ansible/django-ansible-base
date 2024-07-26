@@ -1,3 +1,5 @@
+import secrets
+
 from django.db.models import JSONField, fields
 
 from ansible_base.authentication.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_plugin
@@ -39,8 +41,8 @@ class Authenticator(UniqueNamedCommonModel):
 
         if not self.slug:
             self.slug = generate_authenticator_slug(self.type, self.name)
-            # TODO: What happens if computed slug is not unique?
-            # You would have to create an adapter with a name, rename it and then create a new one with the same name
+            if Authenticator.objects.filter(slug=self.slug).count() > 0:
+                self.slug = generate_authenticator_slug(self.type, self.name, secrets.token_hex(4))
         super().save(*args, **kwargs)
 
     def __str__(self):
