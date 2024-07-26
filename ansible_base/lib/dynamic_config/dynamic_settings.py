@@ -4,6 +4,8 @@
 #     Add a new requirements/requirements_<section>.in /even if its an empty file/
 #
 
+from ansible_base.lib.dynamic_config import default_settings
+
 # The org and team abstract models cause errors if not set, even if not used
 try:
     ANSIBLE_BASE_TEAM_MODEL
@@ -122,31 +124,11 @@ if 'ansible_base.authentication' in INSTALLED_APPS:
     if drf_authentication_class not in REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES']:  # noqa: F821
         REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES'].insert(0, drf_authentication_class)  # noqa: F821
 
-    try:
-        ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES  # noqa: F821
-    except NameError:
-        ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES = ["ansible_base.authentication.authenticator_plugins"]
+    for key, value in vars(default_settings.authentication).items():
+        if key in locals():
+            continue
+        locals()[key] = value
 
-    SOCIAL_AUTH_PIPELINE = (
-        'social_core.pipeline.social_auth.social_details',
-        'social_core.pipeline.social_auth.social_uid',
-        'social_core.pipeline.social_auth.auth_allowed',
-        'social_core.pipeline.social_auth.social_user',
-        'ansible_base.authentication.utils.authentication.determine_username_from_uid_social',
-        'social_core.pipeline.user.create_user',
-        'social_core.pipeline.social_auth.associate_user',
-        'social_core.pipeline.social_auth.load_extra_data',
-        'social_core.pipeline.user.user_details',
-        'ansible_base.authentication.social_auth.create_user_claims_pipeline',
-    )
-    SOCIAL_AUTH_STORAGE = "ansible_base.authentication.social_auth.AuthenticatorStorage"
-    SOCIAL_AUTH_STRATEGY = "ansible_base.authentication.social_auth.AuthenticatorStrategy"
-    SOCIAL_AUTH_LOGIN_REDIRECT_URL = "/"
-
-    ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG = "is_system_auditor"
-
-    # URL to send users when social auth login fails
-    LOGIN_ERROR_URL = "/?auth_failed"
 
 if 'ansible_base.rest_pagination' in INSTALLED_APPS:
     REST_FRAMEWORK['DEFAULT_PAGINATION_CLASS'] = 'ansible_base.rest_pagination.DefaultPaginator'
@@ -158,67 +140,17 @@ if 'ansible_base.jwt_consumer' in INSTALLED_APPS:
     ANSIBLE_BASE_JWT_MANAGED_ROLES = ["Platform Auditor", "Organization Admin", "Organization Member", "Team Admin", "Team Member"]
 
 if 'ansible_base.rbac' in INSTALLED_APPS:
-    # The settings-based specification of managed roles from DAB RBAC vendored ones
-    ANSIBLE_BASE_MANAGED_ROLE_REGISTRY = {}
-
-    # Permissions a user will get when creating a new item
-    ANSIBLE_BASE_CREATOR_DEFAULTS = ['add', 'change', 'delete', 'view']
-    # Permissions API will check for related items, think PATCH/PUT
-    # This is a precedence order, so first action related model has will be used
-    ANSIBLE_BASE_CHECK_RELATED_PERMISSIONS = ['use', 'change', 'view']
-    # If a role does not already exist that can give those object permissions
-    # then the system must create one, this is used for naming the auto-created role
-    ANSIBLE_BASE_ROLE_CREATOR_NAME = '{obj._meta.model_name}-creator-permission'
-
-    # Require change permission to get delete permission
-    ANSIBLE_BASE_DELETE_REQUIRE_CHANGE = True
-    # Specific feature enablement bits
-    # For assignments
-    ANSIBLE_BASE_ALLOW_TEAM_PARENTS = True
-    ANSIBLE_BASE_ALLOW_TEAM_ORG_PERMS = True
-    ANSIBLE_BASE_ALLOW_TEAM_ORG_MEMBER = False
-    ANSIBLE_BASE_ALLOW_TEAM_ORG_ADMIN = True
-    # For role definitions
-    ANSIBLE_BASE_ALLOW_CUSTOM_ROLES = True
-    ANSIBLE_BASE_ALLOW_CUSTOM_TEAM_ROLES = False
-    # Allows managing singleton permissions
-    ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES = False
-    ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES = False
-    ANSIBLE_BASE_ALLOW_SINGLETON_ROLES_API = True
-
-    # Pass ignore_conflicts=True for bulk_create calls for role evaluations
-    # this should be fine to resolve cross-process conflicts as long as
-    # directionality is the same - adding or removing permissions
-    # A value of False would result in more errors but be more conservative
-    ANSIBLE_BASE_EVALUATIONS_IGNORE_CONFLICTS = True
-
-    # User flags that can grant permission before consulting roles
-    ANSIBLE_BASE_BYPASS_SUPERUSER_FLAGS = ['is_superuser']
-    ANSIBLE_BASE_BYPASS_ACTION_FLAGS = {}
-
-    # Save RoleEvaluation entries for child permissions on parent models
-    # ex: organization roles giving view_inventory permission will save
-    # entries mapping that permission to the assignment's organization
-    ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS = False
-
-    # API clients can assign users and teams roles for shared resources
-    ALLOW_LOCAL_RESOURCE_MANAGEMENT = True
-
-    try:
-        MANAGE_ORGANIZATION_AUTH
-    except NameError:
-        MANAGE_ORGANIZATION_AUTH = True
-
-    try:
-        ORG_ADMINS_CAN_SEE_ALL_USERS
-    except NameError:
-        ORG_ADMINS_CAN_SEE_ALL_USERS = True
+    for key, value in vars(default_settings.rbac).items():
+        if key in locals():
+            continue
+        locals()[key] = value
 
 
 if 'ansible_base.oauth2_provider' in INSTALLED_APPS:  # noqa: F821
     if 'oauth2_provider' not in INSTALLED_APPS:  # noqa: F821
         INSTALLED_APPS.append('oauth2_provider')  # noqa: F821
 
+    # Process dictionary settings here
     try:
         OAUTH2_PROVIDER  # noqa: F821
     except NameError:
@@ -244,10 +176,10 @@ if 'ansible_base.oauth2_provider' in INSTALLED_APPS:  # noqa: F821
     if oauth2_authentication_class not in REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES']:  # noqa: F821
         REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES'].insert(0, oauth2_authentication_class)  # noqa: F821
 
-    # These have to be defined for the migration to function
-    OAUTH2_PROVIDER_APPLICATION_MODEL = 'dab_oauth2_provider.OAuth2Application'
-    OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL = 'dab_oauth2_provider.OAuth2AccessToken'
-    OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL = "dab_oauth2_provider.OAuth2RefreshToken"
-    OAUTH2_PROVIDER_ID_TOKEN_MODEL = "dab_oauth2_provider.OAuth2IDToken"
+    # Process non dictionary settings
+    for key, value in vars(default_settings.oauth2_provider).items():
+        if key in locals():
+            continue
+        locals()[key] = value
 
-    ALLOW_OAUTH2_FOR_EXTERNAL_USERS = False
+del default_settings
