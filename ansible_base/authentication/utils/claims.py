@@ -62,9 +62,13 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
         trigger_result = TriggerResult.SKIP
         allowed_keys = TRIGGER_DEFINITION.keys()
         invalid_keys = set(auth_map.triggers.keys()) - set(allowed_keys)
+
+        if auth_map.enabled is False:
+            logger.info(f"The AuthenticatorMap {auth_map.id} is disabled")
+
         if invalid_keys:
             logger.warning(f"In AuthenticatorMap {auth_map.id} the following trigger keys are invalid: {', '.join(invalid_keys)}, rule will be ignored")
-            rule_responses.append({auth_map.id: 'invalid'})
+            rule_responses.append({auth_map.id: 'invalid', 'enabled': auth_map.enabled})
             continue
 
         for trigger_type, trigger in auth_map.triggers.items():
@@ -84,7 +88,7 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
 
         # If the trigger result is still SKIP, this auth map is not applicable to this user => no action needed
         if trigger_result is TriggerResult.SKIP:
-            rule_responses.append({auth_map.id: 'skipped'})
+            rule_responses.append({auth_map.id: 'skipped', 'enabled': auth_map.enabled})
             continue
 
         if trigger_result is TriggerResult.ALLOW:
@@ -92,7 +96,7 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
         elif trigger_result is TriggerResult.DENY:
             has_permission = False
 
-        rule_responses.append({auth_map.id: has_permission})
+        rule_responses.append({auth_map.id: has_permission, 'enabled': auth_map.enabled})
 
         if auth_map.map_type == 'allow' and not has_permission:
             # If any rule does not allow we don't want to return this to true
