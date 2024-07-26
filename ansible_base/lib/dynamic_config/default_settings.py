@@ -1,6 +1,5 @@
 from types import SimpleNamespace
 
-
 authentication = SimpleNamespace(
     ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES=["ansible_base.authentication.authenticator_plugins"],
 
