@@ -6,16 +6,6 @@
 
 from ansible_base.lib.dynamic_config import default_settings as _dab_default_settings
 
-# The org and team abstract models cause errors if not set, even if not used
-try:
-    ANSIBLE_BASE_TEAM_MODEL
-except NameError:
-    ANSIBLE_BASE_TEAM_MODEL = 'auth.Group'
-
-try:
-    ANSIBLE_BASE_ORGANIZATION_MODEL
-except NameError:
-    ANSIBLE_BASE_ORGANIZATION_MODEL = 'auth.Group'
 
 try:
     INSTALLED_APPS  # noqa: F821
@@ -28,26 +18,10 @@ except NameError:
     REST_FRAMEWORK = {}
 
 
-# This is needed for the rest_filters app, but someone may use the filter class
-# without enabling the ansible_base.rest_filters app explicitly
-# we also apply this to views from other apps so we should always define it
-try:
-    ANSIBLE_BASE_REST_FILTERS_RESERVED_NAMES
-except NameError:
-    ANSIBLE_BASE_REST_FILTERS_RESERVED_NAMES = (
-        'page',
-        'page_size',
-        'format',
-        'order',
-        'order_by',
-        'search',
-        'type',
-        'host_filter',
-        'count_disabled',
-        'no_truncate',
-        'limit',
-        'validate',
-    )
+for key, value in vars(_dab_default_settings.general).items():
+    if key in locals():
+        continue
+    locals()[key] = value
 
 
 if 'ansible_base.api_documentation' in INSTALLED_APPS:

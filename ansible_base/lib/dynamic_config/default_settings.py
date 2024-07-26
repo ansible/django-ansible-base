@@ -1,5 +1,29 @@
 from types import SimpleNamespace
 
+general = SimpleNamespace(
+    # The org and team abstract models cause errors if not set, even if not used
+    ANSIBLE_BASE_TEAM_MODEL='auth.Group',
+    ANSIBLE_BASE_ORGANIZATION_MODEL='auth.Group',
+
+    # This is needed for the rest_filters app, but someone may use the filter class
+    # without enabling the ansible_base.rest_filters app explicitly
+    # we also apply this to views from other apps so we should always define it
+    ANSIBLE_BASE_REST_FILTERS_RESERVED_NAMES=(
+        'page',
+        'page_size',
+        'format',
+        'order',
+        'order_by',
+        'search',
+        'type',
+        'host_filter',
+        'count_disabled',
+        'no_truncate',
+        'limit',
+        'validate',
+    )
+)
+
 authentication = SimpleNamespace(
     ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES=["ansible_base.authentication.authenticator_plugins"],
 
