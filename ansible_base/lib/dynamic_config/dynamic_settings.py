@@ -4,7 +4,7 @@
 #     Add a new requirements/requirements_<section>.in /even if its an empty file/
 #
 
-from ansible_base.lib.dynamic_config import default_settings
+from ansible_base.lib.dynamic_config import default_settings as _dab_default_settings
 
 # The org and team abstract models cause errors if not set, even if not used
 try:
@@ -124,7 +124,7 @@ if 'ansible_base.authentication' in INSTALLED_APPS:
     if drf_authentication_class not in REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES']:  # noqa: F821
         REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES'].insert(0, drf_authentication_class)  # noqa: F821
 
-    for key, value in vars(default_settings.authentication).items():
+    for key, value in vars(_dab_default_settings.authentication).items():
         if key in locals():
             continue
         locals()[key] = value
@@ -140,7 +140,7 @@ if 'ansible_base.jwt_consumer' in INSTALLED_APPS:
     ANSIBLE_BASE_JWT_MANAGED_ROLES = ["Platform Auditor", "Organization Admin", "Organization Member", "Team Admin", "Team Member"]
 
 if 'ansible_base.rbac' in INSTALLED_APPS:
-    for key, value in vars(default_settings.rbac).items():
+    for key, value in vars(_dab_default_settings.rbac).items():
         if key in locals():
             continue
         locals()[key] = value
@@ -177,9 +177,9 @@ if 'ansible_base.oauth2_provider' in INSTALLED_APPS:  # noqa: F821
         REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES'].insert(0, oauth2_authentication_class)  # noqa: F821
 
     # Process non dictionary settings
-    for key, value in vars(default_settings.oauth2_provider).items():
+    for key, value in vars(_dab_default_settings.oauth2_provider).items():
         if key in locals():
             continue
         locals()[key] = value
 
-del default_settings
+del _dab_default_settings
