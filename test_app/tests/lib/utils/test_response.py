@@ -36,7 +36,7 @@ def test_get_relative_url():
     [
         ("https://www.example.com/something"),
         (None),
-    ]
+    ],
 )
 def test_get_fully_qualified_url(front_end_url):
     scheme = 'https'
