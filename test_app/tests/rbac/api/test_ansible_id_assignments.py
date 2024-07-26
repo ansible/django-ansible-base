@@ -16,6 +16,7 @@ def test_user_assignment_ansible_id(admin_api_client, inv_rd, rando, inventory):
     response = admin_api_client.post(url, data=data, format="json")
     assert response.status_code == 201, response.data
     assert rando.has_obj_perm(inventory, 'change')
+    assert response.data['user_ansible_id'] == str(resource.ansible_id)
 
 
 @pytest.mark.django_db
