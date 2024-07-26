@@ -6,7 +6,7 @@ from django.conf import settings
 from ansible_base.authentication.authenticator_plugins.saml import AuthenticatorPlugin
 from ansible_base.authentication.session import SessionAuthentication
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
-from ansible_base.lib.utils.response import get_relative_url
+from ansible_base.lib.utils.response import get_fully_qualified_url, get_relative_url
 
 authenticated_test_page = "authenticator-list"
 
@@ -212,8 +212,29 @@ def test_extra_data(mockedsuper):
     assert "mygroup" in rDict["Group"]
 
 
+def test_saml_create_via_api_without_callback_url(admin_api_client, saml_configuration):
+    del saml_configuration['CALLBACK_URL']
+
+    authenticator_data = {
+        "name": "Test SAML Authenticator",
+        "enabled": True,
+        "create_objects": True,
+        "remove_users": True,
+        "type": "ansible_base.authentication.authenticator_plugins.saml",
+        "configuration": saml_configuration,
+    }
+
+    url = get_relative_url("authenticator-list")
+    response = admin_api_client.post(url, data=authenticator_data, format="json", SERVER_NAME="dab.example.com")
+    assert response.status_code == 201, response.data
+
+    slug = response.data["slug"]
+    expected_path = get_fully_qualified_url('social:complete', kwargs={'backend': slug})
+    assert response.data["configuration"]["CALLBACK_URL"] == f"http://dab.example.com{expected_path}"
+
+
 @pytest.mark.django_db
-def test_callback_url_is_acs_url(rsa_keypair_with_cert):
+def test_saml_callback_url_is_acs_url(rsa_keypair_with_cert):
     """
     Create a new authenticator of type SAML and validate that the CALLBACK_URL we set is the assertion consumer service url
     """
