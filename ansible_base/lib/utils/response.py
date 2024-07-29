@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Optional, Sequence
 from urllib.parse import urlparse
 
+from crum import get_current_request
 from django.http import StreamingHttpResponse
 from django.urls import reverse as django_reverse
 from rest_framework.reverse import reverse as drf_reverse
@@ -46,13 +47,16 @@ def get_fully_qualified_url(view_name: str, *args, **kwargs) -> str:
     Returns a fully qualified URL from the setting FRONT_END_URL or a DRF reverse if the setting is undefined
     NOTE: a DRF reverse could be relative or not depending on the request coming in
     '''
-    url = drf_reverse(view_name, *args, **kwargs)
     front_end_url = get_setting('FRONT_END_URL', None)
-    if not front_end_url:
-        return url
+    if front_end_url:
+        url = drf_reverse(view_name, *args, **kwargs)
+        url_pieces = urlparse(url)
+        return f"{front_end_url.rstrip('/')}{url_pieces.path}"
 
-    url_pieces = urlparse(url)
-    return f"{front_end_url.rstrip('/')}{url_pieces.path}"
+    if not kwargs.get('request'):
+        kwargs['request'] = get_current_request()
+
+    return drf_reverse(view_name, *args, **kwargs)
 
 
 def get_relative_url(view_name: str, *args, **kwargs) -> str:

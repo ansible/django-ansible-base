@@ -32,24 +32,31 @@ def test_get_relative_url():
 
 
 @pytest.mark.parametrize(
-    "front_end_url",
+    "front_end_url, with_request, expected",
     [
-        ("https://www.example.com/something"),
-        (None),
+        pytest.param(
+            "https://frontend.example.com/something", True, "https://frontend.example.com/something/api/v1/users/", id="front_end_url overrides request host"
+        ),
+        pytest.param(
+            "https://frontend.example.com/something",
+            False,
+            "https://frontend.example.com/something/api/v1/users/",
+            id="front_end_url is used if request is absent",
+        ),
+        pytest.param(None, True, "https://dab.example.com:1234/api/v1/users/", id="front_end_url undefined but can get host from request"),
+        pytest.param(None, False, "/api/v1/users/", id="front_end_url undefined and no request, fall back to relative"),
     ],
 )
-def test_get_fully_qualified_url(front_end_url):
+def test_get_fully_qualified_url(front_end_url, with_request, expected):
     scheme = 'https'
-    host = 'localhost'
+    host = 'dab.example.com'
     port = 1234
 
-    request = RequestFactory().get('/fake_path', **{'SERVER_PORT': port, 'wsgi.url_scheme': scheme, 'SERVER_NAME': host})
+    if with_request:
+        request = RequestFactory().get('/fake_path', **{'SERVER_PORT': port, 'wsgi.url_scheme': scheme, 'SERVER_NAME': host})
+    else:
+        request = None
+
     with override_settings(FRONT_END_URL=front_end_url):
         url = get_fully_qualified_url('user-list', request=request)
-        if front_end_url:
-            assert url.startswith(front_end_url), f"expected {url} to start with {front_end_url}"
-            assert url != front_end_url, f"{url} should have more than just {front_end_url}"
-        else:
-            url_constructed_from_request = f"{scheme}://{host}:{port}"
-            assert url.startswith(url_constructed_from_request), f"expected {url} to start with {url_constructed_from_request}"
-            assert url != url_constructed_from_request, f"{url} should have more than just {url_constructed_from_request}"
+        assert url == expected

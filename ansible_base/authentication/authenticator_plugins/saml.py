@@ -152,8 +152,8 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
         required=False,
         allow_null=True,
         help_text=_(
-            '''Register the service as a service provider (SP) with each identity provider (IdP) you have configured.'''
-            '''Provide your SP Entity ID and this ACS URL for your application.'''
+            "Register the service as a service provider (SP) with each identity provider (IdP) you have configured. "
+            "Provide your SP Entity ID and this ACS URL for your application."
         ),
         ui_field_label=_('SAML Assertion Consumer Service (ACS) URL'),
     )
