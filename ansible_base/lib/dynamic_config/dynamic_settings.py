@@ -14,6 +14,10 @@ except NameError:
 ANSIBLE_BASE_OVERRIDDEN_SETTINGS = []
 
 
+# Use temporary local variable so we can avoid setting it if not present
+local_authentication_backends = []
+
+
 # Any settings that will be _modified_ will be mentioned here
 try:
     INSTALLED_APPS  # noqa: F821
@@ -26,9 +30,9 @@ except NameError:
     REST_FRAMEWORK = {}
 
 try:
-    AUTHENTICATION_BACKENDS  # noqa: F821
+    local_authentication_backends = AUTHENTICATION_BACKENDS  # noqa: F821
 except NameError:
-    AUTHENTICATION_BACKENDS = []
+    pass
 
 try:
     SPECTACULAR_SETTINGS  # noqa: F821
@@ -50,7 +54,7 @@ for key, value in get_dab_settings(
     installed_apps=INSTALLED_APPS,
     rest_framework=REST_FRAMEWORK,
     spectacular_settings=SPECTACULAR_SETTINGS,
-    authentication_backends=AUTHENTICATION_BACKENDS,
+    authentication_backends=local_authentication_backends,
     middleware=MIDDLEWARE,
     oauth2_provider=OAUTH2_PROVIDER,
 ).items():
@@ -62,3 +66,4 @@ for key, value in get_dab_settings(
 
 
 del get_dab_settings
+del local_authentication_backends
