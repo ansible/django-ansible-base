@@ -1,4 +1,5 @@
 from copy import copy
+from typing import Optional
 
 #
 # If you are adding a new dynamic setting:
@@ -6,9 +7,13 @@ from copy import copy
 #     Add a new requirements/requirements_<section>.in /even if its an empty file/
 #
 
-
 def get_dab_settings(
-    installed_apps: list[str], rest_framework=None, spectacular_settings=None, authentication_backends=None, middleware=None, oauth2_provider=None
+    installed_apps: list[str],
+    rest_framework: Optional[dict] = None,
+    spectacular_settings: Optional[dict] = None,
+    authentication_backends: Optional[list[str]] = None,
+    middleware: Optional[list[str]] = None,
+    oauth2_provider: Optional[dict] = None,
 ) -> dict:
     dab_data = {}
 
