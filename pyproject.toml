@@ -130,7 +130,8 @@ legacy_tox_ini = """
     [testenv:black]
     deps =
         black
-    commands = black --version && black {posargs:.}
+    allowlist_externals = sh
+    commands = sh -c 'black --version && black {posargs:.}'
 
     [testenv:isort]
     deps =

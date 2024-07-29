@@ -56,11 +56,7 @@ class TestAuthenticationUtilsAuthentication:
 
         # Create a different user tied to the same authenticator to force a collision
         existing_user = User.objects.create(username="existing-user")
-        AuthenticatorUser.objects.create(
-            user=existing_user,
-            provider=saml_authenticator,
-            uid="existing-user"
-        )
+        AuthenticatorUser.objects.create(user=existing_user, provider=saml_authenticator, uid="existing-user")
 
         # Test when there is a match (same uid and authenticator)
         new_username = authentication.determine_username_from_uid(uid="existing-user", authenticator=saml_authenticator)
@@ -77,9 +73,7 @@ class TestAuthenticationUtilsAuthentication:
         user2_uid = "user-2"
 
         # Step 1: Create an external user with username 'user-1' through the API
-        user1, _, user1_created = authentication.get_or_create_authenticator_user(
-            user1_uid, saml_authenticator, {}, {}
-        )
+        user1, _, user1_created = authentication.get_or_create_authenticator_user(user1_uid, saml_authenticator, {}, {})
         # This should now succeed because we're using a unique username
         assert user1.get_authenticator_uids() == [user1_uid]
         assert user1_created is True
@@ -105,9 +99,7 @@ class TestAuthenticationUtilsAuthentication:
         #    there is already a user in the system with username user-2
 
         # Attempt to create the new user
-        user2_user, _, user2_created = authentication.get_or_create_authenticator_user(
-            user2_uid, saml_authenticator, {}, {}
-        )
+        user2_user, _, user2_created = authentication.get_or_create_authenticator_user(user2_uid, saml_authenticator, {}, {})
         assert user2_user.username != user2_uid
         assert user2_user.get_authenticator_uids() == [user2_uid]
         assert user2_created is True
