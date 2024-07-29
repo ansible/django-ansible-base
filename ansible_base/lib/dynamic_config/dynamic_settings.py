@@ -1,0 +1,64 @@
+# Loads the output from settings_logic into locals for this to be included
+
+
+from ansible_base.lib.dynamic_config.settings_logic import get_dab_settings
+
+try:
+    ANSIBLE_BASE_OVERRIDABLE_SETTINGS  # noqa: F821
+except NameError:
+    ANSIBLE_BASE_OVERRIDABLE_SETTINGS = ['INSTALLED_APPS', 'REST_FRAMEWORK', 'AUTHENTICATION_BACKENDS', 'SPECTACULAR_SETTINGS', 'MIDDLEWARE', 'OAUTH2_PROVIDER']
+
+
+# This is mostly to be informative to the client app
+# and this would declare what settings are modified
+ANSIBLE_BASE_OVERRIDDEN_SETTINGS = []
+
+
+# Any settings that will be _modified_ will be mentioned here
+try:
+    INSTALLED_APPS  # noqa: F821
+except NameError:
+    INSTALLED_APPS = []
+
+try:
+    REST_FRAMEWORK  # noqa: F821
+except NameError:
+    REST_FRAMEWORK = {}
+
+try:
+    AUTHENTICATION_BACKENDS  # noqa: F821
+except NameError:
+    AUTHENTICATION_BACKENDS = []
+
+try:
+    SPECTACULAR_SETTINGS  # noqa: F821
+except NameError:
+    SPECTACULAR_SETTINGS = {}
+
+try:
+    MIDDLEWARE  # noqa: F821
+except NameError:
+    MIDDLEWARE = []
+
+try:
+    OAUTH2_PROVIDER  # noqa: F821
+except NameError:
+    OAUTH2_PROVIDER = {}
+
+
+for key, value in get_dab_settings(
+    installed_apps=INSTALLED_APPS,
+    rest_framework=REST_FRAMEWORK,
+    spectacular_settings=SPECTACULAR_SETTINGS,
+    authentication_backends=AUTHENTICATION_BACKENDS,
+    middleware=MIDDLEWARE,
+    oauth2_provider=OAUTH2_PROVIDER,
+).items():
+    if key in ANSIBLE_BASE_OVERRIDABLE_SETTINGS:
+        ANSIBLE_BASE_OVERRIDDEN_SETTINGS.append(key)
+        locals()[key] = value
+    elif key not in locals():
+        locals()[key] = value
+
+
+del get_dab_settings
