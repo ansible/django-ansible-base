@@ -47,14 +47,23 @@ See the following table for a mapping.
 
 ## settings.py
 
-Please read the various sections of this documentation for what settings django-ansible-base requires to function.
+As a convenience, we can let django-ansible-base automatically add and modify the settings it needs to function:
 
-As a convenience, we can let django-ansible-base automatically add the settings it needs to function:
 ```
+from split_settings.tools import include
+
 from ansible_base.lib import dynamic_config
 dab_settings = os.path.join(os.path.dirname(dynamic_config.__file__), 'dynamic_settings.py')
 include(dab_settings)
 ```
+
+You can get a list of settings that may be modified from `ANSIBLE_BASE_OVERRIDABLE_SETTINGS` after
+running this code snippet in your settings.
+By default, this `include` will not modify a setting which is already defined before
+the it runs.
+
+Tthe settings which actually where modified as a result of the dynamic include can be
+found in the `ANSIBLE_BASE_OVERRIDDEN_SETTINGS` setting.
 
 ## urls.py
 

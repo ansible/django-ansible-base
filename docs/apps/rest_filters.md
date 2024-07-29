@@ -40,6 +40,8 @@ due to the model not having an expected field.
 To deal with this, after including the dynamic settings, you can add your field to the "reserved" list:
 
 ```python
+from split_settings.tools import include
+
 from ansible_base.lib import dynamic_config
 dab_settings = os.path.join(os.path.dirname(dynamic_config.__file__), 'dynamic_settings.py')
 include(dab_settings)
