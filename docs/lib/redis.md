@@ -13,8 +13,8 @@ To leverage this client you can setup your Django cache like:
             "OPTIONS": {
                 "CLIENT_CLASS": "ansible_base.lib.redis.RedisClient",
                 "CLIENT_CLASS_KWARGS": {
-                    "clustered": <true or false>
-                    'clustered_hosts': "<host 1>:<port>,<host 2>:<port>,[...],<host N>:<port>",
+                    "mode": <cluster or standalone>
+                    'redis_hosts': "<host 1>:<port>,<host 2>:<port>,[...],<host N>:<port>",
                     'ssl': <true or false>,
                     'ssl_keyfile': '<file path>',
                     'ssl_certfile': '<file path>',
@@ -35,7 +35,7 @@ Inside the `OPTIONS` are two fields which indicate whether we are connecting to 
 
 The first one is `clustered` which will tell the client to use the RedisCluster instead of just Redis.
 
-The second option is `clustered_hosts`. If unset, we will simply connect to the server specified in `LOCATION` will be contacted and user. However, if that node is down or unreachable, the cache will fail. If you set `clustered_hosts` as long as any node can be contacted and will share a healthy cluster info, the cache can be started.
+The second option is `redis_hosts`. If unset, we will simply connect to the server specified in `LOCATION` will be contacted and user. However, if that node is down or unreachable, the cache will fail. If you set `redis_hosts` as long as any node can be contacted and will share a healthy cluster info, the cache can be started.
 
 The remaining fields in the example above control the TLS settings for connecting to Redis. These fields are documented in the redis_py documentation. 
 
