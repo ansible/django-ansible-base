@@ -7,6 +7,7 @@ from typing import Optional
 #     Add a new requirements/requirements_<section>.in /even if its an empty file/
 #
 
+
 def get_dab_settings(
     installed_apps: list[str],
     rest_framework: Optional[dict] = None,
