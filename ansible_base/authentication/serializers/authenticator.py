@@ -110,6 +110,16 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
         except ImportError as e:
             raise ValidationError({'type': _('Failed to import %(e)s') % {'e': e}})
 
+    def validate_order(self, value):
+        """
+        Validate that the authenticator 'order' is within the acceptable range.
+        """
+        max_order = 2147483647
+        min_order = 0
+
+        if value < min_order or value > max_order:
+            raise ValidationError(_("Authenticator order must be between %(min_order)s and %(max_order)s.") % {'min_order': min_order, 'max_order': max_order})
+
     def _get_related(self, obj) -> dict[str, str]:
         related = super()._get_related(obj)
         from ansible_base.authentication.views.authenticator_users import get_authenticator_user_view
