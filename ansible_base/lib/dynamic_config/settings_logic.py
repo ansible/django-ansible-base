@@ -210,6 +210,9 @@ def get_dab_settings(
 
         dab_data['MANAGE_ORGANIZATION_AUTH'] = True
 
+        # Alternative to permission_registry.register
+        dab_data['ANSIBLE_BASE_RBAC_MODEL_REGISTRY'] = {}
+
         dab_data['ORG_ADMINS_CAN_SEE_ALL_USERS'] = True
 
     if 'ansible_base.oauth2_provider' in installed_apps:

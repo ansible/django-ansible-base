@@ -32,7 +32,7 @@ class PermissionRegistry:
         self._tracked_relationships = set()
         self._trackers = dict()
 
-    def register(self, *args, parent_field_name='organization'):
+    def register(self, *args: Type[Model], parent_field_name: Optional[str] = 'organization'):
         if self.apps_ready:
             raise RuntimeError('Cannot register model to permission_registry after apps are ready')
         for cls in args:
@@ -142,16 +142,24 @@ class PermissionRegistry:
             ret.append((rd, created))
         return ret
 
-    def call_when_apps_ready(self, apps, app_config):
+    def call_when_apps_ready(self, apps, app_config) -> None:
         from ansible_base.rbac import triggers
         from ansible_base.rbac.evaluations import bound_has_obj_perm, bound_singleton_permissions, connect_rbac_methods
         from ansible_base.rbac.management import create_dab_permissions
 
         self.apps = apps
-        self.apps_ready = True
 
+        # Finish registering models
         if self.team_model not in self._registry:
-            self._registry.add(self.team_model)
+            self.register(self.team_model)
+
+        for model_name, kwargs in settings.ANSIBLE_BASE_RBAC_MODEL_REGISTRY.items():
+            model = apps.get_model(model_name)
+            if model not in self._registry:
+                self.register(model, **kwargs)
+
+        # This will lock-down the registry, raising an error for any other registrations
+        self.apps_ready = True
 
         # Do no specify sender for create_dab_permissions, because that is passed as app_config
         # and we want to create permissions for external apps, not the dab_rbac app
