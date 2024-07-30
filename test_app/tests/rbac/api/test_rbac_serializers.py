@@ -29,23 +29,17 @@ class TestRoleDefinitions:
         assert response.data['content_type'] == 'aap.inventory'
 
     def test_create_invalid_custom_system_role(self, admin_api_client):
-        response = admin_api_client.post(get_relative_url('roledefinition-list'), data={
-            'name': 'global inventory changer but not viewer',
-            'permissions': [
-                'aap.change_inventory'
-            ]
-        })
+        response = admin_api_client.post(
+            get_relative_url('roledefinition-list'), data={'name': 'global inventory changer but not viewer', 'permissions': ['aap.change_inventory']}
+        )
         assert response.status_code == 400, response.data
         assert 'Permissions for model global role needs to include view' in str(response.data)
 
     def test_create_custom_system_role(self, admin_api_client):
         "Make a POST to create a custom role with system permissions"
-        response = admin_api_client.post(get_relative_url('roledefinition-list'), data={
-            'name': 'global inventory viewer',
-            'permissions': [
-                'aap.view_inventory'
-            ]
-        })
+        response = admin_api_client.post(
+            get_relative_url('roledefinition-list'), data={'name': 'global inventory viewer', 'permissions': ['aap.view_inventory']}
+        )
         assert response.status_code == 201, response.data
         assert response.data['permissions'] == ['aap.view_inventory']
 
