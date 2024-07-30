@@ -1,4 +1,6 @@
 from django.db.models import JSONField, fields
+from django.db.models.signals import pre_save
+from django.dispatch import receiver
 
 from ansible_base.authentication.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_plugin
 from ansible_base.lib.abstract_models.common import UniqueNamedCommonModel
@@ -19,7 +21,7 @@ class Authenticator(UniqueNamedCommonModel):
         help_text="The type of authentication service this is",
     )
     order = fields.IntegerField(
-        default=1, help_text="The order in which an authenticator will be tried. This only pertains to username/password authenticators"
+        default=0, help_text="The order in which an authenticator will be tried. This only pertains to username/password authenticators"
     )
     slug = fields.SlugField(max_length=1024, default=None, editable=False, unique=True, help_text="An immutable identifier for the authenticator")
     category = fields.CharField(max_length=30, default=None, help_text="The base type of this authenticator")
@@ -101,3 +103,22 @@ class Authenticator(UniqueNamedCommonModel):
         if self.enabled and not self.__class__.objects.filter(enabled=True).exclude(id=self.id).exists():
             return True
         return False
+
+
+@receiver(pre_save, sender=Authenticator)
+def set_authenticator_order(sender, instance, **kwargs):
+    """
+    Signal handler to set the 'order' field for new authenticator instances.
+    - If the authenticator is being created without a specified order (defaulting to 0),
+      this function sets 'order' to the maximum current value plus one.
+    - If the authenticator is created with a specified order, the function uses the given order value.
+    - For existing instances being updated, 'order' will be updated with the new value given in the request.
+
+    """
+    if instance._state.adding and instance.order == 0:
+        largest_order_authenticator = Authenticator.objects.all().order_by('-order').first()
+        if largest_order_authenticator:
+            instance.order = largest_order_authenticator.order + 1
+        else:
+            # If no authenticator exists, start with order 1
+            instance.order = 1
