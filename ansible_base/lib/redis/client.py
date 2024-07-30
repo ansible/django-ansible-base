@@ -42,8 +42,8 @@ class RedisClient(DefaultClient):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         connection_kwargs = self._get_client_args()
-        self.clustered = connection_kwargs.get('clustered', False)
-        self.clustered_hosts = connection_kwargs.get('clustered_hosts', '')
+        self.mode = connection_kwargs.get('mode', 'standalone')
+        self.redis_hosts = connection_kwargs.get('redis_hosts', '')
 
     def connect(self, index: int = 0) -> Union[DABRedis, DABRedisCluster]:
         """
@@ -97,21 +97,21 @@ class RedisClientGetter:
             self.connection_settings[key] = value[-1]
 
     def _get_hosts(self) -> None:
-        if not self.clustered_hosts or self.clustered_hosts == '':
+        if not self.redis_hosts or self.redis_hosts == '':
             return
 
         self.connection_settings.pop('host', None)
         self.connection_settings.pop('port', None)
         self.connection_settings['startup_nodes'] = []
 
-        translated_generic_exception = ImproperlyConfigured(_('Unable to parse cluster_hosts, see logs for more details'))
+        translated_generic_exception = ImproperlyConfigured(_('Unable to parse redis_hosts, see logs for more details'))
 
-        # Make sure we have a string for clustered_hosts
-        if not isinstance(self.clustered_hosts, str):
-            logger.error(f"Specified clustered_hosts is not a string, got: {self.clustered_hosts}")
+        # Make sure we have a string for redis_hosts
+        if not isinstance(self.redis_hosts, str):
+            logger.error(f"Specified redis_hosts is not a string, got: {self.redis_hosts}")
             raise translated_generic_exception
 
-        host_ports = self.clustered_hosts.split(',')
+        host_ports = self.redis_hosts.split(',')
         for host_port in host_ports:
             try:
                 node, port_string = host_port.split(':')
@@ -133,8 +133,8 @@ class RedisClientGetter:
 
     def get_client(self, url: str = '', **kwargs) -> Union[DABRedis, DABRedisCluster]:
         # remove our settings which are invalid to the parent classes
-        self.clustered = kwargs.pop('clustered', None)
-        self.clustered_hosts = kwargs.pop('clustered_hosts', None)
+        self.mode = kwargs.pop('mode', 'standalone')
+        self.redis_hosts = kwargs.pop('redis_hosts', None)
 
         self.connection_settings = kwargs
         self.url = url
@@ -151,13 +151,15 @@ class RedisClientGetter:
                 raise ImproperlyConfigured(_('Unable to read file {} from setting {}').format(file, file_setting))
 
         # Connect to either a cluster or a standalone redis
-        if self.clustered:
+        if self.mode == 'cluster':
             logger.debug("Connecting to Redis clustered")
             self._get_hosts()
             return DABRedisCluster(**self.connection_settings)
-        else:
+        elif self.mode == 'standalone':
             logger.debug("Connecting to Redis standalone")
             return DABRedis(**self.connection_settings)
+        else:
+            raise ImproperlyConfigured(_("mode must be either one of ['cluster', 'standalone'] got {}").format(self.mode))
 
 
 def get_redis_client(url: str = '', **kwargs) -> Union[DABRedis, DABRedisCluster]:
@@ -166,7 +168,7 @@ def get_redis_client(url: str = '', **kwargs) -> Union[DABRedis, DABRedisCluster
     The URL can contain things like the db and other params which will be converted into kwargs for the underlying redis client
     Or parameters for the underlying redis client can be specified directly in kwargs
     This will return a DABRedisCluster based on the kwargs "clustered" otherwise it will return a regular DABRedis client
-    If clustered is specified this function also expects the setting "clustered_hosts" as a string of host:port,host:port....
+    If clustered is specified this function also expects the setting "redis_hosts" as a string of host:port,host:port....
     """
     client_getter = RedisClientGetter()
     return client_getter.get_client(url, **kwargs)

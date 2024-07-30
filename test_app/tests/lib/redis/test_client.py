@@ -5,32 +5,46 @@ import pytest
 from django.core.exceptions import ImproperlyConfigured
 from django_redis.cache import RedisCache
 from redis.client import Redis
+from redis.cluster import ClusterNode
 from redis.exceptions import RedisClusterException
 
 from ansible_base.lib.redis.client import DABRedisCluster, RedisClient, RedisClientGetter, get_redis_client
 
 
 @pytest.mark.parametrize(
-    "args,clustered,clustered_hosts",
+    "mode,redis_hosts, args",
     [
-        ({}, False, ''),
-        ({'OPTIONS': {}}, False, ''),
-        ({'OPTIONS': {'CLIENT_CLASS_KWARGS': {}}}, False, ''),
-        ({'OPTIONS': {'CLIENT_CLASS_KWARGS': {'clustered': False}}}, False, ''),
-        ({'OPTIONS': {'CLIENT_CLASS_KWARGS': {'clustered_hosts': ''}}}, False, ''),
-        ({'OPTIONS': {'CLIENT_CLASS_KWARGS': {'clustered_hosts': 'a:1'}}}, False, 'a:1'),
+        (
+            'standalone',
+            'localhost',
+            {},
+        ),
+        ('standalone', 'localhost', {'OPTIONS': {}}),
+        ('standalone', 'localhost', {'OPTIONS': {'CLIENT_CLASS_KWARGS': {}}}),
+        # Items in the CLIENT_CLASS_KWARGS are overwritten by the URL
+        ('standalone', 'localhost', {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'host': 'b'}}}),
+        ('standalone', 'localhost', {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'mode': 'standalone'}}}),
+        ('cluster', 'a', {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'mode': 'cluster', 'redis_hosts': 'a:1'}}}),
+        ('standalone', 'localhost', {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'redis_hosts': ''}}}),
+        ('standalone', 'localhost', {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'redis_hosts': 'a:1'}}}),
     ],
 )
-def test_redis_client_init_through_cache(args, clustered, clustered_hosts):
-    redis_cache = RedisCache('file://localhost', args)
-    client = RedisClient('file://localhost', args, redis_cache)
-    assert client.clustered is clustered
-    assert client.clustered_hosts == clustered_hosts
-    if clustered:
-        assert isinstance(client.get_client(), DABRedisCluster), "Client should have been a DABRedisCluster"
-        assert client.startup_nodes == clustered_hosts
-    else:
-        assert isinstance(client.get_client(), Redis), "Client should have been a Redis"
+def test_redis_client_init(args, mode, redis_hosts):
+    redis_cache = RedisCache('redis://localhost', args)
+    client = RedisClient('redis://localhost', args, redis_cache)
+    with mock.patch('redis.cluster.RedisCluster.__init__', return_value=None) as rcm:
+        with mock.patch('redis.Redis.__init__', return_value=None) as rm:
+            client.connect()
+            if mode == 'cluster':
+                rm.assert_not_called
+                rcm.assert_called_once
+                assert 'startup_nodes' in rcm.call_args.kwargs
+                assert rcm.call_args.kwargs['startup_nodes'] == [ClusterNode('a', '1')]
+            else:
+                rcm.assert_not_called
+                rm.assert_called_once
+                assert 'host' in rm.call_args.kwargs
+                assert rm.call_args.kwargs['host'] == redis_hosts
 
 
 def test_cluster_with_no_hosts():
@@ -38,13 +52,13 @@ def test_cluster_with_no_hosts():
     You can't build a cluster without cluster_hosts
     """
     with pytest.raises(RedisClusterException):
-        get_redis_client(url="file://localhost", **{'clustered': True})
+        get_redis_client(url="file://localhost", **{'mode': 'cluster'})
 
 
 def test_redis_client_confirm_connect_does_not_change_options():
-    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'clustered': False, 'clustered_hosts': 'a:1'}}}
+    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'mode': 'standalone', 'redis_hosts': 'a:1'}}}
     validate_args = copy.deepcopy(args)
-    redis_cache = RedisCache('localhost', args)
+    redis_cache = RedisCache('file://localhost', args)
     client = RedisClient('redis://localhost', args, redis_cache)
     client.connect()
     assert args == validate_args
@@ -67,8 +81,9 @@ def test_redis_client_confirm_connect_does_not_change_options():
     ],
 )
 def test_redis_client_location_parsing(url, host, port, username, password, db, raises, socket):
-    redis_cache = RedisCache(url, {})
-    client = RedisClient(url, {}, redis_cache)
+    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'mode': 'standalone'}}}
+    redis_cache = RedisCache(url, args)
+    client = RedisClient(url, args, redis_cache)
     connection = None
     try:
         connection = client.connect()
@@ -85,9 +100,9 @@ def test_redis_client_location_parsing(url, host, port, username, password, db, 
         assert connection.connection_pool.connection_kwargs.get('path', None) == socket
 
 
-@pytest.mark.parametrize("clustered,expect_exception", [(True, True), (False, False)])
-def test_redis_client_right_connection_type(clustered, expect_exception):
-    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'clustered': clustered, 'clustered_hosts': 'a:1'}}}
+@pytest.mark.parametrize("mode,expect_exception", [('cluster', True), ('standalone', False)])
+def test_redis_client_right_connection_type(mode, expect_exception):
+    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'mode': mode, 'redis_hosts': 'a:1'}}}
     redis_cache = RedisCache('localhost', args)
     client = RedisClient('redis://localhost', args, redis_cache)
 
@@ -101,8 +116,8 @@ def test_redis_client_right_connection_type(clustered, expect_exception):
         assert isinstance(connection, Redis)
 
 
-def test_redis_client_cluster_of_clustered_hosts():
-    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'clustered': True, 'clustered_hosts': 'a:1'}}}
+def test_redis_client_cluster_of_redis_hosts():
+    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'mode': 'cluster', 'redis_hosts': 'a:1'}}}
     redis_cache = RedisCache('localhost', args)
     client = RedisClient('redis://localhost', args, redis_cache)
     with mock.patch('redis.cluster.RedisCluster.__init__', return_value=None) as m:
@@ -114,7 +129,7 @@ def test_redis_client_cluster_of_clustered_hosts():
 
 
 def test_redis_client_cluster_from_url():
-    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'clustered': True, 'clustered_hosts': ''}}}
+    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'mode': 'cluster', 'redis_hosts': ''}}}
     redis_cache = RedisCache('redis://example.com:1234', args)
     client = RedisClient('redis://example.com:1234', args, redis_cache)
     with mock.patch('redis.cluster.RedisCluster.__init__', return_value=None) as m:
@@ -175,7 +190,7 @@ def test_redis_cluster_mget_raises_expected_exception():
 
 
 @pytest.mark.parametrize(
-    "clustered_hosts,raises,expected_length",
+    "redis_hosts,raises,expected_length",
     [
         (True, True, None),
         (1, True, None),
@@ -185,9 +200,9 @@ def test_redis_cluster_mget_raises_expected_exception():
         ('a,b,c', True, None),
     ],
 )
-def test_redis_client_cluster_hosts_parsing(clustered_hosts, raises, expected_length):
-    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'clustered': True, 'clustered_hosts': clustered_hosts}}}
-    redis_cache = RedisCache('localhost', args)
+def test_redis_client_cluster_hosts_parsing(redis_hosts, raises, expected_length):
+    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'mode': 'cluster', 'redis_hosts': redis_hosts}}}
+    redis_cache = RedisCache('redis://localhost', args)
     client = RedisClient('redis://localhost', args, redis_cache)
     with mock.patch('redis.cluster.RedisCluster.__init__', return_value=None) as m:
         if raises:
@@ -211,14 +226,14 @@ def test_redis_client_read_files():
 
 
 def test_redis_client_read_files_no_tls():
-    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'ssl_certfile': '/tmp/junk.does.not.exist'}}}
+    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'mode': 'standalone', 'ssl_certfile': '/tmp/junk.does.not.exist'}}}
     redis_cache = RedisCache('redis://localhost', args)
     client = RedisClient('redis://localhost', args, redis_cache)
     client.connect()
 
 
 def test_redis_client_ssl_settings_empty_strings():
-    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'ssl_certfile': '', 'some_other_setting': 4}}}
+    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'mode': 'standalone', 'ssl_certfile': '', 'some_other_setting': 4}}}
     redis_cache = RedisCache('redis://localhost', args)
     client = RedisClient('redis://localhost', args, redis_cache)
     with mock.patch('redis.Redis.__init__', return_value=None) as m:
@@ -228,7 +243,7 @@ def test_redis_client_ssl_settings_empty_strings():
 
 
 def test_redis_tls_is_set_based_on_rediss_url():
-    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {}}}
+    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'mode': 'standalone'}}}
     redis_cache = RedisCache('rediss://localhost', args)
     client = RedisClient('rediss://localhost', args, redis_cache)
     with mock.patch('redis.Redis.__init__', return_value=None) as m:
@@ -239,7 +254,7 @@ def test_redis_tls_is_set_based_on_rediss_url():
 
 def test_get_redis_client_without_url():
     with pytest.raises(RedisClusterException) as e:
-        get_redis_client(**{'clustered': True, 'clustered_hosts': 'localhost:6370'})
+        get_redis_client(**{'mode': 'cluster', 'redis_hosts': 'localhost:6370'})
         assert 'Redis Cluster cannot be connected' in e
 
 
