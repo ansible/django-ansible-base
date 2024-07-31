@@ -191,6 +191,10 @@ class AnimalViewSet(TestAppViewSet):
     serializer_class = serializers.AnimalSerializer
     queryset = models.Animal.objects.all()
 
+    @action(detail=False, methods=['post'])
+    def upload(self, request):
+        return Response({'result': 'ok'})
+
 
 class CityViewSet(TestAppViewSet):
     serializer_class = serializers.CitySerializer
