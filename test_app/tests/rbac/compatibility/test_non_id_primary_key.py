@@ -41,3 +41,9 @@ def test_make_non_id_api_assignment(admin_api_client, nk_rd, position, user):
 
     assert user.has_obj_perm(position, 'change')
     assert set(PositionModel.access_qs(user)) == set([position])
+
+
+@pytest.mark.django_db
+def test_delete_non_id_after_obj_assignment(admin_api_client, nk_rd, position, user):
+    nk_rd.give_permission(user, position)
+    position.delete()
