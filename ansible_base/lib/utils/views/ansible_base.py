@@ -11,10 +11,10 @@ logger = logging.getLogger('ansible_base.lib.utils.views.ansible_base')
 
 class AnsibleBaseView(APIView):
 
-	# pulp openapi generator compatibility
+    # pulp openapi generator compatibility
     endpoint_name = ''
 
-	# pulp openapi generator compatibility
+    # pulp openapi generator compatibility
     @classmethod
     def endpoint_pieces(cls):
         return []
