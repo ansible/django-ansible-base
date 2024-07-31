@@ -9,8 +9,8 @@ def get_next_authenticator_order():
     """
     Returns the next authenticator order, which is equals to max(order) + 1
     """
-    largest_order_authenticator = Authenticator.objects.all().order_by('-order').first()
-    return largest_order_authenticator.order + 1 if largest_order_authenticator else 1
+    largest_order_authenticator = Authenticator.objects.values('order').order_by('-order').first()
+    return largest_order_authenticator['order'] + 1 if largest_order_authenticator else 1
 
 
 class Authenticator(UniqueNamedCommonModel):
