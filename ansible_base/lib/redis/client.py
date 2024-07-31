@@ -63,6 +63,9 @@ class RedisClient(DefaultClient):
                 if attribute:
                     kwargs[arg_name] = attribute
 
+            if parsed_url.scheme == 'rediss' and kwargs.get('ssl', None) is None:
+                kwargs['ssl'] = True
+
             # Add the DB from the URL (if passed)
             try:
                 kwargs['db'] = int(parsed_url.path.split('/')[1])
@@ -75,11 +78,15 @@ class RedisClient(DefaultClient):
         for key, value in parse_qs(parsed_url.query).items():
             kwargs[key] = value[-1]
 
-        if kwargs.get('ssl', None):
-            for file_setting in ['ssl_certfile', 'ssl_keyfile', 'ssl_ca_certs']:
-                file = kwargs.get(file_setting, None)
-                if file and not os.access(file, os.R_OK):
-                    raise ImproperlyConfigured(_('Unable to read file {} from setting {}').format(file, file_setting))
+        for file_setting in ['ssl_certfile', 'ssl_keyfile', 'ssl_ca_certs']:
+            file = kwargs.get(file_setting, None)
+            if file == '':
+                # Underlying libraries inspect these settings like `if ssl_ca_certs is not None`
+                # However, we allow people to unset these by setting env vars as ""
+                # So if we get a '' or None we are going to just remove the setting so that the underlying library does not try to validate a file named ''
+                kwargs.pop(file_setting)
+            elif file is not None and kwargs.get('ssl', None) and not os.access(file, os.R_OK):
+                raise ImproperlyConfigured(_('Unable to read file {} from setting {}').format(file, file_setting))
 
         # Connect to either a cluster or a standalone redis
         if self.clustered:

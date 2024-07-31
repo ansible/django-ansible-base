@@ -203,3 +203,23 @@ def test_redis_client_read_files_no_tls():
     redis_cache = RedisCache('redis://localhost', args)
     client = RedisClient('redis://localhost', args, redis_cache)
     client.connect()
+
+
+def test_redis_client_ssl_settings_empty_strings():
+    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {'ssl_certfile': '', 'some_other_setting': 4}}}
+    redis_cache = RedisCache('redis://localhost', args)
+    client = RedisClient('redis://localhost', args, redis_cache)
+    with mock.patch('redis.Redis.__init__', return_value=None) as m:
+        client.connect()
+        assert 'ssl_certfile' not in m.cal_args.kwargs
+        assert 'some_other_setting' in m.call_args.kwargs
+
+
+def test_redis_tls_is_set_based_on_rediss_url():
+    args = {'OPTIONS': {'CLIENT_CLASS_KWARGS': {}}}
+    redis_cache = RedisCache('rediss://localhost', args)
+    client = RedisClient('rediss://localhost', args, redis_cache)
+    with mock.patch('redis.Redis.__init__', return_value=None) as m:
+        client.connect()
+        assert 'ssl' not in m.cal_args.kwargs
+        assert m.call_args.kwargs['ssl'] is True
