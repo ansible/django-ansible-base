@@ -1,5 +1,7 @@
 from unittest import mock
 
+import pytest
+
 from ansible_base.authentication.session import SessionAuthentication
 from ansible_base.lib.utils.response import get_relative_url
 
@@ -21,6 +23,45 @@ def test_azuread_auth_successful(authenticate, unauthenticated_api_client, azure
     url = get_relative_url(authenticated_test_page)
     response = client.get(url)
     assert response.status_code == 200
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "key, secret, expected_status_code, expected_error",
+    [
+        (None, None, 400, {'KEY': ['This field may not be null.']}),
+        ('', None, 400, {'KEY': ['This field may not be blank.']}),
+        ('testaz', '', 400, {'SECRET': ['This field may not be blank.']}),
+        ('testaz', None, 201, {}),
+        ('testaz', "testaz_secret", 201, {}),
+    ],
+)
+def test_azuread_endpoint_url_validation(
+    admin_api_client,
+    key,
+    secret,
+    expected_status_code,
+    expected_error,
+):
+    callback_url = "http://testserver/api/social/complete/ansible_base-authentication-authenticator_plugins-azuread__azuread-test/"  # noqa
+    config = {"KEY": key, "SECRET": secret}
+
+    data = {
+        "name": "AZUREAD TEST",
+        "enabled": True,
+        "create_objects": True,
+        "remove_users": True,
+        "configuration": config,
+        "type": "ansible_base.authentication.authenticator_plugins.azuread",
+    }
+
+    url = get_relative_url("authenticator-list")
+    response = admin_api_client.post(url, data=data, format="json")
+    assert response.status_code == expected_status_code
+    if expected_error:
+        assert response.json() == expected_error
+    else:
+        assert response.json()['configuration']['CALLBACK_URL'] == callback_url
 
 
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
