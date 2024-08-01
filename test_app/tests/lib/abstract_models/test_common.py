@@ -130,7 +130,7 @@ def test_resave_of_model_with_no_created(expected_log, system_user):
 def test_attributable_user_anonymous_user(system_user):
     # If we are an AnonymousUser and we call _attributable_error we should get the system user back
     model = User()
-    with impersonate(AnonymousUser):
+    with impersonate(AnonymousUser()):
         model.save()
 
     assert model.created_by == system_user

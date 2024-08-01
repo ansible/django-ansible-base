@@ -88,17 +88,22 @@ class Resource(models.Model):
         return cls.objects.get(object_id=obj.pk, content_type=ContentType.objects.get_for_model(obj).pk)
 
     def delete_resource(self):
+        from ..signals.handlers import no_reverse_sync
+
         if not self.content_type.resource_type.can_be_managed:
             raise ValidationError({"resource_type": _(f"Resource type: {self.content_type.resource_type.name} cannot be managed by Resources.")})
 
         with transaction.atomic():
-            self.content_object.delete()
+            with no_reverse_sync():
+                self.content_object.delete()
             self.delete()
 
     @classmethod
     def create_resource(
         cls, resource_type: ResourceType, resource_data: dict, ansible_id: Union[str, uuid.UUID, None] = None, service_id: Union[str, uuid.UUID, None] = None
     ):
+        from ..signals.handlers import no_reverse_sync
+
         c_type = resource_type.content_type
         serializer = resource_type.serializer_class(data=resource_data)
         serializer.is_valid(raise_exception=True)
@@ -107,8 +112,10 @@ class Resource(models.Model):
 
         with transaction.atomic():
             ObjModel = c_type.model_class()
-            content_object = processor(ObjModel()).save(resource_data, is_new=True)
-            resource = cls.objects.get(object_id=content_object.pk, content_type=c_type)
+            content_object = processor(ObjModel())
+            with no_reverse_sync():
+                content_object.save(resource_data, is_new=True)
+            resource = cls.objects.get(object_id=content_object.instance.pk, content_type=c_type)
 
             if ansible_id:
                 resource.ansible_id = ansible_id
@@ -119,6 +126,8 @@ class Resource(models.Model):
             return resource
 
     def update_resource(self, resource_data: dict, ansible_id=None, partial=False, service_id: Union[str, uuid.UUID, None] = None):
+        from ..signals.handlers import no_reverse_sync
+
         resource_type = self.content_type.resource_type
 
         serializer = resource_type.serializer_class(data=resource_data, partial=partial)
@@ -134,7 +143,9 @@ class Resource(models.Model):
                 self.service_id = service_id
             self.save()
 
-            processor(self.content_object).save(resource_data)
+            content_object = processor(self.content_object)
+            with no_reverse_sync():
+                content_object.save(resource_data)
 
 
 # This is a separate function so that it can work with models from apps in the

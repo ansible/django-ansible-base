@@ -43,6 +43,8 @@ class Organization(AbstractOrganization):
         help_text="The list of admins for this organization",
     )
 
+    extra_field = models.CharField(max_length=100, null=True)
+
 
 class User(AbstractDABUser, CommonModel, AuditableModel):
     class Meta(AbstractDABUser.Meta):

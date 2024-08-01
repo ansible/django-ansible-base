@@ -37,3 +37,32 @@ def test_registered_model_triggers_signals(model, system_user):
     with mock.patch('ansible_base.resource_registry.models.Resource.delete') as mck:
         obj.delete()
     mck.assert_called_once_with()
+
+
+@pytest.mark.django_db
+def test_decide_to_sync_update_with_create(enable_reverse_sync):
+    with enable_reverse_sync(mock_away_sync=True):
+        org = Organization.objects.create(name='Hello')
+
+    assert not hasattr(org, '_skip_reverse_resource_sync')
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    'fields, update_fields, should_skip',
+    [
+        (['name'], ['name'], False),
+        (['name'], ['description'], False),
+        (['name'], None, False),
+        (['extra_field'], ['extra_field'], True),
+        (['extra_field', 'name'], ['name', 'extra_field'], False),
+        (['extra_field'], None, True),
+    ],
+)
+def test_decide_to_sync_update_save(organization, enable_reverse_sync, fields, update_fields, should_skip):
+    with enable_reverse_sync(mock_away_sync=True):
+        for field in fields:
+            setattr(organization, field, 'newvalue')
+        organization.save(update_fields=update_fields)
+
+    assert hasattr(organization, '_skip_reverse_resource_sync') == should_skip

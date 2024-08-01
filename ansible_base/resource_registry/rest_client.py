@@ -104,6 +104,8 @@ class ResourceAPIClient:
             kwargs["stream"] = stream
 
         resp = requests.request(**kwargs)
+        logger.debug(f"Response status code from {url}: {resp.status_code}")
+
         if self.raise_if_bad_request:
             resp.raise_for_status()
         return resp
