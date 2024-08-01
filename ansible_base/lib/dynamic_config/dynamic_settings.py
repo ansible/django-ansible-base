@@ -235,6 +235,8 @@ if 'ansible_base.oauth2_provider' in INSTALLED_APPS:  # noqa: F821
         # of DOT that we are using requires it by default.
         OAUTH2_PROVIDER['PKCE_REQUIRED'] = False
 
+    OAUTH2_PROVIDER['OAUTH2_BACKEND_CLASS'] = 'ansible_base.oauth2_provider.authentication.OAuthLibCore'
+
     OAUTH2_PROVIDER['APPLICATION_MODEL'] = 'dab_oauth2_provider.OAuth2Application'
     OAUTH2_PROVIDER['ACCESS_TOKEN_MODEL'] = 'dab_oauth2_provider.OAuth2AccessToken'
 
