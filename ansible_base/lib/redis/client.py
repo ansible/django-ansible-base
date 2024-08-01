@@ -22,7 +22,10 @@ class DABRedisCluster(RedisCluster):
         try:
             return super().mget(*args, **kwargs)
         except RedisClusterException as e:
-            if 'MGET - all keys must map to the same key slot' in str(e):
+            if str(e) in [
+                'MGET - all keys must map to the same key slot',  # Normal Redis error
+                "CROSSSLOT Keys in request don't hash to the same slot",  # AWS elasticache error
+            ]:
                 return super().mget_nonatomic(*args, **kwargs)
             raise
 
