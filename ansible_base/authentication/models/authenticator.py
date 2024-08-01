@@ -5,6 +5,14 @@ from ansible_base.lib.abstract_models.common import UniqueNamedCommonModel
 from ansible_base.lib.utils.models import prevent_search
 
 
+def get_next_authenticator_order():
+    """
+    Returns the next authenticator order, which is equals to max(order) + 1
+    """
+    largest_order_authenticator = Authenticator.objects.values('order').order_by('-order').first()
+    return largest_order_authenticator['order'] + 1 if largest_order_authenticator else 1
+
+
 class Authenticator(UniqueNamedCommonModel):
     ignore_relations = ['authenticator_users']
     enabled = fields.BooleanField(default=False, help_text="Should this authenticator be enabled")
@@ -19,7 +27,8 @@ class Authenticator(UniqueNamedCommonModel):
         help_text="The type of authentication service this is",
     )
     order = fields.IntegerField(
-        default=1, help_text="The order in which an authenticator will be tried. This only pertains to username/password authenticators"
+        default=get_next_authenticator_order,
+        help_text="The order in which an authenticator will be tried. This only pertains to username/password authenticators",
     )
     slug = fields.SlugField(max_length=1024, default=None, editable=False, unique=True, help_text="An immutable identifier for the authenticator")
     category = fields.CharField(max_length=30, default=None, help_text="The base type of this authenticator")
