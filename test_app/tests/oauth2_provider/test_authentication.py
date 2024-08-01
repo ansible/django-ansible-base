@@ -205,3 +205,10 @@ def test_oauth2_scope_permission_not_authenticated(user, unauthenticated_api_cli
     }
     response = unauthenticated_api_client.post(url, data=data)
     assert response.status_code == 401, response.status_code
+
+
+def test_oauth2_unsupported_media_type(user, user_api_client, only_oauth_scope_permission):
+    url = get_relative_url("animal-upload")
+    data = b'TESTDATA'
+    response = user_api_client.post(url, data=data, content_type='application/octet-stream')
+    assert response.status_code == 200, response.status_code

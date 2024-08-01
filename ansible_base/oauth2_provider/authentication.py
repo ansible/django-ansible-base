@@ -2,8 +2,18 @@ import logging
 
 from django.utils.encoding import smart_str
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication
+from oauth2_provider.oauth2_backends import OAuthLibCore as _OAuthLibCore
+from rest_framework.exceptions import UnsupportedMediaType
 
 logger = logging.getLogger('ansible_base.oauth2_provider.authentication')
+
+
+class OAuthLibCore(_OAuthLibCore):
+    def extract_body(self, request):
+        try:
+            return request.POST.items()
+        except UnsupportedMediaType:
+            return ()
 
 
 class LoggedOAuth2Authentication(OAuth2Authentication):
