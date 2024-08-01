@@ -1,11 +1,13 @@
 import logging
 
 from django.apps import AppConfig
+from django.conf import settings
 from django.db.models import TextField, signals
 from django.db.models.functions import Cast
 from django.db.utils import IntegrityError
 
 import ansible_base.lib.checks  # noqa: F401 - register checks
+from ansible_base.lib.utils.db import ensure_transaction
 
 logger = logging.getLogger('ansible_base.resource_registry.apps')
 
@@ -93,6 +95,17 @@ def proxies_of_model(cls):
             yield sub_cls
 
 
+def _should_reverse_sync():
+    enabled = not getattr(settings, 'DISABLE_RESOURCE_SERVER_SYNC', False)
+    for setting in ('RESOURCE_SERVER', 'RESOURCE_SERVICE_PATH'):
+        if not getattr(settings, setting, False):
+            enabled = False
+            break
+    if hasattr(settings, 'RESOURCE_SERVER') and ('SECRET_KEY' not in settings.RESOURCE_SERVER or not settings.RESOURCE_SERVER['SECRET_KEY']):
+        enabled = False
+    return enabled
+
+
 def connect_resource_signals(sender, **kwargs):
     from ansible_base.resource_registry.signals import handlers
 
@@ -103,6 +116,31 @@ def connect_resource_signals(sender, **kwargs):
             signals.post_save.connect(handlers.update_resource, sender=cls)
             signals.post_delete.connect(handlers.remove_resource, sender=cls)
 
+            if _should_reverse_sync():
+                signals.pre_save.connect(handlers.decide_to_sync_update, sender=cls)
+                signals.post_save.connect(handlers.sync_to_resource_server_post_save, sender=cls)
+                signals.pre_delete.connect(handlers.sync_to_resource_server_pre_delete, sender=cls)
+
+                # Wrap save() in a transaction and sync to resource server
+                cls._original_save = cls.save
+
+                # Avoid late binding issues
+                def save(self, *args, _original_save=cls._original_save, **kwargs):
+                    with ensure_transaction():
+                        _original_save(self, *args, **kwargs)
+
+                cls.save = save
+
+                # Wrap delete() in a transaction and remove from resource server
+                cls._original_delete = cls.delete
+
+                # Avoid late binding issues
+                def delete(self, *args, _original_delete=cls._original_delete, **kwargs):
+                    with ensure_transaction():
+                        _original_delete(self, *args, **kwargs)
+
+                cls.delete = delete
+
 
 def disconnect_resource_signals(sender, **kwargs):
     from ansible_base.resource_registry.signals import handlers
@@ -111,6 +149,18 @@ def disconnect_resource_signals(sender, **kwargs):
         for cls in [model, *proxies_of_model(model)]:
             signals.post_save.disconnect(handlers.update_resource, sender=cls)
             signals.post_delete.disconnect(handlers.remove_resource, sender=cls)
+
+            signals.pre_save.disconnect(handlers.decide_to_sync_update, sender=cls)
+            signals.post_save.disconnect(handlers.sync_to_resource_server_post_save, sender=cls)
+            signals.pre_delete.disconnect(handlers.sync_to_resource_server_pre_delete, sender=cls)
+
+            if hasattr(cls, '_original_save'):
+                cls.save = cls._original_save
+                del cls._original_save
+
+            if hasattr(cls, '_original_delete'):
+                cls.delete = cls._original_delete
+                del cls._original_delete
 
 
 class ResourceRegistryConfig(AppConfig):
@@ -123,5 +173,4 @@ class ResourceRegistryConfig(AppConfig):
         connect_resource_signals(sender=None)
         signals.pre_migrate.connect(disconnect_resource_signals, sender=self)
         signals.post_migrate.connect(initialize_resources, sender=self)
-        # We need to re-connect signals for tests, because migrations are executed in the same process.
         signals.post_migrate.connect(connect_resource_signals, sender=self)

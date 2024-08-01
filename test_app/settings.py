@@ -186,3 +186,5 @@ RESOURCE_SERVER = {
     "SECRET_KEY": "my secret key",
     "VALIDATE_HTTPS": False,
 }
+RESOURCE_SERVICE_PATH = "/api/v1/service-index/"
+DISABLE_RESOURCE_SERVER_SYNC = True

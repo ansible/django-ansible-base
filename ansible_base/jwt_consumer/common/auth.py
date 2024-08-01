@@ -16,6 +16,7 @@ from ansible_base.jwt_consumer.common.cert import JWTCert, JWTCertException
 from ansible_base.lib.utils.auth import get_user_by_ansible_id
 from ansible_base.lib.utils.translations import translatableConditionally as _
 from ansible_base.resource_registry.models import Resource, ResourceType
+from ansible_base.resource_registry.signals.handlers import no_reverse_sync
 
 logger = logging.getLogger("ansible_base.jwt_consumer.common.auth")
 
@@ -120,10 +121,11 @@ class JWTCommonAuth:
                 logger.warn(f"New user {self.user.username} created from JWT auth")
             except IntegrityError as exc:
                 logger.warning(f'Existing user {self.token["user_data"]} is a conflict with local user, error: {exc}')
-                self.user, created = get_user_model().objects.update_or_create(
-                    username=self.token["user_data"]['username'],
-                    defaults=user_defaults,
-                )
+                with no_reverse_sync():
+                    self.user, created = get_user_model().objects.update_or_create(
+                        username=self.token["user_data"]['username'],
+                        defaults=user_defaults,
+                    )
 
         setattr(self.user, "resource_api_actions", self.token.get("resource_api_actions", None))
 
