@@ -28,6 +28,10 @@ class DABRedisCluster(RedisCluster):
 
 
 class RedisClient(DefaultClient):
+    """
+    Get a redis_client for the django cache
+    """
+
     def _get_client_args(self):
         return self._params.get('OPTIONS', {}).get('CLIENT_CLASS_KWARGS', {})
 
@@ -45,83 +49,120 @@ class RedisClient(DefaultClient):
         """
 
         # Make a deep copy of the CLIENT_CLASS_KWARGS so we don't accidentally modify the actual settings
-        kwargs = copy.deepcopy(self._get_client_args())
+        connection_args = copy.deepcopy(self._get_client_args())
 
-        # remove our settings which are invalid to the parent classes
-        kwargs.pop('clustered', None)
-        kwargs.pop('clustered_hosts', None)
+        return get_redis_client(url=self._server[index], **connection_args)
+
+
+class RedisClientGetter:
+    def _redis_parse_url(self) -> None:
+        if self.url == '':
+            # If there is no URL we have nothing to do
+            return
 
         # If we can't parse this just let it raise because other things will fail anyway
-        parsed_url = urlparse(self._server[index])
+        parsed_url = urlparse(self.url)
         if parsed_url.scheme in ['file', 'unix']:
             # Attempt to attach to a socket if its a file or unix scheme
-            kwargs['unix_socket_path'] = parsed_url.path
+            self.connection_settings['unix_socket_path'] = parsed_url.path
         elif parsed_url.scheme in ['redis', 'rediss']:
             # Extract information from a rediss url
             for arg_name, parse_name in [('host', 'hostname'), ('port', 'port'), ('username', 'username'), ('password', 'password')]:
                 attribute = getattr(parsed_url, parse_name, None)
                 if attribute:
-                    kwargs[arg_name] = attribute
+                    self.connection_settings[arg_name] = attribute
 
-            if parsed_url.scheme == 'rediss' and kwargs.get('ssl', None) is None:
-                kwargs['ssl'] = True
+            if parsed_url.scheme == 'rediss' and self.connection_settings.get('ssl', None) is None:
+                logger.info('Implicitly setting ssl in kwargs because URL was rediss')
+                self.connection_settings['ssl'] = True
 
-            # Add the DB from the URL (if passed)
-            try:
-                kwargs['db'] = int(parsed_url.path.split('/')[1])
-            except (IndexError, ValueError):
-                pass
+            if self.connection_settings.get('ssl') and parsed_url.scheme != 'rediss':
+                self.url = self.url.replace('redis://', 'rediss://')
+                logger.info("Altering redis URL to be rediss because tls was specified in kwargs")
         else:
-            raise ImproperlyConfigured('This redis client can only accept file, unix, redis or rediss URLs')
+            raise ImproperlyConfigured(_('Invalid redis URL, can only have the scheme file, unix, redis or rediss URLs, got {}').format(self.url))
+
+        # Add the DB from the URL (if passed)
+        try:
+            self.connection_settings['db'] = int(parsed_url.path.split('/')[1])
+        except (IndexError, ValueError):
+            pass
 
         # Add any additional query params from the URL as kwargs
         for key, value in parse_qs(parsed_url.query).items():
-            kwargs[key] = value[-1]
+            self.connection_settings[key] = value[-1]
+
+    def _get_hosts(self) -> None:
+        if not self.clustered_hosts or self.clustered_hosts == '':
+            return
+
+        self.connection_settings.pop('host', None)
+        self.connection_settings.pop('port', None)
+        self.connection_settings['startup_nodes'] = []
+
+        translated_generic_exception = ImproperlyConfigured(_('Unable to parse cluster_hosts, see logs for more details'))
+
+        # Make sure we have a string for clustered_hosts
+        if not isinstance(self.clustered_hosts, str):
+            logger.error(f"Specified clustered_hosts is not a string, got: {self.clustered_hosts}")
+            raise translated_generic_exception
+
+        host_ports = self.clustered_hosts.split(',')
+        for host_port in host_ports:
+            try:
+                node, port_string = host_port.split(':')
+            except ValueError:
+                logger.error(f"Specified cluster_host {host_port} is not valid; it needs to be in the format <host>:<port>")
+                raise translated_generic_exception
+
+            # Make sure we have an int for the port
+            try:
+                port = int(port_string)
+            except ValueError:
+                logger.error(f'Specified port on {host_port} is not an int')
+                raise translated_generic_exception
+
+            self.connection_settings['startup_nodes'].append(ClusterNode(node, port))
+
+    def __init__(self, *args, **kwargs):
+        self.url = ''
+
+    def get_client(self, url: str = '', **kwargs) -> Union[Redis, RedisCluster]:
+        # remove our settings which are invalid to the parent classes
+        self.clustered = kwargs.pop('clustered', None)
+        self.clustered_hosts = kwargs.pop('clustered_hosts', None)
+
+        self.connection_settings = kwargs
+        self.url = url
+        self._redis_parse_url()
 
         for file_setting in ['ssl_certfile', 'ssl_keyfile', 'ssl_ca_certs']:
-            file = kwargs.get(file_setting, None)
+            file = self.connection_settings.get(file_setting, None)
             if file == '':
                 # Underlying libraries inspect these settings like `if ssl_ca_certs is not None`
                 # However, we allow people to unset these by setting env vars as ""
                 # So if we get a '' or None we are going to just remove the setting so that the underlying library does not try to validate a file named ''
-                kwargs.pop(file_setting)
-            elif file is not None and kwargs.get('ssl', None) and not os.access(file, os.R_OK):
+                self.connection_settings.pop(file_setting)
+            elif file is not None and self.connection_settings.get('ssl', None) and not os.access(file, os.R_OK):
                 raise ImproperlyConfigured(_('Unable to read file {} from setting {}').format(file, file_setting))
 
         # Connect to either a cluster or a standalone redis
         if self.clustered:
             logger.debug("Connecting to Redis clustered")
-            if self.clustered_hosts:
-                kwargs.pop('host', None)
-                kwargs.pop('port', None)
-                startup_nodes = []
-
-                translated_generic_exception = ImproperlyConfigured(_('Unable to parse cluster_hosts, see logs for more details'))
-
-                # Make sure we have a string for clustered_hosts
-                if not isinstance(self.clustered_hosts, str):
-                    logger.error(f"Specified clustered_hosts is not a string, got: {self.clustered_hosts}")
-                    raise translated_generic_exception
-
-                host_ports = self.clustered_hosts.split(',')
-                for host_port in host_ports:
-                    try:
-                        node, port_string = host_port.split(':')
-                    except ValueError:
-                        logger.error(f"Specified cluster_host {host_port} is not valid; it needs to be in the format <host>:<port>")
-                        raise translated_generic_exception
-
-                    # Make sure we have an int for the port
-                    try:
-                        port = int(port_string)
-                    except ValueError:
-                        logger.error(f'Specified port on {host_port} is not an int')
-                        raise translated_generic_exception
-
-                    startup_nodes.append(ClusterNode(node, port))
-
-                kwargs['startup_nodes'] = startup_nodes
-            return DABRedisCluster(**kwargs)
+            self._get_hosts()
+            return DABRedisCluster(**self.connection_settings)
         else:
             logger.debug("Connecting to Redis standalone")
-            return Redis(**kwargs)
+            return Redis(**self.connection_settings)
+
+
+def get_redis_client(url: str = '', **kwargs) -> Union[Redis, RedisCluster]:
+    """
+    Get a raw redis client based on a combination of url and kwargs
+    The URL can contain things like the db and other params which will be converted into kwargs for the underlying redis client
+    Or parameters for the underlying redis client can be specified directly in kwargs
+    This will return a DABRedisCluster based on the kwargs "clustered" otherwise it will return a regular Redis client
+    If clustered is specified this function also expects the setting "clustered_hosts" as a string of host:port,host:port....
+    """
+    client_getter = RedisClientGetter()
+    return client_getter.get_client(url, **kwargs)
