@@ -7,7 +7,7 @@ from django_redis.cache import RedisCache
 from redis.client import Redis
 from redis.exceptions import RedisClusterException
 
-from ansible_base.lib.redis.client import DABRedisCluster, RedisClient
+from ansible_base.lib.redis.client import DABRedisCluster, RedisClient, RedisClientGetter, get_redis_client
 
 
 @pytest.mark.parametrize(
@@ -17,16 +17,28 @@ from ansible_base.lib.redis.client import DABRedisCluster, RedisClient
         ({'OPTIONS': {}}, False, ''),
         ({'OPTIONS': {'CLIENT_CLASS_KWARGS': {}}}, False, ''),
         ({'OPTIONS': {'CLIENT_CLASS_KWARGS': {'clustered': False}}}, False, ''),
-        ({'OPTIONS': {'CLIENT_CLASS_KWARGS': {'clustered': True}}}, True, ''),
         ({'OPTIONS': {'CLIENT_CLASS_KWARGS': {'clustered_hosts': ''}}}, False, ''),
         ({'OPTIONS': {'CLIENT_CLASS_KWARGS': {'clustered_hosts': 'a:1'}}}, False, 'a:1'),
     ],
 )
-def test_redis_client_init(args, clustered, clustered_hosts):
-    redis_cache = RedisCache('localhost', args)
-    client = RedisClient('localhost', args, redis_cache)
+def test_redis_client_init_through_cache(args, clustered, clustered_hosts):
+    redis_cache = RedisCache('file://localhost', args)
+    client = RedisClient('file://localhost', args, redis_cache)
     assert client.clustered is clustered
     assert client.clustered_hosts == clustered_hosts
+    if clustered:
+        assert isinstance(client.get_client(), DABRedisCluster), "Client should have been a DABRedisCluster"
+        assert client.startup_nodes == clustered_hosts
+    else:
+        assert isinstance(client.get_client(), Redis), "Client should have been a Redis"
+
+
+def test_cluster_with_no_hosts():
+    """
+    You can't build a cluster without cluster_hosts
+    """
+    with pytest.raises(RedisClusterException):
+        get_redis_client(url="file://localhost", **{'clustered': True})
 
 
 def test_redis_client_confirm_connect_does_not_change_options():
@@ -223,3 +235,16 @@ def test_redis_tls_is_set_based_on_rediss_url():
         client.connect()
         assert 'ssl' not in m.cal_args.kwargs
         assert m.call_args.kwargs['ssl'] is True
+
+
+def test_get_redis_client_without_url():
+    with pytest.raises(RedisClusterException) as e:
+        get_redis_client(**{'clustered': True, 'clustered_hosts': 'localhost:6370'})
+        assert 'Redis Cluster cannot be connected' in e
+
+
+def test_parse_url_short_circuit():
+    with mock.patch('ansible_base.lib.redis.client.urlparse') as m:
+        client_getter = RedisClientGetter()
+        client_getter._redis_parse_url()
+        m.assert_not_called()
