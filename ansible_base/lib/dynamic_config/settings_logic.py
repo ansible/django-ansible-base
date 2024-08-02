@@ -227,7 +227,7 @@ def get_dab_settings(
             # of DOT that we are using requires it by default.
             dab_data['OAUTH2_PROVIDER']['PKCE_REQUIRED'] = False
 
-        dab_data['OAUTH2_BACKEND_CLASS'] = 'ansible_base.oauth2_provider.authentication.OAuthLibCore'
+        dab_data['OAUTH2_PROVIDER']['OAUTH2_BACKEND_CLASS'] = 'ansible_base.oauth2_provider.authentication.OAuthLibCore'
 
         dab_data['OAUTH2_PROVIDER']['APPLICATION_MODEL'] = 'dab_oauth2_provider.OAuth2Application'
         dab_data['OAUTH2_PROVIDER']['ACCESS_TOKEN_MODEL'] = 'dab_oauth2_provider.OAuth2AccessToken'
