@@ -8,6 +8,7 @@ UID := $(shell id -u)
 TOX_ARGS ?= ""
 COMPOSE_OPTS ?=
 COMPOSE_UP_OPTS ?=
+DOCKER_COMPOSE ?= docker compose
 
 .PHONY: PYTHON_VERSION clean build\
 	check lint check_black check_flake8 check_isort
@@ -57,12 +58,12 @@ check_isort:
 #  -q, --quiet: Surpress the pull output, mainly to condence output in CI
 #  --rm: automatically remove the container when it is stopped
 postgres:
-	docker start dab_postgres || docker compose up -d postgres --quiet-pull
+	docker start dab_postgres || $(DOCKER_COMPOSE) up -d postgres --quiet-pull
 
 ## Stops the postgres container started with 'make postgres'
 stop-postgres:
 	echo "Killing dab_postgres container"
-	docker kill dab_postgres
+	$(DOCKER_COMPOSE) rm -fsv postgres
 
 # Build targets
 # --------------------------------------
