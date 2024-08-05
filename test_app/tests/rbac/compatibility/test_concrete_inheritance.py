@@ -111,14 +111,3 @@ def test_delete_with_permissions_parent_obj(uuid_rd, auto_uuid_obj, user):
     obj = auto_uuid_obj.uuidmodel_ptr
     uuid_rd.give_permission(user, obj)
     obj.delete()
-
-
-# @pytest.mark.django_db
-# def test_make_non_id_api_assignment(admin_api_client, nk_rd, position, user):
-#     url = get_relative_url('roleuserassignment-list')
-#     data = dict(role_definition=nk_rd.id, user=user.id, content_type='aap.positionmodel', object_id=position.position)
-#     response = admin_api_client.post(url, data=data, format="json")
-#     assert response.status_code == 201, response.data
-
-#     assert user.has_obj_perm(position, 'change')
-#     assert set(PositionModel.access_qs(user)) == set([position])
