@@ -252,12 +252,12 @@ def rbac_post_delete_remove_object_roles(instance, *args, **kwargs):
         ObjectRole.objects.filter(users__isnull=True, teams__isnull=True).delete()
 
     ct = permission_registry.content_type_model.objects.get_for_model(instance)
-    ObjectRole.objects.filter(content_type=ct, object_id=instance.id).delete()
+    ObjectRole.objects.filter(content_type=ct, object_id=instance.pk).delete()
 
     parent_field_name = permission_registry.get_parent_fd_name(instance)
     if parent_field_name:
         # Delete all evaluations from inherited permissions
-        get_evaluation_model(instance).objects.filter(content_type_id=ct.id, object_id=instance.id).delete()
+        get_evaluation_model(instance).objects.filter(content_type_id=ct.id, object_id=instance.pk).delete()
 
 
 def rbac_post_user_delete(instance, *args, **kwargs):
@@ -338,7 +338,7 @@ class TrackedRelationship:
             actor_set = pk_set
         elif action == 'post_clear':
             ct = permission_registry.content_type_model.objects.get_for_model(instance)
-            role = ObjectRole.objects.get(object_id=instance.id, content_type=ct, role_definition=rd)
+            role = ObjectRole.objects.get(object_id=instance.pk, content_type=ct, role_definition=rd)
             if actor_model._meta.model_name == 'team':
                 actor_set = set(role.teams.values_list('id', flat=True))
             else:
