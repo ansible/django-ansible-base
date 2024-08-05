@@ -27,6 +27,10 @@ class DABRedisCluster(RedisCluster):
             raise
 
 
+class DABRedis(Redis):
+    pass
+
+
 class RedisClient(DefaultClient):
     """
     Get a redis_client for the django cache
@@ -41,7 +45,7 @@ class RedisClient(DefaultClient):
         self.clustered = connection_kwargs.get('clustered', False)
         self.clustered_hosts = connection_kwargs.get('clustered_hosts', '')
 
-    def connect(self, index: int = 0) -> Union[Redis, RedisCluster]:
+    def connect(self, index: int = 0) -> Union[DABRedis, DABRedisCluster]:
         """
         Given a connection index, returns a new raw redis client/connection
         instance. Index is used for replication setups and indicates that
@@ -127,7 +131,7 @@ class RedisClientGetter:
     def __init__(self, *args, **kwargs):
         self.url = ''
 
-    def get_client(self, url: str = '', **kwargs) -> Union[Redis, RedisCluster]:
+    def get_client(self, url: str = '', **kwargs) -> Union[DABRedis, DABRedisCluster]:
         # remove our settings which are invalid to the parent classes
         self.clustered = kwargs.pop('clustered', None)
         self.clustered_hosts = kwargs.pop('clustered_hosts', None)
@@ -153,15 +157,15 @@ class RedisClientGetter:
             return DABRedisCluster(**self.connection_settings)
         else:
             logger.debug("Connecting to Redis standalone")
-            return Redis(**self.connection_settings)
+            return DABRedis(**self.connection_settings)
 
 
-def get_redis_client(url: str = '', **kwargs) -> Union[Redis, RedisCluster]:
+def get_redis_client(url: str = '', **kwargs) -> Union[DABRedis, DABRedisCluster]:
     """
     Get a raw redis client based on a combination of url and kwargs
     The URL can contain things like the db and other params which will be converted into kwargs for the underlying redis client
     Or parameters for the underlying redis client can be specified directly in kwargs
-    This will return a DABRedisCluster based on the kwargs "clustered" otherwise it will return a regular Redis client
+    This will return a DABRedisCluster based on the kwargs "clustered" otherwise it will return a regular DABRedis client
     If clustered is specified this function also expects the setting "clustered_hosts" as a string of host:port,host:port....
     """
     client_getter = RedisClientGetter()
