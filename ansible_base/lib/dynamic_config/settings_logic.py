@@ -44,6 +44,8 @@ def get_dab_settings(
         if 'drf_spectacular' not in installed_apps:
             dab_data.setdefault('INSTALLED_APPS', copy(installed_apps))
             dab_data['INSTALLED_APPS'].append('drf_spectacular')
+            # Shadow local variable so subsequent conditionals works.
+            installed_apps = dab_data['INSTALLED_APPS']
 
         if spectacular_settings is None:
             raise RuntimeError('Must define SPECTACULAR_SETTINGS to form DAB settings with documentation app')
@@ -85,6 +87,8 @@ def get_dab_settings(
         if 'social_django' not in installed_apps:
             dab_data.setdefault('INSTALLED_APPS', copy(installed_apps))
             dab_data['INSTALLED_APPS'].append('social_django')
+            # Shadow local variable so subsequent conditionals works.
+            installed_apps = dab_data['INSTALLED_APPS']
 
         if "ansible_base.authentication.backend.AnsibleBaseAuth" not in authentication_backends:
             dab_data.setdefault('AUTHENTICATION_BACKENDS', copy(authentication_backends))
@@ -154,6 +158,8 @@ def get_dab_settings(
         if 'ansible_base.rbac' not in installed_apps:
             dab_data.setdefault('INSTALLED_APPS', copy(installed_apps))
             dab_data['INSTALLED_APPS'].append('ansible_base.rbac')
+            # Shadow local variable so subsequent conditionals works.
+            installed_apps = dab_data['INSTALLED_APPS']
 
         dab_data['ANSIBLE_BASE_JWT_MANAGED_ROLES'] = ["Platform Auditor", "Organization Admin", "Organization Member", "Team Admin", "Team Member"]
 
@@ -210,6 +216,8 @@ def get_dab_settings(
         if 'oauth2_provider' not in installed_apps:
             dab_data.setdefault('INSTALLED_APPS', copy(installed_apps))
             dab_data['INSTALLED_APPS'].append('oauth2_provider')
+            # Shadow local variable so subsequent conditionals works.
+            installed_apps = dab_data['INSTALLED_APPS']
 
         if oauth2_provider is None:
             raise RuntimeError('Must define OAUTH2_PROVIDER setting to use ansible_base.oauth2_provider app')
