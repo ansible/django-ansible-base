@@ -735,7 +735,8 @@ def get_evaluation_model(cls):
         if pk_db_type == eval_cls._meta.get_field('object_id').db_type(connection):
             return eval_cls
     # HACK: integer pk caching is handled by same model for now, better to use default pk type later
-    if pk_field.db_type(connection) == 'bigint':
+    # the integer unsigned case happens in AWX in sqlite3 specifically
+    if pk_field.db_type(connection) in ('bigint', 'integer unsigned'):
         return RoleEvaluation
 
     raise RuntimeError(f'Model {cls._meta.model_name} primary key type of {type(pk_field)} (db type {pk_db_type}) is not supported')
