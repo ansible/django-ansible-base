@@ -4,7 +4,7 @@ from django.utils.translation import gettext_lazy as _
 from social_core.backends.google import GoogleOAuth2
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
-from ansible_base.authentication.social_auth import SocialAuthMixin
+from ansible_base.authentication.social_auth import SocialAuthMixin, SocialAuthValidateCallbackMixin
 from ansible_base.lib.serializers.fields import BooleanField, CharField, ChoiceField, ListField, URLField
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.oidc')
@@ -96,7 +96,7 @@ class GoogleOAuth2Configuration(BaseAuthenticatorConfiguration):
     )
 
 
-class AuthenticatorPlugin(SocialAuthMixin, GoogleOAuth2, AbstractAuthenticatorPlugin):
+class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, GoogleOAuth2, AbstractAuthenticatorPlugin):
     configuration_class = GoogleOAuth2Configuration
     type = "google_oauth2"
     logger = logger
