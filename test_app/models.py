@@ -233,6 +233,28 @@ class UUIDModel(models.Model):
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name='uuidmodels')
 
 
+class AutoExtraUUIDModel(UUIDModel):
+    """Adds more uniqueness to UUID, for use by any interdimensional travelers
+
+    This model accomplishes that by using concrete inheritance,
+    so the parent model is made automatically like
+    AutoExtraUUIDModel.objects.create(organization=org)
+    """
+
+    extra_id = models.UUIDField(default=uuid.uuid4)
+
+
+class ManualExtraUUIDModel(models.Model):
+    """Extra-uniquene UUID made by manually feeding in a prior UUIDModel
+
+    An example would be:
+    ManualExtraUUIDModel.objects.create(organization=org)
+    """
+
+    uuidmodel_ptr = models.OneToOneField(UUIDModel, on_delete=models.CASCADE, editable=False, related_name="+", primary_key=True)
+    extra_id = models.UUIDField(default=uuid.uuid4)
+
+
 class ImmutableTask(models.Model):
     "Hypothetical immutable task-like thing, can be created and canceled but not edited"
 
@@ -316,6 +338,9 @@ permission_registry.register(Organization, Inventory, Credential, Namespace, Tea
 permission_registry.register(ParentName, parent_field_name='my_organization')
 permission_registry.register(CollectionImport, parent_field_name='namespace')
 permission_registry.register(InstanceGroup, ImmutableTask, parent_field_name=None)
+# Note that these polymorphic UUID models may not be useful in practice
+# since permissions would be double-tracked on the sub-class table and the original UUIDModel table
+permission_registry.register(AutoExtraUUIDModel, ManualExtraUUIDModel, parent_field_name='uuidmodel_ptr')
 
 # NOTE(cutwater): Using hard coded role names instead of ones defined in ReconcileUser class,
 #   to avoid circular dependency between models and claims modules. This is a temporary workarond,
