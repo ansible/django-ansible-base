@@ -18,6 +18,10 @@ def system_roles_enabled():
     )
 
 
+def printable_model_name(model: Optional[Type[Model]]) -> str:
+    return model._meta.model_name if model else 'global role'
+
+
 def codenames_for_cls(cls) -> list[str]:
     "Helper method that gives the Django permission codenames for a given class"
     return [t[0] for t in cls._meta.permissions] + [f'{act}_{cls._meta.model_name}' for act in cls._meta.default_permissions]
@@ -104,8 +108,7 @@ def validate_permissions_for_model(permissions, content_type: Optional[Model], m
     invalid_codenames = codename_list - combine_values(permissions_by_model)
     if invalid_codenames:
         print_codenames = ', '.join(f'"{codename}"' for codename in invalid_codenames)
-        print_model = role_model._meta.model_name if role_model else 'global roles'
-        raise ValidationError({'permissions': f'Permissions {print_codenames} are not valid for {print_model} roles'})
+        raise ValidationError({'permissions': f'Permissions {print_codenames} are not valid for {printable_model_name(role_model)} roles'})
 
     # Check that view permission is given for every model that has update/delete/special actions listed
     for cls, valid_model_permissions in permissions_by_model.items():
@@ -114,7 +117,7 @@ def validate_permissions_for_model(permissions, content_type: Optional[Model], m
             non_add_model_permissions = {codename for codename in model_permissions if not is_add_perm(codename)}
             if non_add_model_permissions and not any('view' in codename for codename in non_add_model_permissions):
                 display_perms = ', '.join(non_add_model_permissions)
-                raise ValidationError({'permissions': f'Permissions for model {role_model._meta.verbose_name} needs to include view, got: {display_perms}'})
+                raise ValidationError({'permissions': f'Permissions for model {printable_model_name(role_model)} needs to include view, got: {display_perms}'})
 
     # Check requires change and role_model is a system-wide role (None means it is), skip this validation.
     if settings.ANSIBLE_BASE_DELETE_REQUIRE_CHANGE and role_model is not None:

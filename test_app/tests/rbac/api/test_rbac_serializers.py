@@ -6,28 +6,42 @@ from test_app.models import Inventory, User
 
 
 @pytest.mark.django_db
-def test_patch_system_role(admin_api_client, global_inv_rd):
-    "Making a PATCH to a system role should not re-validate the content_type"
-    url = get_relative_url('roledefinition-detail', kwargs={'pk': global_inv_rd.pk})
-    response = admin_api_client.patch(url, data={'name': 'my new name'})
-    assert response.status_code == 200
-    global_inv_rd.refresh_from_db()
-    assert global_inv_rd.name == 'my new name'
-    assert global_inv_rd.content_type is None
-    assert response.data['content_type'] is None
+class TestRoleDefinitions:
+    def test_patch_system_role(self, admin_api_client, global_inv_rd):
+        "Making a PATCH to a system role should not re-validate the content_type"
+        url = get_relative_url('roledefinition-detail', kwargs={'pk': global_inv_rd.pk})
+        response = admin_api_client.patch(url, data={'name': 'my new name'})
+        assert response.status_code == 200
+        global_inv_rd.refresh_from_db()
+        assert global_inv_rd.name == 'my new name'
+        assert global_inv_rd.content_type is None
+        assert response.data['content_type'] is None
 
+    @override_settings(ANSIBLE_BASE_ALLOW_SINGLETON_ROLES_API=False)
+    def test_patch_object_role(self, admin_api_client, inv_rd):
+        "Making a PATCH to a system role should not re-validate the content_type"
+        url = get_relative_url('roledefinition-detail', kwargs={'pk': inv_rd.pk})
+        response = admin_api_client.patch(url, data={'name': 'my new name'})
+        assert response.status_code == 200
+        inv_rd.refresh_from_db()
+        assert inv_rd.name == 'my new name'
+        assert inv_rd.content_type.model == 'inventory'
+        assert response.data['content_type'] == 'aap.inventory'
 
-@pytest.mark.django_db
-@override_settings(ANSIBLE_BASE_ALLOW_SINGLETON_ROLES_API=False)
-def test_patch_object_role(admin_api_client, inv_rd):
-    "Making a PATCH to a system role should not re-validate the content_type"
-    url = get_relative_url('roledefinition-detail', kwargs={'pk': inv_rd.pk})
-    response = admin_api_client.patch(url, data={'name': 'my new name'})
-    assert response.status_code == 200
-    inv_rd.refresh_from_db()
-    assert inv_rd.name == 'my new name'
-    assert inv_rd.content_type.model == 'inventory'
-    assert response.data['content_type'] == 'aap.inventory'
+    def test_create_invalid_custom_system_role(self, admin_api_client):
+        response = admin_api_client.post(
+            get_relative_url('roledefinition-list'), data={'name': 'global inventory changer but not viewer', 'permissions': ['aap.change_inventory']}
+        )
+        assert response.status_code == 400, response.data
+        assert 'Permissions for model global role needs to include view' in str(response.data)
+
+    def test_create_custom_system_role(self, admin_api_client):
+        "Make a POST to create a custom role with system permissions"
+        response = admin_api_client.post(
+            get_relative_url('roledefinition-list'), data={'name': 'global inventory viewer', 'permissions': ['aap.view_inventory']}
+        )
+        assert response.status_code == 201, response.data
+        assert response.data['permissions'] == ['aap.view_inventory']
 
 
 @pytest.mark.django_db
