@@ -255,6 +255,13 @@ class ManualExtraUUIDModel(models.Model):
     extra_id = models.UUIDField(default=uuid.uuid4)
 
 
+class ExtraExtraUUIDModel(models.Model):
+    """In case the prior models were not unique enough, this adds another UUID"""
+
+    extra_uuid = models.OneToOneField(ManualExtraUUIDModel, on_delete=models.CASCADE, editable=False, related_name="+", primary_key=True)
+    third_id = models.UUIDField(default=uuid.uuid4)
+
+
 class ImmutableTask(models.Model):
     "Hypothetical immutable task-like thing, can be created and canceled but not edited"
 
@@ -341,6 +348,8 @@ permission_registry.register(InstanceGroup, ImmutableTask, parent_field_name=Non
 # Note that these polymorphic UUID models may not be useful in practice
 # since permissions would be double-tracked on the sub-class table and the original UUIDModel table
 permission_registry.register(AutoExtraUUIDModel, ManualExtraUUIDModel, parent_field_name='uuidmodel_ptr')
+permission_registry.register(ExtraExtraUUIDModel, parent_field_name='extra_uuid')
+
 
 # NOTE(cutwater): Using hard coded role names instead of ones defined in ReconcileUser class,
 #   to avoid circular dependency between models and claims modules. This is a temporary workarond,
