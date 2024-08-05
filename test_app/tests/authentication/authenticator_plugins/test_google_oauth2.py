@@ -1,9 +1,10 @@
 from unittest import mock
 
 import pytest
+from django.test import override_settings
 
 from ansible_base.authentication.session import SessionAuthentication
-from ansible_base.lib.utils.response import get_relative_url
+from ansible_base.lib.utils.response import get_fully_qualified_url, get_relative_url
 
 authenticated_test_page = "authenticator-list"
 
@@ -43,7 +44,6 @@ def test_google_oauth2_callback_url_validation(
     expected_status_code,
     expected_error,
 ):
-    callback_url = "http://testserver/api/social/complete/ansible_base-authentication-authenticator_plugins-google_oauth2__google-oauth2-test/"  # noqa
     config = {"KEY": key, "SECRET": secret}
 
     data = {
@@ -61,7 +61,10 @@ def test_google_oauth2_callback_url_validation(
     if expected_error:
         assert response.json() == expected_error
     else:
-        assert response.json()['configuration']['CALLBACK_URL'] == callback_url
+        slug = response.data["slug"]
+        with override_settings(FRONT_END_URL='http://testserver/'):
+            expected_path = get_fully_qualified_url('social:complete', kwargs={'backend': slug})
+            assert response.json()['configuration']['CALLBACK_URL'] == expected_path
 
 
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
