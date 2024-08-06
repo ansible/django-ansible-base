@@ -14,17 +14,15 @@ def view_uuid_rd():
 
 
 @pytest.mark.django_db
-def test_get_evaluation_model(organization):
+def test_get_evaluation_model(uuid_obj):
     assert get_evaluation_model(UUIDModel) == RoleEvaluationUUID
     assert get_evaluation_model(Organization) == RoleEvaluation
-    uuid_obj = UUIDModel.objects.create(organization=organization)
     assert get_evaluation_model(uuid_obj) == RoleEvaluationUUID
-    assert get_evaluation_model(organization) == RoleEvaluation
+    assert get_evaluation_model(uuid_obj.organization) == RoleEvaluation
 
 
 @pytest.mark.django_db
-def test_duplicate_assignment(rando, organization, view_uuid_rd):
-    uuid_obj = UUIDModel.objects.create(organization=organization)
+def test_duplicate_assignment(rando, view_uuid_rd, uuid_obj):
     assignment = view_uuid_rd.give_permission(rando, uuid_obj)
     assert ObjectRole.objects.count() == 1
     assert assignment.content_object == uuid_obj
@@ -69,11 +67,10 @@ def test_organization_uuid_model_permission(rando):
 
 
 @pytest.mark.django_db
-def test_add_uuid_permission_to_role(rando, organization):
+def test_add_uuid_permission_to_role(rando, organization, uuid_obj):
     rd, _ = RoleDefinition.objects.get_or_create(
         permissions=['view_organization'], name='will change', content_type=permission_registry.content_type_model.objects.get_for_model(Organization)
     )
-    uuid_obj = UUIDModel.objects.create(organization=organization)
     rd.give_permission(rando, organization)
     assert not rando.has_obj_perm(uuid_obj, 'view')
 

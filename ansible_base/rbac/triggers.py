@@ -1,6 +1,7 @@
 import logging
 from contextlib import contextmanager
-from typing import Optional
+from typing import Optional, Union
+from uuid import UUID
 
 from django.db.models import Model, Q
 from django.db.models.signals import m2m_changed, post_delete, post_init, post_save, pre_delete, pre_save
@@ -132,7 +133,7 @@ def rbac_post_init_set_original_parent(sender, instance, **kwargs):
     instance.__rbac_original_parent_id = getattr(instance, parent_id_name)
 
 
-def get_parent_ids(instance) -> list[tuple[Model, int]]:
+def get_parent_ids(instance) -> list[tuple[Model, Union[int, UUID]]]:
     parent_field_name = permission_registry.get_parent_fd_name(instance)
     if not parent_field_name:
         return []
