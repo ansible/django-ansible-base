@@ -74,6 +74,9 @@ class LDAPSearchField(ListField):
         super().__init__(**kwargs)
 
         def validator(value):
+            if not value:
+                return
+
             errors = {}
 
             if len(value) != 3:
@@ -253,7 +256,7 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
             'need to be supported use of "LDAPUnion" is possible. See '
             'the documentation for details.'
         ),
-        allow_null=False,
+        allow_null=True,
         required=False,
         search_must_have_user=True,
         ui_field_label=_('LDAP User Search'),

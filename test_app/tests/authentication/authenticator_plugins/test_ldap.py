@@ -476,3 +476,92 @@ def test_AuthenticatorPlugin_authenticate_start_tls(authenticate, ldap_authentic
         assert backend.settings.CONNECTION_OPTIONS[ldap.OPT_X_TLS_NEWCTX] == newctx_value
     else:
         assert ldap.OPT_X_TLS_NEWCTX not in backend.settings.CONNECTION_OPTIONS
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "group_type, group_type_params, server_uri, user_attr_map, user_search, expected_status_code, expected_error, saved_user_search",  # noqa
+    [
+        ('PosixGroupType', {"name_attr": "ldap test"}, ["ldaps://ldap.example.com"], {"email": "ldap@ldap.example.com"}, None, 201, {}, None),  # noqa
+        ('PosixGroupType', {"name_attr": "ldap test"}, ["ldaps://ldap.example.com"], {"email": "ldap@ldap.example.com"}, [], 201, {}, []),  # noqa
+        (
+            'PosixGroupType',
+            {"name_attr": "ldap test"},
+            ["ldaps://ldap.example.com"],
+            {"email": "ldap@ldap.example.com"},
+            ['a', 'b'],
+            400,
+            {"USER_SEARCH": ["Must be an array of 3 items: search DN, search scope and a filter"]},
+            [],
+        ),
+        (
+            'PosixGroupType',
+            {"name_attr": "ldap test"},
+            ["ldaps://ldap.example.com"],
+            {"email": "ldap@ldap.example.com"},
+            ['a', 'b', 'c'],
+            400,
+            {
+                'USER_SEARCH': {
+                    '0': 'Invalid DN: a',
+                    '1': 'Must be a string representing an LDAP scope object',
+                    '2': 'DN must include "%(user)s" placeholder for username: c',
+                }
+            },
+            [],
+        ),
+        (
+            'PosixGroupType',
+            {"name_attr": "ldap test"},
+            ["ldaps://ldap.example.com"],
+            {"email": "ldap@ldap.example.com"},
+            ["OU=Users,DC=website,DC=com", "SCOPE_SUBTREE", "(cn=%(user)s)"],
+            201,
+            {},
+            ["OU=Users,DC=website,DC=com", "SCOPE_SUBTREE", "(cn=%(user)s)"],
+        ),
+    ],
+)
+def test_ldap_user_search_validation(
+    admin_api_client, group_type, group_type_params, server_uri, user_attr_map, user_search, expected_status_code, expected_error, saved_user_search
+):
+    config = {
+        "GROUP_TYPE": group_type,
+        "GROUP_TYPE_PARAMS": group_type_params,
+        "SERVER_URI": server_uri,
+        "USER_ATTR_MAP": user_attr_map,
+        "USER_SEARCH": user_search,
+    }
+
+    data = {
+        "name": "My LDAP TEST",
+        "enabled": True,
+        "create_objects": True,
+        "remove_users": True,
+        "configuration": config,
+        "type": "ansible_base.authentication.authenticator_plugins.ldap",
+    }
+
+    url = get_relative_url("authenticator-list")
+    response = admin_api_client.post(url, data=data, format="json")
+    assert response.status_code == expected_status_code
+    if expected_error:
+        assert response.json() == expected_error
+    else:
+        assert response.json()['configuration']['USER_SEARCH'] == saved_user_search
+        if saved_user_search:
+            # Reset config['USER_SEARCH'] to empty list
+            config['USER_SEARCH'] = []
+
+            url_put = get_relative_url("authenticator-detail", args=[response.data["id"]])
+            response_put = admin_api_client.put(url_put, data=data, format="json")
+            assert response_put.status_code == 200
+            # Confirm that the saved 'USER_SEARCH' is an empty list
+            assert response_put.json()['configuration']['USER_SEARCH'] == []
+
+            # Reset config['USER_SEARCH'] to None
+            config['USER_SEARCH'] = None
+            response_put = admin_api_client.put(url_put, data=data, format="json")
+            assert response_put.status_code == 200
+            # Confirm that the saved 'USER_SEARCH' is None
+            assert response_put.json()['configuration']['USER_SEARCH'] is None
