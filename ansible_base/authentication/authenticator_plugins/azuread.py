@@ -4,7 +4,7 @@ from django.utils.translation import gettext_lazy as _
 from social_core.backends.azuread import AzureADOAuth2
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
-from ansible_base.authentication.social_auth import SocialAuthMixin
+from ansible_base.authentication.social_auth import SocialAuthMixin, SocialAuthValidateCallbackMixin
 from ansible_base.lib.serializers.fields import CharField, URLField
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.azuread')
@@ -38,7 +38,7 @@ class AzureADConfiguration(BaseAuthenticatorConfiguration):
     )
 
 
-class AuthenticatorPlugin(SocialAuthMixin, AzureADOAuth2, AbstractAuthenticatorPlugin):
+class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, AzureADOAuth2, AbstractAuthenticatorPlugin):
     configuration_class = AzureADConfiguration
     type = "azuread"
     logger = logger

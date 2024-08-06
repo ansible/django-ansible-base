@@ -80,7 +80,7 @@ def clear_content_type_cache():
 @pytest.fixture
 def azuread_configuration():
     return {
-        "CALLBACK_URL": "https://localhost/api/gateway/callback/github_test/",
+        "CALLBACK_URL": "https://localhost/api/gateway/callback/azuread_test/",
         "KEY": "12345",
         "SECRET": "abcdefg12345",
     }
