@@ -6,6 +6,7 @@ from uuid import UUID
 from django.db.models import Model, Q
 from django.db.models.signals import m2m_changed, post_delete, post_init, post_save, pre_delete, pre_save
 from django.db.utils import ProgrammingError
+from django.dispatch import Signal
 
 from ansible_base.rbac.caching import compute_object_role_permissions, compute_team_member_roles
 from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation, get_evaluation_model
@@ -20,6 +21,9 @@ As the caching module will fill in cached data,
 this module shall manage the calling of the caching methods.
 Sounds simple, but is actually more complicated that the caching logic itself.
 """
+
+
+dab_post_migrate = Signal()
 
 
 def team_ancestor_roles(team):
@@ -270,11 +274,14 @@ def rbac_post_user_delete(instance, *args, **kwargs):
     ObjectRole.objects.filter(users__isnull=True, teams__isnull=True).delete()
 
 
-def post_migration_rbac_setup(*args, **kwargs):
+def post_migration_rbac_setup(sender, *args, **kwargs):
     try:
         RoleDefinition.objects.first()
     except ProgrammingError:
-        return  # this happens when migrating backwards, tables do not exist at prior states
+        logger.info('Not running DAB RBAC post_migrate logic because of suspected reverse migration')
+        return
+
+    dab_post_migrate.send(sender=sender)
 
     compute_team_member_roles()
     compute_object_role_permissions()
