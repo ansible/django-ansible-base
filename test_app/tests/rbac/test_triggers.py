@@ -12,6 +12,7 @@ from test_app.models import Inventory, Organization
 def test_post_migrate_signals(mocker):
     mck = mocker.Mock()
     dab_post_migrate.connect(mck.ad_hoc_func, dispatch_uid="my_logic")
+    # corresponds to docs/apps/rbac/for_app_developers.md, Post-migrate Actions
     post_migration_rbac_setup(apps.get_app_config('dab_rbac'))
     mck.ad_hoc_func.assert_called_once_with(sender=apps.get_app_config('dab_rbac'), signal=dab_post_migrate)
 
