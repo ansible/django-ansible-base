@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock
+
 import pytest
 from django.apps import apps
 from django.test.utils import override_settings
@@ -9,10 +11,10 @@ from test_app.models import Inventory, Organization
 
 
 @pytest.mark.django_db
-def test_post_migrate_signals(mocker):
-    mck = mocker.Mock()
-    dab_post_migrate.connect(mck.ad_hoc_func, dispatch_uid="my_logic")
+def test_post_migrate_signals():
+    mck = MagicMock()
     # corresponds to docs/apps/rbac/for_app_developers.md, Post-migrate Actions
+    dab_post_migrate.connect(mck.ad_hoc_func, dispatch_uid="my_logic")
     post_migration_rbac_setup(apps.get_app_config('dab_rbac'))
     mck.ad_hoc_func.assert_called_once_with(sender=apps.get_app_config('dab_rbac'), signal=dab_post_migrate)
 
