@@ -1,9 +1,19 @@
 import pytest
+from django.apps import apps
 from django.test.utils import override_settings
 
 from ansible_base.rbac.models import ObjectRole, RoleEvaluation, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry
+from ansible_base.rbac.triggers import dab_post_migrate, post_migration_rbac_setup
 from test_app.models import Inventory, Organization
+
+
+@pytest.mark.django_db
+def test_post_migrate_signals(mocker):
+    mck = mocker.Mock()
+    dab_post_migrate.connect(mck.ad_hoc_func, dispatch_uid="my_logic")
+    post_migration_rbac_setup(apps.get_app_config('dab_rbac'))
+    mck.ad_hoc_func.assert_called_once_with(sender=apps.get_app_config('dab_rbac'), signal=dab_post_migrate)
 
 
 @pytest.mark.django_db

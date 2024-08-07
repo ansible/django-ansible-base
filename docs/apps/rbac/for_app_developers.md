@@ -33,7 +33,7 @@ permissions are created.
 ```python
 from ansible_base.rbac.triggers import dab_post_migrate
 
-dab_post_migrate.connect(my_logic, dispatch_uuid="my_logic")
+dab_post_migrate.connect(my_logic, dispatch_uid="my_logic")
 ```
 
 By doing this, you can write code in `my_logic` that references `DABPermission`
