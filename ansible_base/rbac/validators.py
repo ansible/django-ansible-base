@@ -183,15 +183,19 @@ def validate_team_assignment_enabled(content_type: Optional[Model], has_team_per
     if not team_team_allowed and content_type.model == team_model_name:
         raise ValidationError('Assigning team permissions to other teams is not allowed')
 
-    team_parent_model_name = permission_registry.get_parent_model(permission_registry.team_model)._meta.model_name
-    if not team_org_allowed and content_type.model == team_parent_model_name:
-        raise ValidationError(f'Assigning {team_parent_model_name} permissions to teams is not allowed')
+    # Not sure what the "parent" for a Team model would be, but it's unlikely to match
+    # the content type model being sent for a role assignment ...
+    team_parent_model = permission_registry.get_parent_model(permission_registry.team_model)
+    if team_parent_model is not None:
+        team_parent_model_name = team_parent_model._meta.model_name
+        if not team_org_allowed and content_type.model == team_parent_model_name:
+            raise ValidationError(f'Assigning {team_parent_model_name} permissions to teams is not allowed')
 
-    if (not team_org_member_allowed) and has_org_member:
-        raise ValidationError(f'Assigning {team_parent_model_name} member permission to teams is not allowed')
+        if (not team_org_member_allowed) and has_org_member:
+            raise ValidationError(f'Assigning {team_parent_model_name} member permission to teams is not allowed')
 
-    if not team_org_team_allowed and content_type.model == team_parent_model_name and has_team_perm:
-        raise ValidationError(f'Assigning {team_parent_model_name} permissions that manage other teams is not allowed')
+        if not team_org_team_allowed and content_type.model == team_parent_model_name and has_team_perm:
+            raise ValidationError(f'Assigning {team_parent_model_name} permissions that manage other teams is not allowed')
 
 
 def validate_assignment(rd, actor, obj) -> None:
