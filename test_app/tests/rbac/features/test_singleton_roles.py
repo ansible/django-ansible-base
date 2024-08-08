@@ -1,8 +1,10 @@
 import pytest
+from rest_framework.exceptions import ValidationError
 
 from ansible_base.lib.utils.response import get_relative_url
+from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
-from test_app.models import Inventory, User
+from test_app.models import Inventory, Organization, User
 
 
 @pytest.mark.django_db
@@ -97,3 +99,23 @@ def test_view_assignments_with_global_and_org_role(inventory, organization, user
     expected_assignments = {global_assignment.id, assignment1.id, assignment2.id}
     assert expected_assignments == returned_assignments
     assert len(response.data['results']) == 3
+
+
+@pytest.mark.django_db
+def test_invalid_global_role_assignment(rando, inv_rd):
+    with pytest.raises(ValidationError) as exc:
+        inv_rd.give_global_permission(rando)
+    assert 'Role definition content type must be null to assign globally' in str(exc)
+
+
+@pytest.mark.django_db
+def test_remove_invalid_user_singleton_assignment(rando, global_inv_rd):
+    # normally give the global role to user
+    global_inv_rd.give_global_permission(rando)
+
+    # this will make the assignment from earlier invalid
+    global_inv_rd.content_type = permission_registry.content_type_model.objects.get_for_model(Organization)
+    global_inv_rd.save(update_fields=['content_type'])
+
+    # should still be able to remove the permission, even if the configuration is invalid
+    global_inv_rd.remove_global_permission(rando)
