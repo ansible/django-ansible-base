@@ -102,14 +102,14 @@ def test_view_assignments_with_global_and_org_role(inventory, organization, user
 
 
 @pytest.mark.django_db
-def test_invalid_global_role_assignment(rando, inv_rd, inventory):
+def test_invalid_global_role_assignment(rando, inv_rd):
     with pytest.raises(ValidationError) as exc:
         inv_rd.give_global_permission(rando)
     assert 'Role definition content type must be null to assign globally' in str(exc)
 
 
 @pytest.mark.django_db
-def test_remove_invalid_user_singleton_assignment(rando, inventory, global_inv_rd):
+def test_remove_invalid_user_singleton_assignment(rando, global_inv_rd):
     # normally give the global role to user
     global_inv_rd.give_global_permission(rando)
 
