@@ -1,12 +1,10 @@
 import pytest
-
 from rest_framework.exceptions import ValidationError
 
 from ansible_base.lib.utils.response import get_relative_url
-from ansible_base.rbac.models import RoleDefinition
 from ansible_base.rbac import permission_registry
-
-from test_app.models import Inventory, User, Organization
+from ansible_base.rbac.models import RoleDefinition
+from test_app.models import Inventory, Organization, User
 
 
 @pytest.mark.django_db
@@ -120,4 +118,3 @@ def test_remove_invalid_user_singleton_assignment(rando, inventory, global_inv_r
 
     # should still be able to remove the permission, even if the configuration is invalid
     global_inv_rd.remove_global_permission(rando)
-
