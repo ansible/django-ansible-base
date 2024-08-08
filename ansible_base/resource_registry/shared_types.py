@@ -58,6 +58,10 @@ class OrganizationType(SharedResourceTypeSerializer):
     RESOURCE_TYPE = "organization"
 
     name = serializers.CharField()
+    description = serializers.CharField(
+        default="",
+        allow_blank=True,
+    )
 
 
 class TeamType(SharedResourceTypeSerializer):
@@ -65,3 +69,7 @@ class TeamType(SharedResourceTypeSerializer):
 
     name = serializers.CharField()
     organization = AnsibleResourceForeignKeyField("shared.organization", required=False, allow_null=True)
+    description = serializers.CharField(
+        default="",
+        allow_blank=True,
+    )
