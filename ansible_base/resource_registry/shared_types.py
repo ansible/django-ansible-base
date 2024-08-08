@@ -14,29 +14,14 @@ class UserAdditionalDataSerializer(serializers.Serializer):
     social_auth = serializers.ListField()
 
     def to_representation(self, instance):
-        print("____------______-----____-----")
-        social_auth = []
+        social_auth = {}
 
         if hasattr(instance, "authenticator_users"):
-            print("authenticator type")
             for social in instance.authenticator_users.all():
-                social_auth.append(
-                    {
-                        "social_backend": social.provider.type,
-                        "social_uid": social.uid,
-                    }
-                )
+                social_auth[social.provider.type] = social.uid
         elif hasattr(instance, "social_auth"):
-            print("social type")
             for social in instance.social_auth.all():
-                social_auth.append(
-                    {
-                        "social_backend": social.provider,
-                        "social_uid": social.uid,
-                    }
-                )
-        else:
-            print("???")
+                social_auth[social.provider] = social.uid
 
         return {"social_auth": social_auth}
 

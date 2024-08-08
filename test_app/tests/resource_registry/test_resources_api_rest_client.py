@@ -177,8 +177,7 @@ def test_additional_data(resource_client, django_user_model, github_authenticato
 
     assert "social_auth" in additional
     assert len(additional["social_auth"]) == 1
-    assert additional["social_auth"][0]["social_uid"] == "different_uid"
-    assert additional["social_auth"][0]["social_backend"] == github_authenticator.type
+    assert additional["social_auth"][github_authenticator.type] == "different_uid"
 
 
 @pytest.mark.django_db
