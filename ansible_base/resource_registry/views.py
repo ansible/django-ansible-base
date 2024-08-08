@@ -13,7 +13,6 @@ from rest_framework.viewsets import GenericViewSet, mixins
 from ansible_base.lib.utils.response import CSVStreamResponse, get_relative_url
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.resource_registry.models import Resource, ResourceType, service_id
-from ansible_base.resource_registry.models.resource import resource_type_cache
 from ansible_base.resource_registry.registry import get_registry
 from ansible_base.resource_registry.serializers import ResourceListSerializer, ResourceSerializer, ResourceTypeSerializer, UserAuthenticationSerializer
 from ansible_base.rest_filters.rest_framework.field_lookup_backend import FieldLookupBackend
@@ -95,15 +94,15 @@ class ResourceViewSet(
 
         return super().get_serializer_class()
 
-    @action(detail=True, methods=['get'])
-    def additional_data(self, *args, **kwargs):
-        obj = self.get_object()
-        if serializer := resource_type_cache(obj.content_type.pk).serializer_class:
-            data = serializer.get_additional_data(obj.content_object)
-            if data is not None:
-                return Response(data.data)
+    # @action(detail=True, methods=['get'])
+    # def additional_data(self, *args, **kwargs):
+    #     obj = self.get_object()
+    #     if serializer := resource_type_cache(obj.content_type.pk).serializer_class:
+    #         data = serializer.get_additional_data(obj.content_object)
+    #         if data is not None:
+    #             return Response(data.data)
 
-        return HttpResponseNotFound()
+    #     return HttpResponseNotFound()
 
     def perform_destroy(self, instance):
         instance.delete_resource()

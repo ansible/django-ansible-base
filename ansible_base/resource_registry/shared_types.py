@@ -2,7 +2,6 @@ from rest_framework import serializers
 
 from ansible_base.resource_registry.utils.resource_type_serializers import (
     AnsibleResourceForeignKeyField,
-    AnsibleResourceManyRelated,
     SharedResourceTypeSerializer,
 )
 
@@ -12,33 +11,34 @@ class UserAdditionalDataSerializer(serializers.Serializer):
     Additional data serializer for UserType
     """
 
-    username = serializers.CharField()
-    email = serializers.EmailField(required=False, allow_blank=True)
-    first_name = serializers.CharField(required=False, allow_blank=True)
-    last_name = serializers.CharField(required=False, allow_blank=True)
-    is_superuser = serializers.BooleanField(default=False)
+    social_auth = serializers.ListField()
 
-    # If this user is an SSO user, provide
-    external_auth_provider = serializers.CharField(required=False, allow_blank=True)
-    external_auth_uid = serializers.CharField(required=False, allow_blank=True)
+    def to_representation(self, instance):
+        print("____------______-----____-----")
+        social_auth = []
 
-    organizations = AnsibleResourceManyRelated("shared.organization")
-    organizations_administered = serializers.SerializerMethodField()
+        if hasattr(instance, "authenticator_users"):
+            print("authenticator type")
+            for social in instance.authenticator_users.all():
+                social_auth.append(
+                    {
+                        "social_backend": social.provider.type,
+                        "social_uid": social.uid,
+                    }
+                )
+        elif hasattr(instance, "social_auth"):
+            print("social type")
+            for social in instance.social_auth.all():
+                social_auth.append(
+                    {
+                        "social_backend": social.provider,
+                        "social_uid": social.uid,
+                    }
+                )
+        else:
+            print("???")
 
-    teams = AnsibleResourceManyRelated("shared.team")
-    teams_administered = serializers.SerializerMethodField()
-
-    def get_organizations_administered(self, obj):
-        if not hasattr(obj, "organizations_administered"):
-            return []
-        ansible_resources_serializer = AnsibleResourceManyRelated("shared.organization")
-        return ansible_resources_serializer.to_representation(obj.organizations_administered)
-
-    def get_teams_administered(self, obj):
-        if not hasattr(obj, "teams_administered"):
-            return []
-        ansible_resources_serializer = AnsibleResourceManyRelated("shared.team")
-        return ansible_resources_serializer.to_representation(obj.teams_administered)
+        return {"social_auth": social_auth}
 
 
 class UserType(SharedResourceTypeSerializer):

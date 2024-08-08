@@ -18,13 +18,6 @@ def get_concrete_model(model):
     return _model
 
 
-class UserResourceTypeProcessor(ResourceTypeProcessor):
-    def pre_serialize_additional(self):
-        setattr(self.instance, "external_auth_provider", None)
-        setattr(self.instance, "external_auth_uid", None)
-        return self.instance
-
-
 class ServiceAPIConfig:
     """
     This will be the interface for configuring the resource registry for each service.
@@ -33,7 +26,7 @@ class ServiceAPIConfig:
     _default_resource_processors = {
         "shared.team": ResourceTypeProcessor,
         "shared.organization": ResourceTypeProcessor,
-        "shared.user": UserResourceTypeProcessor,
+        "shared.user": ResourceTypeProcessor,
     }
 
     custom_resource_processors = {}

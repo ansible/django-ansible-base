@@ -26,11 +26,11 @@ class ResourceDataField(serializers.JSONField):
         return {self.field_name: data}
 
 
-class ResourceSerializer(serializers.ModelSerializer):
+class ResourceListSerializer(serializers.ModelSerializer):
     has_serializer = serializers.SerializerMethodField()
-    resource_data = ResourceDataField(source="*")
     url = serializers.SerializerMethodField()
     resource_type = serializers.CharField(required=False)
+    resource_data = ResourceDataField(source="*", write_only=True)
 
     class Meta:
         model = Resource
@@ -91,8 +91,23 @@ class ResourceSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"resource_type": _(f"Resource type: {validated_data['resource_type']} does not exist.")})
 
 
-class ResourceListSerializer(ResourceSerializer):
-    resource_data = ResourceDataField(source="*", write_only=True)
+class ResourceSerializer(ResourceListSerializer):
+    additional_data = serializers.SerializerMethodField()
+    resource_data = ResourceDataField(source="*")
+
+    class Meta:
+        model = ResourceListSerializer.Meta.model
+        read_only_fields = ResourceListSerializer.Meta.read_only_fields
+        fields = ResourceListSerializer.Meta.fields + [
+            "additional_data",
+        ]
+
+    def get_additional_data(self, obj):
+        if serializer := obj.content_type.resource_type.serializer_class:
+            if serializer.ADDITIONAL_DATA_SERIALIZER is not None:
+                return serializer.ADDITIONAL_DATA_SERIALIZER(obj.content_object).data
+
+        return None
 
 
 class ResourceTypeSerializer(serializers.ModelSerializer):

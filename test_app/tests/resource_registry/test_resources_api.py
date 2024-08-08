@@ -8,7 +8,7 @@ from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.resource_registry.models import Resource
 from ansible_base.resource_registry.utils.resource_type_processor import ResourceTypeProcessor
 from test_app.models import EncryptionModel, Organization
-from test_app.resource_api import APIConfig, UserProcessor
+from test_app.resource_api import APIConfig
 
 
 def test_service_index_root(user_api_client):
@@ -343,22 +343,6 @@ def test_processor_pre_serialize(admin_api_client, organization):
     with patch("test_app.resource_api.APIConfig", PatchedConfig):
         resp = admin_api_client.get(url)
         assert resp.data["resource_data"]["name"] == "PRE SERIALIZED"
-
-
-def test_processor_pre_serialize_additional(admin_api_client, admin_user):
-    class CustomProcessor(UserProcessor):
-        def pre_serialize_additional(self):
-            self.instance.username = "PRE SERIALIZED"
-            return super().pre_serialize_additional()
-
-    class PatchedConfig(APIConfig):
-        custom_resource_processors = {"shared.user": CustomProcessor}
-
-    url = get_relative_url("resource-additional-data", kwargs={"ansible_id": str(admin_user.resource.ansible_id)})
-
-    with patch("test_app.resource_api.APIConfig", PatchedConfig):
-        resp = admin_api_client.get(url)
-        assert resp.data["username"] == "PRE SERIALIZED"
 
 
 def test_processor_save(admin_api_client):
