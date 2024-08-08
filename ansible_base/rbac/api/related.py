@@ -2,12 +2,12 @@ import logging
 from typing import Optional
 
 from django.conf import settings
-from django.db import transaction
 from django.db.models import Field, ForeignKey, Model
 from django.forms import model_to_dict
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import PermissionDenied
 
+from ansible_base.lib.utils.db import ensure_transaction
 from ansible_base.lib.utils.models import is_add_perm
 from ansible_base.rbac.models import RoleDefinition
 from ansible_base.rbac.permission_registry import permission_registry
@@ -120,7 +120,7 @@ class RelatedAccessMixin:
             # Properties of the prior instance must be saved before setattr with new data
             # this is analogous to making a copy of instance
             old_data = model_to_dict(instance)
-            with transaction.atomic():
+            with ensure_transaction():
                 updated_instance = super().update(instance, validated_data)
                 check_related_permissions(view.request.user, self.Meta.model, old_data, model_to_dict(updated_instance))
         return updated_instance
@@ -131,7 +131,7 @@ class RelatedAccessMixin:
             logger.warning(f'Serializer cannot check related permissions for new {self.Meta.model} because context was not passed to {type(self)}')
             instance = super().create(validated_data)
         else:
-            with transaction.atomic():
+            with ensure_transaction():
                 instance = super().create(validated_data)
                 check_related_permissions(view.request.user, self.Meta.model, {}, model_to_dict(instance))
                 RoleDefinition.objects.give_creator_permissions(view.request.user, instance)
