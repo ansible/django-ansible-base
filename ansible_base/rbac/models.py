@@ -184,11 +184,11 @@ class RoleDefinition(CommonModel):
         return self.give_or_remove_global_permission(actor, giving=False)
 
     def give_or_remove_global_permission(self, actor, giving=True):
-        if self.content_type is not None:
-            raise RuntimeError('Role definition content type must be null to assign globally')
+        if giving and (self.content_type is not None):
+            raise ValidationError('Role definition content type must be null to assign globally')
 
         if actor._meta.model_name == 'user':
-            if not settings.ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES:
+            if giving and (not settings.ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES):
                 raise ValidationError('Global roles are not enabled for users')
             kwargs = dict(object_role=None, user=actor, role_definition=self)
             cls = RoleUserAssignment
@@ -198,7 +198,7 @@ class RoleDefinition(CommonModel):
             kwargs = dict(object_role=None, team=actor, role_definition=self)
             cls = RoleTeamAssignment
         else:
-            raise RuntimeError(f'Cannot give permission to {actor}, must be a user or team')
+            raise RuntimeError(f'Cannot {giving and "give" or "remove"} permission for {actor}, must be a user or team')
 
         if giving:
             assignment, _ = cls.objects.get_or_create(**kwargs)
