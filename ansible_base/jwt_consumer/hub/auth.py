@@ -21,6 +21,8 @@ class HubJWTAuth(JWTAuthentication):
         except ImportError:
             raise InvalidService("automation-hub")
 
+        orgs = []
+        teams = []
         groups = []
         for role_name in self.common_auth.token.get('object_roles', {}).keys():
             if role_name.startswith('Team'):
@@ -32,9 +34,32 @@ class HubJWTAuth(JWTAuthentication):
                     except Resource.DoesNotExist:
                         team = self.common_auth.get_or_create_resource('team', team_data)[1]
 
+                    teams.append(team)
                     groups.append(team.group)
 
+            elif role_name.startswith('Organization'):
+                for object_index in self.common_auth.token['object_roles'][role_name]['objects']:
+                    org_data = self.common_auth.token['objects']['organization'][object_index]
+                    ansible_id = org_data['ansible_id']
+
+                    try:
+                        org = Resource.objects.get(ansible_id=ansible_id).content_object
+                    except Resource.DoesNotExist:
+                        org = self.common_auth.get_or_create_resource('organization', org_data)[1]
+
+                    orgs.append(org)
+
         self.common_auth.user.groups.set(groups)
+
+        # reconcile orgs
+        removal_orgs = Organization.objects.filter(users=self.common_auth.user).exclude(pk__in=[org.pk for org in orgs])
+        for ro in removal_orgs:
+            ro.users.remove(self.common_auth.user)
+
+        # reconcile teams
+        removal_teams = Team.objects.filter(users=self.common_auth.user).exclude(pk__in=[team.pk for team in teams])
+        for rt in removal_teams:
+            rt.users.remove(self.common_auth.user)
 
         if "Platform Auditor" in self.common_auth.token.get('global_roles', []):
             assign_role("galaxy.auditor", self.common_auth.user)
