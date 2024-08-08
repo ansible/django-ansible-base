@@ -156,6 +156,16 @@ class ImmutableLogEntryNotCommon(ImmutableModel):
     message = models.CharField(max_length=400)
 
 
+class LogEntry(models.Model):
+    """
+    Testing a very specific conflict, where name conflicts with admin.LogEntry
+    We have to use this model to test that RBAC and other registries do not get confused
+    This model will be registered in permission registry, but not the admin.LogEntry
+    """
+
+    message = models.CharField(max_length=400)
+
+
 class Inventory(models.Model):
     "Simple example of a child object, it has a link to its parent organization"
     name = models.CharField(max_length=512)
@@ -344,7 +354,7 @@ class PublicData(NamedCommonModel):
 permission_registry.register(Organization, Inventory, Credential, Namespace, Team, Cow, UUIDModel, PositionModel, WeirdPerm, PublicData)
 permission_registry.register(ParentName, parent_field_name='my_organization')
 permission_registry.register(CollectionImport, parent_field_name='namespace')
-permission_registry.register(InstanceGroup, ImmutableTask, parent_field_name=None)
+permission_registry.register(InstanceGroup, ImmutableTask, LogEntry, parent_field_name=None)
 # Note that these polymorphic UUID models may not be useful in practice
 # since permissions would be double-tracked on the sub-class table and the original UUIDModel table
 permission_registry.register(AutoExtraUUIDModel, ManualExtraUUIDModel, parent_field_name='uuidmodel_ptr')
