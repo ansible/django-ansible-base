@@ -341,10 +341,15 @@ class PublicData(NamedCommonModel):
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name='public_data')
 
 
-permission_registry.register(Organization, Inventory, Credential, Namespace, Team, Cow, UUIDModel, PositionModel, WeirdPerm, PublicData)
+# Intentionally, for testing purposes, we register these models in settings
+# - Inventory
+# - Credential
+# - ImmutableTask, parent_field_name=None
+
+permission_registry.register(Organization, Namespace, Team, Cow, UUIDModel, PositionModel, WeirdPerm, PublicData)
 permission_registry.register(ParentName, parent_field_name='my_organization')
 permission_registry.register(CollectionImport, parent_field_name='namespace')
-permission_registry.register(InstanceGroup, ImmutableTask, parent_field_name=None)
+permission_registry.register(InstanceGroup, parent_field_name=None)
 # Note that these polymorphic UUID models may not be useful in practice
 # since permissions would be double-tracked on the sub-class table and the original UUIDModel table
 permission_registry.register(AutoExtraUUIDModel, ManualExtraUUIDModel, parent_field_name='uuidmodel_ptr')

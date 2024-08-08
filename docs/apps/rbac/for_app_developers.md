@@ -140,6 +140,25 @@ model of `MyModel`, or `None`.
 TODO: Update to allow ManyToMany parent relationship in addition to ForeignKey
 https://github.com/ansible/django-ansible-base/issues/78
 
+#### Registering via a Setting
+
+If you don't want to register models in your Django models definition,
+then you can do the same thing with a setting.
+
+```
+ANSIBLE_BASE_RBAC_MODEL_REGISTRY = {
+    "my_app.mymodel": {"parent_field_name": "organization"}
+}
+```
+
+You might want to do this if `MyModel` isn't from your own app,
+and you want to avoid changing import order without additional thought.
+
+Models declared here are registered _in addition to_ the calls to
+`permission_registry.register`.
+Note that settings should never contain imported python objects.
+The model is referenced by app_label.model_name string.
+
 #### Django Model, Apps, and Permission Constraints
 
 It is fine to register models from multiple apps, but among the registered models,

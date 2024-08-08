@@ -176,6 +176,11 @@ ANSIBLE_BASE_MANAGED_ROLE_REGISTRY = {
 ANSIBLE_BASE_JWT_MANAGED_ROLES.append("System Auditor")  # noqa: F821 this is set by dynamic settings for jwt_consumer
 ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES = True
 ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES = True
+ANSIBLE_BASE_RBAC_MODEL_REGISTRY = {
+    "test_app.inventory": {"parent_field_name": "organization"},
+    "test_app.credential": {},
+    "test_app.immutabletask": {"parent_field_name": None},
+}
 
 ANSIBLE_BASE_USER_VIEWSET = 'test_app.views.UserViewSet'
 
