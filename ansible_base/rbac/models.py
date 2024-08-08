@@ -198,7 +198,7 @@ class RoleDefinition(CommonModel):
             kwargs = dict(object_role=None, team=actor, role_definition=self)
             cls = RoleTeamAssignment
         else:
-            raise RuntimeError(f'Cannot give or remove permission to {actor}, must be a user or team')
+            raise RuntimeError(f'Cannot {giving and "give" or "remove"} permission for {actor}, must be a user or team')
 
         if giving:
             assignment, _ = cls.objects.get_or_create(**kwargs)
