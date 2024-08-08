@@ -115,6 +115,7 @@ def test_remove_invalid_user_singleton_assignment(rando, inventory, global_inv_r
 
     # this will make the assignment from earlier invalid
     global_inv_rd.content_type = permission_registry.content_type_model.objects.get_for_model(Organization)
+    global_inv_rd.save(update_fields=['content_type'])
 
     # should still be able to remove the permission, even if the configuration is invalid
     global_inv_rd.remove_global_permission(rando)
