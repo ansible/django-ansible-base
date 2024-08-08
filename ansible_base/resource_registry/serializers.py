@@ -43,6 +43,7 @@ class ResourceSerializer(serializers.ModelSerializer):
             "name",
             "ansible_id",
             "service_id",
+            "is_partially_migrated",
             "resource_type",
             "has_serializer",
             "resource_data",
@@ -65,6 +66,7 @@ class ResourceSerializer(serializers.ModelSerializer):
         instance.update_resource(
             validated_data.get("resource_data", {}),
             ansible_id=validated_data.get("ansible_id"),
+            is_partially_migrated=validated_data.get("is_partially_migrated"),
             service_id=validated_data.get("service_id"),
             partial=self.partial,
         )

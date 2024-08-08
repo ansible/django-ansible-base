@@ -50,13 +50,19 @@ def test_create_resource(resource_client):
     new_service_id = str(uuid.uuid4())
     new_ansible_id = str(uuid.uuid4())
 
-    data = ResourceRequestBody(ansible_id=new_ansible_id, service_id=new_service_id, resource_type="shared.user", resource_data={"username": "mrs_dab"})
+    data = ResourceRequestBody(
+        ansible_id=new_ansible_id,
+        service_id=new_service_id,
+        resource_type="shared.user",
+        resource_data={"username": "mrs_dab"},
+    )
     resp = resource_client.create_resource(data)
 
     assert resp.status_code == 201
     assert resp.json()["name"] == "mrs_dab"
     assert resp.json()["ansible_id"] == new_ansible_id
     assert resp.json()["service_id"] == new_service_id
+    assert resp.json()["is_partially_migrated"] is False
 
 
 @pytest.mark.django_db
@@ -94,6 +100,12 @@ def test_update_resource(resource_client, organization):
     assert resp.json()["ansible_id"] == new_ansible_id
     assert resp.json()["service_id"] == new_service_id
 
+    data = ResourceRequestBody(is_partially_migrated=True)
+    resp = resource_client.update_resource(new_ansible_id, data, partial=True)
+
+    assert resp.status_code == 200
+    assert resp.json()["is_partially_migrated"] is True
+
 
 @pytest.mark.django_db
 def test_delete_resource(resource_client, organization):
@@ -117,6 +129,7 @@ def test_list_resources(resource_client, organization):
     assert resp.status_code == 200
     assert resp.json()["count"] == 1
     assert resp.json()["results"][0]["ansible_id"] == ansible_id
+    assert resp.json()["results"][0]["is_partially_migrated"] is False
 
 
 @pytest.mark.django_db
