@@ -21,6 +21,27 @@ link via generic foreign key.
 Your permission model is needed to respect your existing permissions setup,
 and it needs relational links to your "actor" models (user/team).
 
+#### Post-migrate Actions
+
+The DAB RBAC app will create permission entries in a `post_migrate` signal.
+This is expected to run _after_ any post_migrate signals from _your_ app,
+because "ansible_base.rbac" needs to come later in `INSTALLED_APPS`.
+
+Because of this, DAB RBAC sends a special signal so you can run logic after
+permissions are created.
+
+```python
+from ansible_base.rbac.triggers import dab_post_migrate
+
+dab_post_migrate.connect(my_logic, dispatch_uid="my_logic")
+```
+
+By doing this, you can write code in `my_logic` that references `DABPermission`
+entries. This would be a common place to create managed RoleDefinitions, for example.
+
+This will still rebuild the role evaluation entries afterwards.
+This is so that DAB RBAC will be in a consistent state after any logic you run.
+
 ### Using in an REST API
 
 Instead of calling methods from DAB RBAC directly, you can connect your
