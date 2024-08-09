@@ -165,7 +165,7 @@ def validate_permissions_for_model(permissions, content_type: Optional[Model], m
                 continue
             model = perm.content_type.model_class()
             if permission_registry.get_resource_prefix(model) == 'shared':
-                raise ValidationError({'permissions', 'Not managed locally, local custom roles can only include view'})
+                raise ValidationError({'permissions', 'Local custom roles can only include view permission for shared models'})
 
 
 def validate_codename_for_model(codename: str, model: Union[Model, Type[Model]]) -> str:
