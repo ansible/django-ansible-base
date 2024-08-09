@@ -226,7 +226,7 @@ class PermissionRegistry:
 
     def is_registered(self, obj: Union[ModelBase, Model]) -> bool:
         """Tells if the given object or class is a type tracked by DAB RBAC"""
-        return any(obj._meta.model_name == cls._meta.model_name for cls in self._registry)
+        return any((obj._meta.model_name == cls._meta.model_name and obj._meta.app_label == cls._meta.app_label) for cls in self._registry)
 
 
 permission_registry = PermissionRegistry()
