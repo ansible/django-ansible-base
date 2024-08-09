@@ -4,6 +4,7 @@ from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.db.models.functions import Cast
 from django.db.models.query import QuerySet
+from rest_framework.serializers import ValidationError
 
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import DABPermission, RoleDefinition, get_evaluation_model
@@ -99,7 +100,7 @@ class AccessibleIdsDescriptor(BaseEvaluationDescriptor):
 
 def bound_has_obj_perm(self, obj, codename) -> bool:
     if not permission_registry.is_registered(obj):
-        raise RuntimeError(f'Object of {obj._meta.model_name} type is not registered with DAB RBAC')
+        raise ValidationError(f'Object of {obj._meta.model_name} type is not registered with DAB RBAC')
     full_codename = validate_codename_for_model(codename, obj)
     if has_super_permission(self, full_codename):
         return True

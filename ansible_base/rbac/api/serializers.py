@@ -225,6 +225,10 @@ class BaseAssignmentSerializer(CommonModelSerializer):
                 obj = serializers.PrimaryKeyRelatedField(queryset=model.access_qs(requesting_user)).to_internal_value(validated_data['object_id'])
             except ValidationError as exc:
                 raise ValidationError({'object_id': exc.detail})
+            except AttributeError:
+                if not permission_registry.is_registered(model):
+                    raise ValidationError({'role_definition': 'Given role definition is for a model not registered in the permissions system'})
+                raise  # in this case no idea what went wrong
         elif validated_data.get('object_ansible_id'):
             obj = self.get_by_ansible_id(validated_data.get('object_ansible_id'), requesting_user, for_field='object_ansible_id')
             if permission_registry.content_type_model.objects.get_for_model(obj) != role_definition.content_type:
