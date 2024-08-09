@@ -1,4 +1,5 @@
 import logging
+import os
 
 from crum import get_current_user
 from django.conf import settings
@@ -25,8 +26,12 @@ def sync_to_resource_server(instance, action, ansible_id=None):
     function.)
     """
 
-    # This gets set in Resource.create_resource() and friends (and jwt_consumer.common.auth...)
-    # Also from a pre_save hook that checks to see if the object has changed a synced field or not, for updates.
+    sync_disabled = os.environ.get('ANSIBLE_REVERSE_RESOURCE_SYNC', 'true').lower() == 'false'
+    if sync_disabled:
+        logger.info("Skipping sync of resource {instance} because $ANSIBLE_REVERSE_RESOURCE_SYNC is 'false'")
+        return
+
+    # This gets set in in signals.handlers.decide_to_sync_update() sometimes.
     skip_sync = getattr(instance, '_skip_reverse_resource_sync', False)
     if skip_sync:
         # Avoid an infinite loop by not syncing resources that came from the resource server.
