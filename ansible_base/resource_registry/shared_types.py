@@ -1,9 +1,6 @@
 from rest_framework import serializers
 
-from ansible_base.resource_registry.utils.resource_type_serializers import (
-    AnsibleResourceForeignKeyField,
-    SharedResourceTypeSerializer,
-)
+from ansible_base.resource_registry.utils.resource_type_serializers import AnsibleResourceForeignKeyField, SharedResourceTypeSerializer
 
 
 class UserAdditionalDataSerializer(serializers.Serializer):
