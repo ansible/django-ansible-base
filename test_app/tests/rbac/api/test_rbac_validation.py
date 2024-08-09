@@ -23,7 +23,7 @@ class TestSharedAssignmentsDisabled:
         assert response.status_code == 400, response.data
         assert self.NON_LOCAL_MESSAGE in str(response.data)
 
-    @override_settings(ALLOW_LOCAL_RESOURCE_MANAGEMENT=False)
+    @override_settings(ALLOW_SHARED_RESOURCE_CUSTOM_ROLES=False)
     def test_custom_roles_for_shared_stuff_not_allowed(self, admin_api_client):
         url = get_relative_url('roledefinition-list')
         response = admin_api_client.post(
@@ -35,7 +35,7 @@ class TestSharedAssignmentsDisabled:
             },
         )
         assert response.status_code == 400, response.data
-        assert self.NON_LOCAL_MESSAGE in str(response.data)
+        assert 'Local custom roles can only include view permission for shared models' in str(response.data)
 
     @override_settings(ALLOW_LOCAL_RESOURCE_MANAGEMENT=False)
     def test_auditor_for_external_models(self, admin_api_client, rando, external_auditor_constructor):
