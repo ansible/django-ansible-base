@@ -134,7 +134,7 @@ class BaseAssignmentViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
 
     def perform_destroy(self, instance):
         check_can_remove_assignment(self.request.user, instance)
-        check_locally_managed(instance.role_definition.permissions.prefetch_related('content_type'), role_content_type=instance.content_type)
+        check_locally_managed(instance.role_definition)
 
         if instance.content_type_id:
             with transaction.atomic():

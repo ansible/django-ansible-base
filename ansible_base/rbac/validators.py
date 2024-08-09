@@ -234,22 +234,13 @@ def validate_assignment(rd, actor, obj) -> None:
         raise ValidationError(f'Role type {rd_model} does not match object {obj_ct.model}')
 
 
-def check_locally_managed(permissions_qs: Iterable[Model], role_content_type: Optional[Model]) -> None:
+def check_locally_managed(rd: Model) -> None:
     """Can the given role definition be managed here, or is it externally managed
 
-    If the role definition manages permissions on any shared resources, then
-    those should be locked down locally.
     This rule is a bridge solution until the RoleDefinition model declares
     explicitly whether it is managed locally or by a remote system.
     """
     if settings.ALLOW_LOCAL_RESOURCE_MANAGEMENT is True:
         return
-    for perm in permissions_qs:
-        # View permission for shared objects is interpreted as permission to view
-        # the resource locally, which is needed to be able to view parent objects
-        # For system roles, this exception is not allowed
-        if role_content_type and perm.codename.startswith('view'):
-            continue
-        model = perm.content_type.model_class()
-        if permission_registry.get_resource_prefix(model) == 'shared':
-            raise ValidationError('Not managed locally, use the resource server instead')
+    if rd.name in settings.ANSIBLE_BASE_JWT_MANAGED_ROLES:
+        raise ValidationError('Not managed locally, use the resource server instead')

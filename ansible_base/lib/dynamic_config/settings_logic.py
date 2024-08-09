@@ -161,6 +161,7 @@ def get_dab_settings(
             # Shadow local variable so subsequent conditionals works.
             installed_apps = dab_data['INSTALLED_APPS']
 
+    if ('ansible_base.jwt_consumer' in installed_apps) or ('ansible_base.rbac' in installed_apps):
         dab_data['ANSIBLE_BASE_JWT_MANAGED_ROLES'] = ["Platform Auditor", "Organization Admin", "Organization Member", "Team Admin", "Team Member"]
 
     if 'ansible_base.rbac' in installed_apps:
