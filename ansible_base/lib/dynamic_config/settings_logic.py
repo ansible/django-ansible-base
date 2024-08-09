@@ -211,6 +211,8 @@ def get_dab_settings(
 
         # API clients can assign users and teams roles for shared resources
         dab_data['ALLOW_LOCAL_RESOURCE_MANAGEMENT'] = True
+        # API clients can create custom roles that change shared resources
+        dab_data['ALLOW_SHARED_RESOURCE_CUSTOM_ROLES'] = True
 
         dab_data['MANAGE_ORGANIZATION_AUTH'] = True
 

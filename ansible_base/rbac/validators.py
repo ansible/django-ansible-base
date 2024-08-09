@@ -1,6 +1,5 @@
 import re
 from collections import defaultdict
-from collections.abc import Iterable
 from typing import Optional, Type, Union
 
 from django.conf import settings
@@ -156,7 +155,7 @@ def validate_permissions_for_model(permissions, content_type: Optional[Model], m
     if settings.ANSIBLE_BASE_DELETE_REQUIRE_CHANGE and role_model is not None:
         check_has_change_with_delete(codename_set, permissions_by_model)
 
-    if not managed:
+    if (not managed) and (not settings.ALLOW_SHARED_RESOURCE_CUSTOM_ROLES):
         for perm in permissions:
             # View permission for shared objects is interpreted as permission to view
             # the resource locally, which is needed to be able to view parent objects
