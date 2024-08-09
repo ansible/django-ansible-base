@@ -156,6 +156,17 @@ def validate_permissions_for_model(permissions, content_type: Optional[Model], m
     if settings.ANSIBLE_BASE_DELETE_REQUIRE_CHANGE and role_model is not None:
         check_has_change_with_delete(codename_set, permissions_by_model)
 
+    if not managed:
+        for perm in permissions:
+            # View permission for shared objects is interpreted as permission to view
+            # the resource locally, which is needed to be able to view parent objects
+            # For system roles, this exception is not allowed
+            if content_type and perm.codename.startswith('view'):
+                continue
+            model = perm.content_type.model_class()
+            if permission_registry.get_resource_prefix(model) == 'shared':
+                raise ValidationError({'permissions', 'Not managed locally, local custom roles can only include view'})
+
 
 def validate_codename_for_model(codename: str, model: Union[Model, Type[Model]]) -> str:
     """Shortcut method and validation to allow action name, codename, or app_name.codename
