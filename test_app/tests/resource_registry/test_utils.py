@@ -1,3 +1,4 @@
+import os
 from contextlib import nullcontext
 from unittest import mock
 
@@ -100,6 +101,28 @@ class TestReverseResourceSync:
 
         # We bail out if we don't have a resource
         get_resource_server_client.assert_not_called()
+
+    @pytest.mark.django_db(transaction=True)
+    @pytest.mark.parametrize(
+        'ansible_reverse_resource_sync, should_sync',
+        [("true", True), ("True", True), ("false", False), ("False", False), (None, True)],
+    )
+    def test_sync_to_resource_server_env_var_override(self, user, enable_reverse_sync, ansible_reverse_resource_sync, should_sync):
+        """
+        We can override/disable syncing with the env var ANSIBLE_REVERSE_RESOURCE_SYNC.
+        """
+        if ansible_reverse_resource_sync is None:
+            cm = nullcontext()
+        else:
+            cm = mock.patch.dict(os.environ, ANSIBLE_REVERSE_RESOURCE_SYNC=ansible_reverse_resource_sync)
+
+        with enable_reverse_sync():
+            with cm:
+                with mock.patch(f'{utils_path}.get_resource_server_client') as get_resource_server_client:
+                    with impersonate(user):
+                        Organization.objects.create(name='Hello')
+
+        assert get_resource_server_client.called == should_sync
 
     @pytest.mark.django_db(transaction=True)
     def test_sync_to_resource_server_exception_during_sync(self, user, enable_reverse_sync):
