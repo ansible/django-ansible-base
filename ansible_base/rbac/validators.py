@@ -22,6 +22,10 @@ def printable_model_name(model: Optional[Type[Model]]) -> str:
     return model._meta.model_name if model else 'global role'
 
 
+def printable_codenames(codename_set: set[str]) -> str:
+    return ', '.join(codename_set)
+
+
 def codenames_for_cls(cls) -> list[str]:
     "Helper method that gives the Django permission codenames for a given class"
     return [t[0] for t in cls._meta.permissions] + [f'{act}_{cls._meta.model_name}' for act in cls._meta.default_permissions]
@@ -85,6 +89,20 @@ def validate_role_definition_enabled(permissions, content_type) -> None:
                 raise ValidationError('Creating custom roles that include team permissions is disabled')
 
 
+def check_view_permission_criteria(codename_list: set[str], permissions_by_model: dict[Type[Model], list[str]]) -> None:
+    """Given a codename_list to be used in a role definition, enforce that view permission is included
+
+    For example, a role can not give change permission to a thing without also giving view permission,
+    because being able to change a thing without the ability to see it makes no sense.
+    """
+    for cls, valid_model_permissions in permissions_by_model.items():
+        if 'view' in cls._meta.default_permissions:
+            model_permissions = set(valid_model_permissions) & codename_list
+            non_add_model_permissions = {codename for codename in model_permissions if not is_add_perm(codename)}
+            if non_add_model_permissions and not any('view' in codename for codename in non_add_model_permissions):
+                raise ValidationError({'permissions': f'Permissions for model {cls._meta.model_name} needs to include view, got: {printable_codenames(non_add_model_permissions)}'})
+
+
 def validate_permissions_for_model(permissions, content_type: Optional[Model], managed: bool = False) -> None:
     """Validation for creating a RoleDefinition
 
@@ -112,13 +130,7 @@ def validate_permissions_for_model(permissions, content_type: Optional[Model], m
 
     # Check that view permission is given for every model that has update/delete/special actions listed
     if settings.ANSIBLE_BASE_ROLES_REQUIRE_VIEW:
-        for cls, valid_model_permissions in permissions_by_model.items():
-            if 'view' in cls._meta.default_permissions:
-                model_permissions = set(valid_model_permissions) & codename_list
-                non_add_model_permissions = {codename for codename in model_permissions if not is_add_perm(codename)}
-                if non_add_model_permissions and not any('view' in codename for codename in non_add_model_permissions):
-                    display_perms = ', '.join(non_add_model_permissions)
-                    raise ValidationError({'permissions': f'Permissions for model {printable_model_name(role_model)} needs to include view, got: {display_perms}'})
+        check_view_permission_criteria(codename_list, permissions_by_model)
 
     # Check requires change and role_model is a system-wide role (None means it is), skip this validation.
     if settings.ANSIBLE_BASE_DELETE_REQUIRE_CHANGE and role_model is not None:
@@ -129,9 +141,8 @@ def validate_permissions_for_model(permissions, content_type: Optional[Model], m
                 if any('delete' in codename for codename in non_add_model_permissions) and not any(
                     'change' in codename for codename in non_add_model_permissions
                 ):
-                    display_perms = ', '.join(non_add_model_permissions)
                     raise ValidationError(
-                        {'permissions': f'Permissions for model {role_model._meta.verbose_name} needs to include change, got: {display_perms}'}
+                        {'permissions': f'Permissions for model {role_model._meta.verbose_name} needs to include change, got: {printable_codenames(non_add_model_permissions)}'}
                     )
 
 

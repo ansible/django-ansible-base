@@ -1,3 +1,5 @@
+import contextlib
+
 import pytest
 from django.test.utils import override_settings
 from rest_framework.exceptions import ValidationError
@@ -109,11 +111,30 @@ class TestProhibitedRoleDefinitions:
 
 
 @pytest.mark.django_db
-def test_no_delete_capability_without_change():
-    with pytest.raises(ValidationError) as exc:
-        RoleDefinition.objects.create_from_permissions(
-            name='anything',
-            permissions=['view_credential', 'delete_credential'],
-            content_type=permission_registry.content_type_model.objects.get_for_model(Credential),
-        )
-    assert 'Permissions for model credential needs to include change, got:' in str(exc)
+@pytest.mark.parametrize('enabled', [True, False])
+def test_no_delete_permission_without_change(enabled):
+    with override_settings(ANSIBLE_BASE_DELETE_REQUIRE_CHANGE=enabled):
+        catching_context = pytest.raises(ValidationError) if enabled else contextlib.nullcontext()
+        with catching_context as exc:
+            RoleDefinition.objects.create_from_permissions(
+                name='anything',
+                permissions=['view_credential', 'delete_credential'],
+                content_type=permission_registry.content_type_model.objects.get_for_model(Credential),
+            )
+    if enabled:
+        assert 'Permissions for model credential needs to include change, got:' in str(exc)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('enabled', [True, False])
+def test_no_change_permission_without_view(enabled):
+    with override_settings(ANSIBLE_BASE_ROLES_REQUIRE_VIEW=enabled):
+        catching_context = pytest.raises(ValidationError) if enabled else contextlib.nullcontext()
+        with catching_context as exc:
+            RoleDefinition.objects.create_from_permissions(
+                name='anything',
+                permissions=['change_credential', 'delete_credential'],
+                content_type=permission_registry.content_type_model.objects.get_for_model(Credential),
+            )
+    if enabled:
+        assert 'needs to include view, got:' in str(exc)
