@@ -111,13 +111,14 @@ def validate_permissions_for_model(permissions, content_type: Optional[Model], m
         raise ValidationError({'permissions': f'Permissions {print_codenames} are not valid for {printable_model_name(role_model)} roles'})
 
     # Check that view permission is given for every model that has update/delete/special actions listed
-    for cls, valid_model_permissions in permissions_by_model.items():
-        if 'view' in cls._meta.default_permissions:
-            model_permissions = set(valid_model_permissions) & codename_list
-            non_add_model_permissions = {codename for codename in model_permissions if not is_add_perm(codename)}
-            if non_add_model_permissions and not any('view' in codename for codename in non_add_model_permissions):
-                display_perms = ', '.join(non_add_model_permissions)
-                raise ValidationError({'permissions': f'Permissions for model {printable_model_name(role_model)} needs to include view, got: {display_perms}'})
+    if settings.ANSIBLE_BASE_ROLES_REQUIRE_VIEW:
+        for cls, valid_model_permissions in permissions_by_model.items():
+            if 'view' in cls._meta.default_permissions:
+                model_permissions = set(valid_model_permissions) & codename_list
+                non_add_model_permissions = {codename for codename in model_permissions if not is_add_perm(codename)}
+                if non_add_model_permissions and not any('view' in codename for codename in non_add_model_permissions):
+                    display_perms = ', '.join(non_add_model_permissions)
+                    raise ValidationError({'permissions': f'Permissions for model {printable_model_name(role_model)} needs to include view, got: {display_perms}'})
 
     # Check requires change and role_model is a system-wide role (None means it is), skip this validation.
     if settings.ANSIBLE_BASE_DELETE_REQUIRE_CHANGE and role_model is not None:
