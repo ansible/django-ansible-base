@@ -101,9 +101,7 @@ def check_view_permission_criteria(codename_set: set[str], permissions_by_model:
             local_codenames = {codename for codename in model_permissions if not is_add_perm(codename)}
             if local_codenames and not any('view' in codename for codename in local_codenames):
                 raise ValidationError(
-                    {
-                        'permissions': f'Permissions for model {cls._meta.verbose_name} needs to include view, got: {prnt_codenames(local_codenames)}'
-                    }
+                    {'permissions': f'Permissions for model {cls._meta.verbose_name} needs to include view, got: {prnt_codenames(local_codenames)}'}
                 )
 
 
@@ -121,9 +119,7 @@ def check_has_change_with_delete(codename_set: set[str], permissions_by_model: d
             local_codenames = {codename for codename in model_permissions if not is_add_perm(codename)}
             if any('delete' in codename for codename in local_codenames) and not any('change' in codename for codename in local_codenames):
                 raise ValidationError(
-                    {
-                        'permissions': f'Permissions for model {cls._meta.verbose_name} needs to include change, got: {prnt_codenames(local_codenames)}'
-                    }
+                    {'permissions': f'Permissions for model {cls._meta.verbose_name} needs to include change, got: {prnt_codenames(local_codenames)}'}
                 )
 
 
