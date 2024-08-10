@@ -1,12 +1,18 @@
-from social_core.backends.oauth import OAuthAuth
-from social_core.backends.saml import SAMLAuth
-from social_django.utils import load_strategy
+try:
+    from social_core.backends.oauth import OAuthAuth
+    from social_core.backends.saml import SAMLAuth
+    from social_django.utils import load_strategy
+except ImportError:
+    load_strategy = None
 
 
 def get_sso_provider_server(backend_name: str, uid: str):
     """
     Returns the hostname for the SSO server that authenticated this user.
     """
+    if load_strategy is None:
+        return None
+
     social_strat = load_strategy()
 
     try:
