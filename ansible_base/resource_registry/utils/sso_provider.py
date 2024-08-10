@@ -19,6 +19,6 @@ def get_sso_provider_server(backend_name: str, uid: str):
         return (backend.get_idp(idp).entity_id, real_uid)
 
     elif isinstance(backend, OAuthAuth):
-        return (backend.setting("AUTHORIZATION_URL"), uid)
+        return (backend.authorization_url(), uid)
     else:
         return (None, uid)
