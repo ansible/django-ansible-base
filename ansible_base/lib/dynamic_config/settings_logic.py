@@ -174,6 +174,9 @@ def get_dab_settings(
         # If a role does not already exist that can give those object permissions
         # then the system must create one, this is used for naming the auto-created role
         dab_data['ANSIBLE_BASE_ROLE_CREATOR_NAME'] = '{obj._meta.model_name}-creator-permission'
+        # Require view permission in roles containing any other permission
+        # this requirement does not apply to models that do not have view permission
+        dab_data['ANSIBLE_BASE_ROLES_REQUIRE_VIEW'] = True
         # Require change permission to get delete permission
         dab_data['ANSIBLE_BASE_DELETE_REQUIRE_CHANGE'] = True
         # Specific feature enablement bits
