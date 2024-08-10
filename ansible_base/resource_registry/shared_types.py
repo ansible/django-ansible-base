@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from ansible_base.resource_registry.utils.resource_type_serializers import AnsibleResourceForeignKeyField, SharedResourceTypeSerializer
-from ansible_base.resource_registry.utils.sso_provider import get_sso_provider_host
+from ansible_base.resource_registry.utils.sso_provider import get_sso_provider_server
 
 
 class UserAdditionalDataSerializer(serializers.Serializer):
@@ -16,7 +16,7 @@ class UserAdditionalDataSerializer(serializers.Serializer):
 
         if hasattr(instance, "authenticator_users"):
             for social in instance.authenticator_users.all():
-                sso_server, uid = get_sso_provider_host(social.provider.slug, social.uid)
+                sso_server, uid = get_sso_provider_server(social.provider.slug, social.uid)
                 social_auth.append(
                     {
                         "uid": uid,
@@ -26,7 +26,7 @@ class UserAdditionalDataSerializer(serializers.Serializer):
                 )
         elif hasattr(instance, "social_auth"):
             for social in instance.social_auth.all():
-                sso_server, uid = get_sso_provider_host(social.provider, social.uid)
+                sso_server, uid = get_sso_provider_server(social.provider, social.uid)
                 social_auth.append(
                     {
                         "uid": uid,

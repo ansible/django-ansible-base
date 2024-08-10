@@ -3,7 +3,7 @@ from social_core.backends.saml import SAMLAuth
 from social_django.utils import load_strategy
 
 
-def get_sso_provider_host(backend_name: str, uid: str):
+def get_sso_provider_server(backend_name: str, uid: str):
     """
     Returns the hostname for the SSO server that authenticated this user.
     """
@@ -16,7 +16,7 @@ def get_sso_provider_host(backend_name: str, uid: str):
 
     if isinstance(backend, SAMLAuth):
         idp, real_uid = uid.split(":", maxsplit=1)
-        return (backend.get_idp(idp), real_uid)
+        return (backend.get_idp(idp).entity_id, real_uid)
 
     elif isinstance(backend, OAuthAuth):
         return (backend.setting("AUTHORIZATION_URL"), uid)
