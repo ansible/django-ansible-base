@@ -18,7 +18,7 @@ def system_roles_enabled():
     )
 
 
-def printable_model_name(model: Optional[Type[Model]]) -> str:
+def prnt_model_name(model: Optional[Type[Model]]) -> str:
     return model._meta.model_name if model else 'global role'
 
 
@@ -150,7 +150,7 @@ def validate_permissions_for_model(permissions, content_type: Optional[Model], m
     invalid_codenames = codename_set - combine_values(permissions_by_model)
     if invalid_codenames:
         print_codenames = ', '.join(f'"{codename}"' for codename in invalid_codenames)
-        raise ValidationError({'permissions': f'Permissions {print_codenames} are not valid for {printable_model_name(role_model)} roles'})
+        raise ValidationError({'permissions': f'Permissions {print_codenames} are not valid for {prnt_model_name(role_model)} roles'})
 
     # Check that view permission is given for every model that has update/delete/special actions listed
     if settings.ANSIBLE_BASE_ROLES_REQUIRE_VIEW:
