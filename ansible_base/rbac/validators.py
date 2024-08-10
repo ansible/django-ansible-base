@@ -89,18 +89,42 @@ def validate_role_definition_enabled(permissions, content_type) -> None:
                 raise ValidationError('Creating custom roles that include team permissions is disabled')
 
 
-def check_view_permission_criteria(codename_list: set[str], permissions_by_model: dict[Type[Model], list[str]]) -> None:
-    """Given a codename_list to be used in a role definition, enforce that view permission is included
+def check_view_permission_criteria(codename_set: set[str], permissions_by_model: dict[Type[Model], list[str]]) -> None:
+    """Given a codename_set to be used in a role definition, enforce that view permission is included
 
     For example, a role can not give change permission to a thing without also giving view permission,
     because being able to change a thing without the ability to see it makes no sense.
     """
     for cls, valid_model_permissions in permissions_by_model.items():
         if 'view' in cls._meta.default_permissions:
-            model_permissions = set(valid_model_permissions) & codename_list
+            model_permissions = set(valid_model_permissions) & codename_set
             non_add_model_permissions = {codename for codename in model_permissions if not is_add_perm(codename)}
             if non_add_model_permissions and not any('view' in codename for codename in non_add_model_permissions):
-                raise ValidationError({'permissions': f'Permissions for model {cls._meta.model_name} needs to include view, got: {printable_codenames(non_add_model_permissions)}'})
+                raise ValidationError(
+                    {
+                        'permissions': f'Permissions for model {cls._meta.verbose_name} needs to include view, got: {printable_codenames(non_add_model_permissions)}'
+                    }
+                )
+
+
+def check_has_change_with_delete(codename_set: set[str], permissions_by_model: dict[Type[Model], list[str]]):
+    """Given a codename_set to be used in a role definition, include change if including delete
+
+    We would like to get rid of this criteria eventually, but no harm in making it configurable.
+    This requires that listing a delete permission in a RoleDefinition, like delete_credential,
+    also includes the respective change permission like change_credential.
+    If it has delete permission without change permission, throw an error.
+    """
+    for cls, valid_model_permissions in permissions_by_model.items():
+        if 'delete' in cls._meta.default_permissions and 'change' in cls._meta.default_permissions:
+            model_permissions = set(valid_model_permissions) & codename_set
+            non_add_model_permissions = {codename for codename in model_permissions if not is_add_perm(codename)}
+            if any('delete' in codename for codename in non_add_model_permissions) and not any('change' in codename for codename in non_add_model_permissions):
+                raise ValidationError(
+                    {
+                        'permissions': f'Permissions for model {cls._meta.verbose_name} needs to include change, got: {printable_codenames(non_add_model_permissions)}'
+                    }
+                )
 
 
 def validate_permissions_for_model(permissions, content_type: Optional[Model], managed: bool = False) -> None:
@@ -113,8 +137,8 @@ def validate_permissions_for_model(permissions, content_type: Optional[Model], m
     if not managed:
         validate_role_definition_enabled(permissions, content_type)
 
-    codename_list = {perm.codename for perm in permissions}
-    if content_type is None and permission_registry.team_permission in codename_list:
+    codename_set = {perm.codename for perm in permissions}
+    if content_type is None and permission_registry.team_permission in codename_set:
         # Special validation case, global team permissions are not allowed in any scenario
         raise ValidationError({'permissions': f'The {permission_registry.team_permission} permission can not be used in global roles'})
 
@@ -123,27 +147,18 @@ def validate_permissions_for_model(permissions, content_type: Optional[Model], m
         role_model = content_type.model_class()
     permissions_by_model = permissions_allowed_for_role(role_model)
 
-    invalid_codenames = codename_list - combine_values(permissions_by_model)
+    invalid_codenames = codename_set - combine_values(permissions_by_model)
     if invalid_codenames:
         print_codenames = ', '.join(f'"{codename}"' for codename in invalid_codenames)
         raise ValidationError({'permissions': f'Permissions {print_codenames} are not valid for {printable_model_name(role_model)} roles'})
 
     # Check that view permission is given for every model that has update/delete/special actions listed
     if settings.ANSIBLE_BASE_ROLES_REQUIRE_VIEW:
-        check_view_permission_criteria(codename_list, permissions_by_model)
+        check_view_permission_criteria(codename_set, permissions_by_model)
 
     # Check requires change and role_model is a system-wide role (None means it is), skip this validation.
     if settings.ANSIBLE_BASE_DELETE_REQUIRE_CHANGE and role_model is not None:
-        for cls, valid_model_permissions in permissions_by_model.items():
-            if 'delete' in cls._meta.default_permissions and 'change' in cls._meta.default_permissions:
-                model_permissions = set(valid_model_permissions) & codename_list
-                non_add_model_permissions = {codename for codename in model_permissions if not is_add_perm(codename)}
-                if any('delete' in codename for codename in non_add_model_permissions) and not any(
-                    'change' in codename for codename in non_add_model_permissions
-                ):
-                    raise ValidationError(
-                        {'permissions': f'Permissions for model {role_model._meta.verbose_name} needs to include change, got: {printable_codenames(non_add_model_permissions)}'}
-                    )
+        check_has_change_with_delete(codename_set, permissions_by_model)
 
 
 def validate_codename_for_model(codename: str, model: Union[Model, Type[Model]]) -> str:
