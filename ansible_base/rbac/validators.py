@@ -31,7 +31,7 @@ def codenames_for_cls(cls) -> list[str]:
     return [t[0] for t in cls._meta.permissions] + [f'{act}_{cls._meta.model_name}' for act in cls._meta.default_permissions]
 
 
-def permissions_allowed_for_system_role() -> dict[type, list[str]]:
+def permissions_allowed_for_system_role() -> dict[Type[Model], list[str]]:
     "Permission codenames useable in system-wide roles, which have content_type set to None"
     permissions_by_model = defaultdict(list)
     for cls in sorted(permission_registry.all_registered_models, key=lambda cls: cls._meta.model_name):
@@ -43,7 +43,7 @@ def permissions_allowed_for_system_role() -> dict[type, list[str]]:
     return permissions_by_model
 
 
-def permissions_allowed_for_role(cls) -> dict[type, list[str]]:
+def permissions_allowed_for_role(cls) -> dict[Type[Model], list[str]]:
     "Permission codenames valid for a RoleDefinition of given class, organized by permission class"
     if cls is None:
         return permissions_allowed_for_system_role()
@@ -62,7 +62,7 @@ def permissions_allowed_for_role(cls) -> dict[type, list[str]]:
     return permissions_by_model
 
 
-def combine_values(data: dict[type, list[str]]) -> set[str]:
+def combine_values(data: dict[Type[Model], list[str]]) -> set[str]:
     "Utility method to merge everything in .values() into a single set"
     ret = set()
     for this_list in data.values():
