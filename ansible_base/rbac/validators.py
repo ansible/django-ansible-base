@@ -22,7 +22,7 @@ def printable_model_name(model: Optional[Type[Model]]) -> str:
     return model._meta.model_name if model else 'global role'
 
 
-def printable_codenames(codename_set: set[str]) -> str:
+def prnt_codenames(codename_set: set[str]) -> str:
     return ', '.join(codename_set)
 
 
@@ -98,11 +98,11 @@ def check_view_permission_criteria(codename_set: set[str], permissions_by_model:
     for cls, valid_model_permissions in permissions_by_model.items():
         if 'view' in cls._meta.default_permissions:
             model_permissions = set(valid_model_permissions) & codename_set
-            non_add_model_permissions = {codename for codename in model_permissions if not is_add_perm(codename)}
-            if non_add_model_permissions and not any('view' in codename for codename in non_add_model_permissions):
+            local_codenames = {codename for codename in model_permissions if not is_add_perm(codename)}
+            if local_codenames and not any('view' in codename for codename in local_codenames):
                 raise ValidationError(
                     {
-                        'permissions': f'Permissions for model {cls._meta.verbose_name} needs to include view, got: {printable_codenames(non_add_model_permissions)}'
+                        'permissions': f'Permissions for model {cls._meta.verbose_name} needs to include view, got: {prnt_codenames(local_codenames)}'
                     }
                 )
 
@@ -118,11 +118,11 @@ def check_has_change_with_delete(codename_set: set[str], permissions_by_model: d
     for cls, valid_model_permissions in permissions_by_model.items():
         if 'delete' in cls._meta.default_permissions and 'change' in cls._meta.default_permissions:
             model_permissions = set(valid_model_permissions) & codename_set
-            non_add_model_permissions = {codename for codename in model_permissions if not is_add_perm(codename)}
-            if any('delete' in codename for codename in non_add_model_permissions) and not any('change' in codename for codename in non_add_model_permissions):
+            local_codenames = {codename for codename in model_permissions if not is_add_perm(codename)}
+            if any('delete' in codename for codename in local_codenames) and not any('change' in codename for codename in local_codenames):
                 raise ValidationError(
                     {
-                        'permissions': f'Permissions for model {cls._meta.verbose_name} needs to include change, got: {printable_codenames(non_add_model_permissions)}'
+                        'permissions': f'Permissions for model {cls._meta.verbose_name} needs to include change, got: {prnt_codenames(local_codenames)}'
                     }
                 )
 
