@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pytest
 from django.contrib.contenttypes.models import ContentType
 
+from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.resource_registry.models import Resource
 from ansible_base.resource_registry.utils.resource_type_processor import ResourceTypeProcessor
@@ -367,3 +368,58 @@ def test_processor_save(admin_api_client):
         resp = admin_api_client.put(url, {"resource_data": {"name": "my_name2"}}, format="json")
         assert resp.data["name"] == "HELLO my_name2"
         assert Organization.objects.filter(name="HELLO my_name2").exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    'authenticator_fixture, server',
+    [
+        ('github_authenticator', 'https://github.com/login/oauth/authorize'),
+        ('github_organization_authenticator', 'https://github.com/login/oauth/authorize'),
+        ('github_team_authenticator', 'https://github.com/login/oauth/authorize'),
+        ('github_enterprise_authenticator', 'https://foohub.com/login/oauth/authorize'),
+        ('github_enterprise_organization_authenticator', 'https://foohub.com/login/oauth/authorize'),
+        ('github_enterprise_team_authenticator', 'https://foohub.com/login/oauth/authorize'),
+        ('google_oauth2_authenticator', 'https://accounts.google.com/o/oauth2/auth'),
+        ('oidc_authenticator', 'https://oidc.example.com/authorize/'),
+        ('azuread_authenticator', 'https://login.microsoftonline.com/common/oauth2/authorize'),
+        ('radius_authenticator', None),
+        ('tacacs_authenticator', None),
+    ],
+)
+def test_user_social_auth_field(admin_api_client, django_user_model, request, authenticator_fixture, server):
+    user = django_user_model.objects.create(username="lisan_al_gaib")
+    authenticator = request.getfixturevalue(authenticator_fixture)
+    AuthenticatorUser.objects.create(provider=authenticator, user=user, uid="different_uid")
+    ansible_id = str(Resource.get_resource_for_object(user).ansible_id)
+
+    url = get_relative_url("resource-detail", kwargs={"ansible_id": ansible_id})
+    resp = admin_api_client.get(url)
+
+    assert resp.status_code == 200
+    additional = resp.json()["additional_data"]
+
+    assert "social_auth" in additional
+    assert len(additional["social_auth"]) == 1
+    assert additional["social_auth"][0]["uid"] == "different_uid"
+    assert additional["social_auth"][0]["backend_type"] == authenticator.type
+    assert additional["social_auth"][0]["sso_server"] == server
+
+
+@pytest.mark.django_db
+def test_user_social_auth_field_saml(admin_api_client, django_user_model, saml_authenticator, saml_configuration):
+    user = django_user_model.objects.create(username="lisan_al_gaib")
+    AuthenticatorUser.objects.create(provider=saml_authenticator, user=user, uid="IdP:different_uid")
+    ansible_id = str(Resource.get_resource_for_object(user).ansible_id)
+
+    url = get_relative_url("resource-detail", kwargs={"ansible_id": ansible_id})
+    resp = admin_api_client.get(url)
+
+    assert resp.status_code == 200
+    additional = resp.json()["additional_data"]
+
+    assert "social_auth" in additional
+    assert len(additional["social_auth"]) == 1
+    assert additional["social_auth"][0]["uid"] == "different_uid"
+    assert additional["social_auth"][0]["backend_type"] == saml_authenticator.type
+    assert additional["social_auth"][0]["sso_server"] == saml_configuration["IDP_ENTITY_ID"]
