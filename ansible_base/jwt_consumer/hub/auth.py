@@ -21,9 +21,22 @@ class HubJWTAuth(JWTAuthentication):
         except ImportError:
             raise InvalidService("automation-hub")
 
+        orgs = []
         teams = []
         groups = []
         for role_name in self.common_auth.token.get('object_roles', {}).keys():
+            if role_name.startswith('Org'):
+                for object_index in self.common_auth.token['object_roles'][role_name]['objects']:
+                    org_data = self.common_auth.token['objects']['organization'][object_index]
+                    ansible_id = org_data['ansible_id']
+
+                    try:
+                        org = Resource.objects.get(ansible_id=ansible_id).content_object
+                    except Resource.DoesNotExist:
+                        org = self.common_auth.get_or_create_resource('organization', org_data)[1]
+
+                    orgs.append(org)
+
             if role_name.startswith('Team'):
                 for object_index in self.common_auth.token['object_roles'][role_name]['objects']:
                     team_data = self.common_auth.token['objects']['team'][object_index]
@@ -37,6 +50,13 @@ class HubJWTAuth(JWTAuthentication):
                     groups.append(team.group)
 
         self.common_auth.user.groups.set(groups)
+
+		# manage org membership ...
+        org_pks = [org.pk for org in orgs]
+        for org in Organization.objects.exclude(pk__in=org_pks).filter(users=self.common_auth.user):
+            org.users.remove(self.common_auth.user)
+        for org in orgs:
+            org.users.add(self.common_auth.user)
 
         # manage team membership ...
         team_pks = [team.pk for team in teams]
