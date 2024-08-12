@@ -21,6 +21,7 @@ class HubJWTAuth(JWTAuthentication):
         except ImportError:
             raise InvalidService("automation-hub")
 
+        teams = []
         groups = []
         for role_name in self.common_auth.token.get('object_roles', {}).keys():
             if role_name.startswith('Team'):
@@ -31,10 +32,18 @@ class HubJWTAuth(JWTAuthentication):
                         team = Resource.objects.get(ansible_id=ansible_id).content_object
                     except Resource.DoesNotExist:
                         team = self.common_auth.get_or_create_resource('team', team_data)[1]
+                    teams.append(team)
 
                     groups.append(team.group)
 
         self.common_auth.user.groups.set(groups)
+
+        # manage team membership ...
+        team_pks = [team.pk for team in teams]
+        for team in Team.objects.exclude(pk__in=team_pks).filter(users=self.common_auth.user):
+            team.users.remove(self.common_auth.user)
+        for team in teams:
+            team.users.add(self.common_auth.user)
 
         if "Platform Auditor" in self.common_auth.token.get('global_roles', []):
             assign_role("galaxy.auditor", self.common_auth.user)
