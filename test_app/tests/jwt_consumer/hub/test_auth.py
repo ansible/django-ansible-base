@@ -1,11 +1,21 @@
 # import sys
-# from unittest.mock import MagicMock
 from uuid import uuid4
+from unittest.mock import patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from ansible_base.jwt_consumer.common.exceptions import InvalidService
 from ansible_base.jwt_consumer.hub.auth import HubJWTAuth
+from ansible_base.rbac.models import RoleDefinition
+# from ansible_base.resource_registry.models import Resource
+
+from django.contrib.contenttypes.models import ContentType
+from django.contrib.auth.models import Group
+
+from test_app.models import Organization
+from test_app.models import Team
+from test_app.models import User
 
 
 def test_hub_import_error(user):
@@ -46,3 +56,78 @@ def test_hub_jwt_teams(user, token, num_roles):
 #    mocked_authenticator.process_permissions(user, token)
 #    call_count = num_roles
 #    assert mocked_Group.Group.objects.get_or_create.call_count == call_count
+
+
+@pytest.mark.django_db
+@patch('ansible_base.jwt_consumer.hub.auth.Resource')
+@patch('ansible_base.jwt_consumer.hub.auth.ContentType')
+def test_hub_jwt_orgs_teams_groups_memberships(mock_contenttype, mock_resource):
+
+    content_type = ContentType.objects.get_for_model(Team)
+    team_member_role, _ = RoleDefinition.objects.get_or_create(name="Team Member", content_type=content_type)
+
+    assign_role = MagicMock()
+    remove_role = MagicMock()
+
+    # Make all the objects
+    testuser, _ = User.objects.get_or_create(username="testuser")
+    testorg, _ = Organization.objects.get_or_create(name='testorg')
+    testteam, _ = Team.objects.get_or_create(name='testteam', organization=testorg)
+    testgroup, _ = Group.objects.get_or_create(name=testorg.name + '::' + testteam.name)
+    testteam.group = testgroup
+
+    def get_galaxy_models_and_functions():
+        return Organization, Team, assign_role, remove_role
+
+    def get_or_create_resource(*args, **kwargs):
+        raise Exception('not yet implemented')
+
+    # return a very limited set of resources for Resource...
+    def get_resource_content(*args, **kwargs):
+        for obj in [testuser, testorg, testteam]:
+            if str(obj.resource.ansible_id) == kwargs['ansible_id']:
+                resource = MagicMock()
+                resource.content_object = obj
+                return resource
+        raise Exception('not found')
+
+    # we don't want the resource queryset to return our unmodified team ...
+    mock_resource.objects.get.side_effect = get_resource_content
+
+    auth = HubJWTAuth()
+    auth.get_galaxy_models_and_functions = get_galaxy_models_and_functions
+    auth.common_auth.get_or_create_resource = get_or_create_resource
+    auth.common_auth.user = testuser
+    auth.common_auth.token = {
+        "object_roles": {
+            # 'Organization Member': [],
+            'Team Member': {
+                'content_type': 'team',
+                'objects': [0]
+            },
+        },
+        "objects": {
+            "organization": [
+                {
+                    "ansible_id": str(testorg.resource.ansible_id),
+                    "id": testorg.id,
+                    "name": testorg.name,
+                }
+            ],
+            "team": [
+                {
+                    "ansible_id": str(testteam.resource.ansible_id),
+                    "name": testteam.name,
+                    "org": 0,
+                }
+            ]
+        }
+    }
+
+    auth.process_permissions()
+
+    assert testuser.groups.filter(pk=testgroup.pk).exists()
+    assert testteam.users.filter(pk=testuser.pk).exists()
+    assert remove_role.called
+    assert remove_role.call_args[0][0] == 'galaxy.auditor'
+    assert remove_role.call_args[0][1] == testuser
