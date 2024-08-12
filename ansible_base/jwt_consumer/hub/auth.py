@@ -51,7 +51,7 @@ class HubJWTAuth(JWTAuthentication):
 
         self.common_auth.user.groups.set(groups)
 
-		# manage org membership ...
+        # manage org membership ...
         org_pks = [org.pk for org in orgs]
         for org in Organization.objects.exclude(pk__in=org_pks).filter(users=self.common_auth.user):
             org.users.remove(self.common_auth.user)
