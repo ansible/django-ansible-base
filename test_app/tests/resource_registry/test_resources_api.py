@@ -423,3 +423,31 @@ def test_user_social_auth_field_saml(admin_api_client, django_user_model, saml_a
     assert additional["social_auth"][0]["uid"] == "different_uid"
     assert additional["social_auth"][0]["backend_type"] == saml_authenticator.type
     assert additional["social_auth"][0]["sso_server"] == saml_configuration["IDP_ENTITY_ID"]
+
+
+@pytest.mark.django_db
+def test_user_social_auth_no_social_core(admin_api_client, django_user_model, saml_authenticator, saml_configuration, expected_log):
+    user = django_user_model.objects.create(username="lisan_al_gaib")
+    AuthenticatorUser.objects.create(provider=saml_authenticator, user=user, uid="IdP:different_uid")
+    ansible_id = str(Resource.get_resource_for_object(user).ansible_id)
+
+    url = get_relative_url("resource-detail", kwargs={"ansible_id": ansible_id})
+
+    with patch("ansible_base.resource_registry.utils.sso_provider.load_strategy", None):
+        with expected_log('ansible_base.resource_registry.utils.sso_provider.logger', 'debug', "'social_core' is not installed"):
+            resp = admin_api_client.get(url)
+            assert resp.status_code == 200
+
+
+@pytest.mark.django_db
+def test_user_social_auth_exception(admin_api_client, django_user_model, saml_authenticator, saml_configuration, expected_log):
+    user = django_user_model.objects.create(username="lisan_al_gaib")
+    AuthenticatorUser.objects.create(provider=saml_authenticator, user=user, uid="IdP:different_uid")
+    ansible_id = str(Resource.get_resource_for_object(user).ansible_id)
+
+    url = get_relative_url("resource-detail", kwargs={"ansible_id": ansible_id})
+
+    with patch("ansible_base.resource_registry.utils.sso_provider.load_strategy", side_effect=RuntimeError("broken")):
+        with expected_log('ansible_base.resource_registry.utils.sso_provider.logger', 'warning', "Failed to parse server url from"):
+            resp = admin_api_client.get(url)
+            assert resp.status_code == 200

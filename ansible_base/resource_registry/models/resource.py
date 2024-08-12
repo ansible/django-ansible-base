@@ -134,9 +134,9 @@ class Resource(models.Model):
 
             return resource
 
-
     def update_resource(self, resource_data: dict, ansible_id=None, is_partially_migrated=None, partial=False, service_id: Union[str, uuid.UUID, None] = None):
         from ..signals.handlers import no_reverse_sync
+
         resource_type = self.content_type.resource_type
 
         serializer = resource_type.serializer_class(data=resource_data, partial=partial)
