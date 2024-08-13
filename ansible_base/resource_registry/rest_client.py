@@ -32,7 +32,7 @@ class ResourceAPIClient:
     Client for Ansible services to interact with the service-index/ api
     """
 
-    header_name = "Authorization"
+    header_name = "X-ANSIBLE-SERVICE-AUTH"
     _jwt_timeout = None
     _jwt = None
 
@@ -70,7 +70,7 @@ class ResourceAPIClient:
     def refresh_jwt(self):
         # Add a buffer to the token timeout to account for slower requests.
         self._jwt_timeout = time.time() + (self.jwt_expiration - 2)
-        self._jwt = "Token " + get_service_token(self.jwt_user_id, expiration=self.jwt_expiration)
+        self._jwt = get_service_token(self.jwt_user_id, expiration=self.jwt_expiration)
 
     @property
     def jwt(self):
