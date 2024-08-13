@@ -10,16 +10,22 @@ logger = logging.getLogger('ansible_base.jwt_consumer.hub.auth')
 
 
 class HubJWTAuth(JWTAuthentication):
-    def process_permissions(self):
-        # Map teams in the JWT to Automation Hub groups.
+
+    def get_galaxy_models_and_functions(self):
+        '''This is separate from process_permissions purely for testability.'''
         try:
             from galaxy_ng.app.models import Organization, Team
             from pulpcore.plugin.util import assign_role, remove_role
-
-            self.team_content_type = ContentType.objects.get_for_model(Team)
-            self.org_content_type = ContentType.objects.get_for_model(Organization)
         except ImportError:
             raise InvalidService("automation-hub")
+
+        return Organization, Team, assign_role, remove_role
+
+    def process_permissions(self):
+        # Map teams in the JWT to Automation Hub groups.
+        Organization, Team, assign_role, remove_role = self.get_galaxy_models_and_functions()
+        self.team_content_type = ContentType.objects.get_for_model(Team)
+        self.org_content_type = ContentType.objects.get_for_model(Organization)
 
         orgs = []
         teams = []
