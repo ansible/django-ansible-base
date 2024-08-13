@@ -215,6 +215,10 @@ def get_dab_settings(
 
         dab_data['ORG_ADMINS_CAN_SEE_ALL_USERS'] = True
 
+    if 'ansible_base.resource_registry' in installed_apps:
+        # Disable reverse syncing by default
+        dab_data['DISABLE_RESOURCE_SERVER_SYNC'] = True
+
     if 'ansible_base.oauth2_provider' in installed_apps:
         if 'oauth2_provider' not in installed_apps:
             dab_data.setdefault('INSTALLED_APPS', copy(installed_apps))
