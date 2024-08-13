@@ -63,8 +63,11 @@ def test_hub_jwt_teams(user, token, num_roles):
 @patch('ansible_base.jwt_consumer.hub.auth.ContentType')
 def test_hub_jwt_orgs_teams_groups_memberships(mock_contenttype, mock_resource):
 
-    content_type = ContentType.objects.get_for_model(Team)
-    team_member_role, _ = RoleDefinition.objects.get_or_create(name="Team Member", content_type=content_type)
+    org_content_type = ContentType.objects.get_for_model(Organization)
+    org_member_role, _ = RoleDefinition.objects.get_or_create(name="Organization Member", content_type=org_content_type)
+
+    team_content_type = ContentType.objects.get_for_model(Team)
+    team_member_role, _ = RoleDefinition.objects.get_or_create(name="Team Member", content_type=team_content_type)
 
     assign_role = MagicMock()
     remove_role = MagicMock()
@@ -100,7 +103,10 @@ def test_hub_jwt_orgs_teams_groups_memberships(mock_contenttype, mock_resource):
     auth.common_auth.user = testuser
     auth.common_auth.token = {
         "object_roles": {
-            # 'Organization Member': [],
+            'Organization Member': {
+                'content_type': 'organization',
+                'objects': [0]
+            },
             'Team Member': {
                 'content_type': 'team',
                 'objects': [0]
@@ -126,6 +132,7 @@ def test_hub_jwt_orgs_teams_groups_memberships(mock_contenttype, mock_resource):
 
     auth.process_permissions()
 
+    assert testorg.users.filter(pk=testuser.pk).exists()
     assert testuser.groups.filter(pk=testgroup.pk).exists()
     assert testteam.users.filter(pk=testuser.pk).exists()
     assert remove_role.called
