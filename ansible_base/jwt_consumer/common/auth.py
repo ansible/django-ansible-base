@@ -118,9 +118,9 @@ class JWTCommonAuth:
                     ResourceType.objects.get(name="shared.user"), resource_data=self.token["user_data"], ansible_id=self.token["sub"]
                 )
                 self.user = resource.content_object
-                logger.warn(f"New user {self.user.username} created from JWT auth")
+                logger.info(f"New user {self.user.username} created from JWT auth")
             except IntegrityError as exc:
-                logger.warning(f'Existing user {self.token["user_data"]} is a conflict with local user, error: {exc}')
+                logger.debug(f'Existing user {self.token["user_data"]} is a conflict with local user, error: {exc}')
                 with no_reverse_sync():
                     self.user, created = get_user_model().objects.update_or_create(
                         username=self.token["user_data"]['username'],
