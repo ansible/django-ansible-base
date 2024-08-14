@@ -6,13 +6,15 @@ from ansible_base.lib.dynamic_config.settings_logic import get_dab_settings
 try:
     ANSIBLE_BASE_OVERRIDABLE_SETTINGS  # noqa: F821
 except NameError:
-    ANSIBLE_BASE_OVERRIDABLE_SETTINGS = ['INSTALLED_APPS',
-                                         'REST_FRAMEWORK',
-                                         'AUTHENTICATION_BACKENDS',
-                                         'SPECTACULAR_SETTINGS',
-                                         'MIDDLEWARE',
-                                         'OAUTH2_PROVIDER',
-                                         'CACHES']
+    ANSIBLE_BASE_OVERRIDABLE_SETTINGS = [
+        'INSTALLED_APPS',
+        'REST_FRAMEWORK',
+        'AUTHENTICATION_BACKENDS',
+        'SPECTACULAR_SETTINGS',
+        'MIDDLEWARE',
+        'OAUTH2_PROVIDER',
+        'CACHES',
+    ]
 
 
 # This is mostly to be informative to the client app

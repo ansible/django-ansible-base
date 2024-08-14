@@ -1,7 +1,8 @@
 import asyncio
 import logging
-from django.core.cache.backends.base import BaseCache
+
 from django.core import cache as django_cache
+from django.core.cache.backends.base import BaseCache
 
 logger = logging.getLogger('ansible_base.cache.fallback_cache')
 
