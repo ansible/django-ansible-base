@@ -1,6 +1,7 @@
 from copy import copy
 from typing import Optional
-from ansible_base.cache.fallback_cache import PRIMARY_CACHE, FALLBACK_CACHE, STATUS_CACHE
+
+from ansible_base.cache.fallback_cache import FALLBACK_CACHE, PRIMARY_CACHE, STATUS_CACHE
 
 #
 # If you are adding a new dynamic setting:
