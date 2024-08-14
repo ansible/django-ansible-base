@@ -1,7 +1,7 @@
 import copy
 import logging
 import os
-from typing import Union
+from typing import Dict, Union
 from urllib.parse import parse_qs, urlparse
 
 from django.core.exceptions import ImproperlyConfigured
@@ -11,13 +11,20 @@ from redis import Redis
 from redis.cluster import ClusterNode, RedisCluster
 from redis.exceptions import RedisClusterException
 
+from ansible_base.lib.constants import STATUS_DEGRADED, STATUS_FAILED, STATUS_GOOD
+
 logger = logging.getLogger('ansible_base.lib.redis.client')
+
+_DEFAULT_STATUS_TIMEOUT_SEC = 4
+_REDIS_CLUSTER_OK_STATUS = 'ok'
 
 
 # We are going to build our own cluster class to override the mget function
 # In a redis cluster, keys might not be in the same slot and this will throw off mget.
 # Instead, we are going to try and use mget and then, if we get the slot error, we will try the mget_nonatomic to make it work
 class DABRedisCluster(RedisCluster):
+    mode = 'cluster'
+
     def mget(self, *args, **kwargs):
         try:
             return super().mget(*args, **kwargs)
@@ -28,7 +35,7 @@ class DABRedisCluster(RedisCluster):
 
 
 class DABRedis(Redis):
-    pass
+    mode = 'standalone'
 
 
 class RedisClient(DefaultClient):
@@ -172,3 +179,52 @@ def get_redis_client(url: str = '', **kwargs) -> Union[DABRedis, DABRedisCluster
     """
     client_getter = RedisClientGetter()
     return client_getter.get_client(url, **kwargs)
+
+
+def get_redis_status(url: str = '', timeout: int = _DEFAULT_STATUS_TIMEOUT_SEC, **kwargs) -> Dict:
+    for setting in ['socket_timeout', 'socket_connect_timeout']:
+        if setting not in kwargs:
+            kwargs[setting] = timeout
+    if 'socket_keepalive' not in kwargs:
+        kwargs['socket_keepalive'] = True
+
+    kwargs.pop('retry', None)
+
+    response = {
+        'mode': 'Unknown',
+        'status': 'Unknown',
+    }
+
+    try:
+        redis_client = get_redis_client(url, **kwargs)
+        response['mode'] = redis_client.mode
+        response['status'] = STATUS_GOOD
+        if redis_client.mode == 'standalone':
+            response['ping'] = redis_client.execute_command('PING')
+        elif redis_client.mode == 'cluster':
+            response['cluster_info'] = redis_client.cluster_info()
+            response['cluster_nodes'] = redis_client.cluster_nodes()
+            response['status'] = determine_cluster_node_status(response['cluster_nodes'])
+            # Now our status should be STATUS_GOOD or STATUS_DEGRADED
+            # There is one more check we need to do and that is if the cluster_info did not return ok we are in a bad state
+            if response['cluster_info']['cluster_state'] != _REDIS_CLUSTER_OK_STATUS:
+                response['status'] = STATUS_FAILED
+    except Exception as e:
+        response['status'] = STATUS_FAILED
+        response['exception'] = str(e)
+        logger.exception("Failed getting redis status")
+
+    return response
+
+
+def determine_cluster_node_status(cluster_nodes: Dict) -> str:
+    # A general marker that there is at least 1 failed node in the cluster
+    has_bad_node = False
+    for response_node in cluster_nodes.values():
+        if 'fail' in response_node['flags']:
+            has_bad_node = True
+
+    if has_bad_node:
+        return STATUS_DEGRADED
+
+    return STATUS_GOOD

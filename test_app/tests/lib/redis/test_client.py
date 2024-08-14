@@ -8,7 +8,16 @@ from redis.client import Redis
 from redis.cluster import ClusterNode
 from redis.exceptions import RedisClusterException
 
-from ansible_base.lib.redis.client import DABRedisCluster, RedisClient, RedisClientGetter, get_redis_client
+from ansible_base.lib.constants import STATUS_DEGRADED, STATUS_FAILED, STATUS_GOOD
+from ansible_base.lib.redis.client import (
+    _DEFAULT_STATUS_TIMEOUT_SEC,
+    _REDIS_CLUSTER_OK_STATUS,
+    DABRedisCluster,
+    RedisClient,
+    determine_cluster_node_status,
+    get_redis_client,
+    get_redis_status,
+)
 
 
 @pytest.mark.parametrize(
@@ -260,6 +269,118 @@ def test_get_redis_client_without_url():
 
 def test_parse_url_short_circuit():
     with mock.patch('ansible_base.lib.redis.client.urlparse') as m:
-        client_getter = RedisClientGetter()
-        client_getter._redis_parse_url()
+        get_redis_client()
         m.assert_not_called()
+
+
+@pytest.mark.parametrize("socket_timeout,socket_connect_timeout", [(None, None), (5000, None), (None, 5000), (4, 4)])
+def test_redis_get_status_timeouts(socket_timeout, socket_connect_timeout):
+    with mock.patch('ansible_base.lib.redis.client.RedisClientGetter.get_client', side_effect=Exception('stop here')) as m:
+        kwargs = {}
+        if socket_timeout:
+            kwargs['socket_timeout'] = socket_timeout
+        if socket_connect_timeout:
+            kwargs['socket_connect_timeout'] = socket_connect_timeout
+        result = get_redis_status('redis://localhost', **kwargs)
+        assert result['status'] == STATUS_FAILED
+        assert m.called
+        assert m.call_args.kwargs['socket_timeout'] == kwargs.get('socket_timeout', _DEFAULT_STATUS_TIMEOUT_SEC)
+        assert m.call_args.kwargs['socket_connect_timeout'] == kwargs.get('socket_connect_timeout', _DEFAULT_STATUS_TIMEOUT_SEC)
+
+
+def test_get_redis_status_standalone():
+    with mock.patch('ansible_base.lib.redis.client.DABRedis.execute_command', return_value='PONG'):
+        response = get_redis_status('redis://localhost', **{'mode': 'standalone'})
+        assert response['status'] == STATUS_GOOD, response
+
+
+def test_get_redisSTATUS_FAILED_redis_mode():
+    result = get_redis_status('redis://localhost', **{'mode': 'junk'})
+    assert result['status'] == STATUS_FAILED
+
+
+@pytest.mark.parametrize(
+    "cluster_state,node_status,expected_status",
+    [
+        (_REDIS_CLUSTER_OK_STATUS, STATUS_GOOD, STATUS_GOOD),
+        (_REDIS_CLUSTER_OK_STATUS, STATUS_DEGRADED, STATUS_DEGRADED),
+        ('not_redis_cluster_ok', STATUS_GOOD, STATUS_FAILED),
+        ('not_redis_cluster_ok', STATUS_DEGRADED, STATUS_FAILED),
+    ],
+)
+# Mock our redis cluster calls
+@mock.patch('ansible_base.lib.redis.client.DABRedisCluster.cluster_nodes', return_value='there')
+# Mock the RedisCluster functions that attempt to connect on definition
+@mock.patch('redis.cluster.NodesManager.initialize')
+@mock.patch('redis._parsers.CommandsParser.initialize')
+def test_get_redis_status_cluster(cluster_nodes, nm_initialize, cp_initialize, cluster_state, expected_status, node_status):
+    with mock.patch('ansible_base.lib.redis.client.DABRedisCluster.cluster_info', return_value={'cluster_state': cluster_state}):
+        with mock.patch('ansible_base.lib.redis.client.determine_cluster_node_status', return_value=node_status):
+            response = get_redis_status('redis://localhost', **{'mode': 'cluster'})
+            assert response['status'] == expected_status
+
+
+def test_get_redis_status_exception():
+    exception_message = 'mock timeout'
+    with mock.patch('ansible_base.lib.redis.client.DABRedis.execute_command', side_effect=Exception(exception_message)):
+        response = get_redis_status('redis://localhost', **{'mode': 'standalone'})
+        assert response['status'] == STATUS_FAILED
+        assert response['exception'] == exception_message
+
+
+@pytest.mark.parametrize(
+    "cluster_nodes,expected_response",
+    [
+        # No nodes
+        ({}, STATUS_GOOD),
+        # Two nodes that are good
+        (
+            {
+                'a': {'node_id': 'a', 'flags': ''},
+                'b': {'node_id': 'b', 'flags': ''},
+            },
+            STATUS_GOOD,
+        ),
+        # Two nodes that are good, one is a primary (master_id = '-') both in good status
+        (
+            {
+                'a': {'node_id': 'a', 'flags': '', 'master_id': '-'},
+                'b': {'node_id': 'b', 'flags': '', 'master_id': 'a'},
+            },
+            STATUS_GOOD,
+        ),
+        # A primary up and its replica failed
+        (
+            {
+                'a': {'node_id': 'a', 'flags': '', 'master_id': '-'},
+                'b': {'node_id': 'b', 'flags': 'fail', 'master_id': 'a'},
+            },
+            STATUS_DEGRADED,
+        ),
+        # A primary failed and its replica up
+        (
+            {
+                'a': {'node_id': 'a', 'flags': 'something,fail', 'master_id': '-'},
+                'b': {'node_id': 'b', 'flags': '', 'master_id': 'a'},
+            },
+            STATUS_DEGRADED,
+        ),
+        # A primary failed and its replica failed
+        (
+            {
+                'a': {'node_id': 'a', 'flags': 'something,fail', 'master_id': '-'},
+                'b': {'node_id': 'b', 'flags': 'fail,else', 'master_id': 'a'},
+            },
+            STATUS_DEGRADED,
+        ),
+    ],
+)
+def test_determine_cluster_node_status(cluster_nodes, expected_response):
+    assert expected_response == determine_cluster_node_status(cluster_nodes)
+
+
+def test_redis_timeout():
+    with mock.patch('ansible_base.lib.redis.client.get_redis_client', side_effect=Exception("raised")):
+        result = get_redis_status('redis://localhost', timeout=1)
+        assert result['status'] == STATUS_FAILED
+        assert result['exception'] == 'raised'
