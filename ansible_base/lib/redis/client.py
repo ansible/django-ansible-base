@@ -12,11 +12,10 @@ from redis.cluster import ClusterNode, RedisCluster
 from redis.exceptions import RedisClusterException
 
 from ansible_base.lib.constants import STATUS_DEGRADED, STATUS_FAILED, STATUS_GOOD
-from ansible_base.lib.utils.timeout import Timeout
 
 logger = logging.getLogger('ansible_base.lib.redis.client')
 
-_DEFAULT_STATUS_TIMEOUT_SEC = 1
+_DEFAULT_STATUS_TIMEOUT_SEC = 4
 _REDIS_CLUSTER_OK_STATUS = 'ok'
 
 
@@ -182,10 +181,14 @@ def get_redis_client(url: str = '', **kwargs) -> Union[DABRedis, DABRedisCluster
     return client_getter.get_client(url, **kwargs)
 
 
-def get_redis_status(url: str = '', timeout: int = 3, **kwargs) -> Dict:
+def get_redis_status(url: str = '', timeout: int = _DEFAULT_STATUS_TIMEOUT_SEC, **kwargs) -> Dict:
     for setting in ['socket_timeout', 'socket_connect_timeout']:
         if setting not in kwargs:
-            kwargs[setting] = _DEFAULT_STATUS_TIMEOUT_SEC
+            kwargs[setting] = timeout
+    if 'socket_keepalive' not in kwargs:
+        kwargs['socket_keepalive'] = True
+
+    kwargs.pop('retry', None)
 
     response = {
         'mode': 'Unknown',
@@ -193,26 +196,23 @@ def get_redis_status(url: str = '', timeout: int = 3, **kwargs) -> Dict:
     }
 
     try:
-        with Timeout(timeout):
-            redis_client = get_redis_client(url, **kwargs)
-            response['mode'] = redis_client.mode
-            response['status'] = STATUS_GOOD
-            if redis_client.mode == 'standalone':
-                response['ping'] = redis_client.execute_command('PING')
-            elif redis_client.mode == 'cluster':
-                response['cluster_info'] = redis_client.cluster_info()
-                response['cluster_nodes'] = redis_client.cluster_nodes()
-                response['status'] = determine_cluster_node_status(response['cluster_nodes'])
-                # Now our status should be STATUS_GOOD or STATUS_DEGRADED
-                # There is one more check we need to do and that is if the cluster_info did not return ok we are in a bad state
-                if response['cluster_info']['cluster_state'] != _REDIS_CLUSTER_OK_STATUS:
-                    response['status'] = STATUS_FAILED
-    except Timeout.TimeoutException:
-        response['status'] = STATUS_FAILED
-        response['exception'] = 'Failed to get timely response from redis'
+        redis_client = get_redis_client(url, **kwargs)
+        response['mode'] = redis_client.mode
+        response['status'] = STATUS_GOOD
+        if redis_client.mode == 'standalone':
+            response['ping'] = redis_client.execute_command('PING')
+        elif redis_client.mode == 'cluster':
+            response['cluster_info'] = redis_client.cluster_info()
+            response['cluster_nodes'] = redis_client.cluster_nodes()
+            response['status'] = determine_cluster_node_status(response['cluster_nodes'])
+            # Now our status should be STATUS_GOOD or STATUS_DEGRADED
+            # There is one more check we need to do and that is if the cluster_info did not return ok we are in a bad state
+            if response['cluster_info']['cluster_state'] != _REDIS_CLUSTER_OK_STATUS:
+                response['status'] = STATUS_FAILED
     except Exception as e:
         response['status'] = STATUS_FAILED
         response['exception'] = str(e)
+        logger.exception("Failed getting redis status")
 
     return response
 

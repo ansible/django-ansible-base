@@ -380,9 +380,7 @@ def test_determine_cluster_node_status(cluster_nodes, expected_response):
 
 
 def test_redis_timeout():
-    from ansible_base.lib.utils.timeout import Timeout
-
-    with mock.patch('ansible_base.lib.redis.client.get_redis_client', side_effect=Timeout.TimeoutException("raised")):
+    with mock.patch('ansible_base.lib.redis.client.get_redis_client', side_effect=Exception("raised")):
         result = get_redis_status('redis://localhost', timeout=1)
         assert result['status'] == STATUS_FAILED
-        assert result['exception'] == 'Failed to get timely response from redis'
+        assert result['exception'] == 'raised'
