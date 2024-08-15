@@ -46,7 +46,11 @@ class Resource(models.Model):
     object_id = models.TextField(null=False, db_index=True)
     content_object = GenericForeignKey('content_type', 'object_id')
 
-    service_id = models.UUIDField(null=False, default=service_id)
+    service_id = models.UUIDField(
+        null=False,
+        default=service_id,
+        help_text="ID of the service responsible for managing this resource.",
+    )
 
     # we're not using this as the primary key because the ansible_id can change if the object is
     # externally managed.
@@ -54,6 +58,11 @@ class Resource(models.Model):
 
     # human readable name for the resource
     name = models.CharField(max_length=512, null=True)
+
+    is_partially_migrated = models.BooleanField(
+        default=False,
+        help_text="This gets set to True when a resource has been copied into the resource server, but the service_id hasn't been updated yet.",
+    )
 
     def summary_fields(self):
         return {"ansible_id": self.ansible_id, "resource_type": self.resource_type}
@@ -125,7 +134,7 @@ class Resource(models.Model):
 
             return resource
 
-    def update_resource(self, resource_data: dict, ansible_id=None, partial=False, service_id: Union[str, uuid.UUID, None] = None):
+    def update_resource(self, resource_data: dict, ansible_id=None, is_partially_migrated=None, partial=False, service_id: Union[str, uuid.UUID, None] = None):
         from ..signals.handlers import no_reverse_sync
 
         resource_type = self.content_type.resource_type
@@ -141,6 +150,8 @@ class Resource(models.Model):
                 self.ansible_id = ansible_id
             if service_id:
                 self.service_id = service_id
+            if is_partially_migrated is not None:
+                self.is_partially_migrated = is_partially_migrated
             self.save()
 
             content_object = processor(self.content_object)

@@ -4,11 +4,12 @@ from unittest.mock import patch
 import pytest
 from django.contrib.contenttypes.models import ContentType
 
+from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.resource_registry.models import Resource
 from ansible_base.resource_registry.utils.resource_type_processor import ResourceTypeProcessor
 from test_app.models import EncryptionModel, Organization
-from test_app.resource_api import APIConfig, UserProcessor
+from test_app.resource_api import APIConfig
 
 
 def test_service_index_root(user_api_client):
@@ -345,22 +346,6 @@ def test_processor_pre_serialize(admin_api_client, organization):
         assert resp.data["resource_data"]["name"] == "PRE SERIALIZED"
 
 
-def test_processor_pre_serialize_additional(admin_api_client, admin_user):
-    class CustomProcessor(UserProcessor):
-        def pre_serialize_additional(self):
-            self.instance.username = "PRE SERIALIZED"
-            return super().pre_serialize_additional()
-
-    class PatchedConfig(APIConfig):
-        custom_resource_processors = {"shared.user": CustomProcessor}
-
-    url = get_relative_url("resource-additional-data", kwargs={"ansible_id": str(admin_user.resource.ansible_id)})
-
-    with patch("test_app.resource_api.APIConfig", PatchedConfig):
-        resp = admin_api_client.get(url)
-        assert resp.data["username"] == "PRE SERIALIZED"
-
-
 def test_processor_save(admin_api_client):
     class CustomProcessor(ResourceTypeProcessor):
         def save(self, validated_data, is_new=False):
@@ -383,3 +368,86 @@ def test_processor_save(admin_api_client):
         resp = admin_api_client.put(url, {"resource_data": {"name": "my_name2"}}, format="json")
         assert resp.data["name"] == "HELLO my_name2"
         assert Organization.objects.filter(name="HELLO my_name2").exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    'authenticator_fixture, server',
+    [
+        ('github_authenticator', 'https://github.com/login/oauth/authorize'),
+        ('github_organization_authenticator', 'https://github.com/login/oauth/authorize'),
+        ('github_team_authenticator', 'https://github.com/login/oauth/authorize'),
+        ('github_enterprise_authenticator', 'https://foohub.com/login/oauth/authorize'),
+        ('github_enterprise_organization_authenticator', 'https://foohub.com/login/oauth/authorize'),
+        ('github_enterprise_team_authenticator', 'https://foohub.com/login/oauth/authorize'),
+        ('google_oauth2_authenticator', 'https://accounts.google.com/o/oauth2/auth'),
+        ('oidc_authenticator', 'https://oidc.example.com/authorize/'),
+        ('azuread_authenticator', 'https://login.microsoftonline.com/common/oauth2/authorize'),
+        ('radius_authenticator', None),
+        ('tacacs_authenticator', None),
+    ],
+)
+def test_user_social_auth_field(admin_api_client, django_user_model, request, authenticator_fixture, server):
+    user = django_user_model.objects.create(username="lisan_al_gaib")
+    authenticator = request.getfixturevalue(authenticator_fixture)
+    AuthenticatorUser.objects.create(provider=authenticator, user=user, uid="different_uid")
+    ansible_id = str(Resource.get_resource_for_object(user).ansible_id)
+
+    url = get_relative_url("resource-detail", kwargs={"ansible_id": ansible_id})
+    resp = admin_api_client.get(url)
+
+    assert resp.status_code == 200
+    additional = resp.json()["additional_data"]
+
+    assert "social_auth" in additional
+    assert len(additional["social_auth"]) == 1
+    assert additional["social_auth"][0]["uid"] == "different_uid"
+    assert additional["social_auth"][0]["backend_type"] == authenticator.type
+    assert additional["social_auth"][0]["sso_server"] == server
+
+
+@pytest.mark.django_db
+def test_user_social_auth_field_saml(admin_api_client, django_user_model, saml_authenticator, saml_configuration):
+    user = django_user_model.objects.create(username="lisan_al_gaib")
+    AuthenticatorUser.objects.create(provider=saml_authenticator, user=user, uid="IdP:different_uid")
+    ansible_id = str(Resource.get_resource_for_object(user).ansible_id)
+
+    url = get_relative_url("resource-detail", kwargs={"ansible_id": ansible_id})
+    resp = admin_api_client.get(url)
+
+    assert resp.status_code == 200
+    additional = resp.json()["additional_data"]
+
+    assert "social_auth" in additional
+    assert len(additional["social_auth"]) == 1
+    assert additional["social_auth"][0]["uid"] == "different_uid"
+    assert additional["social_auth"][0]["backend_type"] == saml_authenticator.type
+    assert additional["social_auth"][0]["sso_server"] == saml_configuration["IDP_ENTITY_ID"]
+
+
+@pytest.mark.django_db
+def test_user_social_auth_no_social_core(admin_api_client, django_user_model, saml_authenticator, saml_configuration, expected_log):
+    user = django_user_model.objects.create(username="lisan_al_gaib")
+    AuthenticatorUser.objects.create(provider=saml_authenticator, user=user, uid="IdP:different_uid")
+    ansible_id = str(Resource.get_resource_for_object(user).ansible_id)
+
+    url = get_relative_url("resource-detail", kwargs={"ansible_id": ansible_id})
+
+    with patch("ansible_base.resource_registry.utils.sso_provider.load_strategy", None):
+        with expected_log('ansible_base.resource_registry.utils.sso_provider.logger', 'debug', "'social_core' is not installed"):
+            resp = admin_api_client.get(url)
+            assert resp.status_code == 200
+
+
+@pytest.mark.django_db
+def test_user_social_auth_exception(admin_api_client, django_user_model, saml_authenticator, saml_configuration, expected_log):
+    user = django_user_model.objects.create(username="lisan_al_gaib")
+    AuthenticatorUser.objects.create(provider=saml_authenticator, user=user, uid="IdP:different_uid")
+    ansible_id = str(Resource.get_resource_for_object(user).ansible_id)
+
+    url = get_relative_url("resource-detail", kwargs={"ansible_id": ansible_id})
+
+    with patch("ansible_base.resource_registry.utils.sso_provider.load_strategy", side_effect=RuntimeError("broken")):
+        with expected_log('ansible_base.resource_registry.utils.sso_provider.logger', 'warning', "Failed to parse server url from"):
+            resp = admin_api_client.get(url)
+            assert resp.status_code == 200

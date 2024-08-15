@@ -3,6 +3,7 @@ import uuid
 import pytest
 from requests.exceptions import HTTPError
 
+from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.resource_registry.models import Resource, service_id
 from ansible_base.resource_registry.rest_client import ResourceAPIClient, ResourceRequestBody
 
@@ -50,13 +51,19 @@ def test_create_resource(resource_client):
     new_service_id = str(uuid.uuid4())
     new_ansible_id = str(uuid.uuid4())
 
-    data = ResourceRequestBody(ansible_id=new_ansible_id, service_id=new_service_id, resource_type="shared.user", resource_data={"username": "mrs_dab"})
+    data = ResourceRequestBody(
+        ansible_id=new_ansible_id,
+        service_id=new_service_id,
+        resource_type="shared.user",
+        resource_data={"username": "mrs_dab"},
+    )
     resp = resource_client.create_resource(data)
 
     assert resp.status_code == 201
     assert resp.json()["name"] == "mrs_dab"
     assert resp.json()["ansible_id"] == new_ansible_id
     assert resp.json()["service_id"] == new_service_id
+    assert resp.json()["is_partially_migrated"] is False
 
 
 @pytest.mark.django_db
@@ -94,6 +101,12 @@ def test_update_resource(resource_client, organization):
     assert resp.json()["ansible_id"] == new_ansible_id
     assert resp.json()["service_id"] == new_service_id
 
+    data = ResourceRequestBody(is_partially_migrated=True)
+    resp = resource_client.update_resource(new_ansible_id, data, partial=True)
+
+    assert resp.status_code == 200
+    assert resp.json()["is_partially_migrated"] is True
+
 
 @pytest.mark.django_db
 def test_delete_resource(resource_client, organization):
@@ -117,6 +130,8 @@ def test_list_resources(resource_client, organization):
     assert resp.status_code == 200
     assert resp.json()["count"] == 1
     assert resp.json()["results"][0]["ansible_id"] == ansible_id
+    assert resp.json()["results"][0]["is_partially_migrated"] is False
+    assert "additional_data" not in resp.json()["results"][0]
 
 
 @pytest.mark.django_db
@@ -149,36 +164,22 @@ def test_get_resource_404(resource_client):
 
 
 @pytest.mark.django_db
-def test_additional_data(resource_client, team, django_user_model, member_rd, admin_rd):
-    team_member = django_user_model.objects.create(username="usul")
-    team_admin = django_user_model.objects.create(username="muad_dib")
-    team_all = django_user_model.objects.create(username="lisan_al_gaib")
+def test_additional_data(resource_client, django_user_model, github_authenticator):
+    user = django_user_model.objects.create(username="lisan_al_gaib")
 
-    team.users.set([team_member, team_all])
-    team.admins.set([team_admin, team_all])
+    AuthenticatorUser.objects.create(provider=github_authenticator, user=user, uid="different_uid")
 
-    for user in [team_member, team_admin, team_all]:
-        data = resource_client.get_additional_resource_data(str(user.resource.ansible_id)).json()
+    ansible_id = str(Resource.get_resource_for_object(user).ansible_id)
+    resp = resource_client.get_resource(ansible_id)
 
-        assert data["external_auth_provider"] is None
-        assert data["external_auth_uid"] is None
-        assert data["organizations"] == []
-        assert data["organizations_administered"] == []
-        assert data["username"] == user.username
+    assert resp.status_code == 200
+    additional = resp.json()["additional_data"]
 
-    teams = set([str(team.resource.ansible_id)])
-
-    member = resource_client.get_additional_resource_data(str(team_member.resource.ansible_id)).json()
-    assert set(member["teams"]) == teams
-    assert set(member["teams_administered"]) == set([])
-
-    admin = resource_client.get_additional_resource_data(str(team_admin.resource.ansible_id)).json()
-    assert set(admin["teams"]) == set([])
-    assert set(admin["teams_administered"]) == teams
-
-    user_all = resource_client.get_additional_resource_data(str(team_all.resource.ansible_id)).json()
-    assert set(user_all["teams"]) == teams
-    assert set(user_all["teams_administered"]) == teams
+    assert "social_auth" in additional
+    assert len(additional["social_auth"]) == 1
+    assert additional["social_auth"][0]["uid"] == "different_uid"
+    assert additional["social_auth"][0]["backend_type"] == github_authenticator.type
+    assert additional["social_auth"][0]["sso_server"] == "https://github.com/login/oauth/authorize"
 
 
 @pytest.mark.django_db

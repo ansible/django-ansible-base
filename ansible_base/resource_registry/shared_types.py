@@ -1,10 +1,7 @@
 from rest_framework import serializers
 
-from ansible_base.resource_registry.utils.resource_type_serializers import (
-    AnsibleResourceForeignKeyField,
-    AnsibleResourceManyRelated,
-    SharedResourceTypeSerializer,
-)
+from ansible_base.resource_registry.utils.resource_type_serializers import AnsibleResourceForeignKeyField, SharedResourceTypeSerializer
+from ansible_base.resource_registry.utils.sso_provider import get_sso_provider_server
 
 
 class UserAdditionalDataSerializer(serializers.Serializer):
@@ -12,33 +9,33 @@ class UserAdditionalDataSerializer(serializers.Serializer):
     Additional data serializer for UserType
     """
 
-    username = serializers.CharField()
-    email = serializers.EmailField(required=False, allow_blank=True)
-    first_name = serializers.CharField(required=False, allow_blank=True)
-    last_name = serializers.CharField(required=False, allow_blank=True)
-    is_superuser = serializers.BooleanField(default=False)
+    social_auth = serializers.ListField()
 
-    # If this user is an SSO user, provide
-    external_auth_provider = serializers.CharField(required=False, allow_blank=True)
-    external_auth_uid = serializers.CharField(required=False, allow_blank=True)
+    def to_representation(self, instance):
+        social_auth = []
 
-    organizations = AnsibleResourceManyRelated("shared.organization")
-    organizations_administered = serializers.SerializerMethodField()
+        if hasattr(instance, "authenticator_users"):
+            for social in instance.authenticator_users.all():
+                sso_server, uid = get_sso_provider_server(social.provider.slug, social.uid)
+                social_auth.append(
+                    {
+                        "uid": uid,
+                        "backend_type": social.provider.type,
+                        "sso_server": sso_server,
+                    }
+                )
+        elif hasattr(instance, "social_auth"):
+            for social in instance.social_auth.all():
+                sso_server, uid = get_sso_provider_server(social.provider, social.uid)
+                social_auth.append(
+                    {
+                        "uid": uid,
+                        "backend_type": social.provider,
+                        "sso_server": sso_server,
+                    }
+                )
 
-    teams = AnsibleResourceManyRelated("shared.team")
-    teams_administered = serializers.SerializerMethodField()
-
-    def get_organizations_administered(self, obj):
-        if not hasattr(obj, "organizations_administered"):
-            return []
-        ansible_resources_serializer = AnsibleResourceManyRelated("shared.organization")
-        return ansible_resources_serializer.to_representation(obj.organizations_administered)
-
-    def get_teams_administered(self, obj):
-        if not hasattr(obj, "teams_administered"):
-            return []
-        ansible_resources_serializer = AnsibleResourceManyRelated("shared.team")
-        return ansible_resources_serializer.to_representation(obj.teams_administered)
+        return {"social_auth": social_auth}
 
 
 class UserType(SharedResourceTypeSerializer):

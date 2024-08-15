@@ -8,7 +8,11 @@ import urllib3
 
 from ansible_base.resource_registry.resource_server import get_resource_server_config, get_service_token
 
-ResourceRequestBody = namedtuple("ResourceRequestBody", ["ansible_id", "service_id", "resource_type", "resource_data"], defaults=(None, None, None, None))
+ResourceRequestBody = namedtuple(
+    "ResourceRequestBody",
+    ["ansible_id", "service_id", "is_partially_migrated", "resource_type", "resource_data"],
+    defaults=(None, None, None, None, None),
+)
 
 
 urllib3.disable_warnings()

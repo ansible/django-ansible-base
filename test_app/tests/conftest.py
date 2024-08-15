@@ -293,6 +293,7 @@ def oidc_configuration():
         "OIDC_VERIFY_SSL": True,
         "KEY": "12345",
         "SECRET": "abcdefg12345",
+        "AUTHORIZATION_URL": "https://oidc.example.com/authorize/",
     }
 
 
@@ -391,7 +392,15 @@ def saml_configuration(rsa_keypair_with_cert, rsa_keypair_with_cert_1):
 
 @pytest.fixture
 def saml_authenticator(saml_configuration):
+    from ansible_base.authentication.authenticator_plugins.saml import SAMLConfiguration
     from ansible_base.authentication.models import Authenticator
+
+    # The SAMLConfiguration transforms the provided config into an internal data structure
+    # that is used by the underlying social_auth backend. This is normally done by the
+    # serializer, but since this fixture is creating the object directly in the database
+    # it doesn't get transformed correctly by default.
+    config = SAMLConfiguration(data=saml_configuration)
+    config.is_valid(raise_exception=True)
 
     authenticator = Authenticator.objects.create(
         name="Test SAML Authenticator",
@@ -399,7 +408,7 @@ def saml_authenticator(saml_configuration):
         create_objects=True,
         remove_users=True,
         type="ansible_base.authentication.authenticator_plugins.saml",
-        configuration=saml_configuration,
+        configuration=config.validated_data,
     )
     yield authenticator
     delete_authenticator(authenticator)
