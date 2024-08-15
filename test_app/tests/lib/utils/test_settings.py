@@ -3,6 +3,7 @@ from unittest import mock
 import pytest
 from django.test import override_settings
 
+from ansible_base.lib.dynamic_config.settings_logic import get_dab_settings
 from ansible_base.lib.utils.settings import SettingNotSetException, get_setting, is_aoc_instance
 
 
@@ -68,3 +69,21 @@ def test_is_aoc_instance(setting_value, expected_value, expected_log_output, exp
             assert_not_called=(not expected_log_output),
         ):
             assert expected_value == is_aoc_instance()
+
+
+def test_fallback_cache():
+    redis_cache = {'default': {'BACKEND': 'django_redis.cache.RedisCache'}}
+
+    assert get_dab_settings([], caches=redis_cache)['CACHES'] == redis_cache
+
+    fallback_cache = {
+        'default': {'BACKEND': 'ansible_base.lib.cache.fallback_cache.DABCacheWithFallback'},
+        'primary': {'BACKEND': 'django_redis.cache.RedisCache'},
+    }
+
+    with pytest.raises(RuntimeError):
+        get_dab_settings([], caches=fallback_cache)
+
+    fallback_cache['fallback'] = {'BACKEND': 'dummy'}
+
+    assert 'fallback_status' in get_dab_settings([], caches=fallback_cache)['CACHES']
