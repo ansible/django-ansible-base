@@ -284,7 +284,9 @@ def get_dab_settings(
             if default_backend == 'ansible_base.cache.fallback_cache.DABCacheWithFallback':
                 # Ensure primary and fallback are defined
                 if PRIMARY_CACHE not in caches or FALLBACK_CACHE not in caches:
-                    raise RuntimeError(f'Cache definitions with the keys {PRIMARY_CACHE} and {FALLBACK_CACHE} must be defined when DABCacheWithFallback is used.')
+                    raise RuntimeError(
+                        f'Cache definitions with the keys {PRIMARY_CACHE} and {FALLBACK_CACHE} must be defined when DABCacheWithFallback is used.'
+                    )
                 # Add fallback status manager cache
                 dab_data['CACHES'][STATUS_CACHE] = {
                     'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
