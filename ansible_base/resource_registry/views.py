@@ -94,16 +94,6 @@ class ResourceViewSet(
 
         return super().get_serializer_class()
 
-    # @action(detail=True, methods=['get'])
-    # def additional_data(self, *args, **kwargs):
-    #     obj = self.get_object()
-    #     if serializer := resource_type_cache(obj.content_type.pk).serializer_class:
-    #         data = serializer.get_additional_data(obj.content_object)
-    #         if data is not None:
-    #             return Response(data.data)
-
-    #     return HttpResponseNotFound()
-
     def perform_destroy(self, instance):
         instance.delete_resource()
 
