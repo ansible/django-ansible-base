@@ -3,8 +3,6 @@ import logging
 logger = logging.getLogger('ansible_base.resource_registry.utils.sso_provider')
 
 try:
-    from social_core.backends.oauth import OAuthAuth
-    from social_core.backends.saml import SAMLAuth
     from social_django.utils import load_strategy
 except ImportError:
     load_strategy = None
@@ -34,14 +32,14 @@ def get_sso_provider_server(backend_name: str, uid: str):
         except TypeError:
             return (None, uid)
 
-        if isinstance(backend, SAMLAuth):
+        if hasattr(backend, "get_idp"):
             idp, real_uid = uid.split(":", maxsplit=1)
             return (backend.get_idp(idp).entity_id, real_uid)
 
-        elif isinstance(backend, OAuthAuth):
+        elif hasattr(backend, "authorization_url"):
             return (backend.authorization_url(), uid)
         else:
             return (None, uid)
-    except:  # noqa E722
+    except Exception as e:  # noqa E722
         logger.warning(f"Failed to parse server url from {backend_name}")
         return (None, uid)
