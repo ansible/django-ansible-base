@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import multiprocessing
 
 from django.core import cache as django_cache
 from django.core.cache.backends.base import BaseCache
@@ -11,6 +12,7 @@ PRIMARY_CACHE = 'primary'
 FALLBACK_CACHE = 'fallback'
 STATUS_CACHE = 'fallback_status'
 CACHE_STATUS_KEY = 'fallback_status_indicator'
+RECOVERY_KEY = 'recovery_in_progress'
 
 
 class DABCacheWithFallback(BaseCache):
@@ -61,9 +63,12 @@ class DABCacheWithFallback(BaseCache):
                 return response
 
             except Exception:
-                logger.error("Primary cache unavailable, switching to fallback cache.")
-                self._status_cache.set(CACHE_STATUS_KEY, FALLBACK_CACHE)
-                asyncio.run(self._recover_primary())
+                with multiprocessing.Lock():
+                    if not self._status_cache.get(RECOVERY_KEY, default=False):
+                        logger.error("Primary cache unavailable, switching to fallback cache.")
+                        self._status_cache.set(CACHE_STATUS_KEY, FALLBACK_CACHE)
+                        self._status_cache.set(RECOVERY_KEY, True)
+                        asyncio.run(self._recover_primary())
         response = getattr(self._fallback_cache, operation)(*args, **kwargs)
         return response
 
@@ -74,6 +79,7 @@ class DABCacheWithFallback(BaseCache):
             logger.warn("Primary cache recovered, clearing and resuming use.")
             self._primary_cache.clear()
             self._status_cache.set(CACHE_STATUS_KEY, PRIMARY_CACHE)
+            self._status_cache.set(RECOVERY_KEY, False)
         except Exception:
             logger.error("Primary cache still not available, retrying.")
             await self._recover_primary()
