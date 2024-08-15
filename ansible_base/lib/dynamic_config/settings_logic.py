@@ -1,7 +1,7 @@
 from copy import copy
 from typing import Optional
 
-from ansible_base.cache.fallback_cache import FALLBACK_CACHE, PRIMARY_CACHE, STATUS_CACHE
+from ansible_base.lib.cache.fallback_cache import FALLBACK_CACHE, PRIMARY_CACHE, STATUS_CACHE
 
 #
 # If you are adding a new dynamic setting:
@@ -277,17 +277,18 @@ def get_dab_settings(
 
         dab_data['ALLOW_OAUTH2_FOR_EXTERNAL_USERS'] = False
 
-        dab_data['CACHES'] = copy(caches)
-        # Ensure proper configuration for fallback cache
-        default_backend = caches.get('default', {}).get('BACKEND', '')
-        if default_backend == 'ansible_base.cache.fallback_cache.DABCacheWithFallback':
-            # Ensure primary and fallback are defined
-            if PRIMARY_CACHE not in caches or FALLBACK_CACHE not in caches:
-                raise RuntimeError(f'Cache definitions with the keys {PRIMARY_CACHE} and {FALLBACK_CACHE} must be defined when DABCacheWithFallback is used.')
-            # Add fallback status manager cache
-            dab_data['CACHES'][STATUS_CACHE] = {
-                'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
-                'LOCATION': '/var/tmp/fallback_status',
-            }
+        if caches is not None:
+            dab_data['CACHES'] = copy(caches)
+            # Ensure proper configuration for fallback cache
+            default_backend = caches.get('default', {}).get('BACKEND', '')
+            if default_backend == 'ansible_base.cache.fallback_cache.DABCacheWithFallback':
+                # Ensure primary and fallback are defined
+                if PRIMARY_CACHE not in caches or FALLBACK_CACHE not in caches:
+                    raise RuntimeError(f'Cache definitions with the keys {PRIMARY_CACHE} and {FALLBACK_CACHE} must be defined when DABCacheWithFallback is used.')
+                # Add fallback status manager cache
+                dab_data['CACHES'][STATUS_CACHE] = {
+                    'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+                    'LOCATION': '/var/tmp/fallback_status',
+                }
 
     return dab_data
