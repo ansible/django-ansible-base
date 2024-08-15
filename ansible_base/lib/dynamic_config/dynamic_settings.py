@@ -64,7 +64,7 @@ for key, value in get_dab_settings(
     authentication_backends=local_authentication_backends,
     middleware=MIDDLEWARE,
     oauth2_provider=OAUTH2_PROVIDER,
-    caches=CACHES if 'CACHES' in locals() else None,
+    caches=CACHES if 'CACHES' in locals() else None,  # noqa: F821
 ).items():
     if key in ANSIBLE_BASE_OVERRIDABLE_SETTINGS:
         ANSIBLE_BASE_OVERRIDDEN_SETTINGS.append(key)
