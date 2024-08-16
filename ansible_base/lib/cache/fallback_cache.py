@@ -13,6 +13,7 @@ FALLBACK_CACHE = 'fallback'
 STATUS_CACHE = 'fallback_status'
 CACHE_STATUS_KEY = 'fallback_status_indicator'
 RECOVERY_KEY = 'recovery_in_progress'
+RECOVERY_CHECK_FREQ_SEC = 10
 
 
 class DABCacheWithFallback(BaseCache):
@@ -37,6 +38,10 @@ class DABCacheWithFallback(BaseCache):
         self._fallback_cache = django_cache.caches.create_connection(FALLBACK_CACHE)
         self._status_cache = django_cache.caches.create_connection(STATUS_CACHE)
 
+        options = params.get("OPTIONS", {})
+        self._recovery_check_freq_sec = options.get("recovery_check_freq_sec", RECOVERY_CHECK_FREQ_SEC)
+        # Default to primary
+        self._status_cache.set(CACHE_STATUS_KEY, PRIMARY_CACHE)
         self.__initialized = True
 
     # Main cache interface
@@ -73,10 +78,10 @@ class DABCacheWithFallback(BaseCache):
         return response
 
     async def _recover_primary(self):
-        await asyncio.sleep(10)
+        await asyncio.sleep(self._recovery_check_freq_sec)
         try:
             self._primary_cache.get('fakekey')
-            logger.warn("Primary cache recovered, clearing and resuming use.")
+            logger.warning("Primary cache recovered, clearing and resuming use.")
             self._primary_cache.clear()
             self._status_cache.set(CACHE_STATUS_KEY, PRIMARY_CACHE)
             self._status_cache.set(RECOVERY_KEY, False)
