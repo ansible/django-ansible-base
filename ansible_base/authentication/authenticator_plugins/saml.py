@@ -3,6 +3,7 @@ import logging
 from django.http import HttpResponse, HttpResponseNotFound
 from django.urls import re_path
 from django.utils.translation import gettext_lazy as _
+from onelogin.saml2.auth import OneLogin_Saml2_Auth
 from onelogin.saml2.errors import OneLogin_Saml2_Error
 from onelogin.saml2.settings import OneLogin_Saml2_Settings
 from rest_framework.serializers import ValidationError
@@ -261,6 +262,26 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAML
     def get_login_url(self, authenticator):
         url = get_relative_url('social:begin', kwargs={'backend': authenticator.slug})
         return f'{url}?idp={idp_string}'
+
+    def _create_saml_auth(self, idp):
+        """
+        Get an instance of OneLogin_Saml2_Auth
+        Identical to the implementation in SAMLAuth, with the exception
+        of forcing https in the request info when SOCIAL_AUTH_REDIRECT_IS_HTTPS == True
+        """
+        config = self.generate_saml_config(idp)
+        request_info = {
+            "https": "on" if self.strategy.request_is_secure() else "off",
+            "http_host": self.strategy.request_host(),
+            "script_name": self.strategy.request_path(),
+            "get_data": self.strategy.request_get(),
+            "post_data": self.strategy.request_post(),
+        }
+
+        if self.strategy.setting("REDIRECT_IS_HTTPS", False, self):
+            request_info["https"] = "on"
+
+        return OneLogin_Saml2_Auth(request_info, config)
 
     def add_related_fields(self, request, authenticator):
         return {"metadata": get_relative_url('authenticator-metadata', kwargs={'pk': authenticator.id})}

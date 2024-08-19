@@ -2,6 +2,7 @@ from unittest import mock
 
 import pytest
 from django.conf import settings
+from django.test.utils import override_settings
 
 from ansible_base.authentication.authenticator_plugins.saml import AuthenticatorPlugin
 from ansible_base.authentication.session import SessionAuthentication
@@ -273,3 +274,31 @@ def test_saml_callback_url_is_acs_url(rsa_keypair_with_cert):
     authenticator_object = get_authenticator_plugin(authenticator.type)
     authenticator_object.update_if_needed(authenticator)
     assert authenticator_object.generate_saml_config()['sp']['assertionConsumerService']['url'] == callback_url
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "redirect_is_https",
+    [
+        (True),
+        (False),
+    ],
+)
+def test_saml_config_https_coersion(saml_authenticator, redirect_is_https):
+    from django.http import HttpRequest
+
+    from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
+
+    with override_settings(SOCIAL_AUTH_REDIRECT_IS_HTTPS=redirect_is_https):
+        authenticator_object = get_authenticator_plugin(saml_authenticator.type)
+        authenticator_object.update_if_needed(saml_authenticator)
+
+        request = HttpRequest()
+        request.META["HTTP_HOST"] = "example.com"
+        request.path = "/some/random/path"
+        authenticator_object.strategy.request = request
+
+        with mock.patch("onelogin.saml2.settings.OneLogin_Saml2_Settings.check_idp_settings", return_value=[]):
+            auth_object = authenticator_object._create_saml_auth(None)
+            https_expected = "on" if redirect_is_https else "off"
+            assert auth_object._request_data["https"] == https_expected
