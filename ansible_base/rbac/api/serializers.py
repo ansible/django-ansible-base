@@ -1,4 +1,5 @@
 from django.apps import apps
+from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.db.utils import IntegrityError
@@ -80,11 +81,9 @@ class ContentTypeField(ChoiceLikeMixin):
 
     def get_dynamic_object(self, data):
         app_label, model = data.rsplit('.')
-        try:
-            if permission_registry.content_type_model.objects.get(model=model, app_label=app_label).exists():
+        if app_label in permission_registry.apps.all_models:
+            if permission_registry.content_type_model.objects.filter(model=model, app_label=app_label).exists():
                 return permission_registry.content_type_model.objects.get(model=model, app_label=app_label)
-        except Exception:
-            pass
         return permission_registry.content_type_model.objects.get(model=model)
 
     def to_representation(self, value):
