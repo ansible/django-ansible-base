@@ -14,6 +14,15 @@ def get_remote_host(request: HttpRequest) -> Optional[str]:
     return value[0] if value else None
 
 
+def split_header(value: str) -> list[str]:
+    values = []
+    for a_value in value.split(','):
+        a_value = a_value.strip()
+        if a_value:
+            values.append(a_value)
+    return values
+
+
 def get_remote_hosts(request: HttpRequest, get_first_only: bool = False) -> list[str]:
     '''
     Get all IPs from the allowed headers
@@ -26,22 +35,30 @@ def get_remote_hosts(request: HttpRequest, get_first_only: bool = False) -> list
 
     headers = get_setting('REMOTE_HOST_HEADERS', ['REMOTE_ADDR', 'REMOTE_HOST'])
 
+    for header in headers:
+        for value in split_header(request.META.get(header, '')):
+            remote_hosts.append(value)
+
     # If we are connected to from a trusted proxy then we can add some additional headers
     try:
         if 'HTTP_X_TRUSTED_PROXY' in request.META:
             if validate_x_trusted_proxy_header(request.META['HTTP_X_TRUSTED_PROXY']):
-                headers.insert(0, 'HTTP_X_FORWARDED_FOR')
-                headers.insert(0, 'HTTP_X_ENVOY_EXTERNAL_ADDRESS')
+                # The last entry in x-forwarded-for from envoy can be trusted implicitly
+                # https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_conn_man/headers#x-forwarded-for
+                values = split_header(request.META.get('HTTP_X_FORWARDED_FOR', ''))
+                if values:
+                    remote_hosts.insert(0, values[-1])
+
+                # x-envoy-external-address can always be trusted when coming from envoy
+                # https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_conn_man/headers#x-envoy-external-address
+                for value in reversed(split_header(request.META.get('HTTP_X_ENVOY_EXTERNAL_ADDRESS', ''))):
+                    remote_hosts.insert(0, value)
             else:
                 logger.error("Unable to use headers from trusted proxy because shared secret was invalid!")
     except Exception:
         logger.exception("Failed to validate HTTP_X_TRUSTED_PROXY")
 
-    for header in headers:
-        for value in request.META.get(header, '').split(','):
-            value = value.strip()
-            if value:
-                if get_first_only:
-                    return [value]
-                remote_hosts.append(value)
+    if get_first_only and len(remote_hosts) > 0:
+        return [remote_hosts[0]]
+
     return remote_hosts
