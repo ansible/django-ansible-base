@@ -228,5 +228,12 @@ class PermissionRegistry:
         """Tells if the given object or class is a type tracked by DAB RBAC"""
         return any((obj._meta.model_name == cls._meta.model_name and obj._meta.app_label == cls._meta.app_label) for cls in self._registry)
 
+    def get_model_by_name(self, model_name: str) -> Optional[Type[Model]]:
+        """Returns class with given model_name if registered, returns None otherwise"""
+        for cls in self._registry:
+            if model_name == cls._meta.model_name:
+                return cls
+        return None
+
 
 permission_registry = PermissionRegistry()
