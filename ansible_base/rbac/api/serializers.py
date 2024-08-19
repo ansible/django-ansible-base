@@ -80,8 +80,11 @@ class ContentTypeField(ChoiceLikeMixin):
 
     def get_dynamic_object(self, data):
         app_label, model = data.rsplit('.')
-        if permission_registry.content_type_model.objects.get(model=model, app_label=app_label).exists():
-            return permission_registry.content_type_model.objects.get(model=model, app_label=app_label)
+        try:
+            if permission_registry.content_type_model.objects.get(model=model, app_label=app_label).exists():
+                return permission_registry.content_type_model.objects.get(model=model, app_label=app_label)
+        except Exception:
+            pass
         return permission_registry.content_type_model.objects.get(model=model)
 
     def to_representation(self, value):
