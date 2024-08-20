@@ -16,7 +16,7 @@ def ensure_transaction():
 
 
 def migrations_are_complete() -> bool:
-    """Returns a booling telling you if manage.py migrate has been run to completion
+    """Returns a boolean telling you if manage.py migrate has been run to completion
 
     Note that this is a little expensive, like up to 20 database queries
     and lots of imports.
