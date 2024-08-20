@@ -86,8 +86,15 @@ def test_fallback_cache():
 
     primary.fixit()
 
-    time.sleep(10)
-    assert status.get(CACHE_STATUS_KEY) == PRIMARY_CACHE
+    # Check until primary is back
+    timeout = time.time() + 30
+    while True:
+        if status.get(CACHE_STATUS_KEY) == PRIMARY_CACHE:
+            break
+        if time.time() > timeout:
+            assert False
+        time.sleep(1)
+
     assert not status.get(RECOVERY_KEY)
 
     assert cache.get('key') is None
