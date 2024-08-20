@@ -18,6 +18,8 @@ logger = logging.getLogger('ansible_base.lib.redis.client')
 _DEFAULT_STATUS_TIMEOUT_SEC = 4
 _REDIS_CLUSTER_OK_STATUS = 'ok'
 
+_INVALID_STANDALONE_OPTIONS = ['cluster_error_retry_attempts']
+
 
 # We are going to build our own cluster class to override the mget function
 # In a redis cluster, keys might not be in the same slot and this will throw off mget.
@@ -163,6 +165,10 @@ class RedisClientGetter:
             self._get_hosts()
             return DABRedisCluster(**self.connection_settings)
         elif self.mode == 'standalone':
+            for setting in _INVALID_STANDALONE_OPTIONS:
+                if setting in self.connection_settings:
+                    logger.info("Removing setting {setting} from connection settings because its invalid for standalone mode")
+                    self.connection_settings.pop(setting)
             logger.debug("Connecting to Redis standalone")
             return DABRedis(**self.connection_settings)
         else:
