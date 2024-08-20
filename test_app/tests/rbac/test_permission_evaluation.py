@@ -139,3 +139,83 @@ def test_superuser_flag_not_considered(inventory):
 )
 def test_is_add_perm(codename, expect):
     assert is_add_perm(codename) is expect
+
+
+@pytest.mark.django_db
+class TestMultipleMemberRoles:
+    """This tests that multiple roles can provide the member permission"""
+
+    @override_settings(ANSIBLE_BASE_DELETE_REQUIRE_CHANGE=False)
+    def test_duplicate_team_member(self, member_rd, team, inv_rd, inventory):
+        alice, bob = [permission_registry.user_model.objects.create(username=uname) for uname in ('alice', 'bob')]
+        member_rd.give_permission(alice, team)
+        new_member_rd = RoleDefinition.objects.create_from_permissions(
+            name='another member role',
+            permissions=['member_team', 'delete_team', 'view_team'],
+            content_type=permission_registry.content_type_model.objects.get_for_model(team),
+            managed=True,
+        )
+        inv_rd.give_permission(team, inventory)
+
+        # As a traditional team member, alice has permissions to the inventory, via team
+        assert alice.has_obj_perm(inventory, 'change')
+        assert alice.has_obj_perm(team, 'member')
+        assert not alice.has_obj_perm(team, 'delete')  # normally team members can not do this
+
+        # Bob gets the new team member role and those permissions are inherited just the same
+        assert not bob.has_obj_perm(inventory, 'change')
+        new_member_rd.give_permission(bob, team)
+        assert bob.has_obj_perm(inventory, 'change')
+        assert bob.has_obj_perm(team, 'member')
+        assert bob.has_obj_perm(team, 'delete')  # Special ability of our new role
+
+        # Bob can have both member roles without conflict
+        new_member_rd.give_permission(bob, team)
+        assert bob.has_obj_perm(inventory, 'change')
+
+        # Test revoking one but not the other
+        member_rd.remove_permission(bob, team)
+        assert bob.has_obj_perm(inventory, 'change')
+
+        # Test revoking final permission that bob has
+        new_member_rd.remove_permission(bob, team)
+        assert not bob.has_obj_perm(inventory, 'change')
+
+    @override_settings(ANSIBLE_BASE_DELETE_REQUIRE_CHANGE=False)
+    def test_duplicate_org_admin_roles(self, org_admin_rd, team, organization, inv_rd, inventory):
+        inv_rd.give_permission(team, inventory)
+        alice, bob = [permission_registry.user_model.objects.create(username=uname) for uname in ('alice', 'bob')]
+        org_admin_rd.give_permission(alice, organization)
+        new_org_rd = RoleDefinition.objects.create_from_permissions(
+            name='another organization role',
+            permissions=['member_team', 'delete_team', 'view_team', 'view_organization'],
+            content_type=permission_registry.content_type_model.objects.get_for_model(organization),
+            managed=True,
+        )
+
+        # As an org admin, alice has permission to the inventory
+        assert alice.has_obj_perm(inventory, 'change')
+
+        # Bob gets the new org-admin-like role and stuff still works
+        assert not bob.has_obj_perm(inventory, 'change')
+        new_org_rd.give_permission(bob, organization)
+        assert bob.has_obj_perm(inventory, 'change')
+        assert bob.has_obj_perm(team, 'member')
+        assert bob.has_obj_perm(organization, 'view')
+        # Interesting detail, our new role does not give organization membership
+        assert not bob.has_obj_perm(organization, 'member')
+
+        # Bob can have both roles, sure, why not
+        org_admin_rd.give_permission(bob, organization)
+        assert bob.has_obj_perm(inventory, 'change')
+        assert bob.has_obj_perm(organization, 'member')  # only given by org_admin_rd
+
+        # Revoking one org-team-member-inventory permission chain
+        new_org_rd.remove_permission(bob, organization)
+        assert bob.has_obj_perm(inventory, 'change')
+
+        # Now bob loses both roles and loses permissions too
+        org_admin_rd.remove_permission(bob, organization)
+        assert not bob.has_obj_perm(inventory, 'change')
+        assert not bob.has_obj_perm(team, 'member')
+        assert not bob.has_obj_perm(organization, 'view')
