@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 
 import jwt
+
 from ansible_base.resource_registry.models import Resource, service_id
 from ansible_base.resource_registry.resource_server import get_resource_server_config
 from ansible_base.resource_registry.utils.sso_provider import get_sso_provider_server

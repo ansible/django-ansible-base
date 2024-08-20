@@ -41,5 +41,5 @@ def get_sso_provider_server(backend_name: str, uid: str):
         else:
             return (None, uid)
     except Exception as e:  # noqa E722
-        logger.warning(f"Failed to parse server url from {backend_name}")
+        logger.warning(f"Failed to parse server url from {backend_name}, {e}")
         return (None, uid)

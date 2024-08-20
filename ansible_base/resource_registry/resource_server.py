@@ -4,7 +4,7 @@ from typing import TypedDict
 import jwt
 from django.conf import settings
 
-from ansible_base.resource_registry.models import Resource, service_id
+from ansible_base.resource_registry.models import service_id
 
 
 class ResourceServerConfig(TypedDict):
