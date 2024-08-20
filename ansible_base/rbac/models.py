@@ -396,7 +396,7 @@ class AssignmentBase(ImmutableCommonModel, ObjectRoleFields):
         # we must be very careful to avoid referencing deferred attributes to avoid RecursionError
         def_fields = self.get_deferred_fields()
         if not ({'id', 'object_id', 'object_role_id'} & def_fields):
-            if self.object_role_id and not self.object_id:
+            if (not self.id) and self.object_role_id and (not self.object_id):
                 # Cache fields from the associated object_role
                 self.object_id = self.object_role.object_id
                 self.content_type_id = self.object_role.content_type_id
