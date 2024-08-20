@@ -18,7 +18,6 @@ _temp_file = Path().joinpath(tempfile.gettempdir(), 'gw_primary_cache_failed')
 
 class DABCacheWithFallback(BaseCache):
     _instance = None
-    _initialized = False
     _primary_cache = None
     _fallback_cache = None
 
@@ -37,7 +36,13 @@ class DABCacheWithFallback(BaseCache):
         self._fallback_cache = django_cache.caches.create_connection(FALLBACK_CACHE)
         self.thread_pool = ThreadPoolExecutor()
 
+        if _temp_file.exists():
+            _temp_file.unlink()
+
         self.__initialized = True
+
+    def get_active_cache(self):
+        return FALLBACK_CACHE if _temp_file.exists() else PRIMARY_CACHE
 
     # Main cache interface
     def add(self, key, value, timeout=DEFAULT_TIMEOUT, version=None):
