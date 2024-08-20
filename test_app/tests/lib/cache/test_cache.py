@@ -1,8 +1,9 @@
-from ansible_base.lib.cache.fallback_cache import DABCacheWithFallback, CACHE_STATUS_KEY, PRIMARY_CACHE, FALLBACK_CACHE, RECOVERY_KEY
-from django.test import override_settings
-from django.core.cache.backends.base import BaseCache
-import pytest
 import time
+
+from django.core.cache.backends.base import BaseCache
+from django.test import override_settings
+
+from ansible_base.lib.cache.fallback_cache import CACHE_STATUS_KEY, FALLBACK_CACHE, PRIMARY_CACHE, RECOVERY_KEY, DABCacheWithFallback
 
 
 class BreakableCache(BaseCache):
@@ -30,9 +31,10 @@ class BreakableCache(BaseCache):
 
     def breakit(self):
         self.working = False
-        
+
     def fixit(self):
         self.working = True
+
 
 def test_fallback_cache():
     caches = {
@@ -44,7 +46,7 @@ def test_fallback_cache():
             'LOCATION': 'primary',
             'OPTIONS': {
                 'recovery_check_freq_sec': 1,
-            }
+            },
         },
         'fallback': {
             'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
@@ -53,7 +55,7 @@ def test_fallback_cache():
         'fallback_status': {
             'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
             'LOCATION': 'fallback_status',
-        }
+        },
     }
 
     with override_settings(CACHES=caches):
@@ -65,7 +67,7 @@ def test_fallback_cache():
 
     cache.set('key', 'val1')
     assert primary.get('key') == 'val1'
-    assert fallback.get('key') == None
+    assert fallback.get('key') is None
     assert status.get(CACHE_STATUS_KEY) == PRIMARY_CACHE
 
     primary.set('tobecleared', True)
@@ -75,8 +77,8 @@ def test_fallback_cache():
     cache.get('key')
 
     assert status.get(CACHE_STATUS_KEY) == FALLBACK_CACHE
-    assert status.get(RECOVERY_KEY) == True
-    
+    assert status.get(RECOVERY_KEY)
+
     # Sets in fallback
     cache.set('key', 'val2')
 
@@ -86,14 +88,14 @@ def test_fallback_cache():
 
     time.sleep(10)
     assert status.get(CACHE_STATUS_KEY) == PRIMARY_CACHE
-    assert status.get(RECOVERY_KEY) == False
+    assert not status.get(RECOVERY_KEY)
 
-    assert cache.get('key') == None
+    assert cache.get('key') is None
     assert fallback.get('key') == 'val2'
 
     # Ensure primary was cleared
-    assert cache.get('tobecleared', False) == False
-    
+    assert not cache.get('tobecleared', False)
+
     cache.set('key2', 'val3')
 
     assert cache.get('key2') == 'val3'
