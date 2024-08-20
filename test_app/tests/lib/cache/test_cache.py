@@ -1,5 +1,7 @@
+import logging
 import time
 
+from django.core import cache as django_cache
 from django.core.cache.backends.base import BaseCache
 from django.test import override_settings
 
@@ -9,7 +11,8 @@ from ansible_base.lib.cache.fallback_cache import CACHE_STATUS_KEY, FALLBACK_CAC
 class BreakableCache(BaseCache):
     def __init__(self, location, params):
         self.cache = {}
-        self.working = True
+        options = params.get("OPTIONS", {})
+        self.working = options.get("working", True)
 
     def add(self, key, value, timeout=300, version=None):
         self.cache[key] = value
@@ -40,13 +43,13 @@ def test_fallback_cache():
     caches = {
         'default': {
             'BACKEND': 'ansible_base.lib.cache.fallback_cache.DABCacheWithFallback',
+            'OPTIONS': {
+                'recovery_check_freq_sec': 1,
+            },
         },
         'primary': {
             'BACKEND': 'test_app.tests.lib.cache.test_cache.BreakableCache',
             'LOCATION': 'primary',
-            'OPTIONS': {
-                'recovery_check_freq_sec': 1,
-            },
         },
         'fallback': {
             'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
@@ -59,12 +62,11 @@ def test_fallback_cache():
     }
 
     with override_settings(CACHES=caches):
-        cache = DABCacheWithFallback("", {})
+        cache = django_cache.caches.create_connection('default')
 
     primary = cache._primary_cache
     fallback = cache._fallback_cache
     status = cache._status_cache
-
     cache.set('key', 'val1')
     assert primary.get('key') == 'val1'
     assert fallback.get('key') is None
@@ -106,3 +108,43 @@ def test_fallback_cache():
     cache.set('key2', 'val3')
 
     assert cache.get('key2') == 'val3'
+
+def test_dead_primary():
+    caches = {
+        'default': {
+            'BACKEND': 'ansible_base.lib.cache.fallback_cache.DABCacheWithFallback',
+            'OPTIONS': {
+                'recovery_check_freq_sec': 1,
+            },
+        },
+        'primary': {
+            'BACKEND': 'test_app.tests.lib.cache.test_cache.BreakableCache',
+            'LOCATION': 'primary',
+            'OPTIONS': {
+                'working': False,
+            }
+        },
+        'fallback': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'fallback',
+        },
+        'fallback_status': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'fallback_status',
+        },
+    }
+
+    # Kill post-shutdown logging from unfinished recovery checker
+    logging.getLogger('ansible_base.cache.fallback_cache').setLevel(logging.CRITICAL)
+
+    with override_settings(CACHES=caches):
+        cache = django_cache.caches.create_connection('default')
+
+    primary = cache._primary_cache
+    fallback = cache._fallback_cache
+    status = cache._status_cache
+
+    cache.set('key', 'val')
+    cache.get('key')
+
+    assert status.get(CACHE_STATUS_KEY) == 'fallback'
