@@ -84,6 +84,4 @@ def test_fallback_cache():
     with pytest.raises(RuntimeError):
         get_dab_settings([], caches=fallback_cache)
 
-    fallback_cache['fallback'] = {'BACKEND': 'dummy'}
-
-    assert 'fallback_status' in get_dab_settings([], caches=fallback_cache)['CACHES']
+    assert 'CACHES' not in get_dab_settings([], caches=None)
