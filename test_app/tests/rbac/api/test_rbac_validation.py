@@ -7,6 +7,7 @@ from ansible_base.lib.utils.auth import get_team_model
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
+from ansible_base.rbac.permission_registry import permission_registry
 
 Team = get_team_model()
 User = get_user_model()
@@ -22,6 +23,18 @@ class TestSharedAssignmentsDisabled:
         response = admin_api_client.post(url, data={'object_id': team.id, 'role_definition': member_rd.id, 'user': rando.id})
         assert response.status_code == 400, response.data
         assert self.NON_LOCAL_MESSAGE in str(response.data)
+        assert not rando.has_obj_perm(team, 'member')
+
+        # Other non-shared team member roles can have their assignments modified
+        new_member_rd = RoleDefinition.objects.create_from_permissions(
+            name='another member role',
+            permissions=['member_team', 'view_team'],
+            content_type=permission_registry.content_type_model.objects.get_for_model(team),
+            managed=True,
+        )
+        response = admin_api_client.post(url, data={'object_id': team.id, 'role_definition': new_member_rd.id, 'user': rando.id})
+        assert response.status_code == 201, response.data
+        assert rando.has_obj_perm(team, 'member')
 
     @override_settings(ALLOW_SHARED_RESOURCE_CUSTOM_ROLES=False)
     def test_custom_roles_for_shared_stuff_not_allowed(self, admin_api_client):
