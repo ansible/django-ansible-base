@@ -5,7 +5,7 @@ from django.core import cache as django_cache
 from django.core.cache.backends.base import BaseCache
 from django.test import override_settings
 
-from ansible_base.lib.cache.fallback_cache import CACHE_STATUS_KEY, FALLBACK_CACHE, PRIMARY_CACHE, RECOVERY_KEY, DABCacheWithFallback
+from ansible_base.lib.cache.fallback_cache import CACHE_STATUS_KEY, FALLBACK_CACHE, PRIMARY_CACHE, RECOVERY_KEY
 
 
 class BreakableCache(BaseCache):
@@ -109,6 +109,7 @@ def test_fallback_cache():
 
     assert cache.get('key2') == 'val3'
 
+
 def test_dead_primary():
     caches = {
         'default': {
@@ -122,7 +123,7 @@ def test_dead_primary():
             'LOCATION': 'primary',
             'OPTIONS': {
                 'working': False,
-            }
+            },
         },
         'fallback': {
             'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
@@ -140,8 +141,6 @@ def test_dead_primary():
     with override_settings(CACHES=caches):
         cache = django_cache.caches.create_connection('default')
 
-    primary = cache._primary_cache
-    fallback = cache._fallback_cache
     status = cache._status_cache
 
     cache.set('key', 'val')
