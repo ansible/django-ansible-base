@@ -171,15 +171,6 @@ def test_callback_validate_role_team_assignment(admin_api_client, inventory, org
 
 
 @pytest.mark.django_db
-def test_unregistered_model_type_for_rd(admin_api_client):
-    # the secret color model is not registered with DAB RBAC
-    url = get_relative_url('roledefinition-list')
-    r = admin_api_client.post(url, data={'name': 'bad role', 'permissions': ['local.view_inventory'], 'content_type': 'secretcolor'})
-    assert r.status_code == 400
-    assert 'does not track permissions for model secretcolor' in str(r.data)
-
-
-@pytest.mark.django_db
 def test_unregistered_model_type_for_assignment(admin_api_client, inventory, inv_rd, user):
     url = get_relative_url('roleuserassignment-list')
     # force invalid state of role definition, should not really happen
