@@ -91,10 +91,10 @@ class RecoveryThread(Thread):
             time.sleep(self.retry_seconds)
             try:
                 self.primary_cache.get('317783e3-03f6-4f05-9a22-7c774a0bbea3', default=True)
-                logger.warning(f"Primary cache recovered, clearing and resuming use. {self}")
+                logger.warning("Primary cache recovered, clearing and resuming use.")
                 self.primary_cache.clear()
                 self.status_cache.set(CACHE_STATUS_KEY, PRIMARY_CACHE)
                 self.status_cache.set(RECOVERY_KEY, False)
                 return
             except Exception as e:
-                logger.error(f"Primary cache still not available, {self} retrying: {e}")
+                logger.error(f"Primary cache still not available, retrying after {self.retry_seconds} sec: {e}")
