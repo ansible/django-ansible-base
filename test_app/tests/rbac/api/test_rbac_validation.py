@@ -36,19 +36,23 @@ class TestSharedAssignmentsDisabled:
         assert response.status_code == 201, response.data
         assert rando.has_obj_perm(team, 'member')
 
-    @override_settings(ALLOW_SHARED_RESOURCE_CUSTOM_ROLES=False)
-    def test_custom_roles_for_shared_stuff_not_allowed(self, admin_api_client):
+    @pytest.mark.parametrize('allowed', [True, False])
+    def test_custom_roles_for_shared_stuff_not_allowed(self, admin_api_client, allowed):
         url = get_relative_url('roledefinition-list')
-        response = admin_api_client.post(
-            url,
-            data={
-                'name': 'Alternative Organization Admin Role in Local Server',
-                'content_type': 'aap.organization',
-                'permissions': ['aap.view_organization', 'local.change_organization'],
-            },
-        )
-        assert response.status_code == 400, response.data
-        assert 'Local custom roles can only include view permission for shared models' in str(response.data)
+        with override_settings(ALLOW_SHARED_RESOURCE_CUSTOM_ROLES=allowed):
+            response = admin_api_client.post(
+                url,
+                data={
+                    'name': 'Alternative Organization Admin Role in Local Server',
+                    'content_type': 'aap.organization',
+                    'permissions': ['aap.view_organization', 'local.change_organization'],
+                },
+            )
+        if allowed is False:
+            assert response.status_code == 400, response.data
+            assert 'Local custom roles can only include view permission for shared models' in str(response.data)
+        else:
+            assert response.status_code == 201, response.data
 
     @override_settings(ALLOW_LOCAL_RESOURCE_MANAGEMENT=False)
     def test_auditor_for_external_models(self, admin_api_client, rando, external_auditor_constructor):
