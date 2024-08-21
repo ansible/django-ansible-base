@@ -97,10 +97,8 @@ def proxies_of_model(cls):
 
 def _should_reverse_sync():
     enabled = not getattr(settings, 'DISABLE_RESOURCE_SERVER_SYNC', False)
-    for setting in ('RESOURCE_SERVER', 'RESOURCE_SERVICE_PATH'):
-        if not getattr(settings, setting, False):
-            enabled = False
-            break
+    if not getattr(settings, 'RESOURCE_SERVER', False):
+        enabled = False
     if hasattr(settings, 'RESOURCE_SERVER') and ('SECRET_KEY' not in settings.RESOURCE_SERVER or not settings.RESOURCE_SERVER['SECRET_KEY']):
         enabled = False
     return enabled
