@@ -13,9 +13,14 @@ def redirect_to_resource_server(*args, social=None, user=None, **kwargs):
     if not user:
         return None
 
-    redirect_path = getattr(settings, 'SSO_AUTH_CODE_REDIRECT_PATH', '/login/')
+    redirect_path = getattr(settings, 'SERVICE_BACKED_SSO_AUTH_CODE_REDIRECT_PATH', '/login/')
+    redirect_url = getattr(
+        settings,
+        'SERVICE_BACKED_SSO_AUTH_CODE_REDIRECT_URL',
+        get_resource_server_config()["URL"],
+    )
 
     auth_code = get_user_auth_code(user, social_user=social)
-    url = get_resource_server_config()["URL"] + redirect_path + "?auth_code=" + auth_code
+    url = redirect_url + redirect_path + "?auth_code=" + auth_code
 
     return redirect(url, permanent=False)
