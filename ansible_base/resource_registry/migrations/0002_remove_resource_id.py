@@ -11,6 +11,12 @@ def reset_service_id(apps, schema_editor):
     Resource.objects.all().update(service_id=ServiceID.objects.first().id)
 
 
+def revert_post_migrate(apps, schema_editor):
+    "Resources are created post-migrate, and prior model is incompatible anyway, so delete them"
+    Resource = apps.get_model("dab_resource_registry", "Resource")
+    Resource.objects.all().delete()
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -30,7 +36,7 @@ class Migration(migrations.Migration):
         ),
         migrations.RunPython(
             code=reset_service_id,
-            reverse_code=migrations.RunPython.noop
+            reverse_code=revert_post_migrate
         ),
         migrations.AlterField(
             model_name='resource',

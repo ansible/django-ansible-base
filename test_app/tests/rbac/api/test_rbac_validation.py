@@ -5,6 +5,7 @@ from django.test.utils import override_settings
 
 from ansible_base.lib.utils.auth import get_team_model
 from ansible_base.lib.utils.response import get_relative_url
+from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
 
 Team = get_team_model()
@@ -167,3 +168,22 @@ def test_callback_validate_role_team_assignment(admin_api_client, inventory, org
     response = admin_api_client.post(url, data={'object_id': inventory.id, 'team': team.id, 'role_definition': inv_rd.id})
     assert response.status_code == 403
     assert "Role assignment not allowed 403" in str(response.data)
+
+
+@pytest.mark.django_db
+def test_unregistered_model_type_for_assignment(admin_api_client, inventory, inv_rd, user):
+    url = get_relative_url('roleuserassignment-list')
+    # force invalid state of role definition, should not really happen
+    cls = apps.get_model('test_app.secretcolor')
+    inv_rd.content_type = permission_registry.content_type_model.objects.get_for_model(cls)
+    inv_rd.save(update_fields=['content_type'])
+    r = admin_api_client.post(url, data={'object_id': inventory.pk, 'user': user.pk, 'role_definition': inv_rd.pk})
+    assert r.status_code == 400
+    assert 'Given role definition is for a model not registered in the permissions system' in str(r.data)
+
+    # Temporarily abusing user model to test this via ansible_id reference, this testing method may not work forever
+    inv_rd.content_type = permission_registry.content_type_model.objects.get_for_model(user)
+    inv_rd.save(update_fields=['content_type'])
+    r = admin_api_client.post(url, data={'object_ansible_id': str(user.resource.ansible_id), 'user': user.pk, 'role_definition': inv_rd.pk})
+    assert r.status_code == 400
+    assert 'user type is not registered with DAB RBAC' in str(r.data)
