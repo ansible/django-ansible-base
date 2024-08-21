@@ -1,4 +1,5 @@
 import logging
+import time
 from itertools import chain
 
 from django.shortcuts import render
@@ -168,14 +169,20 @@ def api_root(request, format=None):
     for url in docs_urls + authentication_urls[1:]:
         if isinstance(url, URLPattern):
             try:
-                list_endpoints[url.name] = get_fully_qualified_url(url.name, request=request, format=format)
+                list_endpoints[url.name] = get_fully_qualified_url(url.name)
             except NoReverseMatch:
                 pass
 
-    list_endpoints['service-index'] = get_fully_qualified_url('service-index-root', request=request, format=format)
-    list_endpoints['role-metadata'] = get_fully_qualified_url('role-metadata', request=request, format=format)
+    list_endpoints['service-index'] = get_fully_qualified_url('service-index-root')
+    list_endpoints['role-metadata'] = get_fully_qualified_url('role-metadata')
+    list_endpoints['timeout-view'] = get_fully_qualified_url('test-timeout-view')
 
     return Response(list_endpoints)
+
+
+@api_view(['GET'])
+def timeout_view(request, format=None):
+    time.sleep(60 * 10)  # 10 minutes
 
 
 class MultipleFieldsViewSet(TestAppViewSet):
