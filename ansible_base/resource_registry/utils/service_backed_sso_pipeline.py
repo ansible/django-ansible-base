@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.shortcuts import redirect
 
 from ansible_base.resource_registry.resource_server import get_resource_server_config
@@ -12,7 +13,9 @@ def redirect_to_resource_server(*args, social=None, user=None, **kwargs):
     if not user:
         return None
 
+    redirect_path = getattr(settings, 'SSO_AUTH_CODE_REDIRECT_PATH', '/login/')
+
     auth_code = get_user_auth_code(user, social_user=social)
-    url = get_resource_server_config()["URL"] + "/api/gateway/v1/validate_auth_code/?auth_code=" + auth_code
+    url = get_resource_server_config()["URL"] + redirect_path + "?auth_code=" + auth_code
 
     return redirect(url, permanent=False)
