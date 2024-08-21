@@ -226,8 +226,7 @@ def get_dab_settings(
         dab_data['ORG_ADMINS_CAN_SEE_ALL_USERS'] = True
 
     if 'ansible_base.resource_registry' in installed_apps:
-        # Disable reverse syncing by default
-        dab_data['DISABLE_RESOURCE_SERVER_SYNC'] = True
+        dab_data['DISABLE_RESOURCE_SERVER_SYNC'] = False
 
         # Disable legacy SSO by default
         dab_data['ENABLE_SERVICE_BACKED_SSO'] = False
