@@ -17,7 +17,8 @@ def redirect_to_resource_server(*args, social=None, user=None, **kwargs):
         settings,
         'SERVICE_BACKED_SSO_AUTH_CODE_REDIRECT_PATH',
         "/api/gateway/v1/legacy_auth/authenticate_sso/",
-    )
+    ).strip("/")
+
     redirect_url = getattr(
         settings,
         'SERVICE_BACKED_SSO_AUTH_CODE_REDIRECT_URL',
@@ -25,6 +26,6 @@ def redirect_to_resource_server(*args, social=None, user=None, **kwargs):
     )
 
     auth_code = get_user_auth_code(user, social_user=social)
-    url = redirect_url + redirect_path + "?auth_code=" + auth_code
+    url = f"{redirect_url}/{redirect_path}/?auth_code={auth_code}"
 
     return redirect(url, permanent=False)
