@@ -5,7 +5,6 @@ from django.test.utils import override_settings
 
 from ansible_base.lib.utils.auth import get_team_model
 from ansible_base.lib.utils.response import get_relative_url
-from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
 from ansible_base.rbac.permission_registry import permission_registry
 
