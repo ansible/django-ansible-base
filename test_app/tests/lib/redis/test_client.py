@@ -384,3 +384,15 @@ def test_redis_timeout():
         result = get_redis_status('redis://localhost', timeout=1)
         assert result['status'] == STATUS_FAILED
         assert result['exception'] == 'raised'
+
+
+def test_redis_standalone_removes_cluster_settings():
+    args = {'mode': 'standalone', 'cluster_error_retry_attempts': 4}
+    with mock.patch('redis.Redis.__init__', return_value=None) as rm:
+        from ansible_base.lib.redis.client import RedisClientGetter
+
+        client_getter = RedisClientGetter()
+        client_getter.get_client('rediss://localhost', **args)
+        rm.assert_called_once
+        assert 'host' in rm.call_args.kwargs
+        assert 'cluster_error_retry_attempts' not in rm.call_args.kwargs

@@ -55,7 +55,7 @@ cache_settings = {
         'BACKEND': 'ansible_base.lib.cache.fallback_cache.DABCacheWithFallback',
     },
     'primary': {
-        'BACKEND': 'test_app.tests.lib.cache.test_cache.BreakableCache',
+        'BACKEND': 'test_app.tests.lib.cache.test_fallback_cache.BreakableCache',
         'LOCATION': 'primary',
     },
     'fallback': {
