@@ -88,6 +88,12 @@ MIDDLEWARE = [
     'ansible_base.lib.middleware.logging.LogRequestMiddleware',
 ]
 
+# set some vanilla social auth plugins so that we can test the social_auth based
+# users in the resource registry
+AUTHENTICATION_BACKENDS = [
+    'social_core.backends.github.GithubOAuth2',
+]
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'test_app.authentication.logged_basic_auth.LoggedBasicAuthentication',
