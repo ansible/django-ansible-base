@@ -1,6 +1,4 @@
 # Python
-import logging
-
 from ansible_base.jwt_consumer.common.auth import JWTAuthentication
 
 
