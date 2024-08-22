@@ -1,6 +1,5 @@
 import re
 from collections import defaultdict
-from collections.abc import Iterable
 from typing import Optional, Type, Union
 
 from django.conf import settings
@@ -156,6 +155,17 @@ def validate_permissions_for_model(permissions, content_type: Optional[Model], m
     if settings.ANSIBLE_BASE_DELETE_REQUIRE_CHANGE and role_model is not None:
         check_has_change_with_delete(codename_set, permissions_by_model)
 
+    if (not managed) and (not settings.ALLOW_SHARED_RESOURCE_CUSTOM_ROLES):
+        for perm in permissions:
+            # View permission for shared objects is interpreted as permission to view
+            # the resource locally, which is needed to be able to view parent objects
+            # For system roles, this exception is not allowed
+            if content_type and perm.codename.startswith('view'):
+                continue
+            model = perm.content_type.model_class()
+            if permission_registry.get_resource_prefix(model) == 'shared':
+                raise ValidationError({'permissions', 'Local custom roles can only include view permission for shared models'})
+
 
 def validate_codename_for_model(codename: str, model: Union[Model, Type[Model]]) -> str:
     """Shortcut method and validation to allow action name, codename, or app_name.codename
@@ -234,22 +244,13 @@ def validate_assignment(rd, actor, obj) -> None:
         raise ValidationError(f'Role type {rd_model} does not match object {obj_ct.model}')
 
 
-def check_locally_managed(permissions_qs: Iterable[Model], role_content_type: Optional[Model]) -> None:
+def check_locally_managed(rd: Model) -> None:
     """Can the given role definition be managed here, or is it externally managed
 
-    If the role definition manages permissions on any shared resources, then
-    those should be locked down locally.
     This rule is a bridge solution until the RoleDefinition model declares
     explicitly whether it is managed locally or by a remote system.
     """
-    if settings.ALLOW_LOCAL_RESOURCE_MANAGEMENT is True:
+    if not (('ansible_base.jwt_consumer' in settings.INSTALLED_APPS) and (not settings.ALLOW_LOCAL_ASSIGNING_JWT_ROLES)):
         return
-    for perm in permissions_qs:
-        # View permission for shared objects is interpreted as permission to view
-        # the resource locally, which is needed to be able to view parent objects
-        # For system roles, this exception is not allowed
-        if role_content_type and perm.codename.startswith('view'):
-            continue
-        model = perm.content_type.model_class()
-        if permission_registry.get_resource_prefix(model) == 'shared':
-            raise ValidationError('Not managed locally, use the resource server instead')
+    if rd.name in settings.ANSIBLE_BASE_JWT_MANAGED_ROLES:
+        raise ValidationError('Not managed locally, use the resource server instead')

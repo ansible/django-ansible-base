@@ -161,6 +161,7 @@ def get_dab_settings(
             # Shadow local variable so subsequent conditionals works.
             installed_apps = dab_data['INSTALLED_APPS']
 
+    if ('ansible_base.jwt_consumer' in installed_apps) or ('ansible_base.rbac' in installed_apps):
         dab_data['ANSIBLE_BASE_JWT_MANAGED_ROLES'] = ["Platform Auditor", "Organization Admin", "Organization Member", "Team Admin", "Team Member"]
 
     if 'ansible_base.rbac' in installed_apps:
@@ -210,6 +211,12 @@ def get_dab_settings(
 
         # API clients can assign users and teams roles for shared resources
         dab_data['ALLOW_LOCAL_RESOURCE_MANAGEMENT'] = True
+        # API clients can assign roles provided by the JWT
+        # this should only be left as True for testing purposes
+        # TODO: change this default to False
+        dab_data['ALLOW_LOCAL_ASSIGNING_JWT_ROLES'] = True
+        # API clients can create custom roles that change shared resources
+        dab_data['ALLOW_SHARED_RESOURCE_CUSTOM_ROLES'] = False
 
         dab_data['MANAGE_ORGANIZATION_AUTH'] = True
 

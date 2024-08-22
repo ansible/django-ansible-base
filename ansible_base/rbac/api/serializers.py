@@ -148,7 +148,8 @@ class RoleDefinitionSerializer(CommonModelSerializer):
         else:
             content_type = self.instance.content_type
         validate_permissions_for_model(permissions, content_type)
-        check_locally_managed(permissions, content_type)
+        if getattr(self, 'instance', None):
+            check_locally_managed(self.instance)
         return super().validate(validated_data)
 
 
@@ -258,7 +259,7 @@ class BaseAssignmentSerializer(CommonModelSerializer):
             obj.validate_role_assignment(actor, rd)
 
         # Return a 400 if the role is not managed locally
-        check_locally_managed(rd.permissions.prefetch_related('content_type'), rd.content_type)
+        check_locally_managed(rd)
 
         if rd.content_type:
             # Object role assignment
