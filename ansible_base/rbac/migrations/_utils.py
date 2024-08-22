@@ -30,7 +30,7 @@ def give_permissions(apps, rd, users=(), teams=(), object_id=None, content_type_
             RoleUserAssignment(object_role=object_role, user=user, **object_role_fields)
             for user in users
         ]
-        RoleUserAssignment.objects.bulk_create(user_assignments)
+        RoleUserAssignment.objects.bulk_create(user_assignments, ignore_conflicts=True)
     if teams:
         RoleTeamAssignment = apps.get_model('dab_rbac', 'RoleTeamAssignment')
         # AWX has trouble getting the team object, conditionally accept team id list
@@ -44,4 +44,4 @@ def give_permissions(apps, rd, users=(), teams=(), object_id=None, content_type_
                 RoleTeamAssignment(object_role=object_role, team_id=team_id, **object_role_fields)
                 for team_id in teams
             ]
-        RoleTeamAssignment.objects.bulk_create(team_assignments)
+        RoleTeamAssignment.objects.bulk_create(team_assignments, ignore_conflicts=True)

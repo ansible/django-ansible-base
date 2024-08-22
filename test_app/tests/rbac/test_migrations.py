@@ -16,12 +16,18 @@ def test_give_permissions(organization, inventory, inv_rd):
     assert RoleUserAssignment.objects.filter(user=user).exists()
     assert RoleTeamAssignment.objects.filter(team=team).exists()
 
+    # Make sure it can be ran twice
+    give_permissions(apps, inv_rd, users=[user], teams=[team], object_id=inventory.id, content_type_id=ContentType.objects.get_for_model(inventory).id)
+
 
 @pytest.mark.django_db
 def test_give_permissions_by_id(organization, inventory, inv_rd):
     team = Team.objects.create(name='ateam', organization=organization)
     give_permissions(apps, inv_rd, teams=[team.id], object_id=inventory.id, content_type_id=ContentType.objects.get_for_model(inventory).id)
     assert RoleTeamAssignment.objects.filter(team=team).exists()
+
+    # Make sure it can be ran twice
+    give_permissions(apps, inv_rd, teams=[team.id], object_id=inventory.id, content_type_id=ContentType.objects.get_for_model(inventory).id)
 
 
 @pytest.mark.django_db
