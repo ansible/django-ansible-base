@@ -211,6 +211,10 @@ def get_dab_settings(
 
         # API clients can assign users and teams roles for shared resources
         dab_data['ALLOW_LOCAL_RESOURCE_MANAGEMENT'] = True
+        # API clients can assign roles provided by the JWT
+        # this should only be left as True for testing purposes
+        # TODO: change this default to False
+        dab_data['ALLOW_LOCAL_ASSIGNING_JWT_ROLES'] = True
         # API clients can create custom roles that change shared resources
         dab_data['ALLOW_SHARED_RESOURCE_CUSTOM_ROLES'] = False
 

@@ -183,6 +183,7 @@ ANSIBLE_BASE_JWT_MANAGED_ROLES.append("System Auditor")  # noqa: F821 this is se
 ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES = True
 ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES = True
 ALLOW_SHARED_RESOURCE_CUSTOM_ROLES = True  # Allow making custom roles with org change permission, for example
+ALLOW_LOCAL_ASSIGNING_JWT_ROLES = False
 
 ANSIBLE_BASE_USER_VIEWSET = 'test_app.views.UserViewSet'
 

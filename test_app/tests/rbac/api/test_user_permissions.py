@@ -164,6 +164,7 @@ class TestUserDetailView:
 
 @pytest.mark.django_db
 class TestRoleBasedAssignment:
+    @override_settings(ALLOW_LOCAL_ASSIGNING_JWT_ROLES=True)
     def test_org_admins_can_add_members(self, user, user_api_client, organization, org_member_rd, org_admin_rd):
         rando = User.objects.create(username='rando')
         unrelated_org = Organization.objects.create(name='another-org')
@@ -184,6 +185,7 @@ class TestRoleBasedAssignment:
         assert response.status_code == 201, response.data
         assert rando.has_obj_perm(organization, 'member')
 
+    @override_settings(ALLOW_LOCAL_ASSIGNING_JWT_ROLES=True)
     def test_team_admins_can_add_children(self, user, user_api_client, organization, inventory, inv_rd, admin_rd, member_rd):
         url = get_relative_url('roleteamassignment-list')
 

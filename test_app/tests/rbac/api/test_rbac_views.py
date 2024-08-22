@@ -155,6 +155,7 @@ def test_remove_team_assignment(user_api_client, user, inv_rd, team, inventory):
 
 
 @pytest.mark.django_db
+@override_settings(ALLOW_LOCAL_ASSIGNING_JWT_ROLES=True)
 def test_team_assignment_validation_error(admin_api_client, team, organization, org_member_rd):
     url = get_relative_url('roleteamassignment-list')
     response = admin_api_client.post(url, data={'team': team.id, 'object_id': organization.id, 'role_definition': org_member_rd.id})

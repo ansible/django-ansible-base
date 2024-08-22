@@ -250,7 +250,7 @@ def check_locally_managed(rd: Model) -> None:
     This rule is a bridge solution until the RoleDefinition model declares
     explicitly whether it is managed locally or by a remote system.
     """
-    if settings.ALLOW_LOCAL_RESOURCE_MANAGEMENT is True:
+    if not (('ansible_base.jwt_consumer' in settings.INSTALLED_APPS) and (not settings.ALLOW_LOCAL_ASSIGNING_JWT_ROLES)):
         return
     if rd.name in settings.ANSIBLE_BASE_JWT_MANAGED_ROLES:
         raise ValidationError('Not managed locally, use the resource server instead')
