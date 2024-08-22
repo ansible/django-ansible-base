@@ -33,7 +33,7 @@ SOCIAL_AUTH_PIPELINE = (
 )
 ```
 
-By default this will redirect the user to `{RESOURCE_SERVER_URL}/login/?auth_code=xxx`, with an auth code generated using the service's secret key. This behaviour can be customized by setting:
+By default this will redirect the user to `{RESOURCE_SERVER_URL}/api/gateway/v1/legacy_auth/authenticate_sso/?auth_code=xxx`, with an auth code generated using the service's secret key. This behaviour can be customized by setting:
 
-- `SERVICE_BACKED_SSO_AUTH_CODE_REDIRECT_PATH`: redirect the user to an alternative location to `/login/`
+- `SERVICE_BACKED_SSO_AUTH_CODE_REDIRECT_PATH`: redirect the user to an alternative location to the default.
 - `SERVICE_BACKED_SSO_AUTH_CODE_REDIRECT_URL`: customize the location that the user is redirected to in cases where the `RESOURCE_SERVER` is not publicly accessible (such as when using internal OCP hostnames)

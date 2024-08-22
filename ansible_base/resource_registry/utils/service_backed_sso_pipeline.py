@@ -13,7 +13,11 @@ def redirect_to_resource_server(*args, social=None, user=None, **kwargs):
     if not user:
         return None
 
-    redirect_path = getattr(settings, 'SERVICE_BACKED_SSO_AUTH_CODE_REDIRECT_PATH', '/login/')
+    redirect_path = getattr(
+        settings,
+        'SERVICE_BACKED_SSO_AUTH_CODE_REDIRECT_PATH',
+        "/api/gateway/v1/legacy_auth/authenticate_sso/",
+    )
     redirect_url = getattr(
         settings,
         'SERVICE_BACKED_SSO_AUTH_CODE_REDIRECT_URL',
