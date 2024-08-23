@@ -1,0 +1,12 @@
+asgiref==3.8.1
+    # via django
+django==5.1
+    # via django-redis
+django-redis==5.4.0
+    # via -r requirements/requirements_redis_client.in
+redis==4.6.0
+    # via
+    #   -r requirements/requirements_redis_client.in
+    #   django-redis
+sqlparse==0.5.1
+    # via django
