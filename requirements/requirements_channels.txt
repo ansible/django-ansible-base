@@ -1,10 +1,17 @@
 asgiref==3.8.1
     # via
+    #   -c requirements_all.txt
     #   channels
     #   django
 channels==4.1.0
-    # via -r requirements/requirements_channels.in
-django==5.1
-    # via channels
+    # via
+    #   -c requirements_all.txt
+    #   -r requirements/requirements_channels.in
+django==4.2.14
+    # via
+    #   -c requirements_all.txt
+    #   channels
 sqlparse==0.5.1
-    # via django
+    # via
+    #   -c requirements_all.txt
+    #   django

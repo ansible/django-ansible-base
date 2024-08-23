@@ -1,12 +1,21 @@
 asgiref==3.8.1
-    # via django
-django==5.1
-    # via django-redis
+    # via
+    #   -c requirements_all.txt
+    #   django
+django==4.2.14
+    # via
+    #   -c requirements_all.txt
+    #   django-redis
 django-redis==5.4.0
-    # via -r requirements/requirements_redis_client.in
+    # via
+    #   -c requirements_all.txt
+    #   -r requirements/requirements_redis_client.in
 redis==4.6.0
     # via
+    #   -c requirements_all.txt
     #   -r requirements/requirements_redis_client.in
     #   django-redis
 sqlparse==0.5.1
-    # via django
+    # via
+    #   -c requirements_all.txt
+    #   django
