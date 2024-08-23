@@ -7,12 +7,15 @@ from ansible_base.resource_registry.resource_server import get_resource_server_c
 from ansible_base.resource_registry.utils.sso_provider import get_sso_provider_server
 
 
-def get_user_auth_code(user, social_user=None):
+def get_user_auth_code(user, social_user=None, oidc_alt_key=None):
     """
     Generate an authentication code using the service's configured secret key.
 
     user: Django User instance
     social_user: SocialUser or AuthenticatorUser instance for the backend used to authenticate the user.
+    oidc_alt_key: for some OIDC backends, the sub claim on the JWT gets used as the UID rather than the username.
+        This param lets us pass the sub id to the auth_code, which can be used as a secondary method for
+        account lookups.
     """
     config = get_resource_server_config()
     payload = {
@@ -24,6 +27,7 @@ def get_user_auth_code(user, social_user=None):
         "sso_uid": None,
         "sso_backend": None,
         "sso_server": None,
+        "oidc_alt_key": oidc_alt_key,
     }
 
     if social_user is not None:

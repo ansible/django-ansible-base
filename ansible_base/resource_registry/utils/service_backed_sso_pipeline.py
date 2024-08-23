@@ -10,6 +10,25 @@ def redirect_to_resource_server(*args, social=None, user=None, **kwargs):
     This MUST come at the end of the SOCIAL_AUTH_PIPELINE configuration.
     """
 
+    oidc_alt_key = None
+
+    # Galaxy and AWX use different social auth backends for keycloak. AWX uses the
+    # generic "oidc" provider, whereas Galaxy uses the "keycloak" provider. The way
+    # these two backends handle the social auth UID is slightly different. The generic
+    # backend uses the "sub" keyword in the ID token keycloak one uses the "preferred_username".
+    # To be able to automatically link up accounts from these two services, we have
+    # a field called "oidc_alt_key" in our auth code which is used to provide an
+    # alternative lookup mechanism for the SSO user. If "sub" is used for the UID,
+    # we'll pass "preferred_username" to oidc_alt_key, otherwise this gets set to "sub".
+    if response := kwargs.get("response"):
+        sub = response.get("sub", None)
+        username = response.get("preferred_username", None)
+
+        if sub == social.uid:
+            oidc_alt_key = username
+        else:
+            oidc_alt_key = sub
+
     if not user:
         return None
 
@@ -25,7 +44,7 @@ def redirect_to_resource_server(*args, social=None, user=None, **kwargs):
         get_resource_server_config()["URL"],
     )
 
-    auth_code = get_user_auth_code(user, social_user=social)
+    auth_code = get_user_auth_code(user, social_user=social, oidc_alt_key=oidc_alt_key)
     url = f"{redirect_url}/{redirect_path}/?auth_code={auth_code}"
 
     return redirect(url, permanent=False)
