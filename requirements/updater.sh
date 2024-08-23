@@ -32,7 +32,7 @@ generate_requirements() {
   for file in ${requirements_dir}/requirements*.in; do
     app="$(basename $file .in)"
     echo "Compiling deps for $app"
-    ${pip_compile} $file --output-file "$app.txt"
+    ${pip_compile} $file --output-file "$app.txt" -c requirements_all.txt
   done
 }
 

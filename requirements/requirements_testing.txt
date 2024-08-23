@@ -1,18 +1,33 @@
 cffi==1.17.0
-    # via cryptography
+    # via
+    #   -c requirements_all.txt
+    #   cryptography
 cryptography==42.0.5
-    # via -r requirements/requirements_testing.in
+    # via
+    #   -c requirements_all.txt
+    #   -r requirements/requirements_testing.in
 iniconfig==2.0.0
-    # via pytest
+    # via
+    #   -c requirements_all.txt
+    #   pytest
 packaging==24.1
-    # via pytest
+    # via
+    #   -c requirements_all.txt
+    #   pytest
 pluggy==1.5.0
-    # via pytest
+    # via
+    #   -c requirements_all.txt
+    #   pytest
 pycparser==2.22
-    # via cffi
+    # via
+    #   -c requirements_all.txt
+    #   cffi
 pytest==8.3.2
     # via
+    #   -c requirements_all.txt
     #   -r requirements/requirements_testing.in
     #   pytest-django
 pytest-django==4.8.0
-    # via -r requirements/requirements_testing.in
+    # via
+    #   -c requirements_all.txt
+    #   -r requirements/requirements_testing.in
