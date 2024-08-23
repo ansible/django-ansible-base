@@ -312,7 +312,7 @@ def test_get_redisSTATUS_FAILED_redis_mode():
 @mock.patch('ansible_base.lib.redis.client.DABRedisCluster.cluster_nodes', return_value='there')
 # Mock the RedisCluster functions that attempt to connect on definition
 @mock.patch('redis.cluster.NodesManager.initialize')
-@mock.patch('redis._parsers.CommandsParser.initialize')
+@mock.patch('redis.commands.CommandsParser.initialize')
 def test_get_redis_status_cluster(cluster_nodes, nm_initialize, cp_initialize, cluster_state, expected_status, node_status):
     with mock.patch('ansible_base.lib.redis.client.DABRedisCluster.cluster_info', return_value={'cluster_state': cluster_state}):
         with mock.patch('ansible_base.lib.redis.client.determine_cluster_node_status', return_value=node_status):
