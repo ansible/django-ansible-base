@@ -1,2 +1,2 @@
-django-redis
-redis
+django-redis<=5.4.0
+redis<=4.6.0

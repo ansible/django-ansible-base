@@ -2,9 +2,9 @@
 # Only generic requirements for django-ansible-base (or the common feature) should be listed here.
 # if you are add a new feature which requires dependencies they should be in a separate requirements_<feature>.in file
 #
-cryptography
+cryptography<=42.0.5
 Django>=4.2.5,<4.3.0
-djangorestframework
-django-crum
-django-split-settings
-inflection
+djangorestframework<=3.15.1
+django-crum<=0.7.9
+django-split-settings<=1.2.0
+inflection<=0.5.1

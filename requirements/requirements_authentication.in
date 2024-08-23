@@ -1,17 +1,17 @@
-social-auth-app-django
-tabulate
+social-auth-app-django<=5.4.1
+tabulate<=0.9.0
 
 # These should eventually be split out when the authentications move into their own repo
 
 # LDAP Authenticator Plugins
-django-auth-ldap
-python-ldap
+django-auth-ldap<=4.0.0
+python-ldap<=3.4.4
 
 # Social Authenticator Plugins
-python3-saml
-tacacs_plus
+python3-saml<=1.16.0
+tacacs_plus<=2.6
 
 xmlsec==1.3.13 # Pin for https://github.com/xmlsec/python-xmlsec/issues/314
 
 # RADIUS Authenticator Plugin
-pyrad
+pyrad<=2.4
