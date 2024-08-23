@@ -1,3 +1,4 @@
+import copy
 import os
 import uuid
 from collections import namedtuple
@@ -33,13 +34,44 @@ def env():
     def _env(key, value):
         old_value = os.environ.get(key)
         os.environ[key] = value
-        yield
-        if old_value is None:
-            del os.environ[key]
-        else:
-            os.environ[key] = old_value
+        try:
+            yield
+        finally:
+            if old_value is None:
+                del os.environ[key]
+            else:
+                os.environ[key] = old_value
 
     return _env
+
+
+@pytest.fixture
+def settings_override_mutable(settings):
+    """
+    pytest-django's settings  doesn't handle mutable settings types well
+    (https://github.com/pytest-dev/pytest-django/issues/601). This fixture is an
+    attempt to solve that problem.
+
+    Use as follows:
+
+    def test_foo(settings, settings_override_mutable):
+        with settings_override_mutable("SOME_SETTING_VAR"):
+            settings.SOME_SETTING_VAR['and']['nested']['a']['bit'] = "new_value"
+            # or even
+            delattr(settings, 'SOME_SETTING_VAR')  # for some reason normal "del" doesn't work here
+        # But out of the context manager the whole var is restored
+        assert settings.SOME_SETTING_VAR['and']['nested']['a']['bit'] == "old_value"
+    """
+
+    @contextmanager
+    def f(setting_key):
+        original = copy.deepcopy(getattr(settings, setting_key))
+        try:
+            yield
+        finally:
+            setattr(settings, setting_key, original)
+
+    return f
 
 
 @pytest.fixture
@@ -114,8 +146,10 @@ def no_log_messages():
         import logging
 
         logging.disable(logging.CRITICAL)
-        yield
-        logging.disable(logging.NOTSET)
+        try:
+            yield
+        finally:
+            logging.disable(logging.NOTSET)
 
     return f
 

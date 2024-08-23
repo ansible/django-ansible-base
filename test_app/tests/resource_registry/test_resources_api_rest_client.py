@@ -1,10 +1,12 @@
 import uuid
 
+import jwt
 import pytest
 from requests.exceptions import HTTPError
 
 from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.resource_registry.models import Resource, service_id
+from ansible_base.resource_registry.resource_server import get_resource_server_config
 from ansible_base.resource_registry.rest_client import ResourceAPIClient, ResourceRequestBody
 
 
@@ -187,8 +189,12 @@ def test_validate_local_user(resource_client, admin_user, member_rd):
     resp = resource_client.validate_local_user(username=admin_user.username, password="password")
 
     assert resp.status_code == 200
-    assert resp.json()["ansible_id"] == str(admin_user.resource.ansible_id)
+    json = resp.json()
+    json["ansible_id"] == str(admin_user.resource.ansible_id)
+
+    config = get_resource_server_config()
+    jwt_decoded = jwt.decode(json["auth_code"], config["SECRET_KEY"], config["JWT_ALGORITHM"])
+    assert jwt_decoded['username'] == admin_user.username
 
     resp = resource_client.validate_local_user(username=admin_user.username, password="fake password")
-
     assert resp.status_code == 401
