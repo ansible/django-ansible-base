@@ -1,0 +1,233 @@
+import logging
+import tempfile
+import time
+from pathlib import Path
+from unittest import mock
+
+import pytest
+import xdist  # noqa: F401   This gives us access to testrun_uid
+from django.core import cache as django_cache
+from django.core.cache.backends.base import BaseCache
+from django.test import override_settings
+
+from ansible_base.lib.cache.fallback_cache import FALLBACK_CACHE, PRIMARY_CACHE, DABCacheWithFallback
+
+
+class BreakableCache(BaseCache):
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(BreakableCache, cls).__new__(cls)
+            cls.__initialized = False
+        return cls._instance
+
+    def __init__(self, location, params):
+        if self.__initialized:
+            return
+        self.cache = {}
+        options = params.get("OPTIONS", {})
+        self.working = options.get("working", True)
+        self.__initialized = True
+
+    def add(self, key, value, timeout=300, version=None):
+        self.cache[key] = value
+
+    def get(self, key, default=None, version=None):
+        if self.working:
+            return self.cache.get(key, default)
+        else:
+            raise RuntimeError(f"Sorry, cache no worky {self}")
+
+    def set(self, key, value, timeout=300, version=None, client=None):
+        self.cache[key] = value
+
+    def delete(self, key, version=None):
+        self.cache.pop(key, None)
+
+    def clear(self):
+        self.cache = {}
+
+    def breakit(self):
+        self.working = False
+
+    def fixit(self):
+        self.working = True
+
+
+cache_settings = {
+    'default': {
+        'BACKEND': 'ansible_base.lib.cache.fallback_cache.DABCacheWithFallback',
+    },
+    'primary': {
+        'BACKEND': 'test_app.tests.lib.cache.test_fallback_cache.BreakableCache',
+        'LOCATION': 'primary',
+    },
+    'fallback': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'fallback',
+    },
+}
+
+
+@pytest.fixture
+def mocked_fallback_cache_temp_file(testrun_uid):
+    tempfile.NamedTemporaryFile(prefix=testrun_uid)
+    _temp_file = Path(tempfile.NamedTemporaryFile().name)
+    # Make sure the file does not exist right before we yield it
+    _temp_file.unlink(missing_ok=True)
+    with mock.patch('ansible_base.lib.cache.fallback_cache._temp_file', _temp_file):
+        yield _temp_file
+    # Make sure the file is cleaned up
+    _temp_file.unlink(missing_ok=True)
+
+
+@override_settings(CACHES=cache_settings)
+def test_fallback_cache():
+    cache = django_cache.caches.create_connection('default')
+
+    primary = cache._primary_cache
+    fallback = cache._fallback_cache
+    cache.set('key', 'val1')
+    assert primary.get('key') == 'val1'
+    assert fallback.get('key') is None
+
+    primary.set('tobecleared', True)
+    primary.breakit()
+
+    # Breaks primary
+    cache.get('key')
+
+    # Sets in fallback
+    cache.set('key', 'val2')
+
+    assert cache.get('key', 'val2')
+
+    assert cache.get_active_cache() == FALLBACK_CACHE
+
+    primary.fixit()
+
+    # Check until primary is back
+    timeout = time.time() + 30
+    while True:
+        if cache.get_active_cache() == PRIMARY_CACHE:
+            break
+        if time.time() > timeout:
+            assert False
+        time.sleep(1)
+
+    # Ensure caches were cleared
+    assert cache.get('key') is None
+    assert fallback.get('key') is None
+    assert cache.get('tobecleared') is None
+
+    cache.set('key2', 'val3')
+
+    assert cache.get('key2') == 'val3'
+
+
+@override_settings(CACHES=cache_settings)
+def test_dead_primary():
+    primary_cache = django_cache.caches.create_connection('primary')
+    primary_cache.breakit()
+
+    # Kill post-shutdown logging from unfinished recovery checker
+    logging.getLogger('ansible_base.cache.fallback_cache').setLevel(logging.CRITICAL)
+
+    cache = django_cache.caches.create_connection('default')
+
+    cache.set('key', 'val')
+    cache.get('key')
+
+    # Check until fallback is set
+    timeout = time.time() + 30
+    while True:
+        if cache.get_active_cache() == FALLBACK_CACHE:
+            break
+        if time.time() > timeout:
+            assert False
+        time.sleep(1)
+
+
+@override_settings(CACHES=cache_settings)
+def test_ensure_temp_file_is_removed_on_init(mocked_fallback_cache_temp_file):
+    mocked_fallback_cache_temp_file.touch()
+    DABCacheWithFallback(None, {})
+    assert mocked_fallback_cache_temp_file.exists() is False
+
+
+@override_settings(CACHES=cache_settings)
+def test_ensure_initialization_wont_happen_twice():
+    with mock.patch('ansible_base.lib.cache.fallback_cache.ThreadPoolExecutor') as tfe:
+        cache = DABCacheWithFallback(None, {})
+        tfe.assert_called_once()
+        cache.__init__(None, {})
+        # when calling init again ThreadPoolExecute should not be called again so we should still have only one call
+        tfe.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        ('clear'),
+        ('delete'),
+        ('set'),
+        ('get'),
+        ('add'),
+    ],
+)
+@override_settings(CACHES=cache_settings)
+def test_all_methods_are_overwritten(method):
+    with mock.patch('ansible_base.lib.cache.fallback_cache.DABCacheWithFallback._op_with_fallback') as owf:
+        cache = DABCacheWithFallback(None, {})
+        if method == 'clear':
+            getattr(cache, method)()
+        elif method in ['delete', 'get']:
+            getattr(cache, method)('test_value')
+        else:
+            getattr(cache, method)('test_value', 1)
+        owf.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "file_exists",
+    [
+        (True),
+        (False),
+    ],
+)
+@override_settings(CACHES=cache_settings)
+def test_check_primary_cache(file_exists, mocked_fallback_cache_temp_file):
+    # Initialization of the cache will clear the temp file so do this first
+    cache = DABCacheWithFallback(None, {})
+
+    # Create the temp file if needed
+    if file_exists:
+        mocked_fallback_cache_temp_file.touch()
+    else:
+        try:
+            mocked_fallback_cache_temp_file.unlink()
+        except Exception:
+            pass
+
+    mocked_function = mock.MagicMock(return_value=None)
+    cache._primary_cache.clear = mocked_function
+    cache.check_primary_cache()
+    if file_exists:
+        mocked_function.assert_called_once()
+    else:
+        mocked_function.assert_not_called()
+    assert mocked_fallback_cache_temp_file.exists() is False
+
+
+@override_settings(CACHES=cache_settings)
+def test_file_unlink_exception_does_not_cause_failure(mocked_fallback_cache_temp_file):
+    cache = DABCacheWithFallback(None, {})
+    # We can't do: temp_file.unlink = mock.MagicMock(side_effect=Exception('failed to unlink exception'))
+    # Because unlink is marked as read only so we will just mock the cache.clear to raise in its place
+    mocked_function = mock.MagicMock(side_effect=Exception('failed to delete a file exception'))
+    cache._primary_cache.clear = mocked_function
+
+    mocked_fallback_cache_temp_file.touch()
+    cache.check_primary_cache()
+    # No assertion needed because we just want to make sure check_primary_cache does not raise
