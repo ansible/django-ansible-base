@@ -33,28 +33,28 @@ dynamic = ["version", "dependencies", "optional-dependencies"]
 include = ["ansible_base*"]
 
 [tool.setuptools.dynamic]
-dependencies = {file = ["requirements/requirements.in"]}
+dependencies = {file = ["requirements/requirements.txt"]}
 optional-dependencies.all = { file = [
-    "requirements/requirements_activitystream.in",
-    "requirements/requirements_authentication.in",
-    "requirements/requirements_api_documentation.in",
-    "requirements/requirements_rest_filters.in",
-    "requirements/requirements_channels.in",
-    "requirements/requirements_jwt_consumer.in",
-    "requirements/requirements_testing.in",
-    "requirements/requirements_redis_client.in",
-    "requirements/requirements_oauth2_provider.in",
+    "requirements/requirements_activitystream.txt",
+    "requirements/requirements_authentication.txt",
+    "requirements/requirements_api_documentation.txt",
+    "requirements/requirements_rest_filters.txt",
+    "requirements/requirements_channels.txt",
+    "requirements/requirements_jwt_consumer.txt",
+    "requirements/requirements_testing.txt",
+    "requirements/requirements_redis_client.txt",
+    "requirements/requirements_oauth2_provider.txt",
 ] }
-optional-dependencies.activitystream = { file = [ "requirements/requirements_activitystream.in" ] }
-optional-dependencies.authentication = { file = [ "requirements/requirements_authentication.in" ] }
-optional-dependencies.api_documentation = { file = [ "requirements/requirements_api_documentation.in" ] }
-optional-dependencies.rest_filters = { file = [ "requirements/requirements_rest_filters.in" ] }
-optional-dependencies.rbac = { file = [ "requirements/requirements_rbac.in" ] }
-optional-dependencies.channel_auth = { file = [ "requirements/requirements_channels.in" ] }
-optional-dependencies.jwt_consumer = { file = [ "requirements/requirements_jwt_consumer.in" ] }
-optional-dependencies.testing = { file = [ "requirements/requirements_testing.in" ] }
-optional-dependencies.redis_client = { file = [ "requirements/requirements_redis_client.in" ] }
-optional-dependencies.oauth2_provider = { file = [ "requirements/requirements_oauth2_provider.in" ] }
+optional-dependencies.activitystream = { file = [ "requirements/requirements_activitystream.txt" ] }
+optional-dependencies.authentication = { file = [ "requirements/requirements_authentication.txt" ] }
+optional-dependencies.api_documentation = { file = [ "requirements/requirements_api_documentation.txt" ] }
+optional-dependencies.rest_filters = { file = [ "requirements/requirements_rest_filters.txt" ] }
+optional-dependencies.rbac = { file = [ "requirements/requirements_rbac.txt" ] }
+optional-dependencies.channel_auth = { file = [ "requirements/requirements_channels.txt" ] }
+optional-dependencies.jwt_consumer = { file = [ "requirements/requirements_jwt_consumer.txt" ] }
+optional-dependencies.testing = { file = [ "requirements/requirements_testing.txt" ] }
+optional-dependencies.redis_client = { file = [ "requirements/requirements_redis_client.txt" ] }
+optional-dependencies.oauth2_provider = { file = [ "requirements/requirements_oauth2_provider.txt" ] }
 
 [build-system]
 requires = ["setuptools>=64", "setuptools_scm>=8"]
