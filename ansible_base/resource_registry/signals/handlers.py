@@ -50,14 +50,12 @@ def decide_to_sync_update(sender, instance, raw, using, update_fields, **kwargs)
         return
 
     try:
-        if not getattr(instance, 'resource', None) or not instance.resource.ansible_id:
-            # We can't sync here, but we want to log that, so let sync_to_resource_server() discard it.
-            return
+        resource = Resource.get_resource_for_object(instance)
     except Resource.DoesNotExist:
-        # The getattr() will raise a Resource.DoesNotExist if the resource doesn't exist.
+        # We can't sync here, but we want to log that, so let sync_to_resource_server() discard it.
         return
 
-    fields_that_sync = instance.resource.content_type.resource_type.serializer_class().get_fields().keys()
+    fields_that_sync = resource.content_type.resource_type.serializer_class().get_fields().keys()
 
     if update_fields is None:
         # If we're not given a useful update_fields, manually calculate the changed fields

@@ -1,4 +1,5 @@
 import os
+import uuid
 from contextlib import nullcontext
 from unittest import mock
 
@@ -49,6 +50,9 @@ class TestReverseResourceSync:
                             if action == 'create':
                                 org = Organization.objects.create(name='Hello')
                             elif action == 'update':
+                                # Fake the service_id to not be local
+                                org.resource.service_id = uuid.uuid4()
+                                org.resource.save()
                                 org.name = 'World'
                                 org.save()
                             elif action == 'delete':
@@ -100,6 +104,20 @@ class TestReverseResourceSync:
                         org.save()
 
         # We bail out if we don't have a resource
+        get_resource_server_client.assert_not_called()
+
+    @pytest.mark.django_db
+    def test_sync_to_resource_server_update_with_local_service_id(self, user, organization, enable_reverse_sync, expected_log):
+        """
+        If the resource's service_id is the local service_id, we should not attempt to sync it on update.
+        """
+        with enable_reverse_sync():
+            with mock.patch(f'{utils_path}.get_resource_server_client') as get_resource_server_client:
+                with impersonate(user):
+                    organization.name = 'World'
+                    with expected_log(f'{utils_path}.logger', 'info', 'service_id is local'):
+                        organization.save()
+
         get_resource_server_client.assert_not_called()
 
     @pytest.mark.django_db(transaction=True)
