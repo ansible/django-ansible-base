@@ -87,7 +87,11 @@ def test_user_auth_code_generation_dab(authenticator_user):
 def test_auth_code_pipeline(social_user):
     user, social = social_user
 
-    resp = redirect_to_resource_server(user=user, social=social)
+    response = {
+        "sub": "my_uid",
+        "preferred_username": "123123123123123",
+    }
+    resp = redirect_to_resource_server(user=user, social=social, response=response)
 
     auth_code = resp.url.split("?auth_code=")[1]
 
@@ -96,13 +100,18 @@ def test_auth_code_pipeline(social_user):
     assert data["sso_uid"] == "my_uid"
     assert data["sso_backend"] == social.provider
     assert data["sso_server"] == "https://github.com/login/oauth/authorize"
+    assert data["oidc_alt_key"] == "123123123123123"
 
 
 @pytest.mark.django_db
 def test_auth_code_pipeline_dab(authenticator_user):
     user, social = authenticator_user
 
-    resp = redirect_to_resource_server(user=user, social=social)
+    response = {
+        "sub": "123123123123123",
+        "preferred_username": "my_uid",
+    }
+    resp = redirect_to_resource_server(user=user, social=social, response=response)
 
     auth_code = resp.url.split("?auth_code=")[1]
 
@@ -111,6 +120,7 @@ def test_auth_code_pipeline_dab(authenticator_user):
     assert data["sso_uid"] == "my_uid"
     assert data["sso_backend"] == social.provider.slug
     assert data["sso_server"] == "https://github.com/login/oauth/authorize"
+    assert data["oidc_alt_key"] == "123123123123123"
 
 
 @pytest.mark.django_db
