@@ -1,0 +1,81 @@
+asgiref==3.8.1
+    # via django
+certifi==2024.7.4
+    # via requests
+cffi==1.17.0
+    # via cryptography
+charset-normalizer==3.3.2
+    # via requests
+cryptography==43.0.0
+    # via social-auth-core
+defusedxml==0.8.0rc2
+    # via
+    #   python3-openid
+    #   social-auth-core
+django==5.1
+    # via
+    #   django-auth-ldap
+    #   social-auth-app-django
+django-auth-ldap==4.8.0
+    # via -r /Users/jowestco/GIT/github/john-westcott-iv/aap-gateway/django-ansible-base/requirements/requirements_authentication.in
+idna==3.8
+    # via requests
+isodate==0.6.1
+    # via python3-saml
+lxml==5.3.0
+    # via
+    #   python3-saml
+    #   xmlsec
+netaddr==1.3.0
+    # via pyrad
+oauthlib==3.2.2
+    # via
+    #   requests-oauthlib
+    #   social-auth-core
+pyasn1==0.6.0
+    # via
+    #   pyasn1-modules
+    #   python-ldap
+pyasn1-modules==0.4.0
+    # via python-ldap
+pycparser==2.22
+    # via cffi
+pyjwt==2.9.0
+    # via social-auth-core
+pyrad==2.4
+    # via -r /Users/jowestco/GIT/github/john-westcott-iv/aap-gateway/django-ansible-base/requirements/requirements_authentication.in
+python-ldap==3.4.4
+    # via
+    #   -r /Users/jowestco/GIT/github/john-westcott-iv/aap-gateway/django-ansible-base/requirements/requirements_authentication.in
+    #   django-auth-ldap
+python3-openid==3.2.0
+    # via social-auth-core
+python3-saml==1.16.0
+    # via -r /Users/jowestco/GIT/github/john-westcott-iv/aap-gateway/django-ansible-base/requirements/requirements_authentication.in
+requests==2.32.3
+    # via
+    #   requests-oauthlib
+    #   social-auth-core
+requests-oauthlib==2.0.0
+    # via social-auth-core
+six==1.16.0
+    # via
+    #   isodate
+    #   pyrad
+    #   tacacs-plus
+social-auth-app-django==5.4.2
+    # via -r /Users/jowestco/GIT/github/john-westcott-iv/aap-gateway/django-ansible-base/requirements/requirements_authentication.in
+social-auth-core==4.5.4
+    # via social-auth-app-django
+sqlparse==0.5.1
+    # via django
+tabulate==0.9.0
+    # via -r /Users/jowestco/GIT/github/john-westcott-iv/aap-gateway/django-ansible-base/requirements/requirements_authentication.in
+tacacs-plus==2.6
+    # via -r /Users/jowestco/GIT/github/john-westcott-iv/aap-gateway/django-ansible-base/requirements/requirements_authentication.in
+urllib3==2.2.2
+    # via requests
+xmlsec==1.3.13
+    # via
+    #   -r /Users/jowestco/GIT/github/john-westcott-iv/aap-gateway/django-ansible-base/requirements/requirements_authentication.in
+    #   python3-saml

@@ -1,0 +1,10 @@
+asgiref==3.8.1
+    # via
+    #   channels
+    #   django
+channels==4.1.0
+    # via -r /Users/jowestco/GIT/github/john-westcott-iv/aap-gateway/django-ansible-base/requirements/requirements_channels.in
+django==5.1
+    # via channels
+sqlparse==0.5.1
+    # via django

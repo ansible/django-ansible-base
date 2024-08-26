@@ -26,7 +26,13 @@ generate_requirements() {
 
   ${venv}/bin/python -m pip install -U 'pip' pip-tools
 
+  echo "generating requirements_all.txt"
   ${pip_compile} $(ls ${requirements_dir}/requirements*.in | xargs) --output-file requirements_all.txt
+  for OPTIONAL_DEP in $(ls ${requirements_dir}/requirements_*.in | xargs); do
+      OPTIONAL_DEP_TXT=$(echo $OPTIONAL_DEP | sed s':\.in:.txt:')
+      echo "generating $OPTIONAL_DEP_TXT"
+      ${pip_compile} ${OPTIONAL_DEP} --output-file ${OPTIONAL_DEP_TXT}
+  done
 }
 
 main() {
