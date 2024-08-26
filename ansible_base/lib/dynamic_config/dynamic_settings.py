@@ -6,7 +6,15 @@ from ansible_base.lib.dynamic_config.settings_logic import get_dab_settings
 try:
     ANSIBLE_BASE_OVERRIDABLE_SETTINGS  # noqa: F821
 except NameError:
-    ANSIBLE_BASE_OVERRIDABLE_SETTINGS = ['INSTALLED_APPS', 'REST_FRAMEWORK', 'AUTHENTICATION_BACKENDS', 'SPECTACULAR_SETTINGS', 'MIDDLEWARE', 'OAUTH2_PROVIDER']
+    ANSIBLE_BASE_OVERRIDABLE_SETTINGS = [
+        'INSTALLED_APPS',
+        'REST_FRAMEWORK',
+        'AUTHENTICATION_BACKENDS',
+        'SPECTACULAR_SETTINGS',
+        'MIDDLEWARE',
+        'OAUTH2_PROVIDER',
+        'CACHES',
+    ]
 
 
 # This is mostly to be informative to the client app
@@ -49,7 +57,6 @@ try:
 except NameError:
     OAUTH2_PROVIDER = {}
 
-
 for key, value in get_dab_settings(
     installed_apps=INSTALLED_APPS,
     rest_framework=REST_FRAMEWORK,
@@ -57,6 +64,7 @@ for key, value in get_dab_settings(
     authentication_backends=local_authentication_backends,
     middleware=MIDDLEWARE,
     oauth2_provider=OAUTH2_PROVIDER,
+    caches=CACHES if 'CACHES' in locals() else None,  # noqa: F821
 ).items():
     if key in ANSIBLE_BASE_OVERRIDABLE_SETTINGS:
         ANSIBLE_BASE_OVERRIDDEN_SETTINGS.append(key)

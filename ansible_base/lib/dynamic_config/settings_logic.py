@@ -1,6 +1,8 @@
 from copy import copy
 from typing import Optional
 
+from ansible_base.lib.cache.fallback_cache import FALLBACK_CACHE, PRIMARY_CACHE
+
 #
 # If you are adding a new dynamic setting:
 #     Please be sure to modify pyproject.toml with your new settings in tool.setuptools.dynamic
@@ -15,6 +17,7 @@ def get_dab_settings(
     authentication_backends: Optional[list[str]] = None,
     middleware: Optional[list[str]] = None,
     oauth2_provider: Optional[dict] = None,
+    caches: Optional[dict] = None,
 ) -> dict:
     dab_data = {}
 
@@ -273,5 +276,14 @@ def get_dab_settings(
         dab_data['OAUTH2_PROVIDER_ID_TOKEN_MODEL'] = "dab_oauth2_provider.OAuth2IDToken"
 
         dab_data['ALLOW_OAUTH2_FOR_EXTERNAL_USERS'] = False
+
+    if caches is not None:
+        dab_data['CACHES'] = copy(caches)
+        # Ensure proper configuration for fallback cache
+        default_backend = caches.get('default', {}).get('BACKEND', '')
+        if default_backend == 'ansible_base.lib.cache.fallback_cache.DABCacheWithFallback':
+            # Ensure primary and fallback are defined
+            if PRIMARY_CACHE not in caches or FALLBACK_CACHE not in caches:
+                raise RuntimeError(f'Cache definitions with the keys {PRIMARY_CACHE} and {FALLBACK_CACHE} must be defined when DABCacheWithFallback is used.')
 
     return dab_data
