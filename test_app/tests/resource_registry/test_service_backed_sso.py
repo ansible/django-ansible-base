@@ -84,7 +84,9 @@ def test_user_auth_code_generation_dab(authenticator_user):
 
 
 @pytest.mark.django_db
-def test_auth_code_pipeline(social_user):
+def test_auth_code_pipeline(settings, social_user):
+    settings.ENABLE_SERVICE_BACKED_SSO = True
+
     user, social = social_user
 
     response = {
@@ -105,7 +107,7 @@ def test_auth_code_pipeline(social_user):
 
 @pytest.mark.django_db
 def test_auth_code_pipeline_resource_server_unset(social_user, settings):
-    settings.RESOURCE_SERVER = {}
+    settings.ENABLE_SERVICE_BACKED_SSO = False
 
     user, social = social_user
 
@@ -118,7 +120,9 @@ def test_auth_code_pipeline_resource_server_unset(social_user, settings):
 
 
 @pytest.mark.django_db
-def test_auth_code_pipeline_dab(authenticator_user):
+def test_auth_code_pipeline_dab(authenticator_user, settings):
+    settings.ENABLE_SERVICE_BACKED_SSO = True
+
     user, social = authenticator_user
 
     response = {
@@ -138,7 +142,9 @@ def test_auth_code_pipeline_dab(authenticator_user):
 
 
 @pytest.mark.django_db
-def test_auth_code_pipeline_no_social(user):
+def test_auth_code_pipeline_no_social(user, settings):
+    settings.ENABLE_SERVICE_BACKED_SSO = True
+
     resp = redirect_to_resource_server(user=user)
 
     auth_code = resp.url.split("?auth_code=")[1]
@@ -151,5 +157,7 @@ def test_auth_code_pipeline_no_social(user):
 
 
 @pytest.mark.django_db
-def test_auth_code_pipeline_not_authed():
+def test_auth_code_pipeline_not_authed(settings):
+    settings.ENABLE_SERVICE_BACKED_SSO = True
+
     assert redirect_to_resource_server(user=None, social=None) is None
