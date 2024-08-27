@@ -1,5 +1,5 @@
 import logging
-import multiprocessing
+import threading
 import random
 import tempfile
 import time
@@ -71,7 +71,7 @@ class DABCacheWithFallback(BaseCache):
                 response = getattr(self._primary_cache, operation)(*args, **kwargs)
                 return response
             except Exception:
-                with multiprocessing.Lock():
+                with threading.Lock():
                     # Attempt to ensure one thread/process goes first
                     # dynamic settings especially are read in a batch very quickly
                     time.sleep(random.uniform(10, 100) / 100.0)
@@ -83,7 +83,7 @@ class DABCacheWithFallback(BaseCache):
         return response
 
     def start_recovery(self):
-        with multiprocessing.Lock():
+        with threading.Lock():
             # Set single process/thread to do the recovery, but time out in case it dies
             recoverer = self._fallback_cache.get_or_set('RECOVERY_THREAD_ID', id(self), timeout=60)
             if recoverer == id(self):
@@ -95,7 +95,7 @@ class DABCacheWithFallback(BaseCache):
     def check_primary_cache(self):
         try:
             self._primary_cache.get('up_test')
-            with multiprocessing.Lock():
+            with threading.Lock():
                 if _temp_file.exists():
                     logger.warning("Primary cache recovered, clearing and resuming use.")
                     # Clear the primary cache
