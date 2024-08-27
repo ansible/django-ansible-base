@@ -78,9 +78,10 @@ class HubJWTAuth(JWTAuthentication):
         # manage team membership ...
         member_team_pks = [team.pk for team in member_teams]
         # delete all memberships not defined by this jwt ...
-        RoleUserAssignment.objects.filter(
+        for assignment in RoleUserAssignment.objects.filter(
             user=self.common_auth.user
-        ).exclude(object_id__in=member_team_pks).delete()
+        ).exclude(object_id__in=member_team_pks):
+            assignment.delete()
         # assign "local" membership for each team ...
         roledef = RoleDefinition.objects.get(name='Galaxy Team Member')
         for team in member_teams:
