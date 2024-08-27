@@ -104,6 +104,20 @@ def test_auth_code_pipeline(social_user):
 
 
 @pytest.mark.django_db
+def test_auth_code_pipeline_resource_server_unset(social_user, settings):
+    settings.RESOURCE_SERVER = {}
+
+    user, social = social_user
+
+    response = {
+        "sub": "my_uid",
+        "preferred_username": "123123123123123",
+    }
+    resp = redirect_to_resource_server(user=user, social=social, response=response)
+    assert resp is None
+
+
+@pytest.mark.django_db
 def test_auth_code_pipeline_dab(authenticator_user):
     user, social = authenticator_user
 

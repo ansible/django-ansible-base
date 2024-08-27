@@ -10,6 +10,10 @@ def redirect_to_resource_server(*args, social=None, user=None, **kwargs):
     This MUST come at the end of the SOCIAL_AUTH_PIPELINE configuration.
     """
 
+    # If RESOURCE_SERVER is not set, don't do anything.
+    if not getattr(settings, 'RESOURCE_SERVER', None):
+        return None
+
     oidc_alt_key = None
 
     # Galaxy and AWX use different social auth backends for keycloak. AWX uses the
