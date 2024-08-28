@@ -63,7 +63,7 @@ def test_delete_orphans(admin_api_client, static_api_client, stdout):
     resource = {
         "service_id": "57592fbc-7ecb-405f-9f5f-ebad20932d38",  # from fixtures/static/metadata
         "resource_type": "shared.user",
-        "resource_data": {"username": "Phi", "last_name": "Lips", "email": "phi@example.com", "is_superuser": False},
+        "resource_data": {"username": "Phi", "last_name": "Lips", "email": "phi@example.com"},
     }
     response = admin_api_client.post(url, resource, format="json")
     assert response.status_code == 201
@@ -88,7 +88,6 @@ def test_update_existing_resource(admin_api_client, static_api_client, stdout):
             "email": "theceo@other-email.com",
             "first_name": "A Different",
             "last_name": "Other Name",
-            "is_superuser": True,
         },
     }
     response = admin_api_client.post(url, resource, format="json")
@@ -109,7 +108,7 @@ def test_noop_existing_resource(admin_api_client, static_api_client, stdout):
         "resource_type": "shared.user",
         "service_id": "57592fbc-7ecb-405f-9f5f-ebad20932d38",  # from fixtures/static/metadata
         "ansible_id": "97447387-8596-404f-b0d0-6429b04c8d22",  # from fixtures/status/resources/{id}
-        "resource_data": {"username": "theceo", "email": "theceo@seriouscompany.com", "first_name": "The", "last_name": "CEO", "is_superuser": True},
+        "resource_data": {"username": "theceo", "email": "theceo@seriouscompany.com", "first_name": "The", "last_name": "CEO"},
     }
     response = admin_api_client.post(url, resource, format="json")
     assert response.status_code == 201
