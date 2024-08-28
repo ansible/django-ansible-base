@@ -12,19 +12,18 @@ logger = logging.getLogger('ansible_base.jwt_consumer.hub.auth')
 
 class HubJWTAuth(JWTAuthentication):
 
-    def get_galaxy_models_and_functions(self):
+    def get_galaxy_models(self):
         '''This is separate from process_permissions purely for testability.'''
         try:
             from galaxy_ng.app.models import Organization, Team
-            from pulpcore.plugin.util import assign_role, remove_role
         except ImportError:
             raise InvalidService("automation-hub")
 
-        return Organization, Team, assign_role, remove_role
+        return Organization, Team
 
     def process_permissions(self):
         # Map teams in the JWT to Automation Hub groups.
-        Organization, Team, assign_role, remove_role = self.get_galaxy_models_and_functions()
+        Organization, Team = self.get_galaxy_models()
         self.team_content_type = ContentType.objects.get_for_model(Team)
         self.org_content_type = ContentType.objects.get_for_model(Organization)
 
@@ -82,8 +81,8 @@ class HubJWTAuth(JWTAuthentication):
 
         # delete all memberships not defined by this jwt ...
         for assignment in RoleUserAssignment.objects.filter(user=self.common_auth.user, role_definition=team_roledef).exclude(object_id__in=member_team_pks):
-            # assignment.delete()
-            team_roledef.remove_permission(self.common_auth.user, assignment.team)
+            team = Team.objects.get(pk=assignment.object_id)
+            team_roledef.remove_permission(self.common_auth.user, team)
 
         # assign "non-local" membership for each team ...
         for team in member_teams:
