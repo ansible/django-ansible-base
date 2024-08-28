@@ -79,19 +79,21 @@ class HubJWTAuth(JWTAuthentication):
         member_team_pks = [team.pk for team in member_teams]
 
         # the "shared" "non-local" role definition ...
-        roledef = RoleDefinition.objects.get(name='Team Member')
+        team_roledef = RoleDefinition.objects.get(name='Team Member')
 
         # delete all memberships not defined by this jwt ...
         for assignment in RoleUserAssignment.objects.filter(
-            user=self.common_auth.user, role_definition=roledef
+            user=self.common_auth.user, role_definition=team_roledef
         ).exclude(object_id__in=member_team_pks):
-            assignment.delete()
+            # assignment.delete()
+            team_roledef.remove_permission(self.common_auth.user, assignment.team)
 
         # assign "non-local" membership for each team ...
         for team in member_teams:
-            roledef.give_permission(self.common_auth.user, team)
+            team_roledef.give_permission(self.common_auth.user, team)
 
+        auditor_roledef = RoleDefinition.objects.get(name='Platform Auditor')
         if "Platform Auditor" in self.common_auth.token.get('global_roles', []):
-            assign_role("galaxy.auditor", self.common_auth.user)
+            auditor_roledef.give_global_permission(self.common_auth.user)
         else:
-            remove_role("galaxy.auditor", self.common_auth.user)
+            auditor_roledef.remove_global_permission(self.common_auth.user)
