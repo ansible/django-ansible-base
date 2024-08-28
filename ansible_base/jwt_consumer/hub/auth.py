@@ -83,7 +83,7 @@ class HubJWTAuth(JWTAuthentication):
         ).exclude(object_id__in=member_team_pks):
             assignment.delete()
         # assign "local" membership for each team ...
-        roledef = RoleDefinition.objects.get(name='Galaxy Team Member')
+        roledef = RoleDefinition.objects.get(name='Team Member')
         for team in member_teams:
             RoleUserAssignment.objects.get_or_create(
                 user=self.common_auth.user,
