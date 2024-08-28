@@ -108,9 +108,10 @@ def test_fallback_cache():
     assert fallback.get('key') is None
     assert cache.get('tobecleared') is None
 
+    assert primary.get('key2') is None
     cache.set('key2', 'val3')
-
-    assert cache.get('key2') == 'val3'
+    assert primary.get('key2') == 'val3'
+    assert fallback.get('key2') is None
 
 
 @override_settings(CACHES=cache_settings)
