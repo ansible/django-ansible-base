@@ -82,9 +82,7 @@ class HubJWTAuth(JWTAuthentication):
         team_roledef = RoleDefinition.objects.get(name='Team Member')
 
         # delete all memberships not defined by this jwt ...
-        for assignment in RoleUserAssignment.objects.filter(
-            user=self.common_auth.user, role_definition=team_roledef
-        ).exclude(object_id__in=member_team_pks):
+        for assignment in RoleUserAssignment.objects.filter(user=self.common_auth.user, role_definition=team_roledef).exclude(object_id__in=member_team_pks):
             # assignment.delete()
             team_roledef.remove_permission(self.common_auth.user, assignment.team)
 
