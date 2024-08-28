@@ -4,9 +4,8 @@ from django.contrib.contenttypes.models import ContentType
 
 from ansible_base.jwt_consumer.common.auth import JWTAuthentication
 from ansible_base.jwt_consumer.common.exceptions import InvalidService
-from ansible_base.resource_registry.models import Resource
 from ansible_base.rbac.models import RoleDefinition, RoleUserAssignment
-
+from ansible_base.resource_registry.models import Resource
 
 logger = logging.getLogger('ansible_base.jwt_consumer.hub.auth')
 
