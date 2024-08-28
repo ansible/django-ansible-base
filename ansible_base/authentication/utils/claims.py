@@ -543,8 +543,11 @@ class ReconcileUser:
     def _remove_permission(self, role_definition: CommonModel, obj: Union[AbstractOrganization, AbstractTeam, None] = None) -> None:
         if obj:
             logger.info(
-                _("Removing role '{rd}' from user '{username}' in '{object}").format(
-                    rd=role_definition.name, username=self.user.username, object=obj.__class__.__name__
+                _("Removing role '{rd}' from user '{username}' on '{object}' id {id}").format(
+                    rd=role_definition.name,
+                    username=self.user.username,
+                    object=obj.__class__.__name__,
+                    id=getattr(obj, 'id', 'No ID'),
                 )
             )
         else:
