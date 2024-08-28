@@ -10,6 +10,10 @@ def redirect_to_resource_server(*args, social=None, user=None, **kwargs):
     This MUST come at the end of the SOCIAL_AUTH_PIPELINE configuration.
     """
 
+    # Allow for disabling this pipeline without removing it from the settings.
+    if not getattr(settings, 'ENABLE_SERVICE_BACKED_SSO', False):
+        return None
+
     oidc_alt_key = None
 
     # Galaxy and AWX use different social auth backends for keycloak. AWX uses the
