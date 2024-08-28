@@ -4,6 +4,7 @@ from unittest import mock
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.contrib.contenttypes.models import ContentType
 
 from ansible_base.authentication.utils.claims import ReconcileUser, create_organizations_and_teams
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
@@ -258,5 +259,10 @@ def test_remove_users_setting_set(org_member_rd, org_admin_rd, member_rd, admin_
     assert user.has_obj_perm(teams[1], 'change')
 
     # Nothing was specified in orgs[2], teams[2]
-    assert not user.role_assignments.filter(object_id=str(orgs[2].id)).exists()
-    assert not user.role_assignments.filter(object_id=str(teams[2].id)).exists()
+    org_content_type = ContentType.objects.get_for_model(Organization)
+    user_role_assignments_for_org_2 = user.role_assignments.filter(content_type=org_content_type, object_id=str(orgs[2].id))
+    assert (
+        not user_role_assignments_for_org_2.exists()
+    ), f"Expected no assignments for org2 but got {', '.join([r.role_definition.name for r in user_role_assignments_for_org_2])}"
+    team_content_type = ContentType.objects.get_for_model(Team)
+    assert not user.role_assignments.filter(content_type=team_content_type, object_id=str(teams[2].id)).exists()
