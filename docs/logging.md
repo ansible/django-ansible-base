@@ -52,3 +52,20 @@ LOGGING = {
 ```
 
 After that, the request ID should automatically show up in logs, when the header is passed in.
+
+## Logging Stack on Timeout
+
+django-ansible-base provides machinery to print the stack trace when a request times out.
+To do this, you will need to:
+
+1. Set uwsgi params similar to that in `test_app/uwsgi.ini`.
+2. Add `ansible_base.lib.middleware.logging.LogTracebackMiddleware` to `MIDDLEWARE` setting
+
+You can try to test this with test_app by running the docker compose server (so it runs with uwsgi),
+and then visiting http://localhost:8000/api/v1/timeout_view/ and viewing the logs.
+Within those logs, you should be able to see the culprit:
+
+```
+test_app-1    |   File "/src/test_app/views.py", line 185, in timeout_view
+test_app-1    |     time.sleep(60*10)  # 10 minutes
+```

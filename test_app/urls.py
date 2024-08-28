@@ -19,6 +19,7 @@ urlpatterns = [
     re_path(r"^admin/", admin.site.urls, name="admin"),
     path('api/v1/', include(resource_api_urls)),
     path('api/v1/', views.api_root),
+    path('api/v1/timeout_view/', views.timeout_view, name='test-timeout-view'),
     path('login/', include('rest_framework.urls')),
     path("__debug__/", include("debug_toolbar.urls")),
 ]

@@ -86,6 +86,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'crum.CurrentRequestUserMiddleware',
     'ansible_base.lib.middleware.logging.LogRequestMiddleware',
+    'ansible_base.lib.middleware.logging.LogTracebackMiddleware',
 ]
 
 # set some vanilla social auth plugins so that we can test the social_auth based
