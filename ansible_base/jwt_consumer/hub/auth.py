@@ -45,10 +45,10 @@ class HubJWTAuth(JWTAuthentication):
                     except Resource.DoesNotExist:
                         org = self.common_auth.get_or_create_resource('organization', org_data)[1]
 
-                if role_name == 'Organization Admin':
-                    admin_orgs.append(org)
-                else:
-                    member_orgs.append(org)
+                    if role_name == 'Organization Admin':
+                        admin_orgs.append(org)
+                    else:
+                        member_orgs.append(org)
 
             if role_name.startswith('Team'):
                 for object_index in self.common_auth.token['object_roles'][role_name]['objects']:
@@ -59,10 +59,10 @@ class HubJWTAuth(JWTAuthentication):
                     except Resource.DoesNotExist:
                         team = self.common_auth.get_or_create_resource('team', team_data)[1]
 
-                groups.append(team.group)
+                    groups.append(team.group)
 
-                if role_name == 'Team Member':
-                    member_teams.append(team)
+                    if role_name == 'Team Member':
+                        member_teams.append(team)
 
         self.common_auth.user.groups.set(groups)
 
