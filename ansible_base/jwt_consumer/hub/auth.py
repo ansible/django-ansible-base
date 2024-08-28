@@ -31,7 +31,7 @@ class HubJWTAuth(JWTAuthentication):
 
         admin_orgs = []
         member_orgs = []
-        admin_teams = []
+        # admin_teams = []
         member_teams = []
         groups = []
         for role_name in self.common_auth.token.get('object_roles', {}).keys():
