@@ -39,9 +39,6 @@ class HubJWTAuth(JWTAuthentication):
         # the teams this user should have a "shared" [!local] assignment to
         member_teams = []
 
-        # the django/pulp groups this user should be a member of
-        groups = []
-
         for role_name in self.common_auth.token.get('object_roles', {}).keys():
             if role_name.startswith('Team'):
                 for object_index in self.common_auth.token['object_roles'][role_name]['objects']:
@@ -52,15 +49,10 @@ class HubJWTAuth(JWTAuthentication):
                     except Resource.DoesNotExist:
                         team = self.common_auth.get_or_create_resource('team', team_data)[1]
 
-                    groups.append(team.group)
-
                     if role_name == 'Team Admin':
                         admin_teams.append(team)
                     elif role_name == 'Team Member':
                         member_teams.append(team)
-
-        # FIXME - this does not respect shared vs. local assignments
-        self.common_auth.user.groups.set(groups)
 
         for roledef_name, teams in [('Team Admin', admin_teams), ('Team Member', member_teams)]:
 
