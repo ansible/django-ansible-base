@@ -358,7 +358,7 @@ RESOURCE_JWT_USER_ID = "97447387-8596-404f-b0d0-6429b04c8d22"
 RESOURCE_SERVICE_PATH = "/api/server/v1/service-index/"
 
 # Optional, mainly for tests
-DISABLE_RESOURCE_SERVER_SYNC = False
+RESOURCE_SERVER_SYNC_ENABLED = True
 ```
 
 > NOTE: Secret key must be generated on the resource server, e.g `generate_service_secret` management command.
