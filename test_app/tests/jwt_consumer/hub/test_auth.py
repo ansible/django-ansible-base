@@ -2,12 +2,11 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
-from django.contrib.auth.models import Group
 from django.contrib.contenttypes.models import ContentType
 
 from ansible_base.jwt_consumer.common.exceptions import InvalidService
 from ansible_base.jwt_consumer.hub.auth import HubJWTAuth
-from ansible_base.rbac.models import RoleDefinition
+from ansible_base.rbac.models import RoleDefinition, RoleUserAssignment
 from test_app.models import Organization, Team, User
 
 
@@ -56,6 +55,9 @@ def test_hub_jwt_teams(user, token, num_roles):
 @patch('ansible_base.jwt_consumer.hub.auth.ContentType')
 def test_hub_jwt_orgs_teams_groups_memberships(mock_contenttype, mock_resource):
 
+    # make the _system user ...
+    User.objects.get_or_create(username='_system')
+
     # The rbac hooks will attempt to assign these roledefs
     # when users are added/removed from orgs+teams, so they
     # must exist before claims are processed ...
@@ -63,23 +65,21 @@ def test_hub_jwt_orgs_teams_groups_memberships(mock_contenttype, mock_resource):
     org_member_role, _ = RoleDefinition.objects.get_or_create(name="Organization Member", content_type=org_content_type)
     team_content_type = ContentType.objects.get_for_model(Team)
     team_member_role, _ = RoleDefinition.objects.get_or_create(name="Team Member", content_type=team_content_type)
+    team_admin_role, _ = RoleDefinition.objects.get_or_create(name="Team Admin", content_type=team_content_type)
+
+    # We need a "Platform Auditor" too ...
+    platform_auditor_role, _ = RoleDefinition.objects.get_or_create(name="Platform Auditor")
 
     # Make all the objects
     testuser, _ = User.objects.get_or_create(username="testuser")
     testorg, _ = Organization.objects.get_or_create(name='testorg')
     testteam, _ = Team.objects.get_or_create(name='testteam', organization=testorg)
-    testgroup, _ = Group.objects.get_or_create(name=testorg.name + '::' + testteam.name)
-    testteam.group = testgroup
-
-    # these are functions from pulp ...
-    assign_role = MagicMock()
-    remove_role = MagicMock()
 
     # overrides the inline import function which returns
     # things that the DAB repo doesn't have, so we'll just
-    # send back the local DAB models and function mocks ...
-    def get_galaxy_models_and_functions():
-        return Organization, Team, assign_role, remove_role
+    # send back the local DAB models ...
+    def get_galaxy_models():
+        return Organization, Team
 
     def get_or_create_resource(*args, **kwargs):
         raise Exception('not yet implemented')
@@ -97,7 +97,7 @@ def test_hub_jwt_orgs_teams_groups_memberships(mock_contenttype, mock_resource):
     mock_resource.objects.get.side_effect = get_resource_content
 
     auth = HubJWTAuth()
-    auth.get_galaxy_models_and_functions = get_galaxy_models_and_functions
+    auth.get_galaxy_models = get_galaxy_models
     auth.common_auth.get_or_create_resource = get_or_create_resource
     auth.common_auth.user = testuser
 
@@ -108,7 +108,9 @@ def test_hub_jwt_orgs_teams_groups_memberships(mock_contenttype, mock_resource):
             'Platform Auditor': {},
         },
         "object_roles": {
+            'Organization Admin': {'content_type': 'organization', 'objects': [0]},
             'Organization Member': {'content_type': 'organization', 'objects': [0]},
+            'Team Admin': {'content_type': 'team', 'objects': [0]},
             'Team Member': {'content_type': 'team', 'objects': [0]},
         },
         "objects": {
@@ -131,27 +133,13 @@ def test_hub_jwt_orgs_teams_groups_memberships(mock_contenttype, mock_resource):
 
     # PROCSSS THE CLAIMS AND CHECK THE SIDE EFFECTS ...
     auth.process_permissions()
-
-    assert testorg.users.filter(pk=testuser.pk).exists()
-    assert testuser.groups.filter(pk=testgroup.pk).exists()
-    assert testteam.users.filter(pk=testuser.pk).exists()
-
-    assert not remove_role.called
-    assert assign_role.called
-    assert assign_role.call_args[0][0] == 'galaxy.auditor'
-    assert assign_role.call_args[0][1] == testuser
+    assert RoleUserAssignment.objects.filter(user=testuser, role_definition=team_member_role, object_id=testteam.pk).count() == 1
+    assert RoleUserAssignment.objects.filter(user=testuser, role_definition=team_admin_role, object_id=testteam.pk).count() == 1
+    assert RoleUserAssignment.objects.filter(user=testuser, role_definition=platform_auditor_role).count() == 1
 
     # REVOKE EVERYTHING AND RECHECK ...
-    assign_role.reset_mock()
-    remove_role.reset_mock()
     auth.common_auth.token = {}
     auth.process_permissions()
-
-    assert not testorg.users.filter(pk=testuser.pk).exists()
-    assert not testuser.groups.filter(pk=testgroup.pk).exists()
-    assert not testteam.users.filter(pk=testuser.pk).exists()
-
-    assert not assign_role.called
-    assert remove_role.called
-    assert remove_role.call_args[0][0] == 'galaxy.auditor'
-    assert remove_role.call_args[0][1] == testuser
+    assert RoleUserAssignment.objects.filter(user=testuser, role_definition=team_member_role, object_id=testteam.pk).count() == 0
+    assert RoleUserAssignment.objects.filter(user=testuser, role_definition=team_admin_role, object_id=testteam.pk).count() == 0
+    assert RoleUserAssignment.objects.filter(user=testuser, role_definition=platform_auditor_role).count() == 0

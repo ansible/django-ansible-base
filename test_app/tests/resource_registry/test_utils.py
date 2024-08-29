@@ -210,26 +210,26 @@ class TestReverseResourceSync:
     @pytest.mark.parametrize(
         'new_settings,should_sync',
         [
-            ({'DISABLE_RESOURCE_SERVER_SYNC': False, 'RESOURCE_SERVER': {}, 'RESOURCE_SERVICE_PATH': "/foo"}, False),
+            ({'RESOURCE_SERVER_SYNC_ENABLED': True, 'RESOURCE_SERVER': {}, 'RESOURCE_SERVICE_PATH': "/foo"}, False),
             (
                 {
-                    'DISABLE_RESOURCE_SERVER_SYNC': False,
+                    'RESOURCE_SERVER_SYNC_ENABLED': True,
                     'RESOURCE_SERVER': {'url': 'http://localhost:8000', 'SECRET_KEY': 'foo'},
                     'RESOURCE_SERVICE_PATH': "/foo",
                 },
                 True,
             ),
-            ({'DISABLE_RESOURCE_SERVER_SYNC': False, 'RESOURCE_SERVER': {'url': 'http://localhost:8000'}, 'RESOURCE_SERVICE_PATH': "/foo"}, False),
+            ({'RESOURCE_SERVER_SYNC_ENABLED': True, 'RESOURCE_SERVER': {'url': 'http://localhost:8000'}, 'RESOURCE_SERVICE_PATH': "/foo"}, False),
             (
                 {
-                    'DISABLE_RESOURCE_SERVER_SYNC': True,
+                    'RESOURCE_SERVER_SYNC_ENABLED': False,
                     'RESOURCE_SERVER': {'url': 'http://localhost:8000', 'SECRET_KEY': 'foo'},
                     'RESOURCE_SERVICE_PATH': "/foo",
                 },
                 False,
             ),
             (
-                {'DISABLE_RESOURCE_SERVER_SYNC': True, 'RESOURCE_SERVER': {'url': 'http://localhost:8000', 'SECRET_KEY': 'foo'}, 'RESOURCE_SERVICE_PATH': ""},
+                {'RESOURCE_SERVER_SYNC_ENABLED': False, 'RESOURCE_SERVER': {'url': 'http://localhost:8000', 'SECRET_KEY': 'foo'}, 'RESOURCE_SERVICE_PATH': ""},
                 False,
             ),
         ],
