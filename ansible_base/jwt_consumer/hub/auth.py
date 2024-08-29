@@ -27,10 +27,10 @@ class HubJWTAuth(JWTAuthentication):
         self.team_content_type = ContentType.objects.get_for_model(Team)
         self.org_content_type = ContentType.objects.get_for_model(Organization)
 
-        # TODO - galaxy does not have an org member roledef yet
+        # TODO - galaxy does not have an org admin roledef yet
         # admin_orgs = []
 
-        # TODO - galaxy does not have an org admin roledef yet
+        # TODO - galaxy does not have an org member roledef yet
         # member_orgs = []
 
         # The "shared" [!local] teams this user admins
