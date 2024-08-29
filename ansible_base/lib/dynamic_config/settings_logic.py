@@ -229,6 +229,9 @@ def get_dab_settings(
         # Disable reverse syncing by default
         dab_data['DISABLE_RESOURCE_SERVER_SYNC'] = True
 
+        # Disable legacy SSO by default
+        dab_data['ENABLE_SERVICE_BACKED_SSO'] = False
+
     if 'ansible_base.oauth2_provider' in installed_apps:
         if 'oauth2_provider' not in installed_apps:
             dab_data.setdefault('INSTALLED_APPS', copy(installed_apps))
