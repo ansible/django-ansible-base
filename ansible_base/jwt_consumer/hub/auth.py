@@ -27,27 +27,22 @@ class HubJWTAuth(JWTAuthentication):
         self.team_content_type = ContentType.objects.get_for_model(Team)
         self.org_content_type = ContentType.objects.get_for_model(Organization)
 
-        admin_orgs = []
-        member_orgs = []
-        # admin_teams = []
+        # TODO - galaxy does not have an org member roledef yet
+        # admin_orgs = []
+
+        # TODO - galaxy does not have an org admin roledef yet
+        # member_orgs = []
+
+        # The "shared" [!local] teams this user admins
+        admin_teams = []
+
+        # the teams this user should have a "shared" [!local] assignment to
         member_teams = []
+
+        # the django/pulp groups this user should be a member of
         groups = []
+
         for role_name in self.common_auth.token.get('object_roles', {}).keys():
-            if role_name.startswith('Org'):
-                for object_index in self.common_auth.token['object_roles'][role_name]['objects']:
-                    org_data = self.common_auth.token['objects']['organization'][object_index]
-                    ansible_id = org_data['ansible_id']
-
-                    try:
-                        org = Resource.objects.get(ansible_id=ansible_id).content_object
-                    except Resource.DoesNotExist:
-                        org = self.common_auth.get_or_create_resource('organization', org_data)[1]
-
-                    if role_name == 'Organization Admin':
-                        admin_orgs.append(org)
-                    else:
-                        member_orgs.append(org)
-
             if role_name.startswith('Team'):
                 for object_index in self.common_auth.token['object_roles'][role_name]['objects']:
                     team_data = self.common_auth.token['objects']['team'][object_index]
@@ -59,34 +54,30 @@ class HubJWTAuth(JWTAuthentication):
 
                     groups.append(team.group)
 
-                    if role_name == 'Team Member':
+                    if role_name == 'Team Admin':
+                        admin_teams.append(team)
+                    elif role_name == 'Team Member':
                         member_teams.append(team)
 
+        # FIXME - this does not respect shared vs. local assignments
         self.common_auth.user.groups.set(groups)
 
-        '''
-        # manage org membership ...
-        org_pks = [org.pk for org in orgs]
-        for org in Organization.objects.exclude(pk__in=org_pks).filter(users=self.common_auth.user):
-            org.users.remove(self.common_auth.user)
-        for org in orgs:
-            org.users.add(self.common_auth.user)
-        '''
+        for roledef_name, teams in [('Team Admin', admin_teams), ('Team Member', member_teams)]:
 
-        # pks for filtering ...
-        member_team_pks = [team.pk for team in member_teams]
+            # the "shared" "non-local" definition ...
+            roledef = RoleDefinition.objects.get(name=roledef_name)
 
-        # the "shared" "non-local" role definition ...
-        team_roledef = RoleDefinition.objects.get(name='Team Member')
+            # pks for filtering ...
+            team_pks = [team.pk for team in teams]
 
-        # delete all memberships not defined by this jwt ...
-        for assignment in RoleUserAssignment.objects.filter(user=self.common_auth.user, role_definition=team_roledef).exclude(object_id__in=member_team_pks):
-            team = Team.objects.get(pk=assignment.object_id)
-            team_roledef.remove_permission(self.common_auth.user, team)
+            # delete all assignments not defined by this jwt ...
+            for assignment in RoleUserAssignment.objects.filter(user=self.common_auth.user, role_definition=roledef).exclude(object_id__in=team_pks):
+                team = Team.objects.get(pk=assignment.object_id)
+                roledef.remove_permission(self.common_auth.user, team)
 
-        # assign "non-local" membership for each team ...
-        for team in member_teams:
-            team_roledef.give_permission(self.common_auth.user, team)
+            # assign "non-local" for each team ...
+            for team in teams:
+                roledef.give_permission(self.common_auth.user, team)
 
         auditor_roledef = RoleDefinition.objects.get(name='Platform Auditor')
         if "Platform Auditor" in self.common_auth.token.get('global_roles', []):

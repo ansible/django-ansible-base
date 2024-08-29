@@ -67,6 +67,7 @@ def test_hub_jwt_orgs_teams_groups_memberships(mock_contenttype, mock_resource):
     org_member_role, _ = RoleDefinition.objects.get_or_create(name="Organization Member", content_type=org_content_type)
     team_content_type = ContentType.objects.get_for_model(Team)
     team_member_role, _ = RoleDefinition.objects.get_or_create(name="Team Member", content_type=team_content_type)
+    team_admin_role, _ = RoleDefinition.objects.get_or_create(name="Team Admin", content_type=team_content_type)
 
     # We need a "Platform Auditor" too ...
     platform_auditor_role, _ = RoleDefinition.objects.get_or_create(name="Platform Auditor")
@@ -112,6 +113,7 @@ def test_hub_jwt_orgs_teams_groups_memberships(mock_contenttype, mock_resource):
         },
         "object_roles": {
             'Organization Member': {'content_type': 'organization', 'objects': [0]},
+            'Team Admin': {'content_type': 'team', 'objects': [0]},
             'Team Member': {'content_type': 'team', 'objects': [0]},
         },
         "objects": {
@@ -135,10 +137,12 @@ def test_hub_jwt_orgs_teams_groups_memberships(mock_contenttype, mock_resource):
     # PROCSSS THE CLAIMS AND CHECK THE SIDE EFFECTS ...
     auth.process_permissions()
     assert RoleUserAssignment.objects.filter(user=testuser, role_definition=team_member_role, object_id=testteam.pk).count() == 1
+    assert RoleUserAssignment.objects.filter(user=testuser, role_definition=team_admin_role, object_id=testteam.pk).count() == 1
     assert RoleUserAssignment.objects.filter(user=testuser, role_definition=platform_auditor_role).count() == 1
 
     # REVOKE EVERYTHING AND RECHECK ...
     auth.common_auth.token = {}
     auth.process_permissions()
     assert RoleUserAssignment.objects.filter(user=testuser, role_definition=team_member_role, object_id=testteam.pk).count() == 0
+    assert RoleUserAssignment.objects.filter(user=testuser, role_definition=team_admin_role, object_id=testteam.pk).count() == 0
     assert RoleUserAssignment.objects.filter(user=testuser, role_definition=platform_auditor_role).count() == 0
