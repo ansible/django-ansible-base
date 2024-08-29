@@ -91,7 +91,16 @@ def sync_to_resource_server(instance, action, ansible_id=None):
         if action == "create":
             response = client.create_resource(body)
             json = response.json()
-            if isinstance(json, dict):  # Mainly for tests... to avoid getting here with mock
+            if isinstance(json, dict):  # This 'isinstance' check is mainly for tests... to avoid getting here with mock
+                # The service_id is saved here because we don't have a local reference to it anywhere.
+                # The ansible_id is saved here because of the following scenario:
+                #    Service A and Service B both try to create resource C at the same time.
+                #    Service A's request arrives first and receives the lock on the DB to create the resource and creates resource C with ID=1
+                #    Once the lock on the DB is released, Service B's request comes through.
+                #        Because this endpoint does a create or update operation, Service B modifies resource C, and sets its ID=2.
+                #    Now resource C is out of sync. On the resource server and service B, the ID=2, but on service A the ID is now 1.
+                #    Fixing this problem is fairly easy. We just let the resource server set the ansible ID of the resource,
+                #        rather than let each service pick their own random UUID.
                 resource.service_id = json['service_id']
                 resource.ansible_id = json['ansible_id']
                 resource.save()
