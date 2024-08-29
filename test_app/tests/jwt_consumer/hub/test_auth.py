@@ -2,7 +2,6 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
-from django.contrib.auth.models import Group
 from django.contrib.contenttypes.models import ContentType
 
 from ansible_base.jwt_consumer.common.exceptions import InvalidService
@@ -76,8 +75,6 @@ def test_hub_jwt_orgs_teams_groups_memberships(mock_contenttype, mock_resource):
     testuser, _ = User.objects.get_or_create(username="testuser")
     testorg, _ = Organization.objects.get_or_create(name='testorg')
     testteam, _ = Team.objects.get_or_create(name='testteam', organization=testorg)
-    testgroup, _ = Group.objects.get_or_create(name=testorg.name + '::' + testteam.name)
-    testteam.group = testgroup
 
     # overrides the inline import function which returns
     # things that the DAB repo doesn't have, so we'll just
@@ -112,6 +109,7 @@ def test_hub_jwt_orgs_teams_groups_memberships(mock_contenttype, mock_resource):
             'Platform Auditor': {},
         },
         "object_roles": {
+            'Organization Admin': {'content_type': 'organization', 'objects': [0]},
             'Organization Member': {'content_type': 'organization', 'objects': [0]},
             'Team Admin': {'content_type': 'team', 'objects': [0]},
             'Team Member': {'content_type': 'team', 'objects': [0]},
