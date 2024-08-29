@@ -6,7 +6,7 @@ from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
 
-from ansible_base.resource_registry.models import Resource
+from ansible_base.resource_registry.models import Resource, service_id
 from ansible_base.resource_registry.rest_client import ResourceRequestBody, get_resource_server_client
 
 logger = logging.getLogger('ansible_base.resource_registry.utils.sync_to_resource_server')
@@ -39,18 +39,20 @@ def sync_to_resource_server(instance, action, ansible_id=None):
         logger.info(f"Skipping sync of resource {instance}")
         return
 
+    if action != "delete" and ansible_id is not None:
+        raise Exception("ansible_id should not be provided for create/update actions")
+    elif action == "delete" and ansible_id is None:
+        raise Exception("ansible_id should be provided for delete actions")
+
     try:
-        if action != "delete" and ansible_id is not None:
-            raise Exception("ansible_id should not be provided for create/update actions")
-        elif action == "delete" and ansible_id is None:
-            raise Exception("ansible_id should be provided for delete actions")
-        elif not getattr(instance, 'resource', None) or not instance.resource.ansible_id:
-            # We can't sync if we don't have a resource and an ansible_id.
-            logger.error(f"Resource {instance} does not have a resource or ansible_id")
-            return
+        resource = Resource.get_resource_for_object(instance)
     except Resource.DoesNotExist:
-        # The getattr() will raise a Resource.DoesNotExist if the resource doesn't exist.
         logger.error(f"Resource {instance} does not have a resource")
+        return
+
+    if str(resource.service_id) == service_id() and action == "update":
+        # Don't sync if we're updating a resource that isn't owned by the resource server yet.
+        logger.info(f"Skipping sync of resource {instance} because its service_id is local")
         return
 
     user_ansible_id = None
@@ -60,8 +62,9 @@ def sync_to_resource_server(instance, action, ansible_id=None):
         # If they don't have one some how, or if we don't have a user, sync with None and
         # let the resource server decide what to do.
         try:
-            user_ansible_id = user.resource.ansible_id
-        except AttributeError:
+            user_resource = Resource.get_resource_for_object(user)
+            user_ansible_id = user_resource.ansible_id
+        except (Resource.DoesNotExist, AttributeError):
             logger.error(f"User {user} does not have a resource")
             pass
     else:
@@ -74,9 +77,9 @@ def sync_to_resource_server(instance, action, ansible_id=None):
     )
 
     if action != "delete":
-        ansible_id = instance.resource.ansible_id
+        ansible_id = resource.ansible_id
 
-    resource_type = instance.resource.content_type.resource_type
+    resource_type = resource.content_type.resource_type
     data = resource_type.serializer_class(instance).data
     body = ResourceRequestBody(
         resource_type=resource_type.name,
@@ -88,9 +91,19 @@ def sync_to_resource_server(instance, action, ansible_id=None):
         if action == "create":
             response = client.create_resource(body)
             json = response.json()
-            if isinstance(json, dict):  # Mainly for tests... to avoid getting here with mock
-                instance.resource.service_id = json['service_id']
-                instance.resource.save()
+            if isinstance(json, dict):  # This 'isinstance' check is mainly for tests... to avoid getting here with mock
+                # The service_id is saved here because we don't have a local reference to it anywhere.
+                # The ansible_id is saved here because of the following scenario:
+                #    Service A and Service B both try to create resource C at the same time.
+                #    Service A's request arrives first and receives the lock on the DB to create the resource and creates resource C with ID=1
+                #    Once the lock on the DB is released, Service B's request comes through.
+                #        Because this endpoint does a create or update operation, Service B modifies resource C, and sets its ID=2.
+                #    Now resource C is out of sync. On the resource server and service B, the ID=2, but on service A the ID is now 1.
+                #    Fixing this problem is fairly easy. We just let the resource server set the ansible ID of the resource,
+                #        rather than let each service pick their own random UUID.
+                resource.service_id = json['service_id']
+                resource.ansible_id = json['ansible_id']
+                resource.save()
         elif action == "update":
             client.update_resource(ansible_id, body)
         elif action == "delete":
