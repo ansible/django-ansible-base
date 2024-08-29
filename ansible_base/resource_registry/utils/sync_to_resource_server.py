@@ -67,9 +67,8 @@ def sync_to_resource_server(instance, action, ansible_id=None):
     else:
         logger.error("No user found, syncing to resource server with jwt_user_id=None")
 
-    service_path = getattr(settings, "RESOURCE_SERVICE_PATH", "/api/gateway/v1/service-index/")
     client = get_resource_server_client(
-        service_path,
+        settings.RESOURCE_SERVICE_PATH,
         jwt_user_id=user_ansible_id,
         raise_if_bad_request=True,
     )

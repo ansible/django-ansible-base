@@ -226,7 +226,8 @@ def get_dab_settings(
         dab_data['ORG_ADMINS_CAN_SEE_ALL_USERS'] = True
 
     if 'ansible_base.resource_registry' in installed_apps:
-        dab_data['DISABLE_RESOURCE_SERVER_SYNC'] = False
+        dab_data['RESOURCE_SERVER_SYNC_ENABLED'] = False
+        dab_data['RESOURCE_SERVICE_PATH'] = "/api/gateway/v1/service-index/"
 
         # Disable legacy SSO by default
         dab_data['ENABLE_SERVICE_BACKED_SSO'] = False
