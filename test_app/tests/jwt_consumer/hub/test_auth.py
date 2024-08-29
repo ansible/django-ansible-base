@@ -57,7 +57,6 @@ def test_hub_jwt_orgs_teams_groups_memberships(mock_contenttype, mock_resource):
 
     # make the _system user ...
     User.objects.get_or_create(username='_system')
-    # import epdb; epdb.st()
 
     # The rbac hooks will attempt to assign these roledefs
     # when users are added/removed from orgs+teams, so they
