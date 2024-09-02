@@ -1,42 +1,23 @@
 asgiref==3.8.1
-    # via
-    #   -c requirements_all.txt
-    #   django
+    # via django
 cffi==1.17.0
-    # via
-    #   -c requirements_all.txt
-    #   cryptography
+    # via cryptography
 cryptography==42.0.5
+    # via -r requirements/requirements.in
+django==4.2.15
     # via
-    #   -c requirements_all.txt
-    #   -r requirements/requirements.in
-django==4.2.14
-    # via
-    #   -c requirements_all.txt
     #   -r requirements/requirements.in
     #   django-crum
     #   djangorestframework
 django-crum==0.7.9
-    # via
-    #   -c requirements_all.txt
-    #   -r requirements/requirements.in
+    # via -r requirements/requirements.in
 django-split-settings==1.2.0
-    # via
-    #   -c requirements_all.txt
-    #   -r requirements/requirements.in
+    # via -r requirements/requirements.in
 djangorestframework==3.15.1
-    # via
-    #   -c requirements_all.txt
-    #   -r requirements/requirements.in
+    # via -r requirements/requirements.in
 inflection==0.5.1
-    # via
-    #   -c requirements_all.txt
-    #   -r requirements/requirements.in
+    # via -r requirements/requirements.in
 pycparser==2.22
-    # via
-    #   -c requirements_all.txt
-    #   cffi
+    # via cffi
 sqlparse==0.5.1
-    # via
-    #   -c requirements_all.txt
-    #   django
+    # via django

@@ -1,134 +1,81 @@
 asgiref==3.8.1
-    # via
-    #   -c requirements_all.txt
-    #   django
+    # via django
 certifi==2024.7.4
-    # via
-    #   -c requirements_all.txt
-    #   requests
+    # via requests
 cffi==1.17.0
-    # via
-    #   -c requirements_all.txt
-    #   cryptography
+    # via cryptography
 charset-normalizer==3.3.2
-    # via
-    #   -c requirements_all.txt
-    #   requests
-cryptography==42.0.5
-    # via
-    #   -c requirements_all.txt
-    #   social-auth-core
+    # via requests
+cryptography==43.0.0
+    # via social-auth-core
 defusedxml==0.8.0rc2
     # via
-    #   -c requirements_all.txt
     #   python3-openid
     #   social-auth-core
-django==4.2.14
+django==5.1
     # via
-    #   -c requirements_all.txt
     #   django-auth-ldap
     #   social-auth-app-django
 django-auth-ldap==4.0.0
-    # via
-    #   -c requirements_all.txt
-    #   -r requirements/requirements_authentication.in
+    # via -r requirements/requirements_authentication.in
 idna==3.8
-    # via
-    #   -c requirements_all.txt
-    #   requests
+    # via requests
 isodate==0.6.1
-    # via
-    #   -c requirements_all.txt
-    #   python3-saml
+    # via python3-saml
 lxml==5.3.0
     # via
-    #   -c requirements_all.txt
     #   python3-saml
     #   xmlsec
 netaddr==1.3.0
-    # via
-    #   -c requirements_all.txt
-    #   pyrad
+    # via pyrad
 oauthlib==3.2.2
     # via
-    #   -c requirements_all.txt
     #   requests-oauthlib
     #   social-auth-core
 pyasn1==0.6.0
     # via
-    #   -c requirements_all.txt
     #   pyasn1-modules
     #   python-ldap
 pyasn1-modules==0.4.0
-    # via
-    #   -c requirements_all.txt
-    #   python-ldap
+    # via python-ldap
 pycparser==2.22
-    # via
-    #   -c requirements_all.txt
-    #   cffi
-pyjwt==2.7.0
-    # via
-    #   -c requirements_all.txt
-    #   social-auth-core
+    # via cffi
+pyjwt==2.9.0
+    # via social-auth-core
 pyrad==2.4
-    # via
-    #   -c requirements_all.txt
-    #   -r requirements/requirements_authentication.in
+    # via -r requirements/requirements_authentication.in
 python-ldap==3.4.4
     # via
-    #   -c requirements_all.txt
     #   -r requirements/requirements_authentication.in
     #   django-auth-ldap
 python3-openid==3.2.0
-    # via
-    #   -c requirements_all.txt
-    #   social-auth-core
+    # via social-auth-core
 python3-saml==1.16.0
+    # via -r requirements/requirements_authentication.in
+requests==2.32.3
     # via
-    #   -c requirements_all.txt
-    #   -r requirements/requirements_authentication.in
-requests==2.31.0
-    # via
-    #   -c requirements_all.txt
     #   requests-oauthlib
     #   social-auth-core
 requests-oauthlib==2.0.0
-    # via
-    #   -c requirements_all.txt
-    #   social-auth-core
+    # via social-auth-core
 six==1.16.0
     # via
-    #   -c requirements_all.txt
     #   isodate
     #   pyrad
     #   tacacs-plus
 social-auth-app-django==5.4.1
-    # via
-    #   -c requirements_all.txt
-    #   -r requirements/requirements_authentication.in
+    # via -r requirements/requirements_authentication.in
 social-auth-core==4.5.4
-    # via
-    #   -c requirements_all.txt
-    #   social-auth-app-django
+    # via social-auth-app-django
 sqlparse==0.5.1
-    # via
-    #   -c requirements_all.txt
-    #   django
+    # via django
 tabulate==0.9.0
-    # via
-    #   -c requirements_all.txt
-    #   -r requirements/requirements_authentication.in
+    # via -r requirements/requirements_authentication.in
 tacacs-plus==2.6
-    # via
-    #   -c requirements_all.txt
-    #   -r requirements/requirements_authentication.in
+    # via -r requirements/requirements_authentication.in
 urllib3==2.2.2
-    # via
-    #   -c requirements_all.txt
-    #   requests
+    # via requests
 xmlsec==1.3.13
     # via
-    #   -c requirements_all.txt
     #   -r requirements/requirements_authentication.in
     #   python3-saml
