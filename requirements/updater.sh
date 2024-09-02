@@ -39,7 +39,7 @@ generate_requirements() {
 main() {
   base_dir=$(pwd)
 
-  _tmp=$(mktemp -d /tmp/ansible_base-requirements.XXXXXX)
+  _tmp=$(mktemp -d /tmp/tmp.XXXXXX.ansible_base-requirements)
 
   trap _cleanup INT TERM EXIT
 
