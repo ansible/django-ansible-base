@@ -2,9 +2,9 @@ ansible  # Used in build process to generate some configs
 build
 Django>=4.2.5,<4.3.0
 django-debug-toolbar
-django-extensions<=3.2.3
-djangorestframework<=3.15.1
-django-split-settings<=1.2.0
+django-extensions
+djangorestframework
+django-split-settings
 ipython
 tox
 typeguard
@@ -14,5 +14,5 @@ pytest-xdist
 pytest-cov
 pytest-django
 setuptools-scm
-psycopg[binary]<=3.1.17
+psycopg[binary]
 sdb
