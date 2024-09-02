@@ -134,3 +134,20 @@ class AbstractAuthenticatorPlugin:
 
     def validate(self, serializer, data):
         return data
+
+    def move_authenticator_user_to(self, new_user, old_authenticator_user):
+        """
+        new_user: django User instance. User that we're moving this account to.
+        old_authenticator_user: AuthenticatorUser instance from this authenticator that is being removed.
+        """
+        old_user = old_authenticator_user.user
+
+        # Delete the old authenticator user
+        old_authenticator_user.delete()
+
+        if new_user.pk == old_user.pk:
+            return
+
+        # If there aren't any authenticator user's left for this account, delete it.
+        if not old_user.authenticator_users.exists():
+            old_user.delete()

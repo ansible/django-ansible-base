@@ -9,6 +9,7 @@ from django.utils.translation import gettext as _
 from social_core.exceptions import AuthException
 from social_core.pipeline.user import get_username
 
+from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_class
 from ansible_base.authentication.models import Authenticator, AuthenticatorUser
 from ansible_base.authentication.social_auth import AuthenticatorStorage, AuthenticatorStrategy
 
@@ -49,10 +50,10 @@ def determine_username_from_uid_social(**kwargs: dict) -> dict:
     if not authenticator:
         raise AuthException(_('Unable to get backend from kwargs'))
 
-    return {"username": determine_username_from_uid(uid, authenticator)}
+    return {"username": determine_username_from_uid(uid, authenticator.database_instance)}
 
 
-def determine_username_from_uid(uid: str = None, authenticator: Authenticator = None) -> str:
+def determine_username_from_uid(uid: str = None, authenticator: Authenticator = None, alt_uid=None) -> str:
     """
     Determine what the username for the User object will be from the given uid and authenticator
     This will take uid like "bella" and search for an AuthenticatorUser and return:
@@ -74,10 +75,43 @@ def determine_username_from_uid(uid: str = None, authenticator: Authenticator = 
 
     # If we have an AuthenticatorUser with the exact uid and provider than we have a match
     exact_match = AuthenticatorUser.objects.filter(uid=uid, provider=authenticator)
+    existing_username = None
     if exact_match.count() == 1:
         new_username = exact_match[0].user.username
         logger.info(f"Authenticator {authenticator.name} already authenticated {uid} as {new_username}")
-        return new_username
+        existing_username = new_username
+
+    # TODO: add alternative UID lookup for keycloak
+    uid_filter = [
+        uid,
+    ]
+    if alt_uid:
+        uid_filter = [uid, alt_uid]
+
+    migrate_users = list(
+        AuthenticatorUser.objects.filter(
+            uid__in=uid_filter,
+            provider__auto_migrate_users_to=authenticator.pk,
+        ).order_by("provider__order")
+    )
+
+    if migrate_users:
+        if existing_username:
+            main_user = get_user_model().objects.get(username=existing_username)
+        else:
+            main_user = migrate_users[0].user
+
+        for migrate_user in migrate_users:
+            provider = migrate_user.provider
+            from_authenticator = get_authenticator_class(provider.type)(database_instance=provider)
+            from_authenticator.move_authenticator_user_to(main_user, migrate_user)
+
+        # TODO rename the account to the UID if old accounts were removed.
+        return main_user.username
+
+    else:
+        if existing_username:
+            return existing_username
 
     # We didn't get an exact match. If any other provider is using this uid our id will be uid<hash>
     if AuthenticatorUser.objects.filter(Q(uid=uid) | Q(user__username=uid)).count() != 0:

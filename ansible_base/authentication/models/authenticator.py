@@ -1,4 +1,4 @@
-from django.db.models import JSONField, fields
+from django.db.models import SET_NULL, ForeignKey, JSONField, fields
 
 from ansible_base.authentication.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_plugin
 from ansible_base.lib.abstract_models.common import UniqueNamedCommonModel
@@ -32,6 +32,14 @@ class Authenticator(UniqueNamedCommonModel):
     )
     slug = fields.SlugField(max_length=1024, default=None, editable=False, unique=True, help_text="An immutable identifier for the authenticator")
     category = fields.CharField(max_length=30, default=None, help_text="The base type of this authenticator")
+
+    auto_migrate_users_to = ForeignKey(
+        "Authenticator",
+        help_text=("Automatically move users from this authenticator to the target authenticator when a matching user logs in via the targe authenticator"),
+        related_name="auto_migrate_users_from",
+        null=True,
+        on_delete=SET_NULL,
+    )
 
     def save(self, *args, **kwargs):
         from ansible_base.lib.utils.encryption import ansible_encryption
