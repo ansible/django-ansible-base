@@ -39,7 +39,7 @@ class AuthenticatorStrategy(DjangoStrategy):
         self.settings = {}
         fq_function_name = getattr(settings, 'ANSIBLE_BASE_SOCIAL_AUTH_STRATEGY_SETTINGS_FUNCTION', None)
         if fq_function_name:
-            logger.info(f"Attempting to load social settings from {fq_function_name}")
+            logger.debug(f"Attempting to load social settings from {fq_function_name}")
             try:
                 module_name, _, function_name = fq_function_name.rpartition('.')
                 the_function = getattr(importlib.import_module(module_name), function_name)
