@@ -19,6 +19,7 @@ __pycache__
 .coverage*
 coverage.xml
 coverage.json
+django-ansible-base-test-results.xml
 htmlcov
 *.tox
 venv/
