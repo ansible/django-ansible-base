@@ -214,7 +214,7 @@ class TestReverseResourceSync:
             (
                 {
                     'RESOURCE_SERVER_SYNC_ENABLED': True,
-                    'RESOURCE_SERVER': {'url': 'http://localhost:8000', 'SECRET_KEY': 'foo'},
+                    'RESOURCE_SERVER': {'URL': 'http://localhost:8000', 'SECRET_KEY': 'foo'},
                     'RESOURCE_SERVICE_PATH': "/foo",
                 },
                 True,
@@ -223,7 +223,7 @@ class TestReverseResourceSync:
             (
                 {
                     'RESOURCE_SERVER_SYNC_ENABLED': False,
-                    'RESOURCE_SERVER': {'url': 'http://localhost:8000', 'SECRET_KEY': 'foo'},
+                    'RESOURCE_SERVER': {'URL': 'http://localhost:8000', 'SECRET_KEY': 'foo'},
                     'RESOURCE_SERVICE_PATH': "/foo",
                 },
                 False,
