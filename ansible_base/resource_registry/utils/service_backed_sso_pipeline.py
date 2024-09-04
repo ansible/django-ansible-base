@@ -3,6 +3,7 @@ from django.shortcuts import redirect
 
 from ansible_base.resource_registry.resource_server import get_resource_server_config
 from ansible_base.resource_registry.utils.auth_code import get_user_auth_code
+from ansible_base.resource_registry.utils.settings import resource_server_defined
 
 
 def redirect_to_resource_server(*args, social=None, user=None, **kwargs):
@@ -11,7 +12,9 @@ def redirect_to_resource_server(*args, social=None, user=None, **kwargs):
     """
 
     # Allow for disabling this pipeline without removing it from the settings.
-    if not getattr(settings, 'ENABLE_SERVICE_BACKED_SSO', False):
+    # If resource server is defined, also silently quit
+    # for ease of connected vs disconnected configs
+    if (not getattr(settings, 'ENABLE_SERVICE_BACKED_SSO', False)) or (not resource_server_defined()):
         return None
 
     oidc_alt_key = None

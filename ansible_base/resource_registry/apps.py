@@ -8,6 +8,7 @@ from django.db.utils import IntegrityError
 
 import ansible_base.lib.checks  # noqa: F401 - register checks
 from ansible_base.lib.utils.db import ensure_transaction, migrations_are_complete
+from ansible_base.resource_registry.utils.settings import resource_server_defined
 
 logger = logging.getLogger('ansible_base.resource_registry.apps')
 
@@ -101,10 +102,10 @@ def proxies_of_model(cls):
 
 def _should_reverse_sync():
     enabled = getattr(settings, 'RESOURCE_SERVER_SYNC_ENABLED', False)
-    if not getattr(settings, 'RESOURCE_SERVER', False):
+    if enabled and (not resource_server_defined()):
         logger.error("RESOURCE_SERVER is not configured. Reverse sync will not be enabled.")
         enabled = False
-    if hasattr(settings, 'RESOURCE_SERVER') and ('SECRET_KEY' not in settings.RESOURCE_SERVER or not settings.RESOURCE_SERVER['SECRET_KEY']):
+    if enabled and resource_server_defined() and ('SECRET_KEY' not in settings.RESOURCE_SERVER or not settings.RESOURCE_SERVER['SECRET_KEY']):
         logger.error("RESOURCE_SERVER['SECRET_KEY'] is not configured. Reverse sync will not be enabled.")
         enabled = False
     return enabled
