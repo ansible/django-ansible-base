@@ -18,7 +18,7 @@ def test_authenticator_strategy_init_fail_to_load_function(logger):
 @override_settings(ANSIBLE_BASE_SOCIAL_AUTH_STRATEGY_SETTINGS_FUNCTION='test_app.tests.authentication.test_social_auth.set_settings')
 def test_authenticator_strategy_init_load_function(logger):
     strategy = AuthenticatorStrategy(storage=AuthenticatorStorage())
-    logger.info.assert_any_call(f"Attempting to load social settings from {settings.ANSIBLE_BASE_SOCIAL_AUTH_STRATEGY_SETTINGS_FUNCTION}")
+    logger.debug.assert_any_call(f"Attempting to load social settings from {settings.ANSIBLE_BASE_SOCIAL_AUTH_STRATEGY_SETTINGS_FUNCTION}")
     assert strategy.settings['A_SETTING'] == "set"
 
 
