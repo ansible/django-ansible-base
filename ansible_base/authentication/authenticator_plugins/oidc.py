@@ -270,3 +270,12 @@ class AuthenticatorPlugin(SocialAuthMixin, OpenIdConnectAuth, AbstractAuthentica
                 logger.error(_(f"Unable to decode user info response JWT: {e}"))
                 return None
         return user_data.json()
+
+    def get_alternative_uid(self, **kwargs):
+        preferred_username = kwargs.get("response", {}).get("preferred_username", None)
+        uid = kwargs.get("uid", None)
+
+        if preferred_username != uid:
+            return preferred_username
+
+        return None

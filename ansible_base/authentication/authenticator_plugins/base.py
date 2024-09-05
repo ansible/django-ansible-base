@@ -1,5 +1,6 @@
 import logging
 
+from django.db import IntegrityError, transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from rest_framework.fields import empty
@@ -140,6 +141,14 @@ class AbstractAuthenticatorPlugin:
         new_user: django User instance. User that we're moving this account to.
         old_authenticator_user: AuthenticatorUser instance from this authenticator that is being removed.
         """
+        exclude_fields = (
+            "social_auth",
+            "authenticator_users",
+            "groups",
+            "has_roles",
+            "role_assignments",
+        )
+
         old_user = old_authenticator_user.user
 
         # Delete the old authenticator user
@@ -148,6 +157,23 @@ class AbstractAuthenticatorPlugin:
         if new_user.pk == old_user.pk:
             return
 
-        # If there aren't any authenticator user's left for this account, delete it.
-        if not old_user.authenticator_users.exists():
-            old_user.delete()
+        # Copy all of the relationships from the old user to the new one
+        for field in new_user._meta.get_fields():
+            if field.many_to_many is True or field.one_to_many is True:
+                name = field.name
+                if name in exclude_fields:
+                    continue
+                if not hasattr(old_user, name) or not hasattr(new_user, name):
+                    continue
+                for x in getattr(old_user, name).all():
+                    # The only case where this might fail is if the relationship has a uniqueness
+                    # contraint on the user. In this case, all we can do is skip.
+                    try:
+                        # This atomic block is here to prevent a failure that is best described by
+                        # this stack overflow: https://stackoverflow.com/questions/21458387
+                        with transaction.atomic():
+                            getattr(new_user, name).add(x)
+                    except IntegrityError:
+                        continue
+
+        return old_user

@@ -21,6 +21,51 @@ class FakeBackend:
         return ["username", "email"]
 
 
+def migrate_from_existing_authenticator(uid, alt_uid, authenticator: Authenticator, preferred_username=None):
+    uid_filter = [
+        uid,
+    ]
+    if alt_uid:
+        uid_filter = [uid, alt_uid]
+
+    if authenticator.auto_migrate_users_from.filter(type__endswith="saml").exists():
+        # SAML puts prepends all the UIDs with IdP. Adding this to the search criteria will
+        # allow us to find SAML accounts that match the UID.
+        uid_filter.append("IdP:" + uid)
+
+    migrate_users = list(
+        AuthenticatorUser.objects.filter(
+            uid__in=uid_filter,
+            provider__auto_migrate_users_to=authenticator.pk,
+        ).order_by("provider__order")
+    )
+
+    if len(migrate_users) == 0:
+        return
+
+    try:
+        main_user = AuthenticatorUser.objects.get(uid=uid, provider=authenticator).user
+    except AuthenticatorUser.DoesNotExist:
+        main_user = migrate_users[0].user
+
+    for migrate_user in migrate_users:
+        provider = migrate_user.provider
+        from_authenticator = get_authenticator_class(provider.type)(database_instance=provider)
+        old_user = from_authenticator.move_authenticator_user_to(main_user, migrate_user)
+        if old_user and not old_user.authenticator_users.exists():
+            old_user.delete()
+
+    # Now that we've potentially cleaned up any old user accounts, lets see if we have we can
+    # give the user their preferred_username as their username
+
+    if preferred_username:
+        if main_user.username != preferred_username and not get_user_model().objects.filter(username=preferred_username).exists():
+            main_user.username = preferred_username
+            main_user.save()
+
+    return main_user.username
+
+
 def get_local_username(user_details: dict) -> str:
     """
     Converts the username provided by the backend to one that doesn't conflict with users
@@ -41,16 +86,29 @@ def check_system_username(uid: str) -> None:
         raise AuthException(_('System user is not allowed to log in from external authentication sources.'))
 
 
-def determine_username_from_uid_social(**kwargs: dict) -> dict:
-    uid = kwargs.get('details', {}).get('username', None)
-    if not uid:
+def determine_username_from_uid_social(**kwargs) -> dict:
+    selected_username = kwargs.get('details', {}).get('username', None)
+    if not selected_username:
         raise AuthException(_('Unable to get associated username from: %(details)s') % {'details': kwargs.get("details", None)})
 
     authenticator = kwargs.get('backend')
     if not authenticator:
         raise AuthException(_('Unable to get backend from kwargs'))
 
-    return {"username": determine_username_from_uid(uid, authenticator.database_instance)}
+    alt_uid = None
+
+    # TODO: add this to keycloak, oidc and SAML
+    if hasattr(authenticator, "get_alternative_uid"):
+        alt_uid = authenticator.get_alternative_uid(**kwargs)
+
+    if migrated_username := migrate_from_existing_authenticator(
+        uid=kwargs.get("uid"), alt_uid=alt_uid, authenticator=authenticator.database_instance, preferred_username=selected_username
+    ):
+        username = migrated_username
+    else:
+        username = determine_username_from_uid(selected_username, authenticator.database_instance)
+
+    return {"username": username}
 
 
 def determine_username_from_uid(uid: str = None, authenticator: Authenticator = None, alt_uid=None) -> str:
@@ -75,43 +133,10 @@ def determine_username_from_uid(uid: str = None, authenticator: Authenticator = 
 
     # If we have an AuthenticatorUser with the exact uid and provider than we have a match
     exact_match = AuthenticatorUser.objects.filter(uid=uid, provider=authenticator)
-    existing_username = None
     if exact_match.count() == 1:
         new_username = exact_match[0].user.username
         logger.info(f"Authenticator {authenticator.name} already authenticated {uid} as {new_username}")
-        existing_username = new_username
-
-    # TODO: add alternative UID lookup for keycloak
-    uid_filter = [
-        uid,
-    ]
-    if alt_uid:
-        uid_filter = [uid, alt_uid]
-
-    migrate_users = list(
-        AuthenticatorUser.objects.filter(
-            uid__in=uid_filter,
-            provider__auto_migrate_users_to=authenticator.pk,
-        ).order_by("provider__order")
-    )
-
-    if migrate_users:
-        if existing_username:
-            main_user = get_user_model().objects.get(username=existing_username)
-        else:
-            main_user = migrate_users[0].user
-
-        for migrate_user in migrate_users:
-            provider = migrate_user.provider
-            from_authenticator = get_authenticator_class(provider.type)(database_instance=provider)
-            from_authenticator.move_authenticator_user_to(main_user, migrate_user)
-
-        # TODO rename the account to the UID if old accounts were removed.
-        return main_user.username
-
-    else:
-        if existing_username:
-            return existing_username
+        return new_username
 
     # We didn't get an exact match. If any other provider is using this uid our id will be uid<hash>
     if AuthenticatorUser.objects.filter(Q(uid=uid) | Q(user__username=uid)).count() != 0:
@@ -150,7 +175,11 @@ def get_or_create_authenticator_user(
         logger.warning(f"AuthException: {e}")
         raise
 
-    username = determine_username_from_uid(uid, authenticator)
+    if migrated_username := migrate_from_existing_authenticator(uid=uid, alt_uid=None, authenticator=authenticator, preferred_username=uid):
+        username = migrated_username
+    else:
+        username = determine_username_from_uid(uid, authenticator)
+
     created = None
     try:
         # First see if we have an auth user and if so update it
