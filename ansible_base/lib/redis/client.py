@@ -167,7 +167,7 @@ class RedisClientGetter:
         elif self.mode == 'standalone':
             for setting in _INVALID_STANDALONE_OPTIONS:
                 if setting in self.connection_settings:
-                    logger.info("Removing setting {setting} from connection settings because its invalid for standalone mode")
+                    logger.info(f"Removing setting {setting} from connection settings because its invalid for standalone mode")
                     self.connection_settings.pop(setting)
             logger.debug("Connecting to Redis standalone")
             return DABRedis(**self.connection_settings)
