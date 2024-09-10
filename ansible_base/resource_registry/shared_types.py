@@ -46,7 +46,6 @@ class UserType(SharedResourceTypeSerializer):
     email = serializers.EmailField(required=False, allow_blank=True)
     first_name = serializers.CharField(required=False, allow_blank=True)
     last_name = serializers.CharField(required=False, allow_blank=True)
-    is_superuser = serializers.BooleanField(default=False)
     # Commenting this out for now because Galaxy NG doesn't have a system auditor flag
     # is_platform_auditor = serializers.BooleanField()
 

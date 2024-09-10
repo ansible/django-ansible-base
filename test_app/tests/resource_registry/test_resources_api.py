@@ -154,7 +154,7 @@ def test_resource_partial_update(admin_api_client, user):
 
     url = get_relative_url("resource-detail", kwargs={"ansible_id": ansible_id})
 
-    resp = admin_api_client.patch(url, {"resource_data": {"first_name": "foo", "is_superuser": True}}, format="json")
+    resp = admin_api_client.patch(url, {"resource_data": {"first_name": "foo"}}, format="json")
     assert resp.status_code == 200
 
     resource_data = resp.data["resource_data"]
@@ -162,8 +162,6 @@ def test_resource_partial_update(admin_api_client, user):
     assert resource_data["username"] == user.username
     assert resource_data["first_name"] == "foo"
     assert resource_data["last_name"] == ""
-    assert resource_data["is_superuser"] is True
-
     resp = admin_api_client.patch(url, {"resource_data": {"last_name": "bar"}}, format="json")
     assert resp.status_code == 200
 
@@ -171,7 +169,6 @@ def test_resource_partial_update(admin_api_client, user):
     assert resource_data["username"] == user.username
     assert resource_data["first_name"] == "foo"
     assert resource_data["last_name"] == "bar"
-    assert resource_data["is_superuser"] is True
 
 
 @pytest.mark.parametrize(
@@ -184,16 +181,16 @@ def test_resource_partial_update(admin_api_client, user):
             "ansible_id": "a0057c59-776d-48f8-97f1-8f8033e68d93",
             "service_id": "ae417fc0-885c-49cb-b052-62cfc8e178b4",
             "resource_type": "shared.user",
-            "resource_data": {"username": "MrFoo", "first_name": "Mr", "last_name": "Foo", "email": "mrfoo@redhat.com", "is_superuser": True},
+            "resource_data": {"username": "MrFoo", "first_name": "Mr", "last_name": "Foo", "email": "mrfoo@redhat.com"},
         },
         {
             "resource_type": "shared.user",
-            "resource_data": {"username": "Bobby", "last_name": "Bobberton", "email": "bobby@redhat.com", "is_superuser": False},
+            "resource_data": {"username": "Bobby", "last_name": "Bobberton", "email": "bobby@redhat.com"},
         },
         {
             "service_id": "79f8c69e-a974-4bab-8e0f-e9d4bd4efe81",
             "resource_type": "shared.user",
-            "resource_data": {"username": "Bobby", "last_name": "Bobberton", "email": "bobby@redhat.com", "is_superuser": False},
+            "resource_data": {"username": "Bobby", "last_name": "Bobberton", "email": "bobby@redhat.com"},
         },
     ],
 )
