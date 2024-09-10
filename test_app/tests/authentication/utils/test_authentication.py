@@ -194,5 +194,6 @@ class TestAuthenticationUtilsAuthentication:
         response = authentication.determine_username_from_uid_social(
             details={'username': 'Bob'},
             backend=get_authenticator_class(ldap_authenticator.type)(database_instance=ldap_authenticator),
+            uid="Bob",
         )
         assert response == {'username': 'Bob'}

@@ -37,7 +37,7 @@ def migrate_from_existing_authenticator(
     # allow us to find SAML accounts that match the UID.
     uid_filter = [uid, "IdP:" + uid]
     if alt_uid:
-        uid_filter = [uid, alt_uid]
+        uid_filter.append(alt_uid)
 
     migrate_users = list(
         AuthenticatorUser.objects.filter(
