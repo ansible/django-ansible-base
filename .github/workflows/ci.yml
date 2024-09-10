@@ -60,7 +60,7 @@ jobs:
         run: sed -i '2i <!-- PR ${{ github.event.number }} -->' coverage.xml
 
       - name: Upload coverage as artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         if: matrix.tests.sonar
         with:
           name: coverage
