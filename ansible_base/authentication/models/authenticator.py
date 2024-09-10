@@ -37,8 +37,9 @@ class Authenticator(UniqueNamedCommonModel):
         "Authenticator",
         help_text=(
             "Automatically move users from this authenticator to the target authenticator when a matching user logs in via the target authenticator. "
-            "For this to work, the field used for the user ID on both authenticators needs match up. This should only be used when migrating users "
-            "between two authentication mechanisms that share the same user database (such as when both IDPs share the same LDAP user directory)."
+            "For this to work, the field used for the user ID on both authenticators needs to have the same value. This should only be used when "
+            "migrating users between two authentication mechanisms that share the same user database (such as when both IDPs share the same "
+            "LDAP user directory)."
         ),
         related_name="auto_migrate_users_from",
         null=True,

@@ -96,7 +96,13 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
 
         if auto_migrate := data.get('auto_migrate_users_to'):
             if auto_migrate.auto_migrate_users_to is not None:
-                raise ValidationError({"auto_migrate_users_to": _("The authenticator you have picked is already configured to auto migrate users.")})
+                raise ValidationError(
+                    {
+                        "auto_migrate_users_to": _(
+                            "The authenticator you have picked is already configured to auto migrate users from a different authenticator."
+                        )
+                    }
+                )
 
         try:
             invalid_encrypted_keys = {}

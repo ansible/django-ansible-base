@@ -21,17 +21,23 @@ class FakeBackend:
         return ["username", "email"]
 
 
-def migrate_from_existing_authenticator(uid, alt_uid, authenticator: Authenticator, preferred_username=None):
-    uid_filter = [
-        uid,
-    ]
+def migrate_from_existing_authenticator(
+    uid: str, alt_uid: Optional[str], authenticator: Authenticator, preferred_username: Optional[str] = None
+) -> Optional[str]:
+    """
+    uid: the users uid.
+    alt_uid: an optional alternative uid to use for looking up other accounts.
+    authenticator: the authenticator that the user is currently authenticating with.
+    preferred_username: the username that the authenticator wants to use for the user.
+
+    Returns the username of the django account to user for the authenticated user, or None if no match was found.
+    """
+
+    # SAML puts prepends all the UIDs with IdP. Adding this to the search criteria will
+    # allow us to find SAML accounts that match the UID.
+    uid_filter = [uid, "IdP:" + uid]
     if alt_uid:
         uid_filter = [uid, alt_uid]
-
-    if authenticator.auto_migrate_users_from.filter(type__endswith="saml").exists():
-        # SAML puts prepends all the UIDs with IdP. Adding this to the search criteria will
-        # allow us to find SAML accounts that match the UID.
-        uid_filter.append("IdP:" + uid)
 
     migrate_users = list(
         AuthenticatorUser.objects.filter(
@@ -55,7 +61,7 @@ def migrate_from_existing_authenticator(uid, alt_uid, authenticator: Authenticat
         if old_user and not old_user.authenticator_users.exists():
             old_user.delete()
 
-    # Now that we've potentially cleaned up any old user accounts, lets see if we have we can
+    # Now that we've potentially cleaned up any old user accounts, lets see if we can
     # give the user their preferred_username as their username
 
     if preferred_username:
@@ -95,11 +101,7 @@ def determine_username_from_uid_social(**kwargs) -> dict:
     if not authenticator:
         raise AuthException(_('Unable to get backend from kwargs'))
 
-    alt_uid = None
-
-    # TODO: add this to keycloak, oidc and SAML
-    if hasattr(authenticator, "get_alternative_uid"):
-        alt_uid = authenticator.get_alternative_uid(**kwargs)
+    alt_uid = authenticator.get_alternative_uid(**kwargs)
 
     if migrated_username := migrate_from_existing_authenticator(
         uid=kwargs.get("uid"), alt_uid=alt_uid, authenticator=authenticator.database_instance, preferred_username=selected_username
@@ -111,7 +113,7 @@ def determine_username_from_uid_social(**kwargs) -> dict:
     return {"username": username}
 
 
-def determine_username_from_uid(uid: str = None, authenticator: Authenticator = None, alt_uid=None) -> str:
+def determine_username_from_uid(uid: str = None, authenticator: Authenticator = None, alt_uid: Optional[str] = None) -> str:
     """
     Determine what the username for the User object will be from the given uid and authenticator
     This will take uid like "bella" and search for an AuthenticatorUser and return:

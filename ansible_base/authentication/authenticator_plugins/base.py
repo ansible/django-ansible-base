@@ -173,7 +173,18 @@ class AbstractAuthenticatorPlugin:
                         # this stack overflow: https://stackoverflow.com/questions/21458387
                         with transaction.atomic():
                             getattr(new_user, name).add(x)
-                    except IntegrityError:
+                    except IntegrityError as e:
+                        logger.warning(f"Could not add {name} to {new_user.username}. Error: {e}")
                         continue
 
         return old_user
+
+    def get_alternative_uid(self, **kwargs):
+        """
+        This method can be used to provide an alternative UID for the user in case we need to match
+        UIDs across different authenticators (as is the case for auto_migrate_users_to). It receives
+        the kwargs from the social auth pipeline (https://python-social-auth.readthedocs.io/en/latest/pipeline.html).
+
+        For a good example of this method in action, check out the keycloak authenticator.
+        """
+        return None
