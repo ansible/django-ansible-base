@@ -92,7 +92,7 @@ MIDDLEWARE = [
 # set some vanilla social auth plugins so that we can test the social_auth based
 # users in the resource registry
 AUTHENTICATION_BACKENDS = [
-    'ansible_base.lib.middleware.prefixed_user_auth.PrefixedUserAuthBackend',
+    'ansible_base.lib.backends.prefixed_user_auth.PrefixedUserAuthBackend',
     'social_core.backends.github.GithubOAuth2',
 ]
 
