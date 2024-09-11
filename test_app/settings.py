@@ -92,6 +92,7 @@ MIDDLEWARE = [
 # set some vanilla social auth plugins so that we can test the social_auth based
 # users in the resource registry
 AUTHENTICATION_BACKENDS = [
+    'ansible_base.lib.middleware.prefixed_user_auth.PrefixedUserAuthBackend',
     'social_core.backends.github.GithubOAuth2',
 ]
 
@@ -197,3 +198,5 @@ RESOURCE_SERVER = {
 }
 RESOURCE_SERVICE_PATH = "/api/v1/service-index/"
 RESOURCE_SERVER_SYNC_ENABLED = False
+
+RENAMED_USERNAME_PREFIX = "dab:"
