@@ -146,7 +146,12 @@ class AbstractAuthenticatorPlugin:
             "authenticator_users",
             "groups",
             "has_roles",
+            # We're ignoring role assignments for two reasons: 1. this isn't safe to copy right now, as it
+            # could break the caching layer, 2. roles are intented to come from the authenticator via an
+            # authenticator map, so when a user is move to a new authenticator, they're old roles should
+            # be removed.
             "role_assignments",
+            "logentry",
         )
 
         old_user = old_authenticator_user.user

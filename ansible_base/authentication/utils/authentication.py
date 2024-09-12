@@ -60,6 +60,8 @@ def migrate_from_existing_authenticator(
         old_user = from_authenticator.move_authenticator_user_to(main_user, migrate_user)
         if old_user and not old_user.authenticator_users.exists():
             old_user.delete()
+        elif old_user:
+            logger.warning(f"{old_user.username} is still managed by other authenticators and cannot be deleted.")
 
     # Now that we've potentially cleaned up any old user accounts, lets see if we can
     # give the user their preferred_username as their username
