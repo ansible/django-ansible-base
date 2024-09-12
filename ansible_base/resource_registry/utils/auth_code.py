@@ -28,10 +28,10 @@ def get_user_auth_code(user, social_user=None, oidc_alt_key=None):
         "sso_backend": None,
         "sso_server": None,
         "oidc_alt_key": oidc_alt_key,
+        "auth_backend": getattr(user, "backend", None),
     }
 
     if social_user is not None:
-
         if isinstance(social_user.provider, str):
             provider = social_user.provider
         else:
