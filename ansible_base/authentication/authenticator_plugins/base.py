@@ -1,5 +1,6 @@
 import logging
 
+from django.db import IntegrityError, transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from rest_framework.fields import empty
@@ -134,3 +135,61 @@ class AbstractAuthenticatorPlugin:
 
     def validate(self, serializer, data):
         return data
+
+    def move_authenticator_user_to(self, new_user, old_authenticator_user):
+        """
+        new_user: django User instance. User that we're moving this account to.
+        old_authenticator_user: AuthenticatorUser instance from this authenticator that is being removed.
+        """
+        exclude_fields = (
+            "social_auth",
+            "authenticator_users",
+            "groups",
+            "has_roles",
+            # We're ignoring role assignments for two reasons: 1. this isn't safe to copy right now, as it
+            # could break the caching layer, 2. roles are intented to come from the authenticator via an
+            # authenticator map, so when a user is move to a new authenticator, they're old roles should
+            # be removed.
+            "role_assignments",
+            "logentry",
+        )
+
+        old_user = old_authenticator_user.user
+
+        # Delete the old authenticator user
+        old_authenticator_user.delete()
+
+        if new_user.pk == old_user.pk:
+            return
+
+        # Copy all of the relationships from the old user to the new one
+        for field in new_user._meta.get_fields():
+            if field.many_to_many is True or field.one_to_many is True:
+                name = field.name
+                if name in exclude_fields:
+                    continue
+                if not hasattr(old_user, name) or not hasattr(new_user, name):
+                    continue
+                for x in getattr(old_user, name).all():
+                    # The only case where this might fail is if the relationship has a uniqueness
+                    # contraint on the user. In this case, all we can do is skip.
+                    try:
+                        # This atomic block is here to prevent a failure that is best described by
+                        # this stack overflow: https://stackoverflow.com/questions/21458387
+                        with transaction.atomic():
+                            getattr(new_user, name).add(x)
+                    except IntegrityError as e:
+                        logger.warning(f"Could not add {name} to {new_user.username}. Error: {e}")
+                        continue
+
+        return old_user
+
+    def get_alternative_uid(self, **kwargs):
+        """
+        This method can be used to provide an alternative UID for the user in case we need to match
+        UIDs across different authenticators (as is the case for auto_migrate_users_to). It receives
+        the kwargs from the social auth pipeline (https://python-social-auth.readthedocs.io/en/latest/pipeline.html).
+
+        For a good example of this method in action, check out the keycloak authenticator.
+        """
+        return None

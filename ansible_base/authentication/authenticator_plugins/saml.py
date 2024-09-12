@@ -301,6 +301,13 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAML
     def get_user_groups(self, extra_groups=[]):
         return extra_groups
 
+    def get_alternative_uid(self, **kwargs):
+        if uid := kwargs.get("uid", None):
+            if ":" in uid:
+                return uid.split(":", maxsplit=1)[1]
+
+        return None
+
 
 class SAMLMetadataView(View):
     def get(self, request, pk=None, format=None):

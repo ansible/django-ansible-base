@@ -58,3 +58,6 @@ class AuthenticatorPlugin(SocialAuthMixin, KeycloakOAuth2, AbstractAuthenticator
 
     def get_user_groups(self, extra_groups=[]):
         return extra_groups
+
+    def get_alternative_uid(self, **kwargs):
+        return kwargs.get("response", {}).get("sub", None)

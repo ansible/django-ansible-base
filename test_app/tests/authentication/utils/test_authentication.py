@@ -2,6 +2,7 @@ import pytest
 from django.conf import settings
 from social_core.exceptions import AuthException
 
+from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_class
 from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.authentication.utils import authentication
 from ansible_base.lib.utils.response import get_relative_url
@@ -190,5 +191,9 @@ class TestAuthenticationUtilsAuthentication:
                 authentication.determine_username_from_uid_social(**input)
 
     def test_determine_username_from_uid_social_happy_path(self, ldap_authenticator):
-        response = authentication.determine_username_from_uid_social(details={'username': 'Bob'}, backend=ldap_authenticator)
+        response = authentication.determine_username_from_uid_social(
+            details={'username': 'Bob'},
+            backend=get_authenticator_class(ldap_authenticator.type)(database_instance=ldap_authenticator),
+            uid="Bob",
+        )
         assert response == {'username': 'Bob'}
