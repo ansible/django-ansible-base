@@ -137,7 +137,7 @@ six==1.16.0
     #   isodate
     #   pyrad
     #   tacacs-plus
-social-auth-app-django==5.4.0
+social-auth-app-django==5.4.1
     # via -r requirements/requirements_authentication.in
 social-auth-core==4.5.3
     # via social-auth-app-django
