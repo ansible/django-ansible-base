@@ -2,11 +2,17 @@ from ansible_base.authentication.authenticator_plugins.utils import get_authenti
 from ansible_base.lib.utils.response import get_relative_url
 
 
-def test_plugin_authenticator_view(admin_api_client):
+def test_plugin_authenticator_view(admin_api_client, settings):
     """
     Test the authenticator plugin view. It should show all available plugins
     (which exist on the system as python files, not database entries).
     """
+    fixture_module = "test_app.tests.fixtures.authenticator_plugins"
+    settings.ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES = [
+        "ansible_base.authentication.authenticator_plugins",
+        fixture_module,
+    ]
+
     url = get_relative_url("authenticator_plugin-view")
     response = admin_api_client.get(url)
     assert response.status_code == 200
@@ -15,6 +21,9 @@ def test_plugin_authenticator_view(admin_api_client):
     auth_types = [x['type'] for x in response.data['authenticators']]
     assert 'ansible_base.authentication.authenticator_plugins.ldap' in auth_types
     assert 'ansible_base.authentication.authenticator_plugins.local' in auth_types
+
+    # ones defined with type == 'internal' are not shown on this endpoint
+    assert f"{fixture_module}.definitely_not_public" not in auth_types
 
 
 def test_plugin_authenticator_view_import_error(admin_api_client, shut_up_logging, settings):

@@ -12,6 +12,9 @@ class AuthenticatorPluginView(AnsibleBaseDjangoAppApiView):
         for p in plugins:
             try:
                 klass = get_authenticator_class(p)
+                if getattr(klass, "type", "") == "internal":
+                    # Allow for 'hiding' some plugins from this list so the UI doesn't show them as a choice.
+                    continue
                 config = klass.configuration_class()
                 config_schema = config.get_configuration_schema()
                 resp['authenticators'].append(

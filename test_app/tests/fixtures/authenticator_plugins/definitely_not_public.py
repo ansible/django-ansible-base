@@ -4,12 +4,12 @@ from django.contrib.auth import get_user_model
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin
 
-logger = logging.getLogger('test_app.tests.fixtures.authenticator_plugins.custom')
+logger = logging.getLogger('test_app.tests.fixtures.authenticator_plugins.definitely_not_public')
 
 
 class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
     configuration_encrypted_fields = []
-    type = "custom"
+    type = "internal"
     category = "password"
 
     def __init__(self, database_instance=None, *args, **kwargs):
