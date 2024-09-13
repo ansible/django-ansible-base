@@ -1,4 +1,4 @@
-social-auth-app-django
+social-auth-app-django==5.4.1
 tabulate
 
 # These should eventually be split out when the authentications move into their own repo
