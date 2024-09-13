@@ -21,14 +21,14 @@ For this, django-ansible-base will call out to `validate_role_assignment` method
 
 The signature of this callback is
 
-`validate_role_assignment(self, actor, role_definition)`
+`validate_role_assignment(self, actor, role_definition, **kwargs)`
 
 This method is reponsible for raising the appropriate exception if necessary, for example,
 
 ```python
 from rest_framework.exceptions import ValidationError
 class MyDjangoModel:
-    def validate_role_assignment(self, actor, role_definition):
+    def validate_role_assignment(self, actor, role_definition, **kwargs):
         raise ValidationError({'detail': 'Role assignment not allowed.'})
 ```
 
