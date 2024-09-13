@@ -182,7 +182,7 @@ class Inventory(models.Model):
     def summary_fields(self):
         return {"id": self.id, "name": self.name}
 
-    def validate_role_assignment(self, actor, role_definition):
+    def validate_role_assignment(self, actor, role_definition, **kwargs):
         if isinstance(actor, User):
             name = actor.username
         if isinstance(actor, Team):
