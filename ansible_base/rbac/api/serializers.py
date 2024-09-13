@@ -256,7 +256,7 @@ class BaseAssignmentSerializer(CommonModelSerializer):
         # the callback should raise DRF exceptions directly if
         # necessary
         if getattr(obj, 'validate_role_assignment', None):
-            obj.validate_role_assignment(actor, rd)
+            obj.validate_role_assignment(actor, rd, requesting_user=requesting_user)
 
         # Return a 400 if the role is not managed locally
         check_locally_managed(rd)
