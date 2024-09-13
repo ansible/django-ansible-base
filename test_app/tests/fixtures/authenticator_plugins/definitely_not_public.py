@@ -9,8 +9,9 @@ logger = logging.getLogger('test_app.tests.fixtures.authenticator_plugins.defini
 
 class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
     configuration_encrypted_fields = []
-    type = "internal"
+    type = "definitely_not_public"
     category = "password"
+    internal = True
 
     def __init__(self, database_instance=None, *args, **kwargs):
         super().__init__(database_instance, *args, **kwargs)
