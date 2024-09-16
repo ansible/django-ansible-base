@@ -2,7 +2,6 @@ from uuid import uuid4
 
 
 from ansible_base.lib.utils.response import get_relative_url
-from ansible_base.resource_registry.models import ResourceType
 
 
 def test_validate_local_user(unauthenticated_api_client, admin_user, local_authenticator, settings_override_mutable, settings):
