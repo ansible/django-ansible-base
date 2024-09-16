@@ -131,7 +131,15 @@ class ResourceTypeViewSet(
         if not resource_type.serializer_class:  # pragma: no cover
             return HttpResponseNotFound()
 
-        resources = Resource.objects.filter(content_type__resource_type=resource_type).prefetch_related("content_object")
+        if 'service_id' in request.query_params:
+            list_service_id = request.query_params['service_id']
+        else:
+            list_service_id = service_id()
+
+        resources = Resource.objects.filter(
+            content_type__resource_type=resource_type,
+            service_id=list_service_id
+        ).prefetch_related("content_object")
 
         if name == "shared.user" and (system_user := getattr(settings, "SYSTEM_USERNAME", None)):
             resources = resources.exclude(name=system_user)
