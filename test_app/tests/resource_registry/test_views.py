@@ -35,10 +35,10 @@ def get_users_manifest(client, data=None, expect=200):
     return '\n'.join([str(line) for line in r])
 
 
-def test_resource_type_manifest_default(admin_api_client, user):
+def test_resource_type_manifest_default(admin_api_client, admin_user, user):
     r_text = get_users_manifest(admin_api_client)
     assert str(user.resource.ansible_id) in r_text
-    assert str(user.resource.ansible_id) in r_text
+    assert str(admin_user.resource.ansible_id) in r_text
 
 
 def test_resource_manifest_non_default_service_id(admin_api_client, admin_user, user):
