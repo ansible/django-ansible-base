@@ -1,6 +1,5 @@
 from uuid import uuid4
 
-
 from ansible_base.lib.utils.response import get_relative_url
 
 
