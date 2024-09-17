@@ -132,10 +132,10 @@ class ResourceTypeViewSet(
             return HttpResponseNotFound()
 
         if 'service_id' in request.query_params:
-            if request.query_params['service_id']:
-                service_filter = {'service_id': request.query_params['service_id']}
-            else:
+            if request.query_params['service_id'] == 'all':
                 service_filter = {}
+            else:
+                service_filter = {'service_id': request.query_params['service_id']}
         else:
             service_filter = {'service_id': service_id()}
 

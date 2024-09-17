@@ -64,6 +64,6 @@ def test_resource_manifest_no_service_id_filter(admin_api_client, admin_user, us
     user.resource.service_id = str(uuid4())
     user.resource.save(update_fields=['service_id'])
 
-    r_text = get_users_manifest(admin_api_client, data={'service_id': ''}, expect=200)
+    r_text = get_users_manifest(admin_api_client, data={'service_id': 'all'}, expect=200)
     assert str(user.resource.ansible_id) in r_text
     assert str(admin_user.resource.ansible_id) in r_text
