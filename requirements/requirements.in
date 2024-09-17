@@ -3,7 +3,7 @@
 # if you are add a new feature which requires dependencies they should be in a separate requirements_<feature>.in file
 #
 cryptography
-Django>=4.2.15,<4.3.0 # pinned to version productization already has available
+Django>=4.2.16,<4.3.0 # CVE-2024-45230
 djangorestframework
 django-crum
 django-split-settings
