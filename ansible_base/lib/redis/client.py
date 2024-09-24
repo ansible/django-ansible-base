@@ -1,7 +1,7 @@
 import copy
 import logging
 import os
-from typing import Dict, Union
+from typing import Any, Awaitable, Dict, Optional, Union
 from urllib.parse import parse_qs, urlparse
 
 from django.core.exceptions import ImproperlyConfigured
@@ -9,7 +9,7 @@ from django.utils.translation import gettext as _
 from django_redis.client import DefaultClient
 from redis import Redis
 from redis.cluster import ClusterNode, RedisCluster
-from redis.exceptions import RedisClusterException
+from redis.exceptions import NoPermissionError, RedisClusterException
 
 from ansible_base.lib.constants import STATUS_DEGRADED, STATUS_FAILED, STATUS_GOOD
 
@@ -20,11 +20,48 @@ _REDIS_CLUSTER_OK_STATUS = 'ok'
 
 _INVALID_STANDALONE_OPTIONS = ['cluster_error_retry_attempts']
 
+# This will eventually be in the Redis package under redis.typing later
+ResponseT = Union[Awaitable, Any]
+
+
+class DABRedisRespectACLFlushMixin:
+    """
+    FLUSHDB is called when we call django.cache.clear()
+
+    FLUSHDB does NOT respect Redis ACL on keys. It flushes all keys in a database.
+    You think your keys are protected because the user you are running FLUSHDB as
+    has write-only access to keys with the pattern gateway* or even read-only access
+    ... WRONG, you aren't safe!
+
+    And if you are thinking of using Redis' command re-write feature to sweep this
+    problem under the rug then god help the developer or support person that comes after you.
+
+    At some point in the future we may also want to override flushall as well
+    """
+
+    def flushdb(self, asynchronous: Optional[bool] = None, **kwargs) -> ResponseT:
+        if asynchronous is not None:
+            logger.warning("DABRedis clients implement an ACL friendly FLUSHDB which can not be async")
+
+        if self.__class__ == DABRedisCluster:
+            all_keys = self.keys("*", target_nodes=self.ALL_NODES)
+        elif self.__class__ == DABRedis:
+            all_keys = self.keys("*")
+        else:
+            raise ImproperlyConfigured(f"Got an inappropriate type of client {self.__class__}")
+
+        if all_keys:
+            # Only attempt to delete keys if we got some otherwise we will get an exception from the delete function
+            try:
+                self.delete(*all_keys)
+            except NoPermissionError:
+                pass
+
 
 # We are going to build our own cluster class to override the mget function
 # In a redis cluster, keys might not be in the same slot and this will throw off mget.
 # Instead, we are going to try and use mget and then, if we get the slot error, we will try the mget_nonatomic to make it work
-class DABRedisCluster(RedisCluster):
+class DABRedisCluster(DABRedisRespectACLFlushMixin, RedisCluster):
     mode = 'cluster'
 
     def mget(self, *args, **kwargs):
@@ -36,7 +73,7 @@ class DABRedisCluster(RedisCluster):
             raise
 
 
-class DABRedis(Redis):
+class DABRedis(DABRedisRespectACLFlushMixin, Redis):
     mode = 'standalone'
 
 
@@ -117,24 +154,32 @@ class RedisClientGetter:
         try:
             if not isinstance(self.redis_hosts, str):
                 logger.error(f"Specified redis_hosts is not a string, got: {self.redis_hosts}")
+                # Since we didn't get a string we can't test any further, raise an exception here
                 raise ValueError()
 
+            had_host_errors = False
             host_ports = self.redis_hosts.split(',')
             for host_port in host_ports:
                 try:
                     node, port_string = host_port.split(':')
                 except ValueError:
                     logger.error(f"Specified cluster_host {host_port} is not valid; it needs to be in the format <host>:<port>")
-                    raise
+                    had_host_errors = True
+                    continue
 
                 # Make sure we have an int for the port
                 try:
                     port = int(port_string)
                 except ValueError:
                     logger.error(f'Specified port on {host_port} is not an int')
-                    raise
+                    had_host_errors = True
+                    continue
 
                 self.connection_settings['startup_nodes'].append(ClusterNode(node, port))
+
+            if had_host_errors:
+                raise ValueError()
+
         except ValueError:
             raise ImproperlyConfigured(_('Unable to parse redis_hosts, see logs for more details'))
 
