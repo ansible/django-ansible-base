@@ -12,7 +12,9 @@ from ansible_base.lib.constants import STATUS_DEGRADED, STATUS_FAILED, STATUS_GO
 from ansible_base.lib.redis.client import (
     _DEFAULT_STATUS_TIMEOUT_SEC,
     _REDIS_CLUSTER_OK_STATUS,
+    DABRedis,
     DABRedisCluster,
+    DABRedisRespectACLFlushMixin,
     RedisClient,
     determine_cluster_node_status,
     get_redis_client,
@@ -396,3 +398,73 @@ def test_redis_standalone_removes_cluster_settings():
         rm.assert_called_once
         assert 'host' in rm.call_args.kwargs
         assert 'cluster_error_retry_attempts' not in rm.call_args.kwargs
+
+
+@pytest.mark.parametrize(
+    "the_class",
+    [
+        DABRedis,
+        DABRedisCluster,
+    ],
+)
+def test_redis_clients_have_flushdb_mixin(the_class):
+    assert issubclass(the_class, DABRedisRespectACLFlushMixin)
+
+
+def test_flushdb_warns_about_async(expected_log):
+    args = {'mode': 'standalone'}
+    from ansible_base.lib.redis.client import RedisClientGetter
+
+    with mock.patch('redis.Redis.__init__', return_value=None):
+        client_getter = RedisClientGetter()
+        client = client_getter.get_client('rediss://localhost', **args)
+        client.keys = mock.MagicMock(return_value=[])
+        client.delete = mock.MagicMock(return_value=None)
+        with expected_log('ansible_base.lib.redis.client.logger', 'warning', "DABRedis clients implement an ACL friendly FLUSHDB which can not be async"):
+            client.flushdb(asynchronous=True)
+            # The delete should not be called in this case because keys returned nothing.
+            client.delete.assert_not_called()
+
+
+class notADABClient(DABRedisRespectACLFlushMixin, Redis):
+    pass
+
+
+def test_flushdb_not_a_dab_client():
+    with mock.patch('redis.Redis.__init__', return_value=None):
+        with pytest.raises(ImproperlyConfigured):
+            client = notADABClient('rediss://localhost')
+            client.flushdb()
+
+
+def test_ensure_flushdb_does_not_die_on_no_permission_exception():
+    args = {'mode': 'standalone'}
+    from redis.exceptions import NoPermissionError
+
+    from ansible_base.lib.redis.client import RedisClientGetter
+
+    with mock.patch('redis.Redis.__init__', return_value=None):
+        client_getter = RedisClientGetter()
+        client = client_getter.get_client('rediss://localhost', **args)
+        client.keys = mock.MagicMock(return_value=["key1"])
+        client.delete = mock.MagicMock(side_effect=NoPermissionError())
+        # This should just not raise if NoPermissionError is raised
+        client.flushdb()
+        # We had a key returned so the delete should have been called with it.
+        client.delete.assert_called()
+
+
+def test_redis_cluster_passes_target_nodes():
+    args = {'mode': 'cluster'}
+    from ansible_base.lib.redis.client import RedisClientGetter
+
+    with mock.patch('redis.RedisCluster.__init__', return_value=None):
+        client_getter = RedisClientGetter()
+        client = client_getter.get_client('rediss://localhost', **args)
+        client.keys = mock.MagicMock(return_value=[])
+        client.delete = mock.MagicMock(return_value=None)
+        # This should just not raise if NoPermissionError is raised
+        client.flushdb()
+        client.keys.assert_called_with("*", target_nodes=client.ALL_NODES)
+        # There were no keys specified so delete should not have been called.
+        client.delete.assert_not_called()
