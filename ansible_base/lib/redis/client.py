@@ -113,29 +113,30 @@ class RedisClientGetter:
         self.connection_settings.pop('port', None)
         self.connection_settings['startup_nodes'] = []
 
-        translated_generic_exception = ImproperlyConfigured(_('Unable to parse redis_hosts, see logs for more details'))
-
         # Make sure we have a string for redis_hosts
-        if not isinstance(self.redis_hosts, str):
-            logger.error(f"Specified redis_hosts is not a string, got: {self.redis_hosts}")
-            raise translated_generic_exception
+        try:
+            if not isinstance(self.redis_hosts, str):
+                logger.error(f"Specified redis_hosts is not a string, got: {self.redis_hosts}")
+                raise ValueError()
 
-        host_ports = self.redis_hosts.split(',')
-        for host_port in host_ports:
-            try:
-                node, port_string = host_port.split(':')
-            except ValueError:
-                logger.error(f"Specified cluster_host {host_port} is not valid; it needs to be in the format <host>:<port>")
-                raise translated_generic_exception
+            host_ports = self.redis_hosts.split(',')
+            for host_port in host_ports:
+                try:
+                    node, port_string = host_port.split(':')
+                except ValueError:
+                    logger.error(f"Specified cluster_host {host_port} is not valid; it needs to be in the format <host>:<port>")
+                    raise
 
-            # Make sure we have an int for the port
-            try:
-                port = int(port_string)
-            except ValueError:
-                logger.error(f'Specified port on {host_port} is not an int')
-                raise translated_generic_exception
+                # Make sure we have an int for the port
+                try:
+                    port = int(port_string)
+                except ValueError:
+                    logger.error(f'Specified port on {host_port} is not an int')
+                    raise
 
-            self.connection_settings['startup_nodes'].append(ClusterNode(node, port))
+                self.connection_settings['startup_nodes'].append(ClusterNode(node, port))
+        except ValueError:
+            raise ImproperlyConfigured(_('Unable to parse redis_hosts, see logs for more details'))
 
     def __init__(self, *args, **kwargs):
         self.url = ''
