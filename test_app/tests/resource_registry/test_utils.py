@@ -1,16 +1,17 @@
 import os
 import uuid
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from unittest import mock
 
 import pytest
 from crum import impersonate
 from django.contrib.auth.models import AnonymousUser
 from django.db import IntegrityError, connection
-from django.test.utils import CaptureQueriesContext
+from django.test.utils import CaptureQueriesContext, override_settings
 from rest_framework.exceptions import ValidationError
 
 from ansible_base.resource_registry import apps
+from ansible_base.resource_registry.models import Resource
 from ansible_base.resource_registry.signals.handlers import no_reverse_sync
 from ansible_base.resource_registry.utils.sync_to_resource_server import sync_to_resource_server
 from test_app.models import Organization
@@ -246,3 +247,69 @@ class TestReverseResourceSync:
             setattr(settings, key, value)
 
         assert apps._should_reverse_sync() == should_sync
+
+
+@pytest.mark.django_db
+class TestConflitingSyncSettings:
+    CONFLICT_SETTINGS = dict(
+        ALLOW_LOCAL_RESOURCE_MANAGEMENT=True,
+        RESOURCE_SERVER_SYNC_ENABLED=True,
+        RESOURCE_SERVER={'URL': 'https://foo.invalid', 'SECRET_KEY': 'abcdefghijklmnopqrstuvwxyz'},
+    )
+
+    @contextmanager
+    def apply_settings(self):
+        with override_settings(**self.CONFLICT_SETTINGS):
+            apps.connect_resource_signals(None)
+            yield
+            apps.disconnect_resource_signals(None)
+        apps.connect_resource_signals(None)
+
+    def mark_external(self, obj):
+        "Make object appears as if managed by another system"
+        if hasattr(obj, '_skip_reverse_resource_sync'):
+            delattr(obj, '_skip_reverse_resource_sync')
+        res = Resource.get_resource_for_object(obj)
+        res.service_id = uuid.uuid4()
+        res.save()
+
+    def test_block_org_save(self, organization):
+        with self.apply_settings():
+            organization.save()  # does not error
+            self.mark_external(organization)
+            with pytest.raises(ValidationError):
+                organization.name += 'foo'
+                organization.save()
+
+    def test_block_org_deletion(self, organization):
+        with self.apply_settings():
+            organization.save()  # create resource entry
+            self.mark_external(organization)
+            with pytest.raises(ValidationError):
+                organization.delete()
+
+    def test_change_non_synced_field(self, admin_user):
+        with self.apply_settings():
+            admin_user.save()  # create resource entry
+            self.mark_external(admin_user)
+            assert admin_user.is_superuser is True
+            admin_user.is_superuser = False
+            admin_user.save()  # does not error
+
+    def test_change_user_synced_field(self, admin_user):
+        with self.apply_settings():
+            admin_user.save()  # create resource entry
+            self.mark_external(admin_user)
+            with pytest.raises(ValidationError):
+                admin_user.username = 'some_other_username'
+                admin_user.save()
+
+    def test_create_shared_resource(self):
+        with self.apply_settings():
+            with pytest.raises(ValidationError):
+                Organization.objects.create(name='new org')
+
+    def test_create_allowed_no_sync(self):
+        with self.apply_settings():
+            with no_reverse_sync():
+                Organization.objects.create(name='new org')

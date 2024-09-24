@@ -55,6 +55,16 @@ def sync_to_resource_server(instance, action, ansible_id=None):
         logger.info(f"Skipping sync of resource {instance} because its service_id is local")
         return
 
+    # By this point we have passed the exit conditions
+    # If an edit requires a resource sync, but we intended to not allow local edits
+    # that has led to a contradiction, normally this is enforced by the service API
+    # but for direct ORM actions we throw an error as a last-resort safety measure
+    if not getattr(settings, "ALLOW_LOCAL_RESOURCE_MANAGEMENT"):
+        raise ValidationError(
+            "Configured to resource sync, which conflicts with ALLOW_LOCAL_RESOURCE_MANAGEMENT. "
+            "Try setting environment variable ANSIBLE_REVERSE_RESOURCE_SYNC to false."
+        )
+
     user_ansible_id = None
     user = get_current_user()
     if user:
