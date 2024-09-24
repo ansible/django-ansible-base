@@ -226,7 +226,10 @@ def get_dab_settings(
         dab_data['ORG_ADMINS_CAN_SEE_ALL_USERS'] = True
 
     if 'ansible_base.resource_registry' in installed_apps:
-        dab_data['RESOURCE_SERVER_SYNC_ENABLED'] = False
+        # Sync local changes to the resource server
+        # This will not do anything if RESOURCE_SERVER is not defined
+        dab_data['RESOURCE_SERVER_SYNC_ENABLED'] = True
+        # The API path on the resource server to use to update resources
         dab_data['RESOURCE_SERVICE_PATH'] = "/api/gateway/v1/service-index/"
 
         # Disable legacy SSO by default
