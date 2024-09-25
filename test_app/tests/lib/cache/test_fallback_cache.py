@@ -97,7 +97,10 @@ def test_fallback_cache():
     # Check until primary is back
     timeout = time.time() + 30
     while True:
-        if cache.get_active_cache() == PRIMARY_CACHE:
+        # Tell the cache to get a key, this should cause it to check the primary cache
+        cache.get("key")
+        active_cache = cache.get_active_cache()
+        if active_cache == PRIMARY_CACHE:
             break
         if time.time() > timeout:
             assert False
