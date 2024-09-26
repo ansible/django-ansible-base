@@ -18,7 +18,7 @@ authenticated_test_page = "authenticator-list"
 
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
 @mock.patch("ansible_base.authentication.authenticator_plugins.ldap.AuthenticatorPlugin.authenticate")
-def atest_ldap_auth_successful(authenticate, unauthenticated_api_client, ldap_authenticator, user):
+def test_ldap_auth_successful(authenticate, unauthenticated_api_client, ldap_authenticator, user):
     """
     Test that a successful LDAP authentication returns a 200 on the /me endpoint.
 
@@ -35,7 +35,7 @@ def atest_ldap_auth_successful(authenticate, unauthenticated_api_client, ldap_au
 
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
 @mock.patch("ansible_base.authentication.authenticator_plugins.ldap.AuthenticatorPlugin.authenticate", return_value=None)
-def atest_ldap_auth_failed(authenticate, unauthenticated_api_client, ldap_authenticator):
+def test_ldap_auth_failed(authenticate, unauthenticated_api_client, ldap_authenticator):
     """
     Test that a failed LDAP authentication returns a 401 on the /me endpoint.
     """
@@ -50,7 +50,7 @@ def atest_ldap_auth_failed(authenticate, unauthenticated_api_client, ldap_authen
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
 @mock.patch("ansible_base.authentication.authenticator_plugins.ldap.AuthenticatorPlugin.authenticate", return_value=None)
 @mock.patch("ansible_base.authentication.authenticator_plugins.ldap.config.LDAPSearch", side_effect=Exception("Something went wrong"))
-def atest_ldap_search_exception(
+def test_ldap_search_exception(
     LDAPSearch,
     authenticate,
     admin_api_client,
@@ -138,7 +138,7 @@ def atest_ldap_search_exception(
         ({"USER_DN_TEMPLATE": "cn=invalid,ou=users,dc=example,dc=org"}, {"USER_DN_TEMPLATE": 'DN must include "%(user)s"'}),
     ],
 )
-def atest_ldap_create_authenticator_error_handling(
+def test_ldap_create_authenticator_error_handling(
     admin_api_client,
     ldap_configuration,
     user,
@@ -179,7 +179,7 @@ def atest_ldap_create_authenticator_error_handling(
 
 
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
-def atest_ldap_backend_authenticate_encrypted_fields_update(admin_api_client, ldap_authenticator, shut_up_logging):
+def test_ldap_backend_authenticate_encrypted_fields_update(admin_api_client, ldap_authenticator, shut_up_logging):
     url = get_relative_url("authenticator-detail", kwargs={"pk": ldap_authenticator.pk})
     # BIND_PASSWORD is encrypted
     config = ldap_authenticator.configuration
@@ -202,7 +202,7 @@ def atest_ldap_backend_authenticate_encrypted_fields_update(admin_api_client, ld
 
 @pytest.mark.xfail(reason="https://issues.redhat.com/browse/AAP-17453")
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
-def atest_ldap_backend_validate_configuration_warn_specific_fields(
+def test_ldap_backend_validate_configuration_warn_specific_fields(
     shut_up_logging,  # TODO: Remove with xfail
     admin_api_client,
     ldap_authenticator,
@@ -232,7 +232,7 @@ def atest_ldap_backend_validate_configuration_warn_specific_fields(
         ({}, None),  # no extra settings, just show the "could not be authenticated" message
     ],
 )
-def atest_ldap_backend_authenticate_invalid_user(
+def test_ldap_backend_authenticate_invalid_user(
     logger,
     authenticate,
     unauthenticated_api_client,
@@ -269,7 +269,7 @@ def atest_ldap_backend_authenticate_invalid_user(
         ("", ""),
     ],
 )
-def atest_ldap_backend_authenticate_empty_username_password(
+def test_ldap_backend_authenticate_empty_username_password(
     logger,
     authenticate,
     unauthenticated_api_client,
@@ -292,7 +292,7 @@ def atest_ldap_backend_authenticate_empty_username_password(
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
 @mock.patch("ansible_base.authentication.authenticator_plugins.ldap.LDAPBackend.authenticate")
 @mock.patch("ansible_base.authentication.authenticator_plugins.ldap.logger")
-def atest_ldap_backend_authenticate_valid_user(
+def test_ldap_backend_authenticate_valid_user(
     logger,
     authenticate,
     unauthenticated_api_client,
@@ -324,7 +324,7 @@ def atest_ldap_backend_authenticate_valid_user(
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
 @mock.patch("ansible_base.authentication.authenticator_plugins.ldap.LDAPBackend.authenticate")
 @mock.patch("ansible_base.authentication.authenticator_plugins.ldap.logger")
-def atest_ldap_backend_authenticate_unbind_exception(
+def test_ldap_backend_authenticate_unbind_exception(
     logger,
     authenticate,
     unauthenticated_api_client,
@@ -353,7 +353,7 @@ def atest_ldap_backend_authenticate_unbind_exception(
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
 @mock.patch("ansible_base.authentication.authenticator_plugins.ldap.LDAPBackend.authenticate")
 @mock.patch("ansible_base.authentication.authenticator_plugins.ldap.logger")
-def atest_ldap_backend_authenticate_exception(
+def test_ldap_backend_authenticate_exception(
     logger,
     authenticate,
     unauthenticated_api_client,
@@ -377,7 +377,7 @@ def ldap_settings(ldap_configuration):
     return LDAPSettings(defaults=ldap_configuration)
 
 
-def atest_ldap_validate_connection_options_newctx_comes_last(ldap_configuration):
+def test_ldap_validate_connection_options_newctx_comes_last(ldap_configuration):
     ldap_configuration["CONNECTION_OPTIONS"]["OPT_X_TLS_NEWCTX"] = 0
     ldap_configuration["CONNECTION_OPTIONS"]["OPT_X_TLS_PACKAGE"] = "GnuTLS"
     settings = LDAPSettings(defaults=ldap_configuration)
@@ -387,7 +387,7 @@ def atest_ldap_validate_connection_options_newctx_comes_last(ldap_configuration)
     assert last_key == ldap.OPT_X_TLS_NEWCTX
 
 
-def atest_ldap_validate_ldap_filter(ldap_configuration, ldap_settings):
+def test_ldap_validate_ldap_filter(ldap_configuration, ldap_settings):
     """
     Ensure we handle invalid subfilters correctly.
 
@@ -401,7 +401,7 @@ def atest_ldap_validate_ldap_filter(ldap_configuration, ldap_settings):
 
 @pytest.mark.django_db
 @mock.patch("ansible_base.authentication.authenticator_plugins.ldap.logger")
-def atest_AuthenticatorPlugin_authenticate_authenticator_disabled(logger, ldap_authenticator, ldap_settings):
+def test_AuthenticatorPlugin_authenticate_authenticator_disabled(logger, ldap_authenticator, ldap_settings):
     """
     Ensure we handle disabled authenticators correctly in AuthenticatorPlugin.authenticate.
 
@@ -421,7 +421,7 @@ def atest_AuthenticatorPlugin_authenticate_authenticator_disabled(logger, ldap_a
 
 @pytest.mark.django_db
 @mock.patch("ansible_base.authentication.authenticator_plugins.ldap.logger")
-def atest_AuthenticatorPlugin_authenticate_no_authenticator(logger):
+def test_AuthenticatorPlugin_authenticate_no_authenticator(logger):
     """
     Test how AuthenticatorPlugin.authenticate handles no authenticator.
     """
@@ -474,7 +474,7 @@ def test_empty_user_search(logger, ldap_authenticator):
         "Existing OPT_X_TLS_NEWCTX gets preserved (START_TLS disabled)",
     ],
 )
-def atest_AuthenticatorPlugin_authenticate_start_tls(authenticate, ldap_authenticator, extra_settings, newctx_value, shut_up_logging):
+def test_AuthenticatorPlugin_authenticate_start_tls(authenticate, ldap_authenticator, extra_settings, newctx_value, shut_up_logging):
     """
     Ensure we force OPT_X_TLS_NEWCTX to 0 (only) when START_TLS is enabled.
 
@@ -538,7 +538,7 @@ def atest_AuthenticatorPlugin_authenticate_start_tls(authenticate, ldap_authenti
         ),
     ],
 )
-def atest_ldap_user_search_validation(
+def test_ldap_user_search_validation(
     admin_api_client, group_type, group_type_params, server_uri, user_attr_map, user_search, expected_status_code, expected_error, saved_user_search
 ):
     config = {
