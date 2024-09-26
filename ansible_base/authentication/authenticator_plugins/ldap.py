@@ -374,7 +374,7 @@ class AuthenticatorPlugin(LDAPBackend, AbstractAuthenticatorPlugin):
         # Ensure USER_SEARCH and GROUP_SEARCH are converted into a search object
         for field, search_must_have_user in [('GROUP_SEARCH', False), ('USER_SEARCH', True)]:
             data = getattr(self.settings, field, None)
-            if data is None:
+            if not data:
                 setattr(self.settings, field, None)
             elif not isinstance(data, config.LDAPSearch):
                 try:
