@@ -439,7 +439,7 @@ class TestJWTAuthentication:
     def test_authenticate_is_superuser(self, jwt_token, django_user_model, mocked_http, test_encryption_public_key,
                                        original_is_superuser, token_is_superuser, expected_is_superuser):
         """
-        JWT auth should retain the original is_supervalue, except when going from False to True
+        JWT auth should retain the original is_superuser value, except when jwt token is True
         """
         with override_settings(ANSIBLE_BASE_JWT_KEY=test_encryption_public_key):
             jwt_username = jwt_token.unencrypted_token['user_data']['username']
