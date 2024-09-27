@@ -122,6 +122,8 @@ class JWTCommonAuth:
             except IntegrityError as exc:
                 logger.debug(f'Existing user {self.token["user_data"]} is a conflict with local user, error: {exc}')
                 with no_reverse_sync():
+                    if user_defaults['is_superuser'] == False:
+                        user_defaults.pop('is_superuser')
                     self.user, created = get_user_model().objects.update_or_create(
                         username=self.token["user_data"]['username'],
                         defaults=user_defaults,
@@ -145,6 +147,8 @@ class JWTCommonAuth:
             old_value = getattr(self.user, attribute, None)
             new_value = self.token.get('user_data', {}).get(attribute, None)
             if old_value != new_value:
+                if attribute == 'is_superuser' and new_value is False:
+                    continue
                 logger.debug(f"Changing {attribute} for {self.user.username} from {old_value} to {new_value}")
                 setattr(self.user, attribute, new_value)
                 user_needs_save = True
