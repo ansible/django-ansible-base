@@ -428,6 +428,23 @@ class TestJWTAuthentication:
             created_user, _ = jwt_auth.authenticate(request)
             assert user == created_user
 
+    @pytest.mark.parametrize("original_is_superuser, token_is_superuser, expected_is_superuser",
+                            [(True, False, True), (False, True, True), (True, True, True), (False, False, False)])
+    def test_authenticate_is_superuser(self, jwt_token, django_user_model, mocked_http, test_encryption_public_key, original_is_superuser, token_is_superuser, expected_is_superuser):
+        """
+        JWT auth should retain the original is_supervalue, except when going from False to True
+        """
+        with override_settings(ANSIBLE_BASE_JWT_KEY=test_encryption_public_key):
+            user = django_user_model.objects.create_user(username=jwt_token.unencrypted_token['sub'], password="password", is_superuser=original_is_superuser)
+            jwt_auth = JWTAuthentication()
+            jwt_auth.common_auth.user = user
+            jwt_auth.common_auth.token = jwt_token.unencrypted_token
+            jwt_auth.common_auth.token['user_data']['is_superuser'] = token_is_superuser
+            jwt_auth.process_user_data()
+            request = mocked_http.mocked_parse_jwt_token_get_request('with_headers')
+            created_user, _ = jwt_auth.authenticate(request)
+            assert created_user.is_superuser == expected_is_superuser
+
     def test_authenticate_no_user(self, user):
         with mock.patch('ansible_base.jwt_consumer.common.auth.JWTCommonAuth.parse_jwt_token') as mock_parse:
             mock_parse.return_value = (None, None)
