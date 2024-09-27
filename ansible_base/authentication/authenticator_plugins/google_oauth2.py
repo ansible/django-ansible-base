@@ -7,7 +7,7 @@ from ansible_base.authentication.authenticator_plugins.base import AbstractAuthe
 from ansible_base.authentication.social_auth import SocialAuthMixin, SocialAuthValidateCallbackMixin
 from ansible_base.lib.serializers.fields import BooleanField, CharField, ChoiceField, ListField, URLField
 
-logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.oidc')
+logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.google_oauth2')
 
 
 class GoogleOAuth2Configuration(BaseAuthenticatorConfiguration):
