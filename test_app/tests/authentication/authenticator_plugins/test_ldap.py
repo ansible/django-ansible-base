@@ -432,6 +432,22 @@ def test_AuthenticatorPlugin_authenticate_no_authenticator(logger):
 
 
 @pytest.mark.django_db
+@mock.patch("ansible_base.authentication.authenticator_plugins.ldap.logger")
+def test_empty_user_search(logger, ldap_authenticator):
+    """
+    Test that user_search = [] does not break validation
+    """
+    config = ldap_authenticator.configuration
+    config["USER_SEARCH"] = []
+    backend = AuthenticatorPlugin(database_instance=ldap_authenticator)
+    request = MagicMock()
+    # Goal of test is just to ensure this does not error out (no exception, just logging
+    # of failure to create search, "Failed to instantiate...") for user_search = []
+    backend.authenticate(request, username="foo", password="bar")
+    logger.error.assert_not_called()
+
+
+@pytest.mark.django_db
 @mock.patch("ansible_base.authentication.authenticator_plugins.ldap.LDAPBackend.authenticate", return_value=None)
 @pytest.mark.parametrize(
     "extra_settings, newctx_value",
