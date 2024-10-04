@@ -15,13 +15,12 @@ DEFAULT_TIMEOUT = None
 PRIMARY_CACHE = 'primary'
 FALLBACK_CACHE = 'fallback'
 
-_temp_file = Path().joinpath(tempfile.gettempdir(), 'gw_primary_cache_failed')
-
 
 class DABCacheWithFallback(BaseCache):
     _instance = None
     _primary_cache = None
     _fallback_cache = None
+    _temp_file = None
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
@@ -37,14 +36,22 @@ class DABCacheWithFallback(BaseCache):
         self._primary_cache = django_cache.caches.create_connection(PRIMARY_CACHE)
         self._fallback_cache = django_cache.caches.create_connection(FALLBACK_CACHE)
         self.thread_pool = ThreadPoolExecutor()
+        _temp_file_location = location if location else tempfile.gettempdir()
+        DABCacheWithFallback._temp_file = Path().joinpath(_temp_file_location, 'gw_primary_cache_failed')
 
-        if _temp_file.exists():
-            _temp_file.unlink()
+        try:
+            DABCacheWithFallback._temp_file.touch()
+            DABCacheWithFallback._temp_file.unlink()
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            logger.error(f"Fallback cache directory {_temp_file_location} is not writable.")
+            raise e
 
         self.__initialized = True
 
     def get_active_cache(self):
-        return FALLBACK_CACHE if _temp_file.exists() else PRIMARY_CACHE
+        return FALLBACK_CACHE if DABCacheWithFallback._temp_file.exists() else PRIMARY_CACHE
 
     # Main cache interface
     def add(self, key, value, timeout=DEFAULT_TIMEOUT, version=None):
@@ -63,7 +70,7 @@ class DABCacheWithFallback(BaseCache):
         return self._op_with_fallback("clear")
 
     def _op_with_fallback(self, operation, *args, **kwargs):
-        if _temp_file.exists():
+        if DABCacheWithFallback._temp_file.exists():
             response = getattr(self._fallback_cache, operation)(*args, **kwargs)
             self.start_recovery()
         else:
@@ -75,9 +82,9 @@ class DABCacheWithFallback(BaseCache):
                     # Attempt to ensure one thread/process goes first
                     # dynamic settings especially are read in a batch very quickly
                     time.sleep(random.uniform(10, 100) / 100.0)
-                    if not _temp_file.exists():
+                    if not DABCacheWithFallback._temp_file.exists():
                         logger.error("Primary cache unavailable, switching to fallback cache.")
-                    _temp_file.touch()
+                    DABCacheWithFallback._temp_file.touch()
                 response = getattr(self._fallback_cache, operation)(*args, **kwargs)
 
         return response
@@ -96,13 +103,16 @@ class DABCacheWithFallback(BaseCache):
         try:
             self._primary_cache.get('up_test')
             with multiprocessing.Lock():
-                if _temp_file.exists():
+                if DABCacheWithFallback._temp_file.exists():
+                    print("exists")
                     logger.warning("Primary cache recovered, clearing and resuming use.")
                     # Clear the primary cache
                     self._primary_cache.clear()
                     # Clear the backup cache just incase we need to fall back again (don't want it out of sync)
                     self._fallback_cache.clear()
-                    _temp_file.unlink()
+                    DABCacheWithFallback._temp_file.unlink()
+                else:
+                    print("doesnt exist")
         except Exception:
             pass
         finally:

@@ -70,6 +70,17 @@ cache_settings = {
 
 
 @override_settings(CACHES=cache_settings)
+def test_nonwritable_dir():
+    nonwrite = Path().joinpath(tempfile.gettempdir(), "nowrite")
+    nonwrite.rmdir()  # In case it exists already
+    nonwrite.mkdir()
+    nonwrite.chmod(0o400)
+    with pytest.raises(Exception):
+        DABCacheWithFallback(nonwrite, {})
+    nonwrite.rmdir()
+
+
+@override_settings(CACHES=cache_settings)
 def test_fallback_cache():
     cache = django_cache.caches.create_connection('default')
 
@@ -143,12 +154,12 @@ def test_dead_primary():
 @override_settings(CACHES=cache_settings)
 def test_ensure_temp_file_is_removed_on_init():
     temp_file = Path(tempfile.NamedTemporaryFile().name)
-    with mock.patch('ansible_base.lib.cache.fallback_cache._temp_file', temp_file):
+    with mock.patch.object(DABCacheWithFallback, '_temp_file', temp_file):
         temp_file.touch()
         # Remove singleton instance
         DABCacheWithFallback._instance = None
         DABCacheWithFallback(None, {})
-        assert temp_file.exists() is False
+        assert DABCacheWithFallback._temp_file.exists() is False
 
 
 @override_settings(CACHES=cache_settings)
@@ -196,7 +207,7 @@ def test_all_methods_are_overwritten(method):
 @override_settings(CACHES=cache_settings)
 def test_check_primary_cache(file_exists):
     temp_file = Path(tempfile.NamedTemporaryFile().name)
-    with mock.patch('ansible_base.lib.cache.fallback_cache._temp_file', temp_file):
+    with mock.patch.object(DABCacheWithFallback, '_temp_file', temp_file):
         # Remove singleton instance
         DABCacheWithFallback._instance = None
         # Initialization of the cache will clear the temp file so do this first
@@ -207,6 +218,8 @@ def test_check_primary_cache(file_exists):
         # Create the temp file if needed
         if file_exists:
             temp_file.touch()
+            # Set file back after deletion
+            DABCacheWithFallback._temp_file = temp_file
         else:
             try:
                 temp_file.unlink()
@@ -225,7 +238,7 @@ def test_check_primary_cache(file_exists):
 @override_settings(CACHES=cache_settings)
 def test_file_unlink_exception_does_not_cause_failure():
     temp_file = Path(tempfile.NamedTemporaryFile().name)
-    with mock.patch('ansible_base.lib.cache.fallback_cache._temp_file', temp_file):
+    with mock.patch.object(DABCacheWithFallback, '_temp_file', temp_file):
         cache = DABCacheWithFallback(None, {})
         # We can't do: temp_file.unlink = mock.MagicMock(side_effect=Exception('failed to unlink exception'))
         # Because unlink is marked as read only so we will just mock the cache.clear to raise in its place
