@@ -72,7 +72,10 @@ cache_settings = {
 @override_settings(CACHES=cache_settings)
 def test_nonwritable_dir():
     nonwrite = Path().joinpath(tempfile.gettempdir(), "nowrite")
-    nonwrite.rmdir()  # In case it exists already
+    try:
+        nonwrite.rmdir()  # In case it exists already
+    except Exception:
+        pass
     nonwrite.mkdir()
     nonwrite.chmod(0o400)
     with pytest.raises(Exception):
