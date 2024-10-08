@@ -197,6 +197,9 @@ RESOURCE_SERVER = {
     "VALIDATE_HTTPS": False,
 }
 RESOURCE_SERVICE_PATH = "/api/v1/service-index/"
+# Backwards sync turned off, because for most of the duration of the tests
+# the resource server will not actually be running
+# so it will be flipped true only for specific tests that test this
 RESOURCE_SERVER_SYNC_ENABLED = False
 
 RENAMED_USERNAME_PREFIX = "dab:"
