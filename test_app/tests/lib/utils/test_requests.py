@@ -52,7 +52,7 @@ def test_get_remote_hosts_no_headers():
             },
             {'REMOTE_ADDR': '9.10.11.12', 'REMOTE_HOST': 'localhost, example.com'},
             False,
-            ['5.6.7.8', '9.10.11.12', '1.2.3.4', '5.6.7.8', '9.10.11.12', 'localhost', 'example.com'],
+            ['5.6.7.8', '9.10.11.12', '5.6.7.8', '9.10.11.12', 'localhost', 'example.com'],
         ),
         # Complicated example w/o the trusted_proxy header
         (
@@ -100,7 +100,7 @@ def test_get_remote_hosts_alternate_headers_behind_trusted_proxy(rsa_keypair):
         request = RequestFactory().get('/hello', headers=headers)
         with override_settings(REMOTE_HOST_HEADERS=['HTTP_X_JOHNS_HEADER']):
             remote_hosts = get_remote_hosts(request, get_first_only=False)
-            assert remote_hosts == ['5.6.7.8', '9.10.11.12', '1.2.3.4', '5.6.7.8', 'a.b.c.d']
+            assert remote_hosts == ['5.6.7.8', '9.10.11.12', '5.6.7.8', 'a.b.c.d']
 
 
 @mock.patch("ansible_base.lib.utils.requests.validate_x_trusted_proxy_header", side_effect=Exception)
