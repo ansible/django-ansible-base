@@ -389,14 +389,14 @@ class AssignmentBase(ImmutableCommonModel, ObjectRoleFields):
         app_label = 'dab_rbac'
         abstract = True
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        # Cache fields from the associated object_role
-        if self.object_role_id and not self.object_id:
-            self.object_id = self.object_role.object_id
-            self.content_type_id = self.object_role.content_type_id
-            self.role_definition_id = self.object_role.role_definition_id
+    def save(self, *args, **kwargs):
+        if not self.id:  # usually only new objects can be saved, but super needs to do error handling
+            if self.object_role_id and (not self.object_id):
+                # Cache fields from the associated object_role
+                self.object_id = self.object_role.object_id
+                self.content_type_id = self.object_role.content_type_id
+                self.role_definition_id = self.object_role.role_definition_id
+        return super().save(*args, **kwargs)
 
 
 class RoleUserAssignment(AssignmentBase):
