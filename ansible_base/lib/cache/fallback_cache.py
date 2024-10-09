@@ -9,13 +9,21 @@ from pathlib import Path
 from django.core import cache as django_cache
 from django.core.cache.backends.base import BaseCache
 
+from ansible_base.lib.utils.settings import get_setting
+
 logger = logging.getLogger('ansible_base.cache.fallback_cache')
 
 DEFAULT_TIMEOUT = None
 PRIMARY_CACHE = 'primary'
 FALLBACK_CACHE = 'fallback'
 
-_temp_file = Path().joinpath(tempfile.gettempdir(), 'gw_primary_cache_failed')
+_temp_path = get_setting('ANSIBLE_BASE_FALLBACK_CACHE_FILE_PATH', tempfile.gettempdir())
+_temp_file = Path().joinpath(_temp_path, 'gw_primary_cache_failed')
+
+
+def create_temp_file():
+    _temp_file.touch()
+    _temp_file.chmod(mode=0o660)
 
 
 class DABCacheWithFallback(BaseCache):
@@ -77,7 +85,7 @@ class DABCacheWithFallback(BaseCache):
                     time.sleep(random.uniform(10, 100) / 100.0)
                     if not _temp_file.exists():
                         logger.error("Primary cache unavailable, switching to fallback cache.")
-                    _temp_file.touch()
+                    create_temp_file()
                 response = getattr(self._fallback_cache, operation)(*args, **kwargs)
 
         return response
