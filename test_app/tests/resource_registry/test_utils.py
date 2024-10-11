@@ -125,20 +125,24 @@ class TestReverseResourceSync:
         'ansible_reverse_resource_sync, should_sync',
         [("true", True), ("True", True), ("false", False), ("False", False), (None, True)],
     )
-    def test_sync_to_resource_server_env_var_override(self, user, enable_reverse_sync, ansible_reverse_resource_sync, should_sync):
+    def test_sync_to_resource_server_env_var_override(self, user, enable_reverse_sync, ansible_reverse_resource_sync, should_sync, expected_log):
         """
         We can override/disable syncing with the env var ANSIBLE_REVERSE_RESOURCE_SYNC.
         """
-        if ansible_reverse_resource_sync is None:
-            cm = nullcontext()
-        else:
+        cm = nullcontext()
+        if ansible_reverse_resource_sync is not None:
             cm = mock.patch.dict(os.environ, ANSIBLE_REVERSE_RESOURCE_SYNC=ansible_reverse_resource_sync)
+
+        logger_cm = nullcontext()
+        if not should_sync:
+            logger_cm = expected_log(f'{utils_path}.logger', 'info', "Skipping sync of resource Hello because $ANSIBLE_REVERSE_RESOURCE_SYNC is 'false'")
 
         with enable_reverse_sync():
             with cm:
                 with mock.patch(f'{utils_path}.get_resource_server_client') as get_resource_server_client:
                     with impersonate(user):
-                        Organization.objects.create(name='Hello')
+                        with logger_cm:
+                            Organization.objects.create(name='Hello')
 
         assert get_resource_server_client.called == should_sync
 
