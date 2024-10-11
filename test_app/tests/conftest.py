@@ -26,6 +26,7 @@ from ansible_base.lib.testing.util import copy_fixture, delete_authenticator
 from ansible_base.oauth2_provider.fixtures import *  # noqa: F403, F401
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
+from ansible_base.resource_registry.models.service_identifier import service_id
 from test_app import models
 
 
@@ -517,6 +518,7 @@ def jwt_token(test_encryption_private_key):
                 "exp": int(expiration_date.timestamp()),
                 "aud": "ansible-services",
                 "sub": "1e3de989-5286-48a6-83d4-5de9a6618ffd",
+                "service_id": service_id(),
                 "user_data": {
                     "username": "john.westcott.iv",
                     "first_name": "john",
