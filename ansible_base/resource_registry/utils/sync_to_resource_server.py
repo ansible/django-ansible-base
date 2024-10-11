@@ -28,7 +28,7 @@ def sync_to_resource_server(instance, action, ansible_id=None):
 
     sync_disabled = os.environ.get('ANSIBLE_REVERSE_RESOURCE_SYNC', 'true').lower() == 'false'
     if sync_disabled:
-        logger.info("Skipping sync of resource {instance} because $ANSIBLE_REVERSE_RESOURCE_SYNC is 'false'")
+        logger.info(f"Skipping sync of resource {instance} because $ANSIBLE_REVERSE_RESOURCE_SYNC is 'false'")
         return
 
     # This gets set in in signals.handlers.decide_to_sync_update() sometimes.
