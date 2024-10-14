@@ -35,5 +35,8 @@ def test_is_proxied_request(request, httprequest, headers, expected_result, sett
     else:
         rf_request = None
 
-    crum.set_current_request(rf_request)
-    assert is_proxied_request() == expected_result
+    try:
+        crum.set_current_request(rf_request)
+        assert is_proxied_request() == expected_result
+    finally:
+        crum.set_current_request(None)
