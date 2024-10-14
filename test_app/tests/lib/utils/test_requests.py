@@ -5,7 +5,7 @@ from django.test import override_settings
 from django.test.client import RequestFactory
 
 from ansible_base.jwt_consumer.common.util import generate_x_trusted_proxy_header
-from ansible_base.lib.utils.requests import get_remote_host, get_remote_hosts
+from ansible_base.lib.utils.requests import get_remote_host, get_remote_hosts, is_proxied_request
 
 
 @pytest.mark.parametrize("return_value,expected_value", [(None, None), ([], None), (['a'], 'a'), (['True', 'False'], 'True')])
@@ -130,3 +130,35 @@ def test_get_remote_hosts_validate_trusted_proxy_header_failure(random_public_ke
 
         assert "Unable to use headers from trusted proxy because shared secret was invalid!" in caplog.text
         assert remote_hosts == ['127.0.0.1']
+
+
+@pytest.mark.parametrize(
+    "httprequest,headers,expected_result",
+    [
+        (False, {}, False),
+        (True, {}, False),
+        (True, {'X_TRUSTED_PROXY': 'something'}, False),
+        (True, 'mismatch', False),
+        (True, 'rsa_keypair', True),
+    ],
+)
+def test_is_proxied_request(request, httprequest, headers, expected_result, settings):
+    """
+    Test that get_remote_host always returns None or the first value given back from get_remote_hosts
+    """
+    if headers == 'mismatch':
+        random_key = request.getfixturevalue('random_public_key')
+        rsa_keypair = request.getfixturevalue('rsa_keypair')
+        settings.ANSIBLE_BASE_JWT_KEY = random_key
+        headers = {'X_TRUSTED_PROXY': generate_x_trusted_proxy_header(rsa_keypair.private)}
+    elif headers == 'rsa_keypair':
+        key = request.getfixturevalue('rsa_keypair')
+        settings.ANSIBLE_BASE_JWT_KEY = key.public
+        headers = {'X_TRUSTED_PROXY': generate_x_trusted_proxy_header(key.private)}
+
+    if httprequest:
+        rf_request = RequestFactory().get('/hello', headers=headers)
+    else:
+        rf_request = None
+
+    assert is_proxied_request(rf_request) == expected_result
