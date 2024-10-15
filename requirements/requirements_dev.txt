@@ -1,6 +1,6 @@
 ansible  # Used in build process to generate some configs
 build
-Django>=4.2.5,<4.3.0
+Django==4.2.16
 django-debug-toolbar
 django-extensions
 djangorestframework
