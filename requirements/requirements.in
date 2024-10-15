@@ -8,3 +8,4 @@ djangorestframework
 django-crum
 django-split-settings
 inflection
+sqlparse>=0.5.0 # https://github.com/ansible/django-ansible-base/security/dependabot/9
