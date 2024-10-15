@@ -235,3 +235,33 @@ def test_file_unlink_exception_does_not_cause_failure():
         temp_file.touch()
         cache.check_primary_cache()
         # No assertion needed because we just want to make sure check_primary_cache does not raise
+
+
+def test_temp_file_setting(tmp_path):
+    with override_settings(ANSIBLE_BASE_FALLBACK_CACHE_FILE_PATH=tmp_path):
+        import importlib
+
+        from ansible_base.lib.cache import fallback_cache
+
+        importlib.reload(fallback_cache)
+
+        # Assert that the temp file does not exist yet
+        assert not fallback_cache._temp_file.exists()
+
+        fallback_cache.create_temp_file()
+
+        # The temp file should now exist at the specified cache path
+        assert fallback_cache._temp_file.exists()
+        expected_path = Path().joinpath(tmp_path, 'junk.txt')
+        assert fallback_cache._temp_file.parent in expected_path.parents
+
+
+def test_temp_file_permissions():
+    import os
+
+    from ansible_base.lib.cache.fallback_cache import _temp_file, create_temp_file
+
+    create_temp_file()
+    assert _temp_file.exists
+    status = os.stat(_temp_file)
+    assert oct(status.st_mode)[-3:] == "660"
