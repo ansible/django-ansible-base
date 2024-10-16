@@ -24,6 +24,7 @@ htmlcov
 *.tox
 venv/
 .venv/
+.pg_started
 
 # Mac OS X
 *.DS_Store
