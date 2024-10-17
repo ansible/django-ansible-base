@@ -107,8 +107,11 @@ legacy_tox_ini = """
         -r{toxinidir}/requirements/requirements_all.txt
         -r{toxinidir}/requirements/requirements_dev.txt
     allowlist_externals = sh
-    commands = sh -c 'make postgres && pytest -n auto --cov=. --cov-report=xml:coverage.xml --cov-report=html --cov-report=json --cov-branch --junit-xml=django-ansible-base-test-results.xml {env:ANSIBLE_BASE_PYTEST_ARGS} {env:ANSIBLE_BASE_TEST_DIRS:test_app/tests} {posargs}'
-
+    commands =
+        sh -c 'docker ps | grep -q dab_postgres || (make postgres && touch .pg_started)'
+        sh -c 'pytest -n auto --cov=. --cov-report=xml:coverage.xml --cov-report=html --cov-report=json --cov-branch --junit-xml=django-ansible-base-test-results.xml {env:ANSIBLE_BASE_PYTEST_ARGS} {env:ANSIBLE_BASE_TEST_DIRS:test_app/tests} {posargs}'
+    commands_post =
+        sh -c 'if [ -f .pg_started ]; then rm .pg_started && make stop-postgres;fi'
     [testenv:check]
     deps =
         -r{toxinidir}/requirements/requirements_all.txt
