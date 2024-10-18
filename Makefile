@@ -108,3 +108,7 @@ help/generate:
 	} \
 	{ lastLine = $$0 }' $(MAKEFILE_LIST) | sort -u
 	@printf "\n"
+
+## Run the help text check management command
+help_text_check:
+	./manage.py help_text_check
