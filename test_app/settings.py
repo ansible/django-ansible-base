@@ -73,6 +73,7 @@ INSTALLED_APPS = [
     'django_extensions',
     'debug_toolbar',
     'ansible_base.activitystream',
+    'ansible_base.help_text_check',
 ]
 
 MIDDLEWARE = [
