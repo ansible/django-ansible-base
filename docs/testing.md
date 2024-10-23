@@ -6,6 +6,13 @@ All tests for django-ansible-base are located in `test_app/tests`. The directory
 
 ## Running tests
 
+### Requirements
+Ensure you have the needed python dependencies installed (either in your system or a virtual env):
+```
+pip install -r requirements/requirements_dev.txt
+```
+
+### Run
 To run the test suite locally you can use tox. By default, with no arguments, tox will attempt to run the tests in various version of python. To run a specific version you can add the `-e` parameter like:
 ```
 tox -e 311
@@ -14,11 +21,8 @@ tox -e 311
 ### Test database
 
 Tests require PostgreSQL running in order to pass.
-Running PostgreSQL can be done by running `make postgres` in the root of your django-ansible-base clone.
-This will create a detached/daemonized PostgreSQL container called `dab_postgres`.
 
-If all goes according to plan, tox should automatically kill the container after the tests run.
-However, if you stop tox early or otherwise need to manually kill the container, you can run `make stop-postgres`.
+tox will automatically create/start and stop/destroy the postgres container.  If you want the container to remain after test execution, add **--docker-dont-stop=db**.
 
 ## Checking code coverage locally
 
