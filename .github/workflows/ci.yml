@@ -48,7 +48,7 @@ jobs:
           python-version: ${{ matrix.tests.python-version }}
 
       - name: Install tox
-        run: pip${{ matrix.tests.python-version }} install tox
+        run: pip${{ matrix.tests.python-version }} install tox tox-docker
 
       - name: Run tox
         run: |
