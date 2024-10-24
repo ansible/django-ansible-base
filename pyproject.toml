@@ -44,6 +44,7 @@ optional-dependencies.all = { file = [
     "requirements/requirements_testing.in",
     "requirements/requirements_redis_client.in",
     "requirements/requirements_oauth2_provider.in",
+    "requirements/requirements_resource_registry.in",
 ] }
 optional-dependencies.activitystream = { file = [ "requirements/requirements_activitystream.in" ] }
 optional-dependencies.authentication = { file = [ "requirements/requirements_authentication.in" ] }
@@ -55,6 +56,7 @@ optional-dependencies.jwt_consumer = { file = [ "requirements/requirements_jwt_c
 optional-dependencies.testing = { file = [ "requirements/requirements_testing.in" ] }
 optional-dependencies.redis_client = { file = [ "requirements/requirements_redis_client.in" ] }
 optional-dependencies.oauth2_provider = { file = [ "requirements/requirements_oauth2_provider.in" ] }
+optional-dependencies.resource_registry = { file = [ "requirements/requirements_resource_registry.in" ] }
 
 [build-system]
 requires = ["setuptools>=64", "setuptools_scm>=8"]
