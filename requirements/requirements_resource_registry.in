@@ -1,0 +1,7 @@
+# NOTE: Only dependencies needed to use ansible_base.resource_registry.* should go here.
+# Deps specific to django-ansible-base tests should go in requirements_dev.txt
+asgiref
+pyjwt
+requests
+social-auth-app-django
+urllib3
