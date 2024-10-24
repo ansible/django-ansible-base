@@ -88,3 +88,8 @@ class AuthenticatorMap(NamedCommonModel):
             )
         ),
     )
+    enabled = models.BooleanField(
+        null=False,
+        default=True,
+        help_text=_("Enables or disables this authentication map"),
+    )

@@ -464,6 +464,7 @@ def local_authenticator_map(db, local_authenticator, user, randname):
         triggers={"always": {}},
         organization="testorg",
         team="testteam",
+        enabled=True
     )
     return authenticator_map
 

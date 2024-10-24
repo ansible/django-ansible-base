@@ -20,7 +20,7 @@ from test_app.tests.authentication.conftest import SYSTEM_ROLE_NAME
             True,
             True,
             {"team_membership": {}, "organization_membership": {}, 'rbac_roles': {'system': {'roles': {}}, 'organizations': {}}},
-            [{1: True}],
+            [{1: True, 'enabled': True}],
             id="Set flag 'is_superuser' to True (trigger 'always')",
         ),
         pytest.param(
@@ -32,7 +32,7 @@ from test_app.tests.authentication.conftest import SYSTEM_ROLE_NAME
             True,
             False,
             {"team_membership": {}, "organization_membership": {}, 'rbac_roles': {'system': {'roles': {}}, 'organizations': {}}},
-            [{1: False}],
+            [{1: False, 'enabled': True}],
             id="Set flag 'is_superuser' to False (trigger 'never')",
         ),
         pytest.param(
@@ -44,7 +44,7 @@ from test_app.tests.authentication.conftest import SYSTEM_ROLE_NAME
             True,
             None,
             {"team_membership": {}, "organization_membership": {}, 'rbac_roles': {'system': {'roles': {}}, 'organizations': {}}},
-            [{1: "invalid"}],
+            [{1: "invalid", 'enabled': True}],
             id="Wrong trigger, thus flag 'is_superuser' is not set, auth. map is ignored",
         ),
         pytest.param(
@@ -56,7 +56,7 @@ from test_app.tests.authentication.conftest import SYSTEM_ROLE_NAME
             True,
             None,
             {"team_membership": {}, "organization_membership": {}, 'rbac_roles': {'system': {'roles': {}}, 'organizations': {}}},
-            [{1: "skipped"}],
+            [{1: "skipped", 'enabled': True}],
             id="Define no trigger, thus flag 'is_superuser' is not set",
         ),
         pytest.param(
@@ -68,7 +68,7 @@ from test_app.tests.authentication.conftest import SYSTEM_ROLE_NAME
             False,
             None,
             {"team_membership": {}, "organization_membership": {}, 'rbac_roles': {'system': {'roles': {}}, 'organizations': {}}},
-            [{1: False}],
+            [{1: False, 'enabled': True}],
             id="map_type 'allow' with trigger 'never' sets 'access_allowed' to False",
         ),
         pytest.param(
@@ -84,7 +84,7 @@ from test_app.tests.authentication.conftest import SYSTEM_ROLE_NAME
                 "team_membership": {"testorg": {"testteam": True}},
                 'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {}, 'teams': {'testteam': {'roles': {'Team Member': True}}}}}},
             },
-            [{1: True}],
+            [{1: True, 'enabled': True}],
             id="Assign 'Team Member' role to team 'testteam'",
         ),
         pytest.param(
@@ -100,7 +100,7 @@ from test_app.tests.authentication.conftest import SYSTEM_ROLE_NAME
                 "team_membership": {"testorg": {"testteam": False}},
                 'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {}, 'teams': {'testteam': {'roles': {'Team Member': False}}}}}},
             },
-            [{1: False}],
+            [{1: False, 'enabled': True}],
             id="Remove 'Team Member' role from team 'testteam'",
         ),
         pytest.param(
@@ -116,7 +116,7 @@ from test_app.tests.authentication.conftest import SYSTEM_ROLE_NAME
                 "team_membership": {},
                 'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {'Organization Member': True}, 'teams': {}}}},
             },
-            [{1: True}],
+            [{1: True, 'enabled': True}],
             id="Assign 'Organization Member' role to organization 'testorg'",
         ),
         pytest.param(
@@ -132,7 +132,7 @@ from test_app.tests.authentication.conftest import SYSTEM_ROLE_NAME
                 "team_membership": {},
                 'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {'Organization Member': False}, 'teams': {}}}},
             },
-            [{1: False}],
+            [{1: False, 'enabled': True}],
             id="Remove 'Organization Member' role from organization 'testorg'",
         ),
         pytest.param(
@@ -148,7 +148,7 @@ from test_app.tests.authentication.conftest import SYSTEM_ROLE_NAME
                 "team_membership": {"testorg": {"testteam": True}},
                 'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {}, 'teams': {'testteam': {'roles': {'Team Member': True}}}}}},
             },
-            [{1: True}],
+            [{1: True, 'enabled': True}],
             id="Assign 'Team Member' role to team 'testteam' using map_type 'role'",
         ),
         pytest.param(
@@ -164,7 +164,7 @@ from test_app.tests.authentication.conftest import SYSTEM_ROLE_NAME
                 "team_membership": {},
                 'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {'Organization Member': True}, 'teams': {}}}},
             },
-            [{1: True}],
+            [{1: True, 'enabled': True}],
             id="Assign 'Organization Member' role to organization 'testorg' using map_type 'role'",
         ),
         pytest.param(
@@ -176,7 +176,7 @@ from test_app.tests.authentication.conftest import SYSTEM_ROLE_NAME
             True,
             None,
             {"organization_membership": {}, "team_membership": {}, 'rbac_roles': {'system': {'roles': {SYSTEM_ROLE_NAME: True}}, 'organizations': {}}},
-            [{1: True}],
+            [{1: True, 'enabled': True}],
             id="Assign System role to user",
         ),
         pytest.param(
@@ -188,7 +188,7 @@ from test_app.tests.authentication.conftest import SYSTEM_ROLE_NAME
             True,
             None,
             {"organization_membership": {}, "team_membership": {}, 'rbac_roles': {'system': {'roles': {}}, 'organizations': {}}},
-            [{1: False}],
+            [{1: False, 'enabled': True}],
             id="Wrong map type, this auth. map is ignored",
         ),
     ],
@@ -324,9 +324,9 @@ def test_create_claims_revoke(local_authenticator_map, process_function, trigger
     assert res["is_superuser"] is granted
     assert res["claims"] == {"team_membership": {}, "organization_membership": {}, "rbac_roles": default_rbac_roles_claims}
     if revoke:
-        assert res["last_login_map_results"] == [{local_authenticator_map.pk: False}]
+        assert res["last_login_map_results"] == [{local_authenticator_map.pk: False, 'enabled': True}]
     else:
-        assert res["last_login_map_results"] == [{local_authenticator_map.pk: "skipped"}]
+        assert res["last_login_map_results"] == [{local_authenticator_map.pk: "skipped", 'enabled': True}]
 
 
 @pytest.mark.parametrize(
