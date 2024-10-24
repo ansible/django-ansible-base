@@ -57,6 +57,15 @@ try:
 except NameError:
     OAUTH2_PROVIDER = {}
 
+try:
+    TEMPLATES  # noqa: F821
+    from pathlib import Path
+    from ansible_base import lib
+    drf_template_path = Path.joinpath(Path(lib.__file__).parent, 'drf_templates')
+    TEMPLATES[0]['DIRS'].append(drf_template_path)
+except NameError:
+    pass
+
 for key, value in get_dab_settings(
     installed_apps=INSTALLED_APPS,
     rest_framework=REST_FRAMEWORK,
