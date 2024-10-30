@@ -12,7 +12,7 @@
 
     <form action="{% url 'login' %}" role="form" method="post">
       {% csrf_token %}
-      <input type="hidden" name="next" value={% if request.GET.next %}"{{ request.GET.next }}"{% elif request.POST.next %}"{{ request.POST.next }}"{% else %}"{% url 'api_django_app_v1_root_view' %}"{% endif %} />
+      <input type="hidden" name="next" value={% if request.GET.next %}"{{ request.GET.next }}"{% elif request.POST.next %}"{{ request.POST.next }}"{% else %}"{% url 'api_app_v1_root_view' %}"{% endif %} />
       <div class="clearfix control-group {% if form.username.errors %}error{% endif %}"
           id="div_id_username">
         <div class="form-group">
