@@ -109,7 +109,7 @@ legacy_tox_ini = """
         -r{toxinidir}/requirements/requirements_all.txt
         -r{toxinidir}/requirements/requirements_dev.txt
     allowlist_externals = sh
-    commands = pytest -n auto --cov=. --cov-report=xml:coverage.xml --cov-report=html --cov-report=json --cov-branch --junit-xml=django-ansible-base-test-results.xml {env:ANSIBLE_BASE_PYTEST_ARGS} test_app/tests/test_demo_data.py {posargs}
+    commands = pytest -n auto --cov=. --cov-report=xml:coverage.xml --cov-report=html --cov-report=json --cov-branch --junit-xml=django-ansible-base-test-results.xml {env:ANSIBLE_BASE_PYTEST_ARGS} {env:ANSIBLE_BASE_TEST_DIRS:test_app/tests} {posargs}
     docker = db
 
     [testenv:check]
@@ -125,15 +125,7 @@ legacy_tox_ini = """
         DJANGO_SETTINGS_MODULE = test_app.sqlite3settings
 
     [docker:db]
-    image = postgres:15
-    environment =
-        POSTGRES_PASSWORD=dabing
-        POSTGRES_USER=dab
-        POSTGRES_DB=dab_db
-    healthcheck_cmd = pg_isready -U dab -d dab_db
-    healthcheck_interval = 10
-    healthcheck_timeout = 5
-    healthcheck_retries = 5
+    dockerfile = {toxinidir}/tools/dev_postgres/Dockerfile
     expose =
         DB_PORT=5432/tcp
 

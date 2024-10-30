@@ -1,17 +1,10 @@
 ---
 services:
   postgres:
-    image: "postgres:15"
+    build:
+      context: tools/dev_postgres
+      dockerfile: Dockerfile
     container_name: dab_postgres
-    environment:
-      POSTGRES_DB: dab_db
-      POSTGRES_USER: dab
-      POSTGRES_PASSWORD: dabing
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "dab", "-d", "dab_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     ports:
       - "55432:5432"
 
