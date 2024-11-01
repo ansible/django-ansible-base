@@ -18,6 +18,6 @@ class LoggedBasicAuthentication(authentication.BasicAuthentication):
         return ret
 
     def authenticate_header(self, request):
-        if not get_setting('ANSIBLE_BASE_BASIC_AUTH_ENABLED'):
+        if not get_setting('ANSIBLE_BASE_BASIC_AUTH_ENABLED', False):
             return
         return super(LoggedBasicAuthentication, self).authenticate_header(request)
