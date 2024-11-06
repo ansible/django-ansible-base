@@ -74,7 +74,7 @@
 </div>
 {{ block.super }}
 <script src="{% static 'api/api.js' %}?v={{ django_app_version }}"></script>
-<form name="logoutForm" action="{% url 'logout' %}?next=/api/django_app/v1/" role="form" method="post">
+<form name="logoutForm" action="{% url 'logout' %}?next={{ request.path }}" role="form" method="post">
   {% csrf_token %}
 </form>
 {% endblock %}
