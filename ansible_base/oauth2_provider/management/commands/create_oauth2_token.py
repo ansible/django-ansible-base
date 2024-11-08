@@ -31,5 +31,5 @@ class Command(BaseCommand):
                 self.user = user
 
         serializer_obj.context['request'] = FakeRequest()
-        token_record = serializer_obj.create(config)
-        self.stdout.write(token_record.token)
+        serializer_obj.create(config)
+        self.stdout.write(serializer_obj.unencrypted_token)
