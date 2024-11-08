@@ -29,12 +29,22 @@ def get_model_from_settings(setting_name: str) -> Any:
         raise ImproperlyConfigured(f"{setting_name} refers to model '{setting}' that has not been installed")
 
 
-def get_team_model() -> Type[AbstractTeam]:
-    return get_model_from_settings('ANSIBLE_BASE_TEAM_MODEL')
+def get_team_model(return_none_on_error: bool = False) -> Type[AbstractTeam]:
+    try:
+        return get_model_from_settings('ANSIBLE_BASE_TEAM_MODEL')
+    except ImproperlyConfigured:
+        if return_none_on_error:
+            return None
+        raise
 
 
-def get_organization_model() -> Type[AbstractOrganization]:
-    return get_model_from_settings('ANSIBLE_BASE_ORGANIZATION_MODEL')
+def get_organization_model(return_none_on_error: bool = False) -> Type[AbstractOrganization]:
+    try:
+        return get_model_from_settings('ANSIBLE_BASE_ORGANIZATION_MODEL')
+    except ImproperlyConfigured:
+        if return_none_on_error:
+            return None
+        raise
 
 
 def get_object_by_ansible_id(qs: QuerySet, ansible_id: Union[str, UUID], annotate_as: str = 'ansible_id_for_filter') -> Model:

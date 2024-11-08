@@ -97,7 +97,8 @@ class ResourceRegistry:
             - Viewsets have the correct serializer, pagination and filter classes
             - Service type is set to one of awx, galaxy, eda or aap
         """
-        assert config.service_type in ["aap", "awx", "galaxy", "eda"]
+        service_types = ["aap", "awx", "galaxy", "eda", "templated_app"]
+        assert config.service_type in service_types, f"Expected a service_type in {service_types} got {config.service_type}"
 
     def get_resources(self):
         return self.registry

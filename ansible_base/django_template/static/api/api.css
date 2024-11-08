@@ -1,0 +1,223 @@
+/*************************************************
+ * Copyright (c) 2016 Ansible, Inc.
+ *
+ * All Rights Reserved
+ *************************************************/
+
+@layer theme {
+  :root {
+    --gray-10: #fafafa;
+    --gray-15: #f5f5f5;
+    --gray-20: #f0f0f0;
+    --gray-30: #d2d2d2;
+    --gray-40: #b8bbbe;
+    --gray-50: #8a8d90;
+    --gray-60: #6a6e73;
+    --gray-70: #4f5255;
+    --gray-80: #3c3f42;
+    --gray-85: #212427;
+    --gray-90: #151515;
+    --gray-100: #030303;
+    --blue-5: #e7f1fa;
+    --blue-10: #bee1f4;
+    --blue-20: #73bcf7;
+    --blue-30: #2b9af3;
+    --blue-40: #06c;
+    --blue-50: #004080;
+    --blue-60: #002952;
+    --blue-70: #001223;
+
+    --blue-primary: var(--blue-40);
+    --blue-secondary: var(--blue-60);
+
+    --border-radius: 3px;
+    --background-color: var(--gray-20);
+  }
+
+  @font-face {
+    font-family: 'Overpass';
+    font-style: normal;
+    font-weight: 400;
+    font-display: fallback;
+    src: url(/static/fonts/overpass-regular.woff2) format('woff2');
+  }
+  @font-face {
+    font-family: 'Overpass';
+    font-style: normal;
+    font-weight: 700;
+    font-display: fallback;
+    src: url(/static/fonts/overpass-bold.woff2) format('woff2');
+  }
+  @font-face {
+    font-family: 'Overpass Mono';
+    font-style: normal;
+    font-weight: 400;
+    font-display: fallback;
+    src: url(/static/fonts/overpass-mono.woff2) format('woff2');
+  }
+  @font-face {
+    font-family: 'Overpass Mono';
+    font-style: normal;
+    font-weight: 700;
+    font-display: fallback;
+    src: url(/static/fonts/overpass-mono-bold.woff2) format('woff2');
+  }
+}
+
+@layer global {
+  html {
+    font-size: 0.9375em;
+  }
+
+  body {
+    margin-block-start: 72px;
+    font-family: Overpass, Helvetica, Arial, sans-serif;
+    background-color: var(--background-color);
+    font-size: unset;
+  }
+
+  pre {
+    font-family: 'Overpass Mono', monospace;
+    border-radius: unset;
+    background-color: var(--gray-10);
+  }
+
+  a:any-link {
+    color: var(--blue-40);
+  }
+  a:hover {
+    color: var(--blue-50);
+    text-decoration: underline;
+  }
+}
+
+@layer layout {
+  .l-login {
+    display: flex;
+    min-block-size: calc(100svb - 100px);
+    align-items: center;
+  }
+}
+
+@layer modules {
+  .container {
+    inline-size: unset;
+    max-inline-size: 80rem;
+    margin-inline: auto;
+  }
+
+  .navbar {
+    background-color: var(--gray-90);
+    color: var(--gray-10);
+    padding-block: 10px;
+  }
+  .navbar a:any-link {
+    color: inherit;
+  }
+
+  .navbar > .container {
+    display: flex;
+  }
+  .navbar-header,
+  .navbar-brand {
+    display: flex;
+    gap: 1rem;
+  }
+  .navbar-brand {
+    white-space: nowrap;
+  }
+  .navbar-collapse {
+    margin-inline-start: auto;
+  }
+  .navbar-title {
+    display: none;
+  }
+
+  .nav > li > a:hover {
+    background-color: unset;
+    color: var(--blue-30);
+  }
+
+  .breadcrumb {
+    margin-block-start: 1.5em;
+    margin-inline: -15px;
+  }
+
+  .nav-tabs > li.active > a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .btn {
+    background-color: var(--blue-40);
+    color: var(--gray-10);
+    border: unset;
+    border-radius: var(--border-radius);
+    font: inherit;
+  }
+  .btn:hover {
+    background-color: var(--blue-50);
+  }
+
+  .btn-group > .btn:first-child {
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
+  }
+  .btn-group > .btn:not(:first-child) {
+    margin-inline-start: 1px;
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+  }
+
+  .form-control {
+    border-radius: unset;
+    border: 1px solid var(--gray-30);
+    width: 100% !important;
+  }
+  .form-control:hover {
+    border-block-end: 1px solid var(--blue-40);
+  }
+  .form-control:focus {
+    box-shadow: unset;
+    border-block-end: 2px solid var(--blue-40);
+  }
+  .form-control:focus-visible {
+    outline: 2px solid var(--blue-40);
+  }
+  textarea.form-control {
+    font-family: 'Overpass Mono', monospace;
+  }
+
+  .dropdown-menu a:any-link {
+    color: inherit;
+  }
+  .dropdown-menu a:hover {
+    text-decoration: none;
+  }
+
+  .well {
+    background-color: var(--gray-10);
+    border: 0;
+    border-block-end: 1px solid var(--gray-40);
+    border-radius: unset;
+    box-shadow: unset;
+    -webkit-box-shadow: unset;
+  }
+
+  .footer-copyright {
+    text-align: center;
+    color: var(--gray-50);
+  }
+  .footer-copyright a:any-link {
+    color: var(--gray-70);
+    text-decoration: underline;
+  }
+
+  .prettyprint {
+    font-size: inherit !important;
+  }
+}
+
+.content-main > .request-info {
+  clear: both;
+}

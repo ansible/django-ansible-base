@@ -2,8 +2,6 @@ import json
 import logging
 import re
 
-from ansible_base.lib.utils.requests import get_remote_host
-from django.conf import settings
 from django.contrib.auth import views
 from django.core.exceptions import PermissionDenied
 from django.utils.decorators import method_decorator
@@ -15,7 +13,10 @@ from rest_framework.renderers import StaticHTMLRenderer
 from rest_framework.response import Response
 from social_core.exceptions import AuthException
 
-logger = logging.getLogger('aap.templated_app.views.local_login')
+from ansible_base.lib.utils.requests import get_remote_host
+from ansible_base.lib.utils.settings import get_setting
+
+logger = logging.getLogger('ansible_base.django_template.views.local_login')
 
 
 class LoggedLoginView(views.LoginView):
@@ -63,7 +64,7 @@ class LoggedLoginView(views.LoginView):
 @method_decorator(require_http_methods(["POST", "GET"]), name="dispatch")
 class LoggedLogoutView(views.LogoutView):
 
-    success_url_allowed_hosts = settings.LOGOUT_ALLOWED_HOSTS
+    success_url_allowed_hosts = get_setting('LOGOUT_ALLOWED_HOSTS', [])
 
     def dispatch(self, request, *args, **kwargs):
         original_user = getattr(request, 'user', None)

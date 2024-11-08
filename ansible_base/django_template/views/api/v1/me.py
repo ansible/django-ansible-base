@@ -2,8 +2,8 @@ from django.contrib.auth import get_user_model
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 
-from templated_app.serializers import UserSerializer
-from templated_app.views.api.v1.common import AnsibleBaseView
+from ansible_base.django_template.serializers import UserSerializer
+from ansible_base.django_template.views.api.v1.common import AnsibleBaseView
 
 User = get_user_model()
 

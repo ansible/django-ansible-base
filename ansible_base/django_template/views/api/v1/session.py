@@ -1,13 +1,14 @@
 import logging
 from datetime import datetime, timezone
 
-from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from django.contrib.sessions.models import Session
 from django.utils.translation import gettext as _
 from rest_framework import permissions, status
 from rest_framework.response import Response
 
-logger = logging.getLogger('aap.templated_app.views.api.v1.session')
+from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
+
+logger = logging.getLogger('ansible_base.django_template.views.api.v1.session')
 
 
 class SessionView(AnsibleBaseDjangoAppApiView):
