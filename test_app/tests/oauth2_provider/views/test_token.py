@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import json
 import time
 
@@ -7,6 +8,7 @@ from django.utils.http import urlencode
 
 from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
+from ansible_base.lib.utils.hashing import hash_string
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.oauth2_provider.models import OAuth2AccessToken, OAuth2RefreshToken
 
@@ -217,7 +219,7 @@ def test_oauth2_application_token_summary_fields(admin_api_client, oauth2_admin_
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert response.data['summary_fields']['tokens']['count'] == 1
-    assert response.data['summary_fields']['tokens']['results'][0] == {'id': oauth2_admin_access_token.pk, 'scope': 'write', 'token': ENCRYPTED_STRING}
+    assert response.data['summary_fields']['tokens']['results'][0] == {'id': oauth2_admin_access_token[0].pk, 'scope': 'write', 'token': ENCRYPTED_STRING}
 
 
 @pytest.mark.django_db
@@ -262,14 +264,15 @@ def test_oauth2_authorized_list_is_user_related_field(user, admin_api_client):
 
 
 @pytest.mark.django_db
-def test_oauth2_token_createn(oauth2_application, admin_api_client, admin_user):
+def test_oauth2_token_create(oauth2_application, admin_api_client, admin_user):
     oauth2_application = oauth2_application[0]
     url = get_relative_url('token-list')
     response = admin_api_client.post(url, {'scope': 'read', 'application': oauth2_application.pk})
     assert response.status_code == 201
     assert 'modified' in response.data and response.data['modified'] is not None
     assert 'updated' not in response.data
-    token = OAuth2AccessToken.objects.get(token=response.data['token'])
+    hashed_token = hash_string(response.data['token'], hasher=hashlib.sha256)
+    token = OAuth2AccessToken.objects.get(token=hashed_token)
     refresh_token = OAuth2RefreshToken.objects.get(token=response.data['refresh_token'])
     assert token.application == oauth2_application
     assert refresh_token.application == oauth2_application
@@ -308,28 +311,28 @@ def test_oauth2_token_createn(oauth2_application, admin_api_client, admin_user):
 
 @pytest.mark.django_db
 def test_oauth2_token_update(oauth2_admin_access_token, admin_api_client):
-    assert oauth2_admin_access_token.scope == 'write'
-    url = get_relative_url('token-detail', kwargs={'pk': oauth2_admin_access_token.pk})
+    assert oauth2_admin_access_token[0].scope == 'write'
+    url = get_relative_url('token-detail', kwargs={'pk': oauth2_admin_access_token[0].pk})
     response = admin_api_client.patch(url, {'scope': 'read'})
     assert response.status_code == 200
-    oauth2_admin_access_token.refresh_from_db()
-    assert oauth2_admin_access_token.scope == 'read'
+    oauth2_admin_access_token[0].refresh_from_db()
+    assert oauth2_admin_access_token[0].scope == 'read'
 
 
 @pytest.mark.django_db
 def test_oauth2_token_delete(oauth2_admin_access_token, admin_api_client):
-    url = get_relative_url('token-detail', kwargs={'pk': oauth2_admin_access_token.pk})
+    url = get_relative_url('token-detail', kwargs={'pk': oauth2_admin_access_token[0].pk})
     response = admin_api_client.delete(url)
     assert response.status_code == 204
     assert OAuth2AccessToken.objects.count() == 0
     assert OAuth2RefreshToken.objects.count() == 1
 
-    url = get_relative_url('application-access_tokens-list', kwargs={'pk': oauth2_admin_access_token.application.pk})
+    url = get_relative_url('application-access_tokens-list', kwargs={'pk': oauth2_admin_access_token[0].application.pk})
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert response.data['count'] == 0
 
-    url = get_relative_url('application-detail', kwargs={'pk': oauth2_admin_access_token.application.pk})
+    url = get_relative_url('application-detail', kwargs={'pk': oauth2_admin_access_token[0].application.pk})
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert response.data['summary_fields']['tokens']['count'] == 0
@@ -342,7 +345,7 @@ def test_oauth2_refresh_access_token(oauth2_application, oauth2_admin_access_tok
     """
     app = oauth2_application[0]
     secret = oauth2_application[1]
-    refresh_token = oauth2_admin_access_token.refresh_token
+    refresh_token = oauth2_admin_access_token[0].refresh_token
 
     url = get_relative_url('token')
     data = {
@@ -367,9 +370,10 @@ def test_oauth2_refresh_access_token(oauth2_application, oauth2_admin_access_tok
 
     json_resp = json.loads(resp.content)
     new_token = json_resp['access_token']
+    new_token_hashed = hash_string(new_token, hasher=hashlib.sha256)
     new_refresh_token = json_resp['refresh_token']
 
-    assert OAuth2AccessToken.objects.filter(token=new_token).count() == 1
+    assert OAuth2AccessToken.objects.filter(token=new_token_hashed).count() == 1
     # checks that RefreshTokens are rotated (new RefreshToken issued)
     assert OAuth2RefreshToken.objects.filter(token=new_refresh_token).count() == 1
     new_refresh_obj = OAuth2RefreshToken.objects.get(token=new_refresh_token)
@@ -383,7 +387,7 @@ def test_oauth2_refresh_token_expiration_is_respected(oauth2_application, oauth2
     """
     app = oauth2_application[0]
     secret = oauth2_application[1]
-    refresh_token = oauth2_admin_access_token.refresh_token
+    refresh_token = oauth2_admin_access_token[0].refresh_token
 
     settings.OAUTH2_PROVIDER['REFRESH_TOKEN_EXPIRE_SECONDS'] = 1
     settings.OAUTH2_PROVIDER['ACCESS_TOKEN_EXPIRE_SECONDS'] = 1

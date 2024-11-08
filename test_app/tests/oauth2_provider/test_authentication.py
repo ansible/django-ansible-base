@@ -22,10 +22,10 @@ def test_oauth2_bearer_get_user_correct(unauthenticated_api_client, oauth2_admin
     url = get_relative_url("user-me")
     response = unauthenticated_api_client.get(
         url,
-        headers={'Authorization': f'Bearer {oauth2_admin_access_token.token}'},
+        headers={'Authorization': f'Bearer {oauth2_admin_access_token[1]}'},
     )
     assert response.status_code == 200
-    assert response.data['username'] == oauth2_admin_access_token.user.username
+    assert response.data['username'] == oauth2_admin_access_token[0].user.username
 
 
 @pytest.mark.parametrize(
@@ -40,7 +40,7 @@ def test_oauth2_bearer_get(unauthenticated_api_client, oauth2_admin_access_token
     GET an animal with a bearer token.
     """
     url = get_relative_url("animal-detail", kwargs={"pk": animal.pk})
-    token = oauth2_admin_access_token.token if token == 'fixture' else generate_token()
+    token = oauth2_admin_access_token[1] if token == 'fixture' else generate_token()
     response = unauthenticated_api_client.get(
         url,
         headers={'Authorization': f'Bearer {token}'},
@@ -62,7 +62,7 @@ def test_oauth2_bearer_post(unauthenticated_api_client, oauth2_admin_access_toke
     POST an animal with a bearer token.
     """
     url = get_relative_url("animal-list")
-    token = oauth2_admin_access_token.token if token == 'fixture' else generate_token()
+    token = oauth2_admin_access_token[1] if token == 'fixture' else generate_token()
     data = {
         "name": "Fido",
         "owner": admin_user.pk,
@@ -89,7 +89,7 @@ def test_oauth2_bearer_patch(unauthenticated_api_client, oauth2_admin_access_tok
     PATCH an animal with a bearer token.
     """
     url = get_relative_url("animal-detail", kwargs={"pk": animal.pk})
-    token = oauth2_admin_access_token.token if token == 'fixture' else generate_token()
+    token = oauth2_admin_access_token[1] if token == 'fixture' else generate_token()
     data = {
         "name": "Fido",
     }
@@ -115,7 +115,7 @@ def test_oauth2_bearer_put(unauthenticated_api_client, oauth2_admin_access_token
     PUT an animal with a bearer token.
     """
     url = get_relative_url("animal-detail", kwargs={"pk": animal.pk})
-    token = oauth2_admin_access_token.token if token == 'fixture' else generate_token()
+    token = oauth2_admin_access_token[1] if token == 'fixture' else generate_token()
     data = {
         "name": "Fido",
         "owner": admin_user.pk,
@@ -135,8 +135,8 @@ def test_oauth2_bearer_no_activitystream(unauthenticated_api_client, oauth2_admi
     Ensure no activitystream entries for bearer token based auth
     """
     url = get_relative_url("animal-detail", kwargs={"pk": animal.pk})
-    token = oauth2_admin_access_token.token
-    existing_as_count = len(oauth2_admin_access_token.activity_stream_entries)
+    token = oauth2_admin_access_token[1]
+    existing_as_count = len(oauth2_admin_access_token[0].activity_stream_entries)
 
     response = unauthenticated_api_client.get(
         url,
@@ -145,7 +145,7 @@ def test_oauth2_bearer_no_activitystream(unauthenticated_api_client, oauth2_admi
     assert response.status_code == 200
     assert response.data['name'] == animal.name
 
-    updated_token = OAuth2AccessToken.objects.get(token=token)
+    updated_token = OAuth2AccessToken.objects.get(token=oauth2_admin_access_token[0].token)
     assert len(updated_token.activity_stream_entries) == existing_as_count
 
 
@@ -163,8 +163,8 @@ def test_oauth2_scope_permission(request, admin_user, oauth2_admin_access_token,
     """
     Ensure that scopes are adhered to for PATs
     """
-    oauth2_admin_access_token.scope = scope
-    oauth2_admin_access_token.save()
+    oauth2_admin_access_token[0].scope = scope
+    oauth2_admin_access_token[0].save()
 
     url = get_relative_url("animal-list")
     data = {
@@ -174,7 +174,7 @@ def test_oauth2_scope_permission(request, admin_user, oauth2_admin_access_token,
     response = unauthenticated_api_client.post(
         url,
         data=data,
-        headers={'Authorization': f'Bearer {oauth2_admin_access_token.token}'},
+        headers={'Authorization': f'Bearer {oauth2_admin_access_token[1]}'},
     )
     assert response.status_code == status, response.status_code
 

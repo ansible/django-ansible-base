@@ -5,8 +5,8 @@ from ansible_base.oauth2_provider.models import OAuth2AccessToken, OAuth2Refresh
 
 @pytest.mark.django_db
 def test_oauth2_revoke_access_then_refresh_token(oauth2_admin_access_token):
-    token = oauth2_admin_access_token
-    refresh_token = oauth2_admin_access_token.refresh_token
+    token = oauth2_admin_access_token[0]
+    refresh_token = oauth2_admin_access_token[0].refresh_token
     assert OAuth2AccessToken.objects.count() == 1
     assert OAuth2RefreshToken.objects.count() == 1
 
@@ -22,7 +22,7 @@ def test_oauth2_revoke_access_then_refresh_token(oauth2_admin_access_token):
 
 @pytest.mark.django_db
 def test_oauth2_revoke_refresh_token(oauth2_admin_access_token):
-    refresh_token = oauth2_admin_access_token.refresh_token
+    refresh_token = oauth2_admin_access_token[0].refresh_token
     assert OAuth2AccessToken.objects.count() == 1
     assert OAuth2RefreshToken.objects.count() == 1
 

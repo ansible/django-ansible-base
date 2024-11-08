@@ -22,7 +22,8 @@ logger = logging.getLogger("ansible_base.oauth2_provider.serializers.token")
 
 class BaseOAuth2TokenSerializer(CommonModelSerializer):
     refresh_token = SerializerMethodField()
-    token = SerializerMethodField()
+
+    unencrypted_token = None  # Only used in POST so we can return the token in the response
 
     class Meta:
         model = OAuth2AccessToken
@@ -40,15 +41,14 @@ class BaseOAuth2TokenSerializer(CommonModelSerializer):
         read_only_fields = ('user', 'token', 'expires', 'refresh_token')
         extra_kwargs = {'scope': {'allow_null': False, 'required': False}, 'user': {'allow_null': False, 'required': True}}
 
-    def get_token(self, obj) -> str:
-        request = self.context.get('request')
-        try:
-            if request and request.method == 'POST':
-                return obj.token
-            else:
-                return ENCRYPTED_STRING
-        except ObjectDoesNotExist:
-            return ''
+    def to_representation(self, instance):
+        request = self.context.get('request', None)
+        ret = super().to_representation(instance)
+        if request and request.method == 'POST':
+            # If we're creating the token, show it. Otherwise, show the encrypted string
+            # which is the default from the supermethod.
+            ret['token'] = self.unencrypted_token
+        return ret
 
     def get_refresh_token(self, obj) -> Optional[str]:
         request = self.context.get('request')
@@ -80,6 +80,7 @@ class BaseOAuth2TokenSerializer(CommonModelSerializer):
 
     def create(self, validated_data):
         validated_data['user'] = self.context['request'].user
+        self.unencrypted_token = validated_data.get('token')  # So we don't have to decrypt it
         try:
             return super().create(validated_data)
         except AccessDeniedError as e:

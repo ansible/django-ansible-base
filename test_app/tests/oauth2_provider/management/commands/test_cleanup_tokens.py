@@ -35,7 +35,7 @@ class TestCleanupTokensCommand:
         attempt_cleanup(0, 0)
 
         # Manually expire admin token
-        oauth2_admin_access_token.expires = datetime.datetime.fromtimestamp(0)
-        oauth2_admin_access_token.save()
+        oauth2_admin_access_token[0].expires = datetime.datetime.fromtimestamp(0)
+        oauth2_admin_access_token[0].save()
 
         attempt_cleanup(1, 1)

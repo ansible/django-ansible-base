@@ -1,9 +1,12 @@
+import hashlib
 import logging
 
 from django.utils.encoding import smart_str
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication
 from oauth2_provider.oauth2_backends import OAuthLibCore as _OAuthLibCore
 from rest_framework.exceptions import UnsupportedMediaType
+
+from ansible_base.lib.utils.hashing import hash_string
 
 logger = logging.getLogger('ansible_base.oauth2_provider.authentication')
 
@@ -18,6 +21,14 @@ class OAuthLibCore(_OAuthLibCore):
 
 class LoggedOAuth2Authentication(OAuth2Authentication):
     def authenticate(self, request):
+        # sha256 the bearer token. We store the hash in the database
+        # and this gives us a place to hash the incoming token for comparison
+        bearer_token = request.META.get('HTTP_AUTHORIZATION')
+        if bearer_token and bearer_token.lower().startswith('bearer '):
+            token_component = bearer_token.split(' ', 1)[1]
+            hashed = hash_string(token_component, hasher=hashlib.sha256)
+            request.META['HTTP_AUTHORIZATION'] = f"Bearer {hashed}"
+
         ret = super().authenticate(request)
         if ret:
             user, token = ret

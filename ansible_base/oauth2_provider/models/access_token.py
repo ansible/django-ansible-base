@@ -1,3 +1,5 @@
+import hashlib
+
 import oauth2_provider.models as oauth2_models
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -7,6 +9,7 @@ from django.utils.translation import gettext_lazy as _
 from oauthlib import oauth2
 
 from ansible_base.lib.abstract_models.common import CommonModel
+from ansible_base.lib.utils.hashing import hash_string
 from ansible_base.lib.utils.models import prevent_search
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.oauth2_provider.utils import is_external_account
@@ -103,4 +106,5 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
     def save(self, *args, **kwargs):
         if not self.pk:
             self.validate_external_users()
+            self.token = hash_string(self.token, hasher=hashlib.sha256)
         super().save(*args, **kwargs)

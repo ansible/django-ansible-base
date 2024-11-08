@@ -29,7 +29,7 @@ class TestOAuth2RevokeCommand:
 
     def test_revoke_access_token_for_user(self, oauth2_admin_access_token, oauth2_user_application_token):
         with StringIO() as out:
-            admin_username = oauth2_admin_access_token.user.username
+            admin_username = oauth2_admin_access_token[0].user.username
             user_username = oauth2_user_application_token.user.username
 
             assert OAuth2AccessToken.objects.count() == 2
