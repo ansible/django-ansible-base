@@ -1,3 +1,4 @@
+import hashlib
 from datetime import timedelta
 
 from django.utils.timezone import now
@@ -5,6 +6,7 @@ from oauth2_provider import views as oauth_views
 from oauthlib import oauth2
 from rest_framework.viewsets import ModelViewSet
 
+from ansible_base.lib.utils.hashing import hash_string
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.oauth2_provider.models import OAuth2AccessToken, OAuth2RefreshToken
@@ -28,7 +30,8 @@ class TokenView(oauth_views.TokenView):
         # This code detects and auto-expires them on refresh grant
         # requests.
         if request.POST.get('grant_type') == 'refresh_token' and 'refresh_token' in request.POST:
-            refresh_token = OAuth2RefreshToken.objects.filter(token=request.POST['refresh_token']).first()
+            hashed_refresh_token = hash_string(request.POST['refresh_token'], hasher=hashlib.sha256)
+            refresh_token = OAuth2RefreshToken.objects.filter(token=hashed_refresh_token).first()
             if refresh_token:
                 expire_seconds = get_setting('OAUTH2_PROVIDER', {}).get('REFRESH_TOKEN_EXPIRE_SECONDS', 0)
                 if refresh_token.created + timedelta(seconds=expire_seconds) < now():
@@ -38,7 +41,23 @@ class TokenView(oauth_views.TokenView):
 
         # oauth2_provider.oauth2_backends.OAuthLibCore.create_token_response
         # (we override this so we can implement our own error handling to be compatible with AWX)
-        uri, http_method, body, headers = core._extract_params(request)
+
+        # This is really, really ugly. Modify the request to hash the refresh_token
+        # but only long enough for the oauth lib to do its magic.
+        did_hash_refresh_token = False
+        old_post = request.POST
+        if 'refresh_token' in request.POST:
+            did_hash_refresh_token = True
+            request.POST = request.POST.copy()  # so it's mutable
+            hashed_refresh_token = hash_string(request.POST['refresh_token'], hasher=hashlib.sha256)
+            request.POST['refresh_token'] = hashed_refresh_token
+
+        try:
+            uri, http_method, body, headers = core._extract_params(request)
+        finally:
+            if did_hash_refresh_token:
+                request.POST = old_post
+
         extra_credentials = core._get_extra_credentials(request)
         try:
             headers, body, status = core.server.create_token_response(uri, http_method, body, headers, extra_credentials)

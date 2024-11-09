@@ -65,16 +65,17 @@ def oauth2_application_password(randname):
 @pytest.fixture
 def oauth2_admin_access_token(oauth2_application, admin_api_client, admin_user):
     """
-    2-tuple with (token object with hashed token, plaintext token)
+    3-tuple with (token object with hashed token, plaintext token, plaintext_refresh_token)
     """
     url = get_relative_url('token-list')
     response = admin_api_client.post(url, {'application': oauth2_application[0].pk})
     assert response.status_code == 201
 
     plaintext_token = response.data['token']
+    plaintext_refresh_token = response.data['refresh_token']
     hashed_token = hash_string(plaintext_token, hasher=hashlib.sha256)
     token = OAuth2AccessToken.objects.get(token=hashed_token)
-    return (token, plaintext_token)
+    return (token, plaintext_token, plaintext_refresh_token)
 
 
 @copy_fixture(copies=3)

@@ -273,7 +273,8 @@ def test_oauth2_token_create(oauth2_application, admin_api_client, admin_user):
     assert 'updated' not in response.data
     hashed_token = hash_string(response.data['token'], hasher=hashlib.sha256)
     token = OAuth2AccessToken.objects.get(token=hashed_token)
-    refresh_token = OAuth2RefreshToken.objects.get(token=response.data['refresh_token'])
+    hashed_refresh_token = hash_string(response.data['refresh_token'], hasher=hashlib.sha256)
+    refresh_token = OAuth2RefreshToken.objects.get(token=hashed_refresh_token)
     assert token.application == oauth2_application
     assert refresh_token.application == oauth2_application
     assert token.user == admin_user
@@ -345,12 +346,13 @@ def test_oauth2_refresh_access_token(oauth2_application, oauth2_admin_access_tok
     """
     app = oauth2_application[0]
     secret = oauth2_application[1]
-    refresh_token = oauth2_admin_access_token[0].refresh_token
+    refresh_token = oauth2_admin_access_token[2]
+    refresh_token_obj = oauth2_admin_access_token[0].refresh_token
 
     url = get_relative_url('token')
     data = {
         'grant_type': 'refresh_token',
-        'refresh_token': refresh_token.token,
+        'refresh_token': refresh_token,
     }
     resp = unauthenticated_api_client.post(
         url,
@@ -359,8 +361,8 @@ def test_oauth2_refresh_access_token(oauth2_application, oauth2_admin_access_tok
         headers={'Authorization': 'Basic ' + base64.b64encode(f"{app.client_id}:{secret}".encode()).decode()},
     )
     assert resp.status_code == 201
-    assert OAuth2RefreshToken.objects.filter(token=refresh_token).exists()
-    original_refresh_token = OAuth2RefreshToken.objects.get(token=refresh_token)
+    assert OAuth2RefreshToken.objects.filter(token=refresh_token_obj.token).exists()
+    original_refresh_token = OAuth2RefreshToken.objects.get(token=refresh_token_obj.token)
     assert oauth2_admin_access_token not in OAuth2AccessToken.objects.all()
     assert OAuth2AccessToken.objects.count() == 1
 
@@ -372,11 +374,12 @@ def test_oauth2_refresh_access_token(oauth2_application, oauth2_admin_access_tok
     new_token = json_resp['access_token']
     new_token_hashed = hash_string(new_token, hasher=hashlib.sha256)
     new_refresh_token = json_resp['refresh_token']
+    new_refresh_token_hashed = hash_string(new_refresh_token, hasher=hashlib.sha256)
 
     assert OAuth2AccessToken.objects.filter(token=new_token_hashed).count() == 1
     # checks that RefreshTokens are rotated (new RefreshToken issued)
-    assert OAuth2RefreshToken.objects.filter(token=new_refresh_token).count() == 1
-    new_refresh_obj = OAuth2RefreshToken.objects.get(token=new_refresh_token)
+    assert OAuth2RefreshToken.objects.filter(token=new_refresh_token_hashed).count() == 1
+    new_refresh_obj = OAuth2RefreshToken.objects.get(token=new_refresh_token_hashed)
     assert not new_refresh_obj.revoked
 
 
@@ -387,7 +390,8 @@ def test_oauth2_refresh_token_expiration_is_respected(oauth2_application, oauth2
     """
     app = oauth2_application[0]
     secret = oauth2_application[1]
-    refresh_token = oauth2_admin_access_token[0].refresh_token
+    refresh_token = oauth2_admin_access_token[2]
+    refresh_token_obj = oauth2_admin_access_token[0].refresh_token
 
     settings.OAUTH2_PROVIDER['REFRESH_TOKEN_EXPIRE_SECONDS'] = 1
     settings.OAUTH2_PROVIDER['ACCESS_TOKEN_EXPIRE_SECONDS'] = 1
@@ -397,7 +401,7 @@ def test_oauth2_refresh_token_expiration_is_respected(oauth2_application, oauth2
     url = get_relative_url('token')
     data = {
         'grant_type': 'refresh_token',
-        'refresh_token': refresh_token.token,
+        'refresh_token': refresh_token,
     }
     response = admin_api_client.post(
         url,
@@ -407,7 +411,7 @@ def test_oauth2_refresh_token_expiration_is_respected(oauth2_application, oauth2
     )
     assert response.status_code == 403
     assert b'The refresh token has expired.' in response.content
-    assert OAuth2RefreshToken.objects.filter(token=refresh_token).exists()
+    assert OAuth2RefreshToken.objects.filter(token=refresh_token_obj.token).exists()
     assert OAuth2AccessToken.objects.count() == 1
     assert OAuth2RefreshToken.objects.count() == 1
 
