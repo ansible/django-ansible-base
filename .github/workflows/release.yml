@@ -3,12 +3,10 @@ name: Release django-ansible-base
 
 env:
   LC_ALL: "C.UTF-8" # prevent ERROR: Ansible could not initialize the preferred locale: unsupported locale setting
+  PROJECT_NAME: django-ansible-base
 
 on:
   workflow_dispatch:
-
-env:
-  PROJECT_NAME: django-ansible-base
 
 jobs:
   build:
