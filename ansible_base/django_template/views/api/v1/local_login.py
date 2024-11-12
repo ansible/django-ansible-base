@@ -11,7 +11,7 @@ from rest_framework.exceptions import NotAcceptable
 from rest_framework.negotiation import DefaultContentNegotiation
 from rest_framework.renderers import StaticHTMLRenderer
 from rest_framework.response import Response
-from social_core.exceptions import AuthException
+#from social_core.exceptions import AuthException TODO This does not work
 
 from ansible_base.lib.utils.requests import get_remote_host
 from ansible_base.lib.utils.settings import get_setting
@@ -39,7 +39,7 @@ class LoggedLoginView(views.LoginView):
     def post(self, request, *args, **kwargs):
         try:
             ret = super(LoggedLoginView, self).post(request, *args, **kwargs)
-        except AuthException as e:
+        except ValueError as e:  # TODO What exception should be caught?  Common denominator between social auth and django auth?
             # Log a warning when an exception occurs during login,
             # particularly when SYSTEM_USERNAME attempts to log in.
             logger.warning("Exception occurred during login.")
