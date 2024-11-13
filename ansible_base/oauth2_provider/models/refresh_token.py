@@ -22,7 +22,7 @@ class OAuth2RefreshToken(CommonModel, oauth2_models.AbstractRefreshToken, activi
         ordering = ('id',)
         swappable = "OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL"
 
-    token = prevent_search(models.CharField(max_length=255))
+    token = prevent_search(models.CharField(max_length=255, help_text=_("The refresh token value.")))
     updated = None  # Tracked in CommonModel with 'modified', no need for this
 
     def save(self, *args, **kwargs):

@@ -32,17 +32,35 @@ class Entry(ImmutableCommonModel):
         ('disassociate', _("Entity was disassociated with another entity")),
     ]
 
-    content_type = models.ForeignKey(ContentType, on_delete=models.DO_NOTHING)
-    object_id = models.TextField(null=True, blank=True)
+    content_type = models.ForeignKey(ContentType, on_delete=models.DO_NOTHING, help_text=_("The content type which was changed in this entry."))
+    object_id = models.TextField(null=True, blank=True, help_text=_("The object id which was modified in this entry."))
     content_object = GenericForeignKey('content_type', 'object_id')
-    operation = models.CharField(max_length=12, choices=OPERATION_CHOICES)
-    changes = models.JSONField(null=True, blank=True)
+    operation = models.CharField(
+        max_length=12, choices=OPERATION_CHOICES, help_text=_("The type of change recorded by the entry (i.e. create/update/delete/etc).")
+    )
+    changes = models.JSONField(null=True, blank=True, help_text=_("The changes to the system recorded by this entry."))
 
     # This is used for m2m (dis)associations
-    related_content_type = models.ForeignKey(ContentType, on_delete=models.DO_NOTHING, null=True, blank=True, related_name='related_content_type')
-    related_object_id = models.TextField(null=True, blank=True)
+    related_content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.DO_NOTHING,
+        null=True,
+        blank=True,
+        related_name='related_content_type',
+        help_text=_("The content type if this entry is recording an many to many (M2M) change."),
+    )
+    related_object_id = models.TextField(
+        null=True,
+        blank=True,
+        help_text=_("The object id of the related model if this entry is for an many to many (M2M) change."),
+    )
     related_content_object = GenericForeignKey('related_content_type', 'related_object_id')
-    related_field_name = models.CharField(max_length=64, null=True, blank=True)
+    related_field_name = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        help_text=_("The related field name if this entry is for an many to many (M2M) relationship."),
+    )
 
     def __str__(self):
         return f'[{self.created}] {self.get_operation_display()} by {self.created_by}: {self.content_type} {self.object_id}'

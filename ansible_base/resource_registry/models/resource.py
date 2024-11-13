@@ -23,9 +23,11 @@ class ResourceType(models.Model):
 
         self.resource_registry = get_registry()
 
-    content_type = models.OneToOneField(ContentType, on_delete=models.CASCADE, related_name="resource_type", unique=True)
-    externally_managed = models.BooleanField()
-    name = models.CharField(max_length=256, unique=True, db_index=True, editable=False, blank=False, null=False)
+    content_type = models.OneToOneField(
+        ContentType, on_delete=models.CASCADE, related_name="resource_type", unique=True, help_text=_("The content type for this resource type.")
+    )
+    externally_managed = models.BooleanField(help_text=_("Is this resource type managed externally from this service."))
+    name = models.CharField(max_length=256, unique=True, db_index=True, editable=False, blank=False, null=False, help_text=_("The name of this resource type."))
 
     @property
     def serializer_class(self):
@@ -40,28 +42,28 @@ class ResourceType(models.Model):
 
 
 class Resource(models.Model):
-    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, related_name="resources")
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, related_name="resources", help_text=_("The content type for this resource."))
 
     # this has to accommodate integer and UUID object IDs
-    object_id = models.TextField(null=False, db_index=True)
+    object_id = models.TextField(null=False, db_index=True, help_text=_("The object id for this resource."))
     content_object = GenericForeignKey('content_type', 'object_id')
 
     service_id = models.UUIDField(
         null=False,
         default=service_id,
-        help_text="The ID of the service responsible for managing this resource.",
+        help_text=_("ID of the service responsible for managing this resource."),
     )
 
     # we're not using this as the primary key because the ansible_id can change if the object is
     # externally managed.
-    ansible_id = models.UUIDField(default=uuid.uuid4, db_index=True, unique=True)
+    ansible_id = models.UUIDField(default=uuid.uuid4, db_index=True, unique=True, help_text=_("A unique ID identifying this resource by the resource server."))
 
     # human readable name for the resource
-    name = models.CharField(max_length=512, null=True)
+    name = models.CharField(max_length=512, null=True, help_text=_("The name of this resource."))
 
     is_partially_migrated = models.BooleanField(
         default=False,
-        help_text="This gets set to True when a resource has been copied into the resource server, but the service_id hasn't been updated yet.",
+        help_text=_("A flag indicating that the resource has been copied into the resource server, but the service_id hasn't been updated yet."),
     )
 
     def summary_fields(self):

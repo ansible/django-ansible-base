@@ -1,0 +1,23 @@
+dab_authentication.AuthenticatorUser.created  # Inherited from social auth
+dab_authentication.AuthenticatorUser.extra_data  # Inherited from social auth
+dab_authentication.AuthenticatorUser.modified  # Inherited from social auth
+dab_authentication.AuthenticatorUser.uid  # Inherited from social auth
+
+dab_oauth2_provider.OAuth2AccessToken.expires  # Inherited from django-oauth-toolkit
+dab_oauth2_provider.OAuth2AccessToken.id_token  # Inherited from django-oauth-toolkit
+dab_oauth2_provider.OAuth2AccessToken.source_refresh_token  # Inherited from django-oauth-toolkit
+
+dab_oauth2_provider.OAuth2Application.algorithm  # Inherited from django-oauth-toolkit
+dab_oauth2_provider.OAuth2Application.client_id  # Inherited from django-oauth-toolkit
+
+dab_oauth2_provider.OAuth2IDToken.application  # Inherited from django-oauth-toolkit
+dab_oauth2_provider.OAuth2IDToken.expires  # Inherited from django-oauth-toolkit
+dab_oauth2_provider.OAuth2IDToken.jti  # Inherited from django-oauth-toolkit
+dab_oauth2_provider.OAuth2IDToken.scope  # Inherited from django-oauth-toolkit
+dab_oauth2_provider.OAuth2IDToken.user  # Inherited from django-oauth-toolkit
+
+dab_oauth2_provider.OAuth2RefreshToken.access_token  # Inherited from django-oauth-toolkit
+dab_oauth2_provider.OAuth2RefreshToken.application  # Inherited from django-oauth-toolkit
+dab_oauth2_provider.OAuth2RefreshToken.revoked  # Inherited from django-oauth-toolkit
+dab_oauth2_provider.OAuth2RefreshToken.user  # Inherited from django-oauth-toolkit
+

@@ -43,11 +43,13 @@ class OAuth2Application(NamedCommonModel, oauth2_models.AbstractApplication, act
         null=True,
         blank=True,
         on_delete=models.CASCADE,
+        help_text=_("The user who created the application."),
     )
 
     description = models.TextField(
         default='',
         blank=True,
+        help_text=_("A description of this application."),
     )
     organization = models.ForeignKey(
         getattr(settings, 'ANSIBLE_BASE_ORGANIZATION_MODEL'),

@@ -58,28 +58,17 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
         blank=True,
         null=True,
         related_name='access_tokens',
+        help_text=_('The related application. If None, this is a user token instead of an application token.'),
     )
-    description = models.TextField(
-        default='',
-        blank=True,
-    )
-    last_used = models.DateTimeField(
-        null=True,
-        default=None,
-        editable=False,
-    )
+    description = models.TextField(default='', blank=True, help_text=_('A description for this token.'))
+    last_used = models.DateTimeField(null=True, default=None, editable=False, help_text=_('A timestamp of when this token was last used.'))
     scope = models.CharField(
         default='write',
         max_length=32,
         help_text=_("Allowed scopes, further restricts user permissions. Must be a simple space-separated string with allowed scopes ['read', 'write']."),
         validators=[validate_scope],
     )
-    token = prevent_search(
-        models.CharField(
-            max_length=255,
-            unique=True,
-        )
-    )
+    token = prevent_search(models.CharField(max_length=255, unique=True, help_text=_("The generated token value.")))
     updated = None  # Tracked in CommonModel with 'modified', no need for this
 
     def is_valid(self, scopes=None):

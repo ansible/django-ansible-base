@@ -1,0 +1,37 @@
+---
+name: Sanity
+env:
+  LC_ALL: "C.UTF-8" # prevent ERROR: Ansible could not initialize the preferred locale: unsupported locale setting
+on:
+  pull_request:
+  push:
+jobs:
+  help_text:
+    name: Help Test Check
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+      contents: read
+    strategy:
+      fail-fast: false
+    steps:
+      - name: Install make
+        run: sudo apt install make
+
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Install build requirements
+        run: sudo apt-get update && sudo apt-get install -y libsasl2-dev libldap2-dev libssl-dev libxmlsec1-dev
+
+      - name: Install python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+
+      - name: Install requirements
+        run: pip3.11 install -r requirements/requirements_all.txt -r requirements/requirements_dev.txt
+
+      - name: Run help text check
+        run: ./manage.py help_text_check --applications=dab --ignore-file=./.help_text_check.ignore
