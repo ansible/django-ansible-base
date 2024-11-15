@@ -1,6 +1,7 @@
 from unittest import mock
 
 import pytest
+import re
 
 from ansible_base.authentication.models import Authenticator
 
@@ -32,3 +33,19 @@ def test_authenticator_order_on_create_update():
 
     auth3 = Authenticator.objects.create(name='Authenticator 3', type=auth_type)
     assert auth3.order == 12
+
+@pytest.mark.django_db
+def test_dupe_slug(ldap_authenticator):
+    ldap_auth = Authenticator.objects.first()
+    ldap_slug = ldap_auth.slug
+
+    dupe = Authenticator()
+    dupe.name = ldap_auth.name
+    dupe.type = ldap_auth.type
+
+    ldap_auth.name = "changed"
+    ldap_auth.save()
+
+    dupe.save()
+    pattern = ldap_slug + '[a-z0-9_]{8}'
+    assert re.match(pattern, dupe.slug) is not None
