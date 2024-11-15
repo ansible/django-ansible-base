@@ -27,5 +27,5 @@ class OAuth2RefreshToken(CommonModel, oauth2_models.AbstractRefreshToken, activi
 
     def save(self, *args, **kwargs):
         if not self.pk:
-            self.token = hash_string(self.token, hasher=hashlib.sha256)
+            self.token = hash_string(self.token, hasher=hashlib.sha256, algo="sha256")
         super().save(*args, **kwargs)

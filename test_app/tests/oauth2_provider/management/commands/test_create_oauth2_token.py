@@ -44,7 +44,7 @@ class TestOAuth2CreateCommand:
             call_command('create_oauth2_token', arg, stdout=out)
             generated_token = out.getvalue().strip()
 
-        hashed_token = hash_string(generated_token, hasher=hashlib.sha256)
+        hashed_token = hash_string(generated_token, hasher=hashlib.sha256, algo="sha256")
         assert OAuth2AccessToken.objects.filter(user=random_user, token=hashed_token).count() == 1
         assert OAuth2AccessToken.objects.get(user=random_user, token=hashed_token).scope == 'write'
 

@@ -30,7 +30,7 @@ class TokenView(oauth_views.TokenView):
         # This code detects and auto-expires them on refresh grant
         # requests.
         if request.POST.get('grant_type') == 'refresh_token' and 'refresh_token' in request.POST:
-            hashed_refresh_token = hash_string(request.POST['refresh_token'], hasher=hashlib.sha256)
+            hashed_refresh_token = hash_string(request.POST['refresh_token'], hasher=hashlib.sha256, algo="sha256")
             refresh_token = OAuth2RefreshToken.objects.filter(token=hashed_refresh_token).first()
             if refresh_token:
                 expire_seconds = get_setting('OAUTH2_PROVIDER', {}).get('REFRESH_TOKEN_EXPIRE_SECONDS', 0)
@@ -49,7 +49,7 @@ class TokenView(oauth_views.TokenView):
         if 'refresh_token' in request.POST:
             did_hash_refresh_token = True
             request.POST = request.POST.copy()  # so it's mutable
-            hashed_refresh_token = hash_string(request.POST['refresh_token'], hasher=hashlib.sha256)
+            hashed_refresh_token = hash_string(request.POST['refresh_token'], hasher=hashlib.sha256, algo="sha256")
             request.POST['refresh_token'] = hashed_refresh_token
 
         try:

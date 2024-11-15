@@ -271,9 +271,9 @@ def test_oauth2_token_create(oauth2_application, admin_api_client, admin_user):
     assert response.status_code == 201
     assert 'modified' in response.data and response.data['modified'] is not None
     assert 'updated' not in response.data
-    hashed_token = hash_string(response.data['token'], hasher=hashlib.sha256)
+    hashed_token = hash_string(response.data['token'], hasher=hashlib.sha256, algo="sha256")
     token = OAuth2AccessToken.objects.get(token=hashed_token)
-    hashed_refresh_token = hash_string(response.data['refresh_token'], hasher=hashlib.sha256)
+    hashed_refresh_token = hash_string(response.data['refresh_token'], hasher=hashlib.sha256, algo="sha256")
     refresh_token = OAuth2RefreshToken.objects.get(token=hashed_refresh_token)
     assert token.application == oauth2_application
     assert refresh_token.application == oauth2_application
@@ -372,9 +372,9 @@ def test_oauth2_refresh_access_token(oauth2_application, oauth2_admin_access_tok
 
     json_resp = json.loads(resp.content)
     new_token = json_resp['access_token']
-    new_token_hashed = hash_string(new_token, hasher=hashlib.sha256)
+    new_token_hashed = hash_string(new_token, hasher=hashlib.sha256, algo="sha256")
     new_refresh_token = json_resp['refresh_token']
-    new_refresh_token_hashed = hash_string(new_refresh_token, hasher=hashlib.sha256)
+    new_refresh_token_hashed = hash_string(new_refresh_token, hasher=hashlib.sha256, algo="sha256")
 
     assert OAuth2AccessToken.objects.filter(token=new_token_hashed).count() == 1
     # checks that RefreshTokens are rotated (new RefreshToken issued)

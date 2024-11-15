@@ -9,8 +9,8 @@ def hash_tokens(apps, schema_editor):
     for model in (OAuth2AccessToken, OAuth2RefreshToken):
         for token in model.objects.all():
             # Never re-hash a hashed token
-            if len(token.token) == 64:
+            if token.token.startswith("$"):
                 continue
-            hashed = hash_string(token.token, hasher=hashlib.sha256)
+            hashed = hash_string(token.token, hasher=hashlib.sha256, algo="sha256")
             token.token = hashed
             token.save()

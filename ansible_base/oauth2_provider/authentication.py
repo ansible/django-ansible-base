@@ -27,7 +27,7 @@ class LoggedOAuth2Authentication(OAuth2Authentication):
         bearer_token = request.META.get('HTTP_AUTHORIZATION')
         if bearer_token and bearer_token.lower().startswith('bearer '):
             token_component = bearer_token.split(' ', 1)[1]
-            hashed = hash_string(token_component, hasher=hashlib.sha256)
+            hashed = hash_string(token_component, hasher=hashlib.sha256, algo="sha256")
             did_hash_token = True
             request.META['HTTP_AUTHORIZATION'] = f"Bearer {hashed}"
 

@@ -73,7 +73,7 @@ def oauth2_admin_access_token(oauth2_application, admin_api_client, admin_user):
 
     plaintext_token = response.data['token']
     plaintext_refresh_token = response.data['refresh_token']
-    hashed_token = hash_string(plaintext_token, hasher=hashlib.sha256)
+    hashed_token = hash_string(plaintext_token, hasher=hashlib.sha256, algo="sha256")
     token = OAuth2AccessToken.objects.get(token=hashed_token)
     return (token, plaintext_token, plaintext_refresh_token)
 

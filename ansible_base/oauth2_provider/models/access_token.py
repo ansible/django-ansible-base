@@ -106,5 +106,5 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
     def save(self, *args, **kwargs):
         if not self.pk:
             self.validate_external_users()
-            self.token = hash_string(self.token, hasher=hashlib.sha256)
+            self.token = hash_string(self.token, hasher=hashlib.sha256, algo="sha256")
         super().save(*args, **kwargs)
