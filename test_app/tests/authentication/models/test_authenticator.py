@@ -1,7 +1,7 @@
+import re
 from unittest import mock
 
 import pytest
-import re
 
 from ansible_base.authentication.models import Authenticator
 
@@ -33,6 +33,7 @@ def test_authenticator_order_on_create_update():
 
     auth3 = Authenticator.objects.create(name='Authenticator 3', type=auth_type)
     assert auth3.order == 12
+
 
 @pytest.mark.django_db
 def test_dupe_slug(ldap_authenticator):
