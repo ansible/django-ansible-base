@@ -1,34 +1,47 @@
 from django.utils.translation import gettext_lazy as _
-from flags.state import flag_enabled
-from rest_framework import viewsets
+from rest_framework.response import Response
 
 from ansible_base.feature_flags.models import FeatureFlag
-
-# from ansible_base.feature_flags.serializers import FeatureFlagSerializer
-from ansible_base.lib.utils.settings import get_setting
+from ansible_base.feature_flags.serializers import FeatureFlagSerializer
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 
+from .utils import get_feature_flags
 
-class FeatureFlagView(viewsets.ModelViewSet, AnsibleBaseView):
+
+class FeatureFlagsListView(AnsibleBaseView):
     """
     A view class for displaying feature flags
     """
 
     model = FeatureFlag
-    # serializer_class = FeatureFlagSerializer
+    serializer_class = FeatureFlagSerializer
     filter_backends = []
     name = _('Feature Flags')
     http_method_names = ['get', 'head']
 
+    def get(self, request, format=None):
+        return Response(get_feature_flags())
+
     def get_queryset(self):
-        platform_flags = get_setting('FLAGS', {})
-        service_flags = get_setting('ANSIBLE_BASE_SERVICE_FEATURE_FLAGS', {})
+        return get_feature_flags()
 
-        platform_flags.update(service_flags)
 
-        response = {}
-        all_flags = platform_flags.keys()
-        for flag in sorted(all_flags):
-            response[flag] = flag_enabled(flag)
+class FeatureFlagDetailView(AnsibleBaseView):
+    """
+    A view class for displaying feature flag detail
+    """
 
-        return response
+    model = FeatureFlag
+    serializer_class = FeatureFlagSerializer
+    filter_backends = []
+    name = _('Feature Flags')
+    http_method_names = ['get', 'patch', 'head']
+
+    def get(self, request, category_slug, format=None):
+        self.serializer = FeatureFlagSerializer(category_slug)
+        return Response(self.serializer.to_representation())
+
+    def patch(self, request, category_slug, format=None):
+        self.serializer = FeatureFlagSerializer(category_slug)
+        updated_data = self.serializer.validate_and_save(request.data)
+        return Response(updated_data)
