@@ -96,9 +96,13 @@ def check_system_username(uid: str) -> None:
 
 def determine_username_from_uid_social(**kwargs) -> dict:
     uid_field = getattr(kwargs.get('backend', None), 'ID_KEY', 'username')
+    if uid_field is None:
+        uid_field = 'username'
     selected_username = kwargs.get('details', {}).get(uid_field, None)
     if not selected_username:
-        raise AuthException(_('Unable to get associated username from: %(details)s') % {'details': kwargs.get("details", None)})
+        raise AuthException(
+            _('Unable to get associated username from attribute {uid_field}: %(details)s') % {'uid_field': uid_field, 'details': kwargs.get("details", None)}
+        )
 
     authenticator = kwargs.get('backend')
     if not authenticator:
