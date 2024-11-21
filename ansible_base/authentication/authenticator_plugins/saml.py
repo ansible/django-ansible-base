@@ -296,6 +296,24 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAML
         if "Group" in attrs:
             response["Group"] = attrs["Group"]
         data = super().extra_data(user, backend, response, *args, **kwargs)
+
+        # Ideally we would always have a DB instance
+        # But if something was mocked in a test or somehow a db_instance just wasn't past in we don't want to error here
+        if self.database_instance is None:
+            return data
+
+        # The fields we want in extra get embedded into the ENABLED_IDPS field so we need to get them out from there
+        idp_data = self.database_instance.configuration.get('ENABLED_IDPS', {}).get(idp_string, {})
+
+        # We are going to auto-include all of the fields like USER_FIRST_NAME, USER_EMAIL, etc.
+        for field, attr_name in SAMLConfiguration.settings_to_enabled_idps_fields.items():
+            if field in ('IDP_URL', 'IDP_X509_CERT', 'IDP_ENTITY_ID'):
+                continue
+
+            field_name = idp_data.get(attr_name, None)
+            if field_name in attrs:
+                data[field_name] = attrs[field_name]
+
         return data
 
     def get_user_groups(self, extra_groups=[]):

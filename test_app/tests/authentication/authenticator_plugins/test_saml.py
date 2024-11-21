@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest import mock
 
 import pytest
@@ -211,6 +212,91 @@ def test_extra_data(mockedsuper):
     assert mockedsuper.called
     assert settings.ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG in social.extra_data
     assert "mygroup" in rDict["Group"]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "idp_fields,expected_results",
+    [
+        (
+            {
+                'attr_email': 'email',
+                'attr_groups': 'Groups',
+                'attr_username': 'username',
+                'attr_last_name': 'last_name',
+                'attr_first_name': 'first_name',
+                'attr_user_permanent_id': 'name_id',
+            },
+            {
+                'email': ['no.one@nowhere.com'],
+                'last_name': ['Admin'],
+                'username': ['gateway_admin'],
+                'first_name': ['Gateway'],
+                'name_id': 'gateway_admin',
+            },
+        ),
+        (
+            {
+                'attr_email': 'not_email',
+                'attr_groups': 'Groups',
+                'attr_username': 'username',
+                'attr_last_name': 'last_name',
+                'attr_first_name': 'first_name',
+                'attr_user_permanent_id': 'name_id',
+            },
+            {
+                'last_name': ['Admin'],
+                'username': ['gateway_admin'],
+                'first_name': ['Gateway'],
+                'name_id': 'gateway_admin',
+            },
+        ),
+        (
+            {
+                'attr_username': 'username',
+                'attr_last_name': 'last_name',
+                'attr_first_name': 'first_name',
+                'attr_user_permanent_id': 'name_id',
+            },
+            {
+                'last_name': ['Admin'],
+                'username': ['gateway_admin'],
+                'first_name': ['Gateway'],
+                'name_id': 'gateway_admin',
+            },
+        ),
+    ],
+)
+def test_extra_data_default_attrs(idp_fields, expected_results):
+    from ansible_base.authentication.authenticator_plugins.saml import idp_string
+    from ansible_base.authentication.models import AuthenticatorUser
+
+    ap = AuthenticatorPlugin()
+    database_instance = SimpleNamespace()
+    enabled_idps = {
+        'ENABLED_IDPS': {
+            idp_string: idp_fields,
+        }
+    }
+    database_instance.configuration = enabled_idps
+    ap.database_instance = database_instance
+
+    response = {
+        'idp_name': 'IdP',
+        'attributes': {
+            'email': ['no.one@nowhere.com'],
+            'last_name': ['Admin'],
+            'is_superuser': ['true'],
+            'username': ['gateway_admin'],
+            'first_name': ['Gateway'],
+            'Role': ['default-roles-gateway realm', 'manage-account', 'uma_authorization', 'view-profile', 'offline_access', 'manage-account-links'],
+            'name_id': 'gateway_admin',
+        },
+    }
+    au = AuthenticatorUser()
+    with mock.patch('social_core.backends.saml.SAMLAuth.extra_data', return_value={}):
+        results = ap.extra_data(None, 'IdP:gateway_admin', response, **{'social': au})
+        assert results == expected_results
 
 
 def test_saml_create_via_api_without_callback_url(admin_api_client, saml_configuration):
