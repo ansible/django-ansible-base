@@ -1,4 +1,5 @@
 from random import shuffle
+from types import SimpleNamespace
 from unittest import mock
 
 import pytest
@@ -153,3 +154,21 @@ def test_authenticate(request, local_authenticator, github_enterprise_authentica
             expected = request.getfixturevalue(expected)
 
         assert auth_return == expected
+
+
+@pytest.mark.django_db
+def test_authentication_exception(expected_log):
+    class MockAuthenticator:
+        database_instance = SimpleNamespace(name='testing')
+
+        def authenticate(*args, **kwars):
+            raise Exception('eeekkkk')
+
+    # Patch the backends to have our Mock authenticator in it
+    with mock.patch(
+        "ansible_base.authentication.backend.get_authentication_backends",
+        return_value={1: MockAuthenticator()},
+    ):
+        # Expect the log we emit
+        with expected_log('ansible_base.authentication.backend.logger', "exception", "Exception raised while trying to authenticate with"):
+            backend.AnsibleBaseAuth().authenticate(None)

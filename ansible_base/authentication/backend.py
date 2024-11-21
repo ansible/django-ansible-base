@@ -37,7 +37,11 @@ class AnsibleBaseAuth(ModelBackend):
         last_modified = None if last_modified_item is None else last_modified_item.get('modified')
 
         for authenticator_id, authenticator_object in get_authentication_backends(last_modified).items():
-            user = authenticator_object.authenticate(request, *args, **kwargs)
+            try:
+                user = authenticator_object.authenticate(request, *args, **kwargs)
+            except Exception:
+                logger.exception(f"Exception raised while trying to authenticate with {authenticator_object.database_instance.name}")
+                continue
 
             # Social Auth pipeline can return status string when update_user_claims fails (authentication maps deny access)
             if user == SOCIAL_AUTH_PIPELINE_FAILED_STATUS:
