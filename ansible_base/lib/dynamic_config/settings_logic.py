@@ -18,7 +18,7 @@ def get_dab_settings(
     middleware: Optional[list[str]] = None,
     oauth2_provider: Optional[dict] = None,
     caches: Optional[dict] = None,
-    templates: Optional[dict] = None,
+    templates: Optional[list[dict]] = None,
 ) -> dict:
     dab_data = {}
 
