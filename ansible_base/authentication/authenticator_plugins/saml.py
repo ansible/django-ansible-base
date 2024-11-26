@@ -298,7 +298,7 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAML
         data = super().extra_data(user, backend, response, *args, **kwargs)
 
         # Ideally we would always have a DB instance
-        # But if something was mocked in a test or somehow a db_instance just wasn't past in we don't want to error here
+        # But if something was mocked in a test or somehow a db_instance just wasn't passed in we don't want to error here
         if self.database_instance is None:
             return data
 
