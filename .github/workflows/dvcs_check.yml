@@ -1,0 +1,15 @@
+on:
+  pull_request_target:
+    type: opened, synchronize, reopened, edited
+jobs:
+  dvcs_pr_checker:
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    name: Check the PR for DVCS integration
+    steps:
+      - id: foo
+        uses: ansible/dvcs-action@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
