@@ -21,6 +21,10 @@ class FakeBackend:
         return ["username", "email"]
 
 
+def raise_auth_exception(message: str, backend: Optional[Authenticator] = None):
+    raise AuthException(backend, message)
+
+
 def migrate_from_existing_authenticator(
     uid: str, alt_uid: Optional[str], authenticator: Authenticator, preferred_username: Optional[str] = None
 ) -> Optional[str]:
@@ -84,14 +88,14 @@ def get_local_username(user_details: dict) -> str:
     return username['username']
 
 
-def check_system_username(uid: str) -> None:
+def check_system_username(uid: str, authenticator: Optional[Authenticator]) -> None:
     """
     Determine if a username is identical with SYSTEM_USERNAME
     Raise AuthException if system user attempts to login via an external authentication source
     """
     if uid.casefold() == settings.SYSTEM_USERNAME.casefold():
         logger.warning(f'{settings.SYSTEM_USERNAME} cannot log in from an authenticator!')
-        raise AuthException(_('System user is not allowed to log in from external authentication sources.'))
+        raise_auth_exception(_('System user is not allowed to log in from external authentication sources.'), backend=authenticator)
 
 
 def determine_username_from_uid_social(**kwargs) -> dict:
@@ -108,16 +112,17 @@ def determine_username_from_uid_social(**kwargs) -> dict:
     #     'last_name': <user last name if any>
     # }
     # If this data structure does not return the username, this method will fail
-    selected_username = kwargs.get('details', {}).get('username', None)
-    if not selected_username:
-        raise AuthException(
-            _('Unable to get associated username from details, expected entry "username". Full user details: %(details)s')
-            % {'details': kwargs.get("details", None)}
-        )
-
     authenticator = kwargs.get('backend')
     if not authenticator:
-        raise AuthException(_('Unable to get backend from kwargs'))
+        raise_auth_exception(_('Unable to get backend from kwargs'))
+
+    selected_username = kwargs.get('details', {}).get('username', None)
+    if not selected_username:
+        raise_auth_exception(
+            _('Unable to get associated username from details, expected entry "username". Full user details: %(details)s')
+            % {'details': kwargs.get("details", None)},
+            backend=authenticator,
+        )
 
     alt_uid = authenticator.get_alternative_uid(**kwargs)
 
@@ -146,7 +151,7 @@ def determine_username_from_uid(uid: str = None, authenticator: Authenticator = 
           a username of timmy<hash>.  This literally does not make sense for the local authenticator because the DB is its own source of truth.
     """
     try:
-        check_system_username(uid)
+        check_system_username(uid, authenticator=authenticator)
     except AuthException as e:
         logger.warning(f"AuthException: {e}")
         raise
@@ -190,7 +195,7 @@ def get_or_create_authenticator_user(
                 For example, LDAP might return sn, location, phone_number, etc
     """
     try:
-        check_system_username(uid)
+        check_system_username(uid, authenticator=authenticator)
     except AuthException as e:
         logger.warning(f"AuthException: {e}")
         raise

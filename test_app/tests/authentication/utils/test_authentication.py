@@ -197,3 +197,20 @@ class TestAuthenticationUtilsAuthentication:
             uid="Bob",
         )
         assert response == {'username': 'Bob'}
+
+    def test_raise_auth_exception(self):
+        try:
+            authentication.raise_auth_exception('testing')
+        except AuthException as e:
+            assert str(e) == 'testing'
+
+    def test_raise_auth_exception_in_logs(self, local_authenticator, expected_log):
+        with expected_log(
+            'ansible_base.authentication.utils.authentication.logger',
+            'warning',
+            'AuthException: System user is not allowed to log in from external authentication sources.',
+        ):
+            try:
+                authentication.get_or_create_authenticator_user(settings.SYSTEM_USERNAME, local_authenticator, user_details={}, extra_data={})
+            except AuthException:
+                pass
