@@ -1,5 +1,6 @@
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
+from ansible_base.lib.utils.models import is_system_user
 from ansible_base.lib.utils.settings import get_setting
 
 oauth2_provider_installed = "ansible_base.oauth2_provider" in get_setting("INSTALLED_APPS", [])
@@ -21,12 +22,21 @@ def try_add_oauth2_scope_permission(permission_classes: list):
     return permission_classes
 
 
+def check_service_token_auth(request, view):
+    if is_system_user(request.user) and getattr(view, 'allow_service_token', False) is True and request.auth == 'ServiceTokenAuthentication':
+        return True
+    return False
+
+
 class IsSuperuser(BasePermission):
     """
     Allows access only to superusers.
     """
 
     def has_permission(self, request, view):
+        if check_service_token_auth(request, view):
+            return True
+
         return bool(request.user and request.user.is_authenticated and request.user.is_superuser)
 
 
@@ -37,6 +47,8 @@ class IsSuperuserOrAuditor(BasePermission):
     """
 
     def has_permission(self, request, view):
+        if check_service_token_auth(request, view):
+            return True
         if not (request.user and request.user.is_authenticated):
             return False
         if request.user.is_superuser:
