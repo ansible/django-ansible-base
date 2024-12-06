@@ -86,18 +86,9 @@ class ResourceRegistry:
     registry = {}
 
     def __init__(self, resource_list: List[ResourceConfig], service_api_config: ServiceAPIConfig = None):
-        self._validate_api_config(service_api_config)
         self.api_config = service_api_config
         for r in resource_list:
             self.registry[r.model_label] = r
-
-    def _validate_api_config(self, config):
-        """
-        Needs to validate that:
-            - Viewsets have the correct serializer, pagination and filter classes
-            - Service type is set to one of awx, galaxy, eda or aap
-        """
-        assert config.service_type in ["aap", "awx", "galaxy", "eda", "example"]
 
     def get_resources(self):
         return self.registry
