@@ -55,7 +55,7 @@ class TestJWTCommonAuth:
 
     @pytest.mark.django_db
     def test_parse_jwt_no_header(self, caplog, mocked_http, shut_up_logging):
-        with caplog.at_level(logging.INFO):
+        with caplog.at_level(logging.DEBUG):
             my_auth = JWTCommonAuth()
             my_auth.parse_jwt_token(mocked_http.mocked_parse_jwt_token_get_request('without_headers'))
             assert "X-DAB-JW-TOKEN header not set for JWT authentication" in caplog.text
