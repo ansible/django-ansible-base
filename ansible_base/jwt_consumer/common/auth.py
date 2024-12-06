@@ -66,7 +66,7 @@ class JWTCommonAuth:
 
         token_from_header = request.headers.get("X-DAB-JW-TOKEN", None)
         if not token_from_header:
-            logger.info("X-DAB-JW-TOKEN header not set for JWT authentication")
+            logger.debug("X-DAB-JW-TOKEN header not set for JWT authentication")
             return
         logger.debug(f"Received JWT auth token: {token_from_header}")
 
