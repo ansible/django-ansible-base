@@ -95,9 +95,25 @@ def check_system_username(uid: str) -> None:
 
 
 def determine_username_from_uid_social(**kwargs) -> dict:
+    # If you are troubleshooting login issues and getting to here ....
+    # Make sure that your backend properly implements get_user_details per the base backend
+    # See https://github.com/python-social-auth/social-core/blob/master/social_core/backends/base.py#L173
+    # The return should be in the format:
+    #
+    # {
+    #     'username': <username if any>,
+    #     'email': <user email if any>,
+    #     'fullname': <user full name if any>,
+    #     'first_name': <user first name if any>,
+    #     'last_name': <user last name if any>
+    # }
+    # If this data structure does not return the username, this method will fail
     selected_username = kwargs.get('details', {}).get('username', None)
     if not selected_username:
-        raise AuthException(_('Unable to get associated username from: %(details)s') % {'details': kwargs.get("details", None)})
+        raise AuthException(
+            _('Unable to get associated username from details, expected entry "username". Full user details: %(details)s')
+            % {'details': kwargs.get("details", None)}
+        )
 
     authenticator = kwargs.get('backend')
     if not authenticator:
