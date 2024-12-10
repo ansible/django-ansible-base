@@ -1,6 +1,5 @@
 import random
 import re
-import string
 from collections import defaultdict
 from datetime import datetime, timedelta
 from unittest import mock
@@ -27,11 +26,6 @@ from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
 from ansible_base.resource_registry.models.service_identifier import service_id
 from test_app import models
-
-
-@pytest.fixture
-def random_name(length: int = 10) -> str:
-    return ''.join(random.choices(string.ascii_lowercase, k=length))
 
 
 @pytest.fixture()
