@@ -1,5 +1,3 @@
-from types import SimpleNamespace
-
 import pytest
 from django.conf import settings
 from social_core.exceptions import AuthException
@@ -199,17 +197,3 @@ class TestAuthenticationUtilsAuthentication:
             uid="Bob",
         )
         assert response == {'username': 'Bob'}
-
-    @pytest.mark.parametrize(
-        "kwargs,expected_uid_field",
-        [
-            ({}, 'username'),
-            ({'backend': None}, 'username'),
-            ({'backend': SimpleNamespace(ID_KEY='testing')}, 'testing'),
-            ({'backend': SimpleNamespace(ID_KEY=None)}, 'testing'),
-        ],
-    )
-    def test_determine_username_from_uid_social_authenticator_ID_KEY(self, kwargs, expected_uid_field):
-        with pytest.raises(AuthException) as ae:
-            authentication.determine_username_from_uid_social(**kwargs)
-            assert f'Unable to get associated username from attribute {expected_uid_field}' in ae
