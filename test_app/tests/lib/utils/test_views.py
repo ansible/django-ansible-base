@@ -141,3 +141,106 @@ def test_ansible_base_view_filter_backends_custom_settings():
         importlib.reload(ansible_base.lib.utils.views.django_app_api)
         assert len(AuthenticatorViewSet.filter_backends) == len(settings.REST_FRAMEWORK['DEFAULT_FILTER_BACKENDS'])
     override_settings(ANSIBLE_BASE_CUSTOM_VIEW_FILTERS=settings.ANSIBLE_BASE_ALL_REST_FILTERS)
+
+
+@pytest.mark.parametrize(
+    "user_type,allow_service_token,request_auth,expected_result",
+    [
+        # Change only the auth_request
+        (None, None, None, False),
+        (None, None, 'junk', False),
+        (None, None, 'ServiceTokenAuthentication', False),
+        # Try view attr False with different auth_requests
+        (None, False, None, False),
+        (None, False, 'junk', False),
+        (None, False, 'ServiceTokenAuthentication', False),
+        # Try view attr True with different auth_requests
+        (None, True, None, False),
+        (None, True, 'junk', False),
+        (None, True, 'ServiceTokenAuthentication', False),
+        # Try a real non-system user with different settings
+        ('random', None, None, False),
+        ('random', None, 'junk', False),
+        ('random', None, 'ServiceTokenAuthentication', False),
+        ('random', False, None, False),
+        ('random', False, 'junk', False),
+        ('random', False, 'ServiceTokenAuthentication', False),
+        ('random', True, None, False),
+        ('random', True, 'junk', False),
+        ('random', True, 'ServiceTokenAuthentication', False),
+        # Try the system user with different settings
+        ('system', None, None, False),
+        ('system', None, 'junk', False),
+        ('system', None, 'ServiceTokenAuthentication', False),
+        ('system', False, None, False),
+        ('system', False, 'junk', False),
+        ('system', False, 'ServiceTokenAuthentication', False),
+        ('system', True, None, False),
+        ('system', True, 'junk', False),
+        ('system', True, 'ServiceTokenAuthentication', True),
+    ],
+)
+def test_check_service_token_auth(user_type, allow_service_token, request_auth, expected_result, system_user, random_user):
+    from ansible_base.lib.utils.views.permissions import check_service_token_auth
+
+    request = mock.Mock()
+    view = mock.Mock()
+
+    if user_type is None:
+        request.user = user_type
+    elif user_type == 'random':
+        request.user = random_user
+    elif user_type == 'system':
+        request.user = system_user
+
+    if allow_service_token is not None:
+        view.allow_service_token = allow_service_token
+    request.auth = request_auth
+
+    assert check_service_token_auth(request, view) == expected_result
+
+
+@pytest.mark.parametrize(
+    "check_service_token_auth_return,user_is_superuser,expected_result",
+    [
+        (True, False, True),
+        (False, False, False),
+        (False, False, False),
+        (False, True, True),
+        (True, None, True),
+        (False, None, False),
+    ],
+)
+def test_is_superuser_has_permission(check_service_token_auth_return, user_is_superuser, expected_result, random_user):
+    from ansible_base.lib.utils.views.permissions import IsSuperuser
+
+    perm_class = IsSuperuser()
+
+    request = mock.Mock()
+    if user_is_superuser is None:
+        request.user = None
+    else:
+        random_user.is_superuser = user_is_superuser
+        random_user.save()
+        request.user = random_user
+    with mock.patch('ansible_base.lib.utils.views.permissions.check_service_token_auth', return_value=check_service_token_auth_return):
+        assert perm_class.has_permission(request, None) == expected_result
+
+
+@pytest.mark.parametrize(
+    "check_service_token_auth_return,expected_result",
+    [
+        (True, True),
+        (False, False),
+    ],
+)
+def test_is_superuser_or_auditor_has_permission_with_check_service_token_auth(check_service_token_auth_return, expected_result):
+    from ansible_base.lib.utils.views.permissions import IsSuperuserOrAuditor
+
+    perm_class = IsSuperuserOrAuditor()
+
+    request = mock.Mock()
+    # Because there is no user the function will return False if the check_service_token_auth does not response with True
+    request.user = None
+    with mock.patch('ansible_base.lib.utils.views.permissions.check_service_token_auth', return_value=check_service_token_auth_return):
+        assert perm_class.has_permission(request, None) == expected_result

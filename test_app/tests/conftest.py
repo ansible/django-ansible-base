@@ -1,6 +1,6 @@
-import os
 import random
 import re
+import string
 from collections import defaultdict
 from datetime import datetime, timedelta
 from unittest import mock
@@ -30,6 +30,11 @@ from ansible_base.resource_registry.models.service_identifier import service_id
 from test_app import models
 
 
+@pytest.fixture
+def random_name(length: int = 10) -> str:
+    return ''.join(random.choices(string.ascii_lowercase, k=length))
+
+
 @pytest.fixture()
 def openapi_schema():
     request = RequestFactory().get('/api/v1/')
@@ -54,15 +59,26 @@ def test_migrations_okay(*args, **kwargs):
             app_config = apps.get_app_config(app)
         except LookupError:
             raise RuntimeError(f'App {app} is present in the recorded migrations but not installed, perhaps you need --create-db?')
-        for path in os.listdir(os.path.join(app_config.path, 'migrations')):
-            if re.match(r'^\d{4}_.*.py$', path):
-                disk_steps[app].add(path.rsplit('.')[0])
+
+        migration_module = app_config.module.migrations
+        for step in dir(migration_module):
+            if not re.match(r'\d{4}_', step):
+                continue
+            step_module = getattr(migration_module, step)
+            migration_name = step_module.__name__.rsplit('.')[-1]
+            disk_steps[app].add(migration_name)
+
+            migration_cls = step_module.Migration
+            for replaces_app_name, replaces_migration_name in getattr(migration_cls, 'replaces', []):
+                disk_steps[app].add(replaces_migration_name)
+
     db_steps = defaultdict(set)
     for record in MigrationRecorder.Migration.objects.only('app', 'name'):
         if record.app in app_exceptions:
             continue
         app_name = app_exceptions.get(record.app, record.app)
         db_steps[app_name].add(record.name)
+
     for app in disk_steps:
         assert disk_steps[app] == db_steps[app], f'Migrations not expected for app {app}, perhaps you need --create-db?'
 

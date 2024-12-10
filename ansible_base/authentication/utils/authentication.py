@@ -95,13 +95,21 @@ def check_system_username(uid: str) -> None:
 
 
 def determine_username_from_uid_social(**kwargs) -> dict:
-    uid_field = getattr(kwargs.get('backend', None), 'ID_KEY', 'username')
-    if uid_field is None:
-        uid_field = 'username'
+    backend = kwargs.get('backend', None)
+    uid_field = 'username'
+    if backend:
+        # Update our fallback if the authenticator has an ID_KEY field, ignore if ID_KEY is None
+        if getattr(backend, "ID_KEY", None) is not None:
+            uid_field = backend.ID_KEY
+        # Favor the authenticator configuration variable ID_KEY if present
+        if hasattr(backend, "setting"):
+            uid_field_setting = backend.setting('ID_KEY', default=None)
+            if uid_field_setting is not None:
+                uid_field = uid_field_setting
     selected_username = kwargs.get('details', {}).get(uid_field, None)
     if not selected_username:
         raise AuthException(
-            _('Unable to get associated username from attribute {uid_field}: %(details)s') % {'uid_field': uid_field, 'details': kwargs.get("details", None)}
+            _('Unable to get associated username from attribute %(uid_field)s: %(details)s') % {'uid_field': uid_field, 'details': kwargs.get("details", None)}
         )
 
     authenticator = kwargs.get('backend')

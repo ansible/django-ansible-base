@@ -5,9 +5,9 @@ from uuid import UUID
 
 from django.db.models import Model, Q
 from django.db.models.signals import m2m_changed, post_delete, post_init, post_save, pre_delete, pre_save
-from django.db.utils import ProgrammingError
 from django.dispatch import Signal
 
+from ansible_base.lib.utils.db import migrations_are_complete
 from ansible_base.rbac.caching import compute_object_role_permissions, compute_team_member_roles
 from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation, get_evaluation_model
 from ansible_base.rbac.permission_registry import permission_registry
@@ -275,9 +275,7 @@ def rbac_post_user_delete(instance, *args, **kwargs):
 
 
 def post_migration_rbac_setup(sender, *args, **kwargs):
-    try:
-        RoleDefinition.objects.first()
-    except ProgrammingError:
+    if not migrations_are_complete():
         logger.info('Not running DAB RBAC post_migrate logic because of suspected reverse migration')
         return
 
