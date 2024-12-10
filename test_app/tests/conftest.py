@@ -10,7 +10,6 @@ import pytest
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from django.apps import apps
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from django.db.migrations.recorder import MigrationRecorder
@@ -44,12 +43,14 @@ def openapi_schema():
     return generator.get_schema(request=drf_request)
 
 
-def test_migrations_okay(*args, **kwargs):
+def test_migrations_okay(apps=None, app_config=None, **kwargs):
     """This test is not about the code, but for verifying your own state.
 
     If you are not migrated to the correct state, this may hopefully alert you.
     This is targeted toward situations like switching branches.
     """
+    if (not apps) or (not app_config) or app_config.label != 'test_app':
+        return  # so that it is only ran once
     disk_steps = defaultdict(set)
     app_exceptions = {'default': 'auth', 'social_auth': 'social_django'}
     for app in MigrationRecorder.Migration.objects.values_list('app', flat=True).distinct():
@@ -59,6 +60,9 @@ def test_migrations_okay(*args, **kwargs):
             app_config = apps.get_app_config(app)
         except LookupError:
             raise RuntimeError(f'App {app} is present in the recorded migrations but not installed, perhaps you need --create-db?')
+
+        if (not hasattr(app_config, 'module')) or (not hasattr(app_config.module, 'migrations')):
+            continue  # might catch a stub app
 
         migration_module = app_config.module.migrations
         for step in dir(migration_module):
