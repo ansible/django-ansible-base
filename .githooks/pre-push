@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+# Name of default branch from which feature branches are created and to which PRs will be merged back to
+DEFAULT_BRANCH="devel"
+# Regexp to match jira number AAP-NNNNN or magic string "NO_JIRA"
+NO_JIRA_MARKER="NO_JIRA"
+JIRA_REGEXP="(aap-[0-9]+|${NO_JIRA_MARKER})"
+
+# Fetch current branch name and list of commits since diverging from default branch
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+CURRENT_COMMITS=$(git --no-pager log --format=%s --reverse ${DEFAULT_BRANCH}..)
+
+# Extract Jira number or magic marker from branch and commit messages(filtered for unique values)
+BRANCH_JIRA=$(grep -i -o -E "${JIRA_REGEXP}" <<< ${CURRENT_BRANCH})
+COMMIT_JIRAS=$(grep -i -o -E "${JIRA_REGEXP}" <<< ${CURRENT_COMMITS} | uniq )
+# Count all Jira numbers and those matching Jira from branch name
+COMMIT_JIRA_COUNT=$(grep -c . <<< ${COMMIT_JIRAS})
+MATCHING_JIRAS_COUNT=$(grep -ic -E "${BRANCH_JIRA}" <<< ${COMMIT_JIRAS})
+
+echo "JIRA number from branch name: ${BRANCH_JIRA}"
+echo "JIRA numbers from commits:"
+echo "${COMMIT_JIRAS}"
+echo "Number of JIRA numbers from commits matching JIRA number from branch name: ${MATCHING_JIRAS_COUNT}"
+
+# if no Jira or no magic marker found in branch name, fail
+echo "Checking branch name..."
+if [ "${BRANCH_JIRA}" = "" ]; then
+  echo "Fail: Branch name does not contain a JIRA number or a ${NO_JIRA_MARKER} marker."
+  exit 1
+# if branch does not have the magic marker, check the commits as well
+elif [ "${BRANCH_JIRA}" != "${NO_JIRA_MARKER}" ]; then
+    echo "Checking commit messages..."
+    # if there is no Jira number or magic marker, fail
+    if [ ${COMMIT_JIRA_COUNT} -eq 0 ]; then
+      echo "Fail: No commit message contains a JIRA number or a ${NO_JIRA_MARKER} marker."
+      exit 1
+    # if no Jira numbers or magic marker match the Jira number from branch name, inform the user
+    # this case might be happening when code is being back-ported under different Jira number in branch name
+    elif [ ${MATCHING_JIRAS_COUNT} -eq 0 ]; then
+      echo "Warning: No Jira numbers or ${NO_JIRA_MARKER} marker in commit messages match Jira number from branch name."
+    else
+      echo "OK. Found Jira numbers(or ${NO_JIRA_MARKER} marker) in commit messages that match Jira number in branch name."
+    fi
+else
+  echo "OK. Skipping checks of commit messages, branch name includes ${NO_JIRA_MARKER}."
+fi

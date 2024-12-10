@@ -11,17 +11,14 @@ COMPOSE_UP_OPTS ?=
 DOCKER_COMPOSE ?= docker compose
 
 .PHONY: PYTHON_VERSION clean build\
-	check lint check_black check_flake8 check_isort
+	check lint check_black check_flake8 check_isort git_hooks_config
 
 PYTHON_VERSION:
 	@echo "$(subst python,,$(PYTHON))"
 
-## Install the pre-commit hook in the approprate .git directory structure
-.git/hooks/pre-commit:
-	@echo "if [ -x pre-commit.sh ]; then" > .git/hooks/pre-commit
-	@echo "    ./pre-commit.sh;" >> .git/hooks/pre-commit
-	@echo "fi" >> .git/hooks/pre-commit
-	@chmod +x .git/hooks/pre-commit
+## Set the local git configuration(specific to this repo) to look for hooks in .githooks folder
+git_hooks_config:
+	git config set --local core.hooksPath .githooks
 
 ## Zero out all of the temp and build files
 clean:
@@ -69,7 +66,7 @@ stop-postgres:
 # --------------------------------------
 
 # Build the library into /dist
-build: .git/hooks/pre-commit
+build: git_hooks_config
 	python -m build .
 
 
