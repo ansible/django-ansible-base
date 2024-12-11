@@ -18,7 +18,7 @@ PYTHON_VERSION:
 
 ## Set the local git configuration(specific to this repo) to look for hooks in .githooks folder
 git_hooks_config:
-	git config set --local core.hooksPath .githooks
+	git config --local core.hooksPath .githooks
 
 ## Zero out all of the temp and build files
 clean:
