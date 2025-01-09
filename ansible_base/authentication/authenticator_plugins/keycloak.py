@@ -41,6 +41,14 @@ class KeycloakConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('Keycloak OIDC Secret'),
     )
 
+    GROUPS_CLAIM = CharField(
+        help_text=_("The JSON key used to extract the user's groups from the ID token or userinfo endpoint."),
+        required=False,
+        allow_null=True,
+        default="Group",
+        ui_field_label=_("Groups Claim"),
+    )
+
 
 class AuthenticatorPlugin(SocialAuthMixin, KeycloakOAuth2, AbstractAuthenticatorPlugin):
     configuration_class = KeycloakConfiguration
@@ -48,6 +56,10 @@ class AuthenticatorPlugin(SocialAuthMixin, KeycloakOAuth2, AbstractAuthenticator
     logger = logger
     category = "sso"
     configuration_encrypted_fields = ['SECRET']
+
+    @property
+    def groups_claim(self):
+        return self.setting('GROUPS_CLAIM')
 
     def extra_data(self, user, backend, response, *args, **kwargs):
         for perm in ["is_superuser", "is_platform_auditor"]:
