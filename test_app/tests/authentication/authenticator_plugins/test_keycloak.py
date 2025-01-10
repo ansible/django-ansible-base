@@ -1,7 +1,9 @@
 from unittest import mock
 
 from ansible_base.authentication.authenticator_plugins.keycloak import AuthenticatorPlugin
+from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
 from ansible_base.authentication.session import SessionAuthentication
+from ansible_base.authentication.social_auth import SocialAuthMixin
 from ansible_base.lib.utils.response import get_relative_url
 
 authenticated_test_page = "authenticator-list"
@@ -57,3 +59,26 @@ def test_extra_data(mockedsuper):
     ap.extra_data(None, None, response=rDict, social=social)
     assert mockedsuper.called
     assert "is_superuser" in social.extra_data
+
+
+def test_groups_setting(keycloak_authenticator):
+    custom_groups_claim = "grupper"
+
+    class MockedDb:
+        def __init__(self, group_claim):
+            self.slug = "fake"
+            self.configuration = {"GROUPS_CLAIM": group_claim}
+
+    class MockBackend(SocialAuthMixin):
+        database_instance = MockedDb(custom_groups_claim)
+
+        def __init__(self):
+            pass
+
+    backend = MockBackend()
+
+    auth_type = "ansible_base.authentication.authenticator_plugins.keycloak"
+    kap = get_authenticator_plugin(auth_type)
+    kap.database_instance = MockedDb(custom_groups_claim)
+    assert kap.strategy.get_setting('GROUPS_CLAIM', backend) == custom_groups_claim
+    assert kap.groups_claim == custom_groups_claim
