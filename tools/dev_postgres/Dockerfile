@@ -1,4 +1,4 @@
-FROM postgres:15
+FROM mirror.gcr.io/library/postgres:15
 
 ENV POSTGRES_DB=dab_db
 ENV POSTGRES_USER=dab
