@@ -57,6 +57,11 @@ try:
 except NameError:
     OAUTH2_PROVIDER = {}
 
+try:
+    TEMPLATES  # noqa: F821
+except NameError:
+    TEMPLATES = []
+
 for key, value in get_dab_settings(
     installed_apps=INSTALLED_APPS,
     rest_framework=REST_FRAMEWORK,
@@ -65,6 +70,7 @@ for key, value in get_dab_settings(
     middleware=MIDDLEWARE,
     oauth2_provider=OAUTH2_PROVIDER,
     caches=CACHES if 'CACHES' in locals() else None,  # noqa: F821
+    templates=TEMPLATES,
 ).items():
     if key in ANSIBLE_BASE_OVERRIDABLE_SETTINGS:
         ANSIBLE_BASE_OVERRIDDEN_SETTINGS.append(key)

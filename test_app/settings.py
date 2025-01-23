@@ -74,6 +74,7 @@ INSTALLED_APPS = [
     'debug_toolbar',
     'ansible_base.activitystream',
     'ansible_base.help_text_check',
+    'ansible_base.feature_flags',
 ]
 
 MIDDLEWARE = [
@@ -210,3 +211,39 @@ RESOURCE_SERVICE_PATH = "/api/v1/service-index/"
 RESOURCE_SERVER_SYNC_ENABLED = False
 
 RENAMED_USERNAME_PREFIX = "dab:"
+
+FLAGS = {
+    "FEATURE_SOME_PLATFORM_FLAG_ENABLED": [
+        {
+            "condition": "boolean",
+            "value": False,
+            "required": True,
+        },
+        {
+            "condition": "before date",
+            "value": '2022-06-01T12:00Z',
+        },
+    ],
+    "FEATURE_SOME_PLATFORM_FLAG_FOO_ENABLED": [
+        {
+            "condition": "boolean",
+            "value": False,
+            "required": True,
+        },
+        {
+            "condition": "parameter",
+            "value": "my_flag_param1",
+        },
+    ],
+    "FEATURE_SOME_PLATFORM_FLAG_BAR_ENABLED": [
+        {
+            "condition": "boolean",
+            "value": False,
+            "required": True,
+        },
+        {
+            "condition": "path matches",
+            "value": r'^/flagged/path',
+        },
+    ],
+}
