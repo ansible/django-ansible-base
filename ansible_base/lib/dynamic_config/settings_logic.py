@@ -301,7 +301,8 @@ def get_dab_settings(
 
     if 'ansible_base.feature_flags' in installed_apps:
         dab_data.setdefault('INSTALLED_APPS', copy(installed_apps))
-        dab_data['INSTALLED_APPS'].append('flags')
+        if "flags" not in dab_data["INSTALLED_APPS"]:
+            dab_data['INSTALLED_APPS'].append('flags')
 
         dab_data.setdefault('TEMPLATES', copy(templates))
         found_template_backend = False
