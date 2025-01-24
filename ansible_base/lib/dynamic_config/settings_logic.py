@@ -19,7 +19,6 @@ def get_dab_settings(
     oauth2_provider: Optional[dict] = None,
     caches: Optional[dict] = None,
     templates: Optional[list[dict]] = None,
-    flags: Optional[dict] = None,
 ) -> dict:
     dab_data = {}
 
