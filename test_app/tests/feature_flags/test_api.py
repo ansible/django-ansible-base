@@ -44,3 +44,14 @@ def test_feature_flags_state_api_list_settings_override(admin_api_client: APICli
     assert response.data["FEATURE_SOME_PLATFORM_OVERRIDE_ENABLED"] is False
     assert 'FEATURE_SOME_PLATFORM_OVERRIDE_TRUE_ENABLED' in response.data
     assert response.data["FEATURE_SOME_PLATFORM_OVERRIDE_TRUE_ENABLED"] is True
+
+
+@override_settings(FLAGS={})
+def test_feature_flags_state_api_list_settings_override_empty(admin_api_client: APIClient):
+    """
+    Test that we can list all feature flags
+    """
+    url = get_relative_url("featureflags-list")
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+    assert response.data == {}

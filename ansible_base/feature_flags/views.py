@@ -1,4 +1,3 @@
-from django.http import HttpResponseNotFound
 from django.utils.translation import gettext_lazy as _
 from rest_framework.response import Response
 
@@ -20,8 +19,6 @@ class FeatureFlagsStateListView(AnsibleBaseView):
 
     def get(self, request, format=None):
         self.serializer = FeatureFlagSerializer()
-        if self.serializer.to_representation() == {}:
-            return HttpResponseNotFound()
         return Response(self.serializer.to_representation())
 
     def get_queryset(self):
