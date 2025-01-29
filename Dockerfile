@@ -15,6 +15,11 @@ RUN dnf -y install \
     libpq \
     postgresql
 
+# Create /etc/ansible-automation-platform/testapp folder
+RUN mkdir -p /etc/ansible-automation-platform/testapp
+# add settings.yaml to /etc/ansible-automation-platform/
+COPY test_app/example_files/*.yaml /etc/ansible-automation-platform/testapp/
+
 RUN python3.11 -m venv /venv
 
 COPY requirements/requirements_all.txt /tmp/requirements_all.txt

@@ -1,9 +1,13 @@
-import os
+"""
+Instantiate the DYNACONF instance and export the settings to Django settings.
+Any variable is overridable by environment variables prefixed with TESTAPP_.
+Application current mode can be configured with TESTAPP_MODE environment variable.
+by default it will be development.
+"""
+
 import sys
 
-from split_settings.tools import include
-
-DEBUG = True
+from ansible_base.lib.dynamic_config import export, factory, load_envvars, load_standard_settings_files
 
 if "pytest" in sys.modules:
     # https://github.com/agronholm/typeguard/issues/260
@@ -15,225 +19,30 @@ if "pytest" in sys.modules:
 
     install_import_hook(packages=["ansible_base"])
 
-ALLOWED_HOSTS = ["*"]
+# Create a the standard DYNACONF instance which will come with DAB defaults
+# this loads the files passed to `settings_files` list
+# and environment specific file e.g: development_{filename}.py
+# assuming the current env is development and files are located in the same folder
+DYNACONF = factory(
+    __name__,
+    "TESTAPP",
+    environments=("development", "sqlite"),
+    settings_files=["defaults.py"],
+)
 
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'filters': {
-        'request_id_filter': {
-            '()': 'ansible_base.lib.logging.filters.RequestIdFilter',
-        },
-    },
-    'formatters': {
-        'simple': {'format': '%(asctime)s %(levelname)-8s [%(request_id)s]  %(name)s %(message)s'},
-    },
-    'handlers': {
-        'console': {
-            '()': 'logging.StreamHandler',
-            'level': 'DEBUG',
-            'formatter': 'simple',
-            'filters': ['request_id_filter'],
-        },
-    },
-    'loggers': {
-        'ansible_base': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
-        },
-        '': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
-            'propagate': True,
-        },
-    },
-}
-for logger in LOGGING["loggers"]:  # noqa: F405
-    # We want to ensure that all loggers are at DEBUG because we have tests which validate log messages
-    LOGGING["loggers"][logger]["level"] = "DEBUG"  # noqa: F405
+# Load new standard settings files from
+#  /etc/ansible-automation-platform/ and /etc/ansible-automation-platform/testapp/
+load_standard_settings_files(DYNACONF)
 
-INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-    'rest_framework',
-    'social_django',
-    'ansible_base.api_documentation',
-    'ansible_base.authentication',
-    'ansible_base.rest_filters',
-    'ansible_base.jwt_consumer',
-    'ansible_base.resource_registry',
-    'ansible_base.rest_pagination',
-    'ansible_base.rbac',
-    'ansible_base.oauth2_provider',
-    'test_app',
-    'django_extensions',
-    'debug_toolbar',
-    'ansible_base.activitystream',
-    'ansible_base.help_text_check',
-    'ansible_base.feature_flags',
-]
+# Set overrides that must be set after DAB and file settings are loaded
+DYNACONF.set(
+    "ANSIBLE_BASE_JWT_MANAGED_ROLES",
+    "@merge System Auditor",
+    loader_identifier="add_system_auditor",
+)
 
-MIDDLEWARE = [
-    'debug_toolbar.middleware.DebugToolbarMiddleware',
-    'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'crum.CurrentRequestUserMiddleware',
-    'ansible_base.lib.middleware.logging.LogRequestMiddleware',
-    'ansible_base.lib.middleware.logging.LogTracebackMiddleware',
-]
+# Load envvars at the end to allow them to override everything loaded so far
+load_envvars(DYNACONF)
 
-# set some vanilla social auth plugins so that we can test the social_auth based
-# users in the resource registry
-AUTHENTICATION_BACKENDS = [
-    'ansible_base.lib.backends.prefixed_user_auth.PrefixedUserAuthBackend',
-    'social_core.backends.github.GithubOAuth2',
-]
-
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'test_app.authentication.logged_basic_auth.LoggedBasicAuthentication',
-        'test_app.authentication.service_token_auth.ServiceTokenAuthentication',
-    ],
-    'DEFAULT_PERMISSION_CLASSES': [
-        'ansible_base.oauth2_provider.permissions.OAuth2ScopePermission',
-        'ansible_base.rbac.api.permissions.AnsibleBaseObjectPermissions',
-    ],
-}
-
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "HOST": os.getenv("DB_HOST", "127.0.0.1"),
-        "PORT": os.getenv("DB_PORT", 55432),
-        "USER": os.getenv("DB_USER", "dab"),
-        "PASSWORD": os.getenv("DB_PASSWORD", "dabing"),
-        "NAME": os.getenv("DB_NAME", "dab_db"),
-    }
-}
-
-AUTH_USER_MODEL = 'test_app.User'
-
-ROOT_URLCONF = 'test_app.urls'
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TEMPLATES = [
-    {
-        "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [os.path.join(BASE_DIR, 'test_app', 'templates')],
-        "APP_DIRS": True,
-        "OPTIONS": {
-            'context_processors': [
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
-                'django.template.context_processors.request',
-            ]
-        },
-    },
-]
-
-INTERNAL_IPS = [
-    "127.0.0.1",
-]
-
-LANGUAGE_CODE = 'en-us'
-
-TIME_ZONE = 'UTC'
-
-USE_I18N = True
-
-USE_TZ = True
-
-DEMO_DATA_COUNTS = {'organization': 150, 'user': 379, 'team': 43}
-
-ANSIBLE_BASE_TEAM_MODEL = 'test_app.Team'
-ANSIBLE_BASE_ORGANIZATION_MODEL = 'test_app.Organization'
-
-STATIC_URL = '/static/'
-
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-SECRET_KEY = "asdf1234"
-
-ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES = ['ansible_base.authentication.authenticator_plugins']
-
-from ansible_base.lib import dynamic_config  # noqa: E402
-
-settings_file = os.path.join(os.path.dirname(dynamic_config.__file__), 'dynamic_settings.py')
-include(settings_file)
-
-ANSIBLE_BASE_RESOURCE_CONFIG_MODULE = "test_app.resource_api"
-
-SYSTEM_USERNAME = '_system'
-
-ANSIBLE_BASE_MANAGED_ROLE_REGISTRY = {
-    'sys_auditor': {'name': "Platform Auditor"},
-    'team_member': {},
-    'team_admin': {},
-    'org_admin': {},
-    'org_member': {},
-    'cow_admin': {'shortname': 'admin_base', 'model_name': 'test_app.cow', 'name': 'Cow Admin'},
-    'cow_moo': {'shortname': 'action_base', 'model_name': 'test_app.cow', 'name': 'Cow Mooer', 'action': 'say_cow'},
-}
-ANSIBLE_BASE_JWT_MANAGED_ROLES.append("System Auditor")  # noqa: F821 this is set by dynamic settings for jwt_consumer
-ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES = True
-ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES = True
-ANSIBLE_BASE_RBAC_MODEL_REGISTRY = {
-    "test_app.inventory": {"parent_field_name": "organization"},
-    "test_app.credential": {},
-    "test_app.immutabletask": {"parent_field_name": None},
-}
-ANSIBLE_BASE_OAUTH2_PROVIDER_PERMISSIONS_CHECK_IGNORED_VIEWS = ["drf_spectacular.views.SpectacularSwaggerView"]
-ALLOW_SHARED_RESOURCE_CUSTOM_ROLES = True  # Allow making custom roles with org change permission, for example
-ALLOW_LOCAL_ASSIGNING_JWT_ROLES = False
-
-ANSIBLE_BASE_USER_VIEWSET = 'test_app.views.UserViewSet'
-
-LOGIN_URL = "/login/login"
-
-RESOURCE_SERVER = {
-    "URL": "http://localhost",
-    "SECRET_KEY": "my secret key",
-    "VALIDATE_HTTPS": False,
-}
-RESOURCE_SERVICE_PATH = "/api/v1/service-index/"
-# Backwards sync turned off, because for most of the duration of the tests
-# the resource server will not actually be running
-# so it will be flipped true only for specific tests that test this
-RESOURCE_SERVER_SYNC_ENABLED = False
-
-RENAMED_USERNAME_PREFIX = "dab:"
-
-FLAGS = {
-    "FEATURE_SOME_PLATFORM_FLAG_ENABLED": [
-        {
-            "condition": "boolean",
-            "value": False,
-            "required": True,
-        },
-        {
-            "condition": "before date",
-            "value": '2022-06-01T12:00Z',
-        },
-    ],
-    "FEATURE_SOME_PLATFORM_FLAG_FOO_ENABLED": [
-        {
-            "condition": "boolean",
-            "value": False,
-        },
-    ],
-    "FEATURE_SOME_PLATFORM_FLAG_BAR_ENABLED": [
-        {
-            "condition": "boolean",
-            "value": True,
-        },
-    ],
-}
+# Update django.conf.settings with DYNACONF keys.
+export(__name__, DYNACONF)

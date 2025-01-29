@@ -21,10 +21,18 @@ services:
       postgres:
         condition: service_healthy
     environment:
+      DJANGO_SETTINGS_MODULE: test_app.settings
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: dab
       DB_PASSWORD: dabing
+    
+    # the following 2 parameters makes the container interactive
+    # for debugging purposes, a breakpoint can be set in the code
+    # and the container can be attached to with `docker attach test_app`
+    # and the code can be debugged interactively 
+    stdin_open: true
+    tty: true
 
   # This is the intermediate application reverse proxy without ssl
   nginx:

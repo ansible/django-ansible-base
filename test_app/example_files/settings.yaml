@@ -1,0 +1,4 @@
+# This file exists only for testing the dynamic settings loader
+# capabilities of loading yaml settings from the standard location
+# which is /etc/ansible-automation-platform/{appname}/settings.yaml
+just_a_test: 42

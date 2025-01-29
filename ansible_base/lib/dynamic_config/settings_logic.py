@@ -10,6 +10,22 @@ from ansible_base.lib.cache.fallback_cache import FALLBACK_CACHE, PRIMARY_CACHE
 #
 
 
+DEFAULT_AUTH_GROUP = 'auth.Group'
+DEFAULT_SPECTACULAR_SETTINGS = {
+    'TITLE': 'Open API',
+    'DESCRIPTION': 'Open API',
+    'VERSION': 'v1',
+    'SCHEMA_PATH_PREFIX': '/api/v1/',
+    'COMPONENT_NO_READ_ONLY_REQUIRED': True,
+}
+DEFAULT_ANSIBLE_BASE_AUTH = "ansible_base.authentication.backend.AnsibleBaseAuth"
+DEFAULT_ANSIBLE_BASE_JWT_CONSUMER_APP_NAME = "ansible_base.jwt_consumer"
+DEFAULT_ANSIBLE_BASE_RBAC_APP_NAME = "ansible_base.rbac"
+DEFAULT_OAUTH2_APPLICATION_MODEL = 'dab_oauth2_provider.OAuth2Application'
+DEFAULT_OAUTH2_ACCESS_TOKEN = 'dab_oauth2_provider.OAuth2AccessToken'
+DEFAULT_TEMPLATE_BACKEND = 'django.template.backends.django.DjangoTemplates'
+
+
 def get_dab_settings(
     installed_apps: list[str],
     rest_framework: Optional[dict] = None,
@@ -19,56 +35,88 @@ def get_dab_settings(
     oauth2_provider: Optional[dict] = None,
     caches: Optional[dict] = None,
     templates: Optional[list[dict]] = None,
-) -> dict:
+) -> dict:  # pragma: no cover
+    """
+    This function is deprecated and will be removed in a future version.
+    Please use `ansible_base.lib.dynamic_config.factory` instead.
+    """
+    settings = {
+        "INSTALLED_APPS": installed_apps,
+        "REST_FRAMEWORK": rest_framework or {},
+        "MIDDLEWARE": middleware or [],
+    }
+    if spectacular_settings is not None:
+        settings["SPECTACULAR_SETTINGS"] = spectacular_settings
+    if authentication_backends is not None:
+        settings["AUTHENTICATION_BACKENDS"] = authentication_backends
+    if oauth2_provider is not None:
+        settings["OAUTH2_PROVIDER"] = oauth2_provider
+    if caches is not None:
+        settings["CACHES"] = caches
+    if templates is not None:
+        settings["TEMPLATES"] = templates
+    return get_mergeable_dab_settings(settings)
+
+
+def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
+    """This function takes a settings dict and returns a dict of DAB settings
+     that can be merged into the Dynaconf settings or directly set to any module or object.
+
+    TODO: In a future implementation this function will defer each section to specific app logic.
+    each app will have its own get_defaults function that will return the settings to be merged.
+    e.g:
+        from ansible_base.resource_registry.settings import get_defaults
+        resource_registry_settings = get_defaults(settings)
+        dab_data.update(resource_registry_settings)
+
+    The call here can be explicit, or dynamic based on the INSTALLED_APPS list.
+    """
     dab_data = {}
 
+    installed_apps: list = copy(settings["INSTALLED_APPS"])
+    middleware: list = copy(settings["MIDDLEWARE"])
+    rest_framework: dict = copy(settings["REST_FRAMEWORK"])
+
+    oauth2_provider: dict = copy(settings.get("OAUTH2_PROVIDER", {}))
+    templates: list = copy(settings.get("TEMPLATES", []))
+    authentication_backends: list = copy(settings.get("AUTHENTICATION_BACKENDS", []))
+    spectacular_settings = settings.get('SPECTACULAR_SETTINGS', {})
+
     # The org and team abstract models cause errors if not set, even if not used
-    dab_data['ANSIBLE_BASE_TEAM_MODEL'] = 'auth.Group'
-    dab_data['ANSIBLE_BASE_ORGANIZATION_MODEL'] = 'auth.Group'
+    if settings.get('ANSIBLE_BASE_TEAM_MODEL') is None:
+        dab_data['ANSIBLE_BASE_TEAM_MODEL'] = DEFAULT_AUTH_GROUP
+    if settings.get('ANSIBLE_BASE_ORGANIZATION_MODEL') is None:
+        dab_data['ANSIBLE_BASE_ORGANIZATION_MODEL'] = DEFAULT_AUTH_GROUP
 
     # This is needed for the rest_filters app, but someone may use the filter class
     # without enabling the ansible_base.rest_filters app explicitly
     # we also apply this to views from other apps so we should always define it
-    dab_data['ANSIBLE_BASE_REST_FILTERS_RESERVED_NAMES'] = (
-        'page',
-        'page_size',
-        'format',
-        'order',
-        'order_by',
-        'search',
-        'type',
-        'host_filter',
-        'count_disabled',
-        'no_truncate',
-        'limit',
-        'validate',
-    )
+    if settings.get('ANSIBLE_BASE_REST_FILTERS_RESERVED_NAMES') is None:
+        dab_data['ANSIBLE_BASE_REST_FILTERS_RESERVED_NAMES'] = (
+            'page',
+            'page_size',
+            'format',
+            'order',
+            'order_by',
+            'search',
+            'type',
+            'host_filter',
+            'count_disabled',
+            'no_truncate',
+            'limit',
+            'validate',
+        )
 
+    # SPECTACULAR SETTINGS
     if 'ansible_base.api_documentation' in installed_apps:
+        rest_framework.setdefault('DEFAULT_SCHEMA_CLASS', 'drf_spectacular.openapi.AutoSchema')
+
         if 'drf_spectacular' not in installed_apps:
-            dab_data.setdefault('INSTALLED_APPS', copy(installed_apps))
-            dab_data['INSTALLED_APPS'].append('drf_spectacular')
-            # Shadow local variable so subsequent conditionals works.
-            installed_apps = dab_data['INSTALLED_APPS']
+            installed_apps.append('drf_spectacular')
 
-        if spectacular_settings is None:
-            raise RuntimeError('Must define SPECTACULAR_SETTINGS to form DAB settings with documentation app')
-
-        dab_data['SPECTACULAR_SETTINGS'] = copy(spectacular_settings)
-
-        for key, value in {
-            'TITLE': 'Open API',
-            'DESCRIPTION': 'Open API',
-            'VERSION': 'v1',
-            'SCHEMA_PATH_PREFIX': '/api/v1/',
-            'COMPONENT_NO_READ_ONLY_REQUIRED': True,
-        }.items():
+        for key, value in DEFAULT_SPECTACULAR_SETTINGS.items():
             if key not in spectacular_settings:
-                dab_data['SPECTACULAR_SETTINGS'][key] = value
-
-        if 'DEFAULT_SCHEMA_CLASS' not in rest_framework:
-            dab_data.setdefault('REST_FRAMEWORK', copy(rest_framework))
-            dab_data['REST_FRAMEWORK']['DEFAULT_SCHEMA_CLASS'] = 'drf_spectacular.openapi.AutoSchema'
+                spectacular_settings[key] = value
 
     # General, factual, constant of all filters that ansible_base.rest_filters ships
     dab_data['ANSIBLE_BASE_ALL_REST_FILTERS'] = (
@@ -77,10 +125,8 @@ def get_dab_settings(
         'rest_framework.filters.SearchFilter',
         'ansible_base.rest_filters.rest_framework.order_backend.OrderByBackend',
     )
-
     if 'ansible_base.rest_filters' in installed_apps:
-        dab_data.setdefault('REST_FRAMEWORK', copy(rest_framework))
-        dab_data['REST_FRAMEWORK'].update({'DEFAULT_FILTER_BACKENDS': dab_data['ANSIBLE_BASE_ALL_REST_FILTERS']})
+        rest_framework['DEFAULT_FILTER_BACKENDS'] = dab_data['ANSIBLE_BASE_ALL_REST_FILTERS']
     else:
         # Explanation - these are the filters for views provided by DAB like /authenticators/
         # we want them to be enabled by default _even if_ the rest_filters app is not used
@@ -90,46 +136,29 @@ def get_dab_settings(
 
     if 'ansible_base.authentication' in installed_apps:
         if 'social_django' not in installed_apps:
-            dab_data.setdefault('INSTALLED_APPS', copy(installed_apps))
-            dab_data['INSTALLED_APPS'].append('social_django')
-            # Shadow local variable so subsequent conditionals works.
-            installed_apps = dab_data['INSTALLED_APPS']
-
-        if "ansible_base.authentication.backend.AnsibleBaseAuth" not in authentication_backends:
-            dab_data.setdefault('AUTHENTICATION_BACKENDS', copy(authentication_backends))
-            dab_data['AUTHENTICATION_BACKENDS'].append("ansible_base.authentication.backend.AnsibleBaseAuth")
+            installed_apps.append('social_django')
+        if DEFAULT_ANSIBLE_BASE_AUTH not in authentication_backends:
+            authentication_backends.append(DEFAULT_ANSIBLE_BASE_AUTH)
 
         middleware_classes = [
             'ansible_base.authentication.middleware.SocialExceptionHandlerMiddleware',
             'ansible_base.authentication.middleware.AuthenticatorBackendMiddleware',
         ]
-        if any(cls_name not in middleware for cls_name in middleware_classes):
-            if middleware is None:
-                local_middleware = []
-            else:
-                local_middleware = copy(middleware)
-
-            for mw in middleware_classes:
-                if mw not in local_middleware:
-                    try:
-                        index = local_middleware.index('django.contrib.auth.middleware.AuthenticationMiddleware')
-                        local_middleware.insert(index, mw)
-                    except ValueError:
-                        local_middleware.append(mw)
-
-            dab_data['MIDDLEWARE'] = local_middleware
-
-        if rest_framework is None:
-            raise RuntimeError('Must define REST_FRAMEWORK setting to use authentication app')
+        for mw in middleware_classes:
+            if mw not in middleware:
+                try:
+                    index = middleware.index('django.contrib.auth.middleware.AuthenticationMiddleware')
+                    middleware.insert(index, mw)
+                except ValueError:
+                    middleware.append(mw)
 
         drf_authentication_class = 'ansible_base.authentication.session.SessionAuthentication'
-        dab_data.setdefault('REST_FRAMEWORK', copy(rest_framework))
-        dab_data['REST_FRAMEWORK'].setdefault('DEFAULT_AUTHENTICATION_CLASSES', [])
+        rest_framework.setdefault('DEFAULT_AUTHENTICATION_CLASSES', [])
+        if drf_authentication_class not in rest_framework['DEFAULT_AUTHENTICATION_CLASSES']:
+            rest_framework['DEFAULT_AUTHENTICATION_CLASSES'].insert(0, drf_authentication_class)
 
-        if drf_authentication_class not in dab_data['REST_FRAMEWORK']['DEFAULT_AUTHENTICATION_CLASSES']:
-            dab_data['REST_FRAMEWORK']['DEFAULT_AUTHENTICATION_CLASSES'].insert(0, drf_authentication_class)
-
-        dab_data['ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES'] = ["ansible_base.authentication.authenticator_plugins"]
+        if settings.get('ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES') is None:
+            dab_data['ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES'] = ["ansible_base.authentication.authenticator_plugins"]
 
         dab_data['SOCIAL_AUTH_PIPELINE'] = (
             'social_core.pipeline.social_auth.social_details',
@@ -146,153 +175,124 @@ def get_dab_settings(
         dab_data['SOCIAL_AUTH_STORAGE'] = "ansible_base.authentication.social_auth.AuthenticatorStorage"
         dab_data['SOCIAL_AUTH_STRATEGY'] = "ansible_base.authentication.social_auth.AuthenticatorStrategy"
         dab_data['SOCIAL_AUTH_LOGIN_REDIRECT_URL'] = "/"
-
         dab_data['ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG'] = "is_system_auditor"
-
         # URL to send users when social auth login fails
         dab_data['LOGIN_ERROR_URL'] = "/?auth_failed"
 
     if 'ansible_base.rest_pagination' in installed_apps:
-        if rest_framework is None:
-            raise RuntimeError('Must define REST_FRAMEWORK setting to use rest_pagination app')
+        rest_framework.setdefault('DEFAULT_PAGINATION_CLASS', 'ansible_base.rest_pagination.DefaultPaginator')
 
-        dab_data.setdefault('REST_FRAMEWORK', copy(rest_framework))
-        dab_data['REST_FRAMEWORK'].setdefault('DEFAULT_PAGINATION_CLASS', 'ansible_base.rest_pagination.DefaultPaginator')
+    if DEFAULT_ANSIBLE_BASE_JWT_CONSUMER_APP_NAME in installed_apps and DEFAULT_ANSIBLE_BASE_RBAC_APP_NAME not in installed_apps:
+        installed_apps.append(DEFAULT_ANSIBLE_BASE_RBAC_APP_NAME)
 
-    if 'ansible_base.jwt_consumer' in installed_apps:
-        if 'ansible_base.rbac' not in installed_apps:
-            dab_data.setdefault('INSTALLED_APPS', copy(installed_apps))
-            dab_data['INSTALLED_APPS'].append('ansible_base.rbac')
-            # Shadow local variable so subsequent conditionals works.
-            installed_apps = dab_data['INSTALLED_APPS']
-
-    if ('ansible_base.jwt_consumer' in installed_apps) or ('ansible_base.rbac' in installed_apps):
+    if (DEFAULT_ANSIBLE_BASE_JWT_CONSUMER_APP_NAME in installed_apps) or (DEFAULT_ANSIBLE_BASE_RBAC_APP_NAME in installed_apps):
         dab_data['ANSIBLE_BASE_JWT_MANAGED_ROLES'] = ["Platform Auditor", "Organization Admin", "Organization Member", "Team Admin", "Team Member"]
 
-    if 'ansible_base.rbac' in installed_apps:
+    rbac_defaults = {
         # The settings-based specification of managed roles from DAB RBAC vendored ones
-        dab_data['ANSIBLE_BASE_MANAGED_ROLE_REGISTRY'] = {}
+        'ANSIBLE_BASE_MANAGED_ROLE_REGISTRY': {},
         # Permissions a user will get when creating a new item
-        dab_data['ANSIBLE_BASE_CREATOR_DEFAULTS'] = ['add', 'change', 'delete', 'view']
+        'ANSIBLE_BASE_CREATOR_DEFAULTS': ['add', 'change', 'delete', 'view'],
         # Permissions API will check for related items, think PATCH/PUT
         # This is a precedence order, so first action related model has will be used
-        dab_data['ANSIBLE_BASE_CHECK_RELATED_PERMISSIONS'] = ['use', 'change', 'view']
+        'ANSIBLE_BASE_CHECK_RELATED_PERMISSIONS': ['use', 'change', 'view'],
         # If a role does not already exist that can give those object permissions
         # then the system must create one, this is used for naming the auto-created role
-        dab_data['ANSIBLE_BASE_ROLE_CREATOR_NAME'] = '{obj._meta.model_name}-creator-permission'
+        'ANSIBLE_BASE_ROLE_CREATOR_NAME': '{obj._meta.model_name}-creator-permission',
         # Require view permission in roles containing any other permission
         # this requirement does not apply to models that do not have view permission
-        dab_data['ANSIBLE_BASE_ROLES_REQUIRE_VIEW'] = True
+        'ANSIBLE_BASE_ROLES_REQUIRE_VIEW': True,
         # Require change permission to get delete permission
-        dab_data['ANSIBLE_BASE_DELETE_REQUIRE_CHANGE'] = True
+        'ANSIBLE_BASE_DELETE_REQUIRE_CHANGE': True,
         # Specific feature enablement bits
         # For assignments
-        dab_data['ANSIBLE_BASE_ALLOW_TEAM_PARENTS'] = True
-        dab_data['ANSIBLE_BASE_ALLOW_TEAM_ORG_PERMS'] = True
-        dab_data['ANSIBLE_BASE_ALLOW_TEAM_ORG_MEMBER'] = False
-        dab_data['ANSIBLE_BASE_ALLOW_TEAM_ORG_ADMIN'] = True
+        'ANSIBLE_BASE_ALLOW_TEAM_PARENTS': True,
+        'ANSIBLE_BASE_ALLOW_TEAM_ORG_PERMS': True,
+        'ANSIBLE_BASE_ALLOW_TEAM_ORG_MEMBER': False,
+        'ANSIBLE_BASE_ALLOW_TEAM_ORG_ADMIN': True,
         # For role definitions
-        dab_data['ANSIBLE_BASE_ALLOW_CUSTOM_ROLES'] = True
-        dab_data['ANSIBLE_BASE_ALLOW_CUSTOM_TEAM_ROLES'] = False
+        'ANSIBLE_BASE_ALLOW_CUSTOM_ROLES': True,
+        'ANSIBLE_BASE_ALLOW_CUSTOM_TEAM_ROLES': False,
         # Allows managing singleton permissions
-        dab_data['ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES'] = False
-        dab_data['ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES'] = False
-        dab_data['ANSIBLE_BASE_ALLOW_SINGLETON_ROLES_API'] = True
-
+        'ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES': False,
+        'ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES': False,
+        'ANSIBLE_BASE_ALLOW_SINGLETON_ROLES_API': True,
         # Pass ignore_conflicts=True for bulk_create calls for role evaluations
         # this should be fine to resolve cross-process conflicts as long as
         # directionality is the same - adding or removing permissions
         # A value of False would result in more errors but be more conservative
-        dab_data['ANSIBLE_BASE_EVALUATIONS_IGNORE_CONFLICTS'] = True
-
+        'ANSIBLE_BASE_EVALUATIONS_IGNORE_CONFLICTS': True,
         # User flags that can grant permission before consulting roles
-        dab_data['ANSIBLE_BASE_BYPASS_SUPERUSER_FLAGS'] = ['is_superuser']
-        dab_data['ANSIBLE_BASE_BYPASS_ACTION_FLAGS'] = {}
-
+        'ANSIBLE_BASE_BYPASS_SUPERUSER_FLAGS': ['is_superuser'],
+        'ANSIBLE_BASE_BYPASS_ACTION_FLAGS': {},
         # Save RoleEvaluation entries for child permissions on parent models
         # ex: organization roles giving view_inventory permission will save
         # entries mapping that permission to the assignment's organization
-        dab_data['ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS'] = False
-
+        'ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS': False,
         # API clients can assign users and teams roles for shared resources
-        dab_data['ALLOW_LOCAL_RESOURCE_MANAGEMENT'] = True
+        'ALLOW_LOCAL_RESOURCE_MANAGEMENT': True,
         # API clients can assign roles provided by the JWT
         # this should only be left as True for testing purposes
         # TODO: change this default to False
-        dab_data['ALLOW_LOCAL_ASSIGNING_JWT_ROLES'] = True
+        'ALLOW_LOCAL_ASSIGNING_JWT_ROLES': True,
         # API clients can create custom roles that change shared resources
-        dab_data['ALLOW_SHARED_RESOURCE_CUSTOM_ROLES'] = False
-
-        dab_data['MANAGE_ORGANIZATION_AUTH'] = True
-
+        'ALLOW_SHARED_RESOURCE_CUSTOM_ROLES': False,
+        'MANAGE_ORGANIZATION_AUTH': True,
         # Alternative to permission_registry.register
-        dab_data['ANSIBLE_BASE_RBAC_MODEL_REGISTRY'] = {}
+        'ANSIBLE_BASE_RBAC_MODEL_REGISTRY': {},
+        'ORG_ADMINS_CAN_SEE_ALL_USERS': True,
+    }
+    if DEFAULT_ANSIBLE_BASE_RBAC_APP_NAME in installed_apps:
+        for key, value in rbac_defaults.items():
+            if settings.get(key) is None:
+                dab_data[key] = value
 
-        dab_data['ORG_ADMINS_CAN_SEE_ALL_USERS'] = True
-
-    if 'ansible_base.resource_registry' in installed_apps:
+    resource_registry_defaults = {
         # Sync local changes to the resource server
         # This will not do anything if RESOURCE_SERVER is not defined
-        dab_data['RESOURCE_SERVER_SYNC_ENABLED'] = True
+        'RESOURCE_SERVER_SYNC_ENABLED': True,
         # The API path on the resource server to use to update resources
-        dab_data['RESOURCE_SERVICE_PATH'] = "/api/gateway/v1/service-index/"
-
+        'RESOURCE_SERVICE_PATH': "/api/gateway/v1/service-index/",
         # Disable legacy SSO by default
-        dab_data['ENABLE_SERVICE_BACKED_SSO'] = False
+        'ENABLE_SERVICE_BACKED_SSO': False,
+    }
+    if 'ansible_base.resource_registry' in installed_apps:
+        for key, value in resource_registry_defaults.items():
+            if settings.get(key) is None:
+                dab_data[key] = value
 
     if 'ansible_base.oauth2_provider' in installed_apps:
         if 'oauth2_provider' not in installed_apps:
-            dab_data.setdefault('INSTALLED_APPS', copy(installed_apps))
-            dab_data['INSTALLED_APPS'].append('oauth2_provider')
-            # Shadow local variable so subsequent conditionals works.
-            installed_apps = dab_data['INSTALLED_APPS']
+            installed_apps.append('oauth2_provider')
 
-        if oauth2_provider is None:
-            raise RuntimeError('Must define OAUTH2_PROVIDER setting to use ansible_base.oauth2_provider app')
+        oauth2_provider.setdefault('ACCESS_TOKEN_EXPIRE_SECONDS', 31536000000)
+        oauth2_provider.setdefault('AUTHORIZATION_CODE_EXPIRE_SECONDS', 600)
+        oauth2_provider.setdefault('REFRESH_TOKEN_EXPIRE_SECONDS', 2628000)
+        # For compat with awx, we don't require PKCE, but the new version
+        # of DOT that we are using requires it by default.
+        oauth2_provider.setdefault('PKCE_REQUIRED', False)
 
-        dab_data['OAUTH2_PROVIDER'] = copy(oauth2_provider)
+        oauth2_provider['OAUTH2_BACKEND_CLASS'] = 'ansible_base.oauth2_provider.authentication.OAuthLibCore'
+        oauth2_provider['APPLICATION_MODEL'] = DEFAULT_OAUTH2_APPLICATION_MODEL
+        oauth2_provider['ACCESS_TOKEN_MODEL'] = DEFAULT_OAUTH2_ACCESS_TOKEN
 
-        if 'ACCESS_TOKEN_EXPIRE_SECONDS' not in oauth2_provider:
-            dab_data['OAUTH2_PROVIDER']['ACCESS_TOKEN_EXPIRE_SECONDS'] = 31536000000
-        if 'AUTHORIZATION_CODE_EXPIRE_SECONDS' not in oauth2_provider:
-            dab_data['OAUTH2_PROVIDER']['AUTHORIZATION_CODE_EXPIRE_SECONDS'] = 600
-        if 'REFRESH_TOKEN_EXPIRE_SECONDS' not in oauth2_provider:
-            dab_data['OAUTH2_PROVIDER']['REFRESH_TOKEN_EXPIRE_SECONDS'] = 2628000
-        if 'PKCE_REQUIRED' not in oauth2_provider:
-            # For compat with awx, we don't require PKCE, but the new version
-            # of DOT that we are using requires it by default.
-            dab_data['OAUTH2_PROVIDER']['PKCE_REQUIRED'] = False
-
-        dab_data['OAUTH2_PROVIDER']['OAUTH2_BACKEND_CLASS'] = 'ansible_base.oauth2_provider.authentication.OAuthLibCore'
-
-        dab_data['OAUTH2_PROVIDER']['APPLICATION_MODEL'] = 'dab_oauth2_provider.OAuth2Application'
-        dab_data['OAUTH2_PROVIDER']['ACCESS_TOKEN_MODEL'] = 'dab_oauth2_provider.OAuth2AccessToken'
-
-        if rest_framework is None:
-            raise RuntimeError('Must define REST_FRAMEWORK setting to use ansible_base.oauth2_provider app')
-
-        dab_data.setdefault('REST_FRAMEWORK', copy(rest_framework))
-
+        rest_framework.setdefault('DEFAULT_AUTHENTICATION_CLASSES', [])
         oauth2_authentication_class = 'ansible_base.oauth2_provider.authentication.LoggedOAuth2Authentication'
-        if 'DEFAULT_AUTHENTICATION_CLASSES' not in rest_framework:
-            dab_data['REST_FRAMEWORK']['DEFAULT_AUTHENTICATION_CLASSES'] = []
         if oauth2_authentication_class not in rest_framework['DEFAULT_AUTHENTICATION_CLASSES']:
-            dab_data.setdefault('REST_FRAMEWORK', copy(rest_framework))
-            dab_data['REST_FRAMEWORK']['DEFAULT_AUTHENTICATION_CLASSES'].insert(0, oauth2_authentication_class)
+            rest_framework['DEFAULT_AUTHENTICATION_CLASSES'].insert(0, oauth2_authentication_class)
 
         # These have to be defined for the migration to function
-        dab_data['OAUTH2_PROVIDER_APPLICATION_MODEL'] = 'dab_oauth2_provider.OAuth2Application'
-        dab_data['OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL'] = 'dab_oauth2_provider.OAuth2AccessToken'
+        dab_data['OAUTH2_PROVIDER_APPLICATION_MODEL'] = DEFAULT_OAUTH2_APPLICATION_MODEL
+        dab_data['OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL'] = DEFAULT_OAUTH2_ACCESS_TOKEN
         dab_data['OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL'] = "dab_oauth2_provider.OAuth2RefreshToken"
         dab_data['OAUTH2_PROVIDER_ID_TOKEN_MODEL'] = "dab_oauth2_provider.OAuth2IDToken"
 
         dab_data['ALLOW_OAUTH2_FOR_EXTERNAL_USERS'] = False
-
         dab_data['ANSIBLE_BASE_OAUTH2_PROVIDER_PERMISSIONS_CHECK_DEFAULT_IGNORED_VIEWS'] = []
 
-    if caches is not None:
-        dab_data['CACHES'] = copy(caches)
-        # Ensure proper configuration for fallback cache
+    # Ensure proper configuration for fallback cache
+    if (caches := settings.get("CACHES")) is not None:
+        dab_data['CACHES'] = caches
         default_backend = caches.get('default', {}).get('BACKEND', '')
         if default_backend == 'ansible_base.lib.cache.fallback_cache.DABCacheWithFallback':
             # Ensure primary and fallback are defined
@@ -300,17 +300,15 @@ def get_dab_settings(
                 raise RuntimeError(f'Cache definitions with the keys {PRIMARY_CACHE} and {FALLBACK_CACHE} must be defined when DABCacheWithFallback is used.')
 
     if 'ansible_base.feature_flags' in installed_apps:
-        dab_data.setdefault('INSTALLED_APPS', copy(installed_apps))
-        if "flags" not in dab_data["INSTALLED_APPS"]:
-            dab_data['INSTALLED_APPS'].append('flags')
+        if "flags" not in installed_apps:
+            installed_apps.append('flags')
 
-        dab_data.setdefault('TEMPLATES', copy(templates))
         found_template_backend = False
         template_context_processor = 'django.template.context_processors.request'
         # Look through all of the tmplates
-        for template in dab_data['TEMPLATES']:
+        for template in templates:
             # If this template has the BACKEND we care about...
-            if template['BACKEND'] == 'django.template.backends.django.DjangoTemplates':
+            if template['BACKEND'] == DEFAULT_TEMPLATE_BACKEND:
                 found_template_backend = True
                 # Look through all of its context processors
                 found_context_processor = False
@@ -324,11 +322,27 @@ def get_dab_settings(
 
         # If we never even found the backend, add one
         if not found_template_backend:
-            dab_data['TEMPLATES'].append(
+            templates.append(
                 {
-                    'BACKEND': 'django.template.backends.django.DjangoTemplates',
+                    'BACKEND': DEFAULT_TEMPLATE_BACKEND,
                     'OPTIONS': {'context_processors': [template_context_processor]},
                 }
             )
+
+    # Set back only changed base keys so the inspect history is accurate
+    if installed_apps != settings["INSTALLED_APPS"]:
+        dab_data["INSTALLED_APPS"] = installed_apps
+    if middleware != settings["MIDDLEWARE"]:
+        dab_data["MIDDLEWARE"] = middleware
+    if rest_framework != settings["REST_FRAMEWORK"]:
+        dab_data["REST_FRAMEWORK"] = rest_framework
+    if oauth2_provider != settings.get("OAUTH2_PROVIDER", {}):
+        dab_data["OAUTH2_PROVIDER"] = oauth2_provider
+    if templates != settings.get("TEMPLATES", []):
+        dab_data["TEMPLATES"] = templates
+    if authentication_backends != settings.get("AUTHENTICATION_BACKENDS", []):
+        dab_data["AUTHENTICATION_BACKENDS"] = authentication_backends
+    if spectacular_settings != settings.get('SPECTACULAR_SETTINGS', {}):
+        dab_data['SPECTACULAR_SETTINGS'] = spectacular_settings
 
     return dab_data

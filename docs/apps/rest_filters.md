@@ -39,15 +39,15 @@ due to the model not having an expected field.
 
 To deal with this, after including the dynamic settings, you can add your field to the "reserved" list:
 
+In your application settings defaults.
+
 ```python
-from split_settings.tools import include
-
-from ansible_base.lib import dynamic_config
-dab_settings = os.path.join(os.path.dirname(dynamic_config.__file__), 'dynamic_settings.py')
-include(dab_settings)
-
-ANSIBLE_BASE_REST_FILTERS_RESERVED_NAMES += ('extra_querystring',)
+ANSIBLE_BASE_REST_FILTERS_RESERVED_NAMES = '@merge extra_querystring'
 ```
+
+The `@merge` will be handled by Dynaconf and `extra_querystring` will be added to the reserved names,
+you can pass a comma separated list of reserved names.
+
 
 This will prevent 400 errors for requests like `/api/v1/organizations/?extra_querystring=foo`.
 No filtering would be done in this case, the query string would simply be ignored.

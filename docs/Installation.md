@@ -47,23 +47,22 @@ See the following table for a mapping.
 
 ## settings.py
 
-As a convenience, we can let django-ansible-base automatically add and modify the settings it needs to function:
+django-ansible-base requires a few settings to be set in your application, to make it easier to 
+define, validate and inspect the settings, DAB uses Dynaconf library to manage settings.
 
+In the `settings.py` of your Django application you have to load Dynaconf and export its settings
+back to Django.
+
+
+```python
+from ansible_base.lib.dynamic_config import factory, export
+
+DYNACONF = factory(__name__, "MYAPP", settings_files=["defaults.py"])
+# manipulate DYNACONF as needed
+export(__name__, DYNACONF)
 ```
-from split_settings.tools import include
 
-from ansible_base.lib import dynamic_config
-dab_settings = os.path.join(os.path.dirname(dynamic_config.__file__), 'dynamic_settings.py')
-include(dab_settings)
-```
-
-You can get a list of settings that may be modified from `ANSIBLE_BASE_OVERRIDABLE_SETTINGS` after
-running this code snippet in your settings.
-By default, this `include` will not modify a setting which is already defined before
-the it runs.
-
-Tthe settings which actually where modified as a result of the dynamic include can be
-found in the `ANSIBLE_BASE_OVERRIDDEN_SETTINGS` setting.
+Detailed information on how to configure your application settings can be found on [lib/dynamic_config](./lib/dynamic_config.md)
 
 ## urls.py
 

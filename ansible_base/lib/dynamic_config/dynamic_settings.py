@@ -1,5 +1,6 @@
 # Loads the output from settings_logic into locals for this to be included
-
+# NOTE: This whole module is now deprecated and must be removed soon
+# when all consumers are migrated to the new dynamic settings using Dynaconf.
 
 from ansible_base.lib.dynamic_config.settings_logic import get_dab_settings
 
@@ -14,6 +15,7 @@ except NameError:
         'MIDDLEWARE',
         'OAUTH2_PROVIDER',
         'CACHES',
+        'TEMPLATES',
     ]
 
 
