@@ -228,22 +228,12 @@ FLAGS = {
         {
             "condition": "boolean",
             "value": False,
-            "required": True,
-        },
-        {
-            "condition": "parameter",
-            "value": "my_flag_param1",
         },
     ],
     "FEATURE_SOME_PLATFORM_FLAG_BAR_ENABLED": [
         {
             "condition": "boolean",
-            "value": False,
-            "required": True,
-        },
-        {
-            "condition": "path matches",
-            "value": r'^/flagged/path',
+            "value": True,
         },
     ],
 }

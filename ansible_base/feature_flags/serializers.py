@@ -1,12 +1,16 @@
+from flags.state import flag_state
 from rest_framework import serializers
+
+from .utils import get_django_flags
 
 
 class FeatureFlagSerializer(serializers.Serializer):
     """Serialize list of feature flags"""
 
-    def __init__(self, flag_name=None, *args, **kwargs):
-        if flag_name == 'all':
-            self.flag_name = None
-        else:
-            self.flag_name = flag_name
-        super().__init__(None, *args, **kwargs)
+    def to_representation(self) -> dict:
+        return_data = {}
+        feature_flags = get_django_flags()
+        for feature_flag in feature_flags:
+            return_data[feature_flag] = flag_state(feature_flag)
+
+        return return_data
