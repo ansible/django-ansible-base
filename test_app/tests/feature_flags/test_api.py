@@ -12,11 +12,11 @@ def test_feature_flags_state_api_list(admin_api_client: APIClient):
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert 'FEATURE_SOME_PLATFORM_FLAG_ENABLED' in response.data
-    assert response.data["FEATURE_SOME_PLATFORM_FLAG_ENABLED"] == False
+    assert response.data["FEATURE_SOME_PLATFORM_FLAG_ENABLED"] is False
     assert 'FEATURE_SOME_PLATFORM_FLAG_FOO_ENABLED' in response.data
-    assert response.data["FEATURE_SOME_PLATFORM_FLAG_FOO_ENABLED"] == False
+    assert response.data["FEATURE_SOME_PLATFORM_FLAG_FOO_ENABLED"] is False
     assert 'FEATURE_SOME_PLATFORM_FLAG_BAR_ENABLED' in response.data
-    assert response.data["FEATURE_SOME_PLATFORM_FLAG_BAR_ENABLED"] == True
+    assert response.data["FEATURE_SOME_PLATFORM_FLAG_BAR_ENABLED"] is True
 
 
 @override_settings(
@@ -41,6 +41,6 @@ def test_feature_flags_state_api_list_settings_override(admin_api_client: APICli
     assert 'FEATURE_SOME_PLATFORM_FLAG_FOO_ENABLED' not in response.data
     assert 'FEATURE_SOME_PLATFORM_FLAG_BAR_ENABLED' not in response.data
     assert 'FEATURE_SOME_PLATFORM_OVERRIDE_ENABLED' in response.data
-    assert response.data["FEATURE_SOME_PLATFORM_OVERRIDE_ENABLED"] == False
+    assert response.data["FEATURE_SOME_PLATFORM_OVERRIDE_ENABLED"] is False
     assert 'FEATURE_SOME_PLATFORM_OVERRIDE_TRUE_ENABLED' in response.data
-    assert response.data["FEATURE_SOME_PLATFORM_OVERRIDE_TRUE_ENABLED"] == True
+    assert response.data["FEATURE_SOME_PLATFORM_OVERRIDE_TRUE_ENABLED"] is True
