@@ -316,6 +316,7 @@ def get_dab_settings(
                 for context_processor in template['OPTIONS']['context_processors']:
                     if context_processor == template_context_processor:
                         found_context_processor = True
+                        break
                 # If we didn't find the context processor we care about append it
                 if not found_context_processor:
                     template['OPTIONS']['context_processors'].append(template_context_processor)
