@@ -321,6 +321,11 @@ def get_dab_settings(
 
         # If we never even found the backend, add one
         if not found_template_backend:
-            dab_data['TEMPLATES'].append({'BACKEND': 'django.template.backends.django.DjangoTemplates', 'OPTIONS': {'context_processors': []}})
+            dab_data['TEMPLATES'].append(
+                {
+                    'BACKEND': 'django.template.backends.django.DjangoTemplates',
+                    'OPTIONS': {'context_processors': ['django.template.context_processors.request']},
+                }
+            )
 
     return dab_data
