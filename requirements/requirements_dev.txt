@@ -1,11 +1,15 @@
-ansible  # Used in build process to generate some configs
+ansible                 # Used in build process to generate some configs
+black==25.1.0           # Linting tool, if changed update pyproject.toml as well
 build
 django==4.2.17
 django-debug-toolbar
 django-extensions
 djangorestframework
 django-split-settings
+flake8==7.1.1           # Linting tool, if changed update pyproject.toml as well
+Flake8-pyproject==1.2.3 # Linting tool, if changed update pyproject.toml as well
 ipython
+isort==6.0.0            # Linting tool, if changed update pyproject.toml as well
 tox
 tox-docker
 typeguard
