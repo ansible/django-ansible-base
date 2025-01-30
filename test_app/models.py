@@ -170,6 +170,7 @@ class LogEntry(models.Model):
 
 class Inventory(models.Model):
     "Simple example of a child object, it has a link to its parent organization"
+
     name = models.CharField(max_length=512)
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, null=True, related_name='inventories')
     credential = models.ForeignKey('test_app.Credential', on_delete=models.SET_NULL, null=True, related_name='inventories')
@@ -195,6 +196,7 @@ class Inventory(models.Model):
 
 class Credential(models.Model):
     "Example of a model that gets used by other models"
+
     name = models.CharField(max_length=512)
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, null=True, related_name='credentials')
 
@@ -209,28 +211,33 @@ class Credential(models.Model):
 
 class InstanceGroup(models.Model):
     "Example of an object with no parent object, a root resource, a lone wolf"
+
     name = models.CharField(max_length=512)
 
 
 class Namespace(models.Model):
     "Example of a child object with its own child objects"
+
     name = models.CharField(max_length=64, unique=True, blank=False)
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name='namespaces')
 
 
 class CollectionImport(models.Model):
     "Example of a child of a child object, organization is implied by its namespace"
+
     name = models.CharField(max_length=64, unique=True, blank=False)
     namespace = models.ForeignKey(Namespace, on_delete=models.CASCADE, related_name='collections')
 
 
 class ExampleEvent(models.Model):
     "Example of a model which is not registered in permission registry in the first place"
+
     name = models.CharField(max_length=64, unique=True, blank=False)
 
 
 class Cow(models.Model):
     "This model has a special action it can do, which is to give advice"
+
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name='cows')
 
     class Meta:
@@ -241,6 +248,7 @@ class Cow(models.Model):
 
 class UUIDModel(models.Model):
     "Tests that system works with a model that has a string uuid primary key"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4)
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name='uuidmodels')
 
@@ -285,17 +293,20 @@ class ImmutableTask(models.Model):
 
 class ParentName(models.Model):
     "Tests that system works with a parent field name different from parent model name"
+
     my_organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name='parentnames')
 
 
 class PositionModel(models.Model):
     "Uses a primary key other than id to test that everything still works"
+
     position = models.BigIntegerField(primary_key=True)
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name='positionmodels')
 
 
 class WeirdPerm(models.Model):
     "Uses a weird permission name"
+
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name='weirdperms')
 
     class Meta:
@@ -320,6 +331,7 @@ class ProxyInventory(Inventory):
 
 class Original1(NamedCommonModel):
     "Registered with the Resource Registry"
+
     pass
 
 
@@ -332,6 +344,7 @@ class Proxy1(Original1):
 
 class Original2(NamedCommonModel):
     "Not registered"
+
     pass
 
 
