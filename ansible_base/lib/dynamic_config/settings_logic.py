@@ -305,6 +305,7 @@ def get_dab_settings(
 
         dab_data.setdefault('TEMPLATES', copy(templates))
         found_template_backend = False
+        template_context_processor = 'django.template.context_processors.request'
         # Look through all of the tmplates
         for template in dab_data['TEMPLATES']:
             # If this template has the BACKEND we care about...
@@ -313,18 +314,18 @@ def get_dab_settings(
                 # Look through all of its context processors
                 found_context_processor = False
                 for context_processor in template['OPTIONS']['context_processors']:
-                    if context_processor == 'django.template.context_processors.request':
+                    if context_processor == template_context_processor:
                         found_context_processor = True
                 # If we didn't find the context processor we care about append it
                 if not found_context_processor:
-                    template['OPTIONS']['context_processors'].append('django.template.context_processors.request')
+                    template['OPTIONS']['context_processors'].append(template_context_processor)
 
         # If we never even found the backend, add one
         if not found_template_backend:
             dab_data['TEMPLATES'].append(
                 {
                     'BACKEND': 'django.template.backends.django.DjangoTemplates',
-                    'OPTIONS': {'context_processors': ['django.template.context_processors.request']},
+                    'OPTIONS': {'context_processors': [template_context_processor]},
                 }
             )
 
