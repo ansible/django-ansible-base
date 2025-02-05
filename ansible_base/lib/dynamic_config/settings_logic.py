@@ -61,6 +61,7 @@ def get_dab_settings(
             'DESCRIPTION': 'Open API',
             'VERSION': 'v1',
             'SCHEMA_PATH_PREFIX': '/api/v1/',
+            'COMPONENT_NO_READ_ONLY_REQUIRED': True,
         }.items():
             if key not in spectacular_settings:
                 dab_data['SPECTACULAR_SETTINGS'][key] = value
