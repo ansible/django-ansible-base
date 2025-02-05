@@ -14,7 +14,6 @@ def test_generate_ui_auth_data_no_authenticators_or_settings():
     assert response == {
         'login_redirect_override': '',
         'passwords': [],
-        'show_login_form': False,
         'ssos': [],
         'custom_login_info': '',
         'custom_logo': '',
