@@ -19,12 +19,11 @@ class ImmutableFieldsMixin(serializers.ModelSerializer):
 
     def get_extra_kwargs(self):
         kwargs = super().get_extra_kwargs()
-        immutable_fields = getattr(self.Meta, "immutable_fields", None)
+        immutable_fields = getattr(self.Meta, "immutable_fields", [])
 
         # Make field read_only if instance already exists
-        if immutable_fields:
-            for field in immutable_fields:
-                kwargs.setdefault(field, {})
-                kwargs[field]["read_only"] = bool(self.instance)
+        for field in immutable_fields:
+            kwargs.setdefault(field, {})
+            kwargs[field]["read_only"] = bool(self.instance)
 
         return kwargs
