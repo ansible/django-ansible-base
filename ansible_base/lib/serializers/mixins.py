@@ -22,14 +22,9 @@ class ImmutableFieldsMixin(serializers.ModelSerializer):
         immutable_fields = getattr(self.Meta, "immutable_fields", None)
 
         # Make field read_only if instance already exists
-        if self.instance and immutable_fields:
+        if immutable_fields:
             for field in immutable_fields:
                 kwargs.setdefault(field, {})
-                kwargs[field]["read_only"] = True
-        # Make field writable if no instance yet exists
-        elif immutable_fields:
-            for field in immutable_fields:
-                kwargs.setdefault(field, {})
-                kwargs[field]["read_only"] = False
+                kwargs[field]["read_only"] = bool(self.instance)
 
         return kwargs
