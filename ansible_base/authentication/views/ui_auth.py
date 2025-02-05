@@ -25,7 +25,6 @@ class UIAuth(AnsibleBaseDjangoAppApiView):
 def generate_ui_auth_data():
     authenticators = Authenticator.objects.filter(enabled=True)
     response = {
-        'show_login_form': False,
         'passwords': [],
         'ssos': [],
         'login_redirect_override': '',
@@ -36,7 +35,6 @@ def generate_ui_auth_data():
 
     for authenticator in authenticators:
         if authenticator.category == 'password':
-            response['show_login_form'] = True
             response['passwords'].append(
                 {
                     'name': authenticator.name,
