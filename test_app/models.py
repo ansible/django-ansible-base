@@ -7,6 +7,7 @@ from rest_framework.exceptions import PermissionDenied as DRFPermissionDenied
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from ansible_base.activitystream.models import AuditableModel
+from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.abstract_models import (
     AbstractDABUser,
     AbstractOrganization,
@@ -373,6 +374,7 @@ class PublicData(NamedCommonModel):
 
 permission_registry.register(Organization, Namespace, Team, Cow, UUIDModel, PositionModel, WeirdPerm, PublicData)
 permission_registry.register(ParentName, parent_field_name='my_organization')
+permission_registry.register(Authenticator, parent_field_name=None)
 permission_registry.register(CollectionImport, parent_field_name='namespace')
 permission_registry.register(InstanceGroup, ImmutableTask, LogEntry, parent_field_name=None)
 # Note that these polymorphic UUID models may not be useful in practice
