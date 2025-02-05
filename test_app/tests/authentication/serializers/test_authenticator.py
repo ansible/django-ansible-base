@@ -17,7 +17,7 @@ def test_validate_blank_authenticator_slug(shut_up_logging):
 
 
 def test_validate_new_authenticator_slug(shut_up_logging):
-    slug = slugify(uuid.uuid4())
+    slug = str(uuid.uuid4())
 
     serializer = AuthenticatorSerializer()
     assert serializer.validate_slug(slug) == slugify(slug)
