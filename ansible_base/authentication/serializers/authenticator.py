@@ -20,9 +20,9 @@ class AuthenticatorSerializer(NamedCommonModelSerializer, ImmutableFieldsMixin):
         return value
 
     def validate_slug(self, value):
+        # Only need to perform creation validation for immutable fields;
+        # read_only fields do not include the value in input to the serializer.
         value = generate_authenticator_slug(value)
-        if self.instance and self.instance.slug != value:
-            raise ValidationError(_("Cannot change slug after it has been created."))
 
         return value
 

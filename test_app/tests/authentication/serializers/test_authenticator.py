@@ -24,16 +24,6 @@ def test_validate_new_authenticator_slug(shut_up_logging):
 
 
 @pytest.mark.django_db
-def test_modify_authenticator_slug(ldap_authenticator, shut_up_logging):
-    slug = slugify(uuid.uuid4())
-
-    serializer = AuthenticatorSerializer()
-    serializer.instance = ldap_authenticator
-    with pytest.raises(ValidationError):
-        serializer.validate_slug(slug)
-
-
-@pytest.mark.django_db
 def test_removed_authenticator_plugin(ldap_authenticator, shut_up_logging):
     serializer = AuthenticatorSerializer()
     item = serializer.to_representation(ldap_authenticator)
