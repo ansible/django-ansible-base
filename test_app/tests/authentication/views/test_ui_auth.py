@@ -15,6 +15,7 @@ def test_generate_ui_auth_data_no_authenticators_or_settings():
         'login_redirect_override': '',
         'passwords': [],
         'ssos': [],
+        'show_login_form': False,
         'custom_login_info': '',
         'custom_logo': '',
         'managed_cloud_install': False,
