@@ -118,11 +118,13 @@ legacy_tox_ini = """
     deps =
         -r{toxinidir}/requirements/requirements_all.txt
         -r{toxinidir}/requirements/requirements_dev.txt
+    docker = db
     commands =
         python3 manage.py check
         python3 manage.py makemigrations --check
 
     [testenv:py311sqlite]
+    docker = db
     setenv =
         DJANGO_SETTINGS_MODULE = test_app.sqlite3settings
 
@@ -135,17 +137,20 @@ legacy_tox_ini = """
     deps =
         flake8==7.1.1
         Flake8-pyproject==1.2.3
+    docker =
     commands = flake8 {posargs:.}
 
     [testenv:black]
     deps =
         black==25.1.0
     allowlist_externals = sh
+    docker =
     commands = sh -c 'black --version && black {posargs:.}'
 
     [testenv:isort]
     deps =
         isort==6.0.0
+    docker =
     commands = isort {posargs:.}
 """
 
