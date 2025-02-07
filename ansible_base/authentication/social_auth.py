@@ -179,8 +179,7 @@ class SocialAuthValidateCallbackMixin:
         configuration = data['configuration']
         if not configuration.get('CALLBACK_URL', None):
             if not serializer.instance:
-                if not data.get("slug"):
-                    data["slug"] = generate_authenticator_slug()
+                data["slug"] = generate_authenticator_slug(data.get("slug"))
                 slug = data["slug"]
             else:
                 slug = serializer.instance.slug
