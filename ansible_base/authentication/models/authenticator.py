@@ -1,5 +1,3 @@
-import secrets
-
 from django.db.models import SET_NULL, ForeignKey, JSONField, fields
 
 from ansible_base.authentication.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_plugin
@@ -32,7 +30,13 @@ class Authenticator(UniqueNamedCommonModel):
         default=get_next_authenticator_order,
         help_text="The order in which an authenticator will be tried. This only pertains to username/password authenticators.",
     )
-    slug = fields.SlugField(max_length=1024, default=None, editable=False, unique=True, help_text="An immutable identifier for the authenticator.")
+    slug = fields.SlugField(
+        max_length=1024,
+        default=None,
+        editable=False,
+        unique=True,
+        help_text="An immutable identifier for the authenticator; used to generate the sso uri for sso authenticator types",
+    )
     category = fields.CharField(max_length=30, default=None, help_text="The base type of this authenticator.")
 
     auto_migrate_users_to = ForeignKey(
@@ -62,9 +66,7 @@ class Authenticator(UniqueNamedCommonModel):
                 self.configuration[field] = ansible_encryption.encrypt_string(self.configuration[field])
 
         if not self.slug:
-            self.slug = generate_authenticator_slug(self.type, self.name)
-            if Authenticator.objects.filter(slug=self.slug).count():
-                self.slug = generate_authenticator_slug(self.type, self.name, secrets.token_hex(4))
+            self.slug = generate_authenticator_slug()
         super().save(*args, **kwargs)
 
     def __str__(self):

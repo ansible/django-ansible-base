@@ -1,4 +1,3 @@
-import re
 from unittest import mock
 
 import pytest
@@ -37,16 +36,14 @@ def test_authenticator_order_on_create_update():
 
 @pytest.mark.django_db
 def test_dupe_slug(ldap_authenticator):
-    ldap_auth = Authenticator.objects.first()
-    ldap_slug = ldap_auth.slug
+    ldap_slug = ldap_authenticator.slug
 
     dupe = Authenticator()
-    dupe.name = ldap_auth.name
-    dupe.type = ldap_auth.type
+    dupe.name = ldap_authenticator.name
+    dupe.type = ldap_authenticator.type
 
-    ldap_auth.name = "changed"
-    ldap_auth.save()
+    ldap_authenticator.name = "changed"
+    ldap_authenticator.save()
 
     dupe.save()
-    pattern = ldap_slug + '[a-z0-9_]{8}'
-    assert re.match(pattern, dupe.slug) is not None
+    assert dupe.slug != ldap_slug, "authenticator slugs should be unique"

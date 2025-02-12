@@ -19,6 +19,20 @@ class AuthenticatorViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
     queryset = Authenticator.objects.all()
     serializer_class = AuthenticatorSerializer
 
+    def get_serializer(self, *args, **kwargs):
+        # Return an instanced serializer if one exists for OPTIONS requests.
+        # This is because the AuthenticatorSerializer uses our ImmutableFieldsMixin,
+        # which dynamically changes serializer fields.
+        if self.action == "metadata":
+            instance = kwargs.get("instance", None)
+            if not instance and len(args) == 0:
+                lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
+                if lookup_url_kwarg in self.kwargs:
+                    # set instance to any truthy value, the serializer should not need more details to initialize its field information.
+                    kwargs["instance"] = "object"
+
+        return super().get_serializer(*args, **kwargs)
+
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
 

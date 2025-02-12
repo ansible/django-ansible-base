@@ -46,17 +46,23 @@ class SubstringMatcher:
     __repr__ = __unicode__
 
 
+@pytest.mark.django_db
 @pytest.mark.parametrize(
     "test_data,has_instance,has_slug,expected_result",
     [
         ({'foo': 'bar'}, True, True, {'foo': 'bar'}),
         ({'configuration': {'CALLBACK_URL': '/foo/bar'}}, True, True, {'configuration': {'CALLBACK_URL': '/foo/bar'}}),
         ({'configuration': {}}, True, True, {'configuration': {'CALLBACK_URL': '/foo/bar'}}),
-        ({'type': 'foo', 'name': 'bar', 'configuration': {}}, False, False, {'type': 'foo', 'name': 'bar', 'configuration': {'CALLBACK_URL': '/foo/bar'}}),
+        (
+            {'type': 'foo', 'name': 'bar', 'configuration': {}},
+            False,
+            False,
+            {'type': 'foo', 'name': 'bar', 'configuration': {'CALLBACK_URL': '/foo/bar'}, 'slug': 'generated_slug'},
+        ),
     ],
 )
 @mock.patch("ansible_base.authentication.social_auth.get_fully_qualified_url")
-@mock.patch("ansible_base.authentication.social_auth.generate_authenticator_slug")
+@mock.patch("ansible_base.authentication.social_auth.generate_authenticator_slug", return_value="generated_slug")
 def test_social_auth_validate_callback_mixin(mocked_generate_slug, mocked_reverse, test_data, has_instance, has_slug, expected_result):
     mocked_reverse.return_value = '/foo/bar'
 

@@ -25,9 +25,9 @@ class UIAuth(AnsibleBaseDjangoAppApiView):
 def generate_ui_auth_data():
     authenticators = Authenticator.objects.filter(enabled=True)
     response = {
-        'show_login_form': False,
         'passwords': [],
         'ssos': [],
+        'show_login_form': False,
         'login_redirect_override': '',
         'custom_login_info': '',
         'custom_logo': '',
@@ -36,22 +36,16 @@ def generate_ui_auth_data():
 
     for authenticator in authenticators:
         if authenticator.category == 'password':
-            response['show_login_form'] = True
             response['passwords'].append(
                 {
                     'name': authenticator.name,
-                    'type': authenticator.type,
                 }
             )
+            response["show_login_form"] = True
         elif authenticator.category == 'sso':
             try:
-                response['ssos'].append(
-                    {
-                        'name': authenticator.name,
-                        'login_url': authenticator.get_login_url(),
-                        'type': authenticator.type,
-                    }
-                )
+                response['ssos'].append({'name': authenticator.name, 'login_url': authenticator.get_login_url(), 'type': authenticator.type.split('.')[-1]})
+                response["show_login_form"] = True
             except ImportError:
                 logger.error(f"There is an enabled authenticator id {authenticator.id} whose plugin is not working {authenticator.type}")
         else:

@@ -3,14 +3,15 @@ from collections import OrderedDict
 from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import ChoiceField, ValidationError
 
-from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin, get_authenticator_plugins
+from ansible_base.authentication.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_plugin, get_authenticator_plugins
 from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.serializers.common import NamedCommonModelSerializer
+from ansible_base.lib.serializers.mixins import ImmutableFieldsMixin
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.lib.utils.response import get_relative_url
 
 
-class AuthenticatorSerializer(NamedCommonModelSerializer):
+class AuthenticatorSerializer(NamedCommonModelSerializer, ImmutableFieldsMixin):
     type = ChoiceField(get_authenticator_plugins())
 
     def validate_type(self, value):
@@ -18,10 +19,24 @@ class AuthenticatorSerializer(NamedCommonModelSerializer):
             raise ValidationError(_("Cannot change authenticator type after it has been created."))
         return value
 
+    def validate_slug(self, value):
+        # Only need to perform creation validation for immutable fields;
+        # read_only fields do not include the value in input to the serializer.
+        value = generate_authenticator_slug(value)
+
+        return value
+
     class Meta:
         model = Authenticator
         fields = NamedCommonModelSerializer.Meta.fields + [x.name for x in Authenticator._meta.concrete_fields]
         fields.remove("category")
+        immutable_fields = ["slug"]
+        extra_kwargs = {
+            "slug": {
+                "allow_blank": True,
+                "required": False,
+            }
+        }
 
     # TODO: Do we need/want to delve into dicts and search their keys?
     def to_representation(self, authenticator):

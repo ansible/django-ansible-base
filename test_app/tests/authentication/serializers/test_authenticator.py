@@ -1,9 +1,26 @@
+import uuid
 from unittest import mock
 
 import pytest
+from django.utils.text import slugify
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.serializers import AuthenticatorSerializer
+
+
+def test_validate_blank_authenticator_slug(shut_up_logging):
+    serializer = AuthenticatorSerializer()
+    try:
+        assert uuid.UUID(serializer.validate_slug(""))
+    except ValueError:
+        pytest.fail("uuid not generated if a blank slug is provided")
+
+
+def test_validate_new_authenticator_slug(shut_up_logging):
+    slug = str(uuid.uuid4())
+
+    serializer = AuthenticatorSerializer()
+    assert serializer.validate_slug(slug) == slugify(slug)
 
 
 @pytest.mark.django_db

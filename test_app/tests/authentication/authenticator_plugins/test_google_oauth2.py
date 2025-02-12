@@ -28,19 +28,21 @@ def test_oidc_auth_successful(authenticate, unauthenticated_api_client, google_o
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "key, secret, expected_status_code, expected_error",
+    "key, secret, slug, expected_status_code, expected_error",
     [
-        (None, None, 400, {'KEY': ['This field may not be null.']}),
-        ('', None, 400, {'KEY': ['This field may not be blank.']}),
-        ('testgoogleoauth2', '', 400, {'SECRET': ['This field may not be blank.']}),
-        ('testgoogleoauth2', None, 201, {}),
-        ('testgoogleoauth2', "testgoogleoauth2_secret", 201, {}),
+        (None, None, None, 400, {'KEY': ['This field may not be null.']}),
+        ('', None, None, 400, {'KEY': ['This field may not be blank.']}),
+        ('testgoogleoauth2', '', None, 400, {'SECRET': ['This field may not be blank.']}),
+        ('testgoogleoauth2', None, None, 201, {}),
+        ('testgoogleoauth2', "testgoogleoauth2_secret", None, 201, {}),
+        ('testgoogleoauth2', "testgoogleoauth2_secret", "test_chosen_slug", 201, {}),
     ],
 )
 def test_google_oauth2_callback_url_validation(
     admin_api_client,
     key,
     secret,
+    slug,
     expected_status_code,
     expected_error,
 ):
@@ -54,6 +56,8 @@ def test_google_oauth2_callback_url_validation(
         "configuration": config,
         "type": "ansible_base.authentication.authenticator_plugins.google_oauth2",
     }
+    if slug:
+        data["slug"] = slug
 
     url = get_relative_url("authenticator-list")
     response = admin_api_client.post(url, data=data, format="json")
@@ -61,9 +65,12 @@ def test_google_oauth2_callback_url_validation(
     if expected_error:
         assert response.json() == expected_error
     else:
-        slug = response.data["slug"]
+        if slug:
+            expected_slug = slug
+        else:
+            expected_slug = response.data["slug"]
         with override_settings(FRONT_END_URL='http://testserver/'):
-            expected_path = get_fully_qualified_url('social:complete', kwargs={'backend': slug})
+            expected_path = get_fully_qualified_url('social:complete', kwargs={'backend': expected_slug})
             assert response.json()['configuration']['CALLBACK_URL'] == expected_path
 
 
