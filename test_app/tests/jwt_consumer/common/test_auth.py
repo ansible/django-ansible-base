@@ -12,6 +12,7 @@ from rest_framework.exceptions import AuthenticationFailed
 
 from ansible_base.jwt_consumer.common.auth import JWTAuthentication, JWTCommonAuth, default_mapped_user_fields
 from ansible_base.jwt_consumer.common.cert import JWTCert, JWTCertException
+from ansible_base.jwt_consumer.common.exceptions import InvalidTokenException
 from ansible_base.lib.utils.translations import translatableConditionally as _
 from ansible_base.rbac.models import RoleDefinition, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry
@@ -179,8 +180,12 @@ class TestJWTCommonAuth:
         jwt_token.unencrypted_token['exp'] = datetime.now() + timedelta(minutes=-10)
         # Test the function
         common_auth = JWTCommonAuth()
-        with pytest.raises(AuthenticationFailed, match="JWT has expired"):
+        with pytest.raises(InvalidTokenException) as excinfo:
             common_auth.validate_token(jwt_token.encrypt_token(), test_encryption_public_key)
+
+        assert "JWT expired" in str(excinfo.value)
+        assert "check for clock skew" in str(excinfo.value)
+        assert "Request ID" in str(excinfo.value)
 
     @pytest.mark.django_db
     @pytest.mark.parametrize(

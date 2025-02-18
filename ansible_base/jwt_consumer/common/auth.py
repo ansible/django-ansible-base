@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from typing import Optional, Tuple
 
 import jwt
@@ -13,6 +14,7 @@ from rest_framework.exceptions import AuthenticationFailed
 
 from ansible_base.jwt_consumer.common.cache import JWTCache
 from ansible_base.jwt_consumer.common.cert import JWTCert, JWTCertException
+from ansible_base.jwt_consumer.common.exceptions import InvalidTokenException
 from ansible_base.lib.logging.runtime import log_excess_runtime
 from ansible_base.lib.utils.auth import get_user_by_ansible_id
 from ansible_base.lib.utils.translations import translatableConditionally as _
@@ -65,6 +67,7 @@ class JWTCommonAuth:
             return
 
         token_from_header = request.headers.get("X-DAB-JW-TOKEN", None)
+        request_id = request.headers.get("X-Request-Id")
         if not token_from_header:
             logger.debug("X-DAB-JW-TOKEN header not set for JWT authentication")
             return
@@ -81,7 +84,7 @@ class JWTCommonAuth:
             return None, None
 
         try:
-            self.token = self.validate_token(token_from_header, cert_object.key)
+            self.token = self.validate_token(token_from_header, cert_object.key, request_id)
         except jwt.exceptions.DecodeError as de:
             # This exception means the decryption key failed... maybe it was because the cache is bad.
             if not cert_object.cached:
@@ -99,7 +102,7 @@ class JWTCommonAuth:
                 self.log_and_raise(_("JWT decoding failed: %(e)s, cached key was correct; check your key and generated token"), {"e": de})
             # Since we got a new key, lets go ahead and try to validate the token again.
             # If it fails this time we can just raise whatever
-            self.token = self.validate_token(token_from_header, cert_object.key)
+            self.token = self.validate_token(token_from_header, cert_object.key, request_id)
 
         # Let's see if we have the same user info in the cache already
         # Note: we're not using the "_, user_defaults=" trick here because _ is used for our translation function.
@@ -143,9 +146,13 @@ class JWTCommonAuth:
 
         logger.info(f"User {self.user.username} authenticated from JWT auth")
 
-    def log_and_raise(self, conditional_translate_object, expand_values={}):
+    def log_and_raise(self, conditional_translate_object, expand_values={}, error_code=None):
         logger.error(conditional_translate_object.not_translated() % expand_values)
-        raise AuthenticationFailed(conditional_translate_object.translated() % expand_values)
+        translated_error_message = conditional_translate_object.translated() % expand_values
+        if error_code == 498:
+            raise InvalidTokenException(translated_error_message)
+        else:
+            raise AuthenticationFailed(translated_error_message)
 
     def map_user_fields(self):
         if self.token is None or self.user is None:
@@ -173,7 +180,7 @@ class JWTCommonAuth:
                 logger.info(f"Saving user {self.user.username}")
                 self.user.save()
 
-    def validate_token(self, unencrypted_token, decryption_key):
+    def validate_token(self, unencrypted_token, decryption_key, request_id=None):
         validated_body = None
 
         local_required_field = ["sub", "user_data", "exp", "objects", "object_roles", "global_roles", "version"]
@@ -181,18 +188,23 @@ class JWTCommonAuth:
         # Decrypt the token
         try:
             logger.info("Decrypting token")
-            validated_body = jwt.decode(
+            validated_body = self.decode_jwt_token(
                 unencrypted_token,
                 decryption_key,
-                audience="ansible-services",
                 options={"require": local_required_field},
-                issuer="ansible-issuer",
-                algorithms=["RS256"],
             )
         except jwt.exceptions.DecodeError as e:
             raise e  # This will be handled higher up
         except jwt.exceptions.ExpiredSignatureError:
-            self.log_and_raise(_("JWT has expired"))
+            expired_token = self.decode_jwt_token(
+                unencrypted_token,
+                decryption_key,
+                options={"require": local_required_field, "verify_exp": False},
+            )
+            expired_time = expired_token.get("exp")
+            now = datetime.now().timestamp()
+            time_diff = int(now - expired_time)
+            self.log_and_raise(_(f"JWT expired {time_diff} seconds ago - check for clock skew. Request ID: {request_id}"), error_code=498)
         except jwt.exceptions.InvalidAudienceError:
             self.log_and_raise(_("JWT did not come for the correct audience"))
         except jwt.exceptions.InvalidIssuerError:
@@ -215,6 +227,16 @@ class JWTCommonAuth:
         # At this time we are not doing anything with regards to the version other than ensuring its there.
 
         return validated_body
+
+    def decode_jwt_token(self, unencrypted_token, decryption_key, options):
+        return jwt.decode(
+            unencrypted_token,
+            decryption_key,
+            audience="ansible-services",
+            options=options,
+            issuer="ansible-issuer",
+            algorithms=["RS256"],
+        )
 
     def get_role_definition(self, name: str) -> Optional[Model]:
         """Simply get the RoleDefinition from the database if it exists and handler corner cases
