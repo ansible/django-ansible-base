@@ -122,6 +122,21 @@ def test_saml_create_authenticator_does_not_leak_private_key_on_error(
     assert "not a real private key" not in str(response.data)
 
 
+def test_saml_key_update(admin_api_client, saml_configuration, saml_authenticator, rsa_keypair_with_cert_1):
+    url = get_relative_url("authenticator-detail", kwargs={"pk": saml_authenticator.id})
+
+    saml_configuration['SP_PRIVATE_KEY'] = rsa_keypair_with_cert_1.private
+    saml_configuration['SP_PUBLIC_CERT'] = rsa_keypair_with_cert_1.certificate
+    data = {"configuration": saml_configuration}
+
+    resp = admin_api_client.patch(url, data=data, format="json")
+    assert resp.status_code == 200, "Unsuccessful patch of saml authenticator"
+
+    resp = admin_api_client.get(url)
+    assert resp.status_code == 200
+    assert resp.data["configuration"]["SP_PUBLIC_CERT"].strip() == rsa_keypair_with_cert_1.certificate.strip()
+
+
 def test_saml_create_authenticator_does_not_leak_private_key_on_success(
     admin_api_client,
     saml_configuration,

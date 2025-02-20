@@ -162,10 +162,10 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
     def validate(self, attrs):
         # attrs is only the data in the configuration field
         errors = {}
-        # pull the cert_info out of the existing object (if we have one)
+        # pull the cert_info out of provided attrs or the existing object (if we have one)
         cert_info = {
             "SP_PRIVATE_KEY": getattr(self.instance, 'configuration', {}).get('SP_PRIVATE_KEY', None),
-            "SP_PUBLIC_CERT": getattr(self.instance, 'configuration', {}).get('SP_PUBLIC_CERT', attrs.get('SP_PUBLIC_CERT', None)),
+            "SP_PUBLIC_CERT": attrs.get('SP_PUBLIC_CERT', getattr(self.instance, 'configuration', {}).get('SP_PUBLIC_CERT', None)),
         }
 
         # Now get the SP_PRIVATE_KEY out of the passed in attrs (if there is any)
