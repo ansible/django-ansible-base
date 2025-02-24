@@ -28,6 +28,7 @@ jobs:
           FROM ghcr.io/ansible/awx_devel:devel
           COPY . /opt/dab/
           RUN pip install -e /opt/dab/
+          RUN pip install jq
           EOF
           docker build -t awx-with-dab:latest -f awx-dockerfile/Dockerfile .
 
