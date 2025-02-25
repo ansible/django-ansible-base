@@ -207,9 +207,7 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
     )
     GROUP_SEARCH = LDAPSearchField(
         help_text=_(
-            'Users are mapped to organizations based on their membership in LDAP'
-            ' groups. This setting defines the LDAP search query to find groups. '
-            'Unlike the user search, group search does not support LDAPSearchUnion.'
+            'Users are mapped to organizations based on their membership in LDAP' ' groups. This setting defines the LDAP search query to find groups.'
         ),
         allow_null=True,
         required=False,
@@ -252,9 +250,7 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
             'LDAP search query to find users.  Any user that matches the given '
             'pattern will be able to login to the service.  The user should also be '
             'mapped into an organization (as defined in the '
-            'AUTH_LDAP_ORGANIZATION_MAP setting).  If multiple search queries '
-            'need to be supported use of "LDAPUnion" is possible. See '
-            'the documentation for details.'
+            'AUTH_LDAP_ORGANIZATION_MAP setting).'
         ),
         allow_null=True,
         required=False,
