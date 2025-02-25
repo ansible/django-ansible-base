@@ -183,15 +183,12 @@ class JWTCommonAuth:
     def validate_token(self, unencrypted_token, decryption_key, request_id=None):
         validated_body = None
 
-        local_required_field = ["sub", "user_data", "exp", "objects", "object_roles", "global_roles", "version"]
-
         # Decrypt the token
         try:
             logger.info("Decrypting token")
             validated_body = self.decode_jwt_token(
                 unencrypted_token,
                 decryption_key,
-                options={"require": local_required_field},
             )
         except jwt.exceptions.DecodeError as e:
             raise e  # This will be handled higher up
@@ -199,7 +196,7 @@ class JWTCommonAuth:
             expired_token = self.decode_jwt_token(
                 unencrypted_token,
                 decryption_key,
-                options={"require": local_required_field, "verify_exp": False},
+                additional_options={"verify_exp": False},
             )
             expired_time = expired_token.get("exp")
             now = datetime.now().timestamp()
@@ -228,7 +225,10 @@ class JWTCommonAuth:
 
         return validated_body
 
-    def decode_jwt_token(self, unencrypted_token, decryption_key, options):
+    def decode_jwt_token(self, unencrypted_token, decryption_key, additional_options={}):
+        local_required_field = ["sub", "user_data", "exp", "objects", "object_roles", "global_roles", "version"]
+        options = {"require": local_required_field}
+        options.update(additional_options)
         return jwt.decode(
             unencrypted_token,
             decryption_key,
