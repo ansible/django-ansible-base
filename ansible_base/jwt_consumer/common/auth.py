@@ -14,7 +14,7 @@ from rest_framework.exceptions import AuthenticationFailed
 
 from ansible_base.jwt_consumer.common.cache import JWTCache
 from ansible_base.jwt_consumer.common.cert import JWTCert, JWTCertException
-from ansible_base.jwt_consumer.common.exceptions import InvalidTokenException
+from ansible_base.jwt_consumer.common.exceptions import HTTP_498_INVALID_TOKEN, InvalidTokenException
 from ansible_base.lib.logging.runtime import log_excess_runtime
 from ansible_base.lib.utils.auth import get_user_by_ansible_id
 from ansible_base.lib.utils.translations import translatableConditionally as _
@@ -149,7 +149,7 @@ class JWTCommonAuth:
     def log_and_raise(self, conditional_translate_object, expand_values={}, error_code=None):
         logger.error(conditional_translate_object.not_translated() % expand_values)
         translated_error_message = conditional_translate_object.translated() % expand_values
-        if error_code == 498:
+        if error_code == HTTP_498_INVALID_TOKEN:
             raise InvalidTokenException(translated_error_message)
         else:
             raise AuthenticationFailed(translated_error_message)
@@ -204,7 +204,7 @@ class JWTCommonAuth:
             expired_time = expired_token.get("exp")
             now = datetime.now().timestamp()
             time_diff = int(now - expired_time)
-            self.log_and_raise(_(f"JWT expired {time_diff} seconds ago - check for clock skew. Request ID: {request_id}"), error_code=498)
+            self.log_and_raise(_(f"JWT expired {time_diff} seconds ago - check for clock skew. Request ID: {request_id}"), error_code=HTTP_498_INVALID_TOKEN)
         except jwt.exceptions.InvalidAudienceError:
             self.log_and_raise(_("JWT did not come for the correct audience"))
         except jwt.exceptions.InvalidIssuerError:
