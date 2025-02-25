@@ -59,6 +59,13 @@ class OAuth2Application(NamedCommonModel, oauth2_models.AbstractApplication, act
         null=True,
     )
 
+    app_url = models.URLField(
+        default=None,
+        blank=True,
+        null=True,
+        help_text=_("The URL of this application."),
+    )
+
     # It would be nice to just use our usual encrypted_fields flow here
     # until DOT makes a release with https://github.com/jazzband/django-oauth-toolkit/pull/1311
     # there is no way to disable its expectation of using its own hashing

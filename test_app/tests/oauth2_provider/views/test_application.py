@@ -107,6 +107,7 @@ def test_oauth2_provider_application_create(request, client_fixture, expected_st
             'description': 'Test Description',
             'organization': organization.pk,
             'redirect_uris': 'https://example.com/callback',
+            'app_url': 'https://example.com',
             'authorization_grant_type': 'authorization-code',
             'client_type': 'confidential',
         },
@@ -120,9 +121,71 @@ def test_oauth2_provider_application_create(request, client_fixture, expected_st
         assert created_app.name == name
         assert not created_app.skip_authorization
         assert created_app.redirect_uris == 'https://example.com/callback'
+        assert created_app.app_url == 'https://example.com'
         assert created_app.client_type == 'confidential'
         assert created_app.authorization_grant_type == 'authorization-code'
         assert created_app.organization == organization
+
+
+@pytest.mark.parametrize(
+    "client_fixture,expected_status",
+    [
+        ("admin_api_client", 201),
+        pytest.param("user_api_client", 201, marks=pytest.mark.xfail(reason="https://github.com/ansible/django-ansible-base/issues/424")),
+        ("unauthenticated_api_client", 401),
+    ],
+)
+def test_oauth2_provider_application_create_no_app_url(request, client_fixture, expected_status, randname, organization):
+    """
+    As an admin, I should be able to create an OAuth2 application.
+    """
+    client = request.getfixturevalue(client_fixture)
+    url = get_relative_url("application-list")
+    name = randname("Test Application")
+    response = client.post(
+        url,
+        data={
+            'name': name,
+            'description': 'Test Description',
+            'organization': organization.pk,
+            'redirect_uris': 'https://example.com/callback',
+            'authorization_grant_type': 'authorization-code',
+            'client_type': 'confidential',
+        },
+    )
+    assert response.status_code == expected_status, response.data
+    if expected_status == 201:
+        assert response.data['name'] == name
+        assert OAuth2Application.objects.get(pk=response.data['id']).organization == organization
+
+        created_app = OAuth2Application.objects.get(client_id=response.data['client_id'])
+        assert created_app.name == name
+        assert not created_app.skip_authorization
+        assert created_app.redirect_uris == 'https://example.com/callback'
+        assert created_app.app_url is None or created_app.app_url == ''
+        assert created_app.client_type == 'confidential'
+        assert created_app.authorization_grant_type == 'authorization-code'
+        assert created_app.organization == organization
+
+
+def test_oauth2_provider_application_create_malformed_app_url(admin_api_client):
+    """
+    Validate malformed URL for app_url throws a 400
+    """
+    url = get_relative_url("application-list")
+    response = admin_api_client.post(
+        url,
+        data={
+            'name': 'Throw me a 400',
+            'description': 'Test Description',
+            'organization': '1',
+            'redirect_uris': 'https://example.com/callback',
+            'app_url': 'make this throw a 400',
+            'authorization_grant_type': 'authorization-code',
+            'client_type': 'confidential',
+        },
+    )
+    assert response.status_code == 400
 
 
 def test_oauth2_provider_application_validator(admin_api_client):
@@ -163,6 +226,7 @@ def test_oauth2_provider_application_update(request, client_fixture, expected_st
             'name': 'Updated Name',
             'description': 'Updated Description',
             'redirect_uris': 'http://example.com/updated',
+            'app_url': 'http://example.com/app_url_updated',
             'client_type': 'public',
         },
     )
@@ -176,7 +240,43 @@ def test_oauth2_provider_application_update(request, client_fixture, expected_st
         assert oauth2_application.name == 'Updated Name'
         assert oauth2_application.description == 'Updated Description'
         assert oauth2_application.redirect_uris == 'http://example.com/updated'
+        assert oauth2_application.app_url == 'http://example.com/app_url_updated'
         assert oauth2_application.client_type == 'public'
+
+
+@pytest.mark.parametrize(
+    "client_fixture,expected_status",
+    [
+        ("admin_api_client", 200),
+        pytest.param("user_api_client", 200, marks=pytest.mark.xfail(reason="https://github.com/ansible/django-ansible-base/issues/424")),
+        ("unauthenticated_api_client", 401),
+    ],
+)
+@pytest.mark.django_db
+def test_oauth2_provider_application_update_to_blank_app_url(request, client_fixture, expected_status, oauth2_application):
+    """
+    Test that we can update oauth2 applications iff we are authenticated.
+    """
+    oauth2_application = oauth2_application[0]
+    client = request.getfixturevalue(client_fixture)
+    url = get_relative_url("application-detail", args=[oauth2_application.pk])
+    response = client.patch(
+        url,
+        data={
+            'name': 'Updated Name for Blank app_url',
+            'description': 'Updated Description - blank app_url',
+            'app_url': '',
+        },
+    )
+    assert response.status_code == expected_status, response.data
+    if expected_status == 200:
+        assert response.data['name'] == 'Updated Name for Blank app_url'
+        assert response.data['description'] == 'Updated Description - blank app_url'
+        assert response.data['app_url'] == ''
+        oauth2_application.refresh_from_db()
+        assert oauth2_application.name == 'Updated Name for Blank app_url'
+        assert oauth2_application.description == 'Updated Description - blank app_url'
+        assert oauth2_application.app_url == ''
 
 
 def test_oauth2_provider_application_client_secret_encrypted(admin_api_client, organization):
@@ -194,6 +294,7 @@ def test_oauth2_provider_application_client_secret_encrypted(admin_api_client, o
             'description': 'Test Description',
             'organization': organization.pk,
             'redirect_uris': 'https://example.com/callback',
+            'app_url': 'https://example.com',
             'authorization_grant_type': 'authorization-code',
             'client_type': 'confidential',
         },
@@ -238,6 +339,7 @@ def test_oauth2_provider_application_client_secret_encrypted(admin_api_client, o
             'description': 'Updated Description',
             'organization': organization.pk,
             'redirect_uris': 'http://example.com/updated',
+            'app_url': 'http://example.com/update_app_url',
             'client_type': 'public',
             'authorization_grant_type': 'password',
         },

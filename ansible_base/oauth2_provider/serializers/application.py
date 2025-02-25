@@ -22,6 +22,7 @@ class OAuth2ApplicationSerializer(NamedCommonModelSerializer):
             'client_secret': {'label': _('Client Secret')},
             'client_type': {'label': _('Client Type')},
             'redirect_uris': {'label': _('Redirect URIs')},
+            'app_url': {'label': _('Application URL')},
             'skip_authorization': {'label': _('Skip Authorization')},
         }
 
