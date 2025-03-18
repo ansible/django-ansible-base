@@ -5,6 +5,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Any
+from warnings import warn
 
 from django.core.exceptions import ImproperlyConfigured
 from dynaconf import Dynaconf, Validator
@@ -195,8 +196,16 @@ def load_standard_settings_files(settings: Dynaconf):
         validate=False,
     )
     for path in settings.ANSIBLE_STANDARD_SETTINGS_FILES:
-        if not Path(path).exists():
+        found = False
+        try:
+            found = Path(path).exists()
+        except OSError as e:
+            # Checking on path may raise PermissionError or another OSError if the file is not accessible
+            warn(f"Could not check {path} because it is not accessible due to {e}")
+
+        if not found:
             continue
+
         data = loader.get_source_data([str(path)])
         loader._envless_load(data)
 
