@@ -80,7 +80,7 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
     oauth2_provider: dict = copy(settings.get("OAUTH2_PROVIDER", {}))
     templates: list = copy(settings.get("TEMPLATES", []))
     authentication_backends: list = copy(settings.get("AUTHENTICATION_BACKENDS", []))
-    spectacular_settings = settings.get('SPECTACULAR_SETTINGS', {})
+    spectacular_settings: dict = copy(settings.get('SPECTACULAR_SETTINGS', {}))
 
     # The org and team abstract models cause errors if not set, even if not used
     if settings.get('ANSIBLE_BASE_TEAM_MODEL') is None:
