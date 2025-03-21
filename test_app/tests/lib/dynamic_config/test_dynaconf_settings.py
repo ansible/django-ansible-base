@@ -1,4 +1,6 @@
+import pytest
 from dynaconf import ValidationError, Validator
+from flags.state import flag_state
 
 from ansible_base.lib.dynamic_config import (
     export,
@@ -6,6 +8,7 @@ from ansible_base.lib.dynamic_config import (
     load_envvars,
     load_python_file_with_injected_context,
     load_standard_settings_files,
+    toggle_database_feature_flags,
     toggle_feature_flags,
     validate,
 )
@@ -265,3 +268,13 @@ def test_toggle_feature_flags():
             {"condition": "before date", "value": "2022-06-01T12:00Z"},
         ]
     }
+
+
+@pytest.mark.django_db
+def test_toggle_database_feature_flags():
+    """Ensure that the toggle_feature_flags function works as expected."""
+
+    settings = {"FEATURE_EDA_ANALYTICS_ENABLED": True, "FEATURE_POLICY_AS_CODE_ENABLED": False}
+    toggle_database_feature_flags(settings)
+    assert flag_state("FEATURE_EDA_ANALYTICS_ENABLED") is True
+    assert flag_state("FEATURE_POLICY_AS_CODE_ENABLED") is False

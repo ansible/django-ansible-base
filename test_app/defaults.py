@@ -68,6 +68,9 @@ INSTALLED_APPS = [
     'ansible_base.feature_flags',
 ]
 
+# Specified to control which apps from ansible_base can expose URLs
+INSTALLED_APPS_OMIT_URLS = []
+
 MIDDLEWARE = [
     'debug_toolbar.middleware.DebugToolbarMiddleware',
     'django.middleware.security.SecurityMiddleware',
