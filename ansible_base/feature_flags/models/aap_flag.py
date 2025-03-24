@@ -2,7 +2,9 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+from ansible_base.activitystream.models import AuditableModel
 from ansible_base.lib.abstract_models.common import NamedCommonModel
+from ansible_base.resource_registry.fields import AnsibleResourceField
 
 
 def validate_feature_flag_name(value: str):
@@ -10,7 +12,7 @@ def validate_feature_flag_name(value: str):
         raise ValidationError(_("Feature flag names must follow the format of `FEATURE_<flag-name>_ENABLED`"))
 
 
-class AAPFlag(NamedCommonModel):
+class AAPFlag(NamedCommonModel, AuditableModel):
     class Meta:
         app_label = "dab_feature_flags"
         unique_together = ("name", "condition", "value")
@@ -22,6 +24,8 @@ class AAPFlag(NamedCommonModel):
             value=self.value,
             required=" (required)" if self.required else "",
         )
+
+    resource = AnsibleResourceField(primary_key_field="id")
 
     name = models.CharField(
         max_length=64,
@@ -58,7 +62,4 @@ class AAPFlag(NamedCommonModel):
         help_text=_("Details whether a flag is toggle-able at run-time or install-time. (Default: 'run-time')."),
     )
     description = models.CharField(max_length=300, null=False, default="", help_text=_("A detailed description giving an overview of the feature flag."))
-    version_added = models.CharField(
-        max_length=30, null=False, help_text=_("The Ansible Automation Platform version the feature flag was added in."), blank=False
-    )
     labels = models.JSONField(null=True, default=list, help_text=_("A list of labels for the feature flag."), blank=True)
