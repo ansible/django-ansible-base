@@ -7,7 +7,13 @@ import pytest
 from rest_framework.serializers import ValidationError
 from typeguard import suppress_type_checks
 
-from ansible_base.authentication.authenticator_plugins.ldap import AuthenticatorPlugin, LDAPSettings, validate_ldap_filter
+from ansible_base.authentication.authenticator_plugins.ldap import (
+    _MUST_BE_AN_ARRAY_MESSAGE,
+    AuthenticatorPlugin,
+    LDAPSearchField,
+    LDAPSettings,
+    validate_ldap_filter,
+)
 from ansible_base.authentication.models import Authenticator
 from ansible_base.authentication.session import SessionAuthentication
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
@@ -50,17 +56,28 @@ def test_ldap_auth_failed(authenticate, unauthenticated_api_client, ldap_authent
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
 @mock.patch("ansible_base.authentication.authenticator_plugins.ldap.AuthenticatorPlugin.authenticate", return_value=None)
 @mock.patch("ansible_base.authentication.authenticator_plugins.ldap.config.LDAPSearch", side_effect=Exception("Something went wrong"))
+@pytest.mark.parametrize(
+    "single_user",
+    [
+        (True,),
+        (False,),
+    ],
+)
 def test_ldap_search_exception(
     LDAPSearch,
     authenticate,
     admin_api_client,
     ldap_configuration,
     user,
+    single_user,
 ):
     """
     Test handling if config.LDAPSearch raises an exception.
     """
     url = get_relative_url("authenticator-list")
+    if not single_user:
+        # This will get us in the else when trying to call config.LDAPSearch in the validate method of LDAPSearchField
+        ldap_configuration['USER_SEARCH'] = [["a", "a", "a"], ["b", "b", "b"]]
     data = {
         "name": "LDAP authenticator (should not get created)",
         "enabled": True,
@@ -117,7 +134,7 @@ def test_ldap_search_exception(
         ({"GROUP_SEARCH": [], "USER_SEARCH": []}, None),
         ({"GROUP_SEARCH": "not a list"}, {"GROUP_SEARCH": 'Expected a list of items but got type "str".'}),
         ({"USER_SEARCH": "not a list"}, {"USER_SEARCH": 'Expected a list of items but got type "str".'}),
-        ({"GROUP_SEARCH": ["only", "two"]}, {"GROUP_SEARCH": "Must be an array of 3 items: search DN, search scope and a filter"}),
+        ({"GROUP_SEARCH": ["only", "two"]}, {"GROUP_SEARCH": _MUST_BE_AN_ARRAY_MESSAGE}),
         ({"USER_SEARCH": ["ou=users,dc=example,dc=org", "SCOPE_SUBTREE", "invalid"]}, None),
         ({"USER_SEARCH": ["invalid", "SCOPE_SUBTREE", "(cn=%(user)s)"]}, None),
         (
@@ -129,6 +146,67 @@ def test_ldap_search_exception(
             {"USER_SEARCH": ["ou=users,dc=example,dc=org", True, "(cn=%(user)s)"]},
             {"USER_SEARCH": {1: "Must be a string representing an LDAP scope object"}},
         ),
+        # User search as LDAP Unions
+        (
+            {
+                "USER_SEARCH": [
+                    ["ou=users,dc=example,dc=org", "SCOPE_SUBTREE", "invalid"],
+                ]
+            },
+            None,
+        ),
+        (
+            {
+                "USER_SEARCH": [
+                    ["ou=users,dc=example,dc=org", "SCOPE_SUBTREE", "(uid=%(user)s)"],
+                    ["invalid", "SCOPE_SUBTREE", "(cn=%(user)s)"],
+                ]
+            },
+            None,
+        ),
+        (
+            {
+                "USER_SEARCH": [
+                    ["ou=users,dc=example,dc=org", "SCOPE_SUBTREE", "(uid=%(user)s)"],
+                    ["ou=users,dc=example,dc=org", "invalid", "(cn=%(user)s)"],
+                ]
+            },
+            {"USER_SEARCH": {1: {1: "Must be a string representing an LDAP scope object"}}},
+        ),
+        (
+            {
+                "USER_SEARCH": [
+                    ["ou=users,dc=example,dc=org", 1337, "(cn=%(user)s)"],
+                    ["ou=users,dc=example,dc=org", "SCOPE_SUBTREE", "(cn=%(user)s)"],
+                ]
+            },
+            {"USER_SEARCH": {0: "Must be a string representing an LDAP scope object"}},
+        ),
+        (
+            {
+                "USER_SEARCH": [
+                    ["ou=users,dc=example,dc=org", "SCOPE_SUBTREE", "(cn=%(user)s)"],
+                    ["ou=other_users,dc=example,dc=org", "SCOPE_SUBTREE", "(cn=%(user)s)"],
+                    ["ou=users,dc=example,dc=org", True, "(cn=%(user)s)"],
+                ],
+            },
+            {"USER_SEARCH": {2: {1: "Must be a string representing an LDAP scope object"}}},
+        ),
+        # End User search Unions
+        # Ensure a group search can not use a union
+        (
+            {
+                "GROUP_SEARCH": [
+                    [
+                        "ou=groups,dc=example,dc=org",
+                        "SCOPE_SUBTREE",
+                        "(&(|(objectClass=person))(uid=jdoe)(cn=%(user)s))",
+                    ],
+                ],
+            },
+            {"GROUP_SEARCH": _MUST_BE_AN_ARRAY_MESSAGE},
+        ),
+        ({"GROUP_SEARCH": 1234}, {"GROUP_SEARCH": _MUST_BE_AN_ARRAY_MESSAGE}),
         ({"GROUP_SEARCH": ["ou=groups,dc=example,dc=org", "SCOPE_SUBTREE", "(&(|(objectClass=person))(uid=jdoe)(cn=%(user)s))"]}, None),
         ({"GROUP_SEARCH": ["ou=groups,dc=example,dc=org", "SCOPE_SUBTREE", 1337]}, {"GROUP_SEARCH": {2: "Must be a valid string"}}),
         ({"BIND_DN": ""}, None),
@@ -167,15 +245,18 @@ def test_ldap_create_authenticator_error_handling(
     response = admin_api_client.post(url, data=data, format="json")
     assert response.status_code == 400 if expected_errors else 201
     if expected_errors:
-        for key, value in expected_errors.items():
-            assert key in response.data
-            if type(response.data[key]) is dict:
-                for sub_key in response.data[key]:
-                    assert value[sub_key] in response.data[key][sub_key]
-            elif type(response.data[key]) is list:
-                assert any(value in item for item in response.data[key])
-            else:
-                assert value in response.data[key]
+        validate_response(expected_errors, response.data)
+
+
+def validate_response(expected_value, response_value):
+    if type(expected_value) is dict:
+        for key, value in expected_value.items():
+            assert key in expected_value
+            validate_response(value, expected_value[key])
+    elif type(expected_value) is list:
+        assert any(expected_value in item for item in response_value)
+    else:
+        assert expected_value in response_value
 
 
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
@@ -185,7 +266,7 @@ def test_ldap_backend_authenticate_encrypted_fields_update(admin_api_client, lda
     config = ldap_authenticator.configuration
     config["BIND_PASSWORD"] = 'foo'
     response = admin_api_client.patch(url, data={"configuration": config}, format="json")
-    assert response.status_code == 200
+    assert response.status_code == 200, f"Failed to set BIND_PASSWORD as plain text: {response.content}"
     assert response.data["configuration"]["BIND_PASSWORD"] == ENCRYPTED_STRING
     authenticator = Authenticator.objects.get(pk=ldap_authenticator.pk)
     # We automatically decrypt the encrypted fields in Authenticator#from_db
@@ -194,7 +275,7 @@ def test_ldap_backend_authenticate_encrypted_fields_update(admin_api_client, lda
     # And updating it to ENCRYPTED_STRING should not change the value
     config["BIND_PASSWORD"] = ENCRYPTED_STRING
     response = admin_api_client.patch(url, data={"configuration": config}, format="json")
-    assert response.status_code == 200
+    assert response.status_code == 200, f"Failed to set BIND_PASSWORD as {ENCRYPTED_STRING}"
     assert response.data["configuration"]["BIND_PASSWORD"] == ENCRYPTED_STRING
     authenticator = Authenticator.objects.get(pk=ldap_authenticator.pk)
     assert authenticator.configuration["BIND_PASSWORD"] == "foo"
@@ -498,8 +579,8 @@ def test_AuthenticatorPlugin_authenticate_start_tls(authenticate, ldap_authentic
 @pytest.mark.parametrize(
     "group_type, group_type_params, server_uri, user_attr_map, user_search, expected_status_code, expected_error, saved_user_search",  # noqa
     [
-        ('PosixGroupType', {"name_attr": "ldap test"}, ["ldaps://ldap.example.com"], {"email": "ldap@ldap.example.com"}, None, 201, {}, None),  # noqa
-        ('PosixGroupType', {"name_attr": "ldap test"}, ["ldaps://ldap.example.com"], {"email": "ldap@ldap.example.com"}, [], 201, {}, []),  # noqa
+        ('PosixGroupType', {"name_attr": "ldap test"}, ["ldaps://ldap.example.com"], {"email": "ldap@ldap.example.com"}, None, 201, {}, None),
+        ('PosixGroupType', {"name_attr": "ldap test"}, ["ldaps://ldap.example.com"], {"email": "ldap@ldap.example.com"}, [], 201, {}, []),
         (
             'PosixGroupType',
             {"name_attr": "ldap test"},
@@ -507,7 +588,7 @@ def test_AuthenticatorPlugin_authenticate_start_tls(authenticate, ldap_authentic
             {"email": "ldap@ldap.example.com"},
             ['a', 'b'],
             400,
-            {"USER_SEARCH": ["Must be an array of 3 items: search DN, search scope and a filter"]},
+            {"USER_SEARCH": {"0": _MUST_BE_AN_ARRAY_MESSAGE, "1": _MUST_BE_AN_ARRAY_MESSAGE}},
             [],
         ),
         (
@@ -581,3 +662,20 @@ def test_ldap_user_search_validation(
             assert response_put.status_code == 200
             # Confirm that the saved 'USER_SEARCH' is None
             assert response_put.json()['configuration']['USER_SEARCH'] is None
+
+
+@pytest.mark.parametrize(
+    "value,expected_result",
+    [
+        (1, False),
+        ("a", False),
+        (["a", 1, {}], True),
+        (["a", "a", "a"], True),
+        ([["a", "a", "a"]], False),
+        ([["a", "a", "a"], ["b", "b", "b"]], False),
+        (["a", ["b", "b", "b"]], False),
+        (["a", ["b", "b", "b"], 'c'], True),
+    ],
+)
+def test_ldap_search_field_is_single_search(value, expected_result):
+    assert LDAPSearchField.is_single_search(value) is expected_result

@@ -9,7 +9,7 @@ from django.utils.translation import gettext_lazy as _
 from django_auth_ldap import config
 from django_auth_ldap.backend import LDAPBackend
 from django_auth_ldap.backend import LDAPSettings as BaseLDAPSettings
-from django_auth_ldap.config import LDAPGroupType
+from django_auth_ldap.config import LDAPGroupType, LDAPSearchUnion
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, Authenticator, BaseAuthenticatorConfiguration
@@ -19,6 +19,9 @@ from ansible_base.lib.serializers.fields import BooleanField, CharField, ChoiceF
 from ansible_base.lib.utils.validation import VALID_STRING
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.ldap')
+
+_MUST_BE_AN_ARRAY_MESSAGE = 'Must be an array of 3 items: search DN, search scope and a filter'
+_MUST_BE_AN_ARRAY_MESSAGE_TRANSLATED = _(_MUST_BE_AN_ARRAY_MESSAGE)
 
 
 user_search_string = '%(user)s'
@@ -69,8 +72,71 @@ class LDAPConnectionOptions(DictField):
 
 
 class LDAPSearchField(ListField):
+    @staticmethod
+    def is_single_search(value):
+        try:
+            # Note: this method was chosen as it was how AWX determined a single vs multi-field
+            return len(value) == 3 and type(value[0]) is str
+        except TypeError:
+            return False
+
+    def validate_single_search(self, search_term):
+        errors = {}
+
+        # If this thing doesn't look like we expect, return an error
+        if not LDAPSearchField.is_single_search(search_term):
+            return _MUST_BE_AN_ARRAY_MESSAGE_TRANSLATED
+
+        # Validate the first item is an ldap DN
+        try:
+            validate_ldap_dn(search_term[0], with_user=False, required=True)
+        except ValidationError as e:
+            errors[0] = e.args[0]
+
+        # Validate the second item is a search term
+        if type(search_term[1]) is not str or not search_term[1].startswith('SCOPE_') or not getattr(ldap, search_term[1], None):
+            errors[1] = _('Must be a string representing an LDAP scope object')
+
+        # Validate the third item is a filter
+        try:
+            validate_ldap_filter(search_term[2], with_user=self.search_must_have_user)
+        except ValidationError as e:
+            errors[2] = e.args[0]
+
+        # If we got errors return now because the next part will fail for sure
+        if errors:
+            return errors
+
+        # We made it all the way here, make sure we can instantiate an LDAPSearch object
+        try:
+            # Search fields should be LDAPSearch objects, so we need to convert them from [] to these objects
+            config.LDAPSearch(search_term[0], getattr(ldap, search_term[1]), search_term[2])
+        except Exception as e:
+            errors = _('Failed to instantiate LDAPSearch object: %(e)s') % {"e": e}
+
+        return errors
+
+    def check_search_input(self, allow_union, value):
+        #
+        # Check if we have a single search instance and massage the value if needed
+        #
+
+        # If we got 3 items and all 3 items are not lists than we have what looks like a single search
+        single_search = LDAPSearchField.is_single_search(value)
+
+        # If we are not a union enabled field and got a union, raise
+        if not self.allow_union and not single_search:
+            raise ValidationError(_MUST_BE_AN_ARRAY_MESSAGE_TRANSLATED)
+
+        if single_search:
+            # If we got a single search wrap it in array for common processing
+            value = [value]
+
+        return single_search, value
+
     def __init__(self, **kwargs):
         self.search_must_have_user = kwargs.pop('search_must_have_user', False)
+        self.allow_union = kwargs.pop('allow_union', False)
         super().__init__(**kwargs)
 
         def validator(value):
@@ -79,31 +145,27 @@ class LDAPSearchField(ListField):
 
             errors = {}
 
-            if len(value) != 3:
-                raise ValidationError(_('Must be an array of 3 items: search DN, search scope and a filter'))
+            single_search, value = self.check_search_input(self.allow_union, value)
 
-            try:
-                validate_ldap_dn(value[0], with_user=False, required=True)
-            except ValidationError as e:
-                errors[0] = e.args[0]
+            # Loop over each of the items in the "array" and check it
+            for index in range(len(value)):
+                # Check to see if this ite has any errors in it
+                local_errors = self.validate_single_search(value[index])
 
-            if type(value[1]) is not str or not value[1].startswith('SCOPE_') or not getattr(ldap, value[1], None):
-                errors[1] = _('Must be a string representing an LDAP scope object')
+                # If not, continue
+                if local_errors == {}:
+                    continue
 
-            try:
-                validate_ldap_filter(value[2], with_user=self.search_must_have_user)
-            except ValidationError as e:
-                errors[2] = e.args[0]
+                errors[index] = local_errors
 
+            # If we had any errors in any of the validation, raise them up.
             if errors:
-                raise ValidationError(errors)
-
-            # We made it all the way here, make sure we can instantiate an LDAPSearch object
-            try:
-                # Search fields should be LDAPSearch objects, so we need to convert them from [] to these objects
-                config.LDAPSearch(value[0], getattr(ldap, value[1]), value[2])
-            except Exception as e:
-                raise ValidationError(_('Failed to instantiate LDAPSearch object: %(e)s') % {"e": e})
+                if single_search:
+                    # If we are a single search we are just going to raise the element 0 items for clarity
+                    raise ValidationError(errors[0])
+                else:
+                    # If we are a multi search return all errors
+                    raise ValidationError(errors)
 
         self.validators.append(validator)
 
@@ -214,6 +276,7 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
         allow_null=True,
         required=False,
         search_must_have_user=False,
+        allow_union=False,
         ui_field_label=_('LDAP Group Search'),
     )
     START_TLS = BooleanField(
@@ -259,6 +322,7 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
         allow_null=True,
         required=False,
         search_must_have_user=True,
+        allow_union=True,
         ui_field_label=_('LDAP User Search'),
     )
 
@@ -372,19 +436,28 @@ class AuthenticatorPlugin(LDAPBackend, AbstractAuthenticatorPlugin):
             self.settings.CONNECTION_OPTIONS[ldap.OPT_X_TLS_NEWCTX] = 0
 
         # Ensure USER_SEARCH and GROUP_SEARCH are converted into a search object
-        for field, search_must_have_user in [('GROUP_SEARCH', False), ('USER_SEARCH', True)]:
+        for field in ['GROUP_SEARCH', 'USER_SEARCH']:
             data = getattr(self.settings, field, None)
             # Ignore None or empty (e.g., [])
             if not data:
                 setattr(self.settings, field, None)
-            elif not isinstance(data, config.LDAPSearch):
-                try:
-                    # Search fields should be LDAPSearch objects, so we need to convert them from [] to these objects
-                    search_object = config.LDAPSearch(data[0], getattr(ldap, data[1]), data[2])
-                    setattr(self.settings, field, search_object)
-                except Exception as e:
-                    logger.error(f'Failed to instantiate {field} LDAPSearch object: {e}')
-                    return None
+            elif not isinstance(data, config.LDAPSearch) and not isinstance(data, config.LDAPSearchUnion):
+                # If we only got 3 strings we will be just a single search, stuff it into an array of a single search
+                if len(data) == 3 and type(data[0]) is str and type(data[1]) is str and type(data[2]) is str:
+                    data = [data]
+                searches = []
+                for index in range(len(data)):
+                    try:
+                        # Search fields should be LDAPSearch objects, so we need to convert them from [] to these objects
+                        search_object = config.LDAPSearch(data[index][0], getattr(ldap, data[index][1]), data[index][2])
+                        searches.append(search_object)
+                    except Exception as e:
+                        logger.error(f'Failed to instantiate {field}[{index}] as LDAPSearch object: {e}')
+                        return None
+                if len(searches) == 1:
+                    setattr(self.settings, field, searches[0])
+                else:
+                    setattr(self.settings, field, LDAPSearchUnion(*searches))
 
         try:
             user_from_ldap = super().authenticate(request, username, password)
