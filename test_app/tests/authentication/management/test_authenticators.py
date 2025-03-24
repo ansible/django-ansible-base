@@ -97,7 +97,8 @@ def test_authenticators_cli_initialize(
     err = StringIO()
 
     # Sanity check:
-    assert django_user_model.objects.count() == 0
+    # _system user exists
+    assert django_user_model.objects.count() == 1
 
     # Optionally create admin user
     if admin_user_exists:

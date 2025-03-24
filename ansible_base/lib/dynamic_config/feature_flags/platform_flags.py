@@ -3,24 +3,24 @@ from typing import TypedDict
 
 class AAPFlagNameSchema(TypedDict):
     name: str
-    support_level: str
+    condition: str
+    value: str
     visibility: str
-    toggle_type: str
+    support_level: str
     description: str
-    version_added: str
     labels: list
+    toggle_type: str
 
 
 AAP_FEATURE_FLAGS: list[AAPFlagNameSchema] = [
     AAPFlagNameSchema(
         name="FEATURE_FEATURE_FLAGS_ENABLED",
         condition="boolean",
-        value=True,
+        value="True",
         visibility="public",
         support_level='READY_FOR_PRODUCTION',
         description='If enabled, feature flags can be toggled on/off at runtime via UI or API. '
         'If disabled, feature flags can only be toggled on/off at install-time.',
-        version_added='2.5',
         labels=['platform'],
         toggle_type='install-time',
     ),
@@ -28,30 +28,27 @@ AAP_FEATURE_FLAGS: list[AAPFlagNameSchema] = [
         name="FEATURE_INDIRECT_NODE_COUNTING_ENABLED",
         visibility="public",
         condition="boolean",
-        value=False,
+        value="False",
         support_level="NOT_FOR_PRODUCTION",
         description="TBD",
-        version_added="2.5",
         labels=['controller'],
     ),
     AAPFlagNameSchema(
         name="FEATURE_POLICY_AS_CODE_ENABLED",
         visibility="public",
         condition="boolean",
-        value=False,
+        value="False",
         support_level="NOT_FOR_PRODUCTION",
         description="TBD",
-        version_added="2.5",
         labels=['controller'],
     ),
     AAPFlagNameSchema(
         name="FEATURE_EDA_ANALYTICS_ENABLED",
         condition="boolean",
-        value=False,
+        value="False",
         visibility="public",
         support_level="NOT_FOR_PRODUCTION",
         description="TBD",
-        version_added="2.5",
         labels=['eda'],
     ),
 ]

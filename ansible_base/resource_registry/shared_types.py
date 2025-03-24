@@ -129,3 +129,24 @@ class RoleDefinitionType(SharedResourceTypeSerializer):
 
                     raise SkipResource(*e.args)
             raise
+
+
+class FeatureFlagType(SharedResourceTypeSerializer):
+    """Serialize list of feature flags"""
+
+    RESOURCE_TYPE = "feature_flag"
+    UNIQUE_FIELDS = (
+        "name",
+        "condition",
+        "value",
+    )
+
+    name = serializers.CharField()
+    condition = serializers.CharField()
+    value = serializers.CharField()
+    required = serializers.BooleanField()
+    support_level = serializers.CharField()
+    visibility = serializers.CharField()
+    toggle_type = serializers.CharField()
+    description = serializers.CharField()
+    labels = serializers.JSONField()

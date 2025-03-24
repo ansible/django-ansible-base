@@ -11,9 +11,8 @@ for url_type in url_types:
     globals()[url_type] = []
 
 installed_apps = getattr(settings, 'INSTALLED_APPS', [])
-installed_apps_omit_urls = getattr(settings, 'INSTALLED_APPS_OMIT_URLS', [])
 for app in installed_apps:
-    if app.startswith("ansible_base.") and app not in installed_apps_omit_urls:
+    if app.startswith('ansible_base.'):
         if app in getattr(settings, 'ANSIBLE_BASE_APPS_EXCLUDE_VIEW_LIST', []):
             continue
         if not importlib.util.find_spec(f'{app}.urls'):

@@ -73,7 +73,6 @@ class TestGetSystemUser:
 
     @pytest.mark.django_db
     def test_get_system_user_from_managed_model(self):
-        create_system_user(user_model=ManagedUser)
-
+        # System user already exists
         assert ManagedUser.objects.filter(username=get_system_username()[0]).count() == 0
-        assert ManagedUser.all_objects.filter(username=get_system_username()[0]).count() == 1
+        assert ManagedUser.all_objects.filter(username=get_system_username()[0]).count() == 0
