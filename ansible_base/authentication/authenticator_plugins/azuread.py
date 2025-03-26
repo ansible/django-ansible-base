@@ -46,7 +46,6 @@ class AzureADConfiguration(BaseAuthenticatorConfiguration):
     )
 
 
-
 class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, AzureADOAuth2, AbstractAuthenticatorPlugin):
     configuration_class = AzureADConfiguration
     type = "azuread"
@@ -57,6 +56,6 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Azur
     @property
     def groups_claim(self):
         return self.setting('GROUPS_CLAIM')
-    
+
     def get_user_groups(self, extra_groups=[]):
         return extra_groups
