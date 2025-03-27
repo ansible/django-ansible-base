@@ -265,7 +265,7 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         if 'oauth2_provider' not in installed_apps:
             installed_apps.append('oauth2_provider')
 
-        oauth2_provider.setdefault('ACCESS_TOKEN_EXPIRE_SECONDS', 31536000000)
+        oauth2_provider.setdefault('ACCESS_TOKEN_EXPIRE_SECONDS', 31536000) # 1 year
         oauth2_provider.setdefault('AUTHORIZATION_CODE_EXPIRE_SECONDS', 600)
         oauth2_provider.setdefault('REFRESH_TOKEN_EXPIRE_SECONDS', 2628000)
         # For compat with awx, we don't require PKCE, but the new version
