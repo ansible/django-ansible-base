@@ -1,6 +1,6 @@
 # Dockerfile to build the image for dab_nginx service
 
-FROM mirror.gcr.io/library/nginx:latest
+FROM mirror.gcr.io/library/nginx:1.27
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 

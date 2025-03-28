@@ -1,6 +1,6 @@
 # Dockerfile to build the image for dab_ingress service
 
-FROM mirror.gcr.io/library/nginx:latest
+FROM mirror.gcr.io/library/nginx:1.27
 
 RUN mkdir -p /etc/nginx/ssl && chown -R nginx:nginx /etc/nginx/ssl
 COPY entrypoint.sh /entrypoint.sh
