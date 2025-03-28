@@ -1,9 +1,7 @@
-# Dockerfile to build the image for dab_ingress service
+# Dockerfile to build the image for dab_nginx service
 
 FROM mirror.gcr.io/library/nginx:latest
 
-RUN mkdir -p /etc/nginx/ssl && chown -R nginx:nginx /etc/nginx/ssl
-COPY entrypoint.sh /entrypoint.sh
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Modify the default Nginx configuration to allow it to run as a non-root user

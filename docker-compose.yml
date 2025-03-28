@@ -36,9 +36,8 @@ services:
 
   # This is the intermediate application reverse proxy without ssl
   nginx:
-    image: "nginx:latest"
-    volumes:
-      - './compose/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:z'
+    build: ./compose/nginx
+    image: "dab_nginx:latest"
     ports:
       - '80:80'
     depends_on:
@@ -47,9 +46,8 @@ services:
   # This is the ssl terminated "ingress" reverse proxy
   ingress:
     build: ./compose/ingress
+    image: "dab_ingress:latest"
     command: './entrypoint.sh'
-    volumes:
-      - './compose/ingress/certs:/etc/nginx/ssl:z'
     ports:
       - "443:443"
     depends_on:
