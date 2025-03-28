@@ -101,11 +101,11 @@ def test_groups_setting_and_user_groups(keycloak_authenticator):
 
     ad = get_authenticator_plugin("ansible_base.authentication.authenticator_plugins.azuread")
     ad.database_instance = MockedDb(custom_groups_claim)
-    
+
     # assert that groups claim setting is there and AD has the expected groups claim
     assert ad.strategy.get_setting('GROUPS_CLAIM', backend) == custom_groups_claim
     assert ad.groups_claim == custom_groups_claim
-    
+
     # assert that AD returns expected user groups
     assert ad.get_user_groups() == []
-    assert ad.get_user_groups(["a","b"]) == ["a","b"]
+    assert ad.get_user_groups(["a", "b"]) == ["a", "b"]
