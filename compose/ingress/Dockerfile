@@ -10,8 +10,8 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 # This follows Nginx Docker Hub instructions: https://hub.docker.com/_/nginx
 # By default, Nginx writes its PID file to /var/run/nginx.pid, which is a restricted location.
 # We change it to /tmp/nginx.pid so that it can be accessed by a non-root user.
-RUN sed -i '/^user  nginx;/d' /etc/nginx/nginx.conf && \
-    sed -i 's|pid        /var/run/nginx.pid;|pid        /tmp/nginx.pid;|' /etc/nginx/nginx.conf && \
+RUN sed -i -E '/^user\s+nginx;/d' /etc/nginx/nginx.conf && \
+    sed -i -E 's|pid\s+/var/run/nginx.pid;|pid        /tmp/nginx.pid;|' /etc/nginx/nginx.conf && \
     sed -i '/http {/a \
     client_body_temp_path /tmp/client_temp;\n\
     proxy_temp_path       /tmp/proxy_temp;\n\
