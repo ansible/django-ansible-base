@@ -89,17 +89,49 @@ def test_social_auth_validate_callback_mixin(mocked_generate_slug, mocked_revers
         assert mocked_reverse.called
 
 
+id_token_no_groups = {
+    "ver": "2.0",
+    "iss": "https://login.microsoftonline.com/9122040d-6c67-4c5b-b112-36a304b66dad/v2.0",
+    "sub": "AAAAAAAAAAAAAAAAAAAAAIkzqFVrSaSaFHy782bbtaQ",
+    "aud": "6cb04018-a3f5-46a7-b995-940c78f5aef3",
+    "exp": 4073899721,
+    "iat": 1536274711,
+    "nbf": 1536274711,
+    "name": "Abe Lincoln",
+    "preferred_username": "AbeLi@microsoft.com",
+    "email": "AbeLi@microsoft.com",
+    "oid": "00000000-0000-0000-66f3-3332eca7ea81",
+    "tid": "9122040d-6c67-4c5b-b112-36a304b66dad",
+    "nonce": "123523",
+    "aio": "Df2UVXL1ix!lMCWMSOJBcFatzcGfvFGhjKv8q5g0x732dR5MB5BisvGQO7YWByjd8iQDLq!eGbIDakyp5mnOrcdqHeYSnltepQmRp6AIZ8jY",
+}
+
+id_token = {**id_token_no_groups, "groups": ["myidtokengroup"]}
+
+id_token_duplicate_group = {**id_token_no_groups, "groups": ["mygroup", "myidtokengroup"]}
+
+
 @pytest.mark.parametrize(
-    "groups_claim,returned_groups,expected_groups",
+    "groups_claim,user_info_groups,id_token,expected_groups",
     [
-        (None, ["mygroup"], ["mygroup"]),
-        ("groups", ["mygroup"], ["mygroup"]),
-        (None, None, []),
-        ("groups", None, []),
+        (None, ["mygroup"], {}, ["mygroup"]),
+        ("groups", ["mygroup"], {}, ["mygroup"]),
+        (None, None, {}, []),
+        ("groups", None, {}, []),
+        # Check extracting groups claim from id_token
+        ("groups", None, id_token, ["myidtokengroup"]),
+        # Test extracting groups claim from id_token when groups claim does not exist
+        (None, None, id_token, []),
+        # Test merging groups from UserInfo and id_token.
+        ("groups", ["mygroup"], id_token, ["myidtokengroup", "mygroup"]),
+        # Test merging groups from UserInfo and id_token where we have duplicate groups.
+        ("groups", ["mygroup"], id_token_duplicate_group, ["myidtokengroup", "mygroup"]),
+        # Test where id_token has no groups-claim.
+        ("groups", ["mygroup"], id_token_no_groups, ["mygroup"]),
     ],
 )
 @mock.patch("ansible_base.authentication.utils.claims.update_user_claims")
-def test_create_user_claims_pipeline(mock_update_user_claims, groups_claim, returned_groups, expected_groups):
+def test_create_user_claims_pipeline(mock_update_user_claims, groups_claim, user_info_groups, id_token, expected_groups):
     '''
     We are testing to see if extracting groups from a claim is working correctly
     '''
@@ -107,22 +139,24 @@ def test_create_user_claims_pipeline(mock_update_user_claims, groups_claim, retu
     class MockBackend(SocialAuthMixin):
         database_instance = None
 
-        def __init__(self, groups_claim=None):
+        def __init__(self, groups_claim=None, id_token=None):
             if groups_claim is not None:
                 self.groups_claim = groups_claim
+            if id_token is not None:
+                self.id_token = id_token
 
         def get_user_groups(self, extra_groups=[]):
             return extra_groups
 
-    backend = MockBackend(groups_claim=groups_claim)
+    backend = MockBackend(groups_claim=groups_claim, id_token=id_token)
 
     rData = {}
-    if returned_groups is not None:
-        rData[backend.groups_claim] = returned_groups
+    if user_info_groups is not None:
+        rData[backend.groups_claim] = user_info_groups
 
     user = {
         'auth_time': "2024-11-07T05:19:08.224936Z",
-        'id_token': "asdf",
+        'id_token': id_token,
         'refresh_token': None,
         'id': "ccd2cf13-d927-41ad-cd8c-adb18b2e5f78",
         'access_token': "asdf",
@@ -134,4 +168,6 @@ def test_create_user_claims_pipeline(mock_update_user_claims, groups_claim, retu
     assert mock_update_user_claims.called
     call_args = mock_update_user_claims.call_args
 
-    assert call_args == ((user, None, expected_groups),)
+    assert call_args[0][0] == user
+    assert call_args[0][1] is None
+    assert call_args[0][2].sort() == expected_groups.sort()

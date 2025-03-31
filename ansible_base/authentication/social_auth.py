@@ -195,6 +195,18 @@ def create_user_claims_pipeline(*args, backend, response, **kwargs):
     groups_claim = backend.groups_claim if backend.groups_claim is not None else "Group"
 
     extra_groups = response[groups_claim] if groups_claim in response else []
+    logger.debug(f'groups extracted from UserInfo. "{groups_claim}": {extra_groups}')
+
+    # attempt to get group claims from id token if current backend has it
+    if hasattr(backend, "id_token"):
+        extra_groups_from_id_token = backend.id_token.get(groups_claim, [])
+        logger.debug(f'groups extracted from id_token. "{groups_claim}": {extra_groups_from_id_token}')
+
+        # Merge groups from UserInfo and groups_claim in id_token and remove duplicates
+        extra_groups = list(set(extra_groups + extra_groups_from_id_token))
+
+    logger.debug(f'updating user claims with groups claim "{groups_claim}": {extra_groups}')
+
     user = update_user_claims(kwargs["user"], backend.database_instance, backend.get_user_groups(extra_groups))
     if user is None:
         return SOCIAL_AUTH_PIPELINE_FAILED_STATUS
