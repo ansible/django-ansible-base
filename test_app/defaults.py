@@ -148,7 +148,14 @@ DEMO_DATA_COUNTS = {'organization': 150, 'user': 379, 'team': 43}
 ANSIBLE_BASE_TEAM_MODEL = 'test_app.Team'
 ANSIBLE_BASE_ORGANIZATION_MODEL = 'test_app.Organization'
 
+STATIC_ROOT = os.path.join(BASE_DIR, 'test_app', 'static_collected')
 STATIC_URL = '/static/'
+
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'static'),
+]
+
+CSRF_TRUSTED_ORIGINS = ['http://localhost', 'https://localhost']
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

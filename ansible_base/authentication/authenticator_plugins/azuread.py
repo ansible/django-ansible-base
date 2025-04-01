@@ -37,6 +37,14 @@ class AzureADConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('OIDC Secret'),
     )
 
+    GROUPS_CLAIM = CharField(
+        help_text=_("The JSON key used to extract the user's groups from the ID token or userinfo endpoint."),
+        required=False,
+        allow_null=False,
+        default="Group",
+        ui_field_label=_("Groups Claim"),
+    )
+
 
 class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, AzureADOAuth2, AbstractAuthenticatorPlugin):
     configuration_class = AzureADConfiguration
@@ -44,3 +52,10 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Azur
     logger = logger
     category = "sso"
     configuration_encrypted_fields = ['SECRET']
+
+    @property
+    def groups_claim(self):
+        return self.setting('GROUPS_CLAIM')
+
+    def get_user_groups(self, extra_groups=[]):
+        return extra_groups

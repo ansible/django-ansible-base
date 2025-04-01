@@ -19,6 +19,7 @@ echo "Read the custom settings file data just as a test"
 $DYNACONF -i test_app.settings.DYNACONF inspect -k JUST_A_TEST
 
 $PYTHON manage.py migrate
+$PYTHON manage.py collectstatic --clear --noinput
 DJANGO_SUPERUSER_PASSWORD=password DJANGO_SUPERUSER_USERNAME=admin DJANGO_SUPERUSER_EMAIL=admin@stuff.invalid $PYTHON manage.py createsuperuser --noinput || true
 $PYTHON manage.py authenticators --initialize
 $PYTHON manage.py create_demo_data

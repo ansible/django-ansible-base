@@ -49,3 +49,6 @@ tools/generated/*
 
 # generated ssl certs
 compose/ingress/certs/*
+
+# static files
+test_app/static_collected/

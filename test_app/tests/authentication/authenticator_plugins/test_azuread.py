@@ -3,7 +3,9 @@ from unittest import mock
 import pytest
 from django.test import override_settings
 
+from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
 from ansible_base.authentication.session import SessionAuthentication
+from ansible_base.authentication.social_auth import SocialAuthMixin
 from ansible_base.lib.utils.response import get_fully_qualified_url, get_relative_url
 
 authenticated_test_page = "authenticator-list"
@@ -79,3 +81,31 @@ def test_azuread_auth_failed(authenticate, unauthenticated_api_client, azuread_a
     url = get_relative_url(authenticated_test_page)
     response = client.get(url)
     assert response.status_code == 401
+
+
+def test_groups_setting_and_user_groups(keycloak_authenticator):
+    custom_groups_claim = "some_groups"
+
+    class MockedDb:
+        def __init__(self, group_claim):
+            self.slug = "fake"
+            self.configuration = {"GROUPS_CLAIM": group_claim}
+
+    class MockBackend(SocialAuthMixin):
+        database_instance = MockedDb(custom_groups_claim)
+
+        def __init__(self):
+            pass
+
+    backend = MockBackend()
+
+    ad = get_authenticator_plugin("ansible_base.authentication.authenticator_plugins.azuread")
+    ad.database_instance = MockedDb(custom_groups_claim)
+
+    # assert that groups claim setting is there and AD has the expected groups claim
+    assert ad.strategy.get_setting('GROUPS_CLAIM', backend) == custom_groups_claim
+    assert ad.groups_claim == custom_groups_claim
+
+    # assert that AD returns expected user groups
+    assert ad.get_user_groups() == []
+    assert ad.get_user_groups(["a", "b"]) == ["a", "b"]
