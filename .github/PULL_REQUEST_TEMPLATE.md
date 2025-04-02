@@ -1,5 +1,3 @@
-# [AAP-XXXXX] Brief Title Describing the Change
-
 ## Description
 <!-- Mandatory: Provide a clear, concise description of the changes and their purpose -->
 - What is being changed?
