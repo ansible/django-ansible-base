@@ -28,6 +28,8 @@ def create_initial_data(**kwargs):
 
         existing.support_level = new['support_level']
         existing.visibility = new['visibility']
+        existing.ui_name = new['ui_name']
+        existing.support_url = new['support_url']
         if 'required' in new:
             existing.required = new['required']
         if 'toggle_type' in new:
