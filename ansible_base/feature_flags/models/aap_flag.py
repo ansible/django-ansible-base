@@ -25,7 +25,7 @@ class AAPFlag(NamedCommonModel, AuditableModel):
             required=" (required)" if self.required else "",
         )
 
-    resource = AnsibleResourceField(primary_key_field="id")
+    # resource = AnsibleResourceField(primary_key_field="id")
 
     name = models.CharField(
         max_length=64,
@@ -33,6 +33,12 @@ class AAPFlag(NamedCommonModel, AuditableModel):
         help_text=_("The name of the feature flag. Must follow the format of FEATURE_<flag-name>_ENABLED."),
         validators=[validate_feature_flag_name],
         blank=False,
+    )
+    ui_name = models.CharField(
+        max_length=64,
+        null=False,
+        blank=False,
+        help_text=_("The pretty name to display in the application User Interface")
     )
     condition = models.CharField(max_length=64, default="boolean", help_text=_("Used to specify a condition, which if met, will enable the feature flag."))
     value = models.CharField(max_length=127, default="True", help_text=_("The value used to evaluate the conditional specified."))
@@ -61,5 +67,6 @@ class AAPFlag(NamedCommonModel, AuditableModel):
         default='run-time',
         help_text=_("Details whether a flag is toggle-able at run-time or install-time. (Default: 'run-time')."),
     )
-    description = models.CharField(max_length=300, null=False, default="", help_text=_("A detailed description giving an overview of the feature flag."))
+    description = models.CharField(max_length=500, null=False, default="", help_text=_("A detailed description giving an overview of the feature flag."))
+    support_url = models.CharField(max_length=250, null=False, default="", blank=True, help_text="A link to the documentation support URL for the feature")
     labels = models.JSONField(null=True, default=list, help_text=_("A list of labels for the feature flag."), blank=True)

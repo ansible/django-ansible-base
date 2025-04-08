@@ -8,11 +8,10 @@ app_name = FeatureFlagsConfig.label
 
 router = AssociationResourceRouter()
 
-router.register(r'feature_flags/states', views.FeatureFlagsStatesView, basename='aap_flags_states')
-
 router.register(r'feature_flags', views.FeatureFlagsView, basename='aap_flags')
 
 # TODO: Remove once all components are migrated to new endpoints.
 api_version_urls = [path('feature_flags_state/', views.OldFeatureFlagsStateListView.as_view(), name='feature-flags-state-list'), path('', include(router.urls))]
+
 api_urls = []
 root_urls = []
