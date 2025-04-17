@@ -180,6 +180,7 @@ def validate_ldap_filter(value: Any, with_user: bool = False) -> None:
     if with_user:
         if user_search_string not in value:
             raise ValidationError(_('DN must include "{}" placeholder for username: {}').format(user_search_string, value))
+
         dn_value = value.replace(user_search_string, 'USER')
 
     if re.match(r'^\([A-Za-z0-9-]+?=[^()]+?\)$', dn_value):
@@ -515,7 +516,7 @@ class AuthenticatorPlugin(LDAPBackend, AbstractAuthenticatorPlugin):
         This gets called by _LDAPUser to create the user in the database.
         """
         user, _authenticator_user, created = get_or_create_authenticator_user(
-            username,
+            username.lower(),
             self.database_instance,
             user_details={
                 "username": username,

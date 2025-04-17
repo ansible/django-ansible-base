@@ -1,3 +1,4 @@
+import importlib
 from collections import OrderedDict
 from unittest import mock
 from unittest.mock import MagicMock
@@ -679,3 +680,33 @@ def test_ldap_user_search_validation(
 )
 def test_ldap_search_field_is_single_search(value, expected_result):
     assert LDAPSearchField.is_single_search(value) is expected_result
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "username",
+    [
+        ("Timmy"),
+        ("TIMMY"),
+        ("TiMmY"),
+    ],
+)
+def test_get_or_build_user(username, ldap_authenticator):
+    from ansible_base.authentication.authenticator_plugins import ldap
+
+    with mock.patch(
+<<<<<<< Updated upstream
+        'ansible_base.authentication.utils.authentication.get_or_create_authenticator_user',
+        return_value=(None, None, None)
+    ) as test_get_or_build_user:
+=======
+        'ansible_base.authentication.utils.authentication.get_or_create_authenticator_user', return_value=(None, None, None)
+    ) as get_or_create_authenticator_user:
+>>>>>>> Stashed changes
+        importlib.reload(ldap)
+        plugin = AuthenticatorPlugin(database_instance=ldap_authenticator)
+        ldap_object = MagicMock()
+        plugin.get_or_build_user(username, ldap_object)
+        assert test_get_or_build_user.called
+        assert username.lower() in test_get_or_build_user.call_args[0]
+        assert username not in test_get_or_build_user.call_args[0]
