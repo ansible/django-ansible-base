@@ -3,7 +3,9 @@ from unittest import mock
 
 import pytest
 from django.core.management import CommandError, call_command
+from django.test.utils import override_settings
 
+from ansible_base.authentication.management.commands.authenticators import Command
 from ansible_base.authentication.models import Authenticator, AuthenticatorUser
 
 
@@ -88,13 +90,39 @@ def test_authenticators_cli_initialize(django_user_model):
     # Sanity check:
     assert django_user_model.objects.count() == 0
 
-    with pytest.raises(CommandError) as e:
-        call_command('authenticators', "--initialize", stdout=out, stderr=err)
-    assert "Admin user with username 'admin' not defined." in str(e.value)
-
-    django_user_model.objects.create(username="admin")
     call_command('authenticators', "--initialize", stdout=out, stderr=err)
     assert "Created default local authenticator" in out.getvalue()
+
+    assert Authenticator.objects.count() == 1
+    assert Authenticator.objects.first().created_by.username == "_system"
+
+    # Delete authenticator for next round
+    Authenticator.objects.all().delete()
+
+    # Create admin user
+    django_user_model.objects.create(username="admin")
+    call_command('authenticators', "--initialize", stdout=out, stderr=err)
+    assert "Binding admin user to the local authenticator" in out.getvalue()
+
+    assert Authenticator.objects.count() == 1
+    assert AuthenticatorUser.objects.first().user.username == "admin"
+
+
+@pytest.mark.django_db
+def test_authenticators_cli_initialize_no_system_user():
+
+    # Hide system user
+    with override_settings(SYSTEM_USERNAME=None):
+        assert Authenticator.objects.count() == 0
+        command = Command()
+        command.stderr = StringIO()
+        command.initialize_authenticators()
+
+        assert "Neither system user nor admin user were defined" in command.stderr.getvalue()
+
+        assert Authenticator.objects.count() == 1
+        assert Authenticator.objects.first().created_by is None
+        assert AuthenticatorUser.objects.count() == 0
 
 
 def test_authenticators_cli_initialize_pre_existing(django_user_model, local_authenticator, admin_user):

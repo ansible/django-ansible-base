@@ -10,6 +10,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils.translation import gettext_lazy as _
 
 from ansible_base.authentication.models import Authenticator, AuthenticatorUser
+from ansible_base.lib.utils.models import get_system_user
 
 
 class Command(BaseCommand):
@@ -58,10 +59,21 @@ class Command(BaseCommand):
         self.stdout.write('')
 
     def initialize_authenticators(self):
-        admin_user = get_user_model().objects.filter(username="admin").first()
-        if not admin_user:
-            raise CommandError("Admin user with username 'admin' not defined.")
-
+        # First try to get the system user
+        system_user = get_system_user()
+        admin_user = None
+        try:
+            admin_user = get_user_model().objects.filter(username="admin").first()
+        except get_user_model().DoesNotExist:
+            pass
+        creator = None
+        if system_user is not None:
+            creator = system_user
+        elif admin_user is not None:
+            creator = admin_user
+        else:
+            creator = None
+            self.stderr.write("Neither system user nor admin user were defined, local authenticator will be created without created_by set")
         existing_authenticator = Authenticator.objects.filter(type="ansible_base.authentication.authenticator_plugins.local").first()
         if not existing_authenticator:
             existing_authenticator = Authenticator.objects.create(
@@ -69,15 +81,16 @@ class Command(BaseCommand):
                 enabled=True,
                 create_objects=True,
                 configuration={},
-                created_by=admin_user,
-                modified_by=admin_user,
+                created_by=creator,
+                modified_by=creator,
                 remove_users=False,
                 type='ansible_base.authentication.authenticator_plugins.local',
             )
             self.stdout.write("Created default local authenticator")
-
-            AuthenticatorUser.objects.get_or_create(
-                uid=admin_user.username,
-                user=admin_user,
-                provider=existing_authenticator,
-            )
+            if admin_user is not None:
+                self.stdout.write("Binding admin user to the local authenticator")
+                AuthenticatorUser.objects.get_or_create(
+                    uid=admin_user.username,
+                    user=admin_user,
+                    provider=existing_authenticator,
+                )
