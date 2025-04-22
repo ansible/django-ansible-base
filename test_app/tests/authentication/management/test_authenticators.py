@@ -144,7 +144,7 @@ def test_authenticators_cli_initialize_pre_existing(django_user_model, local_aut
     # Nothing should have changed
     assert existing_user == new_user
     assert existing_user.date_joined == new_user.date_joined
-    assert out.getvalue() == ""
+    assert "Local authenticator already exists, skipping" in out.getvalue()
     assert err.getvalue() == ""
 
     # No AuthenticatorUser should get created in this case
