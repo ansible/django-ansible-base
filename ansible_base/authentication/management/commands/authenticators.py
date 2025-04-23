@@ -9,7 +9,7 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.utils.translation import gettext_lazy as _
 
-from ansible_base.authentication.models import Authenticator, AuthenticatorUser
+from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.utils.models import get_system_user
 
 
@@ -82,7 +82,7 @@ class Command(BaseCommand):
             creator = None
             self.stderr.write("Neither system user nor admin user were defined, local authenticator will be created without created_by set")
 
-        new_authenticator = Authenticator.objects.create(
+        Authenticator.objects.create(
             name='Local Database Authenticator',
             enabled=True,
             create_objects=True,
@@ -93,10 +93,3 @@ class Command(BaseCommand):
             type='ansible_base.authentication.authenticator_plugins.local',
         )
         self.stdout.write("Created default local authenticator")
-        if admin_user is not None:
-            self.stdout.write("Binding admin user to the local authenticator")
-            AuthenticatorUser.objects.get_or_create(
-                uid=admin_user.username,
-                user=admin_user,
-                provider=new_authenticator,
-            )

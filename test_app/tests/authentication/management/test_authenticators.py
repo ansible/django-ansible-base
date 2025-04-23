@@ -81,9 +81,9 @@ def test_authenticators_cli_list_without_tabulate(command_args, local_authentica
 @pytest.mark.parametrize(
     "system_user_exists,admin_user_exists,log_location,expected_log_entry,expected_authenticator_creator",
     [
-        (True, True, "stdout", "Binding admin user to the local authenticator", "_system"),
+        (True, True, "stdout", "Created default local authenticator", "_system"),
         (True, False, "stdout", "Created default local authenticator", "_system"),
-        (False, True, "stdout", "Binding admin user to the local authenticator", "admin"),
+        (False, True, "stdout", "Created default local authenticator", "admin"),
         (False, False, "stderr", "Neither system user nor admin user were defined", None),
     ],
 )
@@ -120,7 +120,7 @@ def test_authenticators_cli_initialize(
             assert Authenticator.objects.first().created_by is None
 
 
-def test_authenticators_cli_initialize_pre_existing(django_user_model, local_authenticator, admin_user):
+def test_authenticators_cli_initialize_pre_existing(django_user_model, local_authenticator, admin_user, unauthenticated_api_client):
     """
     What if we already have an admin user?
 
@@ -149,6 +149,11 @@ def test_authenticators_cli_initialize_pre_existing(django_user_model, local_aut
 
     # No AuthenticatorUser should get created in this case
     assert AuthenticatorUser.objects.count() == 0
+
+    # Log in to auto-create AuthenticatorUser
+    unauthenticated_api_client.login(username="admin", password="password")
+    assert AuthenticatorUser.objects.count() == 1
+    assert AuthenticatorUser.objects.first().user == admin_user
 
 
 @pytest.mark.parametrize(
