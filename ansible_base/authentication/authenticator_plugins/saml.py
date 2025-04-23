@@ -189,10 +189,6 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
         except ValidationError as e:
             errors['SP_PRIVATE_KEY'] = e
 
-        idp_data = attrs.get('ENABLED_IDPS', {}).get(idp_string, {})
-        if not idp_data.get('attr_user_permanent_id', None) and not idp_data.get('attr_username'):
-            errors['IDP_ATTR_USERNAME'] = "Either IDP_ATTR_USERNAME or IDP_ATTR_USER_PERMANENT_ID needs to be set"
-
         if errors:
             raise ValidationError(errors)
 
