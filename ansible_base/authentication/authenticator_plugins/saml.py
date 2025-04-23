@@ -128,8 +128,6 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('User Email'),
     )
     IDP_ATTR_USERNAME = CharField(
-        allow_null=True,
-        required=False,
         help_text=_("The field in the assertion which represents the user's username."),
         ui_field_label=_('Username'),
     )
@@ -144,9 +142,7 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('User First Name'),
     )
     IDP_ATTR_USER_PERMANENT_ID = CharField(
-        allow_null=True,
-        required=False,
-        help_text=_("The field in the assertion which represents the user's permanent id (overrides IDP_ATTR_USERNAME)"),
+        help_text=_("The field in the assertion which represents the user's permanent id."),
         ui_field_label=_('User Permanent ID'),
     )
     CALLBACK_URL = URLField(
