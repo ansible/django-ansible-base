@@ -695,18 +695,12 @@ def test_get_or_build_user(username, ldap_authenticator):
     from ansible_base.authentication.authenticator_plugins import ldap
 
     with mock.patch(
-<<<<<<< Updated upstream
-        'ansible_base.authentication.utils.authentication.get_or_create_authenticator_user',
-        return_value=(None, None, None)
-    ) as test_get_or_build_user:
-=======
         'ansible_base.authentication.utils.authentication.get_or_create_authenticator_user', return_value=(None, None, None)
     ) as get_or_create_authenticator_user:
->>>>>>> Stashed changes
         importlib.reload(ldap)
         plugin = AuthenticatorPlugin(database_instance=ldap_authenticator)
         ldap_object = MagicMock()
         plugin.get_or_build_user(username, ldap_object)
-        assert test_get_or_build_user.called
-        assert username.lower() in test_get_or_build_user.call_args[0]
-        assert username not in test_get_or_build_user.call_args[0]
+        assert get_or_create_authenticator_user.called
+        assert username.lower() in get_or_create_authenticator_user.call_args[0]
+        assert username not in get_or_create_authenticator_user.call_args[0]
