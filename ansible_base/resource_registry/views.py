@@ -2,6 +2,7 @@ import logging
 from collections import OrderedDict
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db.models import Q
 from django.http import HttpResponseNotFound
 from django.shortcuts import get_object_or_404
@@ -197,6 +198,11 @@ class ValidateLocalUserView(AnsibleBaseDjangoAppApiView):
     def post(self, request, **kwargs):
         serializer = UserAuthenticationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+
+        # Ensure the users exists before authenticating
+        if not get_user_model().objects.filter(username=serializer.validated_data["username"]).exists():
+            logger.debug(f"User {serializer.validated_data['username']} does not exist, not validating authentication")
+            return Response(status=401)
 
         api_config = get_registry().api_config
         user = api_config.authenticate_local_user(serializer.validated_data["username"], serializer.validated_data["password"])

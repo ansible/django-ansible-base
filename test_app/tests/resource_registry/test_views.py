@@ -23,6 +23,14 @@ def test_validate_local_user(unauthenticated_api_client, admin_user, local_authe
         assert 'ansible_id' in response.data
         assert response.data['auth_code'] is None
 
+    # Should return 401 for non-existent user
+    data = {
+        "username": "fakeuser",
+        "password": "doesnotexist",
+    }
+    response = unauthenticated_api_client.post(url, data=data)
+    assert response.status_code == 401
+
 
 def get_users_manifest(client, data=None, expect=200):
     if data is None:
