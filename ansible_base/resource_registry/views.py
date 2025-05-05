@@ -200,7 +200,9 @@ class ValidateLocalUserView(AnsibleBaseDjangoAppApiView):
         serializer.is_valid(raise_exception=True)
 
         # Ensure the users exists before authenticating
-        if not get_user_model().objects.filter(username=serializer.validated_data["username"]).exists():
+        PREFIX = getattr(settings, "RENAMED_USERNAME_PREFIX", "")
+        viable_usernames = [serializer.validated_data["username"], PREFIX + serializer.validated_data["username"]]
+        if not get_user_model().objects.filter(username__in=viable_usernames).exists():
             logger.debug(f"User {serializer.validated_data['username']} does not exist, not validating authentication")
             return Response(status=401)
 
