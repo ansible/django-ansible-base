@@ -39,22 +39,10 @@ def test_classify_address(address, expected):
         ("10.0.1.1:1234", (AddressType.IPv4, "10.0.1.1", "1234")),
         ("::1", (AddressType.IPv6, "::1", "")),
         ("[::1]:1234", (AddressType.HOSTNAME, "[::1]", "1234")),
-        (
-            "2600:1f18:218b:5902:e5d4:54de:fdc1:24b8",
-            (AddressType.IPv6, "2600:1f18:218b:5902:e5d4:54de:fdc1:24b8", "")
-        ),
-        (
-            "2600:1f18:218b:5902:e5d4:54de:fdc1:24b8:1234",
-            (AddressType.IPv6, "2600:1f18:218b:5902:e5d4:54de:fdc1:24b8", "1234")
-        ),
-        (
-            "[2600:1f18:218b:5902:e5d4:54de:fdc1:24b8]",
-            (AddressType.HOSTNAME, "[2600:1f18:218b:5902:e5d4:54de:fdc1:24b8]", "")
-        ),
-        (
-            "[2600:1f18:218b:5902:e5d4:54de:fdc1:24b8]:1234",
-            (AddressType.HOSTNAME, "[2600:1f18:218b:5902:e5d4:54de:fdc1:24b8]", "1234")
-        ),
+        ("2600:1f18:218b:5902:e5d4:54de:fdc1:24b8", (AddressType.IPv6, "2600:1f18:218b:5902:e5d4:54de:fdc1:24b8", "")),
+        ("2600:1f18:218b:5902:e5d4:54de:fdc1:24b8:1234", (AddressType.IPv6, "2600:1f18:218b:5902:e5d4:54de:fdc1:24b8", "1234")),
+        ("[2600:1f18:218b:5902:e5d4:54de:fdc1:24b8]", (AddressType.HOSTNAME, "[2600:1f18:218b:5902:e5d4:54de:fdc1:24b8]", "")),
+        ("[2600:1f18:218b:5902:e5d4:54de:fdc1:24b8]:1234", (AddressType.HOSTNAME, "[2600:1f18:218b:5902:e5d4:54de:fdc1:24b8]", "1234")),
         ("localhost", (AddressType.HOSTNAME, "localhost", "")),
         ("localhost:1234", (AddressType.HOSTNAME, "localhost", "1234")),
         ("a-host-name", (AddressType.HOSTNAME, "a-host-name", "")),

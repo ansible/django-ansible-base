@@ -33,11 +33,7 @@ def _classify_address_string(address_string) -> AddressType:
         pass
 
     # Basic hostname check (can be expanded for more rigorous validation)
-    if re.match(
-        r"^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?"
-        r"(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
-        address_string
-    ):
+    if re.match(r"^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?" r"(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$", address_string):
         return AddressType.HOSTNAME
 
     return AddressType.UNKNOWN
