@@ -12,6 +12,7 @@ from redis.cluster import ClusterNode, RedisCluster
 from redis.exceptions import NoPermissionError, RedisClusterException
 
 from ansible_base.lib.constants import STATUS_DEGRADED, STATUS_FAILED, STATUS_GOOD
+from ansible_base.lib.utils.address import AddressType, classify_and_split_address_string
 
 logger = logging.getLogger('ansible_base.lib.redis.client')
 
@@ -160,13 +161,15 @@ class RedisClientGetter:
             had_host_errors = False
             host_ports = self.redis_hosts.split(',')
             for host_port in host_ports:
-                try:
-                    node, port_string = host_port.split(':')
-                except ValueError:
+                (addr_type, node, port_string) = classify_and_split_address_string(host_port)
+                if addr_type == AddressType.UNKNOWN:
+                    logger.error(f"Specified cluster_host {host_port} is not valid; it is of an unknown address type")
+                    had_host_errors = True
+                    continue
+                if not port_string:
                     logger.error(f"Specified cluster_host {host_port} is not valid; it needs to be in the format <host>:<port>")
                     had_host_errors = True
                     continue
-
                 # Make sure we have an int for the port
                 try:
                     port = int(port_string)

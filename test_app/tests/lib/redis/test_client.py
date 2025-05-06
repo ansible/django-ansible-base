@@ -209,6 +209,11 @@ def test_redis_cluster_mget_raises_expected_exception():
         ('a:1,b:1', False, 2),
         ('a:b', True, None),
         ('a,b,c', True, None),
+        ('[::1]:1', False, 1),
+        ('2600:1f18:218b:5902:e5d4:54de:fdc1:24b8:1', False, 1),
+        ('[2600:1f18:218b:5902:e5d4:54de:fdc1:24b8]:1', False, 1),
+        ('[::1]:1,2600:1f18:218b:5902:e5d4:54de:fdc1:24b8:1', False, 2),
+        ('[::1]:1,[2600:1f18:218b:5902:e5d4:54de:fdc1:24b8]:1', False, 2),
     ],
 )
 def test_redis_client_cluster_hosts_parsing(redis_hosts, raises, expected_length):
