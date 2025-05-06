@@ -25,6 +25,7 @@ from ansible_base.lib.utils.address import (
         ("[localhost]", AddressType.UNKNOWN),
         ("a-host-name", AddressType.HOSTNAME),
         ("[a-host-name]", AddressType.UNKNOWN),
+        ("////////////", AddressType.UNKNOWN),
     ],
 )
 def test_classify_address(address, expected):
