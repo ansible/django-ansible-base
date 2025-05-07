@@ -4,6 +4,22 @@ import re
 
 
 class AddressType(enum.Enum):
+    """
+    AddressType provides an abstracted identification of the determined kind of
+    an address.  The abstraction eliminates cohesion between the provided
+    address identification functionality and its clients.
+
+    The type allows a client which may be configured with any of the supported
+    types to identify which type was specified and perform necessary runtime
+    handling.
+
+    An example would be a client which uses the values from its configuration
+    to construct URLs and which is configured using raw IPv6 addreesses. The
+    client needs to be able to determine the address type to know what
+    processing (such as enclosing IPv6 addresses in []s) is needed to
+    successfully utilize it.
+    """
+
     HOSTNAME = "hostname"
     IPv4 = "ipv4"
     IPv6 = "ipv6"
