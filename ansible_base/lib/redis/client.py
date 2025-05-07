@@ -163,7 +163,10 @@ class RedisClientGetter:
             for host_port in host_ports:
                 (addr_type, node, port_string) = classify_and_split_address_string(host_port)
                 if addr_type == AddressType.UNKNOWN:
-                    logger.error(f"Specified cluster_host {host_port} is not valid; it is of an unknown address type")
+                    logger.error(
+                        f"Specified cluster_host {host_port} is not valid; "
+                        "it is of an unknown address type and must be one of <hostname>:<port>, <ipv4>:<port> or <ipv6>:<port>"
+                    )
                     had_host_errors = True
                     continue
                 if not port_string:
