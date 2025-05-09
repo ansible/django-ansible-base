@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import os
 import sys
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 from warnings import warn
@@ -269,6 +270,13 @@ def load_python_file_with_injected_context(*paths: str, settings: Dynaconf, run_
         files_to_load = glob(pattern)
         for file_path in files_to_load:
             scope = settings.as_dict()
+
+            # Inject ldap module because some legacy custom config expect it on the global scope
+            with suppress(ImportError):  # ldap may not be installed on all environments
+                import ldap
+
+                scope["ldap"] = ldap
+
             file_path = os.path.abspath(file_path)
             with open(file_path, "rb") as to_compile:
                 code = compile(to_compile.read(), file_path, "exec")
