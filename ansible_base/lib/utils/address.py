@@ -74,6 +74,23 @@ def _classify_base_address(address: str) -> AddressType:
     # The original regex was generated via Gemini AI.
     # It was modified to require the first character be alphabetic to eliminate
     # a string composed of nothing but digits be recognized as a hostname.
+    #
+    # The regex may appear more complicated than it actually is.
+    #
+    # First you can ignore the "?:" which simply makes the group in which it
+    # appears non-capturing.
+    #
+    # Second you can conceptually collapse the portions delineated by "{" and
+    # "}" to "*". The bracketed portions simply put a limit on minimum and
+    # maximum lengths of the preceding construct.
+    #
+    # With the two above changes you'll see that there's effectively only one
+    # construct in the regex:
+    #
+    #   [a-zA-Z]([a-zA-Z0-9-]*[a-zA-Z0-9])?
+    #
+    # It's second usage simply includes the requirement for a leading "." and
+    # allows it to be specified zero or more times.
     if re.match(r"^[a-zA-Z](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$", address):
         return AddressType.HOSTNAME
 
