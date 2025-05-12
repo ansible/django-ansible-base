@@ -38,17 +38,26 @@ class AddressTypeResponse(object):
     existing code to facilitate use of the classification functionality
     provided.  An empty string indicates the non-existence of that particular
     attribute as part of the classified address.
-
-    The address and port fields are not valid in any sense if the type field is
-    AddressType.UNKNOWN.
     """
 
     type: AddressType
     address: str = ""
     port: str = ""
 
+    @property
+    def ipv6_bracketed(self):
+        """
+        IPv6 addresses are stored without brackets in the address field.
+        If the type of this instance is AddressType.IPv6 the method will return
+        the address enclosed in brackets.
+        If the type is not AddressType.IPv6 it will return None.
+        """
+        if self.type != AddressType.IPv6:
+            return None
+        return f"[{self.address}]"
 
-def _classify_base_address(address: str) -> AddressType:
+
+def _classify_base_address(address: str) -> AddressTypeResponse:
     """
     Categorizes a given string as IPv4, IPv6, hostname, or unknown.
 
@@ -56,17 +65,17 @@ def _classify_base_address(address: str) -> AddressType:
         address: The string to categorize.
 
     Returns:
-        A value of AddressType indicating the category.
+        A value of AddressTypeResponse indicating the classified address.
     """
     try:
         ipaddress.IPv4Address(address)
-        return AddressType.IPv4
+        return AddressTypeResponse(AddressType.IPv4, address)
     except ipaddress.AddressValueError:
         pass
 
     try:
         ipaddress.IPv6Address(address)
-        return AddressType.IPv6
+        return AddressTypeResponse(AddressType.IPv6, address)
     except ipaddress.AddressValueError:
         pass
 
@@ -92,39 +101,33 @@ def _classify_base_address(address: str) -> AddressType:
     # It's second usage simply includes the requirement for a leading "." and
     # allows it to be specified zero or more times.
     if re.match(r"^[a-zA-Z](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$", address):
-        return AddressType.HOSTNAME
+        return AddressTypeResponse(AddressType.HOSTNAME, address)
 
-    return AddressType.UNKNOWN
+    return AddressTypeResponse(AddressType.UNKNOWN, address)
 
 
-def _classify_address(address: str) -> AddressType:
+def _classify_address(address: str) -> AddressTypeResponse:
     """
     Categorizes a given string as IPv4, IPv6, hostname, or unknown.
-
-    An IPv6 address wrapped in [] is considered a hostname.
 
     Args:
         address: The string to categorize.
 
     Returns:
-        A value of AddressType indicating the category.
+        A value of AddressTypeResponse indicating the classified address.
     """
     # We could be dealing with an IPv6 address wrapped in [].
-    # If that is the case we want to identify it as a host name.
-    # The reason for this is the common use case where an IPv6 in []s is
-    # utilized in the same manner as a hostname.  Thus we eliminate special
-    # casing on the part of the client to only the situation where they have a
-    # "raw" IPv6 address.
+    # If that is the case we want to classify the address itself.
 
     # Check that the address is at least two characters long.
     if (len(address) >= 2) and (address[0] == "[") and (address[-1] == "]"):
-        address_type = _classify_base_address(address[1:-1])
+        response = _classify_base_address(address[1:-1])
 
         # Only an address type of IPv6 is considered valid here.
         # We don't want to treat any other specification as valid.
-        if address_type == AddressType.IPv6:
-            return AddressType.HOSTNAME
-        return AddressType.UNKNOWN
+        if response.type == AddressType.IPv6:
+            return response
+        return AddressTypeResponse(AddressType.UNKNOWN, address)
 
     return _classify_base_address(address)
 
@@ -138,19 +141,19 @@ def classify_address(address: str) -> AddressTypeResponse:
         address: The string to categorize.
 
     Returns:
-        An instance of AddressTypeResponse.
+        A value of AddressTypeResponse indicating the classified address.
     """
-    address_type = _classify_address(address)
-    if address_type != AddressType.UNKNOWN:
+    response = _classify_address(address)
+    if response.type != AddressType.UNKNOWN:
         # A known type with no port.
-        return AddressTypeResponse(address_type, address)
+        return response
 
     # Split into potential address and port and classify the address.
-    (address, _, port) = address.rpartition(":")
-    address_type = _classify_address(address)
-    if address_type != AddressType.UNKNOWN:
+    (split_address, _, port) = address.rpartition(":")
+    response = _classify_address(split_address)
+    if response.type != AddressType.UNKNOWN:
         # A known type with a port.
-        return AddressTypeResponse(address_type, address, port)
+        return AddressTypeResponse(response.type, response.address, port)
 
     # An unknown address type.
-    return AddressTypeResponse(AddressType.UNKNOWN)
+    return AddressTypeResponse(AddressType.UNKNOWN, address)
