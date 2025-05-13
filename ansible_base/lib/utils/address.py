@@ -2,6 +2,7 @@ import dataclasses
 import enum
 import ipaddress
 import re
+import typing
 
 
 class AddressType(enum.Enum):
@@ -36,13 +37,12 @@ class AddressTypeResponse(object):
 
     Strings are used for the address and port so as to minimize changes to
     existing code to facilitate use of the classification functionality
-    provided.  An empty string indicates the non-existence of that particular
-    attribute as part of the classified address.
+    provided.
     """
 
     type: AddressType
-    address: str = ""
-    port: str = ""
+    address: str
+    port: typing.Optional[str] = None
 
     @property
     def ipv6_bracketed(self):
@@ -123,8 +123,9 @@ def _classify_address(address: str) -> AddressTypeResponse:
     if (len(address) >= 2) and (address[0] == "[") and (address[-1] == "]"):
         response = _classify_base_address(address[1:-1])
 
-        # Only an address type of IPv6 is considered valid here.
-        # We don't want to treat any other specification as valid.
+        # We only recognize an IPv6 address wrapped in []s as valid.
+        # Regardless of the contents being identified if it is not an IPv6
+        # address we treat it as unknown.
         if response.type == AddressType.IPv6:
             return response
         return AddressTypeResponse(AddressType.UNKNOWN, address)
