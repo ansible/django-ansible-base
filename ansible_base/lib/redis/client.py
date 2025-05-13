@@ -165,7 +165,7 @@ class RedisClientGetter:
                 if response.type == address.AddressType.UNKNOWN:
                     logger.error(
                         f"Specified cluster_host {host_port} is not valid; "
-                        "it is of an unknown address type and must be one of <hostname>:<port>, <ipv4>:<port> or <ipv6>:<port>"
+                        "it is of an unknown address type and must be one of <hostname>:<port>, <ipv4>:<port> or [<ipv6>]:<port>"
                     )
                     had_host_errors = True
                     continue
