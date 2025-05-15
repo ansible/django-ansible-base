@@ -5,6 +5,7 @@ from collections import OrderedDict
 from typing import Any
 
 import ldap
+from ldap_filter import Filter, ParseError
 from django.utils.translation import gettext_lazy as _
 from django_auth_ldap import config
 from django_auth_ldap.backend import LDAPBackend
@@ -183,14 +184,14 @@ def validate_ldap_filter(value: Any, with_user: bool = False) -> None:
 
         dn_value = value.replace(user_search_string, 'USER')
 
-    if re.match(r'^\([A-Za-z0-9-]+?=[^()]+?\)$', dn_value):
-        return
-    elif re.match(r'^\([&|!]\(.*?\)\)$', dn_value):
+    if re.match(r'^\([&|!]\(.*?\)\)$', dn_value):
         for sub_filter in dn_value[3:-2].split(')('):
             # We only need to check with_user at the top of the recursion stack
             validate_ldap_filter(f'({sub_filter})', with_user=False)
-        return
-    raise ValidationError(_('Invalid filter: %s') % value)
+    try:
+        Filter.parse(dn_value)
+    except ParseError:
+        raise ValidationError(_('Invalid filter: %s') % value)
 
 
 def get_all_sub_classes(cls):

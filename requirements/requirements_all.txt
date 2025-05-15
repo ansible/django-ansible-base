@@ -71,6 +71,8 @@ jsonschema-specifications==2024.10.1
     # via jsonschema
 jwcrypto==1.5.6
     # via django-oauth-toolkit
+ldap-filter==1.0.1
+    # via -r requirements/requirements_authentication.in
 lxml==5.3.0
     # via
     #   python3-saml
@@ -145,7 +147,9 @@ six==1.17.0
 social-auth-app-django==5.4.1
     # via -r requirements/requirements_authentication.in
 social-auth-core==4.5.4
-    # via social-auth-app-django
+    # via
+    #   -r requirements/requirements_authentication.in
+    #   social-auth-app-django
 sqlparse==0.5.2
     # via
     #   -r requirements/requirements.in

@@ -7,6 +7,7 @@ tabulate
 # LDAP Authenticator Plugins
 django-auth-ldap
 python-ldap
+ldap-filter
 
 # Social Authenticator Plugins
 python3-saml
