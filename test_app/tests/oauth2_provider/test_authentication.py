@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 import pytest
@@ -48,6 +49,15 @@ def test_oauth2_bearer_get(unauthenticated_api_client, oauth2_admin_access_token
     assert response.status_code == expected
     if expected != 401:
         assert response.data['name'] == animal.name
+
+
+@pytest.mark.django_db
+def test_oauth2_token_expiry(oauth2_admin_access_token):
+    """
+    Verify default expiration is 1 year
+    """
+    token = oauth2_admin_access_token[0]
+    assert token.expires < datetime.now(tz=timezone.utc) + timedelta(weeks=53)
 
 
 @pytest.mark.parametrize(
