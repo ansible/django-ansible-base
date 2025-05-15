@@ -52,6 +52,15 @@ class AuthenticatorPlugin(ModelBackend, AbstractAuthenticatorPlugin):
         if new_username != username:
             return None
 
+        auth_log_headers = (
+            f"HTTP_USER_AGENT: {request.META['HTTP_USER_AGENT'] if 'HTTP_USER_AGENT' in request.META else 'UNKNOWN'} "
+            f"HTTP_X_FORWARDED_FOR: {request.META['HTTP_X_FORWARDED_FOR'] if 'HTTP_X_FORWARDED_FOR' in request.META else 'UNKNOWN'} "
+            f"REMOTE_ADDR: {request.META['REMOTE_ADDR'] if 'REMOTE_ADDR' in request.META else 'UNKNOWN'} "
+            f"REMOTE_HOST: {request.META['REMOTE_HOST'] if 'REMOTE_HOST' in request.META else 'UNKNOWN'}"
+        )
+
+        logger.info(f"Login attempt for user: {username} {auth_log_headers}")
+
         user = super().authenticate(request, username, password, **kwargs)
 
         # This auth class doesn't create any new local users, but we still need to make sure
@@ -69,5 +78,8 @@ class AuthenticatorPlugin(ModelBackend, AbstractAuthenticatorPlugin):
                     "is_superuser": user.is_superuser,
                 },
             )
+            logger.info(f"Successful login for user: {username} {auth_log_headers}")
+        else:
+            logger.info(f"Failed login for user: {username} {auth_log_headers}")
 
         return update_user_claims(user, self.database_instance, [])

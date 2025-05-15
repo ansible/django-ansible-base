@@ -221,6 +221,29 @@ class AuthenticatorPlugin(SocialAuthMixin, OpenIdConnectAuth, AbstractAuthentica
     def groups_claim(self):
         return self.setting('GROUPS_CLAIM')
 
+    def authenticate(self, *args, **kwargs):
+        request = args[0]
+
+        auth_log_headers = (
+            f"HTTP_USER_AGENT: {request.META['HTTP_USER_AGENT'] if 'HTTP_USER_AGENT' in request.META else 'UNKNOWN'} "
+            f"HTTP_X_FORWARDED_FOR: {request.META['HTTP_X_FORWARDED_FOR'] if 'HTTP_X_FORWARDED_FOR' in request.META else 'UNKNOWN'} "
+            f"REMOTE_ADDR: {request.META['REMOTE_ADDR'] if 'REMOTE_ADDR' in request.META else 'UNKNOWN'} "
+            f"REMOTE_HOST: {request.META['REMOTE_HOST'] if 'REMOTE_HOST' in request.META else 'UNKNOWN'}"
+        )
+
+        if "backend" in kwargs and kwargs["backend"].name == self.name:
+            logger.info(f"Login attempt for {auth_log_headers}")
+
+        user = super().authenticate(*args, **kwargs)
+
+        if "backend" in kwargs and kwargs["backend"].name == self.name:
+            if user:
+                logger.info(f"Successful login for {user} {auth_log_headers}")
+            else:
+                logger.info(f"Failed login {auth_log_headers}")
+
+        return user
+
     def extra_data(self, user, backend, response, *args, **kwargs):
         for perm in ["is_superuser", get_setting('ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG')]:
             if perm in response:
