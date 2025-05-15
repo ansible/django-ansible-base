@@ -5,12 +5,12 @@ from collections import OrderedDict
 from typing import Any
 
 import ldap
-from ldap_filter import Filter, ParseError
 from django.utils.translation import gettext_lazy as _
 from django_auth_ldap import config
 from django_auth_ldap.backend import LDAPBackend
 from django_auth_ldap.backend import LDAPSettings as BaseLDAPSettings
 from django_auth_ldap.config import LDAPGroupType, LDAPSearchUnion
+from ldap_filter import Filter, ParseError
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, Authenticator, BaseAuthenticatorConfiguration
