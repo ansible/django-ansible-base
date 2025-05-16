@@ -480,7 +480,7 @@ def test_ldap_validate_ldap_filter(ldap_configuration, ldap_settings):
     assert e.value.args[0] == 'Invalid filter: (invalid)'
 
     # From AAP-36738
-    customer_filter = "(&(sAMAccountName=%(user)s)(memberOf:1.2.840.113556.1.4.1941:=CN=pasta,CN=Users,DC=mcanuwin2022,DC=local))"
+    customer_filter = "(&(sAMAccountName=%(user)s)(memberOf:1.3.850.114256.1.4.1241:=CN=ravioli,CN=Users,DC=username2024,DC=local))"
     validate_ldap_filter(customer_filter, True)
 
 
