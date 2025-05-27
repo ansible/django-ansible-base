@@ -2,10 +2,12 @@ from ansible_base.lib.routers import AssociationResourceRouter
 from ansible_base.oauth2_provider import views as oauth2_provider_views
 from ansible_base.rbac.api import views as rbac_views
 from test_app import views
+from metrics_app import views as metrics_app_views
 
 router = AssociationResourceRouter()
 # using an intentionally unpredictable basename
 router.register(r'encrypted_models', views.EncryptionModelViewSet, basename='encryption_test_model')
+router.register(r'metrics', metrics_app_views.MetricsViewSet, basename='metrics')
 
 # intentionally not registering ResourceMigrationTestModel to test lack of URLs
 

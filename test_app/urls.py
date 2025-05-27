@@ -7,6 +7,7 @@ from ansible_base.authentication.views.ui_auth import UIAuth
 from ansible_base.lib.dynamic_config.dynamic_urls import api_urls, api_version_urls, root_urls
 from ansible_base.resource_registry.urls import urlpatterns as resource_api_urls
 from test_app import views
+from metrics_app import views as metrics_app_views
 from test_app.router import router as test_app_router
 
 urlpatterns = [
@@ -22,6 +23,7 @@ urlpatterns = [
     path('api/v1/', include(resource_api_urls)),
     path('api/v1/', views.api_root),
     path('api/v1/timeout_view/', views.timeout_view, name='test-timeout-view'),
+    path('api/v1/metrics/', metrics_app_views.MetricsViewSet.as_view({'get': 'list'}), name='metrics'),
     path('login/', include('rest_framework.urls')),
     path("__debug__/", include("debug_toolbar.urls")),
 ] + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
