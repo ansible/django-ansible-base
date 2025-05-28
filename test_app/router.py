@@ -2,6 +2,7 @@ from ansible_base.lib.routers import AssociationResourceRouter
 from ansible_base.oauth2_provider import views as oauth2_provider_views
 from ansible_base.rbac.api import views as rbac_views
 from test_app import views
+from metrics_app import views as metrics_views
 
 router = AssociationResourceRouter()
 # using an intentionally unpredictable basename
@@ -94,3 +95,4 @@ router.register(r'cities', views.CityViewSet)
 router.register(r'animals', views.AnimalViewSet)
 router.register(r'namespaces', views.NamespaceViewSet, related_views={'collections': (views.CollectionImportViewSet, 'collections')})
 router.register(r'collections', views.CollectionImportViewSet)
+router.register(r'metrics', metrics_views.MetricsViewSet)
