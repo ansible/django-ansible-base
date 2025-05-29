@@ -4,7 +4,8 @@ from django.utils.translation import gettext_lazy as _
 
 from ansible_base.activitystream.models import AuditableModel
 from ansible_base.lib.abstract_models.common import NamedCommonModel
-from ansible_base.resource_registry.fields import AnsibleResourceField
+
+# from ansible_base.resource_registry.fields import AnsibleResourceField
 
 
 def validate_feature_flag_name(value: str):
@@ -34,12 +35,7 @@ class AAPFlag(NamedCommonModel, AuditableModel):
         validators=[validate_feature_flag_name],
         blank=False,
     )
-    ui_name = models.CharField(
-        max_length=64,
-        null=False,
-        blank=False,
-        help_text=_("The pretty name to display in the application User Interface")
-    )
+    ui_name = models.CharField(max_length=64, null=False, blank=False, help_text=_("The pretty name to display in the application User Interface"))
     condition = models.CharField(max_length=64, default="boolean", help_text=_("Used to specify a condition, which if met, will enable the feature flag."))
     value = models.CharField(max_length=127, default="True", help_text=_("The value used to evaluate the conditional specified."))
     required = models.BooleanField(
