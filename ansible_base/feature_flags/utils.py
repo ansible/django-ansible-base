@@ -1,4 +1,5 @@
 from django.apps import apps
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from flags.sources import get_flags
 
@@ -51,6 +52,8 @@ def create_initial_data(**kwargs):
                 if existing_flag:
                     update_feature_flag(existing_flag.first(), flag)
                 else:
+                    if hasattr(settings, flag['name']):
+                        flag['value'] = getattr(settings, flag['name'])
                     FeatureFlags.objects.create(**flag)
                 AAPFlag(**flag).full_clean()
             except ValidationError as e:

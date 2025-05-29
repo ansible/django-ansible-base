@@ -14,5 +14,3 @@ def test_feature_flags_state_api_list(admin_api_client: APIClient):
     assert response.data["FEATURE_EDA_ANALYTICS_ENABLED"] is False
     assert 'FEATURE_INDIRECT_NODE_COUNTING_ENABLED' in response.data
     assert response.data["FEATURE_INDIRECT_NODE_COUNTING_ENABLED"] is False
-    assert 'FEATURE_FEATURE_FLAGS_ENABLED' in response.data
-    assert response.data["FEATURE_FEATURE_FLAGS_ENABLED"] is True

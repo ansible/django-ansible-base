@@ -17,19 +17,6 @@ class AAPFlagNameSchema(TypedDict):
 
 AAP_FEATURE_FLAGS: list[AAPFlagNameSchema] = [
     AAPFlagNameSchema(
-        name="FEATURE_FEATURE_FLAGS_ENABLED",
-        ui_name="Feature Flags",
-        condition="boolean",
-        value="True",
-        support_level='READY_FOR_PRODUCTION',
-        visibility="public",
-        toggle_type='install-time',
-        description='If enabled, feature flags can be toggled on/off at runtime via UI or API. '
-        'If disabled, feature flags can only be toggled on/off at install-time.',
-        support_url="",
-        labels=['platform'],
-    ),
-    AAPFlagNameSchema(
         name="FEATURE_INDIRECT_NODE_COUNTING_ENABLED",
         ui_name="Indirect Node Counting",
         visibility="public",

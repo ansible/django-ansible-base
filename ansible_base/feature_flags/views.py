@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
-from flags.state import flag_enabled, flag_state, get_flags
+from flags.state import flag_enabled
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
@@ -11,7 +11,6 @@ from ansible_base.feature_flags.serializers import FeatureFlagSerializer, OldFea
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.lib.utils.views.permissions import IsSuperuserOrAuditor
-from ansible_base.rest_pagination import DefaultPaginator
 
 from .utils import get_django_flags, is_boolean_str
 
@@ -33,10 +32,6 @@ class FeatureFlagsView(AnsibleBaseDjangoAppApiView, ModelViewSet):
         value = request.data.get('value')
         if not value:
             return Response(status=status.HTTP_400_BAD_REQUEST, data={"details": "Invalid request object."})
-
-        # Disable runtime toggle if the feature flag feature is not enabled
-        if not flag_enabled('FEATURE_FEATURE_FLAGS_ENABLED'):
-            return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED, data={"details": "Runtime feature flags toggle is not enabled."})
 
         feature_flag = get_object_or_404(AAPFlag, pk=_feature_flag.id)
         if feature_flag.toggle_type == 'install-time':
