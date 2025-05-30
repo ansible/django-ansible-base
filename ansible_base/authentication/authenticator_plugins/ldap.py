@@ -380,7 +380,7 @@ class LDAPSettings(BaseLDAPSettings):
         # If a DB-backed setting is specified that wipes out the
         # OPT_NETWORK_TIMEOUT, fall back to a sane default
         if ldap.OPT_NETWORK_TIMEOUT not in internal_data:
-            internal_data[ldap.OPT_NETWORK_TIMEOUT] = 30
+            internal_data[ldap.OPT_NETWORK_TIMEOUT] = 20
 
         # when specifying `.set_option()` calls for TLS in python-ldap, the
         # *order* in which you invoke them *matters*, particularly in Python3,
