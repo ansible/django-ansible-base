@@ -1,0 +1,6 @@
+**/.github
+**/.cache
+**/.gitignore
+**/.venv
+**/venv
+**/.tox

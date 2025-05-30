@@ -30,6 +30,7 @@ class ServiceAPIConfig:
             "shared.team": ResourceTypeProcessor,
             "shared.organization": ResourceTypeProcessor,
             "shared.user": ResourceTypeProcessor,
+            "shared.aapflag": ResourceTypeProcessor,
         }
         if is_rbac_installed():
             processors["shared.roledefinition"] = RoleDefinitionProcessor

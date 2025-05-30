@@ -2,10 +2,8 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from ansible_base.activitystream.models import AuditableModel
 from ansible_base.lib.abstract_models.common import NamedCommonModel
-
-# from ansible_base.resource_registry.fields import AnsibleResourceField
+from ansible_base.resource_registry.fields import AnsibleResourceField
 
 
 def validate_feature_flag_name(value: str):
@@ -13,10 +11,10 @@ def validate_feature_flag_name(value: str):
         raise ValidationError(_("Feature flag names must follow the format of `FEATURE_<flag-name>_ENABLED`"))
 
 
-class AAPFlag(NamedCommonModel, AuditableModel):
+class AAPFlag(NamedCommonModel):
     class Meta:
         app_label = "dab_feature_flags"
-        unique_together = ("name", "condition", "value")
+        unique_together = ("name", "condition")
 
     def __str__(self):
         return "{name} is enabled when {condition} is " "{value}{required}".format(
@@ -26,7 +24,7 @@ class AAPFlag(NamedCommonModel, AuditableModel):
             required=" (required)" if self.required else "",
         )
 
-    # resource = AnsibleResourceField(primary_key_field="id")
+    resource = AnsibleResourceField(primary_key_field="id")
 
     name = models.CharField(
         max_length=64,

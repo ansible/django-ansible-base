@@ -21,6 +21,7 @@ def test_resource_type_list(admin_api_client):
             "shared.organization",
             "shared.roledefinition",
             "aap.resourcemigrationtestmodel",
+            "shared.aapflag",
         ]
     )
 

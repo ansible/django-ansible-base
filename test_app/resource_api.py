@@ -1,9 +1,16 @@
 from django.contrib.auth import get_user_model
 
 from ansible_base.authentication.models import Authenticator
+from ansible_base.feature_flags.models import AAPFlag
 from ansible_base.rbac.models import RoleDefinition
 from ansible_base.resource_registry.registry import ResourceConfig, ServiceAPIConfig, SharedResource
-from ansible_base.resource_registry.shared_types import OrganizationType, RoleDefinitionType, TeamType, UserType
+from ansible_base.resource_registry.shared_types import (
+    FeatureFlagType,
+    OrganizationType,
+    RoleDefinitionType,
+    TeamType,
+    UserType,
+)
 from ansible_base.resource_registry.utils.resource_type_processor import ResourceTypeProcessor
 from test_app.models import Organization, Original1, Proxy2, ResourceMigrationTestModel, Team
 
@@ -47,4 +54,8 @@ RESOURCE_LIST = [
     ResourceConfig(ResourceMigrationTestModel),
     ResourceConfig(Original1),
     ResourceConfig(Proxy2),
+    ResourceConfig(
+        AAPFlag,
+        shared_resource=SharedResource(serializer=FeatureFlagType, is_provider=False),
+    ),
 ]

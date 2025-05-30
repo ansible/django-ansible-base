@@ -15,7 +15,7 @@ class FeatureFlagSerializer(NamedCommonModelSerializer):
     class Meta:
         model = AAPFlag
         fields = NamedCommonModelSerializer.Meta.fields + [x.name for x in AAPFlag._meta.concrete_fields] + ['state']
-        read_only_fields = ["name", "condition", "required", "support_level", "visibility", "toggle_type", "description", "labels"]
+        read_only_fields = ["name", "condition", "required", "support_level", "visibility", "toggle_type", "description", "labels", "ui_name", "support_url"]
 
     def get_state(self, instance):
         return flag_state(instance.name)
@@ -35,7 +35,7 @@ class OldFeatureFlagSerializer(NamedCommonModelSerializer):
         fields = NamedCommonModelSerializer.Meta.fields + [x.name for x in AAPFlag._meta.concrete_fields]
         read_only_fields = ["name", "condition", "required", "support_level", "visibility", "toggle_type", "description", "labels"]
 
-    def to_representation(self) -> dict:
+    def to_representation(self, instance=None) -> dict:
         return_data = {}
         feature_flags = get_django_flags()
         for feature_flag in feature_flags:
