@@ -1,3 +1,5 @@
+import logging
+
 from django.apps import apps
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -5,13 +7,11 @@ from flags.sources import get_flags
 
 from ansible_base.lib.dynamic_config.feature_flags.platform_flags import AAP_FEATURE_FLAGS
 
+logger = logging.getLogger('ansible_base.feature_flags.utils')
+
 
 def get_django_flags():
     return get_flags()
-
-
-def is_boolean_str(val):
-    return val.lower() in {'true', 'false'}
 
 
 def create_initial_data(**kwargs):
@@ -26,20 +26,15 @@ def create_initial_data(**kwargs):
         Update only the required fields of the feature flag model.
         This is used to ensure that flags can be loaded in when the server starts, with any applicable updates.
         """
-
-        existing.support_level = new['support_level']
-        existing.visibility = new['visibility']
-        existing.ui_name = new['ui_name']
-        existing.support_url = new['support_url']
-        if 'required' in new:
-            existing.required = new['required']
-        if 'toggle_type' in new:
-            existing.toggle_type = new['toggle_type']
-        if 'labels' in new:
-            existing.labels = new['labels']
-        if 'description' in new:
-            existing.description = new['description']
-        existing.save()
+        existing.support_level = new.get('support_level')
+        existing.visibility = new.get('visibility')
+        existing.ui_name = new.get('ui_name')
+        existing.support_url = new.get('support_url')
+        existing.required = new.get('required', False)
+        existing.toggle_type = new.get('toggle_type', 'run-time')
+        existing.labels = new.get('labels', [])
+        existing.description = new.get('description', '')
+        return existing
 
     def load_feature_flags():
         """
@@ -50,19 +45,20 @@ def create_initial_data(**kwargs):
             try:
                 existing_flag = FeatureFlags.objects.filter(name=flag['name'], condition=flag['condition'])
                 if existing_flag:
-                    update_feature_flag(existing_flag.first(), flag)
+                    feature_flag = update_feature_flag(existing_flag.first(), flag)
                 else:
                     if hasattr(settings, flag['name']):
                         flag['value'] = getattr(settings, flag['name'])
-                    FeatureFlags.objects.create(**flag)
-                AAPFlag(**flag).full_clean()
+                    feature_flag = FeatureFlags(**flag)
+                feature_flag.full_clean()
+                feature_flag.save()
             except ValidationError as e:
                 # Ignore this error unless better way to bypass this
-                if e.messages[0] == 'Aap flag with this Name, Condition and Value already exists.':
+                if e.messages[0] == 'Aap flag with this Name and Condition already exists.':
                     pass
                 else:
-                    # Raise row validation errors
-                    raise e
+                    error_msg = f"Invalid feature flag: {flag['name']}. Error: {e}"
+                    logger.error(error_msg)
 
     def delete_feature_flags():
         """

@@ -1,8 +1,7 @@
 from django.conf import settings
-from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
-from flags.state import flag_enabled
-from rest_framework import status
+from flags.sources import get_flags
+from flags.state import flag_state
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
@@ -10,9 +9,12 @@ from ansible_base.feature_flags.models import AAPFlag
 from ansible_base.feature_flags.serializers import FeatureFlagSerializer, OldFeatureFlagSerializer
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
-from ansible_base.lib.utils.views.permissions import IsSuperuserOrAuditor
+from ansible_base.lib.utils.views.permissions import IsSuperuserOrAuditor, try_add_oauth2_scope_permission
 
-from .utils import get_django_flags, is_boolean_str
+# from ansible_base.oauth2_provider.permissions import OAuth2ScopePermission
+from ansible_base.rest_pagination import DefaultPaginator
+
+from .utils import get_django_flags
 
 
 class FeatureFlagsView(AnsibleBaseDjangoAppApiView, ModelViewSet):
@@ -22,24 +24,27 @@ class FeatureFlagsView(AnsibleBaseDjangoAppApiView, ModelViewSet):
 
     queryset = AAPFlag.objects.order_by('id')
     serializer_class = FeatureFlagSerializer
-    permission_classes = [IsSuperuserOrAuditor]
-    http_method_names = ['get', 'put', 'head', 'options']
+    permission_classes = try_add_oauth2_scope_permission([IsSuperuserOrAuditor])
+    http_method_names = ['get', 'head', 'options']
 
-    def update(self, request, **kwargs):
-        _feature_flag = self.get_object()
-        value = request.data.get('value')
-        if not value:
-            return Response(status=status.HTTP_400_BAD_REQUEST, data={"details": "Invalid request object."})
 
-        feature_flag = get_object_or_404(AAPFlag, pk=_feature_flag.id)
-        if feature_flag.toggle_type == 'install-time':
-            return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED, data={"details": "Install-time feature flags cannot be toggled at run-time."})
-        if feature_flag.condition == "boolean" and not is_boolean_str(value):
-            return Response(status=status.HTTP_400_BAD_REQUEST, data={"details": "Feature flag boolean conditional requires using boolean value."})
-        feature_flag.value = value
-        feature_flag.save()
+class FeatureFlagsStatesView(AnsibleBaseDjangoAppApiView, ModelViewSet):
+    """
+    A view class for displaying feature flags states
+    """
 
-        return Response(self.get_serializer().to_representation(feature_flag))
+    queryset = AAPFlag.objects.order_by('id')
+    permission_classes = try_add_oauth2_scope_permission([IsSuperuserOrAuditor])
+    http_method_names = ['get', 'head', 'options']
+
+    def list(self, request):
+        paginator = DefaultPaginator()
+        flags = get_flags()
+        ret = []
+        for flag in flags:
+            ret.append({"flag_name": flag, "flag_state": flag_state(flag)})
+        result_page = paginator.paginate_queryset(ret, request)
+        return paginator.get_paginated_response(result_page)
 
 
 # TODO: This can be removed after functionality is migrated over to new class

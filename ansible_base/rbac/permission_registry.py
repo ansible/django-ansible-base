@@ -143,6 +143,7 @@ class PermissionRegistry:
         return ret
 
     def call_when_apps_ready(self, apps, app_config) -> None:
+        from ansible_base.feature_flags.utils import create_initial_data as feature_flag_create_initial_data
         from ansible_base.rbac import triggers
         from ansible_base.rbac.evaluations import bound_has_obj_perm, bound_singleton_permissions, connect_rbac_methods
         from ansible_base.rbac.management import create_dab_permissions
@@ -172,6 +173,11 @@ class PermissionRegistry:
             sender=app_config,
             dispatch_uid="ansible_base.rbac.triggers.post_migration_rbac_setup",
         )
+        if 'ansible_base.feature_flags' in settings.INSTALLED_APPS:
+            try:
+                feature_flag_create_initial_data()
+            except Exception:
+                post_migrate.connect(feature_flag_create_initial_data, sender=self)
 
         self.user_model.add_to_class('has_obj_perm', bound_has_obj_perm)
         self.user_model.add_to_class('singleton_permissions', bound_singleton_permissions)

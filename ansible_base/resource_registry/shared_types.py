@@ -80,11 +80,10 @@ class TeamType(SharedResourceTypeSerializer):
 class FeatureFlagType(SharedResourceTypeSerializer):
     """Serialize list of feature flags"""
 
-    RESOURCE_TYPE = "feature_flag"
+    RESOURCE_TYPE = "aapflag"
     UNIQUE_FIELDS = (
         "name",
         "condition",
-        "value",
     )
 
     name = serializers.CharField()
