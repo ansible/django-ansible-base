@@ -14,7 +14,7 @@ def copy_fixture(copies=1):
     """
 
     def wrapper(func):
-        if '_pytestfixturefunction' not in dir(func):
+        if '_fixture_function' not in dir(func):
             raise TypeError(f"Can't apply copy_fixture to {func.__name__} because it is not a fixture. HINT: @copy_fixture must be *above* @pytest.fixture")
 
         module_name = func.__module__
