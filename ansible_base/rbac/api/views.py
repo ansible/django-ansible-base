@@ -12,6 +12,7 @@ from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.lib.utils.views.permissions import try_add_oauth2_scope_permission
+from ansible_base.rbac.api.filter_backends import TeamAnsibleIdAliasFilterBackend, UserAnsibleIdAliasFilterBackend
 from ansible_base.rbac.api.permissions import RoleDefinitionPermissions
 from ansible_base.rbac.api.serializers import (
     RoleDefinitionDetailSerializer,
@@ -25,7 +26,6 @@ from ansible_base.rbac.models import RoleDefinition
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.policies import check_can_remove_assignment
 from ansible_base.rbac.validators import check_locally_managed, permissions_allowed_for_role, system_roles_enabled
-from ansible_base.rbac.api.filter_backends import TeamAnsibleIdAliasFilterBackend, UserAnsibleIdAliasFilterBackend
 
 
 def list_combine_values(data: dict[Type[Model], list[str]]) -> list[str]:
