@@ -8,7 +8,7 @@ from ansible_base.resource_registry.models import Resource
 
 class AnsibleIdAliasFilterBackend(BaseFilterBackend):
     '''
-    Filter backend for object ansible_id.
+    Filter backend for object_ansible_id.
     Note that this accrues an additional query to the Resource model.
 
     Example:
@@ -41,10 +41,11 @@ class AnsibleIdAliasFilterBackend(BaseFilterBackend):
 
 class UserAnsibleIdAliasFilterBackend(AnsibleIdAliasFilterBackend):
     """
-    Filter backend for user ansible_id.
+    Filter backend for user_ansible_id and object_ansible_id.
 
     Example:
     /api/v1/role_user_assignments/?user_ansible_id=80c7e291-b121-48fc-8fb1-174aac6f57a6
+    /api/v1/role_user_assignments/?object_ansible_id=da0488f5-013b-460c-8a62-c3c10a1d0fad
     """
 
     def filter_queryset(self, request, queryset, view):
@@ -62,10 +63,11 @@ class UserAnsibleIdAliasFilterBackend(AnsibleIdAliasFilterBackend):
 
 class TeamAnsibleIdAliasFilterBackend(AnsibleIdAliasFilterBackend):
     """
-    Filter backend for team ansible_id.
+    Filter backend for team_ansible_id and object_ansible_id.
 
     Example:
     /api/v1/role_team_assignments/?team_ansible_id=c2b59b42-a874-43ca-9e1f-abe410864f65
+    /api/v1/role_team_assignments/?object_ansible_id=da0488f5-013b-460c-8a62-c3c10a1d0fad
     """
 
     def filter_queryset(self, request, queryset, view):
