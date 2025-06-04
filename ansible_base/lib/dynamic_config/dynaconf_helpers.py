@@ -15,8 +15,6 @@ from dynaconf.loaders.base import BaseLoader
 from dynaconf.loaders.yaml_loader import yaml
 from dynaconf.utils.files import glob
 from dynaconf.utils.functional import empty
-from flags.sources import get_flags
-from flags.state import disable_flag, enable_flag
 
 from ansible_base.lib.dynamic_config.settings_logic import get_mergeable_dab_settings
 
@@ -317,17 +315,3 @@ def toggle_feature_flags(settings: Dynaconf) -> dict[str, Any]:
             feature_content[0]["value"] = installer_value
             data[f"FLAGS__{feature_name}"] = feature_content
     return data
-
-
-def toggle_database_feature_flags(settings: Dynaconf) -> dict[str, Any]:
-    """Toggle FLAGS based on installer settings.
-    FLAGS is a django-flags formatted dictionary.
-    Installers will place `FEATURE_SOME_PLATFORM_FLAG_ENABLED=True/False` in the settings file.
-    This function will update the value in the database with the expected boolean value
-    """
-    for feature_name in get_flags():
-        if (installer_value := settings.get(feature_name, empty)) is not empty:
-            if installer_value:
-                enable_flag(feature_name)
-            else:
-                disable_flag(feature_name)

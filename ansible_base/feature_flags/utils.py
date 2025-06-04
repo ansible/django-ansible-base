@@ -5,7 +5,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from flags.sources import get_flags
 
-from ansible_base.lib.dynamic_config.feature_flags.platform_flags import AAP_FEATURE_FLAGS
+from ansible_base.feature_flags.feature_flags import AAP_FEATURE_FLAGS
 
 logger = logging.getLogger('ansible_base.feature_flags.utils')
 
@@ -14,7 +14,7 @@ def get_django_flags():
     return get_flags()
 
 
-def create_initial_data(**kwargs):
+def create_initial_data(**kwargs):  # NOSONAR
     """
     Loads in platform feature flags when the server starts
     """
@@ -40,22 +40,22 @@ def create_initial_data(**kwargs):
         """
         Loads in all feature flags into the database. Updates them if necessary.
         """
-        FeatureFlags = apps.get_model('dab_feature_flags', 'AAPFlag')
+        feature_flags_model = apps.get_model('dab_feature_flags', 'AAPFlag')
         for flag in AAP_FEATURE_FLAGS:
             try:
-                existing_flag = FeatureFlags.objects.filter(name=flag['name'], condition=flag['condition'])
+                existing_flag = feature_flags_model.objects.filter(name=flag['name'], condition=flag['condition'])
                 if existing_flag:
                     feature_flag = update_feature_flag(existing_flag.first(), flag)
                 else:
                     if hasattr(settings, flag['name']):
                         flag['value'] = getattr(settings, flag['name'])
-                    feature_flag = FeatureFlags(**flag)
+                    feature_flag = feature_flags_model(**flag)
                 feature_flag.full_clean()
                 feature_flag.save()
             except ValidationError as e:
                 # Ignore this error unless better way to bypass this
                 if e.messages[0] == 'Aap flag with this Name and Condition already exists.':
-                    pass
+                    logger.info(f"Feature flag: {flag['name']} already exists")
                 else:
                     error_msg = f"Invalid feature flag: {flag['name']}. Error: {e}"
                     logger.error(error_msg)
@@ -70,10 +70,11 @@ def create_initial_data(**kwargs):
             for _flag in AAP_FEATURE_FLAGS:
                 if flag.name == _flag['name'] and flag.condition == _flag['condition']:
                     found = True
-                    continue
+                    break
             if found:
                 continue
             if not found:
+                logger.info(f"Deleting feature flag: {flag.name} as it is no longer available as a platform flag")
                 flag.delete()
 
     delete_feature_flags()

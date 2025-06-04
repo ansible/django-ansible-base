@@ -5,7 +5,6 @@ from .dynaconf_helpers import (
     load_envvars,
     load_python_file_with_injected_context,
     load_standard_settings_files,
-    toggle_database_feature_flags,
     toggle_feature_flags,
     validate,
 )
@@ -18,6 +17,5 @@ __all__ = [
     "load_python_file_with_injected_context",
     "load_standard_settings_files",
     "toggle_feature_flags",
-    "toggle_database_feature_flags",
     "validate",
 ]
