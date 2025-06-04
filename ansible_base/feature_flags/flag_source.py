@@ -3,7 +3,7 @@ from flags.sources import Condition
 
 
 class DatabaseCondition(Condition):
-    """Condition that includes the FlagState database object"""
+    """Condition that includes the AAPFlags database object"""
 
     def __init__(self, condition, value, required=False, obj=None):
         super().__init__(condition, value, required=required)
@@ -13,8 +13,8 @@ class DatabaseCondition(Condition):
 class AAPFlagSource(object):
 
     def get_queryset(self):
-        FlagState = apps.get_model('dab_feature_flags', 'AAPFlag')
-        return FlagState.objects.all()
+        aap_flags = apps.get_model('dab_feature_flags', 'AAPFlag')
+        return aap_flags.objects.all()
 
     def get_flags(self):
         flags = {}

@@ -306,7 +306,7 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         if "flags" not in installed_apps:
             installed_apps.append('flags')
 
-        dab_data['FLAG_SOURCES'] = ('ansible_base.lib.dynamic_config.feature_flags.flag_source.AAPFlagSource',)
+        dab_data['FLAG_SOURCES'] = ('ansible_base.feature_flags.flag_source.AAPFlagSource',)
 
         found_template_backend = False
         template_context_processor = 'django.template.context_processors.request'

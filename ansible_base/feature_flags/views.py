@@ -10,8 +10,6 @@ from ansible_base.feature_flags.serializers import FeatureFlagSerializer, OldFea
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.lib.utils.views.permissions import IsSuperuserOrAuditor, try_add_oauth2_scope_permission
-
-# from ansible_base.oauth2_provider.permissions import OAuth2ScopePermission
 from ansible_base.rest_pagination import DefaultPaginator
 
 from .utils import get_django_flags
