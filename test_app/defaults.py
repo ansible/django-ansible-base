@@ -205,35 +205,3 @@ RESOURCE_SERVER_SYNC_ENABLED = False
 RENAMED_USERNAME_PREFIX = "dab:"
 
 JUST_A_TEST = 41
-
-FLAGS = {
-    "FEATURE_SOME_PLATFORM_FLAG_ENABLED": [
-        {
-            "condition": "boolean",
-            "value": False,
-            "required": True,
-        },
-        {
-            "condition": "before date",
-            "value": '2022-06-01T12:00Z',
-        },
-    ],
-    "FEATURE_SOME_PLATFORM_FLAG_FOO_ENABLED": [
-        {
-            "condition": "boolean",
-            "value": False,
-        },
-    ],
-    "FEATURE_SOME_PLATFORM_FLAG_BAR_ENABLED": [
-        {
-            "condition": "boolean",
-            "value": True,
-        },
-    ],
-    "FEATURE_CASE_INSENSITIVE_AUTH_MAPS": [
-        {
-            "condition": "boolean",
-            "value": False,
-        },
-    ],
-}

@@ -17,7 +17,7 @@ class AAPFlag(NamedCommonModel):
         unique_together = ("name", "condition")
 
     def __str__(self):
-        return "{name} is enabled when {condition} is " "{value}{required}".format(
+        return "{name} condition {condition} is set to " "{value}{required}".format(
             name=self.name,
             condition=self.condition,
             value=self.value,
