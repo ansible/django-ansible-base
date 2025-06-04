@@ -61,7 +61,7 @@ AAP_FEATURE_FLAGS: list[AAPFlagNameSchema] = [
         labels=['gateway'],
     ),
     AAPFlagNameSchema(
-        name="FEATURE_GATEWAY_CREATE_CRC_SERVICE_TYPE",
+        name="FEATURE_GATEWAY_CREATE_CRC_SERVICE_TYPE_ENABLED",
         ui_name="Gateway Create CRC Service Type",
         condition="boolean",
         value="False",
@@ -70,5 +70,16 @@ AAP_FEATURE_FLAGS: list[AAPFlagNameSchema] = [
         description="TBD",
         support_url="https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.5/",
         labels=['gateway'],
+    ),
+    AAPFlagNameSchema(
+        name="FEATURE_DISPATCHERD_ENABLED",
+        ui_name="AAP Dispatcherd",
+        condition="boolean",
+        value="False",
+        visibility="private",
+        support_level="NOT_FOR_PRODUCTION",
+        description="TBD",
+        support_url="https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.5/",
+        labels=['eda', 'controller'],
     ),
 ]

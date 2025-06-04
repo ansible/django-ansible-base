@@ -367,6 +367,13 @@ def ldap_authenticator(ldap_configuration):
 
 
 @pytest.fixture
+def aap_flags():
+    from ansible_base.feature_flags.utils import create_initial_data
+
+    create_initial_data()
+
+
+@pytest.fixture
 def create_mock_method():
     # Creates a function that when called, generates a function that can be used to patch
     # a method. Useful for when you want to mock an object method that modifies an object's state.
