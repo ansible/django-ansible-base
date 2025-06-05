@@ -12,7 +12,6 @@ from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.lib.utils.views.permissions import try_add_oauth2_scope_permission
-from ansible_base.rbac.api.filter_backends import TeamAnsibleIdAliasFilterBackend, UserAnsibleIdAliasFilterBackend
 from ansible_base.rbac.api.permissions import RoleDefinitionPermissions
 from ansible_base.rbac.api.serializers import (
     RoleDefinitionDetailSerializer,
@@ -26,6 +25,7 @@ from ansible_base.rbac.models import RoleDefinition
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.policies import check_can_remove_assignment
 from ansible_base.rbac.validators import check_locally_managed, permissions_allowed_for_role, system_roles_enabled
+from ansible_base.rest_filters.rest_framework.ansible_id_backend import TeamAnsibleIdAliasFilterBackend, UserAnsibleIdAliasFilterBackend
 
 
 def list_combine_values(data: dict[Type[Model], list[str]]) -> list[str]:
@@ -160,7 +160,9 @@ class RoleTeamAssignmentViewSet(BaseAssignmentViewSet):
 
     serializer_class = RoleTeamAssignmentSerializer
     prefetch_related = ('team',)
-    filter_backends = (TeamAnsibleIdAliasFilterBackend,)
+    filter_backends = BaseAssignmentViewSet.filter_backends + [
+        TeamAnsibleIdAliasFilterBackend,
+    ]
 
 
 class RoleUserAssignmentViewSet(BaseAssignmentViewSet):
@@ -177,4 +179,6 @@ class RoleUserAssignmentViewSet(BaseAssignmentViewSet):
 
     serializer_class = RoleUserAssignmentSerializer
     prefetch_related = ('user',)
-    filter_backends = (UserAnsibleIdAliasFilterBackend,)
+    filter_backends = BaseAssignmentViewSet.filter_backends + [
+        UserAnsibleIdAliasFilterBackend,
+    ]
