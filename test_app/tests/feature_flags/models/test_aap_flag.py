@@ -41,6 +41,7 @@ def test_feature_flags_from_db(aap_flags, feature_flag):
     ],
 )
 def test_feature_flag_database_setting_override(feature_flag, value):
+    AAPFlag.objects.all().delete()
     from ansible_base.feature_flags.utils import create_initial_data
 
     setattr(settings, feature_flag, value)
