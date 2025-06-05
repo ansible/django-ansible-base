@@ -35,7 +35,11 @@ class AAPFlag(NamedCommonModel):
     )
     ui_name = models.CharField(max_length=64, null=False, blank=False, help_text=_("The pretty name to display in the application User Interface"))
     condition = models.CharField(max_length=64, default="boolean", help_text=_("Used to specify a condition, which if met, will enable the feature flag."))
-    value = models.CharField(max_length=127, default="True", help_text=_("The value used to evaluate the conditional specified."))
+    value = models.CharField(
+        max_length=127,
+        default="False",
+        help_text=_("The value used to evaluate the conditional specified."),
+    )
     required = models.BooleanField(
         default=False,
         help_text=_("If multiple conditions are required to be met to enable a feature flag, 'required' can be used to specify the necessary conditionals."),

@@ -42,6 +42,8 @@ def load_feature_flags():
     """
     Loads in all feature flags into the database. Updates them if necessary.
     """
+    from ansible_base.resource_registry.signals.handlers import no_reverse_sync
+
     feature_flags_model = apps.get_model('dab_feature_flags', 'AAPFlag')
     for flag in AAP_FEATURE_FLAGS:
         try:
@@ -53,7 +55,8 @@ def load_feature_flags():
                     flag['value'] = getattr(settings, flag['name'])
                 feature_flag = feature_flags_model(**flag)
             feature_flag.full_clean()
-            feature_flag.save()
+            with no_reverse_sync():
+                feature_flag.save()
         except ValidationError as e:
             # Ignore this error unless better way to bypass this
             if e.messages[0] == 'Aap flag with this Name and Condition already exists.':
@@ -67,6 +70,8 @@ def delete_feature_flags():
     """
     If a feature flag has been removed from the platform flags list, delete it from the database.
     """
+    from ansible_base.resource_registry.signals.handlers import no_reverse_sync
+
     all_flags = apps.get_model('dab_feature_flags', 'AAPFlag').objects.all()
     for flag in all_flags:
         found = False
@@ -78,4 +83,5 @@ def delete_feature_flags():
             continue
         if not found:
             logger.info(f"Deleting feature flag: {flag.name} as it is no longer available as a platform flag")
-            flag.delete()
+            with no_reverse_sync():
+                flag.delete()

@@ -6,24 +6,13 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.feature_flags.models import AAPFlag
-from ansible_base.feature_flags.serializers import FeatureFlagSerializer, OldFeatureFlagSerializer
+from ansible_base.feature_flags.serializers import OldFeatureFlagSerializer
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.lib.utils.views.permissions import IsSuperuserOrAuditor, try_add_oauth2_scope_permission
 from ansible_base.rest_pagination import DefaultPaginator
 
 from .utils import get_django_flags
-
-
-class FeatureFlagsView(AnsibleBaseDjangoAppApiView, ModelViewSet):
-    """
-    A view class for displaying feature flags
-    """
-
-    queryset = AAPFlag.objects.order_by('id')
-    serializer_class = FeatureFlagSerializer
-    permission_classes = try_add_oauth2_scope_permission([IsSuperuserOrAuditor])
-    http_method_names = ['get', 'head', 'options']
 
 
 class FeatureFlagsStatesView(AnsibleBaseDjangoAppApiView, ModelViewSet):
