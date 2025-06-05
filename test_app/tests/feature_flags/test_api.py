@@ -8,7 +8,7 @@ def test_feature_flags_state_api_list(admin_api_client: APIClient):
     """
     Test that we can list all feature flags
     """
-    url = get_relative_url("featureflags-list")
+    url = get_relative_url("feature-flags-state-list")
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert 'FEATURE_SOME_PLATFORM_FLAG_ENABLED' in response.data
@@ -34,7 +34,7 @@ def test_feature_flags_state_api_list_settings_override(admin_api_client: APICli
     """
     Test that we can list all feature flags
     """
-    url = get_relative_url("featureflags-list")
+    url = get_relative_url("feature-flags-state-list")
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert 'FEATURE_SOME_PLATFORM_FLAG_ENABLED' not in response.data
@@ -51,7 +51,7 @@ def test_feature_flags_state_api_list_settings_override_empty(admin_api_client: 
     """
     Test that we can list all feature flags
     """
-    url = get_relative_url("featureflags-list")
+    url = get_relative_url("feature-flags-state-list")
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert response.data == {}
