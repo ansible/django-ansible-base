@@ -60,20 +60,20 @@ class TestAnsibleIdAliasFilterBackend:
         assert response.status_code == 200, response.data
         assert response.data["count"] == 1, response.data
 
-    def test_filter_by_user_id(self, admin_api_client, org_inv_rd, inventory, rando):
+    def test_filter_by_user_id(self, admin_api_client, org_inv_rd, inventory, random_user):
         '''
         Test that filtering with user id still works.
         This ensures that the default rest filters are still functional for this
         viewset.
         '''
-        user_resource = Resource.objects.get(object_id=rando.pk, content_type=ContentType.objects.get_for_model(rando).pk)
+        user_resource = Resource.objects.get(object_id=random_user.pk, content_type=ContentType.objects.get_for_model(random_user).pk)
         url = get_relative_url('roleuserassignment-list')
         data = dict(role_definition=org_inv_rd.id, content_type='shared.organization', user_ansible_id=user_resource.ansible_id, object_id=inventory.id)
         response = admin_api_client.post(url, data=data, format="json")
         assert response.status_code == 201, response.data
 
         # filter by user_id
-        query_params = {'user': rando.id}
+        query_params = {'user': random_user.id}
         response = admin_api_client.get(url + '?' + urlencode(query_params))
         assert response.status_code == 200, response.data
         assert response.data["count"] == 1, response.data
