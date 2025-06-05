@@ -379,6 +379,7 @@ class LDAPSettings(BaseLDAPSettings):
 
         # If a DB-backed setting is specified that wipes out the
         # OPT_NETWORK_TIMEOUT, fall back to a sane default
+        # This default should be less than 30 because that is the timeout of envoy
         if ldap.OPT_NETWORK_TIMEOUT not in internal_data:
             internal_data[ldap.OPT_NETWORK_TIMEOUT] = 20
 

@@ -6,14 +6,15 @@ from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.resource_registry.models import Resource
 
 
+@pytest.mark.django_db
 class TestAnsibleIdAliasFilterBackend:
 
-    @pytest.mark.django_db
-    def test_filter_user_ansible_id(self, admin_api_client, org_inv_rd, inv_rd, inventory, rando, organization):
+    def test_filter_user_ansible_id(self, admin_api_client, org_inv_rd, inv_rd, inventory, rando, random_user, organization):
         '''
         Test filtering RoleUserAssignment by user_ansible_id and object_ansible_id.
+        Also test that other filtering works,
         '''
-        # user - org assigment
+        # rando - org assigment
         user_resource = Resource.objects.get(object_id=rando.pk, content_type=ContentType.objects.get_for_model(rando).pk)
         organization_resource = Resource.objects.get(object_id=organization.pk, content_type=ContentType.objects.get_for_model(organization).pk)
         url = get_relative_url('roleuserassignment-list')
@@ -21,8 +22,13 @@ class TestAnsibleIdAliasFilterBackend:
         response = admin_api_client.post(url, data=data, format="json")
         assert response.status_code == 201, response.data
 
-        # user - inventory assignment (just a random assignment to make total count > 1)
-        data = dict(role_definition=inv_rd.id, content_type='shared.inventory', user_ansible_id=user_resource.ansible_id, object_id=inventory.id)
+        # random_user - org assigment
+        data = dict(role_definition=org_inv_rd.id, content_type='shared.organization', user=random_user.id, object_id=organization.id)
+        response = admin_api_client.post(url, data=data, format="json")
+        assert response.status_code == 201, response.data
+
+        # rando - inventory assignment (an additional assignment to make total count > 1)
+        data = dict(role_definition=inv_rd.id, content_type='aap.inventory', user_ansible_id=user_resource.ansible_id, object_id=inventory.id)
         response = admin_api_client.post(url, data=data, format="json")
         assert response.status_code == 201, response.data
 
@@ -40,7 +46,7 @@ class TestAnsibleIdAliasFilterBackend:
         query_params = {'object_ansible_id': organization_resource.ansible_id}
         response = admin_api_client.get(url + '?' + urlencode(query_params))
         assert response.status_code == 200, response.data
-        assert response.data["count"] == 1, response.data
+        assert response.data["count"] == 2, response.data
 
         # filter by both user_ansible_id and object_ansible_id
         query_params = {'user_ansible_id': user_resource.ansible_id, 'object_ansible_id': organization_resource.ansible_id}
@@ -48,7 +54,36 @@ class TestAnsibleIdAliasFilterBackend:
         assert response.status_code == 200, response.data
         assert response.data["count"] == 1, response.data
 
-    @pytest.mark.django_db
+        # filter by random user id
+        query_params = {'user': random_user.id}
+        response = admin_api_client.get(url + '?' + urlencode(query_params))
+        assert response.status_code == 200, response.data
+        assert response.data["count"] == 1, response.data
+
+    def test_filter_by_user_id(self, admin_api_client, inv_rd, inventory, random_user):
+        '''
+        Test that filtering with user id still works.
+        This ensures that the default rest filters are still functional for this
+        viewset.
+        '''
+        user_resource = Resource.objects.get(object_id=random_user.pk, content_type=ContentType.objects.get_for_model(random_user).pk)
+        url = get_relative_url('roleuserassignment-list')
+        data = dict(role_definition=inv_rd.id, content_type='aap.inventory', user_ansible_id=user_resource.ansible_id, object_id=inventory.id)
+        response = admin_api_client.post(url, data=data, format="json")
+        assert response.status_code == 201, response.data
+
+        # filter by user_id
+        query_params = {'user': random_user.id}
+        response = admin_api_client.get(url + '?' + urlencode(query_params))
+        assert response.status_code == 200, response.data
+        assert response.data["count"] == 1, response.data
+
+        # filter by user_ansible_id
+        query_params = {'user_ansible_id': user_resource.ansible_id}
+        response = admin_api_client.get(url + '?' + urlencode(query_params))
+        assert response.status_code == 200, response.data
+        assert response.data["count"] == 1, response.data
+
     def test_filter_team_ansible_id(self, admin_api_client, team, inv_rd, inventory):
         '''
         Test filtering RoleTeamAssignment by team_ansible_id.
@@ -66,7 +101,6 @@ class TestAnsibleIdAliasFilterBackend:
         assert response.data["count"] == 1, response.data
 
     @pytest.mark.parametrize("ansible_id_type", ["user", "team", "object"])
-    @pytest.mark.django_db
     def test_invalid_ansible_id_format(self, admin_api_client, ansible_id_type):
         '''
         Test that invalid UUID formats for ansible_id raise a 400 error.

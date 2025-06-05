@@ -105,6 +105,9 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
             'no_truncate',
             'limit',
             'validate',
+            'user_ansible_id',
+            'team_ansible_id',
+            'object_ansible_id',
         )
 
     # SPECTACULAR SETTINGS
