@@ -5,6 +5,7 @@ from django.utils.http import urlencode
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.resource_registry.models import Resource
 
+
 @pytest.mark.django_db
 class TestAnsibleIdAliasFilterBackend:
 
