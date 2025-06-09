@@ -52,7 +52,7 @@ def test_old_feature_flags_list(admin_api_client, aap_flags):
     """
     Test that we can list feature flags api, after preloading data
     """
-    url = get_relative_url("featureflags-list")
+    url = get_relative_url("feature-flags-state-list")
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert len(response.data) == 6

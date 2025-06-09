@@ -1,0 +1,61 @@
+- name: FEATURE_INDIRECT_NODE_COUNTING_ENABLED
+  ui_name: Indirect Node Counting
+  visibility: public
+  condition: boolean
+  value: 'False'
+  support_level: NOT_FOR_PRODUCTION
+  description: TBD
+  support_url: https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.5/
+  labels:
+    - controller
+- name: FEATURE_POLICY_AS_CODE_ENABLED
+  ui_name: Policy as Code
+  visibility: public
+  condition: boolean
+  value: 'False'
+  support_level: NOT_FOR_PRODUCTION
+  description: TBD
+  support_url: https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.5/
+  labels:
+    - controller
+- name: FEATURE_EDA_ANALYTICS_ENABLED
+  ui_name: Event-Driven Ansible Analytics
+  visibility: public
+  condition: boolean
+  value: 'False'
+  support_level: NOT_FOR_PRODUCTION
+  description: TBD
+  support_url: https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.5/
+  labels:
+    - eda
+- name: FEATURE_GATEWAY_IPV6_USAGE_ENABLED
+  ui_name: Gateway IPv6 Usage
+  visibility: private
+  condition: boolean
+  value: 'False'
+  support_level: NOT_FOR_PRODUCTION
+  description: TBD
+  support_url: https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.5/
+  labels:
+    - gateway
+- name: FEATURE_GATEWAY_CREATE_CRC_SERVICE_TYPE_ENABLED
+  ui_name: Gateway Create CRC Service Type
+  visibility: private
+  condition: boolean
+  value: 'False'
+  support_level: NOT_FOR_PRODUCTION
+  description: TBD
+  support_url: https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.5/
+  labels:
+    - gateway
+- name: FEATURE_DISPATCHERD_ENABLED
+  ui_name: AAP Dispatcherd
+  visibility: private
+  condition: boolean
+  value: 'False'
+  support_level: NOT_FOR_PRODUCTION
+  description: TBD
+  support_url: https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.5/
+  labels:
+    - eda
+    - controller

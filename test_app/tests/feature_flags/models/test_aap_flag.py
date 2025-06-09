@@ -1,8 +1,8 @@
 import pytest
 from django.conf import settings
 
-from ansible_base.feature_flags.feature_flags import AAP_FEATURE_FLAGS
 from ansible_base.feature_flags.models import AAPFlag
+from ansible_base.feature_flags.utils import feature_flags_list
 
 
 @pytest.mark.django_db
@@ -13,7 +13,7 @@ def test_total_platform_flags(aap_flags):
 @pytest.mark.django_db
 @pytest.mark.parametrize(
     "feature_flag",
-    AAP_FEATURE_FLAGS,
+    feature_flags_list(),
 )
 def test_feature_flags_from_db(aap_flags, feature_flag):
     flag = AAPFlag.objects.get(name=feature_flag['name'])
