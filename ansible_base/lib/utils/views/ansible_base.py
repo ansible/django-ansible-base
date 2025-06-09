@@ -11,6 +11,8 @@ logger = logging.getLogger('ansible_base.lib.utils.views.ansible_base')
 
 class AnsibleBaseView(APIView):
 
+    ordering = ['pk']
+
     # pulp openapi generator compatibility
     endpoint_name = ''
 

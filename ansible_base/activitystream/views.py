@@ -37,9 +37,10 @@ class EntryReadOnlyViewSet(ReadOnlyModelViewSet, AnsibleBaseDjangoAppApiView):
     API endpoint that allows for read-only access to activity stream entries.
     """
 
-    queryset = Entry.objects.order_by('-id')
+    queryset = Entry.objects.all()
     serializer_class = EntrySerializer
     filter_backends = calculate_filter_backends()
+    ordering = ['-id']
 
     def get_permissions(self):
         """
