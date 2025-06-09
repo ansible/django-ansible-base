@@ -203,10 +203,10 @@ def test_handle_no_options():
 
 @pytest.mark.django_db
 def test_management_command_existing_data(aap_flags, capsys):
-    from ansible_base.feature_flags.feature_flags import AAP_FEATURE_FLAGS
+    from ansible_base.feature_flags.utils import feature_flags_list
 
     call_command('feature_flags', '--list')
 
     captured = capsys.readouterr()
     output_lines = captured.out.strip().split('\n')
-    assert len(output_lines) - 2 == len(AAP_FEATURE_FLAGS)  # Subtract 2 to remove header and '---' line before data
+    assert len(output_lines) - 2 == len(feature_flags_list())  # Subtract 2 to remove header and '---' line before data

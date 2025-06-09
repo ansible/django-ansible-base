@@ -1,17 +1,27 @@
 import logging
+from pathlib import Path
 
+import yaml
 from django.apps import apps
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from flags.sources import get_flags
-
-from ansible_base.feature_flags.feature_flags import AAP_FEATURE_FLAGS
 
 logger = logging.getLogger('ansible_base.feature_flags.utils')
 
 
 def get_django_flags():
     return get_flags()
+
+
+def feature_flags_list():
+    current_dir = Path(__file__).parent
+    flags_list_file = current_dir / 'feature_flags.yaml'
+    with open(flags_list_file, 'r') as file:
+        try:
+            return yaml.safe_load(file)
+        except yaml.YAMLError as exc:
+            print(exc)
 
 
 def create_initial_data(**kwargs):  # NOSONAR
@@ -45,7 +55,7 @@ def load_feature_flags():
     from ansible_base.resource_registry.signals.handlers import no_reverse_sync
 
     feature_flags_model = apps.get_model('dab_feature_flags', 'AAPFlag')
-    for flag in AAP_FEATURE_FLAGS:
+    for flag in feature_flags_list():
         try:
             existing_flag = feature_flags_model.objects.filter(name=flag['name'], condition=flag['condition'])
             if existing_flag:
@@ -75,7 +85,7 @@ def delete_feature_flags():
     all_flags = apps.get_model('dab_feature_flags', 'AAPFlag').objects.all()
     for flag in all_flags:
         found = False
-        for _flag in AAP_FEATURE_FLAGS:
+        for _flag in feature_flags_list():
             if flag.name == _flag['name'] and flag.condition == _flag['condition']:
                 found = True
                 break

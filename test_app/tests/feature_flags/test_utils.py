@@ -102,8 +102,9 @@ def mock_logger(mocker):
 
 
 @pytest.fixture
-def mock_aap_feature_flags_constant(mocker):
-    return mocker.patch(f"{MODULE_PATH}.AAP_FEATURE_FLAGS", [])
+def mock_feature_flags_list(mocker):
+    mock = mocker.patch(f"{MODULE_PATH}.feature_flags_list")
+    return mock
 
 
 def test_get_django_flags(mocker):
@@ -122,7 +123,7 @@ class TestCreateInitialData:
 
     @pytest.mark.django_db  # May not be strictly necessary with all the mocking, but good practice
     def test_load_feature_flags_creates_new_flag_from_settings_value(
-        self, mock_apps_get_model, mock_aap_flag_model_cls, mock_settings, mock_logger, mock_aap_feature_flags_constant, mocker
+        self, mock_apps_get_model, mock_aap_flag_model_cls, mock_settings, mock_logger, mock_feature_flags_list, mocker
     ):
         from ansible_base.feature_flags.utils import create_initial_data
 
@@ -134,8 +135,7 @@ class TestCreateInitialData:
             'visibility': 'public',
             # No 'value' here, expecting it from settings
         }
-        mock_aap_feature_flags_constant.append(flag_def)
-
+        mock_feature_flags_list.return_value = [flag_def]
         # --- Mocks for database interaction (for load_feature_flags part) ---
         mock_filter_queryset = MagicMock()
         # Simulate flag does NOT exist:
@@ -182,7 +182,7 @@ class TestCreateInitialData:
 
     @pytest.mark.django_db
     def test_load_feature_flags_creates_new_flag_with_default_value_if_not_in_settings(
-        self, mock_apps_get_model, mock_aap_flag_model_cls, mock_settings, mock_logger, mock_aap_feature_flags_constant, mocker
+        self, mock_apps_get_model, mock_aap_flag_model_cls, mock_settings, mock_logger, mock_feature_flags_list, mocker
     ):
         from ansible_base.feature_flags.utils import create_initial_data
 
@@ -194,7 +194,7 @@ class TestCreateInitialData:
             'visibility': 'private',
             'value': False,  # Default value in definition
         }
-        mock_aap_feature_flags_constant.extend([flag_def])
+        mock_feature_flags_list.return_value = [flag_def]
 
         mock_empty_queryset = MagicMock()
         mock_empty_queryset.first.return_value = None
@@ -216,7 +216,7 @@ class TestCreateInitialData:
 
     @pytest.mark.django_db
     def test_load_feature_flags_updates_existing_flag(
-        self, mock_apps_get_model, mock_aap_flag_model_cls, mock_settings, mock_logger, mock_aap_feature_flags_constant, mocker
+        self, mock_apps_get_model, mock_aap_flag_model_cls, mock_settings, mock_logger, mock_feature_flags_list, mocker
     ):
         from ansible_base.feature_flags.utils import create_initial_data
 
@@ -232,7 +232,7 @@ class TestCreateInitialData:
             'labels': ['new'],
             'description': 'new desc',
         }
-        mock_aap_feature_flags_constant.extend([flag_def_updated])
+        mock_feature_flags_list.return_value = [flag_def_updated]
 
         existing_db_flag = MockAAPFlagInstance(
             name='EXISTING_FLAG',
@@ -274,12 +274,12 @@ class TestCreateInitialData:
 
     @pytest.mark.django_db
     def test_load_feature_flags_handles_specific_validation_error(
-        self, mock_apps_get_model, mock_aap_flag_model_cls, mock_settings, mock_logger, mock_aap_feature_flags_constant, mocker
+        self, mock_apps_get_model, mock_aap_flag_model_cls, mock_settings, mock_logger, mock_feature_flags_list, mocker
     ):
         from ansible_base.feature_flags.utils import create_initial_data
 
         flag_def = {'name': 'ERROR_FLAG', 'condition': 'err_cond', 'ui_name': 'Error Flag'}
-        mock_aap_feature_flags_constant.extend([flag_def])
+        mock_feature_flags_list.return_value = [flag_def]
 
         mock_empty_queryset = MagicMock()
         mock_empty_queryset.first.return_value = None
@@ -302,12 +302,12 @@ class TestCreateInitialData:
 
     @pytest.mark.django_db
     def test_load_feature_flags_logs_other_validation_errors(
-        self, mock_apps_get_model, mock_aap_flag_model_cls, mock_settings, mock_logger, mock_aap_feature_flags_constant, mocker
+        self, mock_apps_get_model, mock_aap_flag_model_cls, mock_settings, mock_logger, mock_feature_flags_list, mocker
     ):
         from ansible_base.feature_flags.utils import create_initial_data
 
         flag_def = {'name': 'OTHER_ERROR_FLAG', 'condition': 'other_err_cond', 'ui_name': 'Other Error'}
-        mock_aap_feature_flags_constant.extend([flag_def])
+        mock_feature_flags_list.return_value = [flag_def]
 
         mock_empty_queryset = MagicMock()
         mock_empty_queryset.first.return_value = None
@@ -329,7 +329,7 @@ class TestCreateInitialData:
         mock_created_instance.save.assert_not_called()
 
     @pytest.mark.django_db
-    def test_delete_feature_flags_removes_obsolete_flag(self, mock_apps_get_model, mock_aap_flag_model_cls, mock_logger, mock_aap_feature_flags_constant):
+    def test_delete_feature_flags_removes_obsolete_flag(self, mock_apps_get_model, mock_aap_flag_model_cls, mock_logger, mock_feature_flags_list):
         from ansible_base.feature_flags.utils import create_initial_data
 
         obsolete_flag_in_db = MockAAPFlagInstance(name='OBSOLETE_FLAG', condition='obs_cond')
@@ -347,11 +347,11 @@ class TestCreateInitialData:
         mock_logger.info.assert_any_call(f"Deleting feature flag: {obsolete_flag_in_db.name} as it is no longer available as a platform flag")
 
     @pytest.mark.django_db
-    def test_delete_feature_flags_keeps_current_flag(self, mock_apps_get_model, mock_aap_flag_model_cls, mock_logger, mock_aap_feature_flags_constant):
+    def test_delete_feature_flags_keeps_current_flag(self, mock_apps_get_model, mock_aap_flag_model_cls, mock_logger, mock_feature_flags_list):
         from ansible_base.feature_flags.utils import create_initial_data
 
         current_flag_def = {'name': 'CURRENT_FLAG', 'condition': 'curr_cond', 'ui_name': 'Current'}
-        mock_aap_feature_flags_constant.extend([current_flag_def])
+        mock_feature_flags_list.return_value = [current_flag_def]
 
         current_flag_in_db = MockAAPFlagInstance(name='CURRENT_FLAG', condition='curr_cond')
 

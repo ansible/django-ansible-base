@@ -7,6 +7,6 @@ def test_feature_flags_state_api_list(admin_api_client: APIClient):
     """
     Test that we can list all feature flags
     """
-    url = get_relative_url("featureflags-list")
+    url = get_relative_url("feature-flags-state-list")
     response = admin_api_client.get(url)
     assert response.status_code == 200
