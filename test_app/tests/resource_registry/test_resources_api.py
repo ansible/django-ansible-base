@@ -51,6 +51,34 @@ def test_resources_delete(django_user_model):
     assert not Resource.objects.filter(name=user.username, object_id=user.pk, content_type=ContentType.objects.get_for_model(user).pk).exists()
 
 
+def test_resources_pagination(admin_api_client, django_user_model):
+    """Test that pagination does not cause missing or duplicated records."""
+    resources_url = get_relative_url("resource-list")
+    users_created = []
+    for i in range(110):
+        user = django_user_model.objects.create(username=f"resuser{i}")
+        users_created.append(user.username)
+
+    page_content = []
+    i = 0
+    while True:
+        i += 1
+        resp = admin_api_client.get(f"{resources_url}?page={i}")
+        if "results" in resp.data:
+            page_content.append(resp.data["results"])
+        else:
+            break
+
+    all_records = [x["name"] for y in page_content for x in y if x["resource_type"] == "shared.user" and x["name"].startswith('resuser')]
+    assert len(all_records) == len(users_created)
+    assert set(all_records) == set(users_created)
+
+    # Activitystream has ordering by id
+    activitystream_url = get_relative_url("activitystream-list")
+    activity = admin_api_client.get(activitystream_url)
+    assert int(activity.data["results"][-1]["id"]) + 1 == int(activity.data["results"][-2]["id"])
+
+
 def test_resources_delete_api(admin_api_client, django_user_model):
     """Test that resources can be correctly deleted via the API."""
     user = django_user_model.objects.create(username="foo")
