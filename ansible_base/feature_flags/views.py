@@ -1,16 +1,13 @@
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
-from flags.sources import get_flags
-from flags.state import flag_state
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.feature_flags.models import AAPFlag
-from ansible_base.feature_flags.serializers import OldFeatureFlagSerializer
+from ansible_base.feature_flags.serializers import FeatureFlagStatesSerializer, OldFeatureFlagSerializer
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.lib.utils.views.permissions import IsSuperuserOrAuditor, try_add_oauth2_scope_permission
-from ansible_base.rest_pagination import DefaultPaginator
 
 from .utils import get_django_flags
 
@@ -22,16 +19,8 @@ class FeatureFlagsStatesView(AnsibleBaseDjangoAppApiView, ModelViewSet):
 
     queryset = AAPFlag.objects.order_by('id')
     permission_classes = try_add_oauth2_scope_permission([IsSuperuserOrAuditor])
+    serializer_class = FeatureFlagStatesSerializer
     http_method_names = ['get', 'head', 'options']
-
-    def list(self, request):
-        paginator = DefaultPaginator()
-        flags = get_flags()
-        ret = []
-        for flag in flags:
-            ret.append({"flag_name": flag, "flag_state": flag_state(flag)})
-        result_page = paginator.paginate_queryset(ret, request)
-        return paginator.get_paginated_response(result_page)
 
 
 # TODO: This can be removed after functionality is migrated over to new class

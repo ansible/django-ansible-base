@@ -16,7 +16,7 @@ def get_django_flags():
 
 def feature_flags_list():
     current_dir = Path(__file__).parent
-    flags_list_file = current_dir / 'feature_flags.yaml'
+    flags_list_file = current_dir / 'definitions/feature_flags.yaml'
     with open(flags_list_file, 'r') as file:
         try:
             return yaml.safe_load(file)

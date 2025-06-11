@@ -37,11 +37,11 @@ def test_feature_flags_states_list(admin_api_client, flags_list):
 
     found_and_verified_flags_count = 0
     for flag_from_api in response.data['results']:
-        api_flag_name = flag_from_api.get('flag_name')
+        api_flag_name = flag_from_api.get('name')
         if api_flag_name in expected_flag_states:
             found_and_verified_flags_count += 1
             expected_value = expected_flag_states[api_flag_name]
-            actual_value = flag_from_api.get('flag_state')
+            actual_value = flag_from_api.get('state')
             assert actual_value == expected_value
 
     # Assert that all flags you intended to check were actually found in the API response and verified

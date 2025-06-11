@@ -1,7 +1,10 @@
+import json
 from unittest.mock import MagicMock, call
 
 import pytest
+import yaml
 from django.core.exceptions import ValidationError
+from jsonschema import validate
 
 MODULE_PATH = "ansible_base.feature_flags.utils"
 
@@ -117,6 +120,23 @@ def test_get_django_flags(mocker):
 
     mock_internal_get_flags.assert_called_once()
     assert result == {"FLAG_X": True}
+
+
+def test_validate_flags_yaml_against_json_schema():
+    feature_flags_yaml = 'ansible_base/feature_flags/definitions/feature_flags.yaml'
+    feature_flags_schema = 'ansible_base/feature_flags/definitions/schema.json'
+    try:
+        with open(feature_flags_yaml, 'r') as file:
+            feature_flags_file = yaml.safe_load(file)
+        with open(feature_flags_schema, 'r') as file:
+            schema = json.load(file)
+        validate(instance=feature_flags_file, schema=schema)
+        assert True, "Validation succeeded as expected."
+    except FileNotFoundError as e:
+        pytest.fail(f"Could not find a necessary file: {e}. Make sure schema.json and valid_data.yaml exist.")
+    except Exception as e:
+        # If any other exception occurs (like a ValidationError), fail the test.
+        pytest.fail(f"Validation failed unexpectedly for a valid file: {e}")
 
 
 class TestCreateInitialData:
