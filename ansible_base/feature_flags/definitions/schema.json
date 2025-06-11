@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Feature Flag Configuration Schema",
+  "description": "Validates a list of feature flag configurations.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "description": "The unique identifier for the feature flag. Must be in all capitals and start with 'FEATURE_' and end with '_ENABLED'",
+        "type": "string",
+        "pattern": "^FEATURE_[A-Z0-9_]+_ENABLED$"
+      },
+      "ui_name": {
+        "description": "The human-readable name for the feature flag displayed in the UI.",
+        "type": "string",
+        "minLength": 1
+      },
+      "visibility": {
+        "description": "Controls whether the feature is visible in the UI.",
+        "type": "string",
+        "enum": ["public", "private"]
+      },
+      "condition": {
+        "description": "The type of condition for the feature flag's value. Currently only boolean is supported.",
+        "type": "string",
+        "enum": ["boolean"]
+      },
+      "value": {
+        "description": "The default value of the feature flag, as a string.",
+        "type": "string",
+        "enum": ["True", "False"]
+      },
+      "support_level": {
+        "description": "The level of support provided for this feature.",
+        "type": "string",
+        "enum": [
+          "NOT_FOR_USE",
+          "NOT_FOR_PRODUCTION",
+          "READY_FOR_PRODUCTION"
+        ]
+      },
+      "description": {
+        "description": "A brief explanation of what the feature does.",
+        "type": "string"
+      },
+      "support_url": {
+        "description": "A URL to the relevant documentation for the feature.",
+        "type": "string",
+        "format": "uri"
+      },
+      "toggle_type": {
+        "description": "The actual value of the feature flag. Note: The YAML string 'False' or 'True' is parsed as a boolean.",
+        "type": "string",
+        "enum": ["install-time", "run-time"]
+      },
+      "labels": {
+        "description": "A list of labels to categorize the feature.",
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": ["controller", "eda", "gateway", "platform"]
+        },
+        "minItems": 1,
+        "uniqueItems": true
+      }
+    },
+    "required": [
+      "name",
+      "ui_name",
+      "visibility",
+      "condition",
+      "value",
+      "support_level",
+      "description",
+      "support_url"
+    ]
+  }
+}

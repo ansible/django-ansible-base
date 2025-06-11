@@ -1,9 +1,28 @@
 from flags.state import flag_state
+from rest_framework import serializers
 
 from ansible_base.feature_flags.models import AAPFlag
 from ansible_base.lib.serializers.common import NamedCommonModelSerializer
 
 from .utils import get_django_flags
+
+
+class FeatureFlagStatesSerializer(NamedCommonModelSerializer):
+    """Serialize list of feature flags"""
+
+    state = serializers.SerializerMethodField()
+
+    def get_state(self, instance):
+        return flag_state(instance.name)
+
+    class Meta:
+        model = AAPFlag
+        fields = ["name", "state"]
+
+    def to_representation(self, instance=None) -> dict:
+        instance.state = True
+        ret = super().to_representation(instance)
+        return ret
 
 
 # TODO: Remove once all components are migrated to the new endpont.
