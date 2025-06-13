@@ -1,4 +1,6 @@
 from django.utils.translation import gettext_lazy as _
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiExample, extend_schema
 from rest_framework.response import Response
 
 from ansible_base.feature_flags.serializers import FeatureFlagSerializer
@@ -7,6 +9,7 @@ from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from .utils import get_django_flags
 
 
+@extend_schema(request=None, responses=OpenApiTypes.OBJECT, examples=[OpenApiExample(name="featureflags", value={"FLAG1": True, "FLAG2": False})])
 class FeatureFlagsStateListView(AnsibleBaseView):
     """
     A view class for displaying feature flags
