@@ -1,7 +1,5 @@
+from django.conf import settings
 from django.utils.translation import gettext_lazy as _
-from drf_spectacular.extensions import OpenApiViewExtension
-from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import OpenApiExample, extend_schema
 from rest_framework.response import Response
 
 from ansible_base.feature_flags.serializers import FeatureFlagSerializer
@@ -20,22 +18,23 @@ class FeatureFlagsStateListView(AnsibleBaseView):
     name = _('Feature Flags')
     http_method_names = ['get', 'head']
 
-    def get(self, request, format=None):
+    def _get(self, request, format=None):
         self.serializer = FeatureFlagSerializer()
         return Response(self.serializer.to_representation())
 
     def get_queryset(self):
         return get_django_flags()
 
+    # Conditionally add openapi documentation for feature flags
+    if 'ansible_base.api_documentation' in settings.INSTALLED_APPS:
+        from drf_spectacular.types import OpenApiTypes
+        from drf_spectacular.utils import OpenApiExample, extend_schema
 
-# Apply documentation definition for openapi (loaded if needed)
-class FeatureFlagsStateListViewAddDocs(OpenApiViewExtension):
-    target_class = FeatureFlagsStateListView
+        @extend_schema(request=None, responses=OpenApiTypes.OBJECT, examples=[OpenApiExample(name="featureflags", value={"FLAG1": True, "FLAG2": False})])
+        def get(self, request, format=None):
+            return self._get(request, format)
 
-    def view_replacement(self):
-        class FeatureFlagsStateListDocumentedView(self.target_class):
-            @extend_schema(request=None, responses=OpenApiTypes.OBJECT, examples=[OpenApiExample(name="featureflags", value={"FLAG1": True, "FLAG2": False})])
-            def get(self, request, format=None):
-                return super.get(request, format=None)
+    else:
 
-        return FeatureFlagsStateListDocumentedView
+        def get(self, request, format=None):
+            return self._get(request, format)
