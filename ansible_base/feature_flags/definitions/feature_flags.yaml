@@ -1,61 +1,52 @@
 - name: FEATURE_INDIRECT_NODE_COUNTING_ENABLED
   ui_name: Indirect Node Counting
-  visibility: public
+  visibility: True
   condition: boolean
   value: 'False'
-  support_level: NOT_FOR_PRODUCTION
-  description: TBD
-  support_url: https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.5/
-  labels:
-    - controller
-- name: FEATURE_POLICY_AS_CODE_ENABLED
-  ui_name: Policy as Code
-  visibility: public
-  condition: boolean
-  value: 'False'
-  support_level: NOT_FOR_PRODUCTION
+  support_level: TECHNICAL_PREVIEW
   description: TBD
   support_url: https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.5/
   labels:
     - controller
 - name: FEATURE_EDA_ANALYTICS_ENABLED
   ui_name: Event-Driven Ansible Analytics
-  visibility: public
+  visibility: True
   condition: boolean
   value: 'False'
-  support_level: NOT_FOR_PRODUCTION
-  description: TBD
-  support_url: https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.5/
+  support_level: TECHNICAL_PREVIEW
+  description: Submit Event-Driven Ansible usage analytics to console.redhat.com
+  support_url: https://access.redhat.com/solutions/7112810
   labels:
     - eda
 - name: FEATURE_GATEWAY_IPV6_USAGE_ENABLED
-  ui_name: Gateway IPv6 Usage
-  visibility: private
+  ui_name: Gateway IPv6 Enablement
+  visibility: False
   condition: boolean
   value: 'False'
-  support_level: NOT_FOR_PRODUCTION
-  description: TBD
-  support_url: https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.5/
+  support_level: TECHNICAL_PREVIEW
+  description: The feature flag represents enabling IPv6 only traffic to be allowed through the gateway component and does not include all components of the platform.
+  support_url: https://access.redhat.com/articles/7116569
   labels:
     - gateway
 - name: FEATURE_GATEWAY_CREATE_CRC_SERVICE_TYPE_ENABLED
-  ui_name: Gateway Create CRC Service Type
-  visibility: private
+  ui_name: Dynamic Service Type Feature
+  visibility: False
   condition: boolean
   value: 'False'
-  support_level: NOT_FOR_PRODUCTION
-  description: TBD
-  support_url: https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.5/
+  support_level: DEVELOPER_PREVIEW
+  description: The Dynamic Service Type feature allows for the introduction of new platform services without requiring registration to the existing database. The new service can be enabled through the use of configuration.
+  support_url: https://access.redhat.com/articles/7122668
+  toggle_type: install-time
   labels:
     - gateway
 - name: FEATURE_DISPATCHERD_ENABLED
   ui_name: AAP Dispatcherd
-  visibility: private
+  visibility: True
   condition: boolean
   value: 'False'
-  support_level: NOT_FOR_PRODUCTION
-  description: TBD
-  support_url: https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.5/
+  support_level: DEVELOPER_PREVIEW
+  description: A service to run python tasks in subprocesses, designed specifically to work well with pg_notify, but intended to be extensible to other message delivery means.
+  support_url: ''
   labels:
     - eda
     - controller

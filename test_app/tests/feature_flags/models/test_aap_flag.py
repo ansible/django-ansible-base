@@ -1,5 +1,6 @@
 import pytest
 from django.conf import settings
+from flags.state import disable_flag, enable_flag, flag_state
 
 from ansible_base.feature_flags.models import AAPFlag
 from ansible_base.feature_flags.utils import feature_flags_list
@@ -7,7 +8,7 @@ from ansible_base.feature_flags.utils import feature_flags_list
 
 @pytest.mark.django_db
 def test_total_platform_flags(aap_flags):
-    assert AAPFlag.objects.count() == 6
+    assert AAPFlag.objects.count() == len(feature_flags_list())
 
 
 @pytest.mark.django_db
@@ -35,8 +36,6 @@ def test_feature_flags_from_db(aap_flags, feature_flag):
     "feature_flag, value",
     [
         ('FEATURE_INDIRECT_NODE_COUNTING_ENABLED', True),
-        ('FEATURE_POLICY_AS_CODE_ENABLED', True),
-        ('FEATURE_EDA_ANALYTICS_ENABLED', False),
         ('FEATURE_GATEWAY_IPV6_USAGE_ENABLED', False),
     ],
 )
@@ -48,3 +47,17 @@ def test_feature_flag_database_setting_override(feature_flag, value):
     create_initial_data()
     flag = AAPFlag.objects.get(name=feature_flag)
     assert flag.value == str(value)
+
+
+@pytest.mark.django_db
+def test_enable_and_disable_flag_functions(aap_flags):
+    flag_name = "FEATURE_INDIRECT_NODE_COUNTING_ENABLED"
+    # Assert Initial State
+    assert flag_state(flag_name) is False
+
+    # Ensure flag can be enabled via django-flags enable_flag function
+    enable_flag(flag_name)
+    assert flag_state(flag_name) is True
+    # Ensure flag can be disabled via django-flags enable_flag function
+    disable_flag(flag_name)
+    assert flag_state(flag_name) is False

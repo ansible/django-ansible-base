@@ -2,6 +2,7 @@ import pytest
 from django.conf import settings
 
 from ansible_base.feature_flags.models import AAPFlag
+from ansible_base.feature_flags.utils import feature_flags_list
 from ansible_base.lib.utils.response import get_relative_url
 
 
@@ -10,7 +11,7 @@ from ansible_base.lib.utils.response import get_relative_url
     [
         [
             {'name': 'FEATURE_INDIRECT_NODE_COUNTING_ENABLED', 'value': True},
-            {'name': 'FEATURE_POLICY_AS_CODE_ENABLED', 'value': True},
+            {'name': 'FEATURE_EDA_ANALYTICS_ENABLED', 'value': True},
         ],
         [
             {'name': 'FEATURE_GATEWAY_IPV6_USAGE_ENABLED', 'value': False},
@@ -33,7 +34,7 @@ def test_feature_flags_states_list(admin_api_client, flags_list):
     url = get_relative_url("aap_flags_states-list")
     response = admin_api_client.get(url)
     assert response.status_code == 200
-    assert len(response.data['results']) == 6
+    assert len(response.data['results']) == len(feature_flags_list())
 
     found_and_verified_flags_count = 0
     for flag_from_api in response.data['results']:
@@ -55,4 +56,4 @@ def test_old_feature_flags_list(admin_api_client, aap_flags):
     url = get_relative_url("feature-flags-state-list")
     response = admin_api_client.get(url)
     assert response.status_code == 200
-    assert len(response.data) == 6
+    assert len(response.data) == len(feature_flags_list())

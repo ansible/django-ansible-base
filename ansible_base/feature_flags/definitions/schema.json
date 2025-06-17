@@ -18,8 +18,7 @@
       },
       "visibility": {
         "description": "Controls whether the feature is visible in the UI.",
-        "type": "string",
-        "enum": ["public", "private"]
+        "type": "boolean"
       },
       "condition": {
         "description": "The type of condition for the feature flag's value. Currently only boolean is supported.",
@@ -35,9 +34,8 @@
         "description": "The level of support provided for this feature.",
         "type": "string",
         "enum": [
-          "NOT_FOR_USE",
-          "NOT_FOR_PRODUCTION",
-          "READY_FOR_PRODUCTION"
+          "TECHNICAL_PREVIEW",
+          "DEVELOPER_PREVIEW"
         ]
       },
       "description": {

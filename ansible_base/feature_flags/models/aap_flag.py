@@ -47,16 +47,13 @@ class AAPFlag(NamedCommonModel):
     support_level = models.CharField(
         max_length=25,
         null=False,
-        help_text=_("The support criteria for the feature flag. Must be one of (NOT_FOR_USE, NOT_FOR_PRODUCTION, READY_FOR_PRODUCTION)."),
-        choices=(('NOT_FOR_USE', 'Not for use'), ('NOT_FOR_PRODUCTION', 'Not for production'), ('READY_FOR_PRODUCTION', 'Ready for production')),
+        help_text=_("The support criteria for the feature flag. Must be one of (DEVELOPER_PREVIEW or TECHNICAL_PREVIEW)."),
+        choices=(('DEVELOPER_PREVIEW', 'Developer Preview'), ('TECHNICAL_PREVIEW', 'Technical Preview')),
         blank=False,
     )
-    visibility = models.CharField(
-        max_length=20,
-        null=False,
-        choices=[('public', 'public'), ('private', 'private')],
-        help_text=_("The visibility level of the feature flag. If private, flag is hidden."),
-        blank=False,
+    visibility = models.BooleanField(
+        default=False,
+        help_text=_("The visibility of the feature flag. If false, flag is hidden."),
     )
     toggle_type = models.CharField(
         max_length=20,
