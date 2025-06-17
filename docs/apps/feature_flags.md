@@ -57,7 +57,7 @@ An example flag could resemble -
 ```yaml
 - name: FEATURE_FOO_ENABLED
   ui_name: Foo
-  visibility: public
+  visibility: True
   condition: boolean
   value: 'False'
   support_level: NOT_FOR_PRODUCTION
