@@ -224,7 +224,7 @@ class TestCreateInitialData:
         mock_constructed_flag = MockAAPFlagInstance()
         mock_aap_flag_model_cls.side_effect = [mock_constructed_flag]
 
-        mock_aap_flag_model_cls.objects.all.return_value = []  # For delete_feature_flags
+        mock_aap_flag_model_cls.objects.all.return_value = []  # For purge_feature_flags
 
         create_initial_data()
 
@@ -349,7 +349,7 @@ class TestCreateInitialData:
         mock_created_instance.save.assert_not_called()
 
     @pytest.mark.django_db
-    def test_delete_feature_flags_removes_obsolete_flag(self, mock_apps_get_model, mock_aap_flag_model_cls, mock_logger, mock_feature_flags_list):
+    def test_purge_feature_flags_removes_obsolete_flag(self, mock_apps_get_model, mock_aap_flag_model_cls, mock_logger, mock_feature_flags_list):
         from ansible_base.feature_flags.utils import create_initial_data
 
         obsolete_flag_in_db = MockAAPFlagInstance(name='OBSOLETE_FLAG', condition='obs_cond')
@@ -367,7 +367,7 @@ class TestCreateInitialData:
         mock_logger.info.assert_any_call(f"Deleting feature flag: {obsolete_flag_in_db.name} as it is no longer available as a platform flag")
 
     @pytest.mark.django_db
-    def test_delete_feature_flags_keeps_current_flag(self, mock_apps_get_model, mock_aap_flag_model_cls, mock_logger, mock_feature_flags_list):
+    def test_purge_feature_flags_keeps_current_flag(self, mock_apps_get_model, mock_aap_flag_model_cls, mock_logger, mock_feature_flags_list):
         from ansible_base.feature_flags.utils import create_initial_data
 
         current_flag_def = {'name': 'CURRENT_FLAG', 'condition': 'curr_cond', 'ui_name': 'Current'}
@@ -396,7 +396,7 @@ class TestCreateInitialData:
         from ansible_base.feature_flags.utils import create_initial_data
 
         # Mock the inner functions directly to check call order
-        mock_delete = mocker.patch(f"{MODULE_PATH}.delete_feature_flags")
+        mock_delete = mocker.patch(f"{MODULE_PATH}.purge_feature_flags")
         mock_load = mocker.patch(f"{MODULE_PATH}.load_feature_flags")
 
         manager = MagicMock()

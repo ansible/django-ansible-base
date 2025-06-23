@@ -47,8 +47,8 @@ class AAPFlag(NamedCommonModel):
     support_level = models.CharField(
         max_length=25,
         null=False,
-        help_text=_("The support criteria for the feature flag. Must be one of (DEVELOPER_PREVIEW or TECHNICAL_PREVIEW)."),
-        choices=(('DEVELOPER_PREVIEW', 'Developer Preview'), ('TECHNICAL_PREVIEW', 'Technical Preview')),
+        help_text=_("The support criteria for the feature flag. Must be one of (DEVELOPER_PREVIEW or TECHNOLOGY_PREVIEW)."),
+        choices=(('DEVELOPER_PREVIEW', 'Developer Preview'), ('TECHNOLOGY_PREVIEW', 'Technology Preview')),
         blank=False,
     )
     visibility = models.BooleanField(

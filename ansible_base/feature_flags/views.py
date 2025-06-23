@@ -14,7 +14,9 @@ from .utils import get_django_flags
 
 class FeatureFlagsStatesView(AnsibleBaseDjangoAppApiView, ModelViewSet):
     """
-    A view class for displaying feature flags states
+    A view class for displaying feature flags states.
+    To add/update/remove a feature flag, see the instructions in
+    `docs/apps/feature_flags.md`
     """
 
     queryset = AAPFlag.objects.order_by('id')
