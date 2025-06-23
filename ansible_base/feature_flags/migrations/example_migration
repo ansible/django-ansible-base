@@ -1,0 +1,21 @@
+### INSTRUCTIONS ###
+# If updating the feature_flags.yaml, create a new migration file by copying this one.
+# 1. Name the file XXXX_manual_YYYYMMDD.py. For example 0002_manual_20250808.py
+# 1. Uncomment the migration below, by uncommenting everything below the FileHash
+# 2. Update the dependency to point to the last dependency
+# 3. Set the FileHash
+###
+
+# FileHash: <FileHash>
+
+# from django.db import migrations
+
+
+# class Migration(migrations.Migration):
+
+#     dependencies = [
+#         ('dab_feature_flags', '0001_initial'),
+#     ]
+
+#     operations = [
+#     ]

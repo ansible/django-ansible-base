@@ -34,7 +34,7 @@
         "description": "The level of support provided for this feature.",
         "type": "string",
         "enum": [
-          "TECHNICAL_PREVIEW",
+          "TECHNOLOGY_PREVIEW",
           "DEVELOPER_PREVIEW"
         ]
       },

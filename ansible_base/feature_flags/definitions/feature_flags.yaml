@@ -3,19 +3,20 @@
   visibility: True
   condition: boolean
   value: 'False'
-  support_level: TECHNICAL_PREVIEW
-  description: TBD
-  support_url: https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.5/
+  support_level: TECHNOLOGY_PREVIEW
+  description: "Indirect Node Counting parses the event stream of all jobs to identify resources and stores these in the platform database. Example: Job automates VMware, the parser will report back the VMs, Hypervisors that were automated. This feature helps customers and partners report on the automations they are doing beyond an API endpoint."
+  support_url: https://access.redhat.com/articles/7109910
   labels:
     - controller
 - name: FEATURE_EDA_ANALYTICS_ENABLED
   ui_name: Event-Driven Ansible Analytics
-  visibility: True
+  visibility: False
   condition: boolean
   value: 'False'
-  support_level: TECHNICAL_PREVIEW
-  description: Submit Event-Driven Ansible usage analytics to console.redhat.com
+  support_level: TECHNOLOGY_PREVIEW
+  description: Submit Event-Driven Ansible usage analytics to console.redhat.com.
   support_url: https://access.redhat.com/solutions/7112810
+  toggle_type: install-time
   labels:
     - eda
 - name: FEATURE_GATEWAY_IPV6_USAGE_ENABLED
@@ -23,7 +24,7 @@
   visibility: False
   condition: boolean
   value: 'False'
-  support_level: TECHNICAL_PREVIEW
+  support_level: TECHNOLOGY_PREVIEW
   description: The feature flag represents enabling IPv6 only traffic to be allowed through the gateway component and does not include all components of the platform.
   support_url: https://access.redhat.com/articles/7116569
   labels:
@@ -40,13 +41,14 @@
   labels:
     - gateway
 - name: FEATURE_DISPATCHERD_ENABLED
-  ui_name: AAP Dispatcherd
-  visibility: True
+  ui_name: AAP Dispatcherd background tasking system
+  visibility: False
   condition: boolean
   value: 'False'
-  support_level: DEVELOPER_PREVIEW
+  support_level: TECHNOLOGY_PREVIEW
   description: A service to run python tasks in subprocesses, designed specifically to work well with pg_notify, but intended to be extensible to other message delivery means.
   support_url: ''
+  toggle_type: install-time
   labels:
     - eda
     - controller

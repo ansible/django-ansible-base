@@ -28,7 +28,7 @@ def create_initial_data(**kwargs):  # NOSONAR
     """
     Loads in platform feature flags when the server starts
     """
-    delete_feature_flags()
+    purge_feature_flags()
     load_feature_flags()
 
 
@@ -76,9 +76,9 @@ def load_feature_flags():
                 logger.error(error_msg)
 
 
-def delete_feature_flags():
+def purge_feature_flags():
     """
-    If a feature flag has been removed from the platform flags list, delete it from the database.
+    If a feature flag has been removed from the platform flags list, purge it from the database.
     """
     from ansible_base.resource_registry.signals.handlers import no_reverse_sync
 

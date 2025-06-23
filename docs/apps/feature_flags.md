@@ -18,7 +18,7 @@ INSTALLED_APPS = [
 ## Detail
 
 By adding the `ansible_base.feature_flags` app to your application, all Ansible Automation Platform feature flags will be loaded and available in your component.
-To receive flag state updates, ensure the following definition is available in your components `RESOURCE_LIST` - 
+To receive flag state updates, ensure the following definition is available in your components `RESOURCE_LIST` -
 
 ```python
 from ansible_base.feature_flags.models import AAPFlag
@@ -48,9 +48,9 @@ urlpatterns = [
 ]
 ```
 
-## Adding Feature Flags
+## Adding/updating/removing feature flags
 
-To add a feature flag to the platform, specify it in the following [file](../../ansible_base/feature_flags/definitions/feature_flags.yaml)
+To add/update/remove a feature flag to the platform, ensure its configuration is specified correctly it in the following [file](../../ansible_base/feature_flags/definitions/feature_flags.yaml)
 
 An example flag could resemble -
 
@@ -73,3 +73,11 @@ Validate this file against the json schema by running `check-jsonschema` -
 pip install check-jsonschema
 check-jsonschema --schemafile ansible_base/feature_flags/definitions/schema.json ansible_base/feature_flags/definitions/feature_flags.yaml
 ```
+
+After adding/updating/removing a feature flag, make a manual migration. This can be done by -
+
+1. Copying this [example-migration](../../ansible_base/feature_flags/migrations/example_migration).
+2. Name the file XXXX_manual_YYYYMMDD.py. For example 0002_manual_20250808.py
+3. Uncomment the migration, by uncommenting everything below the FileHash
+4. Update the dependency in the migration to point to the previous migration
+5. Set the **FileHash** in the migration file

@@ -11,7 +11,4 @@ class FeatureFlagsConfig(AppConfig):
     verbose_name = 'Feature Flags'
 
     def ready(self):
-        try:
-            create_initial_data()
-        except Exception:
-            post_migrate.connect(create_initial_data, sender=self)
+        post_migrate.connect(create_initial_data, sender=self)
