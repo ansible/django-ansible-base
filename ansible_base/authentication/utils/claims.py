@@ -222,6 +222,11 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, authentic
     """
     Looks at a maps trigger for an attribute and the users attributes and determines if the trigger is defined for this user.
     """
+
+    # Normalize user and trigger attribute keys (case insensitive compare)
+    attributes = {k.casefold(): v for k, v in attributes.items()}
+    trigger_condition = {k.casefold(): v for k, v in trigger_condition.items()}
+
     has_access = None
     join_condition = trigger_condition.get('join_condition', 'or')
     if join_condition not in TRIGGER_DEFINITION['attributes']['keys']['join_condition']['choices']:
@@ -265,6 +270,7 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, authentic
         for a_user_value in user_value:
             # We are going to do mostly string comparisons, so convert the attribute to a
             #  string just in case it came back as an int or something funky
+            # TODO Do we also want to normalize values??
             a_user_value = f"{a_user_value}"
 
             # Check for any of the valid conditions
