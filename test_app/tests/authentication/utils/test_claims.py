@@ -760,7 +760,7 @@ def test_update_user_claims_groups(user, local_authenticator_map):
     """
     Similar to above, but testing groups instead of attributes.
     """
-    local_authenticator_map.triggers = {"groups": {"has_or": ["foo"]}}
+    local_authenticator_map.triggers = {"groups": {"has_or": ["Foo"]}}
     local_authenticator_map.save()
     authenticator = local_authenticator_map.authenticator
     # Associate the authenticator with the user

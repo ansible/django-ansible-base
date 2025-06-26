@@ -181,24 +181,28 @@ def _add_rbac_role_mapping(has_permission, role_mapping, role, organization=None
 def process_groups(trigger_condition: dict, groups: list, authenticator_id: int) -> TriggerResult:
     """
     Looks at a maps trigger for a group and users groups and determines if the trigger is defined for this user.
+    Group DNs are compared case-insensitively.
     """
 
     invalid_conditions = set(trigger_condition.keys()) - set(TRIGGER_DEFINITION['groups']['keys'].keys())
     if invalid_conditions:
         logger.warning(f"The conditions {', '.join(invalid_conditions)} for groups in mapping {authenticator_id} are invalid and won't be processed")
 
-    set_of_user_groups = set(groups)
+    set_of_user_groups = set([group.casefold() for group in groups])
 
     if "has_or" in trigger_condition:
-        if set_of_user_groups.intersection(set(trigger_condition["has_or"])):
+        trigger_groups = set([group.casefold() for group in trigger_condition["has_or"]])
+        if set_of_user_groups.intersection(trigger_groups):
             return TriggerResult.ALLOW
 
     elif "has_and" in trigger_condition:
-        if set(trigger_condition["has_and"]).issubset(set_of_user_groups):
+        trigger_groups = set([group.casefold() for group in trigger_condition["has_and"]])
+        if trigger_groups.issubset(set_of_user_groups):
             return TriggerResult.ALLOW
 
     elif "has_not" in trigger_condition:
-        if not set(trigger_condition["has_not"]).intersection(set_of_user_groups):
+        trigger_groups = set([group.casefold() for group in trigger_condition["has_not"]])
+        if not trigger_groups.intersection(set_of_user_groups):
             return TriggerResult.ALLOW
 
     return TriggerResult.SKIP
@@ -221,6 +225,7 @@ def has_access_with_join(current_access: Optional[bool], new_access: bool, condi
 def process_user_attributes(trigger_condition: dict, attributes: dict, authenticator_id: int) -> TriggerResult:
     """
     Looks at a maps trigger for an attribute and the users attributes and determines if the trigger is defined for this user.
+    Attribute names are compared case-insensitively.
     """
 
     # Normalize user and trigger attribute keys (case insensitive compare)
@@ -270,8 +275,7 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, authentic
         for a_user_value in user_value:
             # We are going to do mostly string comparisons, so convert the attribute to a
             #  string just in case it came back as an int or something funky
-            # TODO Do we also want to normalize values??
-            a_user_value = f"{a_user_value}"
+            a_user_value = f"{a_user_value}".casefold()
 
             # Check for any of the valid conditions
             if "equals" in trigger_condition[attribute]:
