@@ -439,14 +439,14 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
             id="equals, negative",
         ),
         pytest.param(
-            {"email": {"matches": ".*@ex.*"}},
+            {"EMAIL": {"matches": ".*@ex.*"}},
             {"email": "foo@example.com"},
             claims.TriggerResult.ALLOW,
             id="matches, positive",
         ),
         pytest.param(
             {"email": {"matches": "^foo@.*"}},
-            {"email": "foo@example.com"},
+            {"EMAIL": "foo@example.com"},
             claims.TriggerResult.ALLOW,
             id="matches, start of line, positive",
         ),
@@ -463,8 +463,8 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
             id="matches, start of line, negative",
         ),
         pytest.param(
-            {"email": {"contains": "@example.com"}},
-            {"email": "foo@example.com"},
+            {"EmAiL": {"contains": "@example.com"}},
+            {"eMaIl": "foo@example.com"},
             claims.TriggerResult.ALLOW,
             id="contains, positive",
         ),
