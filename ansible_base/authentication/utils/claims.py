@@ -227,8 +227,6 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, authentic
     Looks at a maps trigger for an attribute and the users attributes and determines if the trigger is defined for this user.
     Attribute names are compared case-insensitively.
     """
-
-    # Normalize user and trigger attribute keys (case insensitive compare)
     attributes = {k.casefold(): v for k, v in attributes.items()}
     trigger_condition = {k.casefold(): v for k, v in trigger_condition.items()}
 
