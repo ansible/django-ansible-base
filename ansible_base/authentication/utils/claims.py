@@ -188,20 +188,20 @@ def process_groups(trigger_condition: dict, groups: list, authenticator_id: int)
     if invalid_conditions:
         logger.warning(f"The conditions {', '.join(invalid_conditions)} for groups in mapping {authenticator_id} are invalid and won't be processed")
 
-    set_of_user_groups = set([group.casefold() for group in groups])
+    set_of_user_groups = set([f"{group}".casefold() for group in groups])
 
     if "has_or" in trigger_condition:
-        trigger_groups = set([group.casefold() for group in trigger_condition["has_or"]])
+        trigger_groups = set([f"{group}".casefold() for group in trigger_condition["has_or"]])
         if set_of_user_groups.intersection(trigger_groups):
             return TriggerResult.ALLOW
 
     elif "has_and" in trigger_condition:
-        trigger_groups = set([group.casefold() for group in trigger_condition["has_and"]])
+        trigger_groups = set([f"{group}".casefold() for group in trigger_condition["has_and"]])
         if trigger_groups.issubset(set_of_user_groups):
             return TriggerResult.ALLOW
 
     elif "has_not" in trigger_condition:
-        trigger_groups = set([group.casefold() for group in trigger_condition["has_not"]])
+        trigger_groups = set([f"{group}".casefold() for group in trigger_condition["has_not"]])
         if not trigger_groups.intersection(set_of_user_groups):
             return TriggerResult.ALLOW
 
@@ -227,8 +227,8 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, authentic
     Looks at a maps trigger for an attribute and the users attributes and determines if the trigger is defined for this user.
     Attribute names are compared case-insensitively.
     """
-    attributes = {k.casefold(): v for k, v in attributes.items()}
-    trigger_condition = {k.casefold(): v for k, v in trigger_condition.items()}
+    attributes = {f"{k}".casefold(): v for k, v in attributes.items()}
+    trigger_condition = {f"{k}".casefold(): v for k, v in trigger_condition.items()}
 
     has_access = None
     join_condition = trigger_condition.get('join_condition', 'or')
