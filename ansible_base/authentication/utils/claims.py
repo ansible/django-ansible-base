@@ -178,12 +178,24 @@ def _add_rbac_role_mapping(has_permission, role_mapping, role, organization=None
             logger.warning(f"Role mapping is not possible, organization for team '{team}' is missing")
 
 
+def _lowercase_group_names(trigger_condition: dict) -> dict:
+    """
+    Lowercase all group names provided to trigger
+    """
+    ci_trigger_condition = {}
+    for operator, grouplist in trigger_condition.items():
+        ci_trigger_condition[operator] = [f"{group}".casefold() for group in grouplist]
+    return ci_trigger_condition
+
+
 def process_groups(trigger_condition: dict, groups: list, authenticator_id: int) -> TriggerResult:
     """
     Looks at a maps trigger for a group and users groups and determines if the trigger is defined for this user.
     Group DNs are compared case-insensitively.
     """
     user_groups = [f"{group}".casefold() for group in groups]
+    trigger_condition = _lowercase_group_names(trigger_condition)
+
     invalid_conditions = set(trigger_condition.keys()) - set(TRIGGER_DEFINITION['groups']['keys'].keys())
     if invalid_conditions:
         logger.warning(f"The conditions {', '.join(invalid_conditions)} for groups in mapping {authenticator_id} are invalid and won't be processed")
@@ -191,18 +203,15 @@ def process_groups(trigger_condition: dict, groups: list, authenticator_id: int)
     set_of_user_groups = set(user_groups)
 
     if "has_or" in trigger_condition:
-        trigger_groups = [f"{group}".casefold() for group in trigger_condition["has_or"]]
-        if set_of_user_groups.intersection(set(trigger_groups)):
+        if set_of_user_groups.intersection(set(trigger_condition["has_or"])):
             return TriggerResult.ALLOW
 
     elif "has_and" in trigger_condition:
-        trigger_groups = [f"{group}".casefold() for group in trigger_condition["has_and"]]
-        if set(trigger_groups).issubset(set_of_user_groups):
+        if set(trigger_condition["has_and"]).issubset(set_of_user_groups):
             return TriggerResult.ALLOW
 
     elif "has_not" in trigger_condition:
-        trigger_groups = [f"{group}".casefold() for group in trigger_condition["has_not"]]
-        if not set(trigger_groups).intersection(set_of_user_groups):
+        if not set(trigger_condition["has_not"]).intersection(set_of_user_groups):
             return TriggerResult.ALLOW
 
     return TriggerResult.SKIP
@@ -222,13 +231,33 @@ def has_access_with_join(current_access: Optional[bool], new_access: bool, condi
         return current_access and new_access
 
 
+def _lowercase_triggers(trigger_condition: dict) -> dict:
+    """
+    Lower case all keys (attribute names) and contained attribute values
+    """
+    ci_trigger_condition = {}
+    for attr, condition in trigger_condition.items():
+        if isinstance(condition, str):
+            updated_condition = condition.casefold()
+        elif isinstance(condition, dict):
+            if not condition:  # empty dict
+                updated_condition = {}
+            for operator, value in condition.items():
+                updated_condition = {operator: value.casefold()}
+        else:
+            updated_condition = condition
+
+        ci_trigger_condition[attr.casefold()] = updated_condition  # join_condition
+    return ci_trigger_condition
+
+
 def process_user_attributes(trigger_condition: dict, attributes: dict, authenticator_id: int) -> TriggerResult:
     """
     Looks at a maps trigger for an attribute and the users attributes and determines if the trigger is defined for this user.
     Attribute names are compared case-insensitively.
     """
     attributes = {f"{k}".casefold(): v for k, v in attributes.items()}
-    trigger_condition = {f"{k}".casefold(): v for k, v in trigger_condition.items()}
+    trigger_condition = _lowercase_triggers(trigger_condition)
 
     has_access = None
     join_condition = trigger_condition.get('join_condition', 'or')

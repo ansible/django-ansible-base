@@ -333,12 +333,12 @@ def test_create_claims_revoke(local_authenticator_map, process_function, trigger
     "trigger_condition, groups, has_access",
     [
         # has_or
-        ({"has_or": ["foo"]}, ["foo"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"]}, ["FOO"], claims.TriggerResult.ALLOW),
         ({"has_or": ["foo"]}, ["bar"], claims.TriggerResult.SKIP),
         ({"has_or": ["foo", "bar"]}, ["foo"], claims.TriggerResult.ALLOW),
         ({"has_or": ["foo", "bar"]}, ["bar"], claims.TriggerResult.ALLOW),
         ({"has_or": ["foo", "bar"]}, ["baz"], claims.TriggerResult.SKIP),
-        ({"has_or": ["foo", "bar"]}, ["foo", "bar"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo", "bar"]}, ["Foo", "Bar"], claims.TriggerResult.ALLOW),
         ({"has_or": ["foo", "bar"]}, ["foo", "baz"], claims.TriggerResult.ALLOW),
         ({"has_or": ["foo", "bar"]}, ["bar", "baz"], claims.TriggerResult.ALLOW),
         ({"has_or": ["foo"]}, ["baz", "foo", "qux"], claims.TriggerResult.ALLOW),
@@ -346,7 +346,7 @@ def test_create_claims_revoke(local_authenticator_map, process_function, trigger
         ({"has_and": ["foo"]}, ["foo"], claims.TriggerResult.ALLOW),
         ({"has_and": ["foo"]}, ["bar"], claims.TriggerResult.SKIP),
         ({"has_and": ["foo", "bar"]}, ["foo", "bar"], claims.TriggerResult.ALLOW),
-        ({"has_and": ["foo", "bar"]}, ["bar", "foo"], claims.TriggerResult.ALLOW),
+        ({"has_and": ["foo", "bar"]}, ["baR", "foO"], claims.TriggerResult.ALLOW),
         ({"has_and": ["foo", "bar"]}, ["foo"], claims.TriggerResult.SKIP),
         ({"has_and": ["foo", "bar"]}, ["bar"], claims.TriggerResult.SKIP),
         ({"has_and": ["foo", "bar"]}, ["baz"], claims.TriggerResult.SKIP),
@@ -464,7 +464,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
         ),
         pytest.param(
             {"EmAiL": {"contains": "@example.com"}},
-            {"eMaIl": "foo@example.com"},
+            {"eMaIl": "foo@example.COM"},
             claims.TriggerResult.ALLOW,
             id="contains, positive",
         ),
@@ -475,7 +475,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
             id="contains, negative",
         ),
         pytest.param(
-            {"email": {"ends_with": "@example.com"}},
+            {"email": {"ends_with": "@EXAMPLE.com"}},
             {"email": "foo@example.com"},
             claims.TriggerResult.ALLOW,
             id="ends_with, positive",
