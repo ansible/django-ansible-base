@@ -183,26 +183,26 @@ def process_groups(trigger_condition: dict, groups: list, authenticator_id: int)
     Looks at a maps trigger for a group and users groups and determines if the trigger is defined for this user.
     Group DNs are compared case-insensitively.
     """
-
+    user_groups = [f"{group}".casefold() for group in groups]
     invalid_conditions = set(trigger_condition.keys()) - set(TRIGGER_DEFINITION['groups']['keys'].keys())
     if invalid_conditions:
         logger.warning(f"The conditions {', '.join(invalid_conditions)} for groups in mapping {authenticator_id} are invalid and won't be processed")
 
-    set_of_user_groups = set([f"{group}".casefold() for group in groups])
+    set_of_user_groups = set(user_groups)
 
     if "has_or" in trigger_condition:
-        trigger_groups = set([f"{group}".casefold() for group in trigger_condition["has_or"]])
-        if set_of_user_groups.intersection(trigger_groups):
+        trigger_groups = [f"{group}".casefold() for group in trigger_condition["has_or"]]
+        if set_of_user_groups.intersection(set(trigger_groups)):
             return TriggerResult.ALLOW
 
     elif "has_and" in trigger_condition:
-        trigger_groups = set([f"{group}".casefold() for group in trigger_condition["has_and"]])
-        if trigger_groups.issubset(set_of_user_groups):
+        trigger_groups = [f"{group}".casefold() for group in trigger_condition["has_and"]]
+        if set(trigger_groups).issubset(set_of_user_groups):
             return TriggerResult.ALLOW
 
     elif "has_not" in trigger_condition:
-        trigger_groups = set([f"{group}".casefold() for group in trigger_condition["has_not"]])
-        if not trigger_groups.intersection(set_of_user_groups):
+        trigger_groups = [f"{group}".casefold() for group in trigger_condition["has_not"]]
+        if not set(trigger_groups).intersection(set_of_user_groups):
             return TriggerResult.ALLOW
 
     return TriggerResult.SKIP
