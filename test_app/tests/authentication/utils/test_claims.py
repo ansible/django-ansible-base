@@ -333,12 +333,12 @@ def test_create_claims_revoke(local_authenticator_map, process_function, trigger
     "trigger_condition, groups, has_access",
     [
         # has_or
-        ({"has_or": ["foo"]}, ["FOO"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"]}, ["foo"], claims.TriggerResult.ALLOW),
         ({"has_or": ["foo"]}, ["bar"], claims.TriggerResult.SKIP),
         ({"has_or": ["foo", "bar"]}, ["foo"], claims.TriggerResult.ALLOW),
         ({"has_or": ["foo", "bar"]}, ["bar"], claims.TriggerResult.ALLOW),
         ({"has_or": ["foo", "bar"]}, ["baz"], claims.TriggerResult.SKIP),
-        ({"has_or": ["foo", "bar"]}, ["Foo", "Bar"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo", "bar"]}, ["foo", "bar"], claims.TriggerResult.ALLOW),
         ({"has_or": ["foo", "bar"]}, ["foo", "baz"], claims.TriggerResult.ALLOW),
         ({"has_or": ["foo", "bar"]}, ["bar", "baz"], claims.TriggerResult.ALLOW),
         ({"has_or": ["foo"]}, ["baz", "foo", "qux"], claims.TriggerResult.ALLOW),
@@ -346,7 +346,7 @@ def test_create_claims_revoke(local_authenticator_map, process_function, trigger
         ({"has_and": ["foo"]}, ["foo"], claims.TriggerResult.ALLOW),
         ({"has_and": ["foo"]}, ["bar"], claims.TriggerResult.SKIP),
         ({"has_and": ["foo", "bar"]}, ["foo", "bar"], claims.TriggerResult.ALLOW),
-        ({"has_and": ["foo", "bar"]}, ["baR", "foO"], claims.TriggerResult.ALLOW),
+        ({"has_and": ["foo", "bar"]}, ["bar", "foo"], claims.TriggerResult.ALLOW),
         ({"has_and": ["foo", "bar"]}, ["foo"], claims.TriggerResult.SKIP),
         ({"has_and": ["foo", "bar"]}, ["bar"], claims.TriggerResult.SKIP),
         ({"has_and": ["foo", "bar"]}, ["baz"], claims.TriggerResult.SKIP),
@@ -386,6 +386,13 @@ def test_create_claims_revoke(local_authenticator_map, process_function, trigger
         # None of has_or, has_and, or has_not
         ({}, ["foo"], claims.TriggerResult.SKIP),
         ({"foo": "bar"}, ["foo"], claims.TriggerResult.SKIP),
+        # Case insensitivity
+        ({"has_or": ["FOO"]}, ["foo"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"]}, ["FOO"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["bAR"]}, ["foo", "bar"], claims.TriggerResult.ALLOW),
+        ({"has_and": ["fOo", "bAr"]}, ["foo", "bar"], claims.TriggerResult.ALLOW),
+        ({"has_not": ["FOO"]}, ["foo"], claims.TriggerResult.SKIP),
+        ({"has_and": ["fOo", "bAr"]}, ["foo", "BaZ"], claims.TriggerResult.SKIP),
     ],
 )
 def test_process_groups(trigger_condition, groups, has_access):
@@ -439,14 +446,14 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
             id="equals, negative",
         ),
         pytest.param(
-            {"EMAIL": {"matches": ".*@ex.*"}},
+            {"email": {"matches": ".*@ex.*"}},
             {"email": "foo@example.com"},
             claims.TriggerResult.ALLOW,
             id="matches, positive",
         ),
         pytest.param(
             {"email": {"matches": "^foo@.*"}},
-            {"EMAIL": "foo@example.com"},
+            {"email": "foo@example.com"},
             claims.TriggerResult.ALLOW,
             id="matches, start of line, positive",
         ),
@@ -463,8 +470,8 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
             id="matches, start of line, negative",
         ),
         pytest.param(
-            {"EmAiL": {"contains": "@example.com"}},
-            {"eMaIl": "foo@example.COM"},
+            {"email": {"contains": "@example.com"}},
+            {"email": "foo@example.com"},
             claims.TriggerResult.ALLOW,
             id="contains, positive",
         ),
@@ -475,7 +482,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
             id="contains, negative",
         ),
         pytest.param(
-            {"email": {"ends_with": "@EXAMPLE.com"}},
+            {"email": {"ends_with": "@example.com"}},
             {"email": "foo@example.com"},
             claims.TriggerResult.ALLOW,
             id="ends_with, positive",
@@ -725,6 +732,42 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
             claims.TriggerResult.SKIP,
             id="user attribute is string, condition equals, join condition or, negative",
         ),
+        pytest.param(
+            {"username": {"equals": "lowercase"}, "join_condition": "or"},
+            {"username": "LOWERCASE"},
+            claims.TriggerResult.ALLOW,
+            id="username attribute value case mismatch",
+        ),
+        pytest.param(
+            {"uSeRnAmE": {"equals": "bbelcher"}, "join_condition": "or"},
+            {"username": "bbelcher"},
+            claims.TriggerResult.ALLOW,
+            id="username attribute name/key case mismatch",
+        ),
+        pytest.param(
+            {"USERNAME": {"equals": "lowercase"}, "join_condition": "or"},
+            {"username": "LOWERCASE"},
+            claims.TriggerResult.ALLOW,
+            id="username attribute name/key and value case mismatch",
+        ),
+        pytest.param(
+            {"username": {"contains": "USER"}, "join_condition": "or"},
+            {"username": "myusername"},
+            claims.TriggerResult.ALLOW,
+            id="username attribute value case mismatch contains",
+        ),
+        pytest.param(
+            {"username": {"in": "BOB JOE JOHN TAMAR"}, "join_condition": "or"},
+            {"username": "tamar"},
+            claims.TriggerResult.ALLOW,
+            id="username attribute value case mismatch in",
+        ),
+        pytest.param(
+            {"email": {"matches": ".*@REDHAT.COM"}, "join_condition": "or"},
+            {"email": "fred@redhat.com"},
+            claims.TriggerResult.ALLOW,
+            id="email attribute value case mismatch matches",
+        ),
     ],
 )
 def test_process_user_attributes(trigger_condition, attributes, expected):
@@ -760,7 +803,7 @@ def test_update_user_claims_groups(user, local_authenticator_map):
     """
     Similar to above, but testing groups instead of attributes.
     """
-    local_authenticator_map.triggers = {"groups": {"has_or": ["Foo"]}}
+    local_authenticator_map.triggers = {"groups": {"has_or": ["foo"]}}
     local_authenticator_map.save()
     authenticator = local_authenticator_map.authenticator
     # Associate the authenticator with the user
