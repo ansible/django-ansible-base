@@ -120,6 +120,7 @@ class AuthenticatorPlugin(SocialAuthMixin, AbstractAuthenticatorPlugin, ModelBac
             if reply.valid:
                 user, _authenticator_user, _created = get_or_create_authenticator_user(
                     username,
+                    "",
                     self.database_instance,
                     user_details={},
                     extra_data={'username': username},

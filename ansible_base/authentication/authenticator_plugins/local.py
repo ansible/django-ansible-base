@@ -43,7 +43,7 @@ class AuthenticatorPlugin(ModelBackend, AbstractAuthenticatorPlugin):
             return None
 
         # Determine the user name for this authenticator, we have to call this so that we can "attach" to a pre-created user
-        new_username = determine_username_from_uid(username, self.database_instance)
+        new_username = determine_username_from_uid(username, "", self.database_instance)
         # However we can't really accept a different username because we are the local authenticator imageine if:
         #    User "a" is from another authenticator and has an AuthenticatorUser
         #    User "a" tried to login from local authenticator
@@ -59,6 +59,7 @@ class AuthenticatorPlugin(ModelBackend, AbstractAuthenticatorPlugin):
         if user:
             get_or_create_authenticator_user(
                 username,
+                user.email,
                 authenticator=self.database_instance,
                 user_details={},
                 extra_data={
