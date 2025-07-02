@@ -10,7 +10,8 @@
     "username": "theceo",
     "email": "theceo@seriouscompany.com",
     "first_name": "The",
-    "last_name": "CEO"
+    "last_name": "CEO",
+    "is_superuser": false
   },
   "url": "/api/server/v1/service-index/resources/97447387-8596-404f-b0d0-6429b04c8d22/"
 }
