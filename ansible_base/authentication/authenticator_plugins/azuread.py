@@ -45,6 +45,14 @@ class AzureADConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_("Groups Claim"),
     )
 
+    USERNAME_FIELD = CharField(
+        help_text=_("The name of the field from the assertion to use as the username. If not set will default to name"),
+        required=False,
+        allow_null=True,
+        default=None,
+        ui_field_label=_("Field to use as username"),
+    )
+
 
 class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, AzureADOAuth2, AbstractAuthenticatorPlugin):
     configuration_class = AzureADConfiguration
@@ -59,3 +67,14 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Azur
 
     def get_user_groups(self, extra_groups=[]):
         return extra_groups
+
+    def get_user_details(self, response):
+        """
+        Return user details from Azure AD account
+
+        This method is an override from social-core/social_core/backends/azuread.py
+        It allows us to control what the username is.
+        """
+        return_object = super().get_user_details(response)
+        return_object['username'] = response.get(self.setting("USERNAME_FIELD"), return_object['username'])
+        return return_object
