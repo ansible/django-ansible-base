@@ -838,6 +838,13 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
             claims.TriggerResult.ALLOW,
             id="email attribute value case mismatch matches",
         ),
+        pytest.param(
+            {"email": {}},
+            {"email": None},
+            True,
+            claims.TriggerResult.ALLOW,
+            id="user attribute is None, exists check still works, case sensitive, negative",
+        ),
     ],
 )
 @pytest.mark.django_db
