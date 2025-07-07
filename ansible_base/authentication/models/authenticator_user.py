@@ -42,6 +42,7 @@ class AuthenticatorUser(AbstractUserSocialAuth, AbstractCommonModel):
         on_delete=models.CASCADE,
         help_text=_("The local DB user related to this authenticator user."),
     )
+    email = models.EmailField(default=None, null=True, blank=True, help_text=_("The e-mail associated with this authenticator user."))
     # TODO: set self.authenticated based on the provider that is passed to this method.
     # the provider should be the name of the Authenticator model instance
     claims = models.JSONField(
