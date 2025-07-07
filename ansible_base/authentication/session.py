@@ -1,22 +1,7 @@
-from rest_framework import authentication, exceptions
+from django.conf import settings
+from rest_framework import authentication
 
-from ansible_base.authentication.middleware import (
-    AnsibleBaseCsrfViewMiddleware,
-)
-
-
-class AnsibleBaseCSRFCheck(AnsibleBaseCsrfViewMiddleware):
-    """
-    Custom CSRF check class that uses AnsibleBaseCsrfViewMiddleware
-    instead of Django's CsrfViewMiddleware for CSRF validation.
-
-    This ensures that CSRF_TRUSTED_ORIGINS is read using get_setting
-    instead of directly from Django settings.
-    """
-
-    def _reject(self, request, reason):
-        # Return the failure reason instead of an HttpResponse
-        return reason
+from ansible_base.lib.utils.settings import get_setting
 
 
 class SessionAuthentication(authentication.SessionAuthentication):
@@ -36,14 +21,11 @@ class SessionAuthentication(authentication.SessionAuthentication):
         Enforce CSRF validation for session based authentication using
         AnsibleBaseCsrfViewMiddleware instead of Django's CsrfViewMiddleware.
         """
-
-        def dummy_get_response(request):  # pragma: no cover
-            return None
-
-        check = AnsibleBaseCSRFCheck(dummy_get_response)
-        # populates request.META['CSRF_COOKIE'], which is used in process_view()
-        check.process_request(request)
-        reason = check.process_view(request, None, (), {})
-        if reason:
-            # CSRF failed, bail with explicit error message
-            raise exceptions.PermissionDenied('CSRF Failed: %s' % reason)
+        csrf_trusted_origins = settings.CSRF_TRUSTED_ORIGINS
+        try:
+            # Temporarily patch the setting
+            settings.CSRF_TRUSTED_ORIGINS = get_setting("CSRF_TRUSTED_ORIGINS", csrf_trusted_origins)
+            return super().enforce_csrf(request)
+        finally:
+            # Revert setting after this is done
+            settings.CSRF_TRUSTED_ORIGINS = csrf_trusted_origins

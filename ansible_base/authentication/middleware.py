@@ -1,16 +1,11 @@
 import logging
-from collections import defaultdict
-from urllib.parse import urlsplit
 
 from django.contrib.auth import BACKEND_SESSION_KEY
 from django.core.exceptions import ImproperlyConfigured
-from django.middleware.csrf import CsrfViewMiddleware
 from django.utils.deprecation import MiddlewareMixin
-from django.utils.functional import cached_property
 from social_django.middleware import SocialAuthExceptionMiddleware
 
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugins
-from ansible_base.lib.utils.settings import get_setting
 
 logger = logging.getLogger('ansible_base.authentication.middleware')
 
@@ -56,46 +51,3 @@ class SocialExceptionHandlerMiddleware(SocialAuthExceptionMiddleware):
         backend_name = getattr(backend, "name", "unknown-backend")
         logger.error(f"Auth failure for backend {backend_name} - {repr(exception)}, redirecting to {error_url}")
         return error_url
-
-
-class AnsibleBaseCsrfViewMiddleware(CsrfViewMiddleware):
-    """
-    CsrfViewMiddleware subclass that reads CSRF_TRUSTED_ORIGINS using
-    ansible_base.lib.utils.settings.get_setting instead of directly from
-    Django settings.
-
-    This allows the setting to be dynamically loaded from various sources
-    as configured by the ANSIBLE_BASE_SETTINGS_FUNCTION setting.
-
-    Overrides all cached properties that access settings.CSRF_TRUSTED_ORIGINS
-    to use get_setting instead.
-    """
-
-    @cached_property
-    def csrf_trusted_origins_hosts(self):
-        """
-        Override to use get_setting instead of settings.CSRF_TRUSTED_ORIGINS.
-        """
-        csrf_trusted_origins = get_setting('CSRF_TRUSTED_ORIGINS', [])
-        return [urlsplit(origin).netloc.lstrip("*") for origin in csrf_trusted_origins]
-
-    @cached_property
-    def allowed_origins_exact(self):
-        """
-        Override to use get_setting instead of settings.CSRF_TRUSTED_ORIGINS.
-        """
-        csrf_trusted_origins = get_setting('CSRF_TRUSTED_ORIGINS', [])
-        return {origin for origin in csrf_trusted_origins if "*" not in origin}
-
-    @cached_property
-    def allowed_origin_subdomains(self):
-        """
-        Override to use get_setting instead of settings.CSRF_TRUSTED_ORIGINS.
-        A mapping of allowed schemes to list of allowed netlocs, where all
-        subdomains of the netloc are allowed.
-        """
-        csrf_trusted_origins = get_setting('CSRF_TRUSTED_ORIGINS', [])
-        allowed_origin_subdomains = defaultdict(list)
-        for parsed in (urlsplit(origin) for origin in csrf_trusted_origins if "*" in origin):
-            allowed_origin_subdomains[parsed.scheme].append(parsed.netloc.lstrip("*"))
-        return allowed_origin_subdomains
