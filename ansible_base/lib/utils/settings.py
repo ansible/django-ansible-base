@@ -49,6 +49,24 @@ def get_function_from_setting(setting_name: str) -> Any:
         return None
 
 
+def replace_trusted_origins(func):
+    """Decorator for patching the CSRF_TRUSTED_ORIGINS django setting using the potentially different value in get_setting for the duration of a
+    function call
+    """
+
+    def override_setting(*args, **kwargs):
+        csrf_trusted_origins = settings.CSRF_TRUSTED_ORIGINS
+        try:
+            # Temporarily patch the setting
+            settings.CSRF_TRUSTED_ORIGINS = get_setting("CSRF_TRUSTED_ORIGINS", csrf_trusted_origins)
+            return func(*args, **kwargs)
+        finally:
+            # Revert setting after this is done
+            settings.CSRF_TRUSTED_ORIGINS = csrf_trusted_origins
+
+    return override_setting
+
+
 def get_from_import(module_name, attr):
     "Thin wrapper around importlib.import_module, mostly exists so that we can safely mock this in tests"
     module = importlib.import_module(module_name, package=attr)
