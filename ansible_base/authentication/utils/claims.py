@@ -179,7 +179,11 @@ def _add_rbac_role_mapping(has_permission, role_mapping, role, organization=None
             logger.warning(f"Role mapping is not possible, organization for team '{team}' is missing")
 
 
-def _lowercase_group_names(trigger_condition: dict) -> dict:
+def _is_case_insensitivity_enabled() -> bool:
+    return flag_enabled("FEATURE_CASE_INSENSITIVE_AUTH_MAPS")
+
+
+def _lowercase_group_triggers(trigger_condition: dict) -> dict:
     """
     Lowercase all group names provided to trigger
     """
@@ -194,9 +198,9 @@ def process_groups(trigger_condition: dict, groups: list, authenticator_id: int)
     Looks at a maps trigger for a group and users groups and determines if the trigger is defined for this user.
     Group DNs are compared case-insensitively when FEATURE_CASE_INSENSITIVE_AUTH_MAPS enabled.
     """
-    if flag_enabled("FEATURE_CASE_INSENSITIVE_AUTH_MAPS"):
+    if _is_case_insensitivity_enabled():
         groups = [f"{group}".casefold() for group in groups]
-        trigger_condition = _lowercase_group_names(trigger_condition)
+        trigger_condition = _lowercase_group_triggers(trigger_condition)
 
     invalid_conditions = set(trigger_condition.keys()) - set(TRIGGER_DEFINITION['groups']['keys'].keys())
     if invalid_conditions:
@@ -233,7 +237,7 @@ def has_access_with_join(current_access: Optional[bool], new_access: bool, condi
         return current_access and new_access
 
 
-def _lowercase_triggers(trigger_condition: dict) -> dict:
+def _lowercase_attr_triggers(trigger_condition: dict) -> dict:
     """
     Lower case all keys (attribute names) and contained attribute values
     """
@@ -258,9 +262,9 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, authentic
     Looks at a maps trigger for an attribute and the users attributes and determines if the trigger is defined for this user.
     Attribute names are compared case-insensitively.
     """
-    if flag_enabled("FEATURE_CASE_INSENSITIVE_AUTH_MAPS"):
+    if _is_case_insensitivity_enabled():
         attributes = {f"{k}".casefold(): v for k, v in attributes.items()}
-        trigger_condition = _lowercase_triggers(trigger_condition)
+        trigger_condition = _lowercase_attr_triggers(trigger_condition)
 
     has_access = None
     join_condition = trigger_condition.get('join_condition', 'or')
@@ -305,7 +309,7 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, authentic
         for a_user_value in user_value:
             # We are going to do mostly string comparisons, so convert the attribute to a
             #  string just in case it came back as an int or something funky
-            a_user_value = f"{a_user_value}".casefold() if flag_enabled("FEATURE_CASE_INSENSITIVE_AUTH_MAPS") else f"{a_user_value}"
+            a_user_value = f"{a_user_value}".casefold() if _is_case_insensitivity_enabled() else f"{a_user_value}"
 
             # Check for any of the valid conditions
             if "equals" in trigger_condition[attribute]:
