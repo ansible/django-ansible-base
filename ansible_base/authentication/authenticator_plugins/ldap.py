@@ -27,6 +27,7 @@ _MUST_BE_AN_ARRAY_MESSAGE_TRANSLATED = _(_MUST_BE_AN_ARRAY_MESSAGE)
 
 
 user_search_string = '%(user)s'
+default_connection_options = {'OPT_REFERRALS': 0, 'OPT_NETWORK_TIMEOUT': 30}
 
 
 class PosixUIDGroupType(LDAPGroupType):
@@ -309,7 +310,7 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
             'https://www.python-ldap.org/doc/html/ldap.html#options for '
             'possible options and values that can be set.'
         ),
-        default={'OPT_REFERRALS': 0},
+        default=default_connection_options,
         allow_null=False,
         required=False,
         ui_field_label=_('LDAP Connection Options'),
@@ -434,7 +435,7 @@ class LDAPSettings(BaseLDAPSettings):
         setattr(self, 'SERVER_URI', ','.join(defaults['SERVER_URI']))
 
         # Connection options need to be set as {"integer": "value"} but our configuration has {"friendly_name": "value"} so we need to convert them
-        connection_options = defaults.get('CONNECTION_OPTIONS', {})
+        connection_options = defaults.get('CONNECTION_OPTIONS', default_connection_options)
         valid_options = dict([(v, k) for k, v in ldap.OPT_NAMES_DICT.items()])
         internal_data = {}
         for key in connection_options:
