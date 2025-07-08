@@ -771,3 +771,15 @@ def test_is_member_missing_uid(group_type, ldap_user):
     ldap_user.attrs = {"gidNumber": ["1000"]}
     result = group_type.is_member(ldap_user, "cn=group,dc=example,dc=com")
     assert result is False
+
+
+def test_ldap_config_defaults():
+    from ansible_base.authentication.authenticator_plugins.ldap import LDAPConfiguration, default_connection_options
+
+    config = LDAPConfiguration()
+    errors = []
+    if config['START_TLS'].default is not False:
+        errors.append(f"START_TLS did not default to false, got {config.defaults['START_TLS']}")
+    if config['CONNECTION_OPTIONS'].default != default_connection_options:
+        errors.append(f"CONNECTION_OPTIONS did not default to {default_connection_options}, got {config['CONNECTION_OPTIONS'].default}")
+    assert errors == []
