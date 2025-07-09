@@ -1,7 +1,6 @@
 import inspect
 import logging
 import re
-import sys
 from collections import OrderedDict
 from typing import Any
 
@@ -32,7 +31,7 @@ user_search_string = '%(user)s'
 
 class PosixUIDGroupType(LDAPGroupType):
     """
-    An LDAPGroupType subclass that handles non-standard DS.
+    An LDAPGroupType subclass that handles non-standard Directory Servers.
     """
 
     def __init__(self, name_attr='cn', ldap_group_user_attr='uid'):
@@ -598,9 +597,6 @@ def find_class_in_modules(class_name: str) -> object:
     """
     Used to find ldap subclasses by string
     """
-    module_search_space = [config, sys.modules[__name__]]
-    for m in module_search_space:
-        cls = getattr(m, class_name, None)
-        if cls:
-            return cls
-    return None
+    if class_name == "PosixUIDGroupType":
+        return PosixUIDGroupType
+    return getattr(config, class_name, None)
