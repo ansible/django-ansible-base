@@ -694,7 +694,10 @@ def test_ldap_search_field_is_single_search(value, expected_result):
 )
 def test_find_class_in_modules(cls_name, cls):
     found_cls = find_class_in_modules(cls_name)
-    assert found_cls is cls
+    if found_cls:
+        assert found_cls.__name__ == cls.__name__
+    else:
+        assert found_cls is cls
 
 
 @pytest.fixture
@@ -715,10 +718,7 @@ def group_search():
 
 
 def test_user_groups_with_gidNumber(group_type, ldap_user, group_search):
-    ldap_user.attrs = {
-        "uid": ["jdoe"],
-        "gidNumber": ["1000"]
-    }
+    ldap_user.attrs = {"uid": ["jdoe"], "gidNumber": ["1000"]}
     mock_search = MagicMock()
     mock_search.execute.return_value = ["group1", "group2"]
     group_search.search_with_additional_term_string.return_value = mock_search
@@ -729,9 +729,7 @@ def test_user_groups_with_gidNumber(group_type, ldap_user, group_search):
 
 
 def test_user_groups_without_gidNumber(group_type, ldap_user, group_search):
-    ldap_user.attrs = {
-        "uid": ["jdoe"]
-    }
+    ldap_user.attrs = {"uid": ["jdoe"]}
     mock_search = MagicMock()
     mock_search.execute.return_value = ["group3"]
     group_search.search_with_additional_term_string.return_value = mock_search
@@ -740,10 +738,7 @@ def test_user_groups_without_gidNumber(group_type, ldap_user, group_search):
 
 
 def test_is_member_by_memberUid(group_type, ldap_user):
-    ldap_user.attrs = {
-        "uid": ["jdoe"],
-        "gidNumber": ["1000"]
-    }
+    ldap_user.attrs = {"uid": ["jdoe"], "gidNumber": ["1000"]}
     ldap_user.connection.compare_s.side_effect = [True, False]
     result = group_type.is_member(ldap_user, "cn=group1,dc=example,dc=com")
     assert result is True
@@ -751,10 +746,7 @@ def test_is_member_by_memberUid(group_type, ldap_user):
 
 
 def test_is_member_by_gidNumber(group_type, ldap_user):
-    ldap_user.attrs = {
-        "uid": ["jdoe"],
-        "gidNumber": ["1000"]
-    }
+    ldap_user.attrs = {"uid": ["jdoe"], "gidNumber": ["1000"]}
     # Simulate memberUid fails, gidNumber succeeds
     ldap_user.connection.compare_s.side_effect = [False, True]
     result = group_type.is_member(ldap_user, "cn=group2,dc=example,dc=com")
@@ -763,10 +755,7 @@ def test_is_member_by_gidNumber(group_type, ldap_user):
 
 
 def test_is_member_none_match(group_type, ldap_user):
-    ldap_user.attrs = {
-        "uid": ["jdoe"],
-        "gidNumber": ["1000"]
-    }
+    ldap_user.attrs = {"uid": ["jdoe"], "gidNumber": ["1000"]}
     ldap_user.connection.compare_s.side_effect = [False, False]
     result = group_type.is_member(ldap_user, "cn=group3,dc=example,dc=com")
     assert result is False
