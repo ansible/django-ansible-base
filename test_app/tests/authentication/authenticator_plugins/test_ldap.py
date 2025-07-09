@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 import ldap
 import pytest
+from django_auth_ldap import config
 from rest_framework.serializers import ValidationError
 from typeguard import suppress_type_checks
 
@@ -12,6 +13,8 @@ from ansible_base.authentication.authenticator_plugins.ldap import (
     AuthenticatorPlugin,
     LDAPSearchField,
     LDAPSettings,
+    PosixUIDGroupType,
+    find_class_in_modules,
     validate_ldap_filter,
 )
 from ansible_base.authentication.models import Authenticator
@@ -683,3 +686,12 @@ def test_ldap_user_search_validation(
 )
 def test_ldap_search_field_is_single_search(value, expected_result):
     assert LDAPSearchField.is_single_search(value) is expected_result
+
+
+@pytest.mark.parametrize(
+    "cls_name,cls",
+    [("PosixGroupType", config.PosixGroupType), ("PosixUIDGroupType", PosixUIDGroupType), ("NonExistentClass", None)],
+)
+def test_find_class_in_modules(cls_name, cls):
+    found_cls = find_class_in_modules(cls_name)
+    assert found_cls is cls
