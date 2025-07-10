@@ -126,3 +126,40 @@ class TestAuthenticatorMapSerializerRole:
             )
         except ValidationError as e:
             pytest.fail(f"Validation should pass, but: {str(e)}")
+
+
+@pytest.mark.django_db
+class TestAuthenticatorMapEscapeSequence:
+    @pytest.fixture(autouse=True)
+    def init_serializer(self, serializer):
+        serializer.validate_trigger_data = MagicMock(return_value={})
+        serializer._is_rbac_installed = MagicMock(return_value=True)
+
+    @pytest.mark.parametrize(
+        "role,organization,team",
+        [
+            (TEAM_MEMBER_ROLE_NAME, "asdf", "1234"),
+            ("Team {% for_attr_value(a) %}", "asdf", "1234"),
+            (TEAM_MEMBER_ROLE_NAME, "Organization {% for_attr_value(member_of) %}", "1234"),
+            (TEAM_MEMBER_ROLE_NAME, "asdf", "{% for_attr_value(member_of) %} Team"),
+        ],
+    )
+    def test_validate_expansion_fields(self, serializer, member_rd, role, organization, team):
+        try:
+            serializer.validate(dict(name="authentication_map_4", map_type="role", role=role, organization=organization, team=team))
+        except ValidationError as e:
+            pytest.fail(f"Validation should pass, but: {str(e)}")
+
+    @pytest.mark.parametrize(
+        "role,organization,team,failure_type",
+        [
+            ("Team {% ) %}", "asdf", "1234", "role"),
+            (TEAM_MEMBER_ROLE_NAME, "Organization {% for_attr_value() %}", "1234", "organization"),
+            (TEAM_MEMBER_ROLE_NAME, "asdf", "{% (member_of) %} Team", "team"),
+        ],
+    )
+    def test_validate_expansion_fields_negative(self, serializer, member_rd, role, organization, team, failure_type):
+        with pytest.raises(ValidationError) as e:
+            serializer.validate(dict(name="authentication_map_4", map_type="role", role=role, organization=organization, team=team))
+        assert failure_type in str(e.value)
+        assert 'Expansion only supports' in str(e.value)
