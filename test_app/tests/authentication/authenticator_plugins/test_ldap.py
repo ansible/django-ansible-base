@@ -737,6 +737,12 @@ def test_user_groups_without_gidNumber(group_type, ldap_user, group_search):
     assert groups == ["group3"]
 
 
+def test_user_groups_missing_uid(group_type, ldap_user, group_search):
+    ldap_user.attrs = {"gidNumber": ["1000"]}
+    groups = group_type.user_groups(ldap_user, group_search)
+    assert groups == []
+
+
 def test_is_member_by_memberUid(group_type, ldap_user):
     ldap_user.attrs = {"uid": ["jdoe"], "gidNumber": ["1000"]}
     ldap_user.connection.compare_s.side_effect = [True, False]
@@ -758,4 +764,10 @@ def test_is_member_none_match(group_type, ldap_user):
     ldap_user.attrs = {"uid": ["jdoe"], "gidNumber": ["1000"]}
     ldap_user.connection.compare_s.side_effect = [False, False]
     result = group_type.is_member(ldap_user, "cn=group3,dc=example,dc=com")
+    assert result is False
+
+
+def test_is_member_missing_uid(group_type, ldap_user):
+    ldap_user.attrs = {"gidNumber": ["1000"]}
+    result = group_type.is_member(ldap_user, "cn=group,dc=example,dc=com")
     assert result is False
