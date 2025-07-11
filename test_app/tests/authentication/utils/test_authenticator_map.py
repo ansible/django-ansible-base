@@ -221,7 +221,7 @@ def test_check_expansion_syntax(value, should_work):
                 {"organization": "    ", "role": "System Role"},
             ],
             id="Org with just spaces",
-        )
+        ),
     ],
 )
 @pytest.mark.django_db()

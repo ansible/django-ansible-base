@@ -59,15 +59,12 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
 
     # load the maps
     logger.debug(f"Authenticator ID: {authenticator.id}")
-    maps = AuthenticatorMap.objects.order_by("order")
-    logger.debug(maps)
     maps = AuthenticatorMap.objects.filter(authenticator=authenticator.id).order_by("order")
     logger.debug("==============================================================")
-    logger.debug(maps)
+    logger.debug("Processing {maps.count()} map(s) for this authenticator")
 
     for auth_map in maps:
-        logger.debug(auth_map)
-        logger.debug("++++")
+        logger.debug(f"Processing map {auth_map.name} {auth_map.id}")
         has_permission = None
         trigger_result = TriggerResult.SKIP
         allowed_keys = TRIGGER_DEFINITION.keys()
@@ -125,7 +122,7 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
                 expanded_team = expanded_values.get('team', None)
                 expanded_role = expanded_values.get('role', None)
 
-                if role_errors := check_role_type(map_type=auth_map.map_type, role=expanded_role, team=expanded_team, org=expanded_organization) != {}:
+                if (role_errors := check_role_type(map_type=auth_map.map_type, role=expanded_role, team=expanded_team, org=expanded_organization)) != {}:
                     logger.info(f"Map type {auth_map.map_type} of rule {auth_map.name} had an invalid role type and will be skipped {role_errors}")
                 elif (
                     auth_map.map_type in ['team', 'role']

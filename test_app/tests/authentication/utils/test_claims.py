@@ -6,7 +6,7 @@ from django.db import connection
 
 from ansible_base.authentication.models import AuthenticatorMap, AuthenticatorUser
 from ansible_base.authentication.utils import claims
-from test_app.tests.authentication.conftest import ORG_MEMBER_ROLE_NAME, TEAM_MEMBER_ROLE_NAME, SYSTEM_ROLE_NAME
+from test_app.tests.authentication.conftest import ORG_ADMIN_ROLE_NAME, ORG_MEMBER_ROLE_NAME, SYSTEM_ROLE_NAME, TEAM_ADMIN_ROLE_NAME, TEAM_MEMBER_ROLE_NAME
 
 
 @pytest.mark.parametrize(
@@ -83,7 +83,10 @@ from test_app.tests.authentication.conftest import ORG_MEMBER_ROLE_NAME, TEAM_ME
             {
                 "organization_membership": {},
                 "team_membership": {"testorg": {"testteam": True}},
-                'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {}, 'teams': {'testteam': {'roles': {TEAM_MEMBER_ROLE_NAME: True}}}}}},
+                'rbac_roles': {
+                    'system': {'roles': {}},
+                    'organizations': {'testorg': {'roles': {}, 'teams': {'testteam': {'roles': {TEAM_MEMBER_ROLE_NAME: True}}}}},
+                },
             },
             [{1: True, 'enabled': True}],
             id=f"Assign {TEAM_MEMBER_ROLE_NAME} role to team 'testteam'",
@@ -99,7 +102,10 @@ from test_app.tests.authentication.conftest import ORG_MEMBER_ROLE_NAME, TEAM_ME
             {
                 "organization_membership": {},
                 "team_membership": {"testorg": {"testteam": False}},
-                'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {}, 'teams': {'testteam': {'roles': {TEAM_MEMBER_ROLE_NAME: False}}}}}},
+                'rbac_roles': {
+                    'system': {'roles': {}},
+                    'organizations': {'testorg': {'roles': {}, 'teams': {'testteam': {'roles': {TEAM_MEMBER_ROLE_NAME: False}}}}},
+                },
             },
             [{1: False, 'enabled': True}],
             id=f"Remove {TEAM_MEMBER_ROLE_NAME} role from team 'testteam'",
@@ -147,7 +153,10 @@ from test_app.tests.authentication.conftest import ORG_MEMBER_ROLE_NAME, TEAM_ME
             {
                 "organization_membership": {},
                 "team_membership": {"testorg": {"testteam": True}},
-                'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {}, 'teams': {'testteam': {'roles': {TEAM_MEMBER_ROLE_NAME: True}}}}}},
+                'rbac_roles': {
+                    'system': {'roles': {}},
+                    'organizations': {'testorg': {'roles': {}, 'teams': {'testteam': {'roles': {TEAM_MEMBER_ROLE_NAME: True}}}}},
+                },
             },
             [{1: True, 'enabled': True}],
             id=f"Assign {TEAM_MEMBER_ROLE_NAME} role to team 'testteam' using map_type 'role'",
@@ -236,7 +245,9 @@ def test_create_claims_single_map_acl(
     assert res["claims"] == exp_claims
 
     if connection.vendor == 'postgresql' and local_authenticator_map.id != 1:
-        # Since we are running in postgres we need to "massage" the exp_last_login_map_results as the saved auth map might have a different id
+        # All of the test cases define exp_last_login_results with ID 1.
+        # But if we are running in postgres we will get sequential IDs back.
+        # So we need to massage the exp_last_login_results to have the correct ID
         exp_last_login_map_results[0][local_authenticator_map.id] = exp_last_login_map_results[0][1]
         del exp_last_login_map_results[0][1]
 
@@ -961,7 +972,7 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
         # Parameterization after this created by AI
         pytest.param(
             'team',
-            'Team Admin',
+            TEAM_ADMIN_ROLE_NAME,
             'Engineering',
             "{% for_attr_value(departments) %}",
             {"departments": ["frontend", "backend", "devops"]},
@@ -974,17 +985,17 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
                             'teams': {
                                 'frontend': {
                                     'roles': {
-                                        'Team Admin': True,
+                                        TEAM_ADMIN_ROLE_NAME: True,
                                     },
                                 },
                                 'backend': {
                                     'roles': {
-                                        'Team Admin': True,
+                                        TEAM_ADMIN_ROLE_NAME: True,
                                     },
                                 },
                                 'devops': {
                                     'roles': {
-                                        'Team Admin': True,
+                                        TEAM_ADMIN_ROLE_NAME: True,
                                     },
                                 },
                             },
@@ -1006,7 +1017,7 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
         ),
         pytest.param(
             'organization',
-            'Organization Admin',
+            ORG_ADMIN_ROLE_NAME,
             "{% for_attr_value(company_orgs) %}",
             None,
             {"company_orgs": ["Sales", "Marketing", "HR"]},
@@ -1020,19 +1031,19 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
                     'organizations': {
                         'Sales': {
                             'roles': {
-                                'Organization Admin': True,
+                                ORG_ADMIN_ROLE_NAME: True,
                             },
                             'teams': {},
                         },
                         'Marketing': {
                             'roles': {
-                                'Organization Admin': True,
+                                ORG_ADMIN_ROLE_NAME: True,
                             },
                             'teams': {},
                         },
                         'HR': {
                             'roles': {
-                                'Organization Admin': True,
+                                ORG_ADMIN_ROLE_NAME: True,
                             },
                             'teams': {},
                         },
@@ -1105,7 +1116,7 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
         ),
         pytest.param(
             'team',
-            'Team Lead',
+            TEAM_ADMIN_ROLE_NAME,
             'Development',
             "{% for_attr_value(projects) %}",
             {"projects": "single_project"},
@@ -1118,7 +1129,7 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
                             'teams': {
                                 'single_project': {
                                     'roles': {
-                                        'Team Lead': True,
+                                        TEAM_ADMIN_ROLE_NAME: True,
                                     },
                                 },
                             },
@@ -1440,7 +1451,7 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
         # Role map_type test cases
         pytest.param(
             'role',
-            'System Administrator',
+            ORG_ADMIN_ROLE_NAME,
             'IT',
             'Infrastructure',
             {"user_roles": ["sysadmin", "dba", "network_admin"]},
@@ -1453,7 +1464,7 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
                             'teams': {
                                 'Infrastructure': {
                                     'roles': {
-                                        'System Administrator': True,
+                                        ORG_ADMIN_ROLE_NAME: True,
                                     },
                                 },
                             },
@@ -1473,7 +1484,7 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
         ),
         pytest.param(
             'role',
-            'Project Manager',
+            SYSTEM_ROLE_NAME,
             'Business',
             None,
             {"management_roles": ["pm", "lead", "director"]},
@@ -1485,7 +1496,7 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
                     'organizations': {
                         'Business': {
                             'roles': {
-                                'Project Manager': True,
+                                SYSTEM_ROLE_NAME: True,
                             },
                             'teams': {},
                         },
@@ -1500,7 +1511,7 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
         ),
         pytest.param(
             'role',
-            'Global Administrator',
+            SYSTEM_ROLE_NAME,
             None,
             None,
             {"admin_privileges": ["super_admin", "global_admin"]},
@@ -1510,7 +1521,7 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
                     'organizations': {},
                     'system': {
                         'roles': {
-                            'Global Administrator': True,
+                            SYSTEM_ROLE_NAME: True,
                         },
                     },
                 },
@@ -1520,7 +1531,7 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
         ),
         pytest.param(
             'role',
-            'Team Lead',
+            TEAM_ADMIN_ROLE_NAME,
             "{% for_attr_value(departments) %}",
             "{% for_attr_value(teams) %}",
             {"departments": ["Engineering", "QA"], "teams": ["Backend", "Frontend"]},
@@ -1533,12 +1544,12 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
                             'teams': {
                                 'Backend': {
                                     'roles': {
-                                        'Team Lead': True,
+                                        TEAM_ADMIN_ROLE_NAME: True,
                                     },
                                 },
                                 'Frontend': {
                                     'roles': {
-                                        'Team Lead': True,
+                                        TEAM_ADMIN_ROLE_NAME: True,
                                     },
                                 },
                             },
@@ -1548,12 +1559,12 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
                             'teams': {
                                 'Backend': {
                                     'roles': {
-                                        'Team Lead': True,
+                                        TEAM_ADMIN_ROLE_NAME: True,
                                     },
                                 },
                                 'Frontend': {
                                     'roles': {
-                                        'Team Lead': True,
+                                        TEAM_ADMIN_ROLE_NAME: True,
                                     },
                                 },
                             },
@@ -1578,7 +1589,7 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
         ),
         pytest.param(
             'role',
-            'Security Officer',
+            ORG_MEMBER_ROLE_NAME,
             "{% for_attr_value(security_orgs) %}",
             None,
             {"security_orgs": ["Security", "Compliance", "Risk Management"]},
@@ -1592,19 +1603,19 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
                     'organizations': {
                         'Security': {
                             'roles': {
-                                'Security Officer': True,
+                                ORG_MEMBER_ROLE_NAME: True,
                             },
                             'teams': {},
                         },
                         'Compliance': {
                             'roles': {
-                                'Security Officer': True,
+                                ORG_MEMBER_ROLE_NAME: True,
                             },
                             'teams': {},
                         },
                         'Risk Management': {
                             'roles': {
-                                'Security Officer': True,
+                                ORG_MEMBER_ROLE_NAME: True,
                             },
                             'teams': {},
                         },
@@ -1638,7 +1649,7 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
         # Organization map_type test cases
         pytest.param(
             'organization',
-            'Organization Owner',
+            ORG_ADMIN_ROLE_NAME,
             'Corporate',
             None,
             {"corp_access": ["full", "admin"]},
@@ -1650,7 +1661,7 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
                     'organizations': {
                         'Corporate': {
                             'roles': {
-                                'Organization Owner': True,
+                                ORG_ADMIN_ROLE_NAME: True,
                             },
                             'teams': {},
                         },
@@ -1713,7 +1724,7 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
         ),
         pytest.param(
             'organization',
-            'Organization Admin',
+            ORG_ADMIN_ROLE_NAME,
             "{% for_attr_value(regional_orgs) %}",
             None,
             {"regional_orgs": ["North America", "Europe", "Asia-Pacific"]},
@@ -1727,19 +1738,19 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
                     'organizations': {
                         'North America': {
                             'roles': {
-                                'Organization Admin': True,
+                                ORG_ADMIN_ROLE_NAME: True,
                             },
                             'teams': {},
                         },
                         'Europe': {
                             'roles': {
-                                'Organization Admin': True,
+                                ORG_ADMIN_ROLE_NAME: True,
                             },
                             'teams': {},
                         },
                         'Asia-Pacific': {
                             'roles': {
-                                'Organization Admin': True,
+                                ORG_ADMIN_ROLE_NAME: True,
                             },
                             'teams': {},
                         },
@@ -1754,7 +1765,7 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
         ),
         pytest.param(
             'organization',
-            'Organization Viewer',
+            ORG_MEMBER_ROLE_NAME,
             "{% for_attr_value(client_orgs) %}",
             None,
             {"client_orgs": ["Client-A Corp", "Client-B LLC", "Client-C Inc"]},
@@ -1768,19 +1779,19 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
                     'organizations': {
                         'Client-A Corp': {
                             'roles': {
-                                'Organization Viewer': True,
+                                ORG_MEMBER_ROLE_NAME: True,
                             },
                             'teams': {},
                         },
                         'Client-B LLC': {
                             'roles': {
-                                'Organization Viewer': True,
+                                ORG_MEMBER_ROLE_NAME: True,
                             },
                             'teams': {},
                         },
                         'Client-C Inc': {
                             'roles': {
-                                'Organization Viewer': True,
+                                ORG_MEMBER_ROLE_NAME: True,
                             },
                             'teams': {},
                         },
@@ -1831,7 +1842,7 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
         ),
         pytest.param(
             'organization',
-            'Organization Coordinator',
+            ORG_ADMIN_ROLE_NAME,
             "{% for_attr_value(single_org) %}",
             None,
             {"single_org": "Single Organization"},
@@ -1843,7 +1854,7 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
                     'organizations': {
                         'Single Organization': {
                             'roles': {
-                                'Organization Coordinator': True,
+                                ORG_ADMIN_ROLE_NAME: True,
                             },
                             'teams': {},
                         },
@@ -1858,7 +1869,7 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
         ),
         pytest.param(
             'organization',
-            'Organization Auditor',
+            ORG_ADMIN_ROLE_NAME,
             "{% for_attr_value(special_char_orgs) %}",
             None,
             {"special_char_orgs": ["Org@123", "Org#456", "Org$789", "Org%ABC"]},
@@ -1873,25 +1884,25 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
                     'organizations': {
                         'Org@123': {
                             'roles': {
-                                'Organization Auditor': True,
+                                ORG_ADMIN_ROLE_NAME: True,
                             },
                             'teams': {},
                         },
                         'Org#456': {
                             'roles': {
-                                'Organization Auditor': True,
+                                ORG_ADMIN_ROLE_NAME: True,
                             },
                             'teams': {},
                         },
                         'Org$789': {
                             'roles': {
-                                'Organization Auditor': True,
+                                ORG_ADMIN_ROLE_NAME: True,
                             },
                             'teams': {},
                         },
                         'Org%ABC': {
                             'roles': {
-                                'Organization Auditor': True,
+                                ORG_ADMIN_ROLE_NAME: True,
                             },
                             'teams': {},
                         },
@@ -1907,7 +1918,7 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
         # Mixed scenarios with different map_types
         pytest.param(
             'role',
-            'Multi-Role User',
+            TEAM_ADMIN_ROLE_NAME,
             "{% for_attr_value(dynamic_orgs) %}",
             "{% for_attr_value(dynamic_teams) %}",
             {"dynamic_orgs": ["Alpha", "Beta"], "dynamic_teams": ["Team1", "Team2", "Team3"]},
@@ -1920,17 +1931,17 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
                             'teams': {
                                 'Team1': {
                                     'roles': {
-                                        'Multi-Role User': True,
+                                        TEAM_ADMIN_ROLE_NAME: True,
                                     },
                                 },
                                 'Team2': {
                                     'roles': {
-                                        'Multi-Role User': True,
+                                        TEAM_ADMIN_ROLE_NAME: True,
                                     },
                                 },
                                 'Team3': {
                                     'roles': {
-                                        'Multi-Role User': True,
+                                        TEAM_ADMIN_ROLE_NAME: True,
                                     },
                                 },
                             },
@@ -1940,17 +1951,17 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
                             'teams': {
                                 'Team1': {
                                     'roles': {
-                                        'Multi-Role User': True,
+                                        TEAM_ADMIN_ROLE_NAME: True,
                                     },
                                 },
                                 'Team2': {
                                     'roles': {
-                                        'Multi-Role User': True,
+                                        TEAM_ADMIN_ROLE_NAME: True,
                                     },
                                 },
                                 'Team3': {
                                     'roles': {
-                                        'Multi-Role User': True,
+                                        TEAM_ADMIN_ROLE_NAME: True,
                                     },
                                 },
                             },
@@ -1977,7 +1988,7 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
         ),
         pytest.param(
             'organization',
-            'Cross-Org Manager',
+            ORG_MEMBER_ROLE_NAME,
             "{% for_attr_value(managed_orgs) %}",
             None,
             {"managed_orgs": [f"Org-{i:02d}" for i in range(1, 26)]},
@@ -1990,7 +2001,7 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
                         **{
                             f"Org-{i:02d}": {
                                 'roles': {
-                                    'Cross-Org Manager': True,
+                                    ORG_MEMBER_ROLE_NAME: True,
                                 },
                                 'teams': {},
                             }
@@ -2007,7 +2018,20 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
         ),
     ],
 )
-def test_expansion_in_claims(local_authenticator_map, map_type, map_role, map_org, map_team, attributes, expected_value):
+def test_expansion_in_claims(
+    local_authenticator_map,
+    map_type,
+    map_role,
+    map_org,
+    map_team,
+    attributes,
+    expected_value,
+    org_admin_rd,
+    org_member_rd,
+    admin_rd,
+    member_rd,
+    system_role,
+):
     """
     Test that we properly append to org_team_mapping
     """

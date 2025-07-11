@@ -5,7 +5,9 @@ from ansible_base.rbac.models import RoleDefinition
 
 SYSTEM_ROLE_NAME = 'System role'
 TEAM_MEMBER_ROLE_NAME = 'Team Member'
+TEAM_ADMIN_ROLE_NAME = 'Team Admin'
 ORG_MEMBER_ROLE_NAME = 'Organization Member'
+ORG_ADMIN_ROLE_NAME = 'Organization Admin'
 
 
 @pytest.fixture
