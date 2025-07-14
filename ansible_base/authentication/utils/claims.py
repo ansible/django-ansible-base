@@ -13,6 +13,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError, models
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
+from flags.state import flag_enabled
 from rest_framework.serializers import DateTimeField
 
 from ansible_base.authentication.models import Authenticator, AuthenticatorMap, AuthenticatorUser
@@ -178,10 +179,28 @@ def _add_rbac_role_mapping(has_permission, role_mapping, role, organization=None
             logger.warning(f"Role mapping is not possible, organization for team '{team}' is missing")
 
 
+def _is_case_insensitivity_enabled() -> bool:
+    return flag_enabled("FEATURE_CASE_INSENSITIVE_AUTH_MAPS")
+
+
+def _lowercase_group_triggers(trigger_condition: dict) -> dict:
+    """
+    Lowercase all group names provided to trigger
+    """
+    ci_trigger_condition = {}
+    for operator, grouplist in trigger_condition.items():
+        ci_trigger_condition[operator] = [f"{group}".casefold() for group in grouplist]
+    return ci_trigger_condition
+
+
 def process_groups(trigger_condition: dict, groups: list, authenticator_id: int) -> TriggerResult:
     """
     Looks at a maps trigger for a group and users groups and determines if the trigger is defined for this user.
+    Group DNs are compared case-insensitively when FEATURE_CASE_INSENSITIVE_AUTH_MAPS enabled.
     """
+    if _is_case_insensitivity_enabled():
+        groups = [f"{group}".casefold() for group in groups]
+        trigger_condition = _lowercase_group_triggers(trigger_condition)
 
     invalid_conditions = set(trigger_condition.keys()) - set(TRIGGER_DEFINITION['groups']['keys'].keys())
     if invalid_conditions:
@@ -218,10 +237,35 @@ def has_access_with_join(current_access: Optional[bool], new_access: bool, condi
         return current_access and new_access
 
 
+def _lowercase_attr_triggers(trigger_condition: dict) -> dict:
+    """
+    Lower case all keys (attribute names) and contained attribute values
+    """
+    ci_trigger_condition = {}
+    for attr, condition in trigger_condition.items():
+        if isinstance(condition, str):
+            updated_condition = condition.casefold()
+        elif isinstance(condition, dict):
+            if not condition:  # empty dict
+                updated_condition = {}
+            for operator, value in condition.items():
+                updated_condition = {operator: value.casefold()}
+        else:
+            updated_condition = condition
+
+        ci_trigger_condition[attr.casefold()] = updated_condition  # join_condition
+    return ci_trigger_condition
+
+
 def process_user_attributes(trigger_condition: dict, attributes: dict, authenticator_id: int) -> TriggerResult:
     """
     Looks at a maps trigger for an attribute and the users attributes and determines if the trigger is defined for this user.
+    Attribute names are compared case-insensitively.
     """
+    if _is_case_insensitivity_enabled():
+        attributes = {f"{k}".casefold(): v for k, v in attributes.items()}
+        trigger_condition = _lowercase_attr_triggers(trigger_condition)
+
     has_access = None
     join_condition = trigger_condition.get('join_condition', 'or')
     if join_condition not in TRIGGER_DEFINITION['attributes']['keys']['join_condition']['choices']:
@@ -265,7 +309,7 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, authentic
         for a_user_value in user_value:
             # We are going to do mostly string comparisons, so convert the attribute to a
             #  string just in case it came back as an int or something funky
-            a_user_value = f"{a_user_value}"
+            a_user_value = f"{a_user_value}".casefold() if _is_case_insensitivity_enabled() else f"{a_user_value}"
 
             # Check for any of the valid conditions
             if "equals" in trigger_condition[attribute]:

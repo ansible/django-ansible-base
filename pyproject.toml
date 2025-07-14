@@ -41,7 +41,7 @@ optional-dependencies.all = { file = [
     "requirements/requirements_rest_filters.in",
     "requirements/requirements_channels.in",
     "requirements/requirements_jwt_consumer.in",
-    "requirements/requirements_testing.in",
+    "requirements/requirements_testing.txt",
     "requirements/requirements_redis_client.in",
     "requirements/requirements_oauth2_provider.in",
     "requirements/requirements_resource_registry.in",
@@ -54,7 +54,7 @@ optional-dependencies.rest_filters = { file = [ "requirements/requirements_rest_
 optional-dependencies.rbac = { file = [ "requirements/requirements_rbac.in" ] }
 optional-dependencies.channel_auth = { file = [ "requirements/requirements_channels.in" ] }
 optional-dependencies.jwt_consumer = { file = [ "requirements/requirements_jwt_consumer.in" ] }
-optional-dependencies.testing = { file = [ "requirements/requirements_testing.in" ] }
+optional-dependencies.testing = { file = [ "requirements/requirements_testing.txt" ] }
 optional-dependencies.redis_client = { file = [ "requirements/requirements_redis_client.in" ] }
 optional-dependencies.oauth2_provider = { file = [ "requirements/requirements_oauth2_provider.in" ] }
 optional-dependencies.resource_registry = { file = [ "requirements/requirements_resource_registry.in" ] }

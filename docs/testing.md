@@ -47,6 +47,7 @@ export EDITOR=vi
 brew edit $USER/local/libxmlsec1@1.2.37
 	Change the url=" line to be:
         url "https://www.aleksey.com/xmlsec/download/older-releases/xmlsec1-1.2.37.tar.gz"
+	Change any occurrences of "openssl@1.1" to "openssl@3"
 
 brew install $USER/local/libxmlsec1@1.2.37
 tox -e 311

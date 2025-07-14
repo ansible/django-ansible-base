@@ -158,7 +158,7 @@ class RoleDefinitionDetailSerializer(RoleDefinitionSerializer):
 
 
 class BaseAssignmentSerializer(CommonModelSerializer):
-    content_type = ContentTypeField(read_only=True)
+    content_type = ContentTypeField(read_only=True, allow_null=True)
     object_ansible_id = serializers.UUIDField(
         required=False,
         help_text=_('The resource id of the object this role applies to. An alternative to the object_id field.'),

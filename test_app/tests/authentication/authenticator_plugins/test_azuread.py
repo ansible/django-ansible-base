@@ -109,3 +109,31 @@ def test_groups_setting_and_user_groups(keycloak_authenticator):
     # assert that AD returns expected user groups
     assert ad.get_user_groups() == []
     assert ad.get_user_groups(["a", "b"]) == ["a", "b"]
+
+
+def test_get_user_details():
+
+    class MockedDb:
+        def __init__(self, username_field):
+            self.slug = "fake"
+            self.configuration = {"USERNAME_FIELD": username_field}
+
+    ad = get_authenticator_plugin("ansible_base.authentication.authenticator_plugins.azuread")
+    ad.database_instance = MockedDb(None)
+
+    username = 'bob'
+    email = 'bob@example.com'
+
+    response = {
+        "name": username,
+        "given_name": "Joe",
+        "family_name": "LastName",
+        "email": email,
+        "upn": "upn123",
+    }
+
+    assert ad.get_user_details(response)['username'] == username
+
+    ad.database_instance = MockedDb('email')
+
+    assert ad.get_user_details(response)['username'] == email

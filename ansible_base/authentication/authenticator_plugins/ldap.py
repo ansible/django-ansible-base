@@ -5,6 +5,7 @@ from collections import OrderedDict
 from typing import Any
 
 import ldap
+from django.utils.encoding import force_str
 from django.utils.translation import gettext_lazy as _
 from django_auth_ldap import config
 from django_auth_ldap.backend import LDAPBackend
@@ -26,6 +27,68 @@ _MUST_BE_AN_ARRAY_MESSAGE_TRANSLATED = _(_MUST_BE_AN_ARRAY_MESSAGE)
 
 
 user_search_string = '%(user)s'
+
+
+class PosixUIDGroupType(LDAPGroupType):
+    """
+    An LDAPGroupType subclass that handles non-standard Directory Servers.
+    """
+
+    def __init__(self, name_attr='cn', ldap_group_user_attr='uid'):
+        self.ldap_group_user_attr = ldap_group_user_attr
+        super().__init__(name_attr)
+
+    def user_groups(self, ldap_user, group_search):
+        """
+        Searches for any group that is either the user's primary or contains the
+        user as a member.
+        """
+        groups = []
+
+        try:
+            user_uid = ldap_user.attrs[self.ldap_group_user_attr][0]
+
+            if 'gidNumber' in ldap_user.attrs:
+                user_gid = ldap_user.attrs['gidNumber'][0]
+                filterstr = "(|(gidNumber={})(memberUid={}))".format(
+                    self.ldap.filter.escape_filter_chars(user_gid),
+                    self.ldap.filter.escape_filter_chars(user_uid),
+                )
+            else:
+                filterstr = "(memberUid={})".format(self.ldap.filter.escape_filter_chars(user_uid))
+
+            search = group_search.search_with_additional_term_string(filterstr)
+            search.attrlist = [str(self.name_attr)]
+            groups = search.execute(ldap_user.connection)
+        except (KeyError, IndexError):
+            pass
+
+        return groups
+
+    def is_member(self, ldap_user, group_dn):
+        """
+        Returns True if the group is the user's primary group or if the user is
+        listed in the group's memberUid attribute.
+        """
+        is_member = False
+        try:
+            user_uid = ldap_user.attrs[self.ldap_group_user_attr][0]
+
+            try:
+                is_member = ldap_user.connection.compare_s(force_str(group_dn), 'memberUid', force_str(user_uid))
+            except (ldap.UNDEFINED_TYPE, ldap.NO_SUCH_ATTRIBUTE):
+                is_member = False
+
+            if not is_member:
+                try:
+                    user_gid = ldap_user.attrs['gidNumber'][0]
+                    is_member = ldap_user.connection.compare_s(force_str(group_dn), 'gidNumber', force_str(user_gid))
+                except (ldap.UNDEFINED_TYPE, ldap.NO_SUCH_ATTRIBUTE):
+                    is_member = False
+        except (KeyError, IndexError):
+            is_member = False
+
+        return is_member
 
 
 def validate_ldap_dn(value: str, with_user: bool = False, required: bool = True) -> None:
@@ -333,7 +396,7 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
         # Check interdependent fields
         errors = {}
 
-        group_type_class = getattr(config, attrs['GROUP_TYPE'], None)
+        group_type_class = find_class_in_modules(attrs["GROUP_TYPE"])
         if group_type_class:
             group_type_params = attrs['GROUP_TYPE_PARAMS']
             logger.error(f"Validating group type params for {attrs['GROUP_TYPE']}")
@@ -379,8 +442,9 @@ class LDAPSettings(BaseLDAPSettings):
 
         # If a DB-backed setting is specified that wipes out the
         # OPT_NETWORK_TIMEOUT, fall back to a sane default
+        # This default should be less than 30 because that is the timeout of envoy
         if ldap.OPT_NETWORK_TIMEOUT not in internal_data:
-            internal_data[ldap.OPT_NETWORK_TIMEOUT] = 30
+            internal_data[ldap.OPT_NETWORK_TIMEOUT] = 20
 
         # when specifying `.set_option()` calls for TLS in python-ldap, the
         # *order* in which you invoke them *matters*, particularly in Python3,
@@ -399,7 +463,7 @@ class LDAPSettings(BaseLDAPSettings):
         setattr(self, 'CONNECTION_OPTIONS', internal_data)
 
         # Group type needs to be an object instead of a String so instantiate it
-        group_type_class = getattr(config, defaults['GROUP_TYPE'], None)
+        group_type_class = find_class_in_modules(defaults["GROUP_TYPE"])
         setattr(self, 'GROUP_TYPE', group_type_class(**defaults['GROUP_TYPE_PARAMS']))
 
 
@@ -527,3 +591,12 @@ class AuthenticatorPlugin(LDAPBackend, AbstractAuthenticatorPlugin):
         )
 
         return user, created
+
+
+def find_class_in_modules(class_name: str) -> object:
+    """
+    Used to find ldap subclasses by string
+    """
+    if class_name == "PosixUIDGroupType":
+        return PosixUIDGroupType
+    return getattr(config, class_name, None)

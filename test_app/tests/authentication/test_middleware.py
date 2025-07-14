@@ -1,7 +1,9 @@
 from django.conf import settings
 from social_core.exceptions import AuthException
 
-from ansible_base.authentication.middleware import SocialExceptionHandlerMiddleware
+from ansible_base.authentication.middleware import (
+    SocialExceptionHandlerMiddleware,
+)
 
 
 def test_social_exception_handler_mw():

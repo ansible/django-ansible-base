@@ -17,7 +17,7 @@ def resource_type_cache(content_type_id):
     return ContentType.objects.get_for_id(content_type_id).resource_type
 
 
-class UnamangedResourceException(Exception):
+class UnmanagedResourceException(Exception):
     pass
 
 
@@ -50,7 +50,7 @@ class ResourceType(models.Model):
         qfilter = {}
 
         if not self.can_be_managed:
-            raise UnamangedResourceException(f"Resource type {self.name} does not have a managed serializer.")
+            raise UnmanagedResourceException(f"Resource type {self.name} does not have a managed serializer.")
 
         serializer = self.serializer_class(data=resource_data)
         serializer.is_valid(raise_exception=True)
