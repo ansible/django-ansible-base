@@ -6,6 +6,7 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.models import AuthenticatorMap
+from ansible_base.authentication.utils.authenticator_map import _EXPANSION_FIELDS, check_expansion_syntax, has_expansion
 from ansible_base.authentication.utils.trigger_definition import TRIGGER_DEFINITION
 from ansible_base.lib.serializers.common import NamedCommonModelSerializer
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
@@ -40,6 +41,12 @@ class AuthenticatorMapSerializer(NamedCommonModelSerializer):
         if role:
             errors.update(self.validate_role_data(map_type, role, org, team))
 
+        for field in _EXPANSION_FIELDS:
+            if error_message := check_expansion_syntax(data.get(field, None)):
+                # Its really not possible to have two errors on the same time.
+                # Other errors indicate that things are missing so they would never get into here
+                errors[field] = error_message
+
         if errors:
             raise ValidationError(errors)
         return data
@@ -58,6 +65,10 @@ class AuthenticatorMapSerializer(NamedCommonModelSerializer):
 
         from ansible_base.rbac.models import RoleDefinition
 
+        # If this role is dynamically expanded we can't check it now, only at run time.
+        if has_expansion(role):
+            return errors
+
         try:
             rbac_role = RoleDefinition.objects.get(name=role)
             is_system_role = rbac_role.content_type is None
@@ -66,9 +77,8 @@ class AuthenticatorMapSerializer(NamedCommonModelSerializer):
             if is_system_role and map_type == 'role':
                 return errors
 
-            if is_system_role:
-                is_org_role, is_team_role = False, False
-            else:
+            is_org_role, is_team_role = False, False
+            if not is_system_role:
                 model_class = rbac_role.content_type.model_class()
                 is_org_role = issubclass(model_class, get_organization_model())
                 is_team_role = issubclass(model_class, get_team_model())

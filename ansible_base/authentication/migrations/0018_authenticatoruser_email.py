@@ -15,4 +15,19 @@ class Migration(migrations.Migration):
             name='email',
             field=models.EmailField(blank=True, default=None, help_text='The e-mail associated with this authenticator user.', max_length=254, null=True),
         ),
+        migrations.AlterField(
+            model_name='authenticatormap',
+            name='organization',
+            field=models.CharField(blank=True, default=None, help_text='An organization name this rule works on. Will expand {% for_attr_value(user_orgs) %} syntax', max_length=512, null=True),
+        ),
+        migrations.AlterField(
+            model_name='authenticatormap',
+            name='role',
+            field=models.CharField(blank=True, default=None, help_text='The role this map will grant the authenticating user to the targeted object. Will expand {% for_attr_value(user_orgs) %} syntax', max_length=512, null=True),
+        ),
+        migrations.AlterField(
+            model_name='authenticatormap',
+            name='team',
+            field=models.CharField(blank=True, default=None, help_text='A team name this rule works on. Will expand {% for_attr_value(user_orgs) %} syntax.', max_length=512, null=True),
+        ),
     ]
