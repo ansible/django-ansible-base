@@ -64,6 +64,7 @@ class JWTCommonAuth:
         user: The Django user instance (set after parsing a valid JWT).
         token: The decoded JWT payload (set after parsing a valid JWT).
     """
+
     def __init__(self, user_fields=default_mapped_user_fields) -> None:
         self.mapped_user_fields = user_fields
         self.cache = JWTCache()
@@ -287,10 +288,7 @@ class JWTCommonAuth:
 
         from ansible_base.rbac.models import RoleUserAssignment
 
-        role_diff = RoleUserAssignment.objects.filter(
-            user=self.user,
-            role_definition__name__in=settings.ANSIBLE_BASE_JWT_MANAGED_ROLES
-        )
+        role_diff = RoleUserAssignment.objects.filter(user=self.user, role_definition__name__in=settings.ANSIBLE_BASE_JWT_MANAGED_ROLES)
 
         role_diff = self._process_global_roles(role_diff)
         role_diff = self._process_object_roles(role_diff)
@@ -339,9 +337,7 @@ class JWTCommonAuth:
                 if resource is not None:
                     assignment = rd.give_permission(self.user, obj)
                     role_diff = role_diff.exclude(pk=assignment.pk)
-                    logger.info(
-                        f"Granted user {self.user.username} role {object_role_name} to object {obj.name} with ansible_id {object_data['ansible_id']}"
-                    )
+                    logger.info(f"Granted user {self.user.username} role {object_role_name} to object {obj.name} with ansible_id {object_data['ansible_id']}")
         return role_diff
 
     def _remove_unauthorized_permissions(self, role_diff):
@@ -410,6 +406,7 @@ class JWTAuthentication(BaseAuthentication):
         use_rbac_permissions: If True, enables RBAC permission processing.
         common_auth: Instance of JWTCommonAuth.
     """
+
     map_fields = default_mapped_user_fields
     use_rbac_permissions = False
 
