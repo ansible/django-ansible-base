@@ -28,66 +28,57 @@ class HubJWTAuth(JWTAuthentication):
         self.team_content_type = ContentType.objects.get_for_model(Team)
         self.org_content_type = ContentType.objects.get_for_model(Organization)
 
-        admin_teams, member_teams = self._get_team_assignments(Team)
+        # TODO - galaxy does not have an org admin roledef yet
+        # admin_orgs = []
 
-        self._process_team_roles('Team Admin', admin_teams, Team)
-        self._process_team_roles('Team Member', member_teams, Team)
+        # TODO - galaxy does not have an org member roledef yet
+        # member_orgs = []
 
-        self._process_auditor_role()
-
-    def _get_team_assignments(self, Team):
+        # The "shared" [!local] teams this user admins
         admin_teams = []
+
+        # the teams this user should have a "shared" [!local] assignment to
         member_teams = []
-        object_roles = self.common_auth.token.get('object_roles', {})
-        team_objects = self.common_auth.token.get('objects', {}).get('team', {})
 
-        for role_name, role_data in object_roles.items():
-            if not role_name.startswith('Team'):
-                continue
-            for object_index in role_data.get('objects', []):
-                self._handle_team_assignment(
-                    role_name, team_objects.get(object_index), admin_teams, member_teams, Team
-                )
-        return admin_teams, member_teams
+        for role_name in self.common_auth.token.get('object_roles', {}).keys():
+            if role_name.startswith('Team'):
+                for object_index in self.common_auth.token['object_roles'][role_name]['objects']:
+                    team_data = self.common_auth.token['objects']['team'][object_index]
+                    ansible_id = team_data['ansible_id']
+                    try:
+                        team = Resource.objects.get(ansible_id=ansible_id).content_object
+                    except Resource.DoesNotExist:
+                        try:
+                            team = self.common_auth.get_or_create_resource('team', team_data)[1]
+                        except IntegrityError as e:
+                            logger.warning(
+                                f"Got integrity error ({e}) on {team_data}. Skipping team assignment. "
+                                "Please make sure the sync task is running to prevent this warning in the future."
+                            )
+                            continue
 
-    def _handle_team_assignment(self, role_name, team_data, admin_teams, member_teams, Team):
-        if not team_data:
-            return
-        ansible_id = team_data['ansible_id']
-        try:
-            team = Resource.objects.get(ansible_id=ansible_id).content_object
-        except Resource.DoesNotExist:
-            try:
-                team = self.common_auth.get_or_create_resource('team', team_data)[1]
-            except IntegrityError as e:
-                logger.warning(
-                    f"Got integrity error ({e}) on {team_data}. Skipping team assignment. "
-                    "Please make sure the sync task is running to prevent this warning in the future."
-                )
-                return
+                    if role_name == 'Team Admin':
+                        admin_teams.append(team)
+                    elif role_name == 'Team Member':
+                        member_teams.append(team)
 
-        if role_name == 'Team Admin':
-            admin_teams.append(team)
-        elif role_name == 'Team Member':
-            member_teams.append(team)
+        for roledef_name, teams in [('Team Admin', admin_teams), ('Team Member', member_teams)]:
 
-    def _process_team_roles(self, roledef_name, teams, Team):
-        roledef = RoleDefinition.objects.get(name=roledef_name)
-        team_pks = [team.pk for team in teams]
+            # the "shared" "non-local" definition ...
+            roledef = RoleDefinition.objects.get(name=roledef_name)
 
-        # delete all assignments not defined by this jwt ...
-        assignments = RoleUserAssignment.objects.filter(
-            user=self.common_auth.user, role_definition=roledef
-        ).exclude(object_id__in=team_pks)
-        for assignment in assignments:
-            team = Team.objects.get(pk=assignment.object_id)
-            roledef.remove_permission(self.common_auth.user, team)
+            # pks for filtering ...
+            team_pks = [team.pk for team in teams]
 
-        # assign "non-local" for each team ...
-        for team in teams:
-            roledef.give_permission(self.common_auth.user, team)
+            # delete all assignments not defined by this jwt ...
+            for assignment in RoleUserAssignment.objects.filter(user=self.common_auth.user, role_definition=roledef).exclude(object_id__in=team_pks):
+                team = Team.objects.get(pk=assignment.object_id)
+                roledef.remove_permission(self.common_auth.user, team)
 
-    def _process_auditor_role(self):
+            # assign "non-local" for each team ...
+            for team in teams:
+                roledef.give_permission(self.common_auth.user, team)
+
         auditor_roledef = RoleDefinition.objects.get(name='Platform Auditor')
         if "Platform Auditor" in self.common_auth.token.get('global_roles', []):
             auditor_roledef.give_global_permission(self.common_auth.user)
