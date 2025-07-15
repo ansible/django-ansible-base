@@ -119,12 +119,16 @@ class JWTCommonAuth:
         try:
             return self.validate_token(token_from_header, cert_object.key, request_id)
         except jwt.exceptions.DecodeError as de:
+            # This exception means the decryption key failed... maybe it was because the cache is bad.
             if not cert_object.cached:
+                # It wasn't cached anyway so we an just raise our exception
                 self.log_and_raise(_("JWT decoding failed: %(e)s, check your key and generated token"), {"e": de})
+            # We had a cached key so lets get the key again ignoring the cache
             old_key = cert_object.key
             try:
                 cert_object.get_decryption_key(ignore_cache=True)
             except JWTCertException as jce:
+                # The new key matched the old key so don't even try and decrypt again, the key just doesn't match.
                 self.log_and_raise(_("Failed to get JWT token on the second try: %(e)s"), {"e": jce})
             if old_key == cert_object.key:
                 self.log_and_raise(_("JWT decoding failed: %(e)s, cached key was correct; check your key and generated token"), {"e": de})

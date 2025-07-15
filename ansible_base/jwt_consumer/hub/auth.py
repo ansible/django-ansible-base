@@ -12,6 +12,21 @@ logger = logging.getLogger('ansible_base.jwt_consumer.hub.auth')
 
 
 class HubJWTAuth(JWTAuthentication):
+    """
+    Automation Hub-specific JWT authentication and permission processing.
+
+    Extends JWTAuthentication to map JWT team and auditor roles to Automation Hub groups and permissions.
+
+    Methods:
+        - get_galaxy_models: Import and return Organization and Team models from Galaxy/Automation Hub.
+        - process_permissions: Main entry for mapping JWT claims to Hub permissions.
+        - _collect_team_roles: Collects admin/member teams from JWT claims.
+        - _process_team_role: Processes a single team role from JWT claims.
+        - _get_or_create_team: Gets or creates a team resource from JWT data.
+        - _sync_team_assignments: Syncs team assignments for admin/member roles.
+        - _remove_unmatched_assignments: Removes assignments not present in JWT.
+        - _sync_auditor_role: Syncs Platform Auditor global role.
+    """
 
     def get_galaxy_models(self):
         '''This is separate from process_permissions purely for testability.'''
@@ -23,6 +38,7 @@ class HubJWTAuth(JWTAuthentication):
         return Organization, Team
 
     def process_permissions(self):
+        # Map teams in the JWT to Automation Hub groups.
         organization, team = self.get_galaxy_models()
         self.team_content_type = ContentType.objects.get_for_model(team)
         self.org_content_type = ContentType.objects.get_for_model(organization)
