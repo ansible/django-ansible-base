@@ -47,6 +47,23 @@ def permission_registry():
 
 
 class JWTCommonAuth:
+    """
+    Handles JWT parsing, validation, user mapping, and RBAC permission processing.
+
+    Typical usage:
+        auth = JWTCommonAuth()
+        auth.parse_jwt_token(request)
+        user = auth.user
+        token = auth.token
+        auth.map_user_fields()
+        auth.process_rbac_permissions()
+
+    Attributes:
+        mapped_user_fields: List of user fields to map from JWT claims.
+        cache: JWTCache instance for user caching.
+        user: The Django user instance (set after parsing a valid JWT).
+        token: The decoded JWT payload (set after parsing a valid JWT).
+    """
     def __init__(self, user_fields=default_mapped_user_fields) -> None:
         self.mapped_user_fields = user_fields
         self.cache = JWTCache()
@@ -381,6 +398,18 @@ class JWTCommonAuth:
 
 
 class JWTAuthentication(BaseAuthentication):
+    """
+    Django REST Framework authentication backend for JWT-based authentication.
+
+    Usage:
+        Add to DRF's DEFAULT_AUTHENTICATION_CLASSES.
+        Handles authentication and permission processing using JWTCommonAuth.
+
+    Attributes:
+        map_fields: List of user fields to map from JWT claims.
+        use_rbac_permissions: If True, enables RBAC permission processing.
+        common_auth: Instance of JWTCommonAuth.
+    """
     map_fields = default_mapped_user_fields
     use_rbac_permissions = False
 
