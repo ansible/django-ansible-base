@@ -58,7 +58,6 @@ class JWTCommonAuth:
         """
         parses the given request setting self.user and self.token
         """
-
         self.user = None
         self.token = None
 
@@ -66,85 +65,90 @@ class JWTCommonAuth:
         if request is None:
             return
 
+        token_from_header, request_id = self._extract_token_and_request_id(request)
+        if not token_from_header:
+            return
+
+        cert_object = self._get_jwt_cert_object()
+        if cert_object is None or cert_object.key is None:
+            return None, None
+
+        self.token = self._validate_token_with_retry(token_from_header, cert_object, request_id)
+        user_defaults = self.cache.check_user_in_cache(self.token)[1]
+        self.user = self._get_or_create_user(user_defaults)
+        setattr(self.user, "resource_api_actions", self.token.get("resource_api_actions", None))
+        logger.info(f"User {self.user.username} authenticated from JWT auth")
+
+    def _extract_token_and_request_id(self, request):
         token_from_header = request.headers.get("X-DAB-JW-TOKEN", None)
         request_id = request.headers.get("X-Request-Id")
         if not token_from_header:
             logger.debug("X-DAB-JW-TOKEN header not set for JWT authentication")
-            return
+            return None, None
         logger.debug(f"Received JWT auth token: {token_from_header}")
+        return token_from_header, request_id
 
+    def _get_jwt_cert_object(self):
         cert_object = JWTCert()
         try:
             cert_object.get_decryption_key()
         except JWTCertException as jce:
             logger.error(jce)
             raise AuthenticationFailed(jce)
+        return cert_object
 
-        if cert_object.key is None:
-            return None, None
-
+    def _validate_token_with_retry(self, token_from_header, cert_object, request_id):
         try:
-            self.token = self.validate_token(token_from_header, cert_object.key, request_id)
+            return self.validate_token(token_from_header, cert_object.key, request_id)
         except jwt.exceptions.DecodeError as de:
-            # This exception means the decryption key failed... maybe it was because the cache is bad.
             if not cert_object.cached:
-                # It wasn't cached anyway so we an just raise our exception
                 self.log_and_raise(_("JWT decoding failed: %(e)s, check your key and generated token"), {"e": de})
-
-            # We had a cached key so lets get the key again ignoring the cache
             old_key = cert_object.key
             try:
                 cert_object.get_decryption_key(ignore_cache=True)
             except JWTCertException as jce:
                 self.log_and_raise(_("Failed to get JWT token on the second try: %(e)s"), {"e": jce})
             if old_key == cert_object.key:
-                # The new key matched the old key so don't even try and decrypt again, the key just doesn't match
                 self.log_and_raise(_("JWT decoding failed: %(e)s, cached key was correct; check your key and generated token"), {"e": de})
-            # Since we got a new key, lets go ahead and try to validate the token again.
-            # If it fails this time we can just raise whatever
-            self.token = self.validate_token(token_from_header, cert_object.key, request_id)
+            return self.validate_token(token_from_header, cert_object.key, request_id)
 
-        # Let's see if we have the same user info in the cache already
-        # Note: we're not using the "_, user_defaults=" trick here because _ is used for our translation function.
-        user_defaults = self.cache.check_user_in_cache(self.token)[1]
-
-        self.user = None
+    def _get_or_create_user(self, user_defaults):
         try:
-            self.user = get_user_by_ansible_id(self.token['sub'])
+            user = get_user_by_ansible_id(self.token['sub'])
         except ObjectDoesNotExist:
-            pass
+            user = None
 
-        if not self.user:
-            # Either the user wasn't cached or the requested user was not in the DB so we need to make a new one
-            resource_kwargs = {}
-            for resource_key, token_key in (('resource_data', 'user_data'), ('ansible_id', 'sub'), ('service_id', 'service_id')):
-                if token_key not in self.token:
-                    logger.warning(f'Missing {token_key} in JWT data, omitting {resource_key} from local resource entry')
-                else:
-                    resource_kwargs[resource_key] = self.token[token_key]
-            try:
-                resource = Resource.create_resource(ResourceType.objects.get(name="shared.user"), **resource_kwargs)
-                self.user = resource.content_object
-                logger.info(f"New user {self.user.username} created from JWT auth")
-            except IntegrityError as exc:
-                logger.debug(f'Existing user {self.token["user_data"]} is a conflict with local user, error: {exc}')
-                with no_reverse_sync():
-                    if user_defaults['is_superuser'] is False:
-                        user_defaults.pop('is_superuser')
-                    self.user, created = get_user_model().objects.update_or_create(
-                        username=self.token["user_data"]['username'],
-                        defaults=user_defaults,
-                    )
+        if user:
+            return user
 
-                    resource = Resource.get_resource_for_object(self.user)
+        resource_kwargs = self._build_resource_kwargs()
+        try:
+            resource = Resource.create_resource(ResourceType.objects.get(name="shared.user"), **resource_kwargs)
+            user = resource.content_object
+            logger.info(f"New user {user.username} created from JWT auth")
+        except IntegrityError as exc:
+            logger.debug(f'Existing user {self.token["user_data"]} is a conflict with local user, error: {exc}')
+            with no_reverse_sync():
+                if user_defaults.get('is_superuser') is False:
+                    user_defaults.pop('is_superuser')
+                user, created = get_user_model().objects.update_or_create(
+                    username=self.token["user_data"]['username'],
+                    defaults=user_defaults,
+                )
+                resource = Resource.get_resource_for_object(user)
+                resource.ansible_id = self.token['sub']
+                resource.service_id = self.token['service_id']
+                resource.save(update_fields=['ansible_id', 'service_id'])
+        return user
 
-                    resource.ansible_id = self.token['sub']
-                    resource.service_id = self.token['service_id']
-                    resource.save(update_fields=['ansible_id', 'service_id'])
-
-        setattr(self.user, "resource_api_actions", self.token.get("resource_api_actions", None))
-
-        logger.info(f"User {self.user.username} authenticated from JWT auth")
+    def _build_resource_kwargs(self):
+        resource_kwargs = {}
+        for resource_key, token_key in (('resource_data', 'user_data'), ('ansible_id', 'sub'), ('service_id', 'service_id')):
+            if token_key not in self.token:
+                logger.warning(f'Missing {token_key} in JWT data, omitting {resource_key} from local resource entry')
+            else:
+                resource_kwargs[resource_key] = self.token[token_key]
+        return resource_kwargs
 
     def log_and_raise(self, conditional_translate_object, expand_values={}, error_code=None):
         logger.error(conditional_translate_object.not_translated() % expand_values)
@@ -266,33 +270,43 @@ class JWTCommonAuth:
 
         from ansible_base.rbac.models import RoleUserAssignment
 
-        role_diff = RoleUserAssignment.objects.filter(user=self.user, role_definition__name__in=settings.ANSIBLE_BASE_JWT_MANAGED_ROLES)
+        role_diff = RoleUserAssignment.objects.filter(
+            user=self.user,
+            role_definition__name__in=settings.ANSIBLE_BASE_JWT_MANAGED_ROLES
+        )
 
+        role_diff = self._process_global_roles(role_diff)
+        role_diff = self._process_object_roles(role_diff)
+        self._remove_unauthorized_permissions(role_diff)
+
+    def _process_global_roles(self, role_diff):
         for system_role_name in self.token.get("global_roles", []):
             logger.debug(f"Processing system role {system_role_name} for {self.user.username}")
             rd = self.get_role_definition(system_role_name)
-            if rd:
-                if rd.name in settings.ANSIBLE_BASE_JWT_MANAGED_ROLES:
-                    assignment = rd.give_global_permission(self.user)
-                    role_diff = role_diff.exclude(pk=assignment.pk)
-                    logger.info(f"Granted user {self.user.username} global role {system_role_name}")
-                else:
-                    logger.error(f"Unable to grant {self.user.username} system level role {system_role_name} because it is not a JWT managed role")
-            else:
+            if not rd:
                 logger.error(f"Unable to grant {self.user.username} system level role {system_role_name} because it does not exist")
                 continue
+            if rd.name not in settings.ANSIBLE_BASE_JWT_MANAGED_ROLES:
+                logger.error(f"Unable to grant {self.user.username} system level role {system_role_name} because it is not a JWT managed role")
+                continue
+            assignment = rd.give_global_permission(self.user)
+            role_diff = role_diff.exclude(pk=assignment.pk)
+            logger.info(f"Granted user {self.user.username} global role {system_role_name}")
+        return role_diff
 
-        for object_role_name in self.token.get('object_roles', {}).keys():
+    def _process_object_roles(self, role_diff):
+        object_roles = self.token.get('object_roles', {})
+        for object_role_name, role_info in object_roles.items():
             rd = self.get_role_definition(object_role_name)
-            if rd is None:
+            if not rd:
                 logger.error(f"Unable to grant {self.user.username} object role {object_role_name} because it does not exist")
                 continue
-            elif rd.name not in settings.ANSIBLE_BASE_JWT_MANAGED_ROLES:
+            if rd.name not in settings.ANSIBLE_BASE_JWT_MANAGED_ROLES:
                 logger.error(f"Unable to grant {self.user.username} object role {object_role_name} because it is not a JWT managed role")
                 continue
 
-            object_type = self.token['object_roles'][object_role_name]['content_type']
-            object_indexes = self.token['object_roles'][object_role_name]['objects']
+            object_type = role_info['content_type']
+            object_indexes = role_info['objects']
 
             for index in object_indexes:
                 object_data = self.token['objects'][object_type][index]
@@ -308,9 +322,12 @@ class JWTCommonAuth:
                 if resource is not None:
                     assignment = rd.give_permission(self.user, obj)
                     role_diff = role_diff.exclude(pk=assignment.pk)
-                    logger.info(f"Granted user {self.user.username} role {object_role_name} to object {obj.name} with ansible_id {object_data['ansible_id']}")
+                    logger.info(
+                        f"Granted user {self.user.username} role {object_role_name} to object {obj.name} with ansible_id {object_data['ansible_id']}"
+                    )
+        return role_diff
 
-        # Remove all permissions not authorized by the JWT
+    def _remove_unauthorized_permissions(self, role_diff):
         for role_assignment in role_diff:
             rd = role_assignment.role_definition
             content_object = role_assignment.content_object
