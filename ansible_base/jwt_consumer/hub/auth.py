@@ -27,21 +27,21 @@ class HubJWTAuth(JWTAuthentication):
         self.team_content_type = ContentType.objects.get_for_model(team)
         self.org_content_type = ContentType.objects.get_for_model(organization)
 
-        admin_teams, member_teams = self._collect_team_roles(team)
+        admin_teams, member_teams = self._collect_team_roles()
 
         self._sync_team_assignments(team, admin_teams, member_teams)
         self._sync_auditor_role()
 
-    def _collect_team_roles(self, team):
+    def _collect_team_roles(self):
         admin_teams = []
         member_teams = []
         object_roles = self.common_auth.token.get('object_roles', {})
         for role_name in object_roles.keys():
             if role_name.startswith('Team'):
-                self._process_team_role(role_name, admin_teams, member_teams, team)
+                self._process_team_role(role_name, admin_teams, member_teams)
         return admin_teams, member_teams
 
-    def _process_team_role(self, role_name, admin_teams, member_teams, team):
+    def _process_team_role(self, role_name, admin_teams, member_teams):
         for object_index in self.common_auth.token['object_roles'][role_name]['objects']:
             team_data = self.common_auth.token['objects']['team'][object_index]
             team = self._get_or_create_team(team_data)
