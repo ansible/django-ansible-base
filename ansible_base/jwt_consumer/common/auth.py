@@ -149,7 +149,7 @@ class JWTCommonAuth:
             with no_reverse_sync():
                 if user_defaults.get('is_superuser') is False:
                     user_defaults.pop('is_superuser')
-                user, created = get_user_model().objects.update_or_create(
+                user, _ = get_user_model().objects.update_or_create(
                     username=self.token["user_data"]['username'],
                     defaults=user_defaults,
                 )

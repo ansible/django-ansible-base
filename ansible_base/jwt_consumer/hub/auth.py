@@ -23,25 +23,25 @@ class HubJWTAuth(JWTAuthentication):
         return Organization, Team
 
     def process_permissions(self):
-        Organization, Team = self.get_galaxy_models()
-        self.team_content_type = ContentType.objects.get_for_model(Team)
-        self.org_content_type = ContentType.objects.get_for_model(Organization)
+        organization, team = self.get_galaxy_models()
+        self.team_content_type = ContentType.objects.get_for_model(team)
+        self.org_content_type = ContentType.objects.get_for_model(organization)
 
-        admin_teams, member_teams = self._collect_team_roles(Team)
+        admin_teams, member_teams = self._collect_team_roles(team)
 
-        self._sync_team_assignments(Team, admin_teams, member_teams)
+        self._sync_team_assignments(team, admin_teams, member_teams)
         self._sync_auditor_role()
 
-    def _collect_team_roles(self, Team):
+    def _collect_team_roles(self, team):
         admin_teams = []
         member_teams = []
         object_roles = self.common_auth.token.get('object_roles', {})
         for role_name in object_roles.keys():
             if role_name.startswith('Team'):
-                self._process_team_role(role_name, admin_teams, member_teams, Team)
+                self._process_team_role(role_name, admin_teams, member_teams, team)
         return admin_teams, member_teams
 
-    def _process_team_role(self, role_name, admin_teams, member_teams, Team):
+    def _process_team_role(self, role_name, admin_teams, member_teams, team):
         for object_index in self.common_auth.token['object_roles'][role_name]['objects']:
             team_data = self.common_auth.token['objects']['team'][object_index]
             team = self._get_or_create_team(team_data)
@@ -66,18 +66,18 @@ class HubJWTAuth(JWTAuthentication):
                 )
                 return None
 
-    def _sync_team_assignments(self, Team, admin_teams, member_teams):
+    def _sync_team_assignments(self, team, admin_teams, member_teams):
         for roledef_name, teams in [('Team Admin', admin_teams), ('Team Member', member_teams)]:
             roledef = RoleDefinition.objects.get(name=roledef_name)
             team_pks = [team.pk for team in teams]
-            self._remove_unmatched_assignments(Team, roledef, team_pks)
+            self._remove_unmatched_assignments(team, roledef, team_pks)
             for team in teams:
                 roledef.give_permission(self.common_auth.user, team)
 
-    def _remove_unmatched_assignments(self, Team, roledef, team_pks):
+    def _remove_unmatched_assignments(self, team, roledef, team_pks):
         assignments = RoleUserAssignment.objects.filter(user=self.common_auth.user, role_definition=roledef).exclude(object_id__in=team_pks)
         for assignment in assignments:
-            team = Team.objects.get(pk=assignment.object_id)
+            team = team.objects.get(pk=assignment.object_id)
             roledef.remove_permission(self.common_auth.user, team)
 
     def _sync_auditor_role(self):
