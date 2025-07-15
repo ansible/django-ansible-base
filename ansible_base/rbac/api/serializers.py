@@ -323,6 +323,7 @@ class RoleTeamAssignmentSerializer(BaseAssignmentSerializer):
     team_ansible_id = serializers.UUIDField(
         required=False,
         help_text=_('The resource ID of the team who will receive permissions from this assignment. An alternative to team field.'),
+        allow_null=True,
     )
 
     class Meta:
