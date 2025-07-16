@@ -6,7 +6,7 @@ from jwt.exceptions import PyJWTError
 
 from ansible_base.authentication.authenticator_plugins.oidc import AuthenticatorPlugin
 from ansible_base.authentication.session import SessionAuthentication
-from ansible_base.lib.utils.response import get_relative_url
+from ansible_base.lib.utils.response import get_fully_qualified_url, get_relative_url
 
 authenticated_test_page = "authenticator-list"
 
@@ -40,6 +40,27 @@ def test_oidc_auth_failed(authenticate, unauthenticated_api_client, oidc_authent
     url = get_relative_url(authenticated_test_page)
     response = client.get(url)
     assert response.status_code == 401
+
+
+def test_oidc_create_via_api_without_callback_url(admin_api_client, oidc_configuration):
+    del oidc_configuration['CALLBACK_URL']
+
+    authenticator_data = {
+        "name": "Test OIDC Authenticator",
+        "enabled": True,
+        "create_objects": True,
+        "remove_users": True,
+        "type": "ansible_base.authentication.authenticator_plugins.oidc",
+        "configuration": oidc_configuration,
+    }
+
+    url = get_relative_url("authenticator-list")
+    response = admin_api_client.post(url, data=authenticator_data, format="json", SERVER_NAME="dab.example.com")
+    assert response.status_code == 201, response.data
+
+    slug = response.data["slug"]
+    expected_path = get_fully_qualified_url('social:complete', kwargs={'backend': slug})
+    assert response.data["configuration"]["CALLBACK_URL"] == f"http://dab.example.com{expected_path}"
 
 
 @pytest.mark.django_db

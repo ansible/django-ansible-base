@@ -9,7 +9,7 @@ from jwt.exceptions import PyJWTError
 from social_core.backends.open_id_connect import OpenIdConnectAuth
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
-from ansible_base.authentication.social_auth import SocialAuthMixin
+from ansible_base.authentication.social_auth import SocialAuthMixin, SocialAuthValidateCallbackMixin
 from ansible_base.lib.serializers.fields import BooleanField, CharField, ChoiceField, DictField, IntegerField, ListField, URLField
 from ansible_base.lib.utils.settings import get_setting
 
@@ -88,6 +88,15 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
         required=False,
         allow_null=True,
         ui_field_label=_("Authorization URL"),
+    )
+
+    CALLBACK_URL = URLField(
+        help_text=_(
+            "Provide this URL as the callback URL for your application as part of your registration process. Refer to the documentation for more detail."
+        ),
+        required=False,
+        allow_null=True,
+        ui_field_label=_("OIDC Callback URL"),
     )
 
     ID_KEY = CharField(
@@ -210,7 +219,7 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
     )
 
 
-class AuthenticatorPlugin(SocialAuthMixin, OpenIdConnectAuth, AbstractAuthenticatorPlugin):
+class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, OpenIdConnectAuth, AbstractAuthenticatorPlugin):
     configuration_class = OpenIdConnectConfiguration
     type = "open_id_connect"
     logger = logger
