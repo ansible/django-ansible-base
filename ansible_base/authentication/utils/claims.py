@@ -17,6 +17,7 @@ from flags.state import flag_enabled
 from rest_framework.serializers import DateTimeField
 
 from ansible_base.authentication.models import Authenticator, AuthenticatorMap, AuthenticatorUser
+from ansible_base.authentication.utils.authenticator_map import check_role_type, expand_syntax
 from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam, CommonModel
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 from ansible_base.lib.utils.string import is_empty
@@ -58,15 +59,12 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
 
     # load the maps
     logger.debug(f"Authenticator ID: {authenticator.id}")
-    maps = AuthenticatorMap.objects.order_by("order")
-    logger.debug(maps)
     maps = AuthenticatorMap.objects.filter(authenticator=authenticator.id).order_by("order")
     logger.debug("==============================================================")
-    logger.debug(maps)
+    logger.debug("Processing {maps.count()} map(s) for this authenticator")
 
     for auth_map in maps:
-        logger.debug(auth_map)
-        logger.debug("++++")
+        logger.debug(f"Processing map {auth_map.name} {auth_map.id}")
         has_permission = None
         trigger_result = TriggerResult.SKIP
         allowed_keys = TRIGGER_DEFINITION.keys()
@@ -109,22 +107,43 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
 
         rule_responses.append({auth_map.id: has_permission, 'enabled': auth_map.enabled})
 
+        understood_map = False
         if auth_map.map_type == 'allow' and not has_permission:
             # If any rule does not allow we don't want to return this to true
             access_allowed = False
+            understood_map = True
         elif auth_map.map_type == 'is_superuser':
             is_superuser = has_permission
-        elif auth_map.map_type in ['team', 'role'] and not is_empty(auth_map.organization) and not is_empty(auth_map.team) and not is_empty(auth_map.role):
-            if auth_map.organization not in org_team_mapping:
-                org_team_mapping[auth_map.organization] = {}
-            org_team_mapping[auth_map.organization][auth_map.team] = has_permission
-            _add_rbac_role_mapping(has_permission, rbac_role_mapping, auth_map.role, auth_map.organization, auth_map.team)
-        elif auth_map.map_type in ['organization', 'role'] and not is_empty(auth_map.organization) and not is_empty(auth_map.role):
-            organization_membership[auth_map.organization] = has_permission
-            _add_rbac_role_mapping(has_permission, rbac_role_mapping, auth_map.role, auth_map.organization)
-        elif auth_map.map_type == 'role' and not is_empty(auth_map.role) and is_empty(auth_map.organization) and is_empty(auth_map.team):
-            _add_rbac_role_mapping(has_permission, rbac_role_mapping, auth_map.role)
-        else:
+            understood_map = True
+        elif auth_map.map_type in ['team', 'organization', 'role']:
+            # These types of maps can have expansions
+            for expanded_values in expand_syntax(attrs, auth_map):
+                expanded_organization = expanded_values.get('organization', None)
+                expanded_team = expanded_values.get('team', None)
+                expanded_role = expanded_values.get('role', None)
+
+                if (role_errors := check_role_type(map_type=auth_map.map_type, role=expanded_role, team=expanded_team, org=expanded_organization)) != {}:
+                    logger.info(f"Map type {auth_map.map_type} of rule {auth_map.name} had an invalid role type and will be skipped {role_errors}")
+                elif (
+                    auth_map.map_type in ['team', 'role']
+                    and not is_empty(expanded_organization)
+                    and not is_empty(expanded_team)
+                    and not is_empty(expanded_role)
+                ):
+                    if expanded_organization not in org_team_mapping:
+                        org_team_mapping[expanded_organization] = {}
+                    org_team_mapping[expanded_organization][expanded_team] = has_permission
+                    _add_rbac_role_mapping(has_permission, rbac_role_mapping, expanded_role, expanded_organization, expanded_team)
+                    understood_map = True
+                elif auth_map.map_type in ['organization', 'role'] and not is_empty(expanded_organization) and not is_empty(expanded_role):
+                    organization_membership[expanded_organization] = has_permission
+                    _add_rbac_role_mapping(has_permission, rbac_role_mapping, expanded_role, expanded_organization)
+                    understood_map = True
+                elif auth_map.map_type == 'role' and not is_empty(expanded_role) and is_empty(expanded_organization) and is_empty(expanded_team):
+                    _add_rbac_role_mapping(has_permission, rbac_role_mapping, expanded_role)
+                    understood_map = True
+
+        if not understood_map:
             logger.error(f"Map type {auth_map.map_type} of rule {auth_map.name} does not know how to be processed")
 
     return {

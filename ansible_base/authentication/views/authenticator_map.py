@@ -12,3 +12,4 @@ class AuthenticatorMapViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
 
     queryset = AuthenticatorMap.objects.all().order_by("id")
     serializer_class = AuthenticatorMapSerializer
+    allow_service_token = True

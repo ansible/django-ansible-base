@@ -55,7 +55,7 @@ class AuthenticatorMap(NamedCommonModel):
         null=True,
         default=None,
         blank=True,
-        help_text=_("The role this map will grant the authenticating user to the targeted object."),
+        help_text=_("The role this map will grant the authenticating user to the targeted object. Will expand {% for_attr_value(user_orgs) %} syntax"),
     )
 
     team = models.CharField(
@@ -63,14 +63,14 @@ class AuthenticatorMap(NamedCommonModel):
         null=True,
         default=None,
         blank=True,
-        help_text=_('A team name this rule works on.'),
+        help_text=_('A team name this rule works on. Will expand {% for_attr_value(user_orgs) %} syntax.'),
     )
     organization = models.CharField(
         max_length=512,
         null=True,
         default=None,
         blank=True,
-        help_text=(_('An organization name this rule works on.')),
+        help_text=(_('An organization name this rule works on. Will expand {% for_attr_value(user_orgs) %} syntax')),
     )
     triggers = models.JSONField(
         null=False,
