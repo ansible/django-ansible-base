@@ -9,6 +9,7 @@ from ansible_base.authentication.social_auth import (
     AuthenticatorStrategy,
     SocialAuthMixin,
     SocialAuthValidateCallbackMixin,
+    capture_oauth_email_pipeline,
     create_user_claims_pipeline,
 )
 
@@ -109,6 +110,179 @@ id_token_no_groups = {
 id_token = {**id_token_no_groups, "groups": ["myidtokengroup"]}
 
 id_token_duplicate_group = {**id_token_no_groups, "groups": ["mygroup", "myidtokengroup"]}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "backend_has_instance,user_exists,uid_exists,email_value,expected_calls",
+    [
+        # Happy path - all parameters valid
+        (True, True, True, "user@example.com", {"get_or_create": True, "debug": True, "info": True}),
+        # Email as list (SAML case)
+        (True, True, True, ["user@example.com", "backup@example.com"], {"get_or_create": True, "debug": True, "info": True}),
+        # Empty email
+        (True, True, True, "", {"get_or_create": True, "debug": True, "info": True}),
+        # Email as non-string (gets normalized to empty)
+        (True, True, True, 123, {"get_or_create": True, "debug": True, "info": True}),
+        # No backend database_instance attribute
+        (False, True, True, "user@example.com", {"warning_backend": True}),
+        # Backend database_instance is None
+        ("none", True, True, "user@example.com", {"warning_backend": True}),
+        # No user in kwargs
+        (True, False, True, "user@example.com", {}),
+        # No uid in kwargs
+        (True, True, False, "user@example.com", {"warning_uid": True}),
+    ],
+)
+@mock.patch("ansible_base.authentication.social_auth.logger")
+@mock.patch("ansible_base.authentication.utils.authentication.get_or_create_authenticator_user")
+def test_capture_oauth_email_pipeline(mock_get_or_create, mock_logger, backend_has_instance, user_exists, uid_exists, email_value, expected_calls):
+    """Test the capture_oauth_email_pipeline function with various scenarios."""
+
+    # Create mock objects
+    mock_user = mock.Mock()
+    mock_user.username = "testuser"
+
+    if backend_has_instance is True:
+        mock_backend = mock.Mock()
+        mock_backend.database_instance = mock.Mock()
+        mock_backend.database_instance.name = "Test Authenticator"
+    elif backend_has_instance == "none":
+        # Test case where backend has database_instance attribute but it's None
+        mock_backend = mock.Mock()
+        mock_backend.database_instance = None
+    else:
+        # Test case where backend doesn't have database_instance attribute
+        mock_backend = mock.Mock(spec=[])  # Backend without database_instance attribute
+
+    # Setup kwargs and details
+    kwargs = {}
+    if user_exists:
+        kwargs['user'] = mock_user
+    if uid_exists:
+        kwargs['uid'] = "test_uid"
+    kwargs['response'] = {"extra": "data"}
+
+    details = {'email': email_value, 'first_name': 'Test', 'last_name': 'User'}
+
+    # Call the function
+    capture_oauth_email_pipeline(backend=mock_backend, details=details, **kwargs)
+
+    # Verify expected calls
+    if expected_calls.get("warning_backend"):
+        mock_logger.warning.assert_called_with("No backend or database_instance found in OAuth email pipeline")
+
+    if expected_calls.get("warning_uid"):
+        mock_logger.warning.assert_called_with("No uid found in OAuth email pipeline")
+
+    if expected_calls.get("debug"):
+        # Normalize email for assertion
+        expected_email = email_value
+        if isinstance(email_value, list) and email_value:
+            expected_email = email_value[0]
+        elif not isinstance(email_value, str):
+            expected_email = ""
+
+        mock_logger.debug.assert_called_with(f"Capturing OAuth email for user testuser: {expected_email}")
+
+    if expected_calls.get("get_or_create"):
+        # Verify get_or_create_authenticator_user was called with correct parameters
+        assert mock_get_or_create.called
+        call_args = mock_get_or_create.call_args
+
+        # Check uid
+        assert call_args[1]['uid'] == 'test_uid'
+
+        # Check normalized email
+        expected_email = email_value
+        if isinstance(email_value, list) and email_value:
+            expected_email = email_value[0]
+        elif not isinstance(email_value, str):
+            expected_email = ""
+        assert call_args[1]['email'] == expected_email
+
+        # Check other parameters
+        assert call_args[1]['authenticator'] == mock_backend.database_instance
+        assert call_args[1]['user_details'] == details
+        assert call_args[1]['extra_data'] == {"extra": "data"}
+
+    if expected_calls.get("info"):
+        expected_email = email_value
+        if isinstance(email_value, list) and email_value:
+            expected_email = email_value[0]
+        elif not isinstance(email_value, str):
+            expected_email = ""
+        mock_logger.info.assert_called_with(f"Stored OAuth email {expected_email} for user testuser from Test Authenticator")
+
+    # If no expected calls, verify nothing was called
+    if not expected_calls:
+        assert not mock_get_or_create.called
+
+
+@mock.patch("ansible_base.authentication.social_auth.logger")
+@mock.patch("ansible_base.authentication.utils.authentication.get_or_create_authenticator_user")
+def test_capture_oauth_email_pipeline_exception_handling(mock_get_or_create, mock_logger):
+    """Test exception handling in capture_oauth_email_pipeline."""
+
+    # Setup mocks to raise exception
+    mock_get_or_create.side_effect = Exception("Database error")
+
+    mock_user = mock.Mock()
+    mock_user.username = "testuser"
+
+    mock_backend = mock.Mock()
+    mock_backend.database_instance = mock.Mock()
+    mock_backend.database_instance.name = "Test Authenticator"
+
+    kwargs = {'user': mock_user, 'uid': 'test_uid', 'response': {}}
+    details = {'email': 'user@example.com'}
+
+    # Call the function
+    capture_oauth_email_pipeline(backend=mock_backend, details=details, **kwargs)
+
+    # Verify exception was caught and logged
+    mock_logger.warning.assert_called_with("Failed to store OAuth email for user testuser: Database error")
+
+
+@mock.patch("ansible_base.authentication.social_auth.logger")
+@mock.patch("ansible_base.authentication.utils.authentication.get_or_create_authenticator_user")
+def test_capture_oauth_email_pipeline_edge_cases(mock_get_or_create, mock_logger):
+    """Test edge cases for email normalization in capture_oauth_email_pipeline."""
+
+    mock_user = mock.Mock()
+    mock_user.username = "testuser"
+
+    mock_backend = mock.Mock()
+    mock_backend.database_instance = mock.Mock()
+    mock_backend.database_instance.name = "Test Authenticator"
+
+    test_cases = [
+        # Empty list
+        ([], ""),
+        # None value
+        (None, ""),
+        # List with empty string
+        ([""], ""),
+        # List with None as first element
+        ([None, "backup@example.com"], ""),
+        # Multiple valid emails in list
+        (["primary@example.com", "backup@example.com"], "primary@example.com"),
+    ]
+
+    for email_input, expected_email in test_cases:
+        # Reset mocks
+        mock_get_or_create.reset_mock()
+        mock_logger.reset_mock()
+
+        kwargs = {'user': mock_user, 'uid': 'test_uid', 'response': {}}
+        details = {'email': email_input}
+
+        # Call the function
+        capture_oauth_email_pipeline(backend=mock_backend, details=details, **kwargs)
+
+        # Verify the email was normalized correctly
+        call_args = mock_get_or_create.call_args
+        assert call_args[1]['email'] == expected_email, f"Failed for input {email_input}, got {call_args[1]['email']}, expected {expected_email}"
 
 
 @pytest.mark.parametrize(

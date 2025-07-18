@@ -87,7 +87,8 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
             return None
 
         user, _authenticator_user, _is_created = get_or_create_authenticator_user(
-            username,
+            uid=username,
+            email="",
             authenticator=self.database_instance,
             user_details={},
             extra_data={"username": username},

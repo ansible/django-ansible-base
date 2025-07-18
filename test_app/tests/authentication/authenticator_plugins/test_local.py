@@ -111,15 +111,6 @@ def test_local_auth_no_db_instance():
     assert plugin.authenticate(request=RequestFactory(), username='jane', password='doe') is None
 
 
-def test_local_auth_determine_username_returns_different_user(local_authenticator, ldap_authenticator, random_user):
-    from ansible_base.authentication.models import AuthenticatorUser
-
-    # Tie the random user to another authenticator, this will force determine_username_from_uid to return something different
-    AuthenticatorUser.objects.create(uid=random_user.username, user=random_user, provider=ldap_authenticator)
-    plugin = AuthenticatorPlugin(database_instance=local_authenticator)
-    assert plugin.authenticate(request=RequestFactory(), username=random_user.username, password='doe') is None
-
-
 @pytest.mark.django_db()
 def test_can_authenticate_from_controller_nonexistent_user():
     """

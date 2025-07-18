@@ -13,6 +13,7 @@ from social_django.strategy import DjangoStrategy
 
 from ansible_base.authentication.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_class, get_authenticator_plugins
 from ansible_base.authentication.models import Authenticator, AuthenticatorUser
+from ansible_base.authentication.utils.user import normalize_and_get_email
 from ansible_base.lib.utils.response import get_fully_qualified_url
 
 logger = logging.getLogger('ansible_base.authentication.social_auth')
@@ -187,6 +188,41 @@ class SocialAuthValidateCallbackMixin:
             configuration['CALLBACK_URL'] = get_fully_qualified_url('social:complete', kwargs={'backend': slug})
 
         return data
+
+
+def capture_oauth_email_pipeline(*args, backend, details, **kwargs):
+    """
+    Pipeline function to capture and store OAuth provider email in AuthenticatorUser.
+    """
+    if not backend or not hasattr(backend, 'database_instance') or not backend.database_instance:
+        logger.warning("No backend or database_instance found in OAuth email pipeline")
+        return
+
+    user = kwargs.get('user')
+    if not user:
+        return
+
+    uid = kwargs.get('uid')
+    if not uid:
+        logger.warning("No uid found in OAuth email pipeline")
+        return
+
+    email = normalize_and_get_email(details.get('email', ''))
+    if not email:
+        email = ''
+
+    logger.debug(f"Capturing OAuth email for user {user.username}: {email}")
+
+    # Get or update the AuthenticatorUser with the email
+    try:
+        from ansible_base.authentication.utils.authentication import get_or_create_authenticator_user
+
+        get_or_create_authenticator_user(
+            uid=uid, email=email, authenticator=backend.database_instance, user_details=details, extra_data=kwargs.get('response', {})
+        )
+        logger.info(f"Stored OAuth email {email} for user {user.username} from {backend.database_instance.name}")
+    except Exception as e:
+        logger.warning(f"Failed to store OAuth email for user {user.username}: {e}")
 
 
 def create_user_claims_pipeline(*args, backend, response, **kwargs):

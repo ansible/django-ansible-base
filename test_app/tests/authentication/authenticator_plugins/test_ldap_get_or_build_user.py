@@ -32,5 +32,5 @@ def test_get_or_build_user(username, ldap_authenticator):
         ldap_object = MagicMock()
         plugin.get_or_build_user(username, ldap_object)
         assert get_or_create_authenticator_user.called
-        assert username.lower() in get_or_create_authenticator_user.call_args[0]
-        assert username not in get_or_create_authenticator_user.call_args[0]
+        assert username.lower() in get_or_create_authenticator_user.call_args.kwargs['uid']
+        assert username not in get_or_create_authenticator_user.call_args.kwargs['uid']

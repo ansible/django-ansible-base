@@ -322,6 +322,7 @@ def test_password_based_authenticators_existing_user(ldap_authenticator, saml_au
 
     get_or_create_authenticator_user(
         uid="my_user_id",
+        email="my_user_id@example.com",
         authenticator=ldap_authenticator,
         user_details={},
         extra_data={},
@@ -354,6 +355,7 @@ def test_password_based_authenticators_new_user(ldap_authenticator, saml_authent
 
     user, _, _ = get_or_create_authenticator_user(
         uid="my_user_id",
+        email="my_user_id@example.com",
         authenticator=ldap_authenticator,
         user_details={},
         extra_data={},

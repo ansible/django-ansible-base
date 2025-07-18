@@ -1,10 +1,29 @@
-from typing import Optional
+from typing import Any, Optional
 
 from django.contrib.auth.models import AbstractUser
 
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
 from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.lib.utils.models import is_system_user
+
+
+# This helper centralizes the logic for handling and cleaning the email input.
+def normalize_and_get_email(email: Any) -> Optional[str]:
+    """Handles list or string email input, validates type, and normalizes it."""
+    if not email:  # Covers None, empty string, or empty list
+        return None
+
+    if isinstance(email, list):
+        first_email = email[0]
+        if not isinstance(first_email, str) or not first_email.strip():
+            return None
+        return first_email.strip().lower()
+
+    if isinstance(email, str):
+        return email.strip().lower()
+
+    # For any other type (int, dict, etc.), treat as empty
+    return None
 
 
 def can_user_change_password(user: Optional[AbstractUser]) -> bool:

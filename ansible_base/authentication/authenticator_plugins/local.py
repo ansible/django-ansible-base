@@ -9,7 +9,7 @@ from django.utils.translation import gettext_lazy as _
 from requests.auth import HTTPBasicAuth
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
-from ansible_base.authentication.utils.authentication import determine_username_from_uid, get_or_create_authenticator_user
+from ansible_base.authentication.utils.authentication import get_or_create_authenticator_user
 from ansible_base.authentication.utils.claims import update_user_claims
 from ansible_base.lib.utils.settings import get_setting
 
@@ -50,16 +50,6 @@ class AuthenticatorPlugin(ModelBackend, AbstractAuthenticatorPlugin):
             logger.info(f"Local authenticator {self.database_instance.name} is disabled, skipping")
             return None
 
-        # Determine the user name for this authenticator, we have to call this so that we can "attach" to a pre-created user
-        new_username = determine_username_from_uid(username, self.database_instance)
-        # However we can't really accept a different username because we are the local authenticator imagine if:
-        #    User "a" is from another authenticator and has an AuthenticatorUser
-        #    User "a" tried to login from local authenticator
-        #    The above function will return a username of "a<hash>"
-        #    We then try to do local authentication with the database from a different username that will not exist in the database, so it would never work
-        if new_username != username:
-            return None
-
         user = super().authenticate(request, username, password, **kwargs)
         controller_login_results = None
         if (
@@ -84,7 +74,8 @@ class AuthenticatorPlugin(ModelBackend, AbstractAuthenticatorPlugin):
         # it has an AuthenticatorUser associated with it.
         if user:
             get_or_create_authenticator_user(
-                username,
+                uid=username,
+                email=user.email,
                 authenticator=self.database_instance,
                 user_details={},
                 extra_data={

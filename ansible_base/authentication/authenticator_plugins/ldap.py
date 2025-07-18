@@ -554,7 +554,13 @@ class AuthenticatorPlugin(LDAPBackend, AbstractAuthenticatorPlugin):
             # In unit testing there were cases where the function we are in was being called before get_or_build_user.
             # Its unclear if that was just a byproduct of mocking or a real scenario.
             # Since this call is idempotent we are just going to call it again to ensure the AuthenticatorUser is created for update_user_claims
-            get_or_create_authenticator_user(username.lower(), self.database_instance, user_details={}, extra_data=user_from_ldap.ldap_user.attrs.data)
+            get_or_create_authenticator_user(
+                uid=username.lower(),
+                email=user_from_ldap.email,
+                authenticator=self.database_instance,
+                user_details={},
+                extra_data=user_from_ldap.ldap_user.attrs.data,
+            )
             return update_user_claims(user_from_ldap, self.database_instance, users_groups)
         except Exception:
             logger.exception(f"Encountered an error authenticating to LDAP {self.database_instance.name}")
@@ -582,8 +588,9 @@ class AuthenticatorPlugin(LDAPBackend, AbstractAuthenticatorPlugin):
         This gets called by _LDAPUser to create the user in the database.
         """
         user, _authenticator_user, created = get_or_create_authenticator_user(
-            username.lower(),
-            self.database_instance,
+            uid=username.lower(),
+            email=ldap_user.attrs.data.get(ldap_user.settings.USER_ATTR_MAP['email'], ""),
+            authenticator=self.database_instance,
             user_details={
                 "username": username,
             },
