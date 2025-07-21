@@ -6,6 +6,7 @@ from django.utils.text import slugify
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.serializers import AuthenticatorSerializer
+from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 
 
 def test_validate_blank_authenticator_slug(shut_up_logging):
@@ -37,6 +38,15 @@ def test_removed_authenticator_plugin(ldap_authenticator, shut_up_logging):
     assert 'error' in item
     assert 'configuration' in item
     assert item['configuration'] == {}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("fixture", ["github_enterprise_authenticator", "github_enterprise_organization_authenticator"])
+def test_authenticator_configuration_encrypted_fields(request, fixture, shut_up_logging):
+    serializer = AuthenticatorSerializer()
+    authenticator = request.getfixturevalue(fixture)
+    item = serializer.to_representation(authenticator)
+    assert item['configuration']["SECRET"] == ENCRYPTED_STRING
 
 
 def test_authenticator_no_configuration(shut_up_logging):

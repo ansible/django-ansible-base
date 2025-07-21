@@ -1,16 +1,15 @@
 import logging
+from typing import Optional
 
-from django.conf import settings
-from django.core.exceptions import ObjectDoesNotExist
 from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.models import AuthenticatorMap
-from ansible_base.authentication.utils.authenticator_map import _EXPANSION_FIELDS, check_expansion_syntax, has_expansion
+from ansible_base.authentication.utils.authenticator_map import _EXPANSION_FIELDS, check_expansion_syntax, check_role_type, has_expansion
 from ansible_base.authentication.utils.trigger_definition import TRIGGER_DEFINITION
 from ansible_base.lib.serializers.common import NamedCommonModelSerializer
-from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 from ansible_base.lib.utils.string import is_empty
+from ansible_base.lib.utils.typing import TranslatedString
 
 logger = logging.getLogger('ansible_base.authentication.serializers.authenticator_map')
 
@@ -51,57 +50,12 @@ class AuthenticatorMapSerializer(NamedCommonModelSerializer):
             raise ValidationError(errors)
         return data
 
-    @staticmethod
-    def _is_rbac_installed():
-        return 'ansible_base.rbac' in settings.INSTALLED_APPS
-
-    def validate_role_data(self, map_type, role, org, team):
-        errors = {}
-
-        # Validation is possible only if RBAC is installed
-        if not self._is_rbac_installed():
-            logger.warning(_("You specified a role without RBAC installed "))
-            return errors
-
-        from ansible_base.rbac.models import RoleDefinition
-
-        # If this role is dynamically expanded we can't check it now, only at run time.
+    def validate_role_data(self, map_type: Optional[str], role: Optional[str], org: Optional[str], team: Optional[str]) -> dict[str, TranslatedString]:
+        # If the role field has an expansion in it we can only check this role at runtime
         if has_expansion(role):
-            return errors
+            return {}
 
-        try:
-            rbac_role = RoleDefinition.objects.get(name=role)
-            is_system_role = rbac_role.content_type is None
-
-            # system role is allowed for map type == role without further conditions
-            if is_system_role and map_type == 'role':
-                return errors
-
-            is_org_role, is_team_role = False, False
-            if not is_system_role:
-                model_class = rbac_role.content_type.model_class()
-                is_org_role = issubclass(model_class, get_organization_model())
-                is_team_role = issubclass(model_class, get_team_model())
-
-            # role type and map type must correspond
-            if map_type == 'organization' and not is_org_role:
-                errors['role'] = _("For an organization map type you must specify an organization based role")
-
-            if map_type == 'team' and not is_team_role:
-                errors['role'] = _("For a team map type you must specify a team based role")
-
-            # org/team role needs organization field
-            if (is_org_role or is_team_role) and is_empty(org):
-                errors["organization"] = _("You must specify an organization with the selected role")
-
-            # team role needs team field
-            if is_team_role and is_empty(team):
-                errors["team"] = _("You must specify a team with the selected role")
-
-        except ObjectDoesNotExist:
-            errors['role'] = _("RoleDefinition {role} doesn't exist").format(role=role)
-
-        return errors
+        return check_role_type(map_type, role, org, team)
 
     def validate_trigger_data(self, data):
         errors = {}

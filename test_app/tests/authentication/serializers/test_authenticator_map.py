@@ -17,7 +17,6 @@ class TestAuthenticatorMapSerializerMapType:
     def init_serializer(self, serializer):
         serializer.validate_trigger_data = MagicMock(return_value={})
         serializer.validate_role_data = MagicMock(return_value={})
-        serializer._is_rbac_installed = MagicMock(return_value=True)
 
     def test_validate_map_type_organization(self, serializer):
         """map_type='organization' requires fields organization and role"""
@@ -63,7 +62,6 @@ class TestAuthenticatorMapSerializerRole:
     @pytest.fixture(autouse=True)
     def init_serializer(self, serializer):
         serializer.validate_trigger_data = MagicMock(return_value={})
-        serializer._is_rbac_installed = MagicMock(return_value=True)
 
     def test_validate_role_system_role(self, serializer, system_role):
         try:
@@ -133,7 +131,6 @@ class TestAuthenticatorMapEscapeSequence:
     @pytest.fixture(autouse=True)
     def init_serializer(self, serializer):
         serializer.validate_trigger_data = MagicMock(return_value={})
-        serializer._is_rbac_installed = MagicMock(return_value=True)
 
     @pytest.mark.parametrize(
         "role,organization,team",

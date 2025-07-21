@@ -305,10 +305,11 @@ def google_oauth2_authenticator(google_oauth2_configuration):
 def oidc_configuration():
     return {
         "OIDC_ENDPOINT": "https://localhost/api/gateway/callback/oidc_test/",
-        "OIDC_VERIFY_SSL": True,
+        "VERIFY_SSL": True,
         "KEY": "12345",
         "SECRET": "abcdefg12345",
         "AUTHORIZATION_URL": "https://oidc.example.com/authorize/",
+        "CALLBACK_URL": "https://localhost/api/social/complete/ansible_base-authenticator_plugins-oidc__test-oidc-authenticator/",
     }
 
 

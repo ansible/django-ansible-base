@@ -18,6 +18,7 @@ class AuthenticatorViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
 
     queryset = Authenticator.objects.all()
     serializer_class = AuthenticatorSerializer
+    allow_service_token = True
 
     def get_serializer(self, *args, **kwargs):
         # Return an instanced serializer if one exists for OPTIONS requests.

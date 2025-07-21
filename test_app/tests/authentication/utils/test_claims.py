@@ -6,7 +6,7 @@ from django.db import connection
 
 from ansible_base.authentication.models import AuthenticatorMap, AuthenticatorUser
 from ansible_base.authentication.utils import claims
-from test_app.tests.authentication.conftest import SYSTEM_ROLE_NAME
+from test_app.tests.authentication.conftest import ORG_ADMIN_ROLE_NAME, ORG_MEMBER_ROLE_NAME, SYSTEM_ROLE_NAME, TEAM_ADMIN_ROLE_NAME, TEAM_MEMBER_ROLE_NAME
 
 
 @pytest.mark.parametrize(
@@ -75,7 +75,7 @@ from test_app.tests.authentication.conftest import SYSTEM_ROLE_NAME
         pytest.param(
             {"always": {}},
             "team",
-            'Team Member',
+            TEAM_MEMBER_ROLE_NAME,
             {},
             [],
             True,
@@ -83,15 +83,18 @@ from test_app.tests.authentication.conftest import SYSTEM_ROLE_NAME
             {
                 "organization_membership": {},
                 "team_membership": {"testorg": {"testteam": True}},
-                'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {}, 'teams': {'testteam': {'roles': {'Team Member': True}}}}}},
+                'rbac_roles': {
+                    'system': {'roles': {}},
+                    'organizations': {'testorg': {'roles': {}, 'teams': {'testteam': {'roles': {TEAM_MEMBER_ROLE_NAME: True}}}}},
+                },
             },
             [{1: True, 'enabled': True}],
-            id="Assign 'Team Member' role to team 'testteam'",
+            id=f"Assign {TEAM_MEMBER_ROLE_NAME} role to team 'testteam'",
         ),
         pytest.param(
             {"never": {}},
             "team",
-            'Team Member',
+            TEAM_MEMBER_ROLE_NAME,
             {},
             [],
             True,
@@ -99,15 +102,18 @@ from test_app.tests.authentication.conftest import SYSTEM_ROLE_NAME
             {
                 "organization_membership": {},
                 "team_membership": {"testorg": {"testteam": False}},
-                'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {}, 'teams': {'testteam': {'roles': {'Team Member': False}}}}}},
+                'rbac_roles': {
+                    'system': {'roles': {}},
+                    'organizations': {'testorg': {'roles': {}, 'teams': {'testteam': {'roles': {TEAM_MEMBER_ROLE_NAME: False}}}}},
+                },
             },
             [{1: False, 'enabled': True}],
-            id="Remove 'Team Member' role from team 'testteam'",
+            id=f"Remove {TEAM_MEMBER_ROLE_NAME} role from team 'testteam'",
         ),
         pytest.param(
             {"always": {}},
             "organization",
-            'Organization Member',
+            ORG_MEMBER_ROLE_NAME,
             {},
             [],
             True,
@@ -115,15 +121,15 @@ from test_app.tests.authentication.conftest import SYSTEM_ROLE_NAME
             {
                 "organization_membership": {"testorg": True},
                 "team_membership": {},
-                'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {'Organization Member': True}, 'teams': {}}}},
+                'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {ORG_MEMBER_ROLE_NAME: True}, 'teams': {}}}},
             },
             [{1: True, 'enabled': True}],
-            id="Assign 'Organization Member' role to organization 'testorg'",
+            id=f"Assign {ORG_MEMBER_ROLE_NAME} role to organization 'testorg'",
         ),
         pytest.param(
             {"never": {}},
             "organization",
-            'Organization Member',
+            ORG_MEMBER_ROLE_NAME,
             {},
             [],
             True,
@@ -131,15 +137,15 @@ from test_app.tests.authentication.conftest import SYSTEM_ROLE_NAME
             {
                 "organization_membership": {"testorg": False},
                 "team_membership": {},
-                'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {'Organization Member': False}, 'teams': {}}}},
+                'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {ORG_MEMBER_ROLE_NAME: False}, 'teams': {}}}},
             },
             [{1: False, 'enabled': True}],
-            id="Remove 'Organization Member' role from organization 'testorg'",
+            id=f"Remove {ORG_MEMBER_ROLE_NAME} role from organization 'testorg'",
         ),
         pytest.param(
             {"always": {}},
             "role",
-            "Team Member",
+            TEAM_MEMBER_ROLE_NAME,
             {},
             [],
             True,
@@ -147,15 +153,18 @@ from test_app.tests.authentication.conftest import SYSTEM_ROLE_NAME
             {
                 "organization_membership": {},
                 "team_membership": {"testorg": {"testteam": True}},
-                'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {}, 'teams': {'testteam': {'roles': {'Team Member': True}}}}}},
+                'rbac_roles': {
+                    'system': {'roles': {}},
+                    'organizations': {'testorg': {'roles': {}, 'teams': {'testteam': {'roles': {TEAM_MEMBER_ROLE_NAME: True}}}}},
+                },
             },
             [{1: True, 'enabled': True}],
-            id="Assign 'Team Member' role to team 'testteam' using map_type 'role'",
+            id=f"Assign {TEAM_MEMBER_ROLE_NAME} role to team 'testteam' using map_type 'role'",
         ),
         pytest.param(
             {"always": {}},
             "role",
-            "Organization Member",  # Team removed from auth map in the test
+            ORG_MEMBER_ROLE_NAME,  # Team removed from auth map in the test
             {},
             [],
             True,
@@ -163,10 +172,10 @@ from test_app.tests.authentication.conftest import SYSTEM_ROLE_NAME
             {
                 "organization_membership": {"testorg": True},
                 "team_membership": {},
-                'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {'Organization Member': True}, 'teams': {}}}},
+                'rbac_roles': {'system': {'roles': {}}, 'organizations': {'testorg': {'roles': {ORG_MEMBER_ROLE_NAME: True}, 'teams': {}}}},
             },
             [{1: True, 'enabled': True}],
-            id="Assign 'Organization Member' role to organization 'testorg' using map_type 'role'",
+            id=f"Assign {ORG_MEMBER_ROLE_NAME} role to organization 'testorg' using map_type 'role'",
         ),
         pytest.param(
             {"always": {}},
@@ -207,6 +216,8 @@ def test_create_claims_single_map_acl(
     exp_claims,
     exp_last_login_map_results,
     system_role,
+    org_member_rd,
+    member_rd,
 ):
     """
     Test a bunch of simple cases for the create_claims function.
@@ -218,7 +229,7 @@ def test_create_claims_single_map_acl(
     local_authenticator_map.triggers = triggers
     local_authenticator_map.map_type = map_type
     local_authenticator_map.role = role
-    if role == 'Organization Member':
+    if role == ORG_MEMBER_ROLE_NAME:
         local_authenticator_map.team = ' '
     elif role == SYSTEM_ROLE_NAME:
         local_authenticator_map.team = None
@@ -232,10 +243,15 @@ def test_create_claims_single_map_acl(
     assert res["access_allowed"] == exp_access_allowed
     assert res["is_superuser"] == exp_is_superuser
     assert res["claims"] == exp_claims
-    if connection.vendor != 'postgresql':
-        assert res["last_login_map_results"] == exp_last_login_map_results
-    else:
-        assert list(res["last_login_map_results"][0].values())[0] == list(exp_last_login_map_results[0].values())[0]
+
+    if connection.vendor == 'postgresql' and local_authenticator_map.id != 1:
+        # All of the test cases define exp_last_login_results with ID 1.
+        # But if we are running in postgres we will get sequential IDs back.
+        # So we need to massage the exp_last_login_results to have the correct ID
+        exp_last_login_map_results[0][local_authenticator_map.id] = exp_last_login_map_results[0][1]
+        del exp_last_login_map_results[0][1]
+
+    assert res["last_login_map_results"] == exp_last_login_map_results
 
 
 @mock.patch("ansible_base.authentication.utils.claims.logger")
@@ -915,3 +931,1118 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
         assert result["is_superuser"] is not None, "Claim should be present when enabled is True"
     else:
         assert result["is_superuser"] is None, "Claim should be None when enabled is False"
+
+
+@pytest.mark.parametrize(
+    "map_type,map_role,map_org,map_team,attributes,expected_value",
+    [
+        pytest.param(
+            'team',
+            TEAM_MEMBER_ROLE_NAME,
+            'Test',
+            "{% for_attr_value(member_of) %}",
+            {"member_of": "a"},
+            {
+                'organization_membership': {},
+                'rbac_roles': {
+                    'organizations': {
+                        'Test': {
+                            'roles': {},
+                            'teams': {
+                                'a': {
+                                    'roles': {
+                                        TEAM_MEMBER_ROLE_NAME: True,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {
+                    'Test': {
+                        'a': True,
+                    },
+                },
+            },
+            id="single_team_expansion_basic",
+        ),
+        # Parameterization after this created by AI
+        pytest.param(
+            'team',
+            TEAM_ADMIN_ROLE_NAME,
+            'Engineering',
+            "{% for_attr_value(departments) %}",
+            {"departments": ["frontend", "backend", "devops"]},
+            {
+                'organization_membership': {},
+                'rbac_roles': {
+                    'organizations': {
+                        'Engineering': {
+                            'roles': {},
+                            'teams': {
+                                'frontend': {
+                                    'roles': {
+                                        TEAM_ADMIN_ROLE_NAME: True,
+                                    },
+                                },
+                                'backend': {
+                                    'roles': {
+                                        TEAM_ADMIN_ROLE_NAME: True,
+                                    },
+                                },
+                                'devops': {
+                                    'roles': {
+                                        TEAM_ADMIN_ROLE_NAME: True,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {
+                    'Engineering': {
+                        'frontend': True,
+                        'backend': True,
+                        'devops': True,
+                    },
+                },
+            },
+            id="multiple_teams_expansion_from_list",
+        ),
+        pytest.param(
+            'organization',
+            ORG_ADMIN_ROLE_NAME,
+            "{% for_attr_value(company_orgs) %}",
+            None,
+            {"company_orgs": ["Sales", "Marketing", "HR"]},
+            {
+                'organization_membership': {
+                    'Sales': True,
+                    'Marketing': True,
+                    'HR': True,
+                },
+                'rbac_roles': {
+                    'organizations': {
+                        'Sales': {
+                            'roles': {
+                                ORG_ADMIN_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                        'Marketing': {
+                            'roles': {
+                                ORG_ADMIN_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                        'HR': {
+                            'roles': {
+                                ORG_ADMIN_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                    },
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {},
+            },
+            id="multiple_organizations_expansion",
+        ),
+        pytest.param(
+            'team',
+            TEAM_MEMBER_ROLE_NAME,
+            "{% for_attr_value(org_names) %}",
+            "{% for_attr_value(team_names) %}",
+            {"org_names": ["Org1", "Org2"], "team_names": ["TeamA", "TeamB"]},
+            {
+                'organization_membership': {},
+                'rbac_roles': {
+                    'organizations': {
+                        'Org1': {
+                            'roles': {},
+                            'teams': {
+                                'TeamA': {
+                                    'roles': {
+                                        TEAM_MEMBER_ROLE_NAME: True,
+                                    },
+                                },
+                                'TeamB': {
+                                    'roles': {
+                                        TEAM_MEMBER_ROLE_NAME: True,
+                                    },
+                                },
+                            },
+                        },
+                        'Org2': {
+                            'roles': {},
+                            'teams': {
+                                'TeamA': {
+                                    'roles': {
+                                        TEAM_MEMBER_ROLE_NAME: True,
+                                    },
+                                },
+                                'TeamB': {
+                                    'roles': {
+                                        TEAM_MEMBER_ROLE_NAME: True,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {
+                    'Org1': {
+                        'TeamA': True,
+                        'TeamB': True,
+                    },
+                    'Org2': {
+                        'TeamA': True,
+                        'TeamB': True,
+                    },
+                },
+            },
+            id="cartesian_product_org_team_expansion",
+        ),
+        pytest.param(
+            'team',
+            TEAM_ADMIN_ROLE_NAME,
+            'Development',
+            "{% for_attr_value(projects) %}",
+            {"projects": "single_project"},
+            {
+                'organization_membership': {},
+                'rbac_roles': {
+                    'organizations': {
+                        'Development': {
+                            'roles': {},
+                            'teams': {
+                                'single_project': {
+                                    'roles': {
+                                        TEAM_ADMIN_ROLE_NAME: True,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {
+                    'Development': {
+                        'single_project': True,
+                    },
+                },
+            },
+            id="single_string_attribute_expansion",
+        ),
+        pytest.param(
+            'team',
+            TEAM_MEMBER_ROLE_NAME,
+            'QA',
+            "{% for_attr_value(missing_attr) %}",
+            {"existing_attr": "value"},
+            {
+                'organization_membership': {},
+                'rbac_roles': {
+                    'organizations': {},
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {},
+            },
+            id="expansion_with_missing_attribute",
+        ),
+        pytest.param(
+            'team',
+            TEAM_MEMBER_ROLE_NAME,
+            'Operations',
+            "{% for_attr_value(empty_list) %}",
+            {"empty_list": []},
+            {
+                'organization_membership': {},
+                'rbac_roles': {
+                    'organizations': {},
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {},
+            },
+            id="expansion_with_empty_list",
+        ),
+        pytest.param(
+            'team',
+            TEAM_MEMBER_ROLE_NAME,
+            'Security',
+            "{% for_attr_value(null_attr) %}",
+            {"null_attr": None},
+            {
+                'organization_membership': {},
+                'rbac_roles': {
+                    'organizations': {},
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {},
+            },
+            id="expansion_with_null_attribute",
+        ),
+        pytest.param(
+            'organization',
+            ORG_MEMBER_ROLE_NAME,
+            "{% for_attr_value(complex_orgs) %}",
+            None,
+            {"complex_orgs": ["Finance & Accounting", "R&D-Innovation", "Sales_North_America"]},
+            {
+                'organization_membership': {
+                    'Finance & Accounting': True,
+                    'R&D-Innovation': True,
+                    'Sales_North_America': True,
+                },
+                'rbac_roles': {
+                    'organizations': {
+                        'Finance & Accounting': {
+                            'roles': {
+                                ORG_MEMBER_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                        'R&D-Innovation': {
+                            'roles': {
+                                ORG_MEMBER_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                        'Sales_North_America': {
+                            'roles': {
+                                ORG_MEMBER_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                    },
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {},
+            },
+            id="complex_organization_names_with_special_chars",
+        ),
+        pytest.param(
+            'team',
+            TEAM_MEMBER_ROLE_NAME,
+            'Unicode-Org',
+            "{% for_attr_value(unicode_teams) %}",
+            {"unicode_teams": ["开发团队", "测试团队", "Équipe-FR"]},
+            {
+                'organization_membership': {},
+                'rbac_roles': {
+                    'organizations': {
+                        'Unicode-Org': {
+                            'roles': {},
+                            'teams': {
+                                '开发团队': {
+                                    'roles': {
+                                        TEAM_MEMBER_ROLE_NAME: True,
+                                    },
+                                },
+                                '测试团队': {
+                                    'roles': {
+                                        TEAM_MEMBER_ROLE_NAME: True,
+                                    },
+                                },
+                                'Équipe-FR': {
+                                    'roles': {
+                                        TEAM_MEMBER_ROLE_NAME: True,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {
+                    'Unicode-Org': {
+                        '开发团队': True,
+                        '测试团队': True,
+                        'Équipe-FR': True,
+                    },
+                },
+            },
+            id="unicode_team_names_expansion",
+        ),
+        pytest.param(
+            'team',
+            'Senior Developer',
+            'Tech',
+            "{% for_attr_value(nested_groups) %}",
+            {"nested_groups": {"level1": ["web", "mobile"], "level2": ["api", "database"]}},
+            {
+                'organization_membership': {},
+                'rbac_roles': {
+                    'organizations': {},
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {},
+            },
+            id="expansion_with_nested_dict_attribute",
+        ),
+        pytest.param(
+            'team',
+            TEAM_MEMBER_ROLE_NAME,
+            'BigOrg',
+            "{% for_attr_value(large_team_list) %}",
+            {"large_team_list": [f"team_{i:03d}" for i in range(1, 101)]},
+            {
+                'organization_membership': {},
+                'rbac_roles': {
+                    'organizations': {
+                        'BigOrg': {
+                            'roles': {},
+                            'teams': {
+                                **{f"team_{i:03d}": {'roles': {TEAM_MEMBER_ROLE_NAME: True}} for i in range(1, 101)},
+                            },
+                        },
+                    },
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {
+                    'BigOrg': {
+                        **{f"team_{i:03d}": True for i in range(1, 101)},
+                    },
+                },
+            },
+            id="large_scale_team_expansion",
+        ),
+        pytest.param(
+            'team',
+            TEAM_MEMBER_ROLE_NAME,
+            'Mixed',
+            "{% for_attr_value(mixed_types) %}",
+            {"mixed_types": [1, "string", True, 3.14]},
+            {
+                'organization_membership': {},
+                'rbac_roles': {
+                    'organizations': {},
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {},
+            },
+            id="mixed_data_types_in_expansion",
+        ),
+        pytest.param(
+            'team',
+            TEAM_MEMBER_ROLE_NAME,
+            'TestOrg',
+            "{% for_attr_value(duplicate_teams) %}",
+            {"duplicate_teams": ["team1", "team2", "team1", "team3", "team2"]},
+            {
+                'organization_membership': {},
+                'rbac_roles': {
+                    'organizations': {
+                        'TestOrg': {
+                            'roles': {},
+                            'teams': {
+                                'team1': {
+                                    'roles': {
+                                        TEAM_MEMBER_ROLE_NAME: True,
+                                    },
+                                },
+                                'team2': {
+                                    'roles': {
+                                        TEAM_MEMBER_ROLE_NAME: True,
+                                    },
+                                },
+                                'team3': {
+                                    'roles': {
+                                        TEAM_MEMBER_ROLE_NAME: True,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {
+                    'TestOrg': {
+                        'team1': True,
+                        'team2': True,
+                        'team3': True,
+                    },
+                },
+            },
+            id="duplicate_values_in_expansion_list",
+        ),
+        pytest.param(
+            'team',
+            TEAM_MEMBER_ROLE_NAME,
+            'DevOps',
+            "{% for_attr_value(whitespace_teams) %}",
+            {"whitespace_teams": [" team1 ", "team2\t", "\nteam3", "  team4  "]},
+            {
+                'organization_membership': {},
+                'rbac_roles': {
+                    'organizations': {
+                        'DevOps': {
+                            'roles': {},
+                            'teams': {
+                                ' team1 ': {
+                                    'roles': {
+                                        TEAM_MEMBER_ROLE_NAME: True,
+                                    },
+                                },
+                                'team2\t': {
+                                    'roles': {
+                                        TEAM_MEMBER_ROLE_NAME: True,
+                                    },
+                                },
+                                '\nteam3': {
+                                    'roles': {
+                                        TEAM_MEMBER_ROLE_NAME: True,
+                                    },
+                                },
+                                '  team4  ': {
+                                    'roles': {
+                                        TEAM_MEMBER_ROLE_NAME: True,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {
+                    'DevOps': {
+                        ' team1 ': True,
+                        'team2\t': True,
+                        '\nteam3': True,
+                        '  team4  ': True,
+                    },
+                },
+            },
+            id="whitespace_handling_in_expansion",
+        ),
+        # Role map_type test cases
+        pytest.param(
+            'role',
+            ORG_ADMIN_ROLE_NAME,
+            'IT',
+            'Infrastructure',
+            {"user_roles": ["sysadmin", "dba", "network_admin"]},
+            {
+                'organization_membership': {},
+                'rbac_roles': {
+                    'organizations': {
+                        'IT': {
+                            'roles': {},
+                            'teams': {
+                                'Infrastructure': {
+                                    'roles': {
+                                        ORG_ADMIN_ROLE_NAME: True,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {
+                    'IT': {
+                        'Infrastructure': True,
+                    },
+                },
+            },
+            id="role_map_type_basic_team_assignment",
+        ),
+        pytest.param(
+            'role',
+            SYSTEM_ROLE_NAME,
+            'Business',
+            None,
+            {"management_roles": ["pm", "lead", "director"]},
+            {
+                'organization_membership': {
+                    'Business': True,
+                },
+                'rbac_roles': {
+                    'organizations': {
+                        'Business': {
+                            'roles': {
+                                SYSTEM_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                    },
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {},
+            },
+            id="role_map_type_organization_assignment",
+        ),
+        pytest.param(
+            'role',
+            SYSTEM_ROLE_NAME,
+            None,
+            None,
+            {"admin_privileges": ["super_admin", "global_admin"]},
+            {
+                'organization_membership': {},
+                'rbac_roles': {
+                    'organizations': {},
+                    'system': {
+                        'roles': {
+                            SYSTEM_ROLE_NAME: True,
+                        },
+                    },
+                },
+                'team_membership': {},
+            },
+            id="role_map_type_system_role_assignment",
+        ),
+        pytest.param(
+            'role',
+            TEAM_ADMIN_ROLE_NAME,
+            "{% for_attr_value(departments) %}",
+            "{% for_attr_value(teams) %}",
+            {"departments": ["Engineering", "QA"], "teams": ["Backend", "Frontend"]},
+            {
+                'organization_membership': {},
+                'rbac_roles': {
+                    'organizations': {
+                        'Engineering': {
+                            'roles': {},
+                            'teams': {
+                                'Backend': {
+                                    'roles': {
+                                        TEAM_ADMIN_ROLE_NAME: True,
+                                    },
+                                },
+                                'Frontend': {
+                                    'roles': {
+                                        TEAM_ADMIN_ROLE_NAME: True,
+                                    },
+                                },
+                            },
+                        },
+                        'QA': {
+                            'roles': {},
+                            'teams': {
+                                'Backend': {
+                                    'roles': {
+                                        TEAM_ADMIN_ROLE_NAME: True,
+                                    },
+                                },
+                                'Frontend': {
+                                    'roles': {
+                                        TEAM_ADMIN_ROLE_NAME: True,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {
+                    'Engineering': {
+                        'Backend': True,
+                        'Frontend': True,
+                    },
+                    'QA': {
+                        'Backend': True,
+                        'Frontend': True,
+                    },
+                },
+            },
+            id="role_map_type_with_expansion_org_and_team",
+        ),
+        pytest.param(
+            'role',
+            ORG_MEMBER_ROLE_NAME,
+            "{% for_attr_value(security_orgs) %}",
+            None,
+            {"security_orgs": ["Security", "Compliance", "Risk Management"]},
+            {
+                'organization_membership': {
+                    'Security': True,
+                    'Compliance': True,
+                    'Risk Management': True,
+                },
+                'rbac_roles': {
+                    'organizations': {
+                        'Security': {
+                            'roles': {
+                                ORG_MEMBER_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                        'Compliance': {
+                            'roles': {
+                                ORG_MEMBER_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                        'Risk Management': {
+                            'roles': {
+                                ORG_MEMBER_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                    },
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {},
+            },
+            id="role_map_type_multiple_org_expansion",
+        ),
+        pytest.param(
+            'role',
+            'Developer',
+            'Tech',
+            "{% for_attr_value(empty_teams) %}",
+            {"empty_teams": []},
+            {
+                'organization_membership': {},
+                'rbac_roles': {
+                    'organizations': {},
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {},
+            },
+            id="role_map_type_empty_expansion",
+        ),
+        # Organization map_type test cases
+        pytest.param(
+            'organization',
+            ORG_ADMIN_ROLE_NAME,
+            'Corporate',
+            None,
+            {"corp_access": ["full", "admin"]},
+            {
+                'organization_membership': {
+                    'Corporate': True,
+                },
+                'rbac_roles': {
+                    'organizations': {
+                        'Corporate': {
+                            'roles': {
+                                ORG_ADMIN_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                    },
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {},
+            },
+            id="organization_map_type_basic_assignment",
+        ),
+        pytest.param(
+            'organization',
+            ORG_MEMBER_ROLE_NAME,
+            "{% for_attr_value(user_orgs) %}",
+            None,
+            {"user_orgs": ["Finance", "Legal", "HR", "Operations"]},
+            {
+                'organization_membership': {
+                    'Finance': True,
+                    'Legal': True,
+                    'HR': True,
+                    'Operations': True,
+                },
+                'rbac_roles': {
+                    'organizations': {
+                        'Finance': {
+                            'roles': {
+                                ORG_MEMBER_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                        'Legal': {
+                            'roles': {
+                                ORG_MEMBER_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                        'HR': {
+                            'roles': {
+                                ORG_MEMBER_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                        'Operations': {
+                            'roles': {
+                                ORG_MEMBER_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                    },
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {},
+            },
+            id="organization_map_type_multiple_org_expansion",
+        ),
+        pytest.param(
+            'organization',
+            ORG_ADMIN_ROLE_NAME,
+            "{% for_attr_value(regional_orgs) %}",
+            None,
+            {"regional_orgs": ["North America", "Europe", "Asia-Pacific"]},
+            {
+                'organization_membership': {
+                    'North America': True,
+                    'Europe': True,
+                    'Asia-Pacific': True,
+                },
+                'rbac_roles': {
+                    'organizations': {
+                        'North America': {
+                            'roles': {
+                                ORG_ADMIN_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                        'Europe': {
+                            'roles': {
+                                ORG_ADMIN_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                        'Asia-Pacific': {
+                            'roles': {
+                                ORG_ADMIN_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                    },
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {},
+            },
+            id="organization_map_type_regional_expansion",
+        ),
+        pytest.param(
+            'organization',
+            ORG_MEMBER_ROLE_NAME,
+            "{% for_attr_value(client_orgs) %}",
+            None,
+            {"client_orgs": ["Client-A Corp", "Client-B LLC", "Client-C Inc"]},
+            {
+                'organization_membership': {
+                    'Client-A Corp': True,
+                    'Client-B LLC': True,
+                    'Client-C Inc': True,
+                },
+                'rbac_roles': {
+                    'organizations': {
+                        'Client-A Corp': {
+                            'roles': {
+                                ORG_MEMBER_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                        'Client-B LLC': {
+                            'roles': {
+                                ORG_MEMBER_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                        'Client-C Inc': {
+                            'roles': {
+                                ORG_MEMBER_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                    },
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {},
+            },
+            id="organization_map_type_client_orgs_expansion",
+        ),
+        pytest.param(
+            'organization',
+            'Organization Contributor',
+            "{% for_attr_value(missing_orgs) %}",
+            None,
+            {"other_attr": "value"},
+            {
+                'organization_membership': {},
+                'rbac_roles': {
+                    'organizations': {},
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {},
+            },
+            id="organization_map_type_missing_attribute",
+        ),
+        pytest.param(
+            'organization',
+            'Organization Analyst',
+            "{% for_attr_value(null_orgs) %}",
+            None,
+            {"null_orgs": None},
+            {
+                'organization_membership': {},
+                'rbac_roles': {
+                    'organizations': {},
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {},
+            },
+            id="organization_map_type_null_attribute",
+        ),
+        pytest.param(
+            'organization',
+            ORG_ADMIN_ROLE_NAME,
+            "{% for_attr_value(single_org) %}",
+            None,
+            {"single_org": "Single Organization"},
+            {
+                'organization_membership': {
+                    'Single Organization': True,
+                },
+                'rbac_roles': {
+                    'organizations': {
+                        'Single Organization': {
+                            'roles': {
+                                ORG_ADMIN_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                    },
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {},
+            },
+            id="organization_map_type_single_string_expansion",
+        ),
+        pytest.param(
+            'organization',
+            ORG_ADMIN_ROLE_NAME,
+            "{% for_attr_value(special_char_orgs) %}",
+            None,
+            {"special_char_orgs": ["Org@123", "Org#456", "Org$789", "Org%ABC"]},
+            {
+                'organization_membership': {
+                    'Org@123': True,
+                    'Org#456': True,
+                    'Org$789': True,
+                    'Org%ABC': True,
+                },
+                'rbac_roles': {
+                    'organizations': {
+                        'Org@123': {
+                            'roles': {
+                                ORG_ADMIN_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                        'Org#456': {
+                            'roles': {
+                                ORG_ADMIN_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                        'Org$789': {
+                            'roles': {
+                                ORG_ADMIN_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                        'Org%ABC': {
+                            'roles': {
+                                ORG_ADMIN_ROLE_NAME: True,
+                            },
+                            'teams': {},
+                        },
+                    },
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {},
+            },
+            id="organization_map_type_special_characters",
+        ),
+        # Mixed scenarios with different map_types
+        pytest.param(
+            'role',
+            TEAM_ADMIN_ROLE_NAME,
+            "{% for_attr_value(dynamic_orgs) %}",
+            "{% for_attr_value(dynamic_teams) %}",
+            {"dynamic_orgs": ["Alpha", "Beta"], "dynamic_teams": ["Team1", "Team2", "Team3"]},
+            {
+                'organization_membership': {},
+                'rbac_roles': {
+                    'organizations': {
+                        'Alpha': {
+                            'roles': {},
+                            'teams': {
+                                'Team1': {
+                                    'roles': {
+                                        TEAM_ADMIN_ROLE_NAME: True,
+                                    },
+                                },
+                                'Team2': {
+                                    'roles': {
+                                        TEAM_ADMIN_ROLE_NAME: True,
+                                    },
+                                },
+                                'Team3': {
+                                    'roles': {
+                                        TEAM_ADMIN_ROLE_NAME: True,
+                                    },
+                                },
+                            },
+                        },
+                        'Beta': {
+                            'roles': {},
+                            'teams': {
+                                'Team1': {
+                                    'roles': {
+                                        TEAM_ADMIN_ROLE_NAME: True,
+                                    },
+                                },
+                                'Team2': {
+                                    'roles': {
+                                        TEAM_ADMIN_ROLE_NAME: True,
+                                    },
+                                },
+                                'Team3': {
+                                    'roles': {
+                                        TEAM_ADMIN_ROLE_NAME: True,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {
+                    'Alpha': {
+                        'Team1': True,
+                        'Team2': True,
+                        'Team3': True,
+                    },
+                    'Beta': {
+                        'Team1': True,
+                        'Team2': True,
+                        'Team3': True,
+                    },
+                },
+            },
+            id="role_map_type_complex_cartesian_expansion",
+        ),
+        pytest.param(
+            'organization',
+            ORG_MEMBER_ROLE_NAME,
+            "{% for_attr_value(managed_orgs) %}",
+            None,
+            {"managed_orgs": [f"Org-{i:02d}" for i in range(1, 26)]},
+            {
+                'organization_membership': {
+                    **{f"Org-{i:02d}": True for i in range(1, 26)},
+                },
+                'rbac_roles': {
+                    'organizations': {
+                        **{
+                            f"Org-{i:02d}": {
+                                'roles': {
+                                    ORG_MEMBER_ROLE_NAME: True,
+                                },
+                                'teams': {},
+                            }
+                            for i in range(1, 26)
+                        },
+                    },
+                    'system': {
+                        'roles': {},
+                    },
+                },
+                'team_membership': {},
+            },
+            id="organization_map_type_large_scale_expansion",
+        ),
+    ],
+)
+def test_expansion_in_claims(
+    local_authenticator_map,
+    map_type,
+    map_role,
+    map_org,
+    map_team,
+    attributes,
+    expected_value,
+    org_admin_rd,
+    org_member_rd,
+    admin_rd,
+    member_rd,
+    system_role,
+):
+    """
+    Test that we properly append to org_team_mapping
+    """
+    local_authenticator_map.triggers = {"always": {}}
+    local_authenticator_map.organization = map_org
+    local_authenticator_map.team = map_team
+    local_authenticator_map.map_type = map_type
+    local_authenticator_map.role = map_role
+    local_authenticator_map.save()
+
+    authenticator = local_authenticator_map.authenticator
+    res = claims.create_claims(authenticator, "username", attributes, [])
+
+    assert res["claims"] == expected_value
