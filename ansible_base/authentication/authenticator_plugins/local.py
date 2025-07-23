@@ -63,7 +63,8 @@ class AuthenticatorPlugin(ModelBackend, AbstractAuthenticatorPlugin):
         user = super().authenticate(request, username, password, **kwargs)
         controller_login_results = None
         if (
-            not user
+            username.lower() != "admin"  # Avoid fallback authentication for admin user. We don't want to overwrite the admin password.
+            and not user
             and request
             and request.path.startswith('/api/gateway/v1/login/')
             and (controller_login_results := self._can_authenticate_from_controller(username, password))

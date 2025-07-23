@@ -1010,3 +1010,85 @@ def test_get_controller_user_timeout_conversion_exception_handling(user):
         # This should handle the ValueError from _convert_to_seconds in the generic exception handler
         result = plugin._get_controller_user(user.username, "password")
         assert result is None
+
+
+@pytest.mark.django_db()
+def test_authenticate_admin_user_skips_controller_fallback(local_authenticator):
+    """
+    Test that controller fallback authentication is skipped for 'admin' user,
+    even when all other conditions are met (non-admin users would trigger fallback).
+    """
+    from django.contrib.auth import get_user_model
+
+    from ansible_base.authentication.models import AuthenticatorUser
+
+    # Create admin user
+    UserModel = get_user_model()
+    admin_user = UserModel.objects.create_user(username='admin', password='admin_password')
+
+    # Create an AuthenticatorUser entry for the admin user with local authenticator
+    AuthenticatorUser.objects.create(uid=admin_user.username, user=admin_user, provider=local_authenticator)
+
+    plugin = AuthenticatorPlugin(database_instance=local_authenticator)
+
+    # Mock regular authentication to fail (this would normally trigger controller fallback for non-admin users)
+    with mock.patch('django.contrib.auth.backends.ModelBackend.authenticate', return_value=None):
+        # Mock controller authentication methods that would be called for non-admin users
+        with mock.patch.object(plugin, '_can_authenticate_from_controller', return_value=True) as mock_check:
+            with mock.patch.object(plugin, 'update_gateway_user') as mock_update:
+                # Create request with gateway login path (condition for fallback)
+                request = RequestFactory().get('/api/gateway/v1/login/')
+
+                # Attempt authentication with admin user
+                result = plugin.authenticate(request=request, username='admin', password='wrong_password')
+
+                # Verify that authentication failed
+                assert result is None
+
+                # Verify that controller fallback authentication was NOT triggered for admin user
+                # _can_authenticate_from_controller should NOT be called because username is 'admin'
+                mock_check.assert_not_called()
+
+                # update_gateway_user should NOT be called because controller fallback was skipped
+                mock_update.assert_not_called()
+
+
+@pytest.mark.django_db()
+def test_authenticate_admin_user_case_insensitive_skips_controller_fallback(local_authenticator):
+    """
+    Test that controller fallback authentication is skipped for 'ADMIN' user (case insensitive),
+    even when all other conditions are met.
+    """
+    from django.contrib.auth import get_user_model
+
+    from ansible_base.authentication.models import AuthenticatorUser
+
+    # Create ADMIN user (uppercase)
+    UserModel = get_user_model()
+    admin_user = UserModel.objects.create_user(username='ADMIN', password='admin_password')
+
+    # Create an AuthenticatorUser entry for the admin user with local authenticator
+    AuthenticatorUser.objects.create(uid=admin_user.username, user=admin_user, provider=local_authenticator)
+
+    plugin = AuthenticatorPlugin(database_instance=local_authenticator)
+
+    # Mock regular authentication to fail
+    with mock.patch('django.contrib.auth.backends.ModelBackend.authenticate', return_value=None):
+        # Mock controller authentication methods that would be called for non-admin users
+        with mock.patch.object(plugin, '_can_authenticate_from_controller', return_value=True) as mock_check:
+            with mock.patch.object(plugin, 'update_gateway_user') as mock_update:
+                # Create request with gateway login path (condition for fallback)
+                request = RequestFactory().get('/api/gateway/v1/login/')
+
+                # Attempt authentication with ADMIN user (uppercase)
+                result = plugin.authenticate(request=request, username='ADMIN', password='wrong_password')
+
+                # Verify that authentication failed
+                assert result is None
+
+                # Verify that controller fallback authentication was NOT triggered for ADMIN user
+                # _can_authenticate_from_controller should NOT be called because username.lower() == 'admin'
+                mock_check.assert_not_called()
+
+                # update_gateway_user should NOT be called because controller fallback was skipped
+                mock_update.assert_not_called()
