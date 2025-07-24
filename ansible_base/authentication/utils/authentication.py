@@ -145,11 +145,7 @@ def _handle_no_merge_strategy(uid: str, authenticator: Authenticator) -> str:
     if AuthenticatorUser.objects.filter(Q(uid=uid) | Q(user__username=uid)).exists():
         # Some other provider is providing this username so we need to create our own username
         new_username = get_local_username({'username': uid})
-        logger.info(
-            f'Authenticator {authenticator.name} wants to authenticate {uid} but that'
-            f' username is already in use by another authenticator,'
-            f' the user from this authenticator will be {new_username}'
-        )
+        logger.warning(f"User {uid} is already associated with an existing user, creating a new user with username {new_username}")
         return new_username
     else:
         # We didn't have an exact match but no other provider is servicing this uid so lets return that for usage
@@ -188,11 +184,7 @@ def _handle_email_fallback_strategy(uid: str, email: Union[str, list[str], None]
     # PROPOSAL FLOW: Does an AAP User with this email exist? No
     else:
         new_username = get_local_username({'username': uid})
-        logger.warning(
-            f"Authenticator {authenticator.name} wants to authenticate {uid}/{email} "
-            "but that username is already in use by another authenticator, "
-            f"the user from this authenticator will be {new_username}"
-        )
+        logger.warning(f"User {uid} is already associated with an existing user, creating a new user with username {new_username}")
         return new_username
 
 
@@ -219,10 +211,8 @@ def _handle_email_fallback_strategy(uid: str, email: Union[str, list[str], None]
 #     else:
 #         # Some other provider is providing this username so we need to create our own username
 #         new_username = get_local_username({'username': uid})
-#         logger.info(
-#             f'Authenticator {authenticator.name} wants to authenticate {uid}/{email} but that'
-#             f' username is already in use by another authenticator,'
-#             f' the user from this authenticator will be {new_username}'
+#         logger.warning(
+#             f"User {uid} is already associated with an existing user, creating a new user with username {new_username}"
 #         )
 #         return new_username
 

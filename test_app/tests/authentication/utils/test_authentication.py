@@ -31,7 +31,7 @@ class TestAuthenticationUtilsAuthentication:
         [
             (None, 'is able to authenticate user', True),
             ('local', 'already authenticated', True),
-            ('ldap', 'username is already in use by another authenticator', False),
+            ('ldap', 'is already associated with an existing user, creating a new user with username', False),
             ('multiple', 'already authenticated', True),
         ],
     )
@@ -43,7 +43,9 @@ class TestAuthenticationUtilsAuthentication:
             AuthenticatorUser.objects.create(uid=random_user.username, user=random_user, provider=local_authenticator)
         elif related_authenticator in ['ldap', 'multiple']:
             AuthenticatorUser.objects.create(uid=random_user.username, user=random_user, provider=ldap_authenticator)
-        with expected_log(self.logger, 'info', info_message):
+        # Use different log levels based on the scenario
+        log_level = 'warning' if related_authenticator == 'ldap' else 'info'
+        with expected_log(self.logger, log_level, info_message):
             new_username = authentication.determine_username_from_uid(uid, "", local_authenticator)
             if expected_username:
                 assert new_username == random_user.username
