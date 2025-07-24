@@ -56,5 +56,8 @@ class AnsibleBaseAuth(ModelBackend):
                     return None
 
                 logger.info(f'User {user.username} logged in from authenticator with ID "{authenticator_id}"')
+                if hasattr(user, "last_login_from"):
+                    user.last_login_from = authenticator_object.database_instance
+                    user.save(update_fields=['last_login_from'])
                 return user
         return None

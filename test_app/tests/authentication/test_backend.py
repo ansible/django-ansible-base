@@ -172,3 +172,168 @@ def test_authentication_exception(expected_log):
         # Expect the log we emit
         with expected_log('ansible_base.authentication.backend.logger', "exception", "Exception raised while trying to authenticate with"):
             backend.AnsibleBaseAuth().authenticate(None)
+
+
+@pytest.mark.django_db
+def test_last_login_from_with_attribute(local_authenticator, random_user, expected_log):
+    """Test that last_login_from is set when user has the attribute."""
+    # Add last_login_from attribute to user
+    random_user.last_login_from = None
+
+    # Create a mock authenticator plugin object with proper structure
+    mock_authenticator_plugin = mock.MagicMock()
+    mock_authenticator_plugin.authenticate.return_value = random_user
+    mock_authenticator_plugin.database_instance = local_authenticator
+
+    # Mock the save method to track calls
+    with mock.patch.object(random_user, 'save') as mock_save:
+        with mock.patch(
+            "ansible_base.authentication.backend.get_authentication_backends",
+            return_value={local_authenticator.id: mock_authenticator_plugin},
+        ):
+            # Expected log message when user logs in
+            with expected_log(
+                'ansible_base.authentication.backend.logger',
+                "info",
+                f'User {random_user.username} logged in from authenticator with ID "{local_authenticator.id}"',
+            ):
+                auth_return = backend.AnsibleBaseAuth().authenticate(None)
+
+            # Verify the user is returned
+            assert auth_return == random_user
+
+            # Verify last_login_from was set to the authenticator database instance
+            assert random_user.last_login_from == local_authenticator
+
+            # Verify save was called with the correct update_fields
+            mock_save.assert_called_once_with(update_fields=['last_login_from'])
+
+
+@pytest.mark.django_db
+def test_last_login_from_without_attribute(local_authenticator, random_user, expected_log):
+    """Test that authentication works normally when user doesn't have last_login_from attribute."""
+    # Ensure user doesn't have last_login_from attribute
+    if hasattr(random_user, 'last_login_from'):
+        delattr(random_user, 'last_login_from')
+
+    # Create a mock authenticator plugin object with proper structure
+    mock_authenticator_plugin = mock.MagicMock()
+    mock_authenticator_plugin.authenticate.return_value = random_user
+    mock_authenticator_plugin.database_instance = local_authenticator
+
+    # Mock the save method to track calls
+    with mock.patch.object(random_user, 'save') as mock_save:
+        with mock.patch(
+            "ansible_base.authentication.backend.get_authentication_backends",
+            return_value={local_authenticator.id: mock_authenticator_plugin},
+        ):
+            with expected_log(
+                'ansible_base.authentication.backend.logger',
+                "info",
+                f'User {random_user.username} logged in from authenticator with ID "{local_authenticator.id}"',
+            ):
+                auth_return = backend.AnsibleBaseAuth().authenticate(None)
+
+            # Verify the user is returned
+            assert auth_return == random_user
+
+            # Verify save was never called since user doesn't have last_login_from
+            mock_save.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_last_login_from_multiple_authenticators(local_authenticator, github_enterprise_authenticator, random_user, expected_log):
+    """Test that last_login_from is set correctly when multiple authenticators are present."""
+    # Add last_login_from attribute to user
+    random_user.last_login_from = None
+
+    # Create mock authenticator plugin objects with proper structure
+    mock_github_plugin = mock.MagicMock()
+    mock_github_plugin.authenticate.return_value = None
+    mock_github_plugin.database_instance = github_enterprise_authenticator
+
+    mock_local_plugin = mock.MagicMock()
+    mock_local_plugin.authenticate.return_value = random_user
+    mock_local_plugin.database_instance = local_authenticator
+
+    # Mock the save method to track calls
+    with mock.patch.object(random_user, 'save') as mock_save:
+        with mock.patch(
+            "ansible_base.authentication.backend.get_authentication_backends",
+            return_value={github_enterprise_authenticator.id: mock_github_plugin, local_authenticator.id: mock_local_plugin},
+        ):
+            # Expected log message when user logs in
+            with expected_log(
+                'ansible_base.authentication.backend.logger',
+                "info",
+                f'User {random_user.username} logged in from authenticator with ID "{local_authenticator.id}"',
+            ):
+                auth_return = backend.AnsibleBaseAuth().authenticate(None)
+
+            # Verify the user is returned
+            assert auth_return == random_user
+
+            # Verify last_login_from was set to the local authenticator (the one that succeeded)
+            assert random_user.last_login_from == local_authenticator
+
+            # Verify save was called with the correct update_fields
+            mock_save.assert_called_once_with(update_fields=['last_login_from'])
+
+
+@pytest.mark.django_db
+def test_last_login_from_inactive_user(local_authenticator, random_user):
+    """Test that last_login_from is not set when user is inactive."""
+    # Add last_login_from attribute to user but make user inactive
+    random_user.last_login_from = None
+    random_user.is_active = False
+
+    # Create a mock authenticator plugin object with proper structure
+    mock_authenticator_plugin = mock.MagicMock()
+    mock_authenticator_plugin.authenticate.return_value = random_user
+    mock_authenticator_plugin.database_instance = local_authenticator
+
+    # Mock the save method to track calls
+    with mock.patch.object(random_user, 'save') as mock_save:
+        with mock.patch(
+            "ansible_base.authentication.backend.get_authentication_backends",
+            return_value={local_authenticator.id: mock_authenticator_plugin},
+        ):
+            auth_return = backend.AnsibleBaseAuth().authenticate(None)
+
+            # Verify authentication failed (returns None for inactive user)
+            assert auth_return is None
+
+            # Verify save was never called since authentication failed
+            mock_save.assert_not_called()
+
+            # Verify last_login_from was not changed
+            assert random_user.last_login_from is None
+
+
+@pytest.mark.django_db
+def test_last_login_from_social_auth_failed(local_authenticator, random_user):
+    """Test that last_login_from is not set when social auth pipeline fails."""
+    # Add last_login_from attribute to user
+    random_user.last_login_from = None
+
+    # Create a mock authenticator plugin object with proper structure
+    mock_authenticator_plugin = mock.MagicMock()
+    mock_authenticator_plugin.authenticate.return_value = SOCIAL_AUTH_PIPELINE_FAILED_STATUS
+    mock_authenticator_plugin.database_instance = local_authenticator
+
+    # Mock the save method to track calls
+    with mock.patch.object(random_user, 'save') as mock_save:
+        with mock.patch(
+            "ansible_base.authentication.backend.get_authentication_backends",
+            return_value={local_authenticator.id: mock_authenticator_plugin},
+        ):
+            auth_return = backend.AnsibleBaseAuth().authenticate(None)
+
+            # Verify authentication failed (returns None)
+            assert auth_return is None
+
+            # Verify save was never called since authentication failed
+            mock_save.assert_not_called()
+
+            # Verify last_login_from was not changed
+            assert random_user.last_login_from is None
