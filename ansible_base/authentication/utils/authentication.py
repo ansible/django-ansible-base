@@ -1,3 +1,4 @@
+import importlib
 import logging
 from typing import Optional, Tuple, Union
 
@@ -20,8 +21,28 @@ merge_strategy = "Email fallback"
 
 
 class FakeBackend:
-    def setting(self, *args, **kwargs):
-        return ["username", "email"]
+    def __init__(self):
+        self.settings = {}
+        fq_function_name = getattr(settings, 'ANSIBLE_BASE_SOCIAL_AUTH_STRATEGY_SETTINGS_FUNCTION', None)
+        if fq_function_name:
+            try:
+                module_name, _, function_name = fq_function_name.rpartition('.')
+                the_function = getattr(importlib.import_module(module_name), function_name)
+                self.settings = the_function()
+            except Exception as e:
+                logger.error(f"FakeBackend: Failed to run {fq_function_name} to get additional settings: {e}")
+
+        self.settings["USER_FIELDS"] = ["username", "email"]
+
+    def setting(self, name, default=None):
+        if name in self.settings:
+            return self.settings[name]
+
+        social_auth_key = f"SOCIAL_AUTH_{name}"
+        if social_auth_key in self.settings:
+            return self.settings[social_auth_key]
+
+        return default
 
 
 def raise_auth_exception(message: str, backend: Optional[Authenticator] = None):
@@ -87,7 +108,6 @@ def get_local_username(user_details: dict) -> str:
     from other auth backends.
     """
     username = get_username(strategy=AuthenticatorStrategy(AuthenticatorStorage()), details=user_details, backend=FakeBackend())
-
     return username['username']
 
 
@@ -118,8 +138,10 @@ def determine_username_from_uid_social(**kwargs) -> dict:
     authenticator = kwargs.get('backend')
     if not authenticator:
         raise_auth_exception(_('Unable to get backend from kwargs'))
-
-    selected_username = kwargs.get('details', {}).get('username', None)
+    if authenticator.setting('USERNAME_IS_FULL_EMAIL', False):
+        selected_username = kwargs.get('details', {}).get('email', None)
+    else:
+        selected_username = kwargs.get('details', {}).get('username', None)
     if not selected_username:
         raise_auth_exception(
             _('Unable to get associated username from details, expected entry "username". Full user details: %(details)s')

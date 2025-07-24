@@ -1,5 +1,6 @@
 import pytest
 from django.conf import settings
+from django.test import override_settings
 from social_core.exceptions import AuthException
 
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_class
@@ -9,14 +10,36 @@ from ansible_base.lib.utils.response import get_relative_url
 from test_app.models import User
 
 
+def load_social_auth_settings():
+    return {"SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL": settings.SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL}
+
+
 @pytest.mark.django_db
 class TestAuthenticationUtilsAuthentication:
     logger = 'ansible_base.authentication.utils.authentication.logger'
 
-    def test_fake_backend_settings(self):
+    @pytest.mark.parametrize(
+        "name, exp_val, username_is_full_email_setting",
+        [
+            ("USER_FIELDS", ["username", "email"], False),
+            ("SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL", True, True),
+            ("SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL", False, False),
+            ("BOGUS", None, False),
+        ],
+    )
+    def test_fake_backend_settings(self, name, exp_val, username_is_full_email_setting):
+        with override_settings(SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL=username_is_full_email_setting):
+            with override_settings(
+                ANSIBLE_BASE_SOCIAL_AUTH_STRATEGY_SETTINGS_FUNCTION="test_app.tests.authentication.utils.test_authentication.load_social_auth_settings"
+            ):
+                backend = authentication.FakeBackend()
+                response = backend.setting(name)
+                assert response == exp_val
+
+    def test_fake_backend_settings_with_default(self):
         backend = authentication.FakeBackend()
-        response = backend.setting()
-        assert response == ["username", "email"]
+        response = backend.setting("BOGUS", "bogus_default")
+        assert response == "bogus_default"
 
     def test_get_local_username_no_input(self):
         response = authentication.get_local_username({})
