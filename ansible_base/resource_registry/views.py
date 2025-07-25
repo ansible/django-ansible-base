@@ -2,7 +2,6 @@ import logging
 from collections import OrderedDict
 
 from django.conf import settings
-from django.contrib.auth import get_user_model
 from django.db.models import Q
 from django.http import HttpResponseNotFound
 from django.shortcuts import get_object_or_404
@@ -10,7 +9,6 @@ from django.urls.exceptions import NoReverseMatch
 from rest_framework import permissions
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet, mixins
 
@@ -19,8 +17,7 @@ from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiV
 from ansible_base.lib.utils.views.permissions import try_add_oauth2_scope_permission
 from ansible_base.resource_registry.models import Resource, ResourceType, service_id
 from ansible_base.resource_registry.registry import get_registry
-from ansible_base.resource_registry.serializers import ResourceListSerializer, ResourceSerializer, ResourceTypeSerializer, UserAuthenticationSerializer
-from ansible_base.resource_registry.utils.auth_code import get_user_auth_code
+from ansible_base.resource_registry.serializers import ResourceListSerializer, ResourceSerializer, ResourceTypeSerializer
 from ansible_base.rest_filters.rest_framework.field_lookup_backend import FieldLookupBackend
 from ansible_base.rest_filters.rest_framework.order_backend import OrderByBackend
 from ansible_base.rest_filters.rest_framework.type_filter_backend import TypeFilterBackend
@@ -193,43 +190,3 @@ class ServiceIndexRootView(AnsibleBaseDjangoAppApiView):
             except NoReverseMatch:
                 logger.info('DAB RBAC service-index views were not included, so not linked')
         return Response(data)
-
-
-class ValidateLocalUserView(AnsibleBaseDjangoAppApiView):
-    """
-    Validate a user's username and password.
-    """
-
-    custom_action_label = "validate-local-user"
-
-    permission_classes = [AllowAny]
-
-    def post(self, request, **kwargs):
-        serializer = UserAuthenticationSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        # Ensure the users exists before authenticating
-        PREFIX = getattr(settings, "RENAMED_USERNAME_PREFIX", "")
-        viable_usernames = [serializer.validated_data["username"], PREFIX + serializer.validated_data["username"]]
-        if not get_user_model().objects.filter(username__in=viable_usernames).exists():
-            logger.debug(f"User {serializer.validated_data['username']} does not exist, not validating authentication")
-            return Response(status=401)
-
-        api_config = get_registry().api_config
-        user = api_config.authenticate_local_user(serializer.validated_data["username"], serializer.validated_data["password"])
-
-        if not user:
-            return Response(status=401)
-
-        try:
-            auth_code = get_user_auth_code(user)
-        except AttributeError:
-            logger.exception(f"Cannot generate auth code for user {user}")
-            auth_code = None
-
-        response = {
-            "ansible_id": Resource.get_resource_for_object(user).ansible_id,
-            "auth_code": auth_code,
-        }
-
-        return Response(data=response)

@@ -171,7 +171,6 @@ settings logic:
 
 ```python
 ANSIBLE_BASE_OAUTH2_PROVIDER_PERMISSIONS_CHECK_IGNORED_VIEWS = [
-    'ansible_base.resource_registry.views.ValidateLocalUserView',
     'test_app.views.SomeOtherViewSet',
 ]
 ```

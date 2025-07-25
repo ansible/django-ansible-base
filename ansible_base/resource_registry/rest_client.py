@@ -133,9 +133,6 @@ class ResourceAPIClient:
                     req_dict[k] = raw_dict[k]
         return req_dict
 
-    def validate_local_user(self, username: str, password: str):
-        return self._make_request("post", "validate-local-account/", {"username": username, "password": password})
-
     def get_service_metadata(self):
         return self._make_request("get", "metadata/")
 
