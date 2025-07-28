@@ -170,7 +170,8 @@ def _handle_email_fallback_strategy(uid: str, email: Union[str, list[str], None]
     normalized_email = normalize_and_get_email(email)
 
     # PROPOSAL FLOW: Authenticator No Email provided
-    if not normalized_email:
+    # If local authenticator, no need to use email fallback strategy
+    if not normalized_email or authenticator.type == "ansible_base.authentication.authenticator_plugins.local":
         return _handle_no_merge_strategy(uid, authenticator)  # Logic is identical to the no-merge strategy
 
     # PROPOSAL FLOW: Authenticator provides email
