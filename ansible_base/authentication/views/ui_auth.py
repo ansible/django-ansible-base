@@ -35,7 +35,7 @@ class UIAuth(AnsibleBaseDjangoAppApiView):
 
     else:
 
-        def get(self, request, format=None):
+        def get(self):
             return self._get()
 
 
