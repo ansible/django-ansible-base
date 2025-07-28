@@ -1,10 +1,12 @@
 import logging
 
+from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from rest_framework.response import Response
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.models import Authenticator
+from ansible_base.authentication.serializers import UIAuthResponseSerializer
 from ansible_base.lib.utils.settings import get_setting, is_aoc_instance
 from ansible_base.lib.utils.validation import validate_image_data, validate_url
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
@@ -15,11 +17,26 @@ logger = logging.getLogger('ansible_base.authentication.views.ui_auth')
 class UIAuth(AnsibleBaseDjangoAppApiView):
     authentication_classes = []
     permission_classes = []
+    serializer_class = UIAuthResponseSerializer
 
-    def get(self, request, format=None):
+    def _get(self):
         response = generate_ui_auth_data()
-
         return Response(response)
+
+    # Conditionally add openapi documentation
+    if 'ansible_base.api_documentation' in settings.INSTALLED_APPS:
+        from drf_spectacular.utils import extend_schema
+
+        @extend_schema(
+            request=None, responses=UIAuthResponseSerializer, description="Get UI authentication configuration including available authenticators and settings."
+        )
+        def get(self, request, format=None):
+            return self._get()
+
+    else:
+
+        def get(self, request, format=None):
+            return self._get()
 
 
 def generate_ui_auth_data():
