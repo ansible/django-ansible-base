@@ -50,6 +50,22 @@ class TestAuthenticationUtilsAuthentication:
         assert len(response) > len(random_user.username)
 
     @pytest.mark.parametrize(
+        "username_is_full_email_setting, expected_username",
+        [
+            (True, "new-user@example.com"),
+            (False, "new-user"),
+        ],
+    )
+    def test_get_local_username_with_email(self, username_is_full_email_setting, expected_username):
+        user_details = {'username': 'new-user', 'email': 'new-user@example.com'}
+        with override_settings(SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL=username_is_full_email_setting):
+            with override_settings(
+                ANSIBLE_BASE_SOCIAL_AUTH_STRATEGY_SETTINGS_FUNCTION="test_app.tests.authentication.utils.test_authentication.load_social_auth_settings"
+            ):
+                response = authentication.get_local_username(user_details)
+                assert response == expected_username
+
+    @pytest.mark.parametrize(
         "related_authenticator,info_message,expected_username",
         [
             (None, 'is able to authenticate user', True),
