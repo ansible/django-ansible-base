@@ -24,7 +24,14 @@ def test_generate_ui_auth_data_no_authenticators_or_settings():
 
 @override_settings(LOGIN_REDIRECT_OVERRIDE='https://example.com')
 @pytest.mark.django_db
-def test_generate_ui_auth_data_valid_login_redirect():
+def test_generate_ui_auth_data_valid_login_redirect_url():
+    response = generate_ui_auth_data()
+    assert response['login_redirect_override'] == settings.LOGIN_REDIRECT_OVERRIDE
+
+
+@override_settings(LOGIN_REDIRECT_OVERRIDE='/an/absolute/path')
+@pytest.mark.django_db
+def test_generate_ui_auth_data_valid_login_redirect_path():
     response = generate_ui_auth_data()
     assert response['login_redirect_override'] == settings.LOGIN_REDIRECT_OVERRIDE
 
@@ -34,7 +41,15 @@ def test_generate_ui_auth_data_valid_login_redirect():
 @pytest.mark.django_db
 def test_generate_ui_auth_data_invalid_login_redirect_function(logger):
     generate_ui_auth_data()
-    logger.error.assert_called_with('LOGIN_REDIRECT_OVERRIDE was set but was not a valid URL, ignoring')
+    logger.error.assert_called_with('LOGIN_REDIRECT_OVERRIDE was set but was not a valid URL or absolute path, ignoring')
+
+
+@mock.patch("ansible_base.authentication.views.ui_auth.logger")
+@override_settings(LOGIN_REDIRECT_OVERRIDE='a/relative/path')
+@pytest.mark.django_db
+def test_generate_ui_auth_invalid_path_login_redirect_function(logger):
+    generate_ui_auth_data()
+    logger.error.assert_called_with('LOGIN_REDIRECT_OVERRIDE was set but was not a valid URL or absolute path, ignoring')
 
 
 @override_settings(custom_login_info='Login with your username and password')

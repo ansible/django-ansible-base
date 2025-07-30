@@ -8,7 +8,7 @@ from rest_framework.serializers import ValidationError
 from ansible_base.authentication.models import Authenticator
 from ansible_base.authentication.serializers import UIAuthResponseSerializer
 from ansible_base.lib.utils.settings import get_setting, is_aoc_instance
-from ansible_base.lib.utils.validation import validate_image_data, validate_url
+from ansible_base.lib.utils.validation import validate_absolute_path, validate_image_data, validate_url
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 
 logger = logging.getLogger('ansible_base.authentication.views.ui_auth')
@@ -75,7 +75,12 @@ def generate_ui_auth_data():
             validate_url(url=login_redirect_override, allow_plain_hostname=True)
             response['login_redirect_override'] = login_redirect_override
     except ValidationError:
-        logger.error('LOGIN_REDIRECT_OVERRIDE was set but was not a valid URL, ignoring')
+        # login_redirect_override can also be an absolute path
+        try:
+            validate_absolute_path(path=login_redirect_override)
+            response['login_redirect_override'] = login_redirect_override
+        except ValidationError:
+            logger.error('LOGIN_REDIRECT_OVERRIDE was set but was not a valid URL or absolute path, ignoring')
 
     custom_login_info = get_setting('custom_login_info', '')
     if isinstance(custom_login_info, str):

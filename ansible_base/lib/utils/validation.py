@@ -2,6 +2,7 @@ import base64
 import binascii
 import re
 import secrets
+from pathlib import Path
 from urllib.parse import urlparse, urlunsplit
 
 from cryptography.exceptions import InvalidSignature
@@ -30,6 +31,12 @@ def validate_url_list(urls: list, schemes: list = ['https'], allow_plain_hostnam
             errors.append(f"{a_url} is invalid")
     if errors:
         raise ValidationError(', '.join(errors))
+
+
+def validate_absolute_path(path: str) -> None:
+    path = Path(path)
+    if not path.is_absolute():
+        raise ValidationError(f"{path} is not an absolute path")
 
 
 def validate_url(url: str, schemes: list = ['https'], allow_plain_hostname: bool = False) -> None:
