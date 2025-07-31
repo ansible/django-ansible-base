@@ -791,6 +791,8 @@ def test_ldap_config_defaults():
     test_config = {
         'SERVER_URI': ['ldap://example.com'],
         'CONNECTION_OPTIONS': {},  # Empty, should get merged with defaults
+        'GROUP_TYPE': 'PosixGroupType',
+        'GROUP_TYPE_PARAMS': {"name_attr": "cn"},
     }
     settings = LDAPSettings(defaults=test_config)
 
