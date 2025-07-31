@@ -310,7 +310,7 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
             'https://www.python-ldap.org/doc/html/ldap.html#options for '
             'possible options and values that can be set.'
         ),
-        default=default_connection_options,
+        default={},
         allow_null=False,
         required=False,
         ui_field_label=_('LDAP Connection Options'),
@@ -435,7 +435,13 @@ class LDAPSettings(BaseLDAPSettings):
         setattr(self, 'SERVER_URI', ','.join(defaults['SERVER_URI']))
 
         # Connection options need to be set as {"integer": "value"} but our configuration has {"friendly_name": "value"} so we need to convert them
-        connection_options = defaults.get('CONNECTION_OPTIONS', default_connection_options)
+        connection_options = defaults.get('CONNECTION_OPTIONS')
+        if not isinstance(connection_options, dict):
+            connection_options = {}
+        _tmp_connection_options = default_connection_options.copy()
+        _tmp_connection_options.update(connection_options)
+        connection_options = _tmp_connection_options
+        del _tmp_connection_options
         valid_options = dict([(v, k) for k, v in ldap.OPT_NAMES_DICT.items()])
         internal_data = {}
         for key in connection_options:
