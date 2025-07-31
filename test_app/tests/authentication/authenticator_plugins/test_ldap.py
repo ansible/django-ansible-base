@@ -774,12 +774,34 @@ def test_is_member_missing_uid(group_type, ldap_user):
 
 
 def test_ldap_config_defaults():
-    from ansible_base.authentication.authenticator_plugins.ldap import LDAPConfiguration, default_connection_options
+    from ansible_base.authentication.authenticator_plugins.ldap import LDAPConfiguration, LDAPSettings
 
     config = LDAPConfiguration()
     errors = []
+    
+    # Verify basic field defaults
     if config['START_TLS'].default is not False:
-        errors.append(f"START_TLS did not default to false, got {config.defaults['START_TLS']}")
-    if config['CONNECTION_OPTIONS'].default != default_connection_options:
-        errors.append(f"CONNECTION_OPTIONS did not default to {default_connection_options}, got {config['CONNECTION_OPTIONS'].default}")
+        errors.append(f"START_TLS did not default to false, got {config['START_TLS'].default}")
+    
+    # Verify CONNECTION_OPTIONS field default is empty (for clean UI)
+    if config['CONNECTION_OPTIONS'].default != {}:
+        errors.append(f"CONNECTION_OPTIONS field did not default to empty dict, got {config['CONNECTION_OPTIONS'].default}")
+    
+    # Verify that LDAPSettings properly applies defaults when CONNECTION_OPTIONS is empty
+    test_config = {
+        'SERVER_URI': ['ldap://example.com'],
+        'CONNECTION_OPTIONS': {},  # Empty, should get merged with defaults
+    }
+    settings = LDAPSettings(defaults=test_config)
+    
+    # Check that the defaults were applied in the settings object
+    import ldap
+    expected_referrals = ldap.OPT_REFERRALS in settings.CONNECTION_OPTIONS and settings.CONNECTION_OPTIONS[ldap.OPT_REFERRALS] == 0
+    expected_timeout = ldap.OPT_NETWORK_TIMEOUT in settings.CONNECTION_OPTIONS and settings.CONNECTION_OPTIONS[ldap.OPT_NETWORK_TIMEOUT] == 30
+    
+    if not expected_referrals:
+        errors.append(f"LDAPSettings did not apply OPT_REFERRALS default when CONNECTION_OPTIONS was empty")
+    if not expected_timeout:
+        errors.append(f"LDAPSettings did not apply OPT_NETWORK_TIMEOUT default when CONNECTION_OPTIONS was empty")
+    
     assert errors == []
