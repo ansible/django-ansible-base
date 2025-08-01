@@ -35,13 +35,9 @@ class FakeBackend:
         self.settings["USER_FIELDS"] = ["username", "email"]
 
     def setting(self, name, default=None):
-        if name in self.settings:
-            return self.settings[name]
-
-        social_auth_key = f"SOCIAL_AUTH_{name}"
-        if social_auth_key in self.settings:
-            return self.settings[social_auth_key]
-
+        for name in [name, f"SOCIAL_AUTH_{name}"]:
+            if name in self.settings:
+                return self.settings[name]
         return default
 
 
