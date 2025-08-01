@@ -41,12 +41,11 @@ class UIAuth(AnsibleBaseDjangoAppApiView):
 
 
 def _validate_and_get_login_redirect_override() -> Union[str, None]:
-
     try:
         login_redirect_override = get_setting('LOGIN_REDIRECT_OVERRIDE', '')
         # ignore validation if login_redirect_override is None or empty string
         if login_redirect_override is not None and login_redirect_override != '':
-            validate_url(url=login_redirect_override, allow_plain_hostname=True)
+            validate_url(url=login_redirect_override, schemes=['https', 'http'], allow_plain_hostname=True)
             return login_redirect_override
     except ValidationError:
         # login_redirect_override can also be an absolute path
