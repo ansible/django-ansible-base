@@ -891,7 +891,7 @@ def test_ldap_connection_options_user_override():
     # Test scenario 4: CONNECTION_OPTIONS is not a dict (edge case)
     test_config_non_dict = {
         'SERVER_URI': ['ldap://example.com'],
-        'CONNECTION_OPTIONS': "invalid",  # Not a dict
+        'CONNECTION_OPTIONS': "invaaalid",  # Not a dict
         'GROUP_TYPE': 'PosixGroupType',
         'GROUP_TYPE_PARAMS': {"name_attr": "cn"},
     }
