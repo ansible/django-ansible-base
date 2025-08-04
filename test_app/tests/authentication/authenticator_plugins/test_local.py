@@ -22,6 +22,25 @@ def mock_get_setting(setting_name):
         return None
 
 
+@pytest.fixture
+def controller_auth_mocks(user):
+    """
+    Helper fixture that provides common mocks for controller authentication tests.
+    Returns a context manager that sets up the basic mocks needed for controller auth.
+    """
+    from contextlib import contextmanager
+
+    @contextmanager
+    def mock_controller_auth():
+        with (
+            mock.patch.object(user, 'use_controller_password', True, create=True),
+            mock.patch('ansible_base.authentication.authenticator_plugins.local.UserModel._default_manager.get_by_natural_key', return_value=user),
+        ):
+            yield
+
+    return mock_controller_auth
+
+
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
 def test_local_auth_successful(unauthenticated_api_client, local_authenticator, user):
     """
@@ -122,7 +141,7 @@ def test_can_authenticate_from_controller_nonexistent_user():
 
 
 @pytest.mark.django_db()
-def test_can_authenticate_from_controller_success(user):
+def test_can_authenticate_from_controller_success(user, controller_auth_mocks):
     """
     Test that _can_authenticate_from_controller returns True when all conditions are met.
     """
@@ -132,8 +151,8 @@ def test_can_authenticate_from_controller_success(user):
     user.password = "$encrypted$"
     user.save()
 
-    # Mock the controller user response - local user with encrypted password
-    with mock.patch.object(plugin, '_get_controller_user', return_value={"ldap_dn": "", "password": "$encrypted$"}):
+    # Use fixture for common mocks and add specific controller user response
+    with controller_auth_mocks(), mock.patch.object(plugin, '_get_controller_user', return_value={"ldap_dn": "", "password": "$encrypted$"}):
         result = plugin._can_authenticate_from_controller(user.username, "password")
         assert result is True
 
@@ -412,17 +431,20 @@ def test_can_authenticate_from_controller_logs_warning_invalid_format(user, expe
     """
     plugin = AuthenticatorPlugin()
 
-    # Mock the request to return invalid format (non-dict result)
-    with mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting):
-        with mock.patch('requests.get') as mock_get:
-            mock_response = mock.Mock()
-            mock_response.raise_for_status.return_value = None
-            mock_response.json.return_value = {"count": 1, "results": ["invalid_string_not_dict"]}
-            mock_get.return_value = mock_response
+    # Mock use_controller_password to True to enable controller authentication
+    mock_response = mock.Mock()
+    mock_response.raise_for_status.return_value = None
+    mock_response.json.return_value = {"count": 1, "results": ["invalid_string_not_dict"]}
 
-            with expected_log('ansible_base.authentication.authenticator_plugins.local.logger', "warning", "user was not a dictionary"):
-                result = plugin._can_authenticate_from_controller(user.username, "password")
-                assert result is False
+    with (
+        mock.patch.object(user, 'use_controller_password', True, create=True),
+        mock.patch('ansible_base.authentication.authenticator_plugins.local.UserModel._default_manager.get_by_natural_key', return_value=user),
+        mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting),
+        mock.patch('requests.get', return_value=mock_response),
+        expected_log('ansible_base.authentication.authenticator_plugins.local.logger', "warning", "user was not a dictionary"),
+    ):
+        result = plugin._can_authenticate_from_controller(user.username, "password")
+        assert result is False
 
 
 @pytest.mark.django_db()
@@ -436,10 +458,15 @@ def test_can_authenticate_from_controller_logs_warning_not_local_user(user, expe
     user.password = "$encrypted$"
     user.save()
 
-    with mock.patch.object(plugin, '_get_controller_user', return_value={"ldap_dn": "cn=user,dc=example,dc=com", "password": "$encrypted$"}):
-        with expected_log('ansible_base.authentication.authenticator_plugins.local.logger', "warning", "is an ldap user and can not be authenticated"):
-            result = plugin._can_authenticate_from_controller(user.username, "password")
-            assert result is False
+    # Mock use_controller_password to True to enable controller authentication
+    with (
+        mock.patch.object(user, 'use_controller_password', True, create=True),
+        mock.patch('ansible_base.authentication.authenticator_plugins.local.UserModel._default_manager.get_by_natural_key', return_value=user),
+        mock.patch.object(plugin, '_get_controller_user', return_value={"ldap_dn": "cn=user,dc=example,dc=com", "password": "$encrypted$"}),
+        expected_log('ansible_base.authentication.authenticator_plugins.local.logger', "warning", "is an ldap user and can not be authenticated"),
+    ):
+        result = plugin._can_authenticate_from_controller(user.username, "password")
+        assert result is False
 
 
 @pytest.mark.django_db()
@@ -629,23 +656,28 @@ def test_authenticate_successful_controller_validation_full_flow(user, local_aut
     user.password = "$encrypted$"
     user.save()
 
-    # Mock all the components for a successful flow
-    with (
-        mock.patch.object(plugin, '_get_controller_user', return_value={"ldap_dn": "", "password": "$encrypted$"}),
-        mock.patch('django.contrib.auth.backends.ModelBackend.authenticate') as mock_auth,
-    ):
-        mock_auth.side_effect = [None, user]  # First call fails, second succeeds after password update
+    # Mock use_controller_password to True to enable controller authentication
+    with mock.patch.object(user, 'use_controller_password', True, create=True):
+        # Mock the database lookup to return our mocked user
+        with mock.patch('ansible_base.authentication.authenticator_plugins.local.UserModel._default_manager.get_by_natural_key', return_value=user):
+            # Mock all the components for a successful flow
+            with (
+                mock.patch.object(plugin, '_get_controller_user', return_value={"ldap_dn": "", "password": "$encrypted$"}),
+                mock.patch('django.contrib.auth.backends.ModelBackend.authenticate') as mock_auth,
+                mock.patch.object(plugin, 'update_gateway_user') as mock_update,
+            ):
+                mock_auth.side_effect = [None, user]  # First call fails, second succeeds after password update
 
-        # Create request with gateway login path
-        request = RequestFactory().get('/api/gateway/v1/login/')
-        result = plugin.authenticate(request=request, username=user.username, password="password")
+                # Create request with gateway login path
+                request = RequestFactory().get('/api/gateway/v1/login/')
+                result = plugin.authenticate(request=request, username=user.username, password="password")
 
-        # Verify successful authentication
-        assert result is not None
-        assert result == user
+                # Verify successful authentication
+                assert result is not None
+                assert result == user
 
-        # Verify user was updated
-        user.refresh_from_db()
+                # Verify update_gateway_user was called
+                mock_update.assert_called_once_with(user.username, "password")
 
 
 # Test connection and timeout errors
@@ -790,11 +822,15 @@ def test_can_authenticate_from_controller_enterprise_user(user, expected_log):
     """
     plugin = AuthenticatorPlugin()
 
-    # Mock the controller user response with regular password (not encrypted)
-    with mock.patch.object(plugin, '_get_controller_user', return_value={"ldap_dn": "", "password": "regular_password"}):
-        with expected_log('ansible_base.authentication.authenticator_plugins.local.logger', "warning", "is an enterprise user and can not be authenticated"):
-            result = plugin._can_authenticate_from_controller(user.username, "password")
-            assert result is False
+    # Mock use_controller_password to True to enable controller authentication
+    with (
+        mock.patch.object(user, 'use_controller_password', True, create=True),
+        mock.patch('ansible_base.authentication.authenticator_plugins.local.UserModel._default_manager.get_by_natural_key', return_value=user),
+        mock.patch.object(plugin, '_get_controller_user', return_value={"ldap_dn": "", "password": "regular_password"}),
+        expected_log('ansible_base.authentication.authenticator_plugins.local.logger', "warning", "is an enterprise user and can not be authenticated"),
+    ):
+        result = plugin._can_authenticate_from_controller(user.username, "password")
+        assert result is False
 
 
 @pytest.mark.django_db()
@@ -804,11 +840,15 @@ def test_can_authenticate_from_controller_enterprise_user_missing_password(user,
     """
     plugin = AuthenticatorPlugin()
 
-    # Mock the controller user response without password field
-    with mock.patch.object(plugin, '_get_controller_user', return_value={"ldap_dn": "", "username": "testuser"}):
-        with expected_log('ansible_base.authentication.authenticator_plugins.local.logger', "warning", "is an enterprise user and can not be authenticated"):
-            result = plugin._can_authenticate_from_controller(user.username, "password")
-            assert result is False
+    # Mock use_controller_password to True to enable controller authentication
+    with (
+        mock.patch.object(user, 'use_controller_password', True, create=True),
+        mock.patch('ansible_base.authentication.authenticator_plugins.local.UserModel._default_manager.get_by_natural_key', return_value=user),
+        mock.patch.object(plugin, '_get_controller_user', return_value={"ldap_dn": "", "username": "testuser"}),
+        expected_log('ansible_base.authentication.authenticator_plugins.local.logger', "warning", "is an enterprise user and can not be authenticated"),
+    ):
+        result = plugin._can_authenticate_from_controller(user.username, "password")
+        assert result is False
 
 
 @pytest.mark.django_db()
@@ -818,11 +858,15 @@ def test_can_authenticate_from_controller_enterprise_user_none_password(user, ex
     """
     plugin = AuthenticatorPlugin()
 
-    # Mock the controller user response with None password
-    with mock.patch.object(plugin, '_get_controller_user', return_value={"ldap_dn": "", "password": None}):
-        with expected_log('ansible_base.authentication.authenticator_plugins.local.logger', "warning", "is an enterprise user and can not be authenticated"):
-            result = plugin._can_authenticate_from_controller(user.username, "password")
-            assert result is False
+    # Mock use_controller_password to True to enable controller authentication
+    with (
+        mock.patch.object(user, 'use_controller_password', True, create=True),
+        mock.patch('ansible_base.authentication.authenticator_plugins.local.UserModel._default_manager.get_by_natural_key', return_value=user),
+        mock.patch.object(plugin, '_get_controller_user', return_value={"ldap_dn": "", "password": None}),
+        expected_log('ansible_base.authentication.authenticator_plugins.local.logger', "warning", "is an enterprise user and can not be authenticated"),
+    ):
+        result = plugin._can_authenticate_from_controller(user.username, "password")
+        assert result is False
 
 
 # Test for timeout handling - if not timeout

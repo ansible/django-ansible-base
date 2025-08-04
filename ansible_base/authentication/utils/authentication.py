@@ -1,3 +1,4 @@
+import importlib
 import logging
 from typing import Optional, Tuple, Union
 
@@ -20,8 +21,24 @@ merge_strategy = "Email fallback"
 
 
 class FakeBackend:
-    def setting(self, *args, **kwargs):
-        return ["username", "email"]
+    def __init__(self):
+        self.settings = {}
+        fq_function_name = getattr(settings, 'ANSIBLE_BASE_SOCIAL_AUTH_STRATEGY_SETTINGS_FUNCTION', None)
+        if fq_function_name:
+            try:
+                module_name, _, function_name = fq_function_name.rpartition('.')
+                the_function = getattr(importlib.import_module(module_name), function_name)
+                self.settings = the_function()
+            except Exception as e:
+                logger.error(f"FakeBackend: Failed to run {fq_function_name} to get additional settings: {e}")
+
+        self.settings["USER_FIELDS"] = ["username", "email"]
+
+    def setting(self, name, default=None):
+        for name in [name, f"SOCIAL_AUTH_{name}"]:
+            if name in self.settings:
+                return self.settings[name]
+        return default
 
 
 def raise_auth_exception(message: str, backend: Optional[Authenticator] = None):
@@ -87,7 +104,6 @@ def get_local_username(user_details: dict) -> str:
     from other auth backends.
     """
     username = get_username(strategy=AuthenticatorStrategy(AuthenticatorStorage()), details=user_details, backend=FakeBackend())
-
     return username['username']
 
 
@@ -118,8 +134,10 @@ def determine_username_from_uid_social(**kwargs) -> dict:
     authenticator = kwargs.get('backend')
     if not authenticator:
         raise_auth_exception(_('Unable to get backend from kwargs'))
-
-    selected_username = kwargs.get('details', {}).get('username', None)
+    if authenticator.setting('USERNAME_IS_FULL_EMAIL', False):
+        selected_username = kwargs.get('details', {}).get('email', None)
+    else:
+        selected_username = kwargs.get('details', {}).get('username', None)
     if not selected_username:
         raise_auth_exception(
             _('Unable to get associated username from details, expected entry "username". Full user details: %(details)s')
@@ -145,11 +163,7 @@ def _handle_no_merge_strategy(uid: str, authenticator: Authenticator) -> str:
     if AuthenticatorUser.objects.filter(Q(uid=uid) | Q(user__username=uid)).exists():
         # Some other provider is providing this username so we need to create our own username
         new_username = get_local_username({'username': uid})
-        logger.info(
-            f'Authenticator {authenticator.name} wants to authenticate {uid} but that'
-            f' username is already in use by another authenticator,'
-            f' the user from this authenticator will be {new_username}'
-        )
+        logger.warning(f"User {uid} is already associated with an existing user, creating a new user with username {new_username}")
         return new_username
     else:
         # We didn't have an exact match but no other provider is servicing this uid so lets return that for usage
@@ -188,11 +202,7 @@ def _handle_email_fallback_strategy(uid: str, email: Union[str, list[str], None]
     # PROPOSAL FLOW: Does an AAP User with this email exist? No
     else:
         new_username = get_local_username({'username': uid})
-        logger.warning(
-            f"Authenticator {authenticator.name} wants to authenticate {uid}/{email} "
-            "but that username is already in use by another authenticator, "
-            f"the user from this authenticator will be {new_username}"
-        )
+        logger.warning(f"User {uid} is already associated with an existing user, creating a new user with username {new_username}")
         return new_username
 
 
@@ -219,10 +229,8 @@ def _handle_email_fallback_strategy(uid: str, email: Union[str, list[str], None]
 #     else:
 #         # Some other provider is providing this username so we need to create our own username
 #         new_username = get_local_username({'username': uid})
-#         logger.info(
-#             f'Authenticator {authenticator.name} wants to authenticate {uid}/{email} but that'
-#             f' username is already in use by another authenticator,'
-#             f' the user from this authenticator will be {new_username}'
+#         logger.warning(
+#             f"User {uid} is already associated with an existing user, creating a new user with username {new_username}"
 #         )
 #         return new_username
 

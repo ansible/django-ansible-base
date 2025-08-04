@@ -583,6 +583,9 @@ class AuthenticatorPlugin(LDAPBackend, AbstractAuthenticatorPlugin):
     def update_settings(self, database_authenticator: Authenticator) -> None:
         self.settings = LDAPSettings(defaults=database_authenticator.configuration)
 
+    def setting(self, name, default=None):
+        return getattr(self.settings, name, default)
+
     def get_or_build_user(self, username, ldap_user):
         """
         This gets called by _LDAPUser to create the user in the database.

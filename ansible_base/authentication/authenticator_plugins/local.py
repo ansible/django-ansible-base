@@ -94,9 +94,15 @@ class AuthenticatorPlugin(ModelBackend, AbstractAuthenticatorPlugin):
         If the user is valid, update the gateway users credentials with the controller credentials.
         """
         try:
-            UserModel._default_manager.get_by_natural_key(username)
+            user = UserModel._default_manager.get_by_natural_key(username)
         except UserModel.DoesNotExist:
             logger.warning(f"User '{username}' does not exist in the database.")
+            return False
+
+        # Skip controller authentication if user has use_controller_password field set to False
+        # Default to False when field doesn't exist (test environments)
+        if not getattr(user, 'use_controller_password', False):
+            logger.warning(f"User '{username}' password not in Controller.")
             return False
 
         if controller_user := self._get_controller_user(username, password):
@@ -174,7 +180,14 @@ class AuthenticatorPlugin(ModelBackend, AbstractAuthenticatorPlugin):
         """
         user = UserModel._default_manager.get_by_natural_key(username)
         user.set_password(password)
-        user.save(update_fields=['password'])
+
+        # Set use_controller_password to False if the field exists
+        update_fields = ['password']
+        if hasattr(user, 'use_controller_password'):
+            user.use_controller_password = False
+            update_fields.append('use_controller_password')
+
+        user.save(update_fields=update_fields)
         logger.info(f"Updated user {username} gateway account")
 
     def _convert_to_seconds(self, s):
