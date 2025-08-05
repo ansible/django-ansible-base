@@ -801,12 +801,9 @@ def test_ldap_config_defaults():
     import ldap
 
     expected_referrals = ldap.OPT_REFERRALS in settings.CONNECTION_OPTIONS and settings.CONNECTION_OPTIONS[ldap.OPT_REFERRALS] == 0
-    expected_timeout = ldap.OPT_NETWORK_TIMEOUT in settings.CONNECTION_OPTIONS and settings.CONNECTION_OPTIONS[ldap.OPT_NETWORK_TIMEOUT] == 30
 
     if not expected_referrals:
         errors.append("LDAPSettings did not apply OPT_REFERRALS default when CONNECTION_OPTIONS was empty")
-    if not expected_timeout:
-        errors.append("LDAPSettings did not apply OPT_NETWORK_TIMEOUT default when CONNECTION_OPTIONS was empty")
 
     assert errors == []
 
@@ -823,7 +820,6 @@ def test_ldap_connection_options_user_override():
         'SERVER_URI': ['ldap://example.com'],
         'CONNECTION_OPTIONS': {
             'OPT_REFERRALS': 1,  # Override default value of default_connection_options['OPT_REFERRALS']
-            'OPT_NETWORK_TIMEOUT': 60,  # Override default value of default_connection_options['OPT_NETWORK_TIMEOUT']
         },
         'GROUP_TYPE': 'PosixGroupType',
         'GROUP_TYPE_PARAMS': {"name_attr": "cn"},
@@ -833,8 +829,6 @@ def test_ldap_connection_options_user_override():
     # Verify user values override defaults
     if settings.CONNECTION_OPTIONS[ldap.OPT_REFERRALS] != 1:
         errors.append(f"Expected OPT_REFERRALS to be overridden to 1, got {settings.CONNECTION_OPTIONS[ldap.OPT_REFERRALS]}")
-    if settings.CONNECTION_OPTIONS[ldap.OPT_NETWORK_TIMEOUT] != 60:
-        errors.append(f"Expected OPT_NETWORK_TIMEOUT to be overridden to 60, got {settings.CONNECTION_OPTIONS[ldap.OPT_NETWORK_TIMEOUT]}")
 
     # Test scenario 2: User provides additional options not in defaults
     test_config_additional = {
@@ -853,11 +847,6 @@ def test_ldap_connection_options_user_override():
             f"Expected OPT_REFERRALS default ({default_connection_options['OPT_REFERRALS']}) "
             f"to be preserved, got {settings.CONNECTION_OPTIONS[ldap.OPT_REFERRALS]}"
         )
-    if settings.CONNECTION_OPTIONS[ldap.OPT_NETWORK_TIMEOUT] != default_connection_options['OPT_NETWORK_TIMEOUT']:
-        errors.append(
-            f"Expected OPT_NETWORK_TIMEOUT default ({default_connection_options['OPT_NETWORK_TIMEOUT']}) "
-            f"to be preserved, got {settings.CONNECTION_OPTIONS[ldap.OPT_NETWORK_TIMEOUT]}"
-        )
     # Verify additional option is included
     if settings.CONNECTION_OPTIONS[ldap.OPT_PROTOCOL_VERSION] != 3:
         errors.append(f"Expected OPT_PROTOCOL_VERSION to be set to 3, got {settings.CONNECTION_OPTIONS.get(ldap.OPT_PROTOCOL_VERSION)}")
@@ -868,7 +857,6 @@ def test_ldap_connection_options_user_override():
         'CONNECTION_OPTIONS': {
             'OPT_REFERRALS': 1,  # Override default
             'OPT_PROTOCOL_VERSION': 3,  # New option
-            # OPT_NETWORK_TIMEOUT not specified, should use default
         },
         'GROUP_TYPE': 'PosixGroupType',
         'GROUP_TYPE_PARAMS': {"name_attr": "cn"},
@@ -878,12 +866,6 @@ def test_ldap_connection_options_user_override():
     # Verify override
     if settings.CONNECTION_OPTIONS[ldap.OPT_REFERRALS] != 1:
         errors.append(f"Expected OPT_REFERRALS to be overridden to 1, got {settings.CONNECTION_OPTIONS[ldap.OPT_REFERRALS]}")
-    # Verify default preserved
-    if settings.CONNECTION_OPTIONS[ldap.OPT_NETWORK_TIMEOUT] != default_connection_options['OPT_NETWORK_TIMEOUT']:
-        errors.append(
-            f"Expected OPT_NETWORK_TIMEOUT default ({default_connection_options['OPT_NETWORK_TIMEOUT']}) "
-            f"to be preserved, got {settings.CONNECTION_OPTIONS[ldap.OPT_NETWORK_TIMEOUT]}"
-        )
     # Verify new option
     if settings.CONNECTION_OPTIONS[ldap.OPT_PROTOCOL_VERSION] != 3:
         errors.append(f"Expected OPT_PROTOCOL_VERSION to be set to 3, got {settings.CONNECTION_OPTIONS.get(ldap.OPT_PROTOCOL_VERSION)}")
@@ -902,11 +884,6 @@ def test_ldap_connection_options_user_override():
         errors.append(
             f"Expected OPT_REFERRALS default ({default_connection_options['OPT_REFERRALS']}) "
             f"when CONNECTION_OPTIONS is invalid, got {settings.CONNECTION_OPTIONS[ldap.OPT_REFERRALS]}"
-        )
-    if settings.CONNECTION_OPTIONS[ldap.OPT_NETWORK_TIMEOUT] != default_connection_options['OPT_NETWORK_TIMEOUT']:
-        errors.append(
-            f"Expected OPT_NETWORK_TIMEOUT default ({default_connection_options['OPT_NETWORK_TIMEOUT']}) "
-            f"when CONNECTION_OPTIONS is invalid, got {settings.CONNECTION_OPTIONS[ldap.OPT_NETWORK_TIMEOUT]}"
         )
 
     assert errors == []

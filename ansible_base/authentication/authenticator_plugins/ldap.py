@@ -27,7 +27,7 @@ _MUST_BE_AN_ARRAY_MESSAGE_TRANSLATED = _(_MUST_BE_AN_ARRAY_MESSAGE)
 
 
 user_search_string = '%(user)s'
-default_connection_options = {'OPT_REFERRALS': 0, 'OPT_NETWORK_TIMEOUT': 30}
+default_connection_options = {'OPT_REFERRALS': 0}
 
 
 class PosixUIDGroupType(LDAPGroupType):
