@@ -22,7 +22,7 @@ def _load_pem_private_key(key: str):
     return serialization.load_pem_private_key(bytes(key, 'utf-8'), password=None)
 
 def generate_x_trusted_proxy_header(key: str) -> str:
-    private_key = _load_private_key(key)
+    private_key = _load_pem_private_key(key)
     timestamp = time.time_ns()
     message = f'{_SHARED_SECRET}-{timestamp}'
     signature = private_key.sign(bytes(message, 'utf-8'), padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH), hashes.SHA256())
