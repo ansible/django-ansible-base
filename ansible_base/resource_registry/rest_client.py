@@ -189,7 +189,10 @@ class ResourceAPIClient:
         return self._make_request("get", "role-team-assignments/", params=params)
 
     def sync_assignment(self, assignment):
-        from ansible_base.rbac.service_api.serializers import ServiceRoleTeamAssignmentSerializer, ServiceRoleUserAssignmentSerializer
+        from ansible_base.rbac.service_api.serializers import (
+            ServiceRoleTeamAssignmentSerializer,
+            ServiceRoleUserAssignmentSerializer,
+        )
 
         if assignment._meta.model_name == 'roleuserassignment':
             serializer = ServiceRoleUserAssignmentSerializer(assignment)
@@ -227,3 +230,7 @@ class ResourceAPIClient:
         url = f'role-{actor_type}-assignments/{sub_url}/'
 
         return self._make_request(method="post", path=url, data=data)
+
+    def get_jwt_claims(self, user_ansible_id):
+        """Get JWT claims for a user from the gateway service-index."""
+        return self._make_request("get", f"jwt_claims/{user_ansible_id}/")

@@ -19,6 +19,7 @@ from ansible_base.lib.logging.runtime import log_excess_runtime
 from ansible_base.lib.utils.auth import get_user_by_ansible_id
 from ansible_base.lib.utils.translations import translatableConditionally as _
 from ansible_base.resource_registry.models import Resource, ResourceType
+from ansible_base.resource_registry.rest_client import get_resource_server_client
 from ansible_base.resource_registry.signals.handlers import no_reverse_sync
 
 logger = logging.getLogger("ansible_base.jwt_consumer.common.auth")
@@ -52,6 +53,7 @@ class JWTCommonAuth:
         self.cache = JWTCache()
         self.user = None
         self.token = None
+        self.gateway_claims = None  # Store claims from gateway
 
     @log_excess_runtime(logger, debug_cutoff=0.01)
     def parse_jwt_token(self, request):
@@ -142,9 +144,76 @@ class JWTCommonAuth:
                     resource.service_id = self.token['service_id']
                     resource.save(update_fields=['ansible_id', 'service_id'])
 
+        # Check if claims need to be refreshed from gateway based on claims_hash
+        user_ansible_id = self.token['sub']
+        current_claims_hash = self.token.get('claims_hash')
+
+        if self._should_fetch_claims_from_gateway(user_ansible_id, current_claims_hash):
+            logger.debug(f"Claims hash changed or not cached, fetching claims from gateway for user {user_ansible_id}")
+            jwt_claims = self._fetch_jwt_claims_from_gateway(user_ansible_id)
+
+            if jwt_claims:
+                self.gateway_claims = jwt_claims
+                self._cache_claims_hash(user_ansible_id, current_claims_hash)
+                logger.debug(f"Successfully loaded and cached gateway claims for user {user_ansible_id}")
+            else:
+                logger.error(f"Failed to fetch claims from gateway for user {user_ansible_id}. RBAC processing will not be available.")
+                # Note: We don't raise an exception here to allow basic authentication to succeed
+                # RBAC processing will fail gracefully with appropriate error messages
+        else:
+            logger.debug(f"Using cached claims for user {user_ansible_id} (claims_hash unchanged)")
         setattr(self.user, "resource_api_actions", self.token.get("resource_api_actions", None))
 
         logger.info(f"User {self.user.username} authenticated from JWT auth")
+
+    def _should_fetch_claims_from_gateway(self, user_ansible_id, current_claims_hash):
+        """
+        Determine if claims should be fetched from gateway based on claims_hash comparison.
+        Returns True if claims need to be fetched (hash changed or not cached).
+        """
+        if not current_claims_hash:
+            logger.debug(f"No claims_hash in token for user {user_ansible_id}, will fetch claims")
+            return True
+
+        cached_hash = self.cache.get_claims_hash(user_ansible_id)
+        if cached_hash != current_claims_hash:
+            logger.debug(f"Claims hash changed for user {user_ansible_id}: cached={cached_hash}, current={current_claims_hash}")
+            return True
+
+        # Hash matches cached value, try to get cached claims
+        cached_claims = self.cache.get_cached_claims(user_ansible_id)
+        if cached_claims:
+            self.gateway_claims = cached_claims
+            return False
+        else:
+            logger.debug(f"Claims hash matches but no cached claims found for user {user_ansible_id}")
+            return True
+
+    def _cache_claims_hash(self, user_ansible_id, claims_hash):
+        """Cache the claims hash and gateway claims for future comparisons."""
+        if claims_hash and self.gateway_claims:
+            self.cache.set_claims_hash(user_ansible_id, claims_hash)
+            self.cache.set_cached_claims(user_ansible_id, self.gateway_claims)
+
+    def _fetch_jwt_claims_from_gateway(self, user_ansible_id):
+        """
+        Fetch JWT claims for a user from the gateway service-index API.
+        Returns None if claims cannot be retrieved.
+        """
+        try:
+            client = get_resource_server_client("service-index")
+            response = client.get_jwt_claims(user_ansible_id)
+
+            if response.status_code == 200:
+                claims = response.json()
+                logger.debug(f"Retrieved JWT claims from gateway for user {user_ansible_id}")
+                return claims
+            else:
+                logger.warning(f"Failed to retrieve JWT claims from gateway for user {user_ansible_id}: " f"{response.status_code}")
+                return None
+        except Exception as e:
+            logger.error(f"Error fetching JWT claims from gateway for user {user_ansible_id}: {e}")
+            return None
 
     def log_and_raise(self, conditional_translate_object, expand_values={}, error_code=None):
         logger.error(conditional_translate_object.not_translated() % expand_values)
@@ -226,7 +295,8 @@ class JWTCommonAuth:
         return validated_body
 
     def decode_jwt_token(self, unencrypted_token, decryption_key, additional_options={}):
-        local_required_field = ["sub", "user_data", "exp", "objects", "object_roles", "global_roles", "version"]
+        # Core required fields - claims_hash is now required to track permission changes
+        local_required_field = ["sub", "user_data", "exp", "version", "claims_hash"]
         options = {"require": local_required_field}
         options.update(additional_options)
         return jwt.decode(
@@ -259,16 +329,23 @@ class JWTCommonAuth:
     def process_rbac_permissions(self):
         """
         This is a default process_permissions which should be usable if you are using RBAC from DAB
+        Uses gateway claims data exclusively - no fallback to JWT token fields
         """
-        if self.token is None or self.user is None:
-            logger.error("Unable to process rbac permissions because user or token is not defined, please call authenticate first")
+        if self.user is None:
+            logger.error("Unable to process rbac permissions because user is not defined, please call authenticate first")
+            return
+
+        if self.gateway_claims is None:
+            logger.error("Unable to process rbac permissions because gateway claims are not available. Ensure gateway jwt_claims endpoint is accessible.")
             return
 
         from ansible_base.rbac.models import RoleUserAssignment
 
         role_diff = RoleUserAssignment.objects.filter(user=self.user, role_definition__name__in=settings.ANSIBLE_BASE_JWT_MANAGED_ROLES)
 
-        for system_role_name in self.token.get("global_roles", []):
+        # Process global roles from gateway claims
+        global_roles = self.gateway_claims.get("global_roles", [])
+        for system_role_name in global_roles:
             logger.debug(f"Processing system role {system_role_name} for {self.user.username}")
             rd = self.get_role_definition(system_role_name)
             if rd:
@@ -282,7 +359,11 @@ class JWTCommonAuth:
                 logger.error(f"Unable to grant {self.user.username} system level role {system_role_name} because it does not exist")
                 continue
 
-        for object_role_name in self.token.get('object_roles', {}).keys():
+        # Process object roles from gateway claims
+        object_roles = self.gateway_claims.get('object_roles', {})
+        objects = self.gateway_claims.get('objects', {})
+
+        for object_role_name in object_roles.keys():
             rd = self.get_role_definition(object_role_name)
             if rd is None:
                 logger.error(f"Unable to grant {self.user.username} object role {object_role_name} because it does not exist")
@@ -291,11 +372,11 @@ class JWTCommonAuth:
                 logger.error(f"Unable to grant {self.user.username} object role {object_role_name} because it is not a JWT managed role")
                 continue
 
-            object_type = self.token['object_roles'][object_role_name]['content_type']
-            object_indexes = self.token['object_roles'][object_role_name]['objects']
+            object_type = object_roles[object_role_name]['content_type']
+            object_indexes = object_roles[object_role_name]['objects']
 
             for index in object_indexes:
-                object_data = self.token['objects'][object_type][index]
+                object_data = objects[object_type][index]
                 try:
                     resource, obj = self.get_or_create_resource(object_type, object_data)
                 except IntegrityError as e:
@@ -310,7 +391,7 @@ class JWTCommonAuth:
                     role_diff = role_diff.exclude(pk=assignment.pk)
                     logger.info(f"Granted user {self.user.username} role {object_role_name} to object {obj.name} with ansible_id {object_data['ansible_id']}")
 
-        # Remove all permissions not authorized by the JWT
+        # Remove all permissions not authorized by the gateway claims
         for role_assignment in role_diff:
             rd = role_assignment.role_definition
             content_object = role_assignment.content_object
@@ -322,9 +403,17 @@ class JWTCommonAuth:
     def get_or_create_resource(self, content_type: str, data: dict) -> Tuple[Optional[Resource], Optional[Model]]:
         """
         Gets or creates a resource from a content type and its default data
+        Uses gateway claims exclusively - no fallback to JWT token fields
 
         This can only build or get organizations or teams
+        Args:
+            content_type: Type of content ('team', 'organization')
+            data: Resource data dictionary
         """
+        if self.gateway_claims is None:
+            logger.error("Unable to create resource because gateway claims are not available")
+            return None, None
+
         object_ansible_id = data['ansible_id']
         try:
             resource = Resource.objects.get(ansible_id=object_ansible_id)
@@ -337,7 +426,7 @@ class JWTCommonAuth:
         if content_type == 'team':
             # For a team we first have to make sure the org is there
             org_id = data['org']
-            organization_data = self.token['objects']["organization"][org_id]
+            organization_data = self.gateway_claims['objects']["organization"][org_id]
 
             # Now that we have the org we can build a team
             org_resource, _ = self.get_or_create_resource("organization", organization_data)
@@ -359,7 +448,7 @@ class JWTCommonAuth:
 
             return resource, resource.content_object
         else:
-            logger.error(f"build_resource_stub does not know how to build an object of type {type}")
+            logger.error(f"build_resource_stub does not know how to build an object of type {content_type}")
             return None, None
 
 

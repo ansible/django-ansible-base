@@ -46,3 +46,23 @@ class JWTCache:
 
     def set_key_in_cache(self, key: str) -> None:
         cache.set(cache_key, key, timeout=self.get_cache_timeout())
+
+    def get_claims_hash(self, user_ansible_id: str) -> Optional[str]:
+        """Get cached claims hash for a user."""
+        claims_hash_key = f"jwt_claims_hash_{user_ansible_id}"
+        return cache.get(claims_hash_key, None)
+
+    def set_claims_hash(self, user_ansible_id: str, claims_hash: str) -> None:
+        """Set cached claims hash for a user."""
+        claims_hash_key = f"jwt_claims_hash_{user_ansible_id}"
+        cache.set(claims_hash_key, claims_hash, timeout=self.get_cache_timeout())
+
+    def get_cached_claims(self, user_ansible_id: str) -> Optional[dict]:
+        """Get cached gateway claims for a user."""
+        claims_key = f"jwt_gateway_claims_{user_ansible_id}"
+        return cache.get(claims_key, None)
+
+    def set_cached_claims(self, user_ansible_id: str, claims: dict) -> None:
+        """Set cached gateway claims for a user."""
+        claims_key = f"jwt_gateway_claims_{user_ansible_id}"
+        cache.set(claims_key, claims, timeout=self.get_cache_timeout())

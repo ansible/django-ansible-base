@@ -542,9 +542,8 @@ def jwt_token(test_encryption_private_key):
                     "email": "noone@redhat.com",
                     "is_superuser": False,
                 },
-                "objects": {},
-                "object_roles": {},
-                "global_roles": [],
+                # claims_hash is required to track permission changes
+                "claims_hash": "test_hash_123",
             }
 
         def encrypt_token(self):
@@ -593,6 +592,31 @@ def mocked_http(test_encryption_public_key, jwt_token):
             return get_request
 
     return MockedHttp()
+
+
+@pytest.fixture
+def mock_gateway_jwt_claims():
+    """Mock for gateway JWT claims endpoint."""
+    mock_claims = {
+        "global_roles": ["Platform Auditor"],
+        "object_roles": {"Organization Admin": {"content_type": "organization", "objects": [0]}},
+        "objects": {"organization": [{"ansible_id": "test-org-id", "name": "Test Organization"}], "team": []},
+    }
+
+    class MockResponse:
+        def __init__(self, json_data, status_code=200):
+            self.json_data = json_data
+            self.status_code = status_code
+
+        def json(self):
+            return self.json_data
+
+    class MockResourceAPIClient:
+        def get_jwt_claims(self, user_ansible_id):
+            return MockResponse(mock_claims)
+
+    with mock.patch('ansible_base.jwt_consumer.common.auth.get_resource_server_client', return_value=MockResourceAPIClient()):
+        yield mock_claims
 
 
 @pytest.fixture
