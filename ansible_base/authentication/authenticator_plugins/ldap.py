@@ -437,6 +437,7 @@ class LDAPSettings(BaseLDAPSettings):
         # Connection options need to be set as {"integer": "value"} but our configuration has {"friendly_name": "value"} so we need to convert them
         connection_options = defaults.get('CONNECTION_OPTIONS')
         if not isinstance(connection_options, dict):
+            logger.warning(f"Invalid CONNECTION_OPTIONS (not a dict): {connection_options}")
             connection_options = {}
         _tmp_connection_options = default_connection_options.copy()
         _tmp_connection_options.update(connection_options)
