@@ -301,7 +301,7 @@ class TestJWTCommonAuth:
     ):
         authentication = JWTCommonAuth()
         authentication.user = admin_user
-        authentication.token = token
+        authentication.gateway_claims = token  # Use gateway_claims instead of token
         if logs_error:
             with expected_log(default_logger, 'error', 'Unable to grant'):
                 authentication.process_rbac_permissions()
@@ -322,7 +322,7 @@ class TestJWTCommonAuth:
     def test_process_rbac_permissions_object_roles_role_dne(self, expected_log, admin_user):
         authentication = JWTCommonAuth()
         authentication.user = admin_user
-        authentication.token = {'object_roles': {'Junk': ['a']}}
+        authentication.gateway_claims = {'object_roles': {'Junk': ['a']}}  # Use gateway_claims instead of token
         with expected_log(default_logger, 'error', 'Unable to grant'):
             authentication.process_rbac_permissions()
 
@@ -338,7 +338,7 @@ class TestJWTCommonAuth:
     ):
         authentication = JWTCommonAuth()
         authentication.user = admin_user
-        authentication.token = {
+        authentication.gateway_claims = {  # Use gateway_claims instead of token
             'objects': {'organization': [{'ansible_id': organization.resource.ansible_id, 'name': organization.name}]},
             'object_roles': object_roles,
         }
@@ -349,7 +349,7 @@ class TestJWTCommonAuth:
     def test_process_rbac_permissions_org_duplicate_name_error(self, expected_log, admin_user, organization, organization_admin_role):
         authentication = JWTCommonAuth()
         authentication.user = admin_user
-        authentication.token = {
+        authentication.gateway_claims = {  # Use gateway_claims instead of token
             'objects': {'organization': [{'ansible_id': str(uuid4()), 'name': organization.name}]},
             'object_roles': {"Organization Admin": {'content_type': 'organization', 'objects': [0]}},
         }
@@ -368,7 +368,7 @@ class TestJWTCommonAuth:
 
         authentication = JWTCommonAuth()
         authentication.user = admin_user
-        authentication.token = {
+        authentication.gateway_claims = {  # Use gateway_claims instead of token
             'objects': {'organization': [{'ansible_id': organization.resource.ansible_id, 'name': organization.name}]},
             'object_roles': {organization_admin_role.name: {'content_type': 'organization', 'objects': [0]}},
             'global_roles': ["Platform Auditor"],
@@ -378,7 +378,7 @@ class TestJWTCommonAuth:
 
         assert RoleUserAssignment.objects.filter(user=admin_user).count() == 2
 
-        authentication.token = {}
+        authentication.gateway_claims = {}  # Use gateway_claims instead of token
 
         authentication.process_rbac_permissions()
 
@@ -387,11 +387,13 @@ class TestJWTCommonAuth:
     @pytest.mark.django_db
     def test_get_or_create_resource_invalid_content_type(self):
         authentication = JWTCommonAuth()
+        authentication.gateway_claims = {}  # Set gateway_claims
         assert authentication.get_or_create_resource('junk', {'ansible_id': uuid4()}) == (None, None)
 
     @pytest.mark.django_db
     def test_get_or_create_resource_organization(self):
         authentication = JWTCommonAuth()
+        authentication.gateway_claims = {}  # Set gateway_claims
         data = {'ansible_id': uuid4(), 'name': 'Test Organization'}
         assert not Organization.objects.filter(name=data['name']).exists()
         assert not Resource.objects.filter(ansible_id=data['ansible_id']).exists()
@@ -404,7 +406,7 @@ class TestJWTCommonAuth:
     def test_get_or_create_resource_team(self):
         authentication = JWTCommonAuth()
         org_name = 'Testing Org Name'
-        authentication.token = {
+        authentication.gateway_claims = {  # Use gateway_claims instead of token
             'objects': {
                 'organization': [
                     {
@@ -427,6 +429,111 @@ class TestJWTCommonAuth:
         assert Organization.objects.filter(name=org_name).exists()
         assert Resource.objects.filter(ansible_id=data['ansible_id']).exists()
         assert Team.objects.filter(name=data['name']).exists()
+
+    @pytest.mark.django_db
+    def test_fetch_jwt_claims_from_gateway_success(self):
+        """Test successful fetching of JWT claims from gateway."""
+        authentication = JWTCommonAuth()
+        user_ansible_id = str(uuid4())
+        
+        mock_claims = {
+            "objects": {"organization": [], "team": []},
+            "object_roles": {},
+            "global_roles": [],
+            "claims_hash": "test_hash_123"
+        }
+        
+        # Mock the response from gateway
+        with mock.patch('ansible_base.jwt_consumer.common.auth.get_resource_server_client') as mock_client:
+            mock_response = mock.Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = mock_claims
+            
+            mock_client_instance = mock.Mock()
+            mock_client_instance.get_jwt_claims.return_value = mock_response
+            mock_client.return_value = mock_client_instance
+            
+            result = authentication._fetch_jwt_claims_from_gateway(user_ansible_id)
+            assert result == mock_claims
+            mock_client_instance.get_jwt_claims.assert_called_once_with(user_ansible_id)
+
+    @pytest.mark.django_db
+    def test_fetch_jwt_claims_from_gateway_invalid_json(self, caplog):
+        """Test handling of invalid JSON response from gateway."""
+        authentication = JWTCommonAuth()
+        user_ansible_id = str(uuid4())
+        
+        # Mock the response from gateway with invalid JSON
+        with mock.patch('ansible_base.jwt_consumer.common.auth.get_resource_server_client') as mock_client:
+            mock_response = mock.Mock()
+            mock_response.status_code = 200
+            mock_response.json.side_effect = ValueError("Invalid JSON")
+            mock_response.headers = {'Content-Type': 'text/html'}
+            mock_response.text = "<html>Error page</html>"
+            
+            mock_client_instance = mock.Mock()
+            mock_client_instance.get_jwt_claims.return_value = mock_response
+            mock_client.return_value = mock_client_instance
+            
+            with caplog.at_level(logging.ERROR):
+                result = authentication._fetch_jwt_claims_from_gateway(user_ansible_id)
+                assert result is None
+                assert "Invalid JSON response from gateway" in caplog.text
+                assert "text/html" in caplog.text
+
+    @pytest.mark.django_db
+    def test_fetch_jwt_claims_from_gateway_non_200_response(self, caplog):
+        """Test handling of non-200 status code from gateway."""
+        authentication = JWTCommonAuth()
+        user_ansible_id = str(uuid4())
+        
+        # Mock the response from gateway with 404
+        with mock.patch('ansible_base.jwt_consumer.common.auth.get_resource_server_client') as mock_client:
+            mock_response = mock.Mock()
+            mock_response.status_code = 404
+            mock_response.text = "Not found"
+            
+            mock_client_instance = mock.Mock()
+            mock_client_instance.get_jwt_claims.return_value = mock_response
+            mock_client.return_value = mock_client_instance
+            
+            with caplog.at_level(logging.WARNING):
+                result = authentication._fetch_jwt_claims_from_gateway(user_ansible_id)
+                assert result is None
+                assert "Failed to retrieve JWT claims from gateway" in caplog.text
+                assert "404" in caplog.text
+
+    @pytest.mark.django_db
+    def test_should_fetch_claims_from_gateway_no_hash(self):
+        """Test that claims are fetched when no claims_hash in token."""
+        authentication = JWTCommonAuth()
+        user_ansible_id = str(uuid4())
+        
+        # No claims_hash means we should fetch
+        assert authentication._should_fetch_claims_from_gateway(user_ansible_id, None) is True
+
+    @pytest.mark.django_db
+    def test_should_fetch_claims_from_gateway_hash_changed(self):
+        """Test that claims are fetched when claims_hash has changed."""
+        authentication = JWTCommonAuth()
+        user_ansible_id = str(uuid4())
+        
+        # Mock cache to return different hash
+        with mock.patch.object(authentication.cache, 'get_claims_hash', return_value="old_hash"):
+            assert authentication._should_fetch_claims_from_gateway(user_ansible_id, "new_hash") is True
+
+    @pytest.mark.django_db
+    def test_should_fetch_claims_from_gateway_cached(self):
+        """Test that cached claims are used when hash hasn't changed."""
+        authentication = JWTCommonAuth()
+        user_ansible_id = str(uuid4())
+        cached_claims = {"global_roles": ["test"]}
+        
+        # Mock cache to return same hash and cached claims
+        with mock.patch.object(authentication.cache, 'get_claims_hash', return_value="same_hash"):
+            with mock.patch.object(authentication.cache, 'get_cached_claims', return_value=cached_claims):
+                assert authentication._should_fetch_claims_from_gateway(user_ansible_id, "same_hash") is False
+                assert authentication.gateway_claims == cached_claims
 
 
 class TestJWTAuthentication:
