@@ -435,24 +435,19 @@ class TestJWTCommonAuth:
         """Test successful fetching of JWT claims from gateway."""
         authentication = JWTCommonAuth()
         user_ansible_id = str(uuid4())
-        
-        mock_claims = {
-            "objects": {"organization": [], "team": []},
-            "object_roles": {},
-            "global_roles": [],
-            "claims_hash": "test_hash_123"
-        }
-        
+
+        mock_claims = {"objects": {"organization": [], "team": []}, "object_roles": {}, "global_roles": [], "claims_hash": "test_hash_123"}
+
         # Mock the response from gateway
         with mock.patch('ansible_base.jwt_consumer.common.auth.get_resource_server_client') as mock_client:
             mock_response = mock.Mock()
             mock_response.status_code = 200
             mock_response.json.return_value = mock_claims
-            
+
             mock_client_instance = mock.Mock()
             mock_client_instance.get_jwt_claims.return_value = mock_response
             mock_client.return_value = mock_client_instance
-            
+
             result = authentication._fetch_jwt_claims_from_gateway(user_ansible_id)
             assert result == mock_claims
             mock_client_instance.get_jwt_claims.assert_called_once_with(user_ansible_id)
@@ -462,7 +457,7 @@ class TestJWTCommonAuth:
         """Test handling of invalid JSON response from gateway."""
         authentication = JWTCommonAuth()
         user_ansible_id = str(uuid4())
-        
+
         # Mock the response from gateway with invalid JSON
         with mock.patch('ansible_base.jwt_consumer.common.auth.get_resource_server_client') as mock_client:
             mock_response = mock.Mock()
@@ -470,11 +465,11 @@ class TestJWTCommonAuth:
             mock_response.json.side_effect = ValueError("Invalid JSON")
             mock_response.headers = {'Content-Type': 'text/html'}
             mock_response.text = "<html>Error page</html>"
-            
+
             mock_client_instance = mock.Mock()
             mock_client_instance.get_jwt_claims.return_value = mock_response
             mock_client.return_value = mock_client_instance
-            
+
             with caplog.at_level(logging.ERROR):
                 result = authentication._fetch_jwt_claims_from_gateway(user_ansible_id)
                 assert result is None
@@ -486,17 +481,17 @@ class TestJWTCommonAuth:
         """Test handling of non-200 status code from gateway."""
         authentication = JWTCommonAuth()
         user_ansible_id = str(uuid4())
-        
+
         # Mock the response from gateway with 404
         with mock.patch('ansible_base.jwt_consumer.common.auth.get_resource_server_client') as mock_client:
             mock_response = mock.Mock()
             mock_response.status_code = 404
             mock_response.text = "Not found"
-            
+
             mock_client_instance = mock.Mock()
             mock_client_instance.get_jwt_claims.return_value = mock_response
             mock_client.return_value = mock_client_instance
-            
+
             with caplog.at_level(logging.WARNING):
                 result = authentication._fetch_jwt_claims_from_gateway(user_ansible_id)
                 assert result is None
@@ -508,7 +503,7 @@ class TestJWTCommonAuth:
         """Test that claims are fetched when no claims_hash in token."""
         authentication = JWTCommonAuth()
         user_ansible_id = str(uuid4())
-        
+
         # No claims_hash means we should fetch
         assert authentication._should_fetch_claims_from_gateway(user_ansible_id, None) is True
 
@@ -517,7 +512,7 @@ class TestJWTCommonAuth:
         """Test that claims are fetched when claims_hash has changed."""
         authentication = JWTCommonAuth()
         user_ansible_id = str(uuid4())
-        
+
         # Mock cache to return different hash
         with mock.patch.object(authentication.cache, 'get_claims_hash', return_value="old_hash"):
             assert authentication._should_fetch_claims_from_gateway(user_ansible_id, "new_hash") is True
@@ -528,7 +523,7 @@ class TestJWTCommonAuth:
         authentication = JWTCommonAuth()
         user_ansible_id = str(uuid4())
         cached_claims = {"global_roles": ["test"]}
-        
+
         # Mock cache to return same hash and cached claims
         with mock.patch.object(authentication.cache, 'get_claims_hash', return_value="same_hash"):
             with mock.patch.object(authentication.cache, 'get_cached_claims', return_value=cached_claims):

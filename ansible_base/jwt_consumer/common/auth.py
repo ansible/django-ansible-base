@@ -213,7 +213,7 @@ class JWTCommonAuth:
                     claims = response.json()
                     logger.debug(f"Retrieved JWT claims from gateway for user {user_ansible_id}")
                     return claims
-                except ValueError as json_error:
+                except ValueError:
                     # Log the actual response content for debugging
                     logger.error(
                         f"Invalid JSON response from gateway for user {user_ansible_id}. "
