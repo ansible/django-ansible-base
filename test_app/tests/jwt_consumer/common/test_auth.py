@@ -528,6 +528,108 @@ class TestJWTCommonAuth:
                 assert authentication._should_fetch_claims_from_gateway(user_ansible_id, "same_hash") is False
                 assert authentication.gateway_claims == cached_claims
 
+    @pytest.mark.django_db  
+    def test_should_fetch_claims_from_gateway_cache_miss(self):
+        """Test that claims are fetched when hash matches but no cached claims exist."""
+        authentication = JWTCommonAuth()
+        user_ansible_id = str(uuid4())
+        
+        # Mock cache to return same hash but no cached claims
+        with mock.patch.object(authentication.cache, 'get_claims_hash', return_value="same_hash"):
+            with mock.patch.object(authentication.cache, 'get_cached_claims', return_value=None):
+                assert authentication._should_fetch_claims_from_gateway(user_ansible_id, "same_hash") is True
+
+    @pytest.mark.django_db
+    def test_fetch_jwt_claims_from_gateway_exception(self, caplog):
+        """Test handling of exceptions when fetching JWT claims from gateway."""
+        authentication = JWTCommonAuth()
+        user_ansible_id = str(uuid4())
+        
+        # Mock client to raise an exception
+        with mock.patch('ansible_base.jwt_consumer.common.auth.get_resource_server_client') as mock_client:
+            mock_client.side_effect = Exception("Connection error")
+            
+            with caplog.at_level(logging.ERROR):
+                result = authentication._fetch_jwt_claims_from_gateway(user_ansible_id)
+                assert result is None
+                assert "Error fetching JWT claims from gateway" in caplog.text
+                assert "Connection error" in caplog.text
+
+    @pytest.mark.django_db
+    def test_cache_claims_hash_with_valid_data(self):
+        """Test caching of claims hash and gateway claims."""
+        authentication = JWTCommonAuth()
+        user_ansible_id = str(uuid4())
+        claims_hash = "test_hash_456"
+        gateway_claims = {"global_roles": ["test"], "object_roles": {}}
+        
+        authentication.gateway_claims = gateway_claims
+        
+        with mock.patch.object(authentication.cache, 'set_claims_hash') as mock_set_hash:
+            with mock.patch.object(authentication.cache, 'set_cached_claims') as mock_set_claims:
+                authentication._cache_claims_hash(user_ansible_id, claims_hash)
+                
+                mock_set_hash.assert_called_once_with(user_ansible_id, claims_hash)
+                mock_set_claims.assert_called_once_with(user_ansible_id, gateway_claims)
+
+    @pytest.mark.django_db
+    def test_cache_claims_hash_with_no_hash(self):
+        """Test that caching is skipped when no claims_hash is provided."""
+        authentication = JWTCommonAuth()
+        user_ansible_id = str(uuid4())
+        authentication.gateway_claims = {"global_roles": ["test"]}
+        
+        with mock.patch.object(authentication.cache, 'set_claims_hash') as mock_set_hash:
+            with mock.patch.object(authentication.cache, 'set_cached_claims') as mock_set_claims:
+                authentication._cache_claims_hash(user_ansible_id, None)
+                
+                mock_set_hash.assert_not_called()
+                mock_set_claims.assert_not_called()
+
+    @pytest.mark.django_db
+    def test_cache_claims_hash_with_no_gateway_claims(self):
+        """Test that caching is skipped when no gateway claims are available."""
+        authentication = JWTCommonAuth()
+        user_ansible_id = str(uuid4())
+        authentication.gateway_claims = None
+        
+        with mock.patch.object(authentication.cache, 'set_claims_hash') as mock_set_hash:
+            with mock.patch.object(authentication.cache, 'set_cached_claims') as mock_set_claims:
+                authentication._cache_claims_hash(user_ansible_id, "test_hash")
+                
+                mock_set_hash.assert_not_called()
+                mock_set_claims.assert_not_called()
+
+
+    @pytest.mark.django_db
+    def test_fetch_jwt_claims_uses_resource_service_path(self):
+        """Test that JWT claims fetching uses RESOURCE_SERVICE_PATH setting."""
+        authentication = JWTCommonAuth()
+        user_ansible_id = str(uuid4())
+        
+        mock_claims = {"global_roles": [], "object_roles": {}}
+        
+        with mock.patch('ansible_base.jwt_consumer.common.auth.get_resource_server_client') as mock_client:
+            mock_response = mock.Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = mock_claims
+            
+            mock_client_instance = mock.Mock()
+            mock_client_instance.get_jwt_claims.return_value = mock_response
+            mock_client.return_value = mock_client_instance
+            
+            # Mock the settings to verify correct path is used
+            with mock.patch('ansible_base.jwt_consumer.common.auth.getattr') as mock_getattr:
+                mock_getattr.return_value = "/custom/api/path/service-index/"
+                
+                result = authentication._fetch_jwt_claims_from_gateway(user_ansible_id)
+                
+                # Verify that getattr was called to get RESOURCE_SERVICE_PATH
+                mock_getattr.assert_called_once()
+                # Verify the client was created with the setting value
+                mock_client.assert_called_once_with("/custom/api/path/service-index/")
+                assert result == mock_claims
+
 
 class TestJWTAuthentication:
     def test_authenticate(self, jwt_token, django_user_model, mocked_http, test_encryption_public_key):
