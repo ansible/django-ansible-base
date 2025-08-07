@@ -3,7 +3,7 @@ from unittest import mock
 
 from django.test.utils import override_settings
 
-from ansible_base.jwt_consumer.common.util import generate_x_trusted_proxy_header, validate_x_trusted_proxy_header, _load_pem_private_key
+from ansible_base.jwt_consumer.common.util import _load_pem_private_key, generate_x_trusted_proxy_header, validate_x_trusted_proxy_header
 
 
 class TestValidateTrustedProxy:
