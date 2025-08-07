@@ -41,7 +41,7 @@ class HubJWTAuth(JWTAuthentication):
         member_teams = []
 
         # Process object roles from gateway claims instead of JWT token
-        if not self.common_auth.gateway_claims:
+        if self.common_auth.gateway_claims is None:
             logger.error("Unable to process permissions because gateway claims are not available")
             return
 
