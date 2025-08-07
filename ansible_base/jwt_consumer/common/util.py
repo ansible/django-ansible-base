@@ -14,7 +14,7 @@ logger = logging.getLogger('ansible_base.jwt_consumer.common.util')
 
 _SHARED_SECRET = 'trusted_proxy'
 
-@lru_cache(maxsize=None)
+@lru_cache
 def _load_pem_private_key(key: str):
     # Loading and validating the private key is more expensive in OpenSSL 3.2 (from RHEL9) than in Openssl 1.1 (from RHEL8)
     # For that reason, we will memoize the result of this function, and only re-execute it if the key changes
