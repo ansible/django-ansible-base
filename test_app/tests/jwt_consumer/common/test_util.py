@@ -5,6 +5,7 @@ from django.test.utils import override_settings
 
 from ansible_base.jwt_consumer.common.util import generate_x_trusted_proxy_header, validate_x_trusted_proxy_header, _load_pem_private_key
 
+
 class TestValidateTrustedProxy:
     def test_validate_trusted_proxy_header_bad_cached_key_but_correct_setting(self, rsa_keypair, random_public_key, create_mock_method):
         field_dicts = [
