@@ -144,6 +144,70 @@ def validate_image_data(data: str) -> None:
         raise ValidationError(_("Invalid base64-encoded data in data URL."))
 
 
+def validate_domain_name(domain: str) -> bool:
+    """
+    Validate a domain name according to RFC standards.
+
+    Validates domain names according to RFC 1035, 1123, and 2181 specifications.
+
+    Args:
+        domain: The domain name to validate
+
+    Returns:
+        bool: True if the domain name is valid, False otherwise
+
+    Checks:
+        - Length limits (labels ≤ 63 chars, total ≤ 255 chars)
+        - LDH rule (Letters, Digits, Hyphens only)
+        - No leading/trailing hyphens in labels
+        - Valid TLD format (not all-numeric, at least 2 chars)
+        - At least one dot (fully qualified domain name)
+    """
+    # First check if domain is a string
+    if not isinstance(domain, str):
+        return False
+
+    if not domain or len(domain) > 255:
+        return False
+
+    # Must contain at least one dot for FQDN
+    if '.' not in domain:
+        return False
+
+    # Remove trailing dot if present (allowed in DNS)
+    if domain.endswith('.'):
+        domain = domain[:-1]
+
+    # Split into labels
+    labels = domain.split('.')
+    if len(labels) < 2:  # Need at least domain.tld
+        return False
+
+    # Validate each label according to LDH rule
+    for i, label in enumerate(labels):
+        if not label or len(label) > 63:
+            return False
+
+        # Must contain only letters, digits, and hyphens
+        if not re.match(r'^[a-zA-Z0-9-]+$', label):
+            return False
+
+        # Cannot start or end with hyphen
+        if label.startswith('-') or label.endswith('-'):
+            return False
+
+        # TLD (last label) cannot be all-numeric
+        if i == len(labels) - 1 and label.isdigit():
+            return False
+
+    # Basic TLD validation - must be at least 2 characters and contain a letter
+    tld = labels[-1]
+    if len(tld) < 2 or not re.search(r'[a-zA-Z]', tld):
+        return False
+
+    return True
+
+
 def to_python_boolean(value, allow_none=False):
     value = str(value)
     if value.lower() in ('true', '1', 't'):
