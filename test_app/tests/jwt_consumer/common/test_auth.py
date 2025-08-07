@@ -152,9 +152,7 @@ class TestJWTCommonAuth:
             ("iss", False),
             ("exp", False),
             ("aud", False),
-            ("objects", False),
-            ("object_roles", False),
-            ("global_roles", False),
+            ("claims_hash", False),
         ],
     )
     def test_validate_token_missing_default_items(self, remove, is_user_data_entry, jwt_token, test_encryption_public_key):

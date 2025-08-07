@@ -102,10 +102,10 @@ def test_hub_jwt_orgs_teams_groups_memberships(mock_contenttype, mock_resource):
 
     # Add the user to the org and the team. Galaxy doesn't have
     # a concept of org&team admin yet so we don't care about those.
-    auth.common_auth.token = {
-        "global_roles": {
-            'Platform Auditor': {},
-        },
+    auth.common_auth.gateway_claims = {
+        "global_roles": [
+            'Platform Auditor',
+        ],
         "object_roles": {
             'Organization Admin': {'content_type': 'organization', 'objects': [0]},
             'Organization Member': {'content_type': 'organization', 'objects': [0]},
@@ -137,7 +137,7 @@ def test_hub_jwt_orgs_teams_groups_memberships(mock_contenttype, mock_resource):
     assert RoleUserAssignment.objects.filter(user=testuser, role_definition=platform_auditor_role).count() == 1
 
     # REVOKE EVERYTHING AND RECHECK ...
-    auth.common_auth.token = {}
+    auth.common_auth.gateway_claims = {}
     auth.process_permissions()
     assert RoleUserAssignment.objects.filter(user=testuser, role_definition=team_member_role, object_id=testteam.pk).count() == 0
     assert RoleUserAssignment.objects.filter(user=testuser, role_definition=team_admin_role, object_id=testteam.pk).count() == 0
