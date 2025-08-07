@@ -201,15 +201,32 @@ class JWTCommonAuth:
         Returns None if claims cannot be retrieved.
         """
         try:
-            client = get_resource_server_client("service-index")
+            # Use the full service path from settings, not just "service-index"
+            # This should be something like "/api/gateway/v1/service-index/"
+            service_path = getattr(settings, "RESOURCE_SERVICE_PATH", "/api/gateway/v1/service-index/")
+            client = get_resource_server_client(service_path)
             response = client.get_jwt_claims(user_ansible_id)
 
             if response.status_code == 200:
-                claims = response.json()
-                logger.debug(f"Retrieved JWT claims from gateway for user {user_ansible_id}")
-                return claims
+                # Try to parse JSON, but handle empty or invalid responses
+                try:
+                    claims = response.json()
+                    logger.debug(f"Retrieved JWT claims from gateway for user {user_ansible_id}")
+                    return claims
+                except ValueError as json_error:
+                    # Log the actual response content for debugging
+                    logger.error(
+                        f"Invalid JSON response from gateway for user {user_ansible_id}. "
+                        f"Status: {response.status_code}, "
+                        f"Content-Type: {response.headers.get('Content-Type', 'unknown')}, "
+                        f"Response text: {response.text[:500]}"  # First 500 chars to avoid huge logs
+                    )
+                    return None
             else:
-                logger.warning(f"Failed to retrieve JWT claims from gateway for user {user_ansible_id}: " f"{response.status_code}")
+                logger.warning(
+                    f"Failed to retrieve JWT claims from gateway for user {user_ansible_id}: "
+                    f"Status: {response.status_code}, Response: {response.text[:500]}"
+                )
                 return None
         except Exception as e:
             logger.error(f"Error fetching JWT claims from gateway for user {user_ansible_id}: {e}")
