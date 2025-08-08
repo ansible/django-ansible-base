@@ -144,6 +144,26 @@ def validate_image_data(data: str) -> None:
         raise ValidationError(_("Invalid base64-encoded data in data URL."))
 
 
+def _is_valid_domain_format(domain: str) -> bool:
+    """Check basic domain format requirements."""
+    return isinstance(domain, str) and bool(domain) and len(domain) <= 255 and '.' in domain
+
+
+def _normalize_domain(domain: str) -> str:
+    """Normalize domain by removing trailing dot if present."""
+    return domain[:-1] if domain.endswith('.') else domain
+
+
+def _is_valid_label(label: str) -> bool:
+    """Validate a single domain label according to LDH (Letter, Digit, Hyphen) rule."""
+    return bool(label) and len(label) <= 63 and re.match(r'^[a-zA-Z0-9-]+$', label) is not None and not label.startswith('-') and not label.endswith('-')
+
+
+def _is_valid_tld(tld: str) -> bool:
+    """Validate the top-level domain."""
+    return len(tld) >= 2 and not tld.isdigit() and re.search(r'[a-zA-Z]', tld) is not None
+
+
 def validate_domain_name(domain: str) -> bool:
     """
     Validate a domain name according to RFC standards.
@@ -163,49 +183,25 @@ def validate_domain_name(domain: str) -> bool:
         - Valid TLD format (not all-numeric, at least 2 chars)
         - At least one dot (fully qualified domain name)
     """
-    # First check if domain is a string
-    if not isinstance(domain, str):
+    # Basic format validation
+    if not _is_valid_domain_format(domain):
         return False
 
-    if not domain or len(domain) > 255:
+    # Normalize and split domain into labels
+    normalized_domain = _normalize_domain(domain)
+    labels = normalized_domain.split('.')
+
+    # Must have at least domain.tld
+    if len(labels) < 2:
         return False
 
-    # Must contain at least one dot for FQDN
-    if '.' not in domain:
-        return False
-
-    # Remove trailing dot if present (allowed in DNS)
-    if domain.endswith('.'):
-        domain = domain[:-1]
-
-    # Split into labels
-    labels = domain.split('.')
-    if len(labels) < 2:  # Need at least domain.tld
-        return False
-
-    # Validate each label according to LDH rule
-    for i, label in enumerate(labels):
-        if not label or len(label) > 63:
+    # Validate each label
+    for label in labels:
+        if not _is_valid_label(label):
             return False
 
-        # Must contain only letters, digits, and hyphens
-        if not re.match(r'^[a-zA-Z0-9-]+$', label):
-            return False
-
-        # Cannot start or end with hyphen
-        if label.startswith('-') or label.endswith('-'):
-            return False
-
-        # TLD (last label) cannot be all-numeric
-        if i == len(labels) - 1 and label.isdigit():
-            return False
-
-    # Basic TLD validation - must be at least 2 characters and contain a letter
-    tld = labels[-1]
-    if len(tld) < 2 or not re.search(r'[a-zA-Z]', tld):
-        return False
-
-    return True
+    # Validate TLD (last label)
+    return _is_valid_tld(labels[-1])
 
 
 def to_python_boolean(value, allow_none=False):

@@ -2,7 +2,17 @@ import pytest
 from rest_framework.exceptions import ValidationError
 from typeguard import suppress_type_checks
 
-from ansible_base.lib.utils.validation import to_python_boolean, validate_cert_with_key, validate_domain_name, validate_image_data, validate_url
+from ansible_base.lib.utils.validation import (
+    _is_valid_domain_format,
+    _is_valid_label,
+    _is_valid_tld,
+    _normalize_domain,
+    to_python_boolean,
+    validate_cert_with_key,
+    validate_domain_name,
+    validate_image_data,
+    validate_url,
+)
 
 
 @suppress_type_checks
@@ -306,3 +316,230 @@ def test_validate_domain_name_tld_requirements():
     # TLD cannot start or end with hyphen (covered by label rules)
     assert validate_domain_name("example.-com") is False  # TLD starts with hyphen
     assert validate_domain_name("example.com-") is False  # TLD ends with hyphen
+
+
+# Tests for the new helper functions
+
+
+@pytest.mark.parametrize(
+    "domain,expected,description",
+    [
+        # Valid basic formats
+        ("example.com", True, "Basic valid format"),
+        ("sub.example.com", True, "Valid subdomain format"),
+        ("a.b", True, "Minimal valid format"),
+        ("test.co.uk", True, "Multi-part TLD format"),
+        ("example.com.", True, "Format with trailing dot"),
+        # Invalid - non-string types
+        (None, False, "None input"),
+        (123, False, "Integer input"),
+        ([], False, "List input"),
+        ({}, False, "Dict input"),
+        (True, False, "Boolean input"),
+        # Invalid - empty or too long
+        ("", False, "Empty string"),
+        ("a" * 256, False, "String too long (>255 chars)"),
+        # Invalid - no dot (not FQDN)
+        ("example", False, "No dot - not FQDN"),
+        ("localhost", False, "Localhost without dot"),
+        # Valid edge cases
+        ("a.b", True, "Minimal length with dot"),
+        ("x" * 253 + ".c", True, "Maximum valid length"),
+    ],
+)
+def test_is_valid_domain_format(domain, expected, description):
+    """
+    Test _is_valid_domain_format helper function.
+    """
+    result = _is_valid_domain_format(domain)
+    assert result == expected, f"Failed for {description}: '{domain}' -> Expected: {expected}, Got: {result}"
+
+
+@pytest.mark.parametrize(
+    "domain,expected,description",
+    [
+        # Domains without trailing dot (no change)
+        ("example.com", "example.com", "Domain without trailing dot"),
+        ("sub.example.org", "sub.example.org", "Subdomain without trailing dot"),
+        ("a.b", "a.b", "Minimal domain without trailing dot"),
+        # Domains with trailing dot (should be removed)
+        ("example.com.", "example.com", "Domain with trailing dot"),
+        ("sub.example.org.", "sub.example.org", "Subdomain with trailing dot"),
+        ("a.b.", "a.b", "Minimal domain with trailing dot"),
+        ("test.co.uk.", "test.co.uk", "Multi-part TLD with trailing dot"),
+        # Edge cases
+        ("", "", "Empty string"),
+        (".", "", "Single dot only"),
+        ("example.", "example", "Domain ending with single dot"),
+    ],
+)
+def test_normalize_domain(domain, expected, description):
+    """
+    Test _normalize_domain helper function.
+    """
+    result = _normalize_domain(domain)
+    assert result == expected, f"Failed for {description}: '{domain}' -> Expected: '{expected}', Got: '{result}'"
+
+
+@pytest.mark.parametrize(
+    "label,expected,description",
+    [
+        # Valid labels
+        ("example", True, "Basic valid label"),
+        ("test123", True, "Alphanumeric label"),
+        ("sub-domain", True, "Label with hyphen in middle"),
+        ("a", True, "Single character label"),
+        ("123", True, "Numeric label"),
+        ("a" * 63, True, "Maximum length label (63 chars)"),
+        ("test-123-abc", True, "Multiple hyphens in middle"),
+        # Invalid - empty or too long
+        ("", False, "Empty label"),
+        ("a" * 64, False, "Label too long (64 chars)"),
+        # Invalid - invalid characters
+        ("test_domain", False, "Underscore in label"),
+        ("test domain", False, "Space in label"),
+        ("test.domain", False, "Dot in label"),
+        ("test@domain", False, "At symbol in label"),
+        ("test#domain", False, "Hash in label"),
+        ("test!domain", False, "Exclamation in label"),
+        ("test/domain", False, "Slash in label"),
+        ("test\\domain", False, "Backslash in label"),
+        ("test?domain", False, "Question mark in label"),
+        ("test&domain", False, "Ampersand in label"),
+        ("test%domain", False, "Percent in label"),
+        # Invalid - hyphens at start/end
+        ("-example", False, "Label starting with hyphen"),
+        ("example-", False, "Label ending with hyphen"),
+        ("-", False, "Single hyphen"),
+        ("-test-", False, "Hyphens at both ends"),
+        ("--test", False, "Multiple leading hyphens"),
+        ("test--", False, "Multiple trailing hyphens"),
+    ],
+)
+def test_is_valid_label(label, expected, description):
+    """
+    Test _is_valid_label helper function.
+    """
+    result = _is_valid_label(label)
+    assert result == expected, f"Failed for {description}: '{label}' -> Expected: {expected}, Got: {result}"
+
+
+@pytest.mark.parametrize(
+    "tld,expected,description",
+    [
+        # Valid TLDs
+        ("com", True, "Common TLD"),
+        ("org", True, "Organization TLD"),
+        ("co", True, "Minimal length TLD"),
+        ("info", True, "Long TLD"),
+        ("museum", True, "Very long TLD"),
+        ("uk", True, "Country code TLD"),
+        ("123a", True, "TLD with numbers and letter"),
+        ("a123", True, "TLD starting with letter"),
+        ("12a3", True, "TLD with mixed numbers and letters"),
+        ("abc123", True, "TLD ending with numbers"),
+        ("a1b2c3", True, "TLD with alternating letters and numbers"),
+        # Invalid - too short
+        ("c", False, "Single character TLD"),
+        ("a", False, "Single letter TLD"),
+        ("1", False, "Single digit TLD"),
+        # Invalid - all numeric
+        ("123", False, "All numeric TLD"),
+        ("12", False, "Two digit TLD"),
+        ("1234", False, "Four digit TLD"),
+        ("999", False, "All nines TLD"),
+        ("000", False, "All zeros TLD"),
+        # Invalid - no letters
+        ("12", False, "Two digits only"),
+        ("123", False, "Three digits only"),
+        # Invalid - empty
+        ("", False, "Empty TLD"),
+        # Valid edge cases with letters
+        ("1a", True, "Number followed by letter"),
+        ("a1", True, "Letter followed by number"),
+        ("11a", True, "Two numbers followed by letter"),
+        ("a11", True, "Letter followed by two numbers"),
+    ],
+)
+def test_is_valid_tld(tld, expected, description):
+    """
+    Test _is_valid_tld helper function.
+    """
+    result = _is_valid_tld(tld)
+    assert result == expected, f"Failed for {description}: '{tld}' -> Expected: {expected}, Got: {result}"
+
+
+def test_helper_functions_integration():
+    """
+    Test that the helper functions work together correctly for domain validation.
+    This tests the integration of all helper functions with the main validate_domain_name.
+    """
+    # Test a valid domain through all helper functions
+    domain = "sub.example.com"
+
+    # Should pass format validation
+    assert _is_valid_domain_format(domain) is True
+
+    # Should normalize correctly (no change for this example)
+    normalized = _normalize_domain(domain)
+    assert normalized == "sub.example.com"
+
+    # Should validate all labels
+    labels = normalized.split('.')
+    for label in labels:
+        assert _is_valid_label(label) is True, f"Label '{label}' should be valid"
+
+    # Should validate TLD
+    tld = labels[-1]
+    assert _is_valid_tld(tld) is True
+
+    # Overall validation should pass
+    assert validate_domain_name(domain) is True
+
+
+def test_helper_functions_edge_case_integration():
+    """
+    Test helper functions with edge cases that should fail at different stages.
+    """
+    # Test domain that fails format validation
+    invalid_format = "example"  # No dot
+    assert _is_valid_domain_format(invalid_format) is False
+    assert validate_domain_name(invalid_format) is False
+
+    # Test domain that passes format but fails label validation
+    invalid_label = "exam_ple.com"  # Underscore in label
+    assert _is_valid_domain_format(invalid_label) is True
+    normalized = _normalize_domain(invalid_label)
+    labels = normalized.split('.')
+    assert _is_valid_label(labels[0]) is False  # "exam_ple" should fail
+    assert validate_domain_name(invalid_label) is False
+
+    # Test domain that passes format and labels but fails TLD validation
+    invalid_tld = "example.123"  # All-numeric TLD
+    assert _is_valid_domain_format(invalid_tld) is True
+    normalized = _normalize_domain(invalid_tld)
+    labels = normalized.split('.')
+    assert _is_valid_label(labels[0]) is True  # "example" should pass
+    assert _is_valid_tld(labels[1]) is False  # "123" should fail
+    assert validate_domain_name(invalid_tld) is False
+
+
+def test_helper_functions_with_trailing_dot():
+    """
+    Test that normalization properly handles trailing dots.
+    """
+    domain_with_dot = "example.com."
+    domain_without_dot = "example.com"
+
+    # Both should pass format validation
+    assert _is_valid_domain_format(domain_with_dot) is True
+    assert _is_valid_domain_format(domain_without_dot) is True
+
+    # Normalization should make them equivalent
+    normalized_with_dot = _normalize_domain(domain_with_dot)
+    normalized_without_dot = _normalize_domain(domain_without_dot)
+    assert normalized_with_dot == normalized_without_dot == "example.com"
+
+    # Both should validate to the same result
+    assert validate_domain_name(domain_with_dot) is True
+    assert validate_domain_name(domain_without_dot) is True
