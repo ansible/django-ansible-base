@@ -14,6 +14,7 @@ from ansible_base.jwt_consumer.common.auth import JWTAuthentication, JWTCommonAu
 from ansible_base.jwt_consumer.common.cert import JWTCert, JWTCertException
 from ansible_base.jwt_consumer.common.exceptions import InvalidTokenException
 from ansible_base.lib.utils.translations import translatableConditionally as _
+from ansible_base.rbac.claims import get_user_claims, get_user_claims_hashable_form, get_claims_hash
 from ansible_base.rbac.models import RoleDefinition, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.resource_registry.models import Resource
@@ -538,6 +539,77 @@ class TestJWTCommonAuth:
         with mock.patch.object(authentication.cache, 'get_claims_hash', return_value="same_hash"):
             with mock.patch.object(authentication.cache, 'get_cached_claims', return_value=None):
                 assert authentication._should_fetch_claims_from_gateway(user_ansible_id, "same_hash") is True
+
+    @pytest.mark.django_db
+    def test_should_fetch_claims_from_gateway_hash_recalculation_matches(self, admin_user):
+        """Test that claims are not fetched when recalculated hash matches current hash from token."""
+        authentication = JWTCommonAuth()
+        authentication.user = admin_user
+        user_ansible_id = str(admin_user.resource.ansible_id)
+
+        # Mock claims functions to return predictable data
+        mock_user_claims = {
+            'objects': {'organization': []},
+            'object_roles': {},
+            'global_roles': ['System Auditor']
+        }
+        mock_hashable_claims = {
+            'global_roles': ['System Auditor'],
+            'object_roles': {}
+        }
+        recalculated_hash = "recalculated_hash_value"
+
+        # Mock cache to return different hash (triggering recalculation)
+        with mock.patch.object(authentication.cache, 'get_claims_hash', return_value="old_cached_hash"):
+            # Mock the claims functions to return our test data
+            with mock.patch('ansible_base.jwt_consumer.common.auth.get_user_claims', return_value=mock_user_claims):
+                with mock.patch('ansible_base.jwt_consumer.common.auth.get_user_claims_hashable_form', return_value=mock_hashable_claims):
+                    with mock.patch('ansible_base.jwt_consumer.common.auth.get_claims_hash', return_value=recalculated_hash):
+                        # When recalculated hash matches current hash, should return False
+                        assert authentication._should_fetch_claims_from_gateway(user_ansible_id, recalculated_hash) is False
+
+    @pytest.mark.django_db
+    def test_should_fetch_claims_from_gateway_hash_recalculation_still_differs(self, admin_user):
+        """Test that claims are fetched when recalculated hash still differs from current hash."""
+        authentication = JWTCommonAuth()
+        authentication.user = admin_user
+        user_ansible_id = str(admin_user.resource.ansible_id)
+
+        # Mock claims functions to return predictable data
+        mock_user_claims = {
+            'objects': {'organization': []},
+            'object_roles': {},
+            'global_roles': ['System Auditor']
+        }
+        mock_hashable_claims = {
+            'global_roles': ['System Auditor'],
+            'object_roles': {}
+        }
+        recalculated_hash = "recalculated_hash_value"
+        current_hash = "different_current_hash"
+
+        # Mock cache to return different hash (triggering recalculation)
+        with mock.patch.object(authentication.cache, 'get_claims_hash', return_value="old_cached_hash"):
+            # Mock the claims functions to return our test data
+            with mock.patch('ansible_base.jwt_consumer.common.auth.get_user_claims', return_value=mock_user_claims):
+                with mock.patch('ansible_base.jwt_consumer.common.auth.get_user_claims_hashable_form', return_value=mock_hashable_claims):
+                    with mock.patch('ansible_base.jwt_consumer.common.auth.get_claims_hash', return_value=recalculated_hash):
+                        # When recalculated hash still differs from current hash, should return True
+                        assert authentication._should_fetch_claims_from_gateway(user_ansible_id, current_hash) is True
+
+    @pytest.mark.django_db
+    def test_should_fetch_claims_from_gateway_hash_recalculation_exception(self, admin_user):
+        """Test that claims are fetched when hash recalculation fails with exception."""
+        authentication = JWTCommonAuth()
+        authentication.user = admin_user
+        user_ansible_id = str(admin_user.resource.ansible_id)
+
+        # Mock cache to return different hash (triggering recalculation)
+        with mock.patch.object(authentication.cache, 'get_claims_hash', return_value="old_cached_hash"):
+            # Mock get_user_claims to raise an exception
+            with mock.patch('ansible_base.jwt_consumer.common.auth.get_user_claims', side_effect=Exception("Test exception")):
+                # When recalculation fails, should return True (fallback behavior)
+                assert authentication._should_fetch_claims_from_gateway(user_ansible_id, "current_hash") is True
 
     @pytest.mark.django_db
     def test_fetch_jwt_claims_from_gateway_exception(self, caplog):

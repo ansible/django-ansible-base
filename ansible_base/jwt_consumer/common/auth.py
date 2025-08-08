@@ -18,6 +18,7 @@ from ansible_base.jwt_consumer.common.exceptions import HTTP_498_INVALID_TOKEN, 
 from ansible_base.lib.logging.runtime import log_excess_runtime
 from ansible_base.lib.utils.auth import get_user_by_ansible_id
 from ansible_base.lib.utils.translations import translatableConditionally as _
+from ansible_base.rbac.claims import get_user_claims, get_user_claims_hashable_form, get_claims_hash
 from ansible_base.resource_registry.models import Resource, ResourceType
 from ansible_base.resource_registry.rest_client import get_resource_server_client
 from ansible_base.resource_registry.signals.handlers import no_reverse_sync
@@ -177,8 +178,31 @@ class JWTCommonAuth:
 
         cached_hash = self.cache.get_claims_hash(user_ansible_id)
         if cached_hash != current_claims_hash:
-            logger.debug(f"Claims hash changed for user {user_ansible_id}: cached={cached_hash}, current={current_claims_hash}")
-            return True
+            # Recalculate hash from local database to verify the mismatch
+            # It is possible that the cached hash is stale, but the local data is synced to the resource server.
+            # This is an optimization to avoid fetching claims from the resource server if the local data is synced.
+            logger.debug(f"Claims hash mismatch for user {user_ansible_id}: cached={cached_hash}, current={current_claims_hash}")
+            logger.debug(f"Recalculating hash from local database for user {user_ansible_id}")
+
+            try:
+                # Get user claims from local database
+                user_claims = get_user_claims(self.user)
+                hashable_claims = get_user_claims_hashable_form(user_claims)
+                recalculated_hash = get_claims_hash(hashable_claims)
+
+                logger.debug(f"Recalculated hash for user {user_ansible_id}: {recalculated_hash}")
+                # Compare recalculated hash with current hash from token
+                if recalculated_hash != current_claims_hash:
+                    logger.debug(f"Claims hash still differs after recalculation for user {user_ansible_id}: local={recalculated_hash}, current={current_claims_hash}")
+                    return True
+                else:
+                    logger.debug(f"Recalculated hash matches current hash for user {user_ansible_id}")
+                    return False
+
+            except Exception as e:
+                logger.error(f"Failed to recalculate claims hash for user {user_ansible_id}: {e}")
+                # If recalculation fails, fall back to treating it as a hash mismatch
+                return True
 
         # Hash matches cached value, try to get cached claims
         cached_claims = self.cache.get_cached_claims(user_ansible_id)
