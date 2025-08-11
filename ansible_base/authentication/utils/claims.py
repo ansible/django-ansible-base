@@ -354,42 +354,42 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, authentic
             a_user_value = f"{a_user_value}".casefold() if _is_case_insensitivity_enabled() else f"{a_user_value}"
 
             # Check for any of the valid conditions
+            prefix = f"Attr {attribute} value {a_user_value}"
             if "equals" in trigger_condition[attribute]:
-                is_equal = a_user_value == trigger_condition[attribute]["equals"]
+                trigger_value = trigger_condition[attribute]["equals"]
+                is_equal = a_user_value == trigger_value
                 has_access = has_access_with_join(has_access, is_equal, join_condition)
-                logger.debug(
-                    f"Attr {attribute} value {a_user_value} is {'equal' if is_equal else 'not equal'} to {trigger_condition[attribute]['equals']}, {'allowing' if is_equal else 'skipping'}"
-                )
+                logger.debug(f"{prefix} is {'equal' if is_equal else 'not equal'} to {trigger_value}, {_result_suffix(is_equal)}")
 
             elif "matches" in trigger_condition[attribute]:
-                is_match = re.match(trigger_condition[attribute]["matches"], a_user_value, re.IGNORECASE) is not None
+                trigger_value = trigger_condition[attribute]["matches"]
+                is_match = re.match(trigger_value, a_user_value, re.IGNORECASE) is not None
                 has_access = has_access_with_join(has_access, is_match, join_condition)
-                logger.debug(
-                    f"Attr {attribute} value {a_user_value} {'matches' if is_match else 'does not match'} {trigger_condition[attribute]['matches']}, {'allowing' if is_match else 'skipping'}"
-                )
+                logger.debug(f"{prefix} {'matches' if is_match else 'does not match'} {trigger_value}, {_result_suffix(is_match)}")
 
             elif "contains" in trigger_condition[attribute]:
-                does_contain = trigger_condition[attribute]['contains'] in a_user_value
+                trigger_value = trigger_condition[attribute]['contains']
+                does_contain = trigger_value in a_user_value
                 has_access = has_access_with_join(has_access, does_contain, join_condition)
-                logger.debug(
-                    f"Attr {attribute} value {a_user_value} {'contains' if does_contain else 'does not contain'} {trigger_condition[attribute]['contains']}, {'allowing' if does_contain else 'skipping'}"
-                )
+                logger.debug(f"{prefix} {'contains' if does_contain else 'does not contain'} {trigger_value}, {_result_suffix(does_contain)}")
 
             elif "ends_with" in trigger_condition[attribute]:
-                does_end_with = a_user_value.endswith(trigger_condition[attribute]['ends_with'])
+                trigger_value = trigger_condition[attribute]['ends_with']
+                does_end_with = a_user_value.endswith(trigger_value)
                 has_access = has_access_with_join(has_access, does_end_with, join_condition)
-                logger.debug(
-                    f"Attr {attribute} value {a_user_value} {'ends with' if does_end_with else 'does not end with'} {trigger_condition[attribute]['ends_with']}, {'allowing' if does_end_with else 'skipping'}"
-                )
+                logger.debug(f"{prefix} {'ends with' if does_end_with else 'does not end with'} {trigger_value}, {_result_suffix(does_end_with)}")
 
             elif "in" in trigger_condition[attribute]:
-                is_in = a_user_value in trigger_condition[attribute]['in']
+                trigger_value = trigger_condition[attribute]['in']
+                is_in = a_user_value in trigger_value
                 has_access = has_access_with_join(has_access, is_in, join_condition)
-                logger.debug(
-                    f"Attr {attribute} value {a_user_value} {'is in' if is_in else 'is not in'} {trigger_condition[attribute]['in']}, {'allowing' if is_in else 'skipping'}"
-                )
+                logger.debug(f"{prefix} {'is in' if is_in else 'is not in'} {trigger_value}, {_result_suffix(is_in)}")
 
     return TriggerResult.ALLOW if has_access else TriggerResult.SKIP
+
+
+def _result_suffix(result: bool) -> str:
+    return "allowing" if result else "skipping"
 
 
 def update_user_claims(user: Optional[AbstractUser], database_authenticator: Authenticator, groups: list[str]) -> Optional[AbstractUser]:
