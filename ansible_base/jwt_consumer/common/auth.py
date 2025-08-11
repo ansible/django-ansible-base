@@ -181,7 +181,7 @@ class JWTCommonAuth:
             # Recalculate hash from local database to verify the mismatch
             # It is possible that the cached hash is stale, but the local data is synced to the resource server.
             # This is an optimization to avoid fetching claims from the resource server if the local data is synced.
-            logger.debug(f"Claims hash mismatch for user {user_ansible_id}: cached={cached_hash}, current={current_claims_hash}")
+            logger.debug(f"Claims hash mismatch for user {user_ansible_id}: cached={cached_hash}, from token={current_claims_hash}")
             logger.debug(f"Recalculating hash from local database for user {user_ansible_id}")
 
             try:
@@ -190,13 +190,14 @@ class JWTCommonAuth:
                 hashable_claims = get_user_claims_hashable_form(user_claims)
                 recalculated_hash = get_claims_hash(hashable_claims)
 
-                logger.debug(f"Recalculated hash for user {user_ansible_id}: {recalculated_hash}")
                 # Compare recalculated hash with current hash from token
                 if recalculated_hash != current_claims_hash:
-                    logger.debug(f"Claims hash still differs after recalculation for user {user_ansible_id}: local={recalculated_hash}, current={current_claims_hash}")
+                    logger.debug(f"Claims hash still differs after recalculation for user {user_ansible_id}: local={recalculated_hash}, from token={current_claims_hash}")
                     return True
                 else:
-                    logger.debug(f"Recalculated hash matches current hash for user {user_ansible_id}")
+                    logger.debug(f"Recalculated local hash matches token hash for user {user_ansible_id}")
+                    logger.debug(f"Caching claims hash for user {user_ansible_id}: {recalculated_hash}")
+                    self._cache_claims_hash(user_ansible_id, recalculated_hash)
                     return False
 
             except Exception as e:
