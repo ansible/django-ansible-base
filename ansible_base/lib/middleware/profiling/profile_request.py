@@ -7,9 +7,12 @@ import time
 import uuid
 from typing import Optional, Union
 
+from django.db import connection
+from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 
 from ansible_base.lib.utils.settings import get_function_from_setting, get_setting
+
 
 logger = logging.getLogger(__name__)
 
@@ -78,5 +81,27 @@ class ProfileRequestMiddleware(threading.local):
                 f'request: {request}, cprofile_file: {response["X-API-CProfile-File"]}',
                 extra=dict(python_objects=dict(request=request, response=response, X_API_CPROFILE_FILE=response["X-API-CProfile-File"])),
             )
+
+        return response
+
+
+class SQLProfilingMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        sql_profiling_enabled = get_setting('ANSIBLE_BASE_SQL_PROFILING', get_setting('SQL_DEBUG', False))
+        if sql_profiling_enabled:
+            if not settings.DEBUG:
+                logger.warning("ANSIBLE_BASE_SQL_PROFILING is enabled, but DEBUG is False. No SQL queries will be logged or counted.")
+                return self.get_response(request)
+
+            queries_before = len(connection.queries)
+            response = self.get_response(request)
+            q_times = [float(q['time']) for q in connection.queries[queries_before:]]
+            response['X-API-Query-Count'] = len(q_times)
+            response['X-API-Query-Time'] = '%0.3fs' % sum(q_times)
+        else:
+            response = self.get_response(request)
 
         return response
