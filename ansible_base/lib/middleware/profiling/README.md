@@ -30,6 +30,38 @@ To enable cProfile support, set the following in your Django settings:
 ANSIBLE_BASE_CPROFILE_REQUESTS = True
 ```
 
+## `SQLProfilingMiddleware`
+
+This middleware provides insights into the database queries executed during a request. When enabled, it adds the following headers to the response:
+
+*   `X-API-Query-Count`: The total number of database queries executed during the request.
+*   `X-API-Query-Time`: The total time spent on database queries, in seconds.
+
+To use it, add it to your `MIDDLEWARE` list in your Django settings:
+
+```python
+# settings.py
+MIDDLEWARE = [
+    ...
+    'ansible_base.lib.middleware.profiling.profile_request.SQLProfilingMiddleware',
+    ...
+]
+```
+
+### Enabling SQL Profiling
+
+**Important:** This middleware relies on Django's `connection.queries` list, which is only populated when `settings.DEBUG` is set to `True`. Therefore, you must have `DEBUG = True` in your Django settings for this middleware to have any effect.
+
+The middleware is controlled by the `ANSIBLE_BASE_SQL_PROFILING` setting. For backwards compatibility, it will also be enabled if the standard Django `SQL_DEBUG` setting is `True`.
+
+To enable SQL profiling, set the following in your Django settings:
+
+```python
+# settings.py
+ANSIBLE_BASE_SQL_PROFILING = True
+DEBUG = True
+```
+
 ## `DABProfiler`
 
 The core profiling logic is encapsulated in the `DABProfiler` class. This class can be imported and used directly for profiling non-HTTP contexts, such as background tasks or gRPC services.
