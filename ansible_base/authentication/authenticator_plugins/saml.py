@@ -296,7 +296,16 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAML
 
         # Move group spec up a level if present
         if "Group" in attrs:
+            logger.debug("Setting Group from attribute: Group")
             response["Group"] = attrs["Group"]
+        else:
+            # else get configured group attribute from configuration and set group from that attribute
+            configuration = self.database_instance.configuration
+            idp_groups_attribute_name = self.configuration_class.settings_to_enabled_idps_fields['IDP_GROUPS']
+            configured_groups_attribute = configuration['ENABLED_IDPS'][idp_string][idp_groups_attribute_name]
+            if configured_groups_attribute in attrs:
+                logger.debug(f"Setting Group from attribute: {configured_groups_attribute}")
+                response["Group"] = attrs[configured_groups_attribute]
         data = super().extra_data(user, backend, response, *args, **kwargs)
 
         # Ideally we would always have a DB instance
