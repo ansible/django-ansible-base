@@ -369,12 +369,14 @@ def test_extra_data(mockedsuper):
                 'attr_last_name': 'last_name',
                 'attr_first_name': 'first_name',
                 'attr_user_permanent_id': 'name_id',
+                'attr_groups': 'member',
             },
             {
                 'last_name': ['Admin'],
                 'username': ['gateway_admin'],
                 'first_name': ['Gateway'],
                 'name_id': 'gateway_admin',
+                'member': ['group-1', 'group-2'],
             },
         ),
     ],
@@ -403,6 +405,7 @@ def test_extra_data_default_attrs(idp_fields, expected_results):
             'first_name': ['Gateway'],
             'Role': ['default-roles-gateway realm', 'manage-account', 'uma_authorization', 'view-profile', 'offline_access', 'manage-account-links'],
             'name_id': 'gateway_admin',
+            'member': ['group-1', 'group-2']
         },
     }
     au = AuthenticatorUser()
