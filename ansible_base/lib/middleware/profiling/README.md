@@ -50,16 +50,13 @@ MIDDLEWARE = [
 
 ### Enabling SQL Profiling
 
-**Important:** This middleware relies on Django's `connection.queries` list, which is only populated when `settings.DEBUG` is set to `True`. Therefore, you must have `DEBUG = True` in your Django settings for this middleware to have any effect.
-
-The middleware is controlled by the `ANSIBLE_BASE_SQL_PROFILING` setting. For backwards compatibility, it will also be enabled if the standard Django `SQL_DEBUG` setting is `True`.
+The middleware is controlled by the `ANSIBLE_BASE_SQL_PROFILING` setting.
 
 To enable SQL profiling, set the following in your Django settings:
 
 ```python
 # settings.py
 ANSIBLE_BASE_SQL_PROFILING = True
-DEBUG = True
 ```
 
 ## `DABProfiler`

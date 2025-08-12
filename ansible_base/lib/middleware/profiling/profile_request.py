@@ -7,12 +7,11 @@ import time
 import uuid
 from typing import Optional, Union
 
-from django.db import connection
 from django.conf import settings
+from django.db import connection
 from django.utils.translation import gettext_lazy as _
 
 from ansible_base.lib.utils.settings import get_function_from_setting, get_setting
-
 
 logger = logging.getLogger(__name__)
 
@@ -85,23 +84,32 @@ class ProfileRequestMiddleware(threading.local):
         return response
 
 
+class SQLQueryMetrics:
+    def __init__(self):
+        self.query_count = 0
+        self.query_time = 0.0
+
+    def __call__(self, execute, sql, params, many, context):
+        start_time = time.time()
+        try:
+            return execute(sql, params, many, context)
+        finally:
+            self.query_count += 1
+            self.query_time += time.time() - start_time
+
+
 class SQLProfilingMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
-        sql_profiling_enabled = get_setting('ANSIBLE_BASE_SQL_PROFILING', get_setting('SQL_DEBUG', False))
-        if sql_profiling_enabled:
-            if not settings.DEBUG:
-                logger.warning("ANSIBLE_BASE_SQL_PROFILING is enabled, but DEBUG is False. No SQL queries will be logged or counted.")
-                return self.get_response(request)
+        if not get_setting('ANSIBLE_BASE_SQL_PROFILING', False):
+            return self.get_response(request)
 
-            queries_before = len(connection.queries)
-            response = self.get_response(request)
-            q_times = [float(q['time']) for q in connection.queries[queries_before:]]
-            response['X-API-Query-Count'] = len(q_times)
-            response['X-API-Query-Time'] = '%0.3fs' % sum(q_times)
-        else:
+        metrics = SQLQueryMetrics()
+        with connection.execute_wrapper(metrics):
             response = self.get_response(request)
 
+        response['X-API-Query-Count'] = metrics.query_count
+        response['X-API-Query-Time'] = f'{metrics.query_time:.3f}s'
         return response
