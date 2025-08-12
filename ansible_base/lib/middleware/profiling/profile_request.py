@@ -11,6 +11,7 @@ from django.conf import settings
 from django.db import connection
 from django.utils.translation import gettext_lazy as _
 
+from ansible_base.lib.logging.context import origin_var, route_var, trace_id_var
 from ansible_base.lib.utils.settings import get_function_from_setting, get_setting
 
 logger = logging.getLogger(__name__)
@@ -90,6 +91,18 @@ class SQLQueryMetrics:
         self.query_time = 0.0
 
     def __call__(self, execute, sql, params, many, context):
+        # Build the context comment
+        context_items = []
+        if trace_id := trace_id_var.get():
+            context_items.append(f"trace_id={trace_id}")
+        if route := route_var.get():
+            context_items.append(f"route={route}")
+        if origin := origin_var.get():
+            context_items.append(f"origin={origin}")
+
+        if context_items:
+            sql = f"/* {', '.join(context_items)} */ {sql}"
+
         start_time = time.time()
         try:
             return execute(sql, params, many, context)
@@ -105,6 +118,13 @@ class SQLProfilingMiddleware:
     def __call__(self, request):
         if not get_setting('ANSIBLE_BASE_SQL_PROFILING', False):
             return self.get_response(request)
+
+        # Check if the trace context is available. If not, log a warning.
+        if trace_id_var.get() is None:
+            logger.warning(
+                "ANSIBLE_BASE_SQL_PROFILING is enabled, but the trace context is not set. "
+                "Please ensure that TraceContextMiddleware is included in your MIDDLEWARE settings before this middleware."
+            )
 
         metrics = SQLQueryMetrics()
         with connection.execute_wrapper(metrics):

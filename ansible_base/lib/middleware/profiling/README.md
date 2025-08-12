@@ -37,12 +37,16 @@ This middleware provides insights into the database queries executed during a re
 *   `X-API-Query-Count`: The total number of database queries executed during the request.
 *   `X-API-Query-Time`: The total time spent on database queries, in seconds.
 
-To use it, add it to your `MIDDLEWARE` list in your Django settings:
+It also injects contextual information as a comment into each SQL query, which is invaluable for debugging and tracing. For example:
+`/* trace_id=b71696ed-c483-408d-9740-2e7935b4f2d9, route=api/v2/users/{pk}/, origin=request */ SELECT ...`
+
+To use it, add both the `TraceContextMiddleware` and the `SQLProfilingMiddleware` to your `MIDDLEWARE` list in your Django settings. The `TraceContextMiddleware` should come before the `SQLProfilingMiddleware`.
 
 ```python
 # settings.py
 MIDDLEWARE = [
     ...
+    'ansible_base.lib.middleware.request_context.TraceContextMiddleware',
     'ansible_base.lib.middleware.profiling.profile_request.SQLProfilingMiddleware',
     ...
 ]
