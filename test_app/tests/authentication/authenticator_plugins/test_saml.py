@@ -405,7 +405,7 @@ def test_extra_data_default_attrs(idp_fields, expected_results):
             'first_name': ['Gateway'],
             'Role': ['default-roles-gateway realm', 'manage-account', 'uma_authorization', 'view-profile', 'offline_access', 'manage-account-links'],
             'name_id': 'gateway_admin',
-            'member': ['group-1', 'group-2']
+            'member': ['group-1', 'group-2'],
         },
     }
     au = AuthenticatorUser()
