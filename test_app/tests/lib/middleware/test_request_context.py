@@ -86,3 +86,21 @@ class TraceContextMiddlewareTest(TestCase):
             UUID(trace_id_2, version=4)
         except ValueError:
             self.fail("trace_id_2 is not a valid UUID4")
+
+    def test_discards_invalid_uuid_in_header(self):
+        """
+        Test that the middleware discards an invalid UUID in the X-Request-ID
+        header and generates a new, valid one.
+        """
+        malicious_id = "not-a-uuid' --"
+        response = self.client.get('/context/', HTTP_X_REQUEST_ID=malicious_id)
+        self.assertEqual(response.status_code, 200)
+
+        # The trace_id in the response should be a new, valid UUID, not the malicious one.
+        new_trace_id = response.headers.get("X-Request-ID")
+        self.assertIsNotNone(new_trace_id)
+        self.assertNotEqual(new_trace_id, malicious_id)
+        try:
+            UUID(new_trace_id, version=4)
+        except ValueError:
+            self.fail("The new trace_id is not a valid UUID4")
