@@ -41,7 +41,7 @@ class AzureADConfiguration(BaseAuthenticatorConfiguration):
         help_text=_("The JSON key used to extract the user's groups from the ID token or userinfo endpoint."),
         required=False,
         allow_null=False,
-        default="Group",
+        default="groups",
         ui_field_label=_("Groups Claim"),
     )
 
