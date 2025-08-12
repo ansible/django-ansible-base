@@ -1,27 +1,28 @@
-# Request Profiling
+# Request Profiling and Observability
 
-The `ProfileRequestMiddleware` and `DABProfiler` class provide a way to profile requests and other code in your Django application. This functionality is a generalization of the profiling tools found in AWX and can be used by any `django-ansible-base` consumer.
+The `ObservabilityMiddleware` provides a simple way to gain performance and debugging insights into your Django application. It acts as a single entry point for several underlying middleware components, ensuring they are always used in the correct order.
 
-## `ProfileRequestMiddleware`
+## `ObservabilityMiddleware`
 
-This middleware provides performance insights for API requests. To use it, add it to your `MIDDLEWARE` list in your Django settings. For the most accurate and reliable timing, it is recommended to add this middleware to the top of the `MIDDLEWARE` list.
+This single middleware bundles tracing, request profiling, and SQL query analysis. To use it, add it to the top of your `MIDDLEWARE` list in your Django settings.
 
 ```python
 # settings.py
 MIDDLEWARE = [
-    'ansible_base.lib.middleware.profiling.profile_request.ProfileRequestMiddleware',
+    'ansible_base.lib.middleware.observability.ObservabilityMiddleware',
     ...
 ]
 ```
 
 The middleware always adds the following headers to the response:
 
+*   `X-Request-ID`: A unique identifier for the request. If the incoming request includes an `X-Request-ID` header, that value will be used; otherwise, a new UUID will be generated.
 *   `X-API-Time`: The total time taken to process the request, in seconds.
-*   `X-API-Node`: The cluster host ID of the node that served the request. This header is only added if it is not already present in the response.
+*   `X-API-Node`: The cluster host ID of the node that served the request.
 
 ### cProfile Support
 
-When the `ANSIBLE_BASE_CPROFILE_REQUESTS` setting is enabled, the middleware will also perform a cProfile analysis for each request. The resulting `.prof` file is saved to a temporary directory on the node that served the request, and its path is returned in the `X-API-CProfile-File` response header.
+When the `ANSIBLE_BASE_CPROFILE_REQUESTS` setting is enabled, the middleware will also perform a cProfile analysis for each request. The resulting `.prof` file is saved to a temporary directory on the node that served the request, and its path is returned in the `X-API-CProfile-File` response header. The filename will include the request's `X-Request-ID`.
 
 To enable cProfile support, set the following in your Django settings:
 
@@ -30,31 +31,15 @@ To enable cProfile support, set the following in your Django settings:
 ANSIBLE_BASE_CPROFILE_REQUESTS = True
 ```
 
-## `SQLProfilingMiddleware`
+### SQL Profiling Support
 
-This middleware provides insights into the database queries executed during a request. When enabled, it adds the following headers to the response:
+When the `ANSIBLE_BASE_SQL_PROFILING` setting is enabled, the middleware provides insights into the database queries executed during a request. It adds the following headers to the response:
 
 *   `X-API-Query-Count`: The total number of database queries executed during the request.
 *   `X-API-Query-Time`: The total time spent on database queries, in seconds.
 
 It also injects contextual information as a comment into each SQL query, which is invaluable for debugging and tracing. For example:
 `/* trace_id=b71696ed-c483-408d-9740-2e7935b4f2d9, route=api/v2/users/{pk}/, origin=request */ SELECT ...`
-
-To use it, add both the `TraceContextMiddleware` and the `SQLProfilingMiddleware` to your `MIDDLEWARE` list in your Django settings. The `TraceContextMiddleware` should come before the `SQLProfilingMiddleware`.
-
-```python
-# settings.py
-MIDDLEWARE = [
-    ...
-    'ansible_base.lib.middleware.request_context.TraceContextMiddleware',
-    'ansible_base.lib.middleware.profiling.profile_request.SQLProfilingMiddleware',
-    ...
-]
-```
-
-### Enabling SQL Profiling
-
-The middleware is controlled by the `ANSIBLE_BASE_SQL_PROFILING` setting.
 
 To enable SQL profiling, set the following in your Django settings:
 
@@ -65,7 +50,7 @@ ANSIBLE_BASE_SQL_PROFILING = True
 
 ## `DABProfiler`
 
-The core profiling logic is encapsulated in the `DABProfiler` class. This class can be imported and used directly for profiling non-HTTP contexts, such as background tasks or gRPC services.
+For profiling non-HTTP contexts, such as background tasks or gRPC services, the `DABProfiler` class can be used directly.
 
 The profiler's cProfile functionality is controlled by the `ANSIBLE_BASE_CPROFILE_REQUESTS` setting.
 
@@ -119,3 +104,4 @@ import pstats
 p = pstats.Stats('/path/to/your/profile.prof')
 p.sort_stats('cumulative').print_stats(10)
 ```
+

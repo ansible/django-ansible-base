@@ -22,7 +22,7 @@ urlpatterns = [
 @override_settings(
     ROOT_URLCONF=__name__,
     MIDDLEWARE=[
-        'ansible_base.lib.middleware.request_context.TraceContextMiddleware',
+        'ansible_base.lib.middleware.request_context._TraceContextMiddleware',
     ],
 )
 class TraceContextMiddlewareTest(TestCase):

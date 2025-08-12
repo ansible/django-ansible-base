@@ -51,7 +51,7 @@ class DABProfiler:
         return elapsed, cprofile_filename
 
 
-class ProfileRequestMiddleware(threading.local):
+class _ProfileRequestMiddleware(threading.local):
     def __init__(self, get_response=None):
         self.get_response = get_response
         self.profiler = DABProfiler()
@@ -59,7 +59,7 @@ class ProfileRequestMiddleware(threading.local):
     def __call__(self, request):
         # Logic before the view (formerly process_request)
         self.profiler.start()
-        request_id = request.headers.get('X-Request-ID')
+        request_id = trace_id_var.get()
 
         # Call the next middleware or the view
         response = self.get_response(request)
@@ -111,7 +111,7 @@ class SQLQueryMetrics:
             self.query_time += time.time() - start_time
 
 
-class SQLProfilingMiddleware:
+class _SQLProfilingMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
 
@@ -123,7 +123,7 @@ class SQLProfilingMiddleware:
         if trace_id_var.get() is None:
             logger.warning(
                 "ANSIBLE_BASE_SQL_PROFILING is enabled, but the trace context is not set. "
-                "Please ensure that TraceContextMiddleware is included in your MIDDLEWARE settings before this middleware."
+                "Please use the ObservabilityMiddleware instead of including profiling middleware individually."
             )
 
         metrics = SQLQueryMetrics()
