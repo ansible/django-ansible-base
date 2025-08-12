@@ -542,9 +542,7 @@ def jwt_token(test_encryption_private_key):
                     "email": "noone@redhat.com",
                     "is_superuser": False,
                 },
-                "objects": {},
-                "object_roles": {},
-                "global_roles": [],
+                "claims_hash": "abc123def456",
             }
 
         def encrypt_token(self):

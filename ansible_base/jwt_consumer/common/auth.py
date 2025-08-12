@@ -1,4 +1,5 @@
 import logging
+import uuid
 from datetime import datetime
 from typing import Optional, Tuple
 
@@ -18,7 +19,9 @@ from ansible_base.jwt_consumer.common.exceptions import HTTP_498_INVALID_TOKEN, 
 from ansible_base.lib.logging.runtime import log_excess_runtime
 from ansible_base.lib.utils.auth import get_user_by_ansible_id
 from ansible_base.lib.utils.translations import translatableConditionally as _
+from ansible_base.rbac.claims import get_claims_hash, get_user_claims, get_user_claims_hashable_form
 from ansible_base.resource_registry.models import Resource, ResourceType
+from ansible_base.resource_registry.rest_client import get_resource_server_client
 from ansible_base.resource_registry.signals.handlers import no_reverse_sync
 
 logger = logging.getLogger("ansible_base.jwt_consumer.common.auth")
@@ -226,7 +229,7 @@ class JWTCommonAuth:
         return validated_body
 
     def decode_jwt_token(self, unencrypted_token, decryption_key, additional_options={}):
-        local_required_field = ["sub", "user_data", "exp", "objects", "object_roles", "global_roles", "version"]
+        local_required_field = ["sub", "user_data", "exp", "claims_hash", "version"]
         options = {"require": local_required_field}
         options.update(additional_options)
         return jwt.decode(
@@ -258,17 +261,98 @@ class JWTCommonAuth:
 
     def process_rbac_permissions(self):
         """
-        This is a default process_permissions which should be usable if you are using RBAC from DAB
+        Process RBAC permissions using claims hash logic
         """
         if self.token is None or self.user is None:
-            logger.error("Unable to process rbac permissions because user or token is not defined, please call authenticate first")
+            logger.error("Unable to process rbac permissions because user or token is not defined")
             return
 
+        jwt_claims_hash = self.token.get("claims_hash")
+        if not jwt_claims_hash:
+            logger.error("No claims_hash found in JWT token")
+            return
+
+        user_ansible_id = self.token.get("sub")
+        if not user_ansible_id:
+            logger.error("No subject (sub) found in JWT token")
+            return
+
+        # Validate UUID format (consistent with rest of codebase)
+        try:
+            uuid.UUID(user_ansible_id)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid UUID format for user_ansible_id: {user_ansible_id}")
+            return
+
+        # Check cached claims hash
+        cached_claims_hash = self.cache.get_cached_claims_hash(user_ansible_id)
+
+        if cached_claims_hash == jwt_claims_hash:
+            logger.debug(f"Claims hash matches cached value for user {user_ansible_id}")
+            return
+
+        # Calculate local claims hash
+        local_claims = get_user_claims(self.user)
+        local_hashable_claims = get_user_claims_hashable_form(local_claims)
+        local_claims_hash = get_claims_hash(local_hashable_claims)
+
+        if local_claims_hash == jwt_claims_hash:
+            logger.debug(f"Claims hash matches local calculation for user {user_ansible_id}")
+            # Update cache with the correct hash
+            self.cache.cache_claims_hash(user_ansible_id, jwt_claims_hash)
+            return
+
+        # Claims hash mismatch - fetch from gateway
+        logger.info(f"Claims hash mismatch for user {user_ansible_id}. JWT: {jwt_claims_hash}, Local: {local_claims_hash}. Fetching from gateway.")
+        gateway_claims = self._fetch_jwt_claims_from_gateway(user_ansible_id)
+
+        if gateway_claims:
+            # Extract claims structure from gateway response
+            objects = gateway_claims.get('objects', {})
+            object_roles = gateway_claims.get('object_roles', {})
+            global_roles = gateway_claims.get('global_roles', [])
+
+            # Process the RBAC permissions with the gateway claims
+            self._apply_rbac_permissions(objects, object_roles, global_roles)
+
+            # Update cache with the new hash
+            self.cache.cache_claims_hash(user_ansible_id, jwt_claims_hash)
+        else:
+            self.log_and_raise(
+                _("Unable to validate user permissions - gateway claims fetch failed for user %(user_ansible_id)s"), {"user_ansible_id": user_ansible_id}
+            )
+
+    def _fetch_jwt_claims_from_gateway(self, user_ansible_id: str) -> Optional[dict]:
+        """
+        Fetch JWT claims from the gateway endpoint using resource server client
+        """
+        try:
+            # Use the resource server client to make the request
+            client = get_resource_server_client(service_path="api/gateway/v1")
+
+            logger.debug(f"Fetching claims from gateway for user {user_ansible_id}")
+            response = client._make_request("GET", f"jwt_claims/{user_ansible_id}/")
+
+            if response.status_code == 200:
+                claims_data = response.json()
+                return claims_data
+            else:
+                logger.error(f"Gateway request failed with status {response.status_code}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error fetching claims from gateway: {e}")
+            return None
+
+    def _apply_rbac_permissions(self, objects, object_roles, global_roles):
+        """
+        Apply RBAC permissions from claims data
+        """
         from ansible_base.rbac.models import RoleUserAssignment
 
         role_diff = RoleUserAssignment.objects.filter(user=self.user, role_definition__name__in=settings.ANSIBLE_BASE_JWT_MANAGED_ROLES)
 
-        for system_role_name in self.token.get("global_roles", []):
+        for system_role_name in global_roles:
             logger.debug(f"Processing system role {system_role_name} for {self.user.username}")
             rd = self.get_role_definition(system_role_name)
             if rd:
@@ -282,7 +366,7 @@ class JWTCommonAuth:
                 logger.error(f"Unable to grant {self.user.username} system level role {system_role_name} because it does not exist")
                 continue
 
-        for object_role_name in self.token.get('object_roles', {}).keys():
+        for object_role_name in object_roles.keys():
             rd = self.get_role_definition(object_role_name)
             if rd is None:
                 logger.error(f"Unable to grant {self.user.username} object role {object_role_name} because it does not exist")
@@ -291,11 +375,11 @@ class JWTCommonAuth:
                 logger.error(f"Unable to grant {self.user.username} object role {object_role_name} because it is not a JWT managed role")
                 continue
 
-            object_type = self.token['object_roles'][object_role_name]['content_type']
-            object_indexes = self.token['object_roles'][object_role_name]['objects']
+            object_type = object_roles[object_role_name]['content_type']
+            object_indexes = object_roles[object_role_name]['objects']
 
             for index in object_indexes:
-                object_data = self.token['objects'][object_type][index]
+                object_data = objects[object_type][index]
                 try:
                     resource, obj = self.get_or_create_resource(object_type, object_data)
                 except IntegrityError as e:

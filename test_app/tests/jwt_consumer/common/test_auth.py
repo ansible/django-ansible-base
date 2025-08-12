@@ -152,9 +152,7 @@ class TestJWTCommonAuth:
             ("iss", False),
             ("exp", False),
             ("aud", False),
-            ("objects", False),
-            ("object_roles", False),
-            ("global_roles", False),
+            ("claims_hash", False),
         ],
     )
     def test_validate_token_missing_default_items(self, remove, is_user_data_entry, jwt_token, test_encryption_public_key):
@@ -287,24 +285,23 @@ class TestJWTCommonAuth:
                         common_auth.parse_jwt_token(request)
 
     @pytest.mark.parametrize(
-        "token,logs_error",
+        "global_roles,logs_error",
         [
-            ({}, None),
-            ({"global_roles": ['System Auditor']}, False),
-            ({"global_roles": ['Ext Auditor']}, False),  # must dynamically create
-            ({"global_roles": ['Unmanaged Auditor']}, True),  # must dynamically create
-            ({"global_roles": ['Junk']}, True),
+            ([], None),
+            (['System Auditor'], False),
+            (['Ext Auditor'], False),  # must dynamically create
+            (['Unmanaged Auditor'], True),  # must dynamically create
+            (['Junk'], True),
         ],
     )
-    def test_process_rbac_permissions_system_roles(
-        self, token, logs_error, admin_user, expected_log, external_auditor_constructor, unmanaged_external_auditor_constructor
+    def test_apply_rbac_permissions_system_roles(
+        self, global_roles, logs_error, admin_user, expected_log, external_auditor_constructor, unmanaged_external_auditor_constructor
     ):
         authentication = JWTCommonAuth()
         authentication.user = admin_user
-        authentication.token = token
         if logs_error:
             with expected_log(default_logger, 'error', 'Unable to grant'):
-                authentication.process_rbac_permissions()
+                authentication._apply_rbac_permissions({}, {}, global_roles)
         elif logs_error is not None:
             # Make sure we have a System Auditor role
             RoleDefinition.objects.get_or_create(
@@ -315,16 +312,16 @@ class TestJWTCommonAuth:
                 },
             )
             with expected_log(default_logger, 'info', 'Granted user'):
-                authentication.process_rbac_permissions()
+                authentication._apply_rbac_permissions({}, {}, global_roles)
         else:
-            authentication.process_rbac_permissions()
+            authentication._apply_rbac_permissions({}, {}, global_roles)
 
-    def test_process_rbac_permissions_object_roles_role_dne(self, expected_log, admin_user):
+    def test_apply_rbac_permissions_object_roles_role_dne(self, expected_log, admin_user):
         authentication = JWTCommonAuth()
         authentication.user = admin_user
-        authentication.token = {'object_roles': {'Junk': ['a']}}
+        object_roles = {'Junk': ['a']}
         with expected_log(default_logger, 'error', 'Unable to grant'):
-            authentication.process_rbac_permissions()
+            authentication._apply_rbac_permissions({}, object_roles, [])
 
     @pytest.mark.parametrize(
         "object_roles,log_level,log_substring",
@@ -333,30 +330,25 @@ class TestJWTCommonAuth:
             ({"Cow Admin": {'content_type': 'organization', 'objects': [0]}}, "error", "Unable to grant"),
         ],
     )
-    def test_process_rbac_permissions_object_role_exists_object_exists(
+    def test_apply_rbac_permissions_object_role_exists_object_exists(
         self, object_roles, log_level, log_substring, expected_log, admin_user, organization, organization_admin_role
     ):
         authentication = JWTCommonAuth()
         authentication.user = admin_user
-        authentication.token = {
-            'objects': {'organization': [{'ansible_id': organization.resource.ansible_id, 'name': organization.name}]},
-            'object_roles': object_roles,
-        }
+        objects = {'organization': [{'ansible_id': organization.resource.ansible_id, 'name': organization.name}]}
         if log_level:
             with expected_log(default_logger, log_level, log_substring):
-                authentication.process_rbac_permissions()
+                authentication._apply_rbac_permissions(objects, object_roles, [])
 
-    def test_process_rbac_permissions_org_duplicate_name_error(self, expected_log, admin_user, organization, organization_admin_role):
+    def test_apply_rbac_permissions_org_duplicate_name_error(self, expected_log, admin_user, organization, organization_admin_role):
         authentication = JWTCommonAuth()
         authentication.user = admin_user
-        authentication.token = {
-            'objects': {'organization': [{'ansible_id': str(uuid4()), 'name': organization.name}]},
-            'object_roles': {"Organization Admin": {'content_type': 'organization', 'objects': [0]}},
-        }
+        objects = {'organization': [{'ansible_id': str(uuid4()), 'name': organization.name}]}
+        object_roles = {"Organization Admin": {'content_type': 'organization', 'objects': [0]}}
         with expected_log(default_logger, "warning", "Got integrity error"):
-            authentication.process_rbac_permissions()
+            authentication._apply_rbac_permissions(objects, object_roles, [])
 
-    def test_process_rbac_permissions_removed_when_removed_from_jwt(self, admin_user, organization, organization_admin_role):
+    def test_apply_rbac_permissions_removed_when_removed_from_jwt(self, admin_user, organization, organization_admin_role):
         # Make sure we have a System Auditor role
         RoleDefinition.objects.get_or_create(
             name='System Auditor',
@@ -368,19 +360,16 @@ class TestJWTCommonAuth:
 
         authentication = JWTCommonAuth()
         authentication.user = admin_user
-        authentication.token = {
-            'objects': {'organization': [{'ansible_id': organization.resource.ansible_id, 'name': organization.name}]},
-            'object_roles': {organization_admin_role.name: {'content_type': 'organization', 'objects': [0]}},
-            'global_roles': ["Platform Auditor"],
-        }
+        objects = {'organization': [{'ansible_id': organization.resource.ansible_id, 'name': organization.name}]}
+        object_roles = {organization_admin_role.name: {'content_type': 'organization', 'objects': [0]}}
+        global_roles = ["Platform Auditor"]
 
-        authentication.process_rbac_permissions()
+        authentication._apply_rbac_permissions(objects, object_roles, global_roles)
 
         assert RoleUserAssignment.objects.filter(user=admin_user).count() == 2
 
-        authentication.token = {}
-
-        authentication.process_rbac_permissions()
+        # Test removing all roles
+        authentication._apply_rbac_permissions({}, {}, [])
 
         assert RoleUserAssignment.objects.filter(user=admin_user).count() == 0
 
@@ -427,6 +416,158 @@ class TestJWTCommonAuth:
         assert Organization.objects.filter(name=org_name).exists()
         assert Resource.objects.filter(ansible_id=data['ansible_id']).exists()
         assert Team.objects.filter(name=data['name']).exists()
+
+    @pytest.mark.parametrize(
+        "cache_hit,local_match,gateway_success,expected_cache_update,expected_gateway_call,expected_rbac_call",
+        [
+            # Cache hit - should return early without processing
+            (True, True, True, False, False, False),
+            # Cache miss but local match - should update cache and return
+            (False, True, True, True, False, False),
+            # Cache miss and local mismatch, gateway success - should fetch and apply
+            (False, False, True, True, True, True),
+            # Cache miss and local mismatch, gateway failure - should not apply
+            (False, False, False, False, True, False),
+        ],
+    )
+    def test_process_rbac_permissions_cache_scenarios(
+        self,
+        cache_hit,
+        local_match,
+        gateway_success,
+        expected_cache_update,
+        expected_gateway_call,
+        expected_rbac_call,
+        admin_user,
+    ):
+        """Test process_rbac_permissions cache hit/miss scenarios"""
+
+        # Setup authentication object
+        authentication = JWTCommonAuth()
+        authentication.user = admin_user
+        user_ansible_id = "12345678-1234-5678-9abc-123456789012"
+        jwt_claims_hash = "a1b2c3d4"
+        local_claims_hash = jwt_claims_hash if local_match else "e5f6g7h8"
+        cached_claims_hash = jwt_claims_hash if cache_hit else "x9y8z7w6"
+
+        authentication.token = {
+            "sub": user_ansible_id,
+            "claims_hash": jwt_claims_hash,
+        }
+
+        # Mock gateway response with realistic data structure matching get_user_claims format
+        gateway_response = (
+            {
+                'claims_hash': jwt_claims_hash,  # Gateway should return the matching hash
+                'objects': {
+                    'organization': [
+                        {'ansible_id': '11111111-1111-1111-1111-111111111111', 'name': 'Engineering Org'},
+                        {'ansible_id': '22222222-2222-2222-2222-222222222222', 'name': 'DevOps Team Org'},
+                    ],
+                    'team': [{'ansible_id': '33333333-3333-3333-3333-333333333333', 'name': 'Backend Team', 'org': 0}],
+                },
+                'object_roles': {
+                    'Organization Admin': {'content_type': 'organization', 'objects': [0, 1]},
+                    'Team Member': {'content_type': 'team', 'objects': [0]},
+                },
+                'global_roles': ['Platform Auditor'],
+            }
+            if gateway_success
+            else None
+        )
+
+        with (
+            mock.patch.object(authentication.cache, 'get_cached_claims_hash') as mock_get_cache,
+            mock.patch.object(authentication.cache, 'cache_claims_hash') as mock_set_cache,
+            mock.patch('ansible_base.jwt_consumer.common.auth.get_user_claims') as mock_get_claims,
+            mock.patch('ansible_base.jwt_consumer.common.auth.get_user_claims_hashable_form') as mock_get_hashable,
+            mock.patch('ansible_base.jwt_consumer.common.auth.get_claims_hash') as mock_get_hash,
+            mock.patch.object(authentication, '_fetch_jwt_claims_from_gateway') as mock_gateway,
+            mock.patch.object(authentication, '_apply_rbac_permissions') as mock_apply,
+        ):
+
+            # Setup mocks
+            mock_get_cache.return_value = cached_claims_hash if cache_hit else None
+            mock_get_claims.return_value = {}
+            mock_get_hashable.return_value = {}
+            mock_get_hash.return_value = local_claims_hash
+            mock_gateway.return_value = gateway_response
+
+            # Execute the method
+            if not gateway_success and not cache_hit and not local_match:
+                # Gateway failure case should raise AuthenticationFailed
+                with pytest.raises(AuthenticationFailed, match="Unable to validate user permissions"):
+                    authentication.process_rbac_permissions()
+                # Early return - no further assertions needed for this case
+                return
+            else:
+                authentication.process_rbac_permissions()
+
+            # Verify cache lookup happened
+            mock_get_cache.assert_called_once_with(user_ansible_id)
+
+            # Verify local claims calculation - only called when cache miss occurs
+            if cache_hit:
+                # Cache hit - no local claims calculation needed
+                mock_get_claims.assert_not_called()
+                mock_get_hashable.assert_not_called()
+                mock_get_hash.assert_not_called()
+            else:
+                # Cache miss - local claims calculation should happen
+                mock_get_claims.assert_called_once_with(admin_user)
+                mock_get_hashable.assert_called_once_with({})  # mock_get_claims returns {}
+                mock_get_hash.assert_called_once_with({})  # mock_get_hashable returns {}
+
+            # Verify cache update behavior
+            if expected_cache_update:
+                mock_set_cache.assert_called_once_with(user_ansible_id, jwt_claims_hash)
+            else:
+                mock_set_cache.assert_not_called()
+
+            # Verify gateway call behavior
+            if expected_gateway_call:
+                mock_gateway.assert_called_once_with(user_ansible_id)
+            else:
+                mock_gateway.assert_not_called()
+
+            # Verify RBAC application behavior
+            if expected_rbac_call:
+                mock_apply.assert_called_once()
+            else:
+                mock_apply.assert_not_called()
+
+    @pytest.mark.django_db
+    def test_process_rbac_permissions_missing_token_data(self):
+        """Test process_rbac_permissions with missing required token data"""
+        authentication = JWTCommonAuth()
+        authentication.user = None
+        authentication.token = None
+
+        with mock.patch('ansible_base.jwt_consumer.common.auth.logger') as mock_logger:
+            authentication.process_rbac_permissions()
+            mock_logger.error.assert_called_with("Unable to process rbac permissions because user or token is not defined")
+
+    @pytest.mark.django_db
+    def test_process_rbac_permissions_missing_claims_hash(self, admin_user):
+        """Test process_rbac_permissions with missing claims_hash in token"""
+        authentication = JWTCommonAuth()
+        authentication.user = admin_user
+        authentication.token = {"sub": "f47ac10b-58cc-4372-a567-0e02b2c3d479"}  # Missing claims_hash
+
+        with mock.patch('ansible_base.jwt_consumer.common.auth.logger') as mock_logger:
+            authentication.process_rbac_permissions()
+            mock_logger.error.assert_called_with("No claims_hash found in JWT token")
+
+    @pytest.mark.django_db
+    def test_process_rbac_permissions_missing_subject(self, admin_user):
+        """Test process_rbac_permissions with missing subject in token"""
+        authentication = JWTCommonAuth()
+        authentication.user = admin_user
+        authentication.token = {"claims_hash": "a1b2c3d4"}  # Missing sub
+
+        with mock.patch('ansible_base.jwt_consumer.common.auth.logger') as mock_logger:
+            authentication.process_rbac_permissions()
+            mock_logger.error.assert_called_with("No subject (sub) found in JWT token")
 
 
 class TestJWTAuthentication:
@@ -594,3 +735,48 @@ class TestJWTAuthentication:
             authentication.use_rbac_permissions = True
             authentication.process_permissions()
             mp.assert_called_once()
+
+    def test__fetch_jwt_claims_from_gateway_success(self):
+        authentication = JWTCommonAuth()
+        user_ansible_id = '12345678-1234-5678-9abc-123456789012'
+
+        with mock.patch('ansible_base.jwt_consumer.common.auth.get_resource_server_client') as mock_get_client:
+            mock_client = mock.Mock()
+            mock_response = mock.Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {'objects': {}, 'object_roles': {}, 'global_roles': []}
+            mock_client._make_request.return_value = mock_response
+            mock_get_client.return_value = mock_client
+
+            result = authentication._fetch_jwt_claims_from_gateway(user_ansible_id)
+
+            assert result == {'objects': {}, 'object_roles': {}, 'global_roles': []}
+            mock_get_client.assert_called_once_with(service_path='api/gateway/v1')
+            mock_client._make_request.assert_called_once_with('GET', f'jwt_claims/{user_ansible_id}/')
+
+    def test__fetch_jwt_claims_from_gateway_non_200(self):
+        authentication = JWTCommonAuth()
+        user_ansible_id = '12345678-1234-5678-9abc-123456789012'
+
+        with mock.patch('ansible_base.jwt_consumer.common.auth.get_resource_server_client') as mock_get_client:
+            mock_client = mock.Mock()
+            mock_response = mock.Mock()
+            mock_response.status_code = 404
+            mock_client._make_request.return_value = mock_response
+            mock_get_client.return_value = mock_client
+
+            result = authentication._fetch_jwt_claims_from_gateway(user_ansible_id)
+
+            assert result is None
+            mock_get_client.assert_called_once_with(service_path='api/gateway/v1')
+            mock_client._make_request.assert_called_once_with('GET', f'jwt_claims/{user_ansible_id}/')
+
+    def test__fetch_jwt_claims_from_gateway_exception(self):
+        authentication = JWTCommonAuth()
+        user_ansible_id = '12345678-1234-5678-9abc-123456789012'
+
+        with mock.patch('ansible_base.jwt_consumer.common.auth.get_resource_server_client', side_effect=Exception('boom')) as mock_get_client:
+            result = authentication._fetch_jwt_claims_from_gateway(user_ansible_id)
+
+            assert result is None
+            mock_get_client.assert_called_once_with(service_path='api/gateway/v1')

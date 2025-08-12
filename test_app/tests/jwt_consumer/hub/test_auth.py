@@ -12,7 +12,8 @@ from test_app.models import Organization, Team, User
 def test_hub_import_error(user):
     authenticator = HubJWTAuth()
     with pytest.raises(InvalidService):
-        authenticator.process_permissions()
+        # Test that InvalidService is raised when trying to apply RBAC permissions
+        authenticator._apply_rbac_permissions({}, {}, [])
 
 
 @pytest.mark.parametrize(
@@ -102,43 +103,38 @@ def test_hub_jwt_orgs_teams_groups_memberships(mock_contenttype, mock_resource):
 
     # Add the user to the org and the team. Galaxy doesn't have
     # a concept of org&team admin yet so we don't care about those.
-    auth.common_auth.token = {
-        "global_roles": {
-            'Platform Auditor': {},
-        },
-        "object_roles": {
-            'Organization Admin': {'content_type': 'organization', 'objects': [0]},
-            'Organization Member': {'content_type': 'organization', 'objects': [0]},
-            'Team Admin': {'content_type': 'team', 'objects': [0]},
-            'Team Member': {'content_type': 'team', 'objects': [0]},
-        },
-        "objects": {
-            "organization": [
-                {
-                    "ansible_id": str(testorg.resource.ansible_id),
-                    "id": testorg.id,
-                    "name": testorg.name,
-                }
-            ],
-            "team": [
-                {
-                    "ansible_id": str(testteam.resource.ansible_id),
-                    "name": testteam.name,
-                    "org": 0,
-                }
-            ],
-        },
+    objects = {
+        "organization": [
+            {
+                "ansible_id": str(testorg.resource.ansible_id),
+                "id": testorg.id,
+                "name": testorg.name,
+            }
+        ],
+        "team": [
+            {
+                "ansible_id": str(testteam.resource.ansible_id),
+                "name": testteam.name,
+                "org": 0,
+            }
+        ],
     }
+    object_roles = {
+        'Organization Admin': {'content_type': 'organization', 'objects': [0]},
+        'Organization Member': {'content_type': 'organization', 'objects': [0]},
+        'Team Admin': {'content_type': 'team', 'objects': [0]},
+        'Team Member': {'content_type': 'team', 'objects': [0]},
+    }
+    global_roles = ['Platform Auditor']
 
-    # PROCSSS THE CLAIMS AND CHECK THE SIDE EFFECTS ...
-    auth.process_permissions()
+    # PROCESS THE CLAIMS AND CHECK THE SIDE EFFECTS ...
+    auth._apply_rbac_permissions(objects, object_roles, global_roles)
     assert RoleUserAssignment.objects.filter(user=testuser, role_definition=team_member_role, object_id=testteam.pk).count() == 1
     assert RoleUserAssignment.objects.filter(user=testuser, role_definition=team_admin_role, object_id=testteam.pk).count() == 1
     assert RoleUserAssignment.objects.filter(user=testuser, role_definition=platform_auditor_role).count() == 1
 
     # REVOKE EVERYTHING AND RECHECK ...
-    auth.common_auth.token = {}
-    auth.process_permissions()
+    auth._apply_rbac_permissions({}, {}, [])
     assert RoleUserAssignment.objects.filter(user=testuser, role_definition=team_member_role, object_id=testteam.pk).count() == 0
     assert RoleUserAssignment.objects.filter(user=testuser, role_definition=team_admin_role, object_id=testteam.pk).count() == 0
     assert RoleUserAssignment.objects.filter(user=testuser, role_definition=platform_auditor_role).count() == 0

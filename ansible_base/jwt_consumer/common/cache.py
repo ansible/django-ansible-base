@@ -38,6 +38,19 @@ class JWTCache:
         cache.set(validated_body["sub"], expected_cache_value, timeout=self.get_cache_timeout())
         return False, expected_cache_value
 
+    def cache_claims_hash(self, user_ansible_id: str, claims_hash: str) -> None:
+        """Cache the claims hash for a user"""
+        cache_key = f"claims_hash_{user_ansible_id}"
+        cache.set(cache_key, claims_hash, timeout=self.get_cache_timeout())
+        logger.debug(f"Cached claims hash for user {user_ansible_id}: {claims_hash}")
+
+    def get_cached_claims_hash(self, user_ansible_id: str) -> Optional[str]:
+        """Get cached claims hash for a user"""
+        cache_key = f"claims_hash_{user_ansible_id}"
+        cached_hash = cache.get(cache_key, None)
+        logger.debug(f"Retrieved cached claims hash for user {user_ansible_id}: {cached_hash}")
+        return cached_hash
+
     def get_key_from_cache(self) -> Optional[str]:
         # If we are not ignoring the cache (forcing a reload of the key), check it
         key = cache.get(cache_key, None)

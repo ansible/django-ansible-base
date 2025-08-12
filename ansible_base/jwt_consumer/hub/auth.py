@@ -22,7 +22,7 @@ class HubJWTAuth(JWTAuthentication):
 
         return Organization, Team
 
-    def process_permissions(self):
+    def _apply_rbac_permissions(self, objects, object_roles, global_roles):
         # Map teams in the JWT to Automation Hub groups.
         Organization, Team = self.get_galaxy_models()
         self.team_content_type = ContentType.objects.get_for_model(Team)
@@ -40,10 +40,10 @@ class HubJWTAuth(JWTAuthentication):
         # the teams this user should have a "shared" [!local] assignment to
         member_teams = []
 
-        for role_name in self.common_auth.token.get('object_roles', {}).keys():
+        for role_name in object_roles.keys():
             if role_name.startswith('Team'):
-                for object_index in self.common_auth.token['object_roles'][role_name]['objects']:
-                    team_data = self.common_auth.token['objects']['team'][object_index]
+                for object_index in object_roles[role_name]['objects']:
+                    team_data = objects['team'][object_index]
                     ansible_id = team_data['ansible_id']
                     try:
                         team = Resource.objects.get(ansible_id=ansible_id).content_object
@@ -83,7 +83,7 @@ class HubJWTAuth(JWTAuthentication):
                 roledef.give_permission(self.common_auth.user, team)
 
         auditor_roledef = RoleDefinition.objects.get(name='Platform Auditor')
-        if "Platform Auditor" in self.common_auth.token.get('global_roles', []):
+        if "Platform Auditor" in global_roles:
             auditor_roledef.give_global_permission(self.common_auth.user)
         else:
             auditor_roledef.remove_global_permission(self.common_auth.user)
