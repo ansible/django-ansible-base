@@ -137,14 +137,22 @@ class _SQLProfilingMiddlewareMissingContextTest(TestCase):
 
 class SQLQueryMetricsTest(TestCase):
     def test_sql_comment_injection(self):
-        from ansible_base.lib.logging.context import origin_var, route_var, trace_id_var
+        from django.test.client import RequestFactory
 
+        from ansible_base.lib.logging.context import origin_var, trace_id_var
+
+        # 1. Manually set the context, saving the tokens to reset it later.
         trace_id_token = trace_id_var.set("test-trace-id")
-        route_token = route_var.set("test/route")
         origin_token = origin_var.set("test-origin")
 
+        # 2. Create a mock request and manually set the resolver_match
+        factory = RequestFactory()
+        request = factory.get('/test-db/')
+        request.resolver_match = type('ResolverMatch', (), {'route': 'test/route'})
+
         try:
-            metrics = SQLQueryMetrics()
+            # 3. Instantiate our metrics class and call it directly.
+            metrics = SQLQueryMetrics(request)
             original_sql = "SELECT 1"
             modified_sql = ""
 
@@ -155,15 +163,16 @@ class SQLQueryMetricsTest(TestCase):
 
             metrics(mock_execute, original_sql, [], False, {})
 
+            # 4. Assert that the SQL passed to our mock was correctly modified.
             self.assertIn("/*", modified_sql)
-            self.assertIn("trace_id=test-trace-id", modified_sql)
-            self.assertIn("route=test/route", modified_sql)
-            self.assertIn("origin=test-origin", modified_sql)
+            self.assertIn("trace_id='test-trace-id'", modified_sql)
+            self.assertIn("route='test/route'", modified_sql)
+            self.assertIn("origin='test-origin'", modified_sql)
             self.assertIn("*/", modified_sql)
             self.assertIn(original_sql, modified_sql)
         finally:
+            # 5. Reset the context variables to their previous state.
             trace_id_var.reset(trace_id_token)
-            route_var.reset(route_token)
             origin_var.reset(origin_token)
 
 
@@ -208,3 +217,26 @@ class ObservabilityMiddlewareTest(TestCase):
                 # 3. From _SQLProfilingMiddleware: Check SQL headers
                 self.assertIn('X-API-Query-Count', response)
                 self.assertIn('X-API-Query-Time', response)
+
+
+class SQLCommentSanitizationTest(TestCase):
+    def test_sanitization_escapes_disallowed_chars(self):
+        from ansible_base.lib.middleware.profiling.profile_request import _sanitize_for_sql_comment
+
+        malicious_string = "*/; DROP TABLE users; --"
+        sanitized = _sanitize_for_sql_comment(malicious_string)
+        self.assertEqual(sanitized, "%%2A/%%3B%%20DROP%%20TABLE%%20users%%3B%%20--")
+
+    def test_sanitization_allows_safe_chars(self):
+        from ansible_base.lib.middleware.profiling.profile_request import _sanitize_for_sql_comment
+
+        safe_string = "a-b_c.d/e123"
+        sanitized = _sanitize_for_sql_comment(safe_string)
+        self.assertEqual(sanitized, "a-b_c.d/e123")
+
+    def test_sanitization_truncates_long_strings(self):
+        from ansible_base.lib.middleware.profiling.profile_request import SQL_COMMENT_MAX_LENGTH, _sanitize_for_sql_comment
+
+        long_string = "a" * (SQL_COMMENT_MAX_LENGTH + 100)
+        sanitized = _sanitize_for_sql_comment(long_string)
+        self.assertEqual(len(sanitized), SQL_COMMENT_MAX_LENGTH)

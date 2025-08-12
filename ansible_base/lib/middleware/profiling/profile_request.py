@@ -6,12 +6,13 @@ import threading
 import time
 import uuid
 from typing import Optional, Union
+from urllib.parse import quote
 
 from django.conf import settings
 from django.db import connection
 from django.utils.translation import gettext_lazy as _
 
-from ansible_base.lib.logging.context import origin_var, route_var, trace_id_var
+from ansible_base.lib.logging.context import origin_var, trace_id_var
 from ansible_base.lib.utils.settings import get_function_from_setting, get_setting
 
 logger = logging.getLogger(__name__)
@@ -85,23 +86,50 @@ class _ProfileRequestMiddleware(threading.local):
         return response
 
 
+# Define the maximum length for a value in a SQL comment
+SQL_COMMENT_MAX_LENGTH = 256
+
+
+def _sanitize_for_sql_comment(value: str) -> str:
+    """
+    Sanitizes a string for safe inclusion in a SQL comment.
+
+    - URL-encodes the value to handle special characters.
+    - Escapes the '%' character to prevent conflicts with database placeholders.
+    - Truncates the string to a maximum length.
+    """
+    # URL-encode the value
+    quoted_value = quote(str(value))
+    # Escape the '%' character for the database driver
+    sanitized_value = quoted_value.replace('%', '%%')
+    # Truncate to the maximum length
+    return sanitized_value[:SQL_COMMENT_MAX_LENGTH]
+
+
 class SQLQueryMetrics:
-    def __init__(self):
+    def __init__(self, request=None):
+        self.request = request
         self.query_count = 0
         self.query_time = 0.0
 
     def __call__(self, execute, sql, params, many, context):
         # Build the context comment
         context_items = []
+        # trace_id is already validated as a UUID, so it is safe
         if trace_id := trace_id_var.get():
-            context_items.append(f"trace_id={trace_id}")
-        if route := route_var.get():
-            context_items.append(f"route={route}")
+            context_items.append(f"trace_id='{trace_id}'")
+
+        # The route is only available after the URL resolver has run
+        if self.request and getattr(self.request, 'resolver_match', None):
+            if route := self.request.resolver_match.route:
+                context_items.append(f"route='{_sanitize_for_sql_comment(route)}'")
+
         if origin := origin_var.get():
-            context_items.append(f"origin={origin}")
+            context_items.append(f"origin='{_sanitize_for_sql_comment(origin)}'")
 
         if context_items:
-            sql = f"/* {', '.join(context_items)} */ {sql}"
+            comment = f"/* {', '.join(context_items)} */"
+            sql = f"{comment} {sql}"
 
         start_time = time.time()
         try:
@@ -126,7 +154,7 @@ class _SQLProfilingMiddleware:
                 "Please use the ObservabilityMiddleware instead of including profiling middleware individually."
             )
 
-        metrics = SQLQueryMetrics()
+        metrics = SQLQueryMetrics(request)
         with connection.execute_wrapper(metrics):
             response = self.get_response(request)
 

@@ -5,7 +5,6 @@ import uuid
 # Providing a default value is important so that they can be accessed
 # even when the context has not been explicitly set.
 trace_id_var = contextvars.ContextVar('trace_id', default=None)
-route_var = contextvars.ContextVar('route', default=None)
 origin_var = contextvars.ContextVar('origin', default=None)
 
 
