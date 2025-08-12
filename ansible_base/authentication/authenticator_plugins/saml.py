@@ -299,7 +299,7 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAML
             logger.debug("Setting Group from attribute: Group")
             response["Group"] = attrs["Group"]
         else:
-            # else get configured group attribute from configuration and set group from that attribute
+            # get configured group attribute set Group from that attribute
             configuration = self.database_instance.configuration
             idp_groups_attribute_name = self.configuration_class.settings_to_enabled_idps_fields['IDP_GROUPS']
             configured_groups_attribute = configuration['ENABLED_IDPS'][idp_string][idp_groups_attribute_name]
