@@ -423,7 +423,7 @@ def test_process_groups(trigger_condition, groups, case_insensitive, has_access,
     """
     with settings_override_mutable("FLAGS"):
         settings.FLAGS["FEATURE_CASE_INSENSITIVE_AUTH_MAPS"][0]["value"] = case_insensitive
-        res = claims.process_groups(trigger_condition, groups, authenticator_id=1337)
+        res = claims.process_groups(trigger_condition, groups, auth_id=1337, map_id=1)
 
     assert res is has_access
 
@@ -867,7 +867,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
 def test_process_user_attributes(trigger_condition, attributes, expected, case_insensitive, settings_override_mutable):
     with settings_override_mutable("FLAGS"):
         settings.FLAGS["FEATURE_CASE_INSENSITIVE_AUTH_MAPS"][0]["value"] = case_insensitive
-        res = claims.process_user_attributes(trigger_condition, attributes, authenticator_id=1337)
+        res = claims.process_user_attributes(trigger_condition, attributes, auth_id=1337, map_id=1)
 
     assert res is expected
 
