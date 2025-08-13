@@ -3,7 +3,7 @@ import importlib
 import logging
 import re
 from enum import Enum, auto
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -351,50 +351,54 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, auth_id: 
             # If the value is a string then convert it to a list
             user_value = [user_value]
 
-        for a_user_value in user_value:
-            # We are going to do mostly string comparisons, so convert the attribute to a
-            #  string just in case it came back as an int or something funky
-            a_user_value = f"{a_user_value}".casefold() if _is_case_insensitivity_enabled() else f"{a_user_value}"
-
-            # Check for any of the valid conditions
-            header = f"Attr [{attribute}] value [{a_user_value}]"
-            if "equals" in trigger_condition[attribute]:
-                trigger_value = trigger_condition[attribute]["equals"]
-                is_equal = a_user_value == trigger_value
-                has_access = has_access_with_join(has_access, is_equal, join_condition)
-                _prefixed_debug(auth_id, map_id, f"{header} is {'equal' if is_equal else 'not equal'} to [{trigger_value}], {_result_suffix(is_equal)}")
-
-            elif "matches" in trigger_condition[attribute]:
-                trigger_value = trigger_condition[attribute]["matches"]
-                is_match = re.match(trigger_value, a_user_value, re.IGNORECASE) is not None
-                has_access = has_access_with_join(has_access, is_match, join_condition)
-                _prefixed_debug(auth_id, map_id, f"{header} {'matches' if is_match else 'does not match'} [{trigger_value}], {_result_suffix(is_match)}")
-
-            elif "contains" in trigger_condition[attribute]:
-                trigger_value = trigger_condition[attribute]['contains']
-                does_contain = trigger_value in a_user_value
-                has_access = has_access_with_join(has_access, does_contain, join_condition)
-                _prefixed_debug(
-                    auth_id, map_id, f"{header} {'contains' if does_contain else 'does not contain'} [{trigger_value}], {_result_suffix(does_contain)}"
-                )
-
-            elif "ends_with" in trigger_condition[attribute]:
-                trigger_value = trigger_condition[attribute]['ends_with']
-                does_end_with = a_user_value.endswith(trigger_value)
-                has_access = has_access_with_join(has_access, does_end_with, join_condition)
-                _prefixed_debug(
-                    auth_id,
-                    map_id,
-                    f"{header} {'ends with' if does_end_with else 'does not end with'} [{trigger_value}], {_result_suffix(does_end_with)}",
-                )
-
-            elif "in" in trigger_condition[attribute]:
-                trigger_value = trigger_condition[attribute]['in']
-                is_in = a_user_value in trigger_value
-                has_access = has_access_with_join(has_access, is_in, join_condition)
-                _prefixed_debug(auth_id, map_id, f"{header} {'is in' if is_in else 'is not in'} [{trigger_value}], {_result_suffix(is_in)}")
+        has_access = _process_user_value(has_access, trigger_condition, user_value, join_condition, attribute, auth_id, map_id)
 
     return TriggerResult.ALLOW if has_access else TriggerResult.SKIP
+
+
+def _process_user_value(
+    has_access: Optional[bool], trigger_condition: dict, user_value: List[str], join_condition: str, attribute: str, auth_id: int, map_id: int
+) -> str:
+    for a_user_value in user_value:
+        # We are going to do mostly string comparisons, so convert the attribute to a
+        #  string just in case it came back as an int or something funky
+        a_user_value = f"{a_user_value}".casefold() if _is_case_insensitivity_enabled() else f"{a_user_value}"
+
+        # Check for any of the valid conditions
+        header = f"Attr [{attribute}] value [{a_user_value}]"
+        if "equals" in trigger_condition[attribute]:
+            trigger_value = trigger_condition[attribute]["equals"]
+            is_equal = a_user_value == trigger_value
+            has_access = has_access_with_join(has_access, is_equal, join_condition)
+            _prefixed_debug(auth_id, map_id, f"{header} is {'equal' if is_equal else 'not equal'} to [{trigger_value}], {_result_suffix(is_equal)}")
+
+        elif "matches" in trigger_condition[attribute]:
+            trigger_value = trigger_condition[attribute]["matches"]
+            is_match = re.match(trigger_value, a_user_value, re.IGNORECASE) is not None
+            has_access = has_access_with_join(has_access, is_match, join_condition)
+            _prefixed_debug(auth_id, map_id, f"{header} {'matches' if is_match else 'does not match'} [{trigger_value}], {_result_suffix(is_match)}")
+
+        elif "contains" in trigger_condition[attribute]:
+            trigger_value = trigger_condition[attribute]['contains']
+            does_contain = trigger_value in a_user_value
+            has_access = has_access_with_join(has_access, does_contain, join_condition)
+            _prefixed_debug(auth_id, map_id, f"{header} {'contains' if does_contain else 'does not contain'} [{trigger_value}], {_result_suffix(does_contain)}")
+
+        elif "ends_with" in trigger_condition[attribute]:
+            trigger_value = trigger_condition[attribute]['ends_with']
+            does_end_with = a_user_value.endswith(trigger_value)
+            has_access = has_access_with_join(has_access, does_end_with, join_condition)
+            _prefixed_debug(
+                auth_id,
+                map_id,
+                f"{header} {'ends with' if does_end_with else 'does not end with'} [{trigger_value}], {_result_suffix(does_end_with)}",
+            )
+
+        elif "in" in trigger_condition[attribute]:
+            trigger_value = trigger_condition[attribute]['in']
+            is_in = a_user_value in trigger_value
+            has_access = has_access_with_join(has_access, is_in, join_condition)
+            _prefixed_debug(auth_id, map_id, f"{header} {'is in' if is_in else 'is not in'} [{trigger_value}], {_result_suffix(is_in)}")
 
 
 def _result_suffix(result: bool) -> str:
