@@ -384,7 +384,7 @@ def _evaluate_ends_with(user_value: str, trigger_value: str) -> bool:
     return user_value.endswith(trigger_value)
 
 
-def _evaluate_in(user_value: str, trigger_value: List[str]) -> bool:
+def _evaluate_in(user_value: str, trigger_value: str) -> bool:
     """Check if user value is in trigger value list."""
     return user_value in trigger_value
 
