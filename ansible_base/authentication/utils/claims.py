@@ -4,6 +4,7 @@ import logging
 import re
 from enum import Enum, auto
 from typing import List, Optional, Union
+from uuid import uuid4
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -57,10 +58,12 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
     logger.debug(f"{username}'s groups: {groups}")
     logger.debug(f"{username}'s attrs: {attrs}")
 
+    # debug tracking ID
+    tracking_id = str(uuid4())
+
     # load the maps
-    apk = authenticator.pk
-    maps = AuthenticatorMap.objects.filter(authenticator=apk).order_by("order")
-    logger.debug(f"Processing {maps.count()} map(s) for Authenticator ID [{apk}]")
+    maps = AuthenticatorMap.objects.filter(authenticator=authenticator.pk).order_by("order")
+    logger.debug(f"Processing {maps.count()} map(s) for Authenticator ID [{authenticator.pk}] ID [{tracking_id}]")
 
     for auth_map in maps:
         mpk = auth_map.pk
@@ -70,46 +73,46 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
         invalid_keys = set(auth_map.triggers.keys()) - set(allowed_keys)
 
         if auth_map.enabled is False:
-            logger.info(f"Skipping AuthenticatorMap {mpk} because it is disabled")
+            logger.info(f"[{tracking_id}] Skipping AuthenticatorMap {mpk} because it is disabled")
             rule_responses.append({mpk: 'skipped', 'enabled': auth_map.enabled})
             continue
 
         if invalid_keys:
-            logger.warning(f"In AuthenticatorMap {mpk} the following trigger keys are invalid: {', '.join(invalid_keys)}, rule will be ignored")
+            logger.warning(f"[{tracking_id}] In AuthenticatorMap {mpk} the following trigger keys are invalid: {', '.join(invalid_keys)}, rule will be ignored")
             rule_responses.append({mpk: 'invalid', 'enabled': auth_map.enabled})
             continue
 
         for trigger_type, trigger in auth_map.triggers.items():
             if trigger_type == 'groups':
-                _prefixed_debug(apk, mpk, "Groups trigger, comparing user groups to trigger groups")
-                trigger_result = process_groups(trigger, groups, apk, mpk)
+                _prefixed_debug(mpk, tracking_id, "Groups trigger, comparing user groups to trigger groups")
+                trigger_result = process_groups(trigger, groups, mpk, tracking_id)
             elif trigger_type == 'attributes':
-                _prefixed_debug(apk, mpk, "Attributes trigger, comparing user attrs to trigger attrs")
-                trigger_result = process_user_attributes(trigger, attrs, apk, mpk)
+                _prefixed_debug(mpk, tracking_id, "Attributes trigger, comparing user attrs to trigger attrs")
+                trigger_result = process_user_attributes(trigger, attrs, mpk, tracking_id)
             elif trigger_type == 'always':
-                _prefixed_debug(apk, mpk, "Always trigger, allowing")
+                _prefixed_debug(mpk, tracking_id, "Always trigger, allowing")
                 trigger_result = TriggerResult.ALLOW
             elif trigger_type == 'never':
-                _prefixed_debug(apk, mpk, "Never trigger, denying")
+                _prefixed_debug(mpk, tracking_id, "Never trigger, denying")
                 trigger_result = TriggerResult.DENY
 
         # If the trigger result is SKIP, auth map is not defined for this user.
         # Together with "revoke" flag => change permission to DENY
         if auth_map.revoke and trigger_result is TriggerResult.SKIP:
-            _prefixed_debug(apk, mpk, "Revoke flag is set for map, denying and revoking permission")
+            _prefixed_debug(mpk, tracking_id, "Revoke flag is set for map, denying and revoking permission")
             trigger_result = TriggerResult.DENY
 
         # If the trigger result is still SKIP, this auth map is not applicable to this user => no action needed
         if trigger_result is TriggerResult.SKIP:
-            _prefixed_debug(apk, mpk, "Trigger result is SKIP, skipping map, no action needed")
+            _prefixed_debug(mpk, tracking_id, "Trigger result is SKIP, skipping map, no action needed")
             rule_responses.append({mpk: 'skipped', 'enabled': auth_map.enabled})
             continue
 
         if trigger_result is TriggerResult.ALLOW:
-            _prefixed_debug(apk, mpk, "Trigger result is ALLOW, allowing map, applying permission")
+            _prefixed_debug(mpk, tracking_id, "Trigger result is ALLOW, allowing map, applying permission")
             has_permission = True
         elif trigger_result is TriggerResult.DENY:
-            _prefixed_debug(apk, mpk, "Trigger result is DENY, denying map, revoking permission")
+            _prefixed_debug(mpk, tracking_id, "Trigger result is DENY, denying map, revoking permission")
             has_permission = False
 
         rule_responses.append({mpk: has_permission, 'enabled': auth_map.enabled})
@@ -130,7 +133,9 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
                 expanded_role = expanded_values.get('role', None)
 
                 if (role_errors := check_role_type(map_type=auth_map.map_type, role=expanded_role, team=expanded_team, org=expanded_organization)) != {}:
-                    logger.info(f"Map type {auth_map.map_type} of rule {auth_map.name} had an invalid role type and will be skipped {role_errors}")
+                    logger.info(
+                        f"[{tracking_id}] Map type {auth_map.map_type} of rule {auth_map.name} had an invalid role type and will be skipped {role_errors}"
+                    )
                 elif (
                     auth_map.map_type in ['team', 'role']
                     and not is_empty(expanded_organization)
@@ -151,7 +156,7 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
                     understood_map = True
 
         if not understood_map:
-            logger.error(f"Map type {auth_map.map_type} of rule {auth_map.name} does not know how to be processed")
+            logger.error(f"[{tracking_id}] Map type {auth_map.map_type} of rule {auth_map.name} does not know how to be processed")
 
     return {
         "access_allowed": access_allowed,
@@ -165,8 +170,8 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
     }
 
 
-def _prefixed_debug(authenticator_pk: int, auth_map_pk: int, message: str):
-    prefix = f"Authenticator [{authenticator_pk}] Map [{auth_map_pk}]"
+def _prefixed_debug(auth_map_pk: int, tracking_id: str, message: str):
+    prefix = f"[{tracking_id}] Map [{auth_map_pk}]"
     logger.debug(f"{prefix} {message}")
 
 
@@ -224,7 +229,7 @@ def _lowercase_group_triggers(trigger_condition: dict) -> dict:
     return ci_trigger_condition
 
 
-def process_groups(trigger_condition: dict, groups: list, auth_id: int, map_id: int) -> TriggerResult:
+def process_groups(trigger_condition: dict, groups: list, map_id: int, tracking_id: str) -> TriggerResult:
     """
     Looks at a maps trigger for a group and users groups and determines if the trigger is defined for this user.
     Group DNs are compared case-insensitively when FEATURE_CASE_INSENSITIVE_AUTH_MAPS enabled.
@@ -235,32 +240,32 @@ def process_groups(trigger_condition: dict, groups: list, auth_id: int, map_id: 
 
     invalid_conditions = set(trigger_condition.keys()) - set(TRIGGER_DEFINITION['groups']['keys'].keys())
     if invalid_conditions:
-        logger.warning(f"The conditions {', '.join(invalid_conditions)} for groups in mapping {auth_id} are invalid and won't be processed")
+        logger.warning(f"The conditions {', '.join(invalid_conditions)} for groups in mapping {map_id} are invalid and won't be processed")
 
     set_of_user_groups = set(groups)
 
     if "has_or" in trigger_condition:
         matching_groups = set_of_user_groups.intersection(set(trigger_condition["has_or"]))
         if matching_groups:
-            _prefixed_debug(auth_id, map_id, f"User has at least one trigger group [{matching_groups}], allowing")
+            _prefixed_debug(map_id, tracking_id, f"User has at least one trigger group [{matching_groups}], allowing")
             return TriggerResult.ALLOW
         else:
-            _prefixed_debug(auth_id, map_id, "User does not have any trigger groups, skipping")
+            _prefixed_debug(map_id, tracking_id, "User does not have any trigger groups, skipping")
 
     elif "has_and" in trigger_condition:
         if set(trigger_condition["has_and"]).issubset(set_of_user_groups):
-            _prefixed_debug(auth_id, map_id, "User has all groups in trigger, allowing")
+            _prefixed_debug(map_id, tracking_id, "User has all groups in trigger, allowing")
             return TriggerResult.ALLOW
         else:
-            _prefixed_debug(auth_id, map_id, "User does not have all trigger groups, skipping")
+            _prefixed_debug(map_id, tracking_id, "User does not have all trigger groups, skipping")
 
     elif "has_not" in trigger_condition:
         unwanted_groups = set(trigger_condition["has_not"]).intersection(set_of_user_groups)
         if not unwanted_groups:
-            _prefixed_debug(auth_id, map_id, "User does not have disallowed groups, allowing")
+            _prefixed_debug(map_id, tracking_id, "User does not have disallowed groups, allowing")
             return TriggerResult.ALLOW
         else:
-            _prefixed_debug(auth_id, map_id, f"User has one or more disallowed groups [{unwanted_groups}], skipping")
+            _prefixed_debug(map_id, tracking_id, f"User has one or more disallowed groups [{unwanted_groups}], skipping")
     return TriggerResult.SKIP
 
 
@@ -298,30 +303,30 @@ def _lowercase_attr_triggers(trigger_condition: dict) -> dict:
     return ci_trigger_condition
 
 
-def process_user_attributes(trigger_condition: dict, attributes: dict, auth_id: int, map_id: int) -> TriggerResult:
+def process_user_attributes(trigger_condition: dict, attributes: dict, map_id: int, tracking_id: str) -> TriggerResult:
     """
     Looks at a maps trigger for an attribute and the users attributes and determines if the trigger is defined for this user.
     Attribute names are compared case-insensitively.
     """
     if _is_case_insensitivity_enabled():
-        _prefixed_debug(auth_id, map_id, "Case insensitivity enabled, converting attributes and values to lowercase")
+        _prefixed_debug(map_id, tracking_id, "Case insensitivity enabled, converting attributes and values to lowercase")
         attributes = {f"{k}".casefold(): v for k, v in attributes.items()}
         trigger_condition = _lowercase_attr_triggers(trigger_condition)
 
     has_access = None
     join_condition = trigger_condition.get('join_condition', 'or')
     if join_condition not in TRIGGER_DEFINITION['attributes']['keys']['join_condition']['choices']:
-        logger.warning("Trigger join_condition {join_condition} on authenticator map {auth_id} is invalid and will be set to 'or'")
+        logger.warning(f"[{tracking_id}] Trigger join_condition {join_condition} on authenticator map {map_id} is invalid and will be set to 'or'")
         join_condition = 'or'
 
     for attribute in trigger_condition.keys():
         if has_access and join_condition == 'or':
             # If we are an or condition and we already have a positive we can break out and return
-            _prefixed_debug(auth_id, map_id, "At least one attribute match with OR join, allowing")
+            _prefixed_debug(map_id, tracking_id, "At least one attribute match with OR join, allowing")
             break
         elif has_access is False and join_condition == 'and':
             # If we are an and and already have a False we can give up
-            _prefixed_debug(auth_id, map_id, "At least one attribute mismatch with AND join, skipping")
+            _prefixed_debug(map_id, tracking_id, "At least one attribute mismatch with AND join, skipping")
             break
 
         # We can skip the join_condition since we already processed that.
@@ -332,73 +337,111 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, auth_id: 
         invalid_conditions = set(trigger_condition[attribute].keys()) - set(TRIGGER_DEFINITION['attributes']['keys']['*']['keys'].keys())
         if invalid_conditions:
             logger.warning(
-                f"The conditions {', '.join(invalid_conditions)} for attribute {attribute} " "in authenticator map {auth_id} are invalid and won't be processed"
+                f"[{tracking_id}] The conditions {', '.join(invalid_conditions)} for attribute {attribute} "
+                "in authenticator map {auth_id} are invalid and won't be processed"
             )
 
         # The attribute is an empty dict we just need to see if the user has the attribute or not
         if trigger_condition[attribute] == {}:
             has_access = has_access_with_join(has_access, attribute in attributes, join_condition)
-            _prefixed_debug(auth_id, map_id, f"Attr [{attribute}] without value constraint {'is' if attribute in attributes else 'is not'} present, allowing")
+            _prefixed_debug(
+                map_id, tracking_id, f"Attr [{attribute}] without value constraint {'is' if attribute in attributes else 'is not'} present, allowing"
+            )
             continue
 
         user_value = attributes.get(attribute, None)
         # If the user does not contain the attribute then we can't check any further, don't set has_access and just continue
         if user_value is None:
-            _prefixed_debug(auth_id, map_id, f"Attr [{attribute}] is not present in user attributes, skipping")
+            _prefixed_debug(map_id, tracking_id, f"Attr [{attribute}] is not present in user attributes, skipping")
             continue
 
         if type(user_value) is not list:
             # If the value is a string then convert it to a list
             user_value = [user_value]
 
-        has_access = _process_user_value(has_access, trigger_condition, user_value, join_condition, attribute, auth_id, map_id)
+        has_access = _process_user_value(has_access, trigger_condition, user_value, join_condition, attribute, map_id, tracking_id)
 
     return TriggerResult.ALLOW if has_access else TriggerResult.SKIP
 
 
+def _evaluate_equals(user_value: str, trigger_value: str) -> bool:
+    """Check if user value equals trigger value."""
+    return user_value == trigger_value
+
+
+def _evaluate_matches(user_value: str, trigger_value: str) -> bool:
+    """Check if user value matches regex pattern."""
+    return re.match(trigger_value, user_value, re.IGNORECASE) is not None
+
+
+def _evaluate_contains(user_value: str, trigger_value: str) -> bool:
+    """Check if user value contains trigger value."""
+    return trigger_value in user_value
+
+
+def _evaluate_ends_with(user_value: str, trigger_value: str) -> bool:
+    """Check if user value ends with trigger value."""
+    return user_value.endswith(trigger_value)
+
+
+def _evaluate_in(user_value: str, trigger_value: List[str]) -> bool:
+    """Check if user value is in trigger value list."""
+    return user_value in trigger_value
+
+
+def _get_operator_messages(operator: str, result: bool) -> str:
+    """Get appropriate message text for operator and result."""
+    messages = {
+        "equals": ("is equal", "is not equal"),
+        "matches": ("matches", "does not match"),
+        "contains": ("contains", "does not contain"),
+        "ends_with": ("ends with", "does not end with"),
+        "in": ("is in", "is not in"),
+    }
+    true_msg, false_msg = messages.get(operator, ("", ""))
+    return true_msg if result else false_msg
+
+
 def _process_user_value(
-    has_access: Optional[bool], trigger_condition: dict, user_value: List[str], join_condition: str, attribute: str, auth_id: int, map_id: int
+    has_access: Optional[bool], trigger_condition: dict, user_value: List[str], join_condition: str, attribute: str, map_id: int, tracking_id: str
 ) -> Optional[bool]:
+    # Operator dispatch table
+    operators = {
+        "equals": _evaluate_equals,
+        "matches": _evaluate_matches,
+        "contains": _evaluate_contains,
+        "ends_with": _evaluate_ends_with,
+        "in": _evaluate_in,
+    }
+
+    condition = trigger_condition[attribute]
+
+    # Find which operator is present (preserve original priority order)
+    operator = None
+    trigger_value = None
+    for op in ["equals", "matches", "contains", "ends_with", "in"]:
+        if op in condition:
+            operator = op
+            trigger_value = condition[op]
+            break
+
+    if not operator:
+        return has_access
+
+    evaluate_fn = operators[operator]
+
     for a_user_value in user_value:
-        # We are going to do mostly string comparisons, so convert the attribute to a
-        #  string just in case it came back as an int or something funky
-        a_user_value = f"{a_user_value}".casefold() if _is_case_insensitivity_enabled() else f"{a_user_value}"
+        # Normalize user value for comparison
+        user_str = f"{a_user_value}".casefold() if _is_case_insensitivity_enabled() else f"{a_user_value}"
 
-        # Check for any of the valid conditions
-        header = f"Attr [{attribute}] value [{a_user_value}]"
-        if "equals" in trigger_condition[attribute]:
-            trigger_value = trigger_condition[attribute]["equals"]
-            is_equal = a_user_value == trigger_value
-            has_access = has_access_with_join(has_access, is_equal, join_condition)
-            _prefixed_debug(auth_id, map_id, f"{header} is {'equal' if is_equal else 'not equal'} to [{trigger_value}], {_result_suffix(is_equal)}")
+        # Evaluate condition
+        result = evaluate_fn(user_str, trigger_value)
+        has_access = has_access_with_join(has_access, result, join_condition)
 
-        elif "matches" in trigger_condition[attribute]:
-            trigger_value = trigger_condition[attribute]["matches"]
-            is_match = re.match(trigger_value, a_user_value, re.IGNORECASE) is not None
-            has_access = has_access_with_join(has_access, is_match, join_condition)
-            _prefixed_debug(auth_id, map_id, f"{header} {'matches' if is_match else 'does not match'} [{trigger_value}], {_result_suffix(is_match)}")
-
-        elif "contains" in trigger_condition[attribute]:
-            trigger_value = trigger_condition[attribute]['contains']
-            does_contain = trigger_value in a_user_value
-            has_access = has_access_with_join(has_access, does_contain, join_condition)
-            _prefixed_debug(auth_id, map_id, f"{header} {'contains' if does_contain else 'does not contain'} [{trigger_value}], {_result_suffix(does_contain)}")
-
-        elif "ends_with" in trigger_condition[attribute]:
-            trigger_value = trigger_condition[attribute]['ends_with']
-            does_end_with = a_user_value.endswith(trigger_value)
-            has_access = has_access_with_join(has_access, does_end_with, join_condition)
-            _prefixed_debug(
-                auth_id,
-                map_id,
-                f"{header} {'ends with' if does_end_with else 'does not end with'} [{trigger_value}], {_result_suffix(does_end_with)}",
-            )
-
-        elif "in" in trigger_condition[attribute]:
-            trigger_value = trigger_condition[attribute]['in']
-            is_in = a_user_value in trigger_value
-            has_access = has_access_with_join(has_access, is_in, join_condition)
-            _prefixed_debug(auth_id, map_id, f"{header} {'is in' if is_in else 'is not in'} [{trigger_value}], {_result_suffix(is_in)}")
+        # Log result
+        header = f"Attr [{attribute}] value [{user_str}]"
+        message = _get_operator_messages(operator, result)
+        _prefixed_debug(map_id, tracking_id, f"{header} {message} to [{trigger_value}], {_result_suffix(result)}")
 
     return has_access
 

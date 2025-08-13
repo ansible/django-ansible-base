@@ -85,7 +85,7 @@ skip_glob = [ "ansible_base/*/migrations" ]
 [tool.flake8]
 max-line-length = 160
 extend-ignore = [ "E203" ]
-exclude = [ 'ansible_base/*/migrations/*', 'test_app/migrations/*', '.tox', 'build']
+exclude = [ 'ansible_base/*/migrations/*', 'test_app/migrations/*', '.tox', 'build', '.venv', 'venv']
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "test_app.settings"
