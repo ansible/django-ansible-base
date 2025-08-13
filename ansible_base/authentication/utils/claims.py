@@ -358,7 +358,7 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, auth_id: 
 
 def _process_user_value(
     has_access: Optional[bool], trigger_condition: dict, user_value: List[str], join_condition: str, attribute: str, auth_id: int, map_id: int
-) -> str:
+) -> Optional[bool]:
     for a_user_value in user_value:
         # We are going to do mostly string comparisons, so convert the attribute to a
         #  string just in case it came back as an int or something funky
@@ -399,6 +399,8 @@ def _process_user_value(
             is_in = a_user_value in trigger_value
             has_access = has_access_with_join(has_access, is_in, join_condition)
             _prefixed_debug(auth_id, map_id, f"{header} {'is in' if is_in else 'is not in'} [{trigger_value}], {_result_suffix(is_in)}")
+
+    return has_access
 
 
 def _result_suffix(result: bool) -> str:
