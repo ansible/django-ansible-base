@@ -274,6 +274,7 @@ def test_create_claims_bad_map_type_logged(
     logger.error.assert_called_once()
     f"Map type bad_map_type of rule {local_authenticator_map.name} does not know how to be processed" in logger.error.call_args
 
+
 def test_create_claims_multiple_same_org(
     local_authenticator_map,
     local_authenticator_map_1,
