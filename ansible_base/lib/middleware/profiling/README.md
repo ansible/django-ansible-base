@@ -31,6 +31,8 @@ To enable cProfile support, set the following in your Django settings:
 ANSIBLE_BASE_CPROFILE_REQUESTS = True
 ```
 
+> **Note:** Enabling cProfile has significant performance implications and is intended for temporary, live debugging sessions, not for permanent use in production environments.
+
 ### SQL Profiling Support
 
 When the `ANSIBLE_BASE_SQL_PROFILING` setting is enabled, the middleware provides insights into the database queries executed during a request. It adds the following headers to the response:
@@ -47,6 +49,8 @@ To enable SQL profiling, set the following in your Django settings:
 # settings.py
 ANSIBLE_BASE_SQL_PROFILING = True
 ```
+
+> **Note:** This feature is most effective when used in combination with your database's slow query logging capabilities. For high-traffic environments, consider configuring your database to log only a percentage of queries to manage logging overhead.
 
 ## `DABProfiler`
 
@@ -74,6 +78,34 @@ def my_background_task():
         print(f"cProfile data saved to: {cprofile_filename}")
 
     print(f"Task took {elapsed:.3f}s to complete.")
+```
+
+## `trace_context` for Background Tasks
+
+For adding observability to non-HTTP contexts without the overhead of the `DABProfiler`, the `trace_context` context manager is the ideal tool. It ensures that background tasks can be traced with a unique request ID, just like the `ObservabilityMiddleware` does for web requests.
+
+This is particularly useful for background tasks, such as those initiated by the controller's dispatcher, where you want to correlate all log messages for a specific operation.
+
+### Example Usage
+
+Here's how you might use the `trace_context` manager in the controller's dispatcher to ensure that all work related to a specific job has a consistent trace ID.
+
+```python
+# In a hypothetical controller dispatcher task
+from ansible_base.lib.logging.context import trace_context
+
+def run_job(job_id, parent_trace_id=None):
+    """
+    A background task that runs a job.
+    """
+    # Use the parent_trace_id if it exists; otherwise, a new one will be generated.
+    # The origin is a string that identifies the source of the trace.
+    with trace_context(origin='controller_dispatcher', trace_id=parent_trace_id):
+        # All logging within this block will now have the same trace_id.
+        # logger.info(f"Starting job {job_id}")
+        # ... do work ...
+        # logger.info(f"Finished job {job_id}")
+        pass
 ```
 
 ## Visualizing Profile Data
