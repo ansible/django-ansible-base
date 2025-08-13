@@ -294,18 +294,17 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAML
             if perm in attrs:
                 kwargs["social"].extra_data[perm] = attrs[perm]
 
-        # Move group spec up a level if present
-        if "Group" in attrs:
+        # Get configured group attribute, if present
+        configuration = self.database_instance.configuration if hasattr(self.database_instance, 'configuration') else None
+        idp_groups_attribute_name = self.configuration_class.settings_to_enabled_idps_fields['IDP_GROUPS']
+        configured_groups_attribute = configuration['ENABLED_IDPS'][idp_string].get(idp_groups_attribute_name) if configuration is not None else None
+        if configured_groups_attribute is not None and configured_groups_attribute in attrs:
+            logger.debug(f"Setting Group from attribute: {configured_groups_attribute}")
+            response["Group"] = attrs[configured_groups_attribute]
+        # Else try getting the "Group" attribute, if present
+        elif "Group" in attrs:
             logger.debug("Setting Group from attribute: Group")
             response["Group"] = attrs["Group"]
-        else:
-            # get configured group attribute set Group from that attribute
-            configuration = self.database_instance.configuration
-            idp_groups_attribute_name = self.configuration_class.settings_to_enabled_idps_fields['IDP_GROUPS']
-            configured_groups_attribute = configuration['ENABLED_IDPS'][idp_string].get(idp_groups_attribute_name)
-            if configured_groups_attribute is not None and configured_groups_attribute in attrs:
-                logger.debug(f"Setting Group from attribute: {configured_groups_attribute}")
-                response["Group"] = attrs[configured_groups_attribute]
         data = super().extra_data(user, backend, response, *args, **kwargs)
 
         # Ideally we would always have a DB instance
