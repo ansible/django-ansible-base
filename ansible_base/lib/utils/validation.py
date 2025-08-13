@@ -144,6 +144,71 @@ def validate_image_data(data: str) -> None:
         raise ValidationError(_("Invalid base64-encoded data in data URL."))
 
 
+def validate_domain_name(domain: str) -> None:
+    """
+    Validate a domain name according to RFC 1035 and related standards.
+
+    Raises ValidationError if the domain is invalid.
+
+    Rules:
+    - Total length must not exceed 253 characters
+    - Each label (part between dots) must be 1-63 characters
+    - Labels can contain letters, numbers, and hyphens
+    - Labels cannot start or end with hyphens
+    - Must have at least one dot (i.e., a TLD)
+    - TLD must be 2-6 characters and contain only letters
+
+    Args:
+        domain: The domain name to validate
+
+    Raises:
+        ValidationError: If the domain name is invalid
+    """
+    if not domain or not isinstance(domain, str):
+        raise ValidationError(_("Domain name must be a non-empty string"))
+
+    if len(domain) > 253:
+        raise ValidationError(_("Domain name exceeds maximum length of 253 characters"))
+
+    # Remove trailing dot if present (valid in DNS)
+    if domain.endswith('.'):
+        domain = domain[:-1]
+
+    # Must have at least one dot to separate domain and TLD
+    if '.' not in domain:
+        raise ValidationError(_("Domain name must contain at least one dot"))
+
+    labels = domain.split('.')
+
+    # Must have at least 2 labels (domain.tld)
+    if len(labels) < 2:
+        raise ValidationError(_("Domain name must have at least two labels (domain.tld)"))
+
+    # Validate each label
+    for i, label in enumerate(labels):
+        if not label:  # Empty label (double dot)
+            raise ValidationError(_("Domain name cannot contain empty labels (double dots)"))
+
+        if len(label) > 63:  # Label too long
+            raise ValidationError(_("Domain label '{}' exceeds maximum length of 63 characters").format(label))
+
+        # Labels cannot start or end with hyphen
+        if label.startswith('-') or label.endswith('-'):
+            raise ValidationError(_("Domain label '{}' cannot start or end with a hyphen").format(label))
+
+        # Labels can only contain alphanumeric characters and hyphens
+        if not re.match(r'^[a-zA-Z0-9-]+$', label):
+            raise ValidationError(_("Domain label '{}' contains invalid characters").format(label))
+
+    # TLD (last label) must be 2-6 characters and contain only letters
+    tld = labels[-1]
+    if len(tld) < 2 or len(tld) > 6:
+        raise ValidationError(_("Top-level domain '{}' must be 2-6 characters long").format(tld))
+
+    if not re.match(r'^[a-zA-Z]+$', tld):
+        raise ValidationError(_("Top-level domain '{}' must contain only letters").format(tld))
+
+
 def to_python_boolean(value, allow_none=False):
     value = str(value)
     if value.lower() in ('true', '1', 't'):

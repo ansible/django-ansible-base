@@ -2,7 +2,7 @@ import pytest
 from rest_framework.exceptions import ValidationError
 from typeguard import suppress_type_checks
 
-from ansible_base.lib.utils.validation import to_python_boolean, validate_cert_with_key, validate_image_data, validate_url
+from ansible_base.lib.utils.validation import to_python_boolean, validate_cert_with_key, validate_domain_name, validate_image_data, validate_url
 
 
 @suppress_type_checks
@@ -180,3 +180,53 @@ def test_to_python_boolean(value, return_value, raises):
 )
 def test_to_python_boolean_none(value):
     assert to_python_boolean(value, allow_none=True) is None
+
+
+class TestValidateDomainName:
+    """Test cases for validate_domain_name function"""
+
+    @pytest.mark.parametrize(
+        "domain",
+        [
+            "example.com",
+            "sub.example.com",
+            "example.co.uk",
+            "test-domain.org",
+            "a.com",
+            "example.museum",  # Valid 6-char TLD
+            "long-subdomain-name-but-within-63-chars.example.com",
+            "123.example.com",  # Numeric subdomain is valid
+        ],
+    )
+    def test_validate_domain_name_valid(self, domain):
+        """Test that valid domain names pass validation"""
+        # Should not raise an exception
+        validate_domain_name(domain)
+
+    @pytest.mark.parametrize(
+        ("domain", "expected_error"),
+        [
+            ("", "Domain name must be a non-empty string"),
+            (None, "Domain name must be a non-empty string"),
+            (123, "Domain name must be a non-empty string"),
+            ("example.c", "Top-level domain 'c' must be 2-6 characters long"),
+            ("example.toolongtobevalid", "Top-level domain 'toolongtobevalid' must be 2-6 characters long"),
+            ("example.", "Domain name must contain at least one dot"),
+            ("example..com", "Domain name cannot contain empty labels (double dots)"),
+            ("ex ample.com", "Domain label 'ex ample' contains invalid characters"),
+            ("example-.com", "Domain label 'example-' cannot start or end with a hyphen"),
+            ("-example.com", "Domain label '-example' cannot start or end with a hyphen"),
+            ("example.123", "Top-level domain '123' must contain only letters"),
+            ("example", "Domain name must contain at least one dot"),
+            (
+                "very-long-subdomain-name-that-exceeds-the-63-character-limit-for-labels.com",
+                "Domain label 'very-long-subdomain-name-that-exceeds-the-63-character-limit-for-labels' exceeds maximum length of 63 characters",
+            ),
+            ("a" * 254 + ".com", "Domain name exceeds maximum length of 253 characters"),
+        ],
+    )
+    def test_validate_domain_name_invalid(self, domain, expected_error):
+        """Test that invalid domain names raise ValidationError with correct message"""
+        with pytest.raises(ValidationError) as exc_info:
+            validate_domain_name(domain)
+        assert expected_error in str(exc_info.value)
