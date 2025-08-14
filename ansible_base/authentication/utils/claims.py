@@ -314,24 +314,15 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, map_id: i
         trigger_condition = _lowercase_attr_triggers(trigger_condition)
 
     has_access = None
-    join_condition = trigger_condition.get('join_condition', 'or')
+    join_condition = trigger_condition.pop('join_condition', 'or')
     if join_condition not in TRIGGER_DEFINITION['attributes']['keys']['join_condition']['choices']:
         logger.warning(f"[{tracking_id}] Trigger join_condition {join_condition} on authenticator map {map_id} is invalid and will be set to 'or'")
         join_condition = 'or'
 
     for attribute in trigger_condition.keys():
-        if has_access and join_condition == 'or':
-            # If we are an or condition and we already have a positive we can break out and return
-            _prefixed_debug(map_id, tracking_id, "At least one attribute match with OR join, allowing")
+        # If we have already determined the result, we can break out and return
+        if _check_early_exit(has_access, join_condition, map_id, tracking_id):
             break
-        elif has_access is False and join_condition == 'and':
-            # If we are an and and already have a False we can give up
-            _prefixed_debug(map_id, tracking_id, "At least one attribute mismatch with AND join, skipping")
-            break
-
-        # We can skip the join_condition since we already processed that.
-        if attribute == 'join_condition':
-            continue
 
         # Warn if there are any invalid conditions, we are just going to ignore them
         invalid_conditions = set(trigger_condition[attribute].keys()) - set(TRIGGER_DEFINITION['attributes']['keys']['*']['keys'].keys())
@@ -362,6 +353,16 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, map_id: i
         has_access = _process_user_value(has_access, trigger_condition, user_value, join_condition, attribute, map_id, tracking_id)
 
     return TriggerResult.ALLOW if has_access else TriggerResult.SKIP
+
+
+def _check_early_exit(has_access: Optional[bool], join_condition: str, map_id: int, tracking_id: str) -> bool:
+    if has_access and join_condition == 'or':
+        _prefixed_debug(map_id, tracking_id, "At least one attribute match with OR join, allowing")
+        return True
+    elif has_access is False and join_condition == 'and':
+        _prefixed_debug(map_id, tracking_id, "At least one attribute mismatch with AND join, skipping")
+        return True
+    return False
 
 
 def _evaluate_equals(user_value: str, trigger_value: str) -> bool:
