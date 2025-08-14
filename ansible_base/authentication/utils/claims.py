@@ -54,12 +54,13 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
     rule_responses = []
     # Assume we will have access
     access_allowed = True
-    logger.info(f"Creating mapping for user {username} through authenticator {authenticator.name}")
-    logger.debug(f"{username}'s groups: {groups}")
-    logger.debug(f"{username}'s attrs: {attrs}")
 
     # debug tracking ID
     tracking_id = str(uuid4())
+
+    logger.info(f"[{tracking_id}] Creating mapping for user {username} through authenticator {authenticator.name}")
+    logger.debug(f"[{tracking_id}] {username}'s groups: {groups}")
+    logger.debug(f"[{tracking_id}] {username}'s attrs: {attrs}")
 
     # load the maps
     maps = AuthenticatorMap.objects.filter(authenticator=authenticator.pk).order_by("order")
@@ -240,7 +241,7 @@ def process_groups(trigger_condition: dict, groups: list, map_id: int, tracking_
 
     invalid_conditions = set(trigger_condition.keys()) - set(TRIGGER_DEFINITION['groups']['keys'].keys())
     if invalid_conditions:
-        logger.warning(f"The conditions {', '.join(invalid_conditions)} for groups in mapping {map_id} are invalid and won't be processed")
+        logger.warning(f"[{tracking_id}] The conditions {', '.join(invalid_conditions)} for groups in mapping {map_id} are invalid and won't be processed")
 
     set_of_user_groups = set(groups)
 
@@ -294,8 +295,17 @@ def _lowercase_attr_triggers(trigger_condition: dict) -> dict:
         elif isinstance(condition, dict):
             if not condition:  # empty dict
                 updated_condition = {}
-            for operator, value in condition.items():
-                updated_condition = {operator: value.casefold()}
+            else:
+                updated_condition = {}
+                for operator, value in condition.items():
+                    if isinstance(value, str):
+                        updated_condition[operator] = value.casefold()
+                    elif isinstance(value, list):
+                        # Handle list values (for "in" operator which should only accept arrays)
+                        updated_condition[operator] = [str(item).casefold() for item in value]
+                    else:
+                        # Keep other types as-is
+                        updated_condition[operator] = value
         else:
             updated_condition = condition
 
@@ -331,6 +341,14 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, map_id: i
                 f"[{tracking_id}] The conditions {', '.join(invalid_conditions)} for attribute {attribute} "
                 f"in authenticator map {map_id} are invalid and won't be processed"
             )
+
+        # Validate that 'in' operator only accepts arrays
+        if "in" in trigger_condition[attribute] and not isinstance(trigger_condition[attribute]["in"], list):
+            logger.warning(
+                f"[{tracking_id}] The 'in' operator for attribute {attribute} in authenticator map {map_id} "
+                f"must use an array, not {type(trigger_condition[attribute]['in']).__name__}. This condition will be ignored."
+            )
+            continue
 
         # The attribute is an empty dict we just need to see if the user has the attribute or not
         if trigger_condition[attribute] == {}:
@@ -391,7 +409,7 @@ def _evaluate_ends_with(user_value: str, trigger_value: str) -> bool:
     return user_value.endswith(trigger_value)
 
 
-def _evaluate_in(user_value: str, trigger_value: str) -> bool:
+def _evaluate_in(user_value: str, trigger_value: list) -> bool:
     """Check if user value is in trigger value list."""
     return user_value in trigger_value
 

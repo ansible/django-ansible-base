@@ -530,48 +530,48 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
             id="ends_with, negative",
         ),
         pytest.param(
-            {"email": {"in": "omg hey foo@example.com bye"}},
+            {"email": {"in": ["foo@example.com", "bar@example.org"]}},
             {"email": "foo@example.com"},
             False,
             claims.TriggerResult.ALLOW,
             id="in, positive",
         ),
         pytest.param(
-            {"email": {"in": "omg hey foo@example.com bye"}},
-            {"email": "foo@example.org"},
+            {"email": {"in": ["foo@example.com", "bar@example.org"]}},
+            {"email": "baz@example.net"},
             False,
             claims.TriggerResult.SKIP,
             id="in, negative",
         ),
         pytest.param(
             {
-                "email": {"in": "omg hey foo@example.com bye"},
+                "email": {"in": ["foo@example.com", "bar@example.org"]},
                 "join_condition": "and",
                 "favorite_color": {
                     "equals": "teal",
                 },
             },
-            {"email": "foo@example.org"},
+            {"email": "baz@example.net"},
             False,
             claims.TriggerResult.SKIP,
             id="'and' join_condition, missing one attribute, negative",
         ),
         pytest.param(
             {
-                "email": {"in": "omg hey foo@example.com bye"},
+                "email": {"in": ["foo@example.com", "bar@example.org"]},
                 "join_condition": "and",
                 "favorite_color": {
                     "equals": "teal",
                 },
             },
-            {"email": "foo@example.org", "favorite_color": "red"},
+            {"email": "baz@example.net", "favorite_color": "red"},
             False,
             claims.TriggerResult.SKIP,
             id="'and' join_condition, two false conditions, negative",
         ),
         pytest.param(
             {
-                "email": {"in": "omg hey foo@example.com bye"},
+                "email": {"in": ["foo@example.com", "bar@example.org"]},
                 "join_condition": "and",
                 "favorite_color": {
                     "equals": "teal",
@@ -584,7 +584,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
         ),
         pytest.param(
             {
-                "email": {"in": "omg hey foo@example.com bye"},
+                "email": {"in": ["foo@example.com", "bar@example.org"]},
                 "join_condition": "and",
                 "favorite_color": {
                     "equals": "teal",
@@ -597,7 +597,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
         ),
         pytest.param(
             {
-                "email": {"in": "omg hey foo@example.com bye"},
+                "email": {"in": ["foo@example.com", "bar@example.org"]},
                 "join_condition": "or",
                 "favorite_color": {
                     "equals": "teal",
@@ -610,7 +610,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
         ),
         pytest.param(
             {
-                "email": {"in": "omg hey foo@example.com bye"},
+                "email": {"in": ["foo@example.com", "bar@example.org"]},
                 "join_condition": "or",
                 "favorite_color": {
                     "equals": "teal",
@@ -623,7 +623,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
         ),
         pytest.param(
             {
-                "email": {"in": "omg hey foo@example.com bye"},
+                "email": {"in": ["foo@example.com", "bar@example.org"]},
                 "favorite_color": {
                     "equals": "teal",
                 },
@@ -635,7 +635,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
         ),
         pytest.param(
             {
-                "email": {"in": "omg hey foo@example.com bye"},
+                "email": {"in": ["foo@example.com", "bar@example.org"]},
                 "favorite_color": {
                     "equals": "teal",
                 },
@@ -647,7 +647,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
         ),
         pytest.param(
             {
-                "email": {"in": "omg hey foo@example.com bye"},
+                "email": {"in": ["foo@example.com", "bar@example.org"]},
                 "join_condition": "or",
                 "favorite_color": {
                     "equals": "teal",
@@ -842,7 +842,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
             id="username attribute value case mismatch contains",
         ),
         pytest.param(
-            {"username": {"in": "BOB JOE JOHN TAMAR"}, "join_condition": "or"},
+            {"username": {"in": ["BOB", "JOE", "JOHN", "TAMAR"]}, "join_condition": "or"},
             {"username": "tamar"},
             True,
             claims.TriggerResult.ALLOW,
@@ -861,6 +861,34 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
             True,
             claims.TriggerResult.ALLOW,
             id="user attribute is None, exists check still works, case sensitive, negative",
+        ),
+        pytest.param(
+            {"department": {"in": ["Engineering", "Sales", "Marketing"]}},
+            {"department": "Engineering"},
+            False,
+            claims.TriggerResult.ALLOW,
+            id="in operator with list value, positive match",
+        ),
+        pytest.param(
+            {"department": {"in": ["Engineering", "Sales", "Marketing"]}},
+            {"department": "HR"},
+            False,
+            claims.TriggerResult.SKIP,
+            id="in operator with list value, negative match",
+        ),
+        pytest.param(
+            {"department": {"in": ["Engineering", "Sales", "Marketing"]}},
+            {"department": "engineering"},
+            True,
+            claims.TriggerResult.ALLOW,
+            id="in operator with list value, case insensitive match",
+        ),
+        pytest.param(
+            {"department": {"in": "Engineering"}},
+            {"department": "Engineering"},
+            False,
+            claims.TriggerResult.SKIP,
+            id="in operator with string value (invalid) should be ignored",
         ),
     ],
 )
