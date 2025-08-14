@@ -211,7 +211,7 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
             raise ValidationError(
                 {
                     'SECURITY_CONFIG': _("Invalid keys: %(keys)s, Valid keys: %(valid_keys)s")
-                    % {"keys": ', '.join(invalid_security_settings), "valid_keys": ', '.join(valid_security_settings)}
+                    % {"keys": ', '.join(sorted(invalid_security_settings)), "valid_keys": ', '.join(sorted(valid_security_settings))}
                 }
             )
 

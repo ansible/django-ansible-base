@@ -63,11 +63,12 @@ def test_saml_auth_successful(authenticate, unauthenticated_api_client, saml_aut
             {
                 "SECURITY_CONFIG": (
                     "Invalid keys: invalidKey1, invalidKey2, "
-                    "Valid keys: allowInsecureNameIdFormat, authnRequestsSigned, digestAlgorithm, "
-                    "logoutRequestSigned, logoutResponseSigned, nameIdEncrypted, requestedAuthnContext, "
-                    "requestedAuthnContextComparison, signMetadata, signatureAlgorithm, "
-                    "wantAssertionsEncrypted, wantAssertionsSigned, wantNameId, wantNameIdEncrypted, "
-                    "wantXMLValidation"
+                    "Valid keys: allowRepeatAttributeName, authnRequestsSigned, digestAlgorithm, "
+                    "failOnAuthnContextMismatch, logoutRequestSigned, logoutResponseSigned, "
+                    "metadataCacheDuration, metadataValidUntil, nameIdEncrypted, rejectDeprecatedAlgorithm, "
+                    "requestedAuthnContext, requestedAuthnContextComparison, signMetadata, signatureAlgorithm, "
+                    "wantAssertionsEncrypted, wantAssertionsSigned, wantAttributeStatement, wantMessagesSigned, "
+                    "wantNameId, wantNameIdEncrypted"
                 )
             },
             id="invalid security config keys",
