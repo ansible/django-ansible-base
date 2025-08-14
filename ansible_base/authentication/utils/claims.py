@@ -334,10 +334,7 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, map_id: i
 
         # The attribute is an empty dict we just need to see if the user has the attribute or not
         if trigger_condition[attribute] == {}:
-            has_access = has_access_with_join(has_access, attribute in attributes, join_condition)
-            _prefixed_debug(
-                map_id, tracking_id, f"Attr [{attribute}] without value constraint {'is' if attribute in attributes else 'is not'} present, allowing"
-            )
+            has_access = has_access_with_join(has_access, _check_empty_attribute(attribute, attributes, map_id, tracking_id), join_condition)
             continue
 
         user_value = attributes.get(attribute, None)
@@ -353,6 +350,15 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, map_id: i
         has_access = _process_user_value(has_access, trigger_condition, user_value, join_condition, attribute, map_id, tracking_id)
 
     return TriggerResult.ALLOW if has_access else TriggerResult.SKIP
+
+
+def _check_empty_attribute(attribute: str, attributes: dict, map_id: int, tracking_id: str) -> bool:
+    _prefixed_debug(
+        map_id,
+        tracking_id,
+        f"Attr [{attribute}] without value constraint {'is' if attribute in attributes else 'is not'} present, {_result_suffix(attribute in attributes)}",
+    )
+    return attribute in attributes
 
 
 def _check_early_exit(has_access: Optional[bool], join_condition: str, map_id: int, tracking_id: str) -> bool:
@@ -393,7 +399,7 @@ def _evaluate_in(user_value: str, trigger_value: str) -> bool:
 def _get_operator_messages(operator: str, result: bool) -> str:
     """Get appropriate message text for operator and result."""
     messages = {
-        "equals": ("is equal", "is not equal"),
+        "equals": ("equals", "does not equal"),
         "matches": ("matches", "does not match"),
         "contains": ("contains", "does not contain"),
         "ends_with": ("ends with", "does not end with"),
@@ -442,7 +448,7 @@ def _process_user_value(
         # Log result
         header = f"Attr [{attribute}] value [{user_str}]"
         message = _get_operator_messages(operator, result)
-        _prefixed_debug(map_id, tracking_id, f"{header} {message} to [{trigger_value}], {_result_suffix(result)}")
+        _prefixed_debug(map_id, tracking_id, f"{header} {message} [{trigger_value}], {_result_suffix(result)}")
 
     return has_access
 
