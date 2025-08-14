@@ -306,10 +306,10 @@ def _lowercase_attr_triggers(trigger_condition: dict) -> dict:
 def process_user_attributes(trigger_condition: dict, attributes: dict, map_id: int, tracking_id: str) -> TriggerResult:
     """
     Looks at a maps trigger for an attribute and the users attributes and determines if the trigger is defined for this user.
-    Attribute names are compared case-insensitively.
+    Attribute names are compared case-insensitively when FEATURE_CASE_INSENSITIVE_AUTH_MAPS is enabled.
     """
     if _is_case_insensitivity_enabled():
-        _prefixed_debug(map_id, tracking_id, "Case insensitivity enabled, converting attributes and values to lowercase")
+        _prefixed_debug(map_id, tracking_id, f"[{tracking_id}] Case insensitivity enabled, converting attributes and values to lowercase")
         attributes = {f"{k}".casefold(): v for k, v in attributes.items()}
         trigger_condition = _lowercase_attr_triggers(trigger_condition)
 
@@ -329,7 +329,7 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, map_id: i
         if invalid_conditions:
             logger.warning(
                 f"[{tracking_id}] The conditions {', '.join(invalid_conditions)} for attribute {attribute} "
-                "in authenticator map {auth_id} are invalid and won't be processed"
+                f"in authenticator map {map_id} are invalid and won't be processed"
             )
 
         # The attribute is an empty dict we just need to see if the user has the attribute or not
