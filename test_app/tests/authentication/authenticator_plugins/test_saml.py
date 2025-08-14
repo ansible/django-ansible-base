@@ -60,7 +60,16 @@ def test_saml_auth_successful(authenticate, unauthenticated_api_client, saml_aut
         ),
         pytest.param(
             {"SECURITY_CONFIG": {"invalidKey1": "value1", "invalidKey2": "value2"}},
-            {"SECURITY_CONFIG": "Invalid keys: invalidKey1, invalidKey2"},
+            {
+                "SECURITY_CONFIG": (
+                    "Invalid keys: invalidKey1, invalidKey2, "
+                    "Valid keys: allowInsecureNameIdFormat, authnRequestsSigned, digestAlgorithm, "
+                    "logoutRequestSigned, logoutResponseSigned, nameIdEncrypted, requestedAuthnContext, "
+                    "requestedAuthnContextComparison, signMetadata, signatureAlgorithm, "
+                    "wantAssertionsEncrypted, wantAssertionsSigned, wantNameId, wantNameIdEncrypted, "
+                    "wantXMLValidation"
+                )
+            },
             id="invalid security config keys",
         ),
     ],
