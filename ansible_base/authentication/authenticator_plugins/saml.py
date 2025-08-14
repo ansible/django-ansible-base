@@ -208,7 +208,12 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
             raise ValidationError(_("Failed to load config: %(e)s") % {"e": e})
 
         if invalid_security_settings:
-            raise ValidationError({'SECURITY_CONFIG': _("Invalid keys:) {', '.join(invalid_security_settings)}")})
+            raise ValidationError(
+                {
+                    'SECURITY_CONFIG': _("Invalid keys: %(keys)s, Valid keys: %(valid_keys)s")
+                    % {"keys": ', '.join(sorted(invalid_security_settings)), "valid_keys": ', '.join(sorted(valid_security_settings))}
+                }
+            )
 
         response = super().validate(attrs)
         return response
