@@ -4,14 +4,14 @@ from unittest import mock
 import pytest
 from django.conf import settings
 from django.test.utils import override_settings
+from onelogin.saml2.settings import OneLogin_Saml2_Settings
+from social_core.backends.saml import SAMLAuth, SAMLIdentityProvider
 
 from ansible_base.authentication.authenticator_plugins.saml import AuthenticatorPlugin
 from ansible_base.authentication.session import SessionAuthentication
 from ansible_base.authentication.social_auth import AuthenticatorConfigTestStrategy, AuthenticatorStorage
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.lib.utils.response import get_fully_qualified_url, get_relative_url
-from onelogin.saml2.settings import OneLogin_Saml2_Settings
-from social_core.backends.saml import SAMLAuth, SAMLIdentityProvider
 
 authenticated_test_page = "authenticator-list"
 
