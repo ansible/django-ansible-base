@@ -11,6 +11,7 @@ from ansible_base.lib.utils.validation import (
     validate_cert_with_key,
     validate_domain_name,
     validate_image_data,
+    validate_port,
     validate_url,
 )
 
@@ -543,3 +544,167 @@ def test_helper_functions_with_trailing_dot():
     # Both should validate to the same result
     assert validate_domain_name(domain_with_dot) is True
     assert validate_domain_name(domain_without_dot) is True
+
+
+class TestValidatePort:
+    """Test cases for validate_port function"""
+
+    @pytest.mark.parametrize(
+        "port,expected,description",
+        [
+            # Valid cases - integers
+            (1, True, "Minimum valid port as integer"),
+            (80, True, "Standard HTTP port as integer"),
+            (443, True, "Standard HTTPS port as integer"),
+            (8080, True, "Common development port as integer"),
+            (65535, True, "Maximum valid port as integer"),
+            # Valid cases - strings
+            ("1", True, "Minimum valid port as string"),
+            ("80", True, "Standard HTTP port as string"),
+            ("443", True, "Standard HTTPS port as string"),
+            ("8080", True, "Common development port as string"),
+            ("65535", True, "Maximum valid port as string"),
+            ("22", True, "SSH port as string"),
+            ("3306", True, "MySQL port as string"),
+            ("5432", True, "PostgreSQL port as string"),
+            # Invalid cases - out of range integers
+            (0, False, "Port 0 is reserved"),
+            (-1, False, "Negative port number"),
+            (65536, False, "Port above maximum range"),
+            (99999, False, "Port well above maximum range"),
+            # Invalid cases - out of range strings
+            ("0", False, "Port 0 as string"),
+            ("-1", False, "Negative port as string"),
+            ("65536", False, "Port above maximum range as string"),
+            ("99999", False, "Port well above maximum range as string"),
+            # Invalid cases - non-numeric strings
+            ("abc", False, "Non-numeric string"),
+            ("80a", False, "String with letters and numbers"),
+            ("", False, "Empty string"),
+            (" ", False, "Whitespace string"),
+            ("80.5", False, "Decimal number as string"),
+            ("80 ", False, "String with trailing space"),
+            (" 80", False, "String with leading space"),
+            ("8080.0", False, "String with decimal point"),
+            # Invalid cases - other types
+            (None, False, "None value"),
+            (80.5, False, "Float number"),
+            ([], False, "Empty list"),
+            ([80], False, "List with port number"),
+            ({}, False, "Empty dictionary"),
+            ({"port": 80}, False, "Dictionary with port"),
+            (True, False, "Boolean True"),
+            (False, False, "Boolean False"),
+            (set([80]), False, "Set with port number"),
+            (tuple([80]), False, "Tuple with port number"),
+        ],
+    )
+    def test_validate_port(self, port, expected, description):
+        """Test validate_port function with various port inputs."""
+        result = validate_port(port)
+        assert result is expected, f"Failed for {description}: validate_port({port!r}) returned {result}, expected {expected}"
+
+    @pytest.mark.parametrize(
+        "port,expected,description",
+        [
+            # Boundary values - integers
+            (1, True, "Minimum valid port as integer"),
+            (65535, True, "Maximum valid port as integer"),
+            (0, False, "Port 0 is reserved (integer)"),
+            (65536, False, "Port above maximum range (integer)"),
+            # Boundary values - strings
+            ("1", True, "Minimum valid port as string"),
+            ("65535", True, "Maximum valid port as string"),
+            ("0", False, "Port 0 is reserved (string)"),
+            ("65536", False, "Port above maximum range (string)"),
+            # Common ports - integers
+            (21, True, "FTP port as integer"),
+            (22, True, "SSH port as integer"),
+            (23, True, "Telnet port as integer"),
+            (25, True, "SMTP port as integer"),
+            (53, True, "DNS port as integer"),
+            (80, True, "HTTP port as integer"),
+            (110, True, "POP3 port as integer"),
+            (143, True, "IMAP port as integer"),
+            (443, True, "HTTPS port as integer"),
+            (993, True, "IMAPS port as integer"),
+            (995, True, "POP3S port as integer"),
+            (3306, True, "MySQL port as integer"),
+            (5432, True, "PostgreSQL port as integer"),
+            (6379, True, "Redis port as integer"),
+            (8080, True, "HTTP alternate port as integer"),
+            (8443, True, "HTTPS alternate port as integer"),
+            # Common ports - strings
+            ("21", True, "FTP port as string"),
+            ("22", True, "SSH port as string"),
+            ("23", True, "Telnet port as string"),
+            ("25", True, "SMTP port as string"),
+            ("53", True, "DNS port as string"),
+            ("80", True, "HTTP port as string"),
+            ("110", True, "POP3 port as string"),
+            ("143", True, "IMAP port as string"),
+            ("443", True, "HTTPS port as string"),
+            ("993", True, "IMAPS port as string"),
+            ("995", True, "POP3S port as string"),
+            ("3306", True, "MySQL port as string"),
+            ("5432", True, "PostgreSQL port as string"),
+            ("6379", True, "Redis port as string"),
+            ("8080", True, "HTTP alternate port as string"),
+            ("8443", True, "HTTPS alternate port as string"),
+        ],
+    )
+    def test_validate_port_edge_cases(self, port, expected, description):
+        """Test validate_port with boundary values and common ports."""
+        result = validate_port(port)
+        assert result is expected, f"Failed for {description}: validate_port({port!r}) returned {result}, expected {expected}"
+
+    @pytest.mark.parametrize(
+        "port_string,expected,description",
+        [
+            # Leading zeros - should work
+            ("08", True, "Leading zero string should convert to valid port 8"),
+            ("080", True, "Leading zero string should convert to valid port 80"),
+            ("0443", True, "Leading zero string should convert to valid port 443"),
+            # Python notation strings - should be invalid
+            ("80L", False, "Old Python long notation should be invalid"),
+            ("80l", False, "Lowercase long notation should be invalid"),
+            ("0x50", False, "Hexadecimal notation should be invalid"),
+            ("0o100", False, "Octal notation should be invalid"),
+            ("0b1010000", False, "Binary notation should be invalid"),
+            ("8.0e1", False, "Scientific notation should be invalid"),
+            ("1e2", False, "Scientific notation (1e2) should be invalid"),
+            ("2E3", False, "Scientific notation (2E3) should be invalid"),
+            # Special float strings - should be invalid
+            ("inf", False, "Infinity string should be invalid"),
+            ("infinity", False, "Infinity string should be invalid"),
+            ("-inf", False, "Negative infinity string should be invalid"),
+            ("nan", False, "NaN string should be invalid"),
+            ("NaN", False, "NaN string (uppercase) should be invalid"),
+            # Complex number strings - should be invalid
+            ("80+0j", False, "Complex number string should be invalid"),
+            ("80j", False, "Imaginary number string should be invalid"),
+            # Fraction strings - should be invalid
+            ("1/2", False, "Fraction string should be invalid"),
+            ("80/1", False, "Fraction string should be invalid"),
+            # Unicode and special characters - Unicode digits work with int()
+            ("８０", True, "Unicode digits should be valid (Python int() accepts them)"),
+            ("80°", False, "String with degree symbol should be invalid"),
+            ("80°C", False, "String with temperature should be invalid"),
+            ("80%", False, "String with percent should be invalid"),
+            ("$80", False, "String with dollar sign should be invalid"),
+            ("80€", False, "String with euro symbol should be invalid"),
+            # Edge case valid strings with unusual formatting
+            ("+80", True, "Positive sign should be valid"),
+            ("00080", True, "Multiple leading zeros should be valid"),
+            # Additional invalid formats
+            ("80.0.0", False, "Multiple decimal points should be invalid"),
+            ("80..0", False, "Double decimal point should be invalid"),
+            ("80,000", False, "Comma separator should be invalid"),
+            ("80_000", False, "Underscore separator should be invalid"),
+            ("80 000", False, "Space separator should be invalid"),
+        ],
+    )
+    def test_validate_port_string_edge_cases(self, port_string, expected, description):
+        """Test validate_port with string edge cases that could cause int() conversion issues."""
+        result = validate_port(port_string)
+        assert result is expected, f"Failed for {description}: validate_port({port_string!r}) returned {result}, expected {expected}"

@@ -3,6 +3,7 @@ import binascii
 import re
 import secrets
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse, urlunsplit
 
 from cryptography.exceptions import InvalidSignature
@@ -202,6 +203,54 @@ def validate_domain_name(domain: str) -> bool:
 
     # Validate TLD (last label)
     return _is_valid_tld(labels[-1])
+
+
+def validate_port(port: Any) -> bool:
+    """
+    Validate a network port number.
+
+    Accepts port numbers as integers or strings and validates they are within
+    the valid TCP/UDP port range (1-65535).
+
+    Args:
+        port: Port number as int, str, or other type
+
+    Returns:
+        bool: True if the port is valid, False otherwise
+
+    Examples:
+        validate_port(80)        # True
+        validate_port("443")     # True
+        validate_port("0")       # False (port 0 is reserved)
+        validate_port("65536")   # False (above valid range)
+        validate_port(None)      # False (invalid type)
+        validate_port("abc")     # False (non-numeric string)
+    """
+    # Handle None and non-string/non-integer types
+    if port is None:
+        return False
+
+    # Explicitly reject boolean types (even though they're technically integers in Python)
+    if isinstance(port, bool):
+        return False
+
+    # Convert to integer if it's a string
+    if isinstance(port, str):
+        # Reject strings with leading/trailing whitespace for stricter validation
+        if port != port.strip():
+            return False
+        try:
+            port_int = int(port)
+        except ValueError:
+            return False
+    elif isinstance(port, int):
+        port_int = port
+    else:
+        # Reject other types (float, list, dict, etc.)
+        return False
+
+    # Validate port range (1-65535)
+    return 1 <= port_int <= 65535
 
 
 def to_python_boolean(value, allow_none=False):
