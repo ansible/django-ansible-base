@@ -58,6 +58,11 @@ def test_saml_auth_successful(authenticate, unauthenticated_api_client, saml_aut
             {"IDP_ATTR_USERNAME": "This field is required.", "IDP_ATTR_USER_PERMANENT_ID": "This field is required."},
             id="missing IDP_ATTR_USERNAME and IDP_ATTR_USER_PERMANENT_ID",
         ),
+        pytest.param(
+            {"SECURITY_CONFIG": {"invalidKey1": "value1", "invalidKey2": "value2"}},
+            {"SECURITY_CONFIG": "Invalid keys: invalidKey1, invalidKey2"},
+            id="invalid security config keys",
+        ),
     ],
 )
 def test_saml_create_authenticator_error_handling(
