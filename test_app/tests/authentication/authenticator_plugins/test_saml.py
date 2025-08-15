@@ -379,6 +379,22 @@ def test_extra_data(mockedsuper):
                 'member': ['group-1', 'group-2'],
             },
         ),
+        (
+            {
+                'attr_username': 'username',
+                'attr_last_name': 'last_name',
+                'attr_first_name': 'first_name',
+                'attr_user_permanent_id': 'name_id',
+                'attr_groups': 'nonexistent_group_attr',  # Configure a group attribute that won't be in response
+            },
+            {
+                'last_name': ['Admin'],
+                'username': ['gateway_admin'],
+                'first_name': ['Gateway'],
+                'name_id': 'gateway_admin',
+                # No group data should be present - will hit the "Unable to get any group claims" branch
+            },
+        ),
     ],
 )
 def test_extra_data_default_attrs(idp_fields, expected_results):
@@ -412,6 +428,51 @@ def test_extra_data_default_attrs(idp_fields, expected_results):
     with mock.patch('social_core.backends.saml.SAMLAuth.extra_data', return_value={}):
         results = ap.extra_data(None, 'IdP:gateway_admin', response, **{'social': au})
         assert results == expected_results
+
+
+def test_extra_data_no_group_claims_logging(caplog):
+    """Test that the 'Unable to get any group claims' logging is triggered when no group attributes are found."""
+    import logging
+
+    from ansible_base.authentication.authenticator_plugins.saml import idp_string
+    from ansible_base.authentication.models import AuthenticatorUser
+
+    ap = AuthenticatorPlugin()
+    database_instance = SimpleNamespace()
+    enabled_idps = {
+        'ENABLED_IDPS': {
+            idp_string: {
+                'attr_username': 'username',
+                'attr_user_permanent_id': 'name_id',
+                'attr_groups': 'missing_group_attr',  # This attribute won't be in the response
+            },
+        }
+    }
+    database_instance.configuration = enabled_idps
+    ap.database_instance = database_instance
+
+    response = {
+        'idp_name': 'IdP',
+        'attributes': {
+            'username': ['gateway_admin'],
+            'name_id': 'gateway_admin',
+            # Note: No 'missing_group_attr' and no default 'Group' attribute
+        },
+    }
+
+    au = AuthenticatorUser()
+
+    # Set logging level to DEBUG to capture the debug message
+    with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.authenticator_plugins.saml'):
+        with mock.patch('social_core.backends.saml.SAMLAuth.extra_data', return_value={}):
+            results = ap.extra_data(None, 'IdP:gateway_admin', response, **{'social': au})
+
+    # Verify the log message was captured
+    assert "Unable to get any group claims from the SAML response" in caplog.text
+
+    # Verify no group data in results
+    assert 'missing_group_attr' not in results
+    assert 'Group' not in results
 
 
 def test_saml_create_via_api_without_callback_url(admin_api_client, saml_configuration):
