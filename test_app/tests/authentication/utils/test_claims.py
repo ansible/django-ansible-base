@@ -2075,3 +2075,142 @@ def test_expansion_in_claims(
     res = claims.create_claims(authenticator, "username", attributes, [])
 
     assert res["claims"] == expected_value
+
+
+# Unit tests for refactored helper functions
+class TestClaimsHelperFunctions:
+    """Test cases for the refactored helper functions in claims processing"""
+
+    @pytest.mark.parametrize(
+        "input_value, expected",
+        [
+            ("TestString", "teststring"),
+            (["Test", "STRING", 123, None], ["test", "string", "123", "none"]),
+            (123, 123),
+            (None, None),
+            ({"key": "value"}, {"key": "value"}),
+        ]
+    )
+    def test_lowercase_value(self, input_value, expected):
+        """Test _lowercase_value with various input types"""
+        result = claims._lowercase_value(input_value)
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "input_dict, expected",
+        [
+            ({}, {}),
+            (
+                {"equals": "TestValue", "in": ["Value1", "Value2"], "contains": "SUBSTRING", "numeric": 123},
+                {"equals": "testvalue", "in": ["value1", "value2"], "contains": "substring", "numeric": 123}
+            ),
+        ]
+    )
+    def test_lowercase_dict(self, input_dict, expected):
+        """Test _lowercase_dict with various dictionary inputs"""
+        result = claims._lowercase_dict(input_dict)
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "trigger_condition, expected",
+        [
+            (
+                {"USERNAME": "TestUser", "Email": "TEST@EXAMPLE.COM"},
+                {"username": "testuser", "email": "test@example.com"}
+            ),
+            (
+                {"USERNAME": {"equals": "TestUser"}, "Department": {"in": ["Engineering", "Sales"]}, "Role": {}},
+                {"username": {"equals": "testuser"}, "department": {"in": ["engineering", "sales"]}, "role": {}}
+            ),
+            (
+                {"SimpleAttr": "Value", "ComplexAttr": {"contains": "SUBSTRING"}, "NumericAttr": 123, "join_condition": "and"},
+                {"simpleattr": "value", "complexattr": {"contains": "substring"}, "numericattr": 123, "join_condition": "and"}
+            ),
+        ]
+    )
+    def test_lowercase_attr_triggers(self, trigger_condition, expected):
+        """Test _lowercase_attr_triggers with various trigger condition types"""
+        result = claims._lowercase_attr_triggers(trigger_condition)
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "join_condition, expected",
+        [
+            ("or", "or"),
+            ("and", "and"),
+            ("invalid", "or"),
+            ("OR", "or"),  # Should be invalid and default to 'or'
+            ("", "or"),
+            (None, "or"),
+        ],
+    )
+    def test_validate_join_condition(self, join_condition, expected, caplog):
+        """Test _validate_join_condition with various inputs"""
+        result = claims._validate_join_condition(join_condition, 1, "test-id")
+        assert result == expected
+
+        if join_condition not in ["or", "and"]:
+            assert "invalid and will be set to 'or'" in caplog.text
+
+    @pytest.mark.parametrize(
+        "condition, expected_result, expected_log_contains",
+        [
+            ({"equals": "value", "contains": "substring"}, True, None),
+            ({"equals": "value", "invalid_op": "test"}, True, "invalid_op"),
+            ({"in": "should_be_list"}, False, "must use an array"),
+            ({"in": ["value1", "value2"]}, True, None),
+        ]
+    )
+    def test_validate_attribute_conditions(self, condition, expected_result, expected_log_contains, caplog):
+        """Test _validate_attribute_conditions with various condition types"""
+        result = claims._validate_attribute_conditions("test_attr", condition, 1, "test-id")
+        assert result is expected_result
+
+        if expected_log_contains:
+            assert expected_log_contains in caplog.text
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize(
+        "case_insensitive_enabled, trigger_condition, attributes, expected_trigger, expected_attrs",
+        [
+            (
+                False,
+                {"USERNAME": {"equals": "TestUser"}},
+                {"USERNAME": "TestUser"},
+                {"USERNAME": {"equals": "TestUser"}},  # No change when disabled
+                {"USERNAME": "TestUser"}  # No change when disabled
+            ),
+            (
+                True,
+                {"USERNAME": {"equals": "TestUser"}},
+                {"USERNAME": "TestUser"},
+                {"username": {"equals": "testuser"}},  # Lowercased when enabled
+                {"username": "TestUser"}  # Keys lowercased, values unchanged
+            ),
+        ]
+    )
+    def test_prepare_case_insensitive_data(self, case_insensitive_enabled, trigger_condition, attributes, expected_trigger, expected_attrs, settings_override_mutable):
+        """Test _prepare_case_insensitive_data with case insensitivity enabled/disabled"""
+        with settings_override_mutable("FLAGS"):
+            settings.FLAGS["FEATURE_CASE_INSENSITIVE_AUTH_MAPS"][0]["value"] = case_insensitive_enabled
+
+            result_trigger, result_attrs = claims._prepare_case_insensitive_data(trigger_condition, attributes, 1, "test-id")
+
+            assert result_trigger == expected_trigger
+            assert result_attrs == expected_attrs
+
+    @pytest.mark.parametrize(
+        "user_value, expected",
+        [
+            ("string_value", ["string_value"]),
+            (["already", "a", "list"], ["already", "a", "list"]),
+            (123, [123]),
+            (None, [None]),
+            ({"key": "value"}, [{"key": "value"}]),
+        ],
+    )
+    def test_normalize_user_value(self, user_value, expected):
+        """Test _normalize_user_value with various input types"""
+        result = claims._normalize_user_value(user_value)
+        assert result == expected
+        assert isinstance(result, list)
