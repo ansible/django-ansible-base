@@ -49,7 +49,6 @@ class AzureADConfiguration(BaseAuthenticatorConfiguration):
         help_text=_("The name of the field from the assertion to use as the username. If not set will default to name"),
         required=False,
         allow_null=True,
-        default=None,
         ui_field_label=_("Field to use as username"),
     )
 

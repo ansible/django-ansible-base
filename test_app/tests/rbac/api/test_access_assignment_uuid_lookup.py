@@ -123,9 +123,23 @@ class TestAccessListRelatedLinksWithAnsibleID:
         # The details URL should use ansible_id instead of primary key
         expected_ansible_id = str(user.resource.ansible_id)
         assert expected_ansible_id in user_data['related']['details']
+
         # Check that the URL ends with the ansible_id, not the primary key
         assert user_data['related']['details'].endswith(f'{expected_ansible_id}/')
-        assert not user_data['related']['details'].endswith(f'{user.pk}/')
+
+        # More robust check: ensure the URL contains the full UUID, not just ends with PK digits
+        # This handles the edge case where UUID might end with the same digits as the PK
+        details_url = user_data['related']['details']
+
+        # Extract the last path segment (should be the ansible_id)
+        url_parts = details_url.rstrip('/').split('/')
+        last_segment = url_parts[-1]
+
+        # The last segment should be the full UUID, not just the PK
+        assert last_segment == expected_ansible_id, f"Expected UUID {expected_ansible_id}, but URL ends with {last_segment}"
+
+        # Additional check: ensure it's not just the primary key
+        assert last_segment != str(user.pk), f"URL incorrectly uses primary key {user.pk} instead of ansible_id"
 
     def test_team_access_list_related_links_use_ansible_id(self, admin_api_client, inventory, inv_rd, organization):
         """Test that team access list provides related links with ansible_id"""
@@ -150,9 +164,75 @@ class TestAccessListRelatedLinksWithAnsibleID:
         # The details URL should use ansible_id instead of primary key
         expected_ansible_id = str(team.resource.ansible_id)
         assert expected_ansible_id in team_data['related']['details']
+
         # Check that the URL ends with the ansible_id, not the primary key
         assert team_data['related']['details'].endswith(f'{expected_ansible_id}/')
-        assert not team_data['related']['details'].endswith(f'/{team.pk}/')
+
+        # More robust check: ensure the URL contains the full UUID, not just ends with PK digits
+        # This handles the edge case where UUID might end with the same digits as the PK
+        details_url = team_data['related']['details']
+
+        # Extract the last path segment (should be the ansible_id)
+        url_parts = details_url.rstrip('/').split('/')
+        last_segment = url_parts[-1]
+
+        # The last segment should be the full UUID, not just the PK
+        assert last_segment == expected_ansible_id, f"Expected UUID {expected_ansible_id}, but URL ends with {last_segment}"
+
+        # Additional check: ensure it's not just the primary key
+        assert last_segment != str(team.pk), f"URL incorrectly uses primary key {team.pk} instead of ansible_id"
+
+    def test_user_access_list_uuid_ending_with_pk_digits(self, admin_api_client, inventory, inv_rd):
+        """Test edge case where UUID happens to end with the same digits as the user's PK"""
+        # Create multiple users to increase the chance of getting a higher PK
+        for i in range(10):
+            User.objects.create(username=f'dummy-user-{i}')
+
+        user = User.objects.create(username='test-user-edge-case')
+        inv_rd.give_permission(user, inventory)
+
+        # Get the user's UUID and PK
+        expected_ansible_id = str(user.resource.ansible_id)
+        user_pk = str(user.pk)
+
+        # This test specifically validates the scenario mentioned in the bug report
+        # Even if UUID ends with PK digits, the test should correctly identify the full UUID
+
+        url = get_relative_url('role-user-access', kwargs={'pk': inventory.pk, 'model_name': 'aap.inventory'})
+        response = admin_api_client.get(url)
+        assert response.status_code == 200
+
+        # Find our test user in the results
+        user_data = None
+        for user_detail in response.data['results']:
+            if user_detail['username'] == 'test-user-edge-case':
+                user_data = user_detail
+                break
+
+        assert user_data is not None
+        assert 'related' in user_data
+        assert 'details' in user_data['related']
+
+        details_url = user_data['related']['details']
+
+        # Extract the last path segment (should be the ansible_id)
+        url_parts = details_url.rstrip('/').split('/')
+        last_segment = url_parts[-1]
+
+        # The critical test: last segment should be the full UUID, not just the PK
+        # This should pass even if the UUID ends with the same digits as the PK
+        assert last_segment == expected_ansible_id, (
+            f"URL should end with full UUID {expected_ansible_id}, not PK {user_pk}. " f"Actual last segment: {last_segment}. Full URL: {details_url}"
+        )
+
+        # Ensure the full UUID is present in the URL
+        assert expected_ansible_id in details_url
+
+        # Additional validation: if UUID ends with PK digits, ensure we're still using the full UUID
+        if expected_ansible_id.endswith(user_pk):
+            # This is the problematic case that was failing
+            # The URL should still contain the full UUID, not just end with PK
+            assert len(last_segment) > len(user_pk), f"UUID {expected_ansible_id} ends with PK {user_pk}, but URL should use full UUID, not just PK"
 
     def test_user_access_list_fallback_to_pk_when_no_resource(self, admin_api_client, inventory, inv_rd):
         """Test fallback to primary key when user has no resource (edge case)"""

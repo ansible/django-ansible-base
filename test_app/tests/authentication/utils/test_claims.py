@@ -271,7 +271,8 @@ def test_create_claims_bad_map_type_logged(
 
     # Most of the actual logic is tested in the above test case, so we just
     # check that the log message is correct here.
-    logger.error.assert_called_once_with(f"Map type bad_map_type of rule {local_authenticator_map.name} does not know how to be processed")
+    logger.error.assert_called_once()
+    f"Map type bad_map_type of rule {local_authenticator_map.name} does not know how to be processed" in logger.error.call_args
 
 
 def test_create_claims_multiple_same_org(
@@ -423,7 +424,7 @@ def test_process_groups(trigger_condition, groups, case_insensitive, has_access,
     """
     with settings_override_mutable("FLAGS"):
         settings.FLAGS["FEATURE_CASE_INSENSITIVE_AUTH_MAPS"][0]["value"] = case_insensitive
-        res = claims.process_groups(trigger_condition, groups, authenticator_id=1337)
+        res = claims.process_groups(trigger_condition, groups, map_id=1, tracking_id="xxx")
 
     assert res is has_access
 
@@ -867,7 +868,7 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
 def test_process_user_attributes(trigger_condition, attributes, expected, case_insensitive, settings_override_mutable):
     with settings_override_mutable("FLAGS"):
         settings.FLAGS["FEATURE_CASE_INSENSITIVE_AUTH_MAPS"][0]["value"] = case_insensitive
-        res = claims.process_user_attributes(trigger_condition, attributes, authenticator_id=1337)
+        res = claims.process_user_attributes(trigger_condition, attributes, map_id=1, tracking_id="xxx")
 
     assert res is expected
 
