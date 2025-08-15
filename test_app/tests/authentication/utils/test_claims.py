@@ -2089,7 +2089,7 @@ class TestClaimsHelperFunctions:
             (123, 123),
             (None, None),
             ({"key": "value"}, {"key": "value"}),
-        ]
+        ],
     )
     def test_lowercase_value(self, input_value, expected):
         """Test _lowercase_value with various input types"""
@@ -2102,9 +2102,9 @@ class TestClaimsHelperFunctions:
             ({}, {}),
             (
                 {"equals": "TestValue", "in": ["Value1", "Value2"], "contains": "SUBSTRING", "numeric": 123},
-                {"equals": "testvalue", "in": ["value1", "value2"], "contains": "substring", "numeric": 123}
+                {"equals": "testvalue", "in": ["value1", "value2"], "contains": "substring", "numeric": 123},
             ),
-        ]
+        ],
     )
     def test_lowercase_dict(self, input_dict, expected):
         """Test _lowercase_dict with various dictionary inputs"""
@@ -2114,19 +2114,16 @@ class TestClaimsHelperFunctions:
     @pytest.mark.parametrize(
         "trigger_condition, expected",
         [
-            (
-                {"USERNAME": "TestUser", "Email": "TEST@EXAMPLE.COM"},
-                {"username": "testuser", "email": "test@example.com"}
-            ),
+            ({"USERNAME": "TestUser", "Email": "TEST@EXAMPLE.COM"}, {"username": "testuser", "email": "test@example.com"}),
             (
                 {"USERNAME": {"equals": "TestUser"}, "Department": {"in": ["Engineering", "Sales"]}, "Role": {}},
-                {"username": {"equals": "testuser"}, "department": {"in": ["engineering", "sales"]}, "role": {}}
+                {"username": {"equals": "testuser"}, "department": {"in": ["engineering", "sales"]}, "role": {}},
             ),
             (
                 {"SimpleAttr": "Value", "ComplexAttr": {"contains": "SUBSTRING"}, "NumericAttr": 123, "join_condition": "and"},
-                {"simpleattr": "value", "complexattr": {"contains": "substring"}, "numericattr": 123, "join_condition": "and"}
+                {"simpleattr": "value", "complexattr": {"contains": "substring"}, "numericattr": 123, "join_condition": "and"},
             ),
-        ]
+        ],
     )
     def test_lowercase_attr_triggers(self, trigger_condition, expected):
         """Test _lowercase_attr_triggers with various trigger condition types"""
@@ -2159,7 +2156,7 @@ class TestClaimsHelperFunctions:
             ({"equals": "value", "invalid_op": "test"}, True, "invalid_op"),
             ({"in": "should_be_list"}, False, "must use an array"),
             ({"in": ["value1", "value2"]}, True, None),
-        ]
+        ],
     )
     def test_validate_attribute_conditions(self, condition, expected_result, expected_log_contains, caplog):
         """Test _validate_attribute_conditions with various condition types"""
@@ -2178,18 +2175,20 @@ class TestClaimsHelperFunctions:
                 {"USERNAME": {"equals": "TestUser"}},
                 {"USERNAME": "TestUser"},
                 {"USERNAME": {"equals": "TestUser"}},  # No change when disabled
-                {"USERNAME": "TestUser"}  # No change when disabled
+                {"USERNAME": "TestUser"},  # No change when disabled
             ),
             (
                 True,
                 {"USERNAME": {"equals": "TestUser"}},
                 {"USERNAME": "TestUser"},
                 {"username": {"equals": "testuser"}},  # Lowercased when enabled
-                {"username": "TestUser"}  # Keys lowercased, values unchanged
+                {"username": "TestUser"},  # Keys lowercased, values unchanged
             ),
-        ]
+        ],
     )
-    def test_prepare_case_insensitive_data(self, case_insensitive_enabled, trigger_condition, attributes, expected_trigger, expected_attrs, settings_override_mutable):
+    def test_prepare_case_insensitive_data(
+        self, case_insensitive_enabled, trigger_condition, attributes, expected_trigger, expected_attrs, settings_override_mutable
+    ):
         """Test _prepare_case_insensitive_data with case insensitivity enabled/disabled"""
         with settings_override_mutable("FLAGS"):
             settings.FLAGS["FEATURE_CASE_INSENSITIVE_AUTH_MAPS"][0]["value"] = case_insensitive_enabled
