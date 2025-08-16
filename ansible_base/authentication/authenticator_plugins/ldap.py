@@ -1,6 +1,5 @@
 import inspect
 import logging
-import re
 from collections import OrderedDict
 from typing import Any
 
@@ -248,11 +247,6 @@ def validate_ldap_filter(value: Any, with_user: bool = False) -> None:
 
         dn_value = value.replace(user_search_string, 'USER')
 
-    # Check if this is an and/or filter with multiple subfilters
-    if re.match(r'^\([&|!]\(.*?\)\)$', dn_value):
-        for sub_filter in dn_value[3:-2].split(')('):
-            # We only need to check with_user at the top of the recursion stack
-            validate_ldap_filter(f'({sub_filter})', with_user=False)
     try:
         Filter.parse(dn_value)
     except ParseError:
