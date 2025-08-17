@@ -294,9 +294,21 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAML
             if perm in attrs:
                 kwargs["social"].extra_data[perm] = attrs[perm]
 
-        # Move group spec up a level if present
-        if "Group" in attrs:
-            response["Group"] = attrs["Group"]
+        # Get configured group attribute, if present
+        configuration = getattr(self.database_instance, 'configuration', {})
+        idp_groups_attribute_name = self.configuration_class.settings_to_enabled_idps_fields.get('IDP_GROUPS', None)
+        configured_groups_attribute = configuration.get('ENABLED_IDPS', {}).get(idp_string, {}).get(idp_groups_attribute_name, None)
+
+        if configured_groups_attribute in attrs:
+            logger.debug(f"Setting {self.groups_claim} from attribute: {configured_groups_attribute}")
+            response[self.groups_claim] = attrs[configured_groups_attribute]
+        # Else try getting the "Group" attribute, if present
+        elif self.groups_claim in attrs:
+            logger.debug(f"Setting {self.groups_claim} from attribute: {self.groups_claim}")
+            response[self.groups_claim] = attrs[self.groups_claim]
+        else:
+            logger.debug("Unable to get any group claims from the SAML response")
+
         data = super().extra_data(user, backend, response, *args, **kwargs)
 
         # Ideally we would always have a DB instance
