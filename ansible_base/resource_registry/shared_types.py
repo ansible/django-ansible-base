@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from rest_framework.exceptions import ValidationError
 
 from ansible_base.rbac.models import DABContentType, DABPermission
 from ansible_base.resource_registry.utils.resource_type_serializers import AnsibleResourceForeignKeyField, SharedResourceTypeSerializer
@@ -104,3 +105,15 @@ class RoleDefinitionType(SharedResourceTypeSerializer):
         default=None,
     )
     permissions = LenientPermissionSlugListField()
+
+    def is_valid(self, raise_exception=False):
+        try:
+            return super().is_valid(raise_exception=raise_exception)
+        except ValidationError as e:
+            if hasattr(e, 'detail') and 'content_type' in e.detail:
+                fd_detail = e.detail['content_type'][0]
+                if fd_detail.code == "does_not_exist":
+                    from ansible_base.resource_registry.tasks.sync import SkipResource
+
+                    raise SkipResource(*e.args)
+            raise

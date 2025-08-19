@@ -37,6 +37,13 @@ class ResourceSyncHTTPError(HTTPError):
     """Custom catchall error"""
 
 
+class SkipResource(ValidationError):
+    """To raise by serializers if the item should be skipped"""
+
+    default_detail = "The specified content_type slug was not found."
+    default_code = "content_type_does_not_exist"
+
+
 class SyncStatus(str, Enum):
     CREATED = "created"
     UPDATED = "updated"
@@ -645,6 +652,8 @@ def _attempt_create_resource(
             ansible_id=manifest_item.ansible_id,
             service_id=resource_service_id,
         )
+    except SkipResource:
+        return SyncResult(SyncStatus.NOOP, manifest_item)
     except IntegrityError:
         # This typically means that there was a duplicate key error. To mitigate this
         # we will attempt to hanlde the conflicting resource and perform the operation
