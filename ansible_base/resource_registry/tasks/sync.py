@@ -219,7 +219,7 @@ def get_local_assignments() -> set[AssignmentTuple]:
         try:
             user_resource = Resource.get_resource_for_object(assignment.user)
         except Resource.DoesNotExist:
-        # Skip assignments where the user doesn't have a resource
+            # Skip assignments where the user doesn't have a resource
             continue
 
         user_ansible_id = user_resource.ansible_id
@@ -242,7 +242,7 @@ def get_local_assignments() -> set[AssignmentTuple]:
         try:
             team_resource = Resource.get_resource_for_object(assignment.team)
         except Resource.DoesNotExist:
-        # Skip assignments where the user doesn't have a resource
+            # Skip assignments where the user doesn't have a resource
             continue
         team_ansible_id = team_resource.ansible_id
 

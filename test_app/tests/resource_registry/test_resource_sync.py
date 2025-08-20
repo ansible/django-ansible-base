@@ -276,9 +276,9 @@ def test_role_assignment_resource_sync(mock_delete, mock_create, static_api_clie
         executor._sync_assignments()
 
         assert '>>> Syncing role assignments' in stdout.lines
-        assert executor.results["assignments_created"] == 1
-        assert executor.results["assignments_deleted"] == 0
-        assert executor.results["assignment_errors"] == 0
+        assert executor.results["assignments_created"] == [1]
+        assert executor.results["assignments_deleted"] == [0]
+        assert executor.results["assignment_errors"] == [0]
 
     # Mock a local assignment with no matching remote assignment to test deletion
     with mock.patch(
@@ -293,6 +293,6 @@ def test_role_assignment_resource_sync(mock_delete, mock_create, static_api_clie
         executor._sync_assignments()
 
         assert '>>> Syncing role assignments' in stdout.lines
-        assert executor.results["assignments_created"] == 0
-        assert executor.results["assignments_deleted"] == 1
-        assert executor.results["assignment_errors"] == 0
+        assert executor.results["assignments_created"] == [0]
+        assert executor.results["assignments_deleted"] == [1]
+        assert executor.results["assignment_errors"] == [0]
