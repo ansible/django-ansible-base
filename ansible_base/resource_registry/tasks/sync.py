@@ -83,14 +83,14 @@ class AssignmentTuple:
     assignment_type: str  # 'user' or 'team'
 
     def __hash__(self):
-        return hash((self.actor_ansible_id, self.object_id, self.role_definition_name, self.assignment_type))
+        return hash((self.actor_ansible_id, self.ansible_id_or_pk, self.role_definition_name, self.assignment_type))
 
     def __eq__(self, other):
         if not isinstance(other, AssignmentTuple):
             return False
         return (
             self.actor_ansible_id == other.actor_ansible_id
-            and self.object_id == other.object_id
+            and self.ansible_id_or_pk == other.ansible_id_or_pk
             and self.role_definition_name == other.role_definition_name
             and self.assignment_type == other.assignment_type
         )
@@ -271,14 +271,6 @@ def delete_local_assignment(assignment_tuple: AssignmentTuple) -> bool:
             else:
                 model = role_definition.content_type.model_class()
                 content_object = model.objects.get(pk=assignment_tuple.ansible_id_or_pk)
-
-            if assignment_tuple.assignment_type == 'user':
-                assignment = RoleUserAssignment.objects.filter(user=actor, role_definition=role_definition, object_id=assignment_tuple.ansible_id_or_pk).first()
-            else:
-                assignment = RoleTeamAssignment.objects.filter(team=actor, role_definition=role_definition, object_id=assignment_tuple.ansible_id_or_pk).first()
-
-            if assignment:
-                assignment.delete()
 
         # Use the role definition's remove methods
         if content_object:
