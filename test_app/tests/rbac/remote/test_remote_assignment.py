@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from ansible_base.rbac.models import DABContentType, DABPermission, RoleDefinition, RoleUserAssignment
@@ -34,18 +36,23 @@ def test_give_remote_permission(rando, foo_type, foo_permission, foo_rd):
 
 
 @pytest.mark.django_db
-def test_prefetch_related_objects(foo_type, foo_rd, inv_rd, inventory):
+def test_prefetch_related_objects(django_assert_num_queries, foo_type, foo_type_uuid, foo_rd, foo_rd_uuid, inv_rd, inventory):
     users = [User.objects.create(username=f'user{i}') for i in range(10)]
 
     a_foo = RemoteObject(content_type=foo_type, object_id=42)
+    a_foo_uuid = RemoteObject(content_type=foo_type_uuid, object_id=str(uuid.uuid4()))
     for u in users:
         foo_rd.give_permission(u, a_foo)
+        foo_rd_uuid.give_permission(u, a_foo_uuid)
         inv_rd.give_permission(u, inventory)
 
-    assert RoleUserAssignment.objects.count() == 20
-    assert {assignment.content_object for assignment in RoleUserAssignment.objects.all()} == {a_foo, inventory}
-    assert {assignment.content_object for assignment in RoleUserAssignment.objects.all()} == {a_foo, inventory}
-    assert {assignment.content_object for assignment in RoleUserAssignment.objects.prefetch_related('content_object')} == {a_foo, inventory}
+    assert RoleUserAssignment.objects.count() == 10 * 3
+    for _ in range(2):
+        with django_assert_num_queries(11):
+            assert {assignment.content_object for assignment in RoleUserAssignment.objects.all()} == {a_foo, inventory, a_foo_uuid}
+    for _ in range(2):
+        with django_assert_num_queries(2):
+            assert {assignment.content_object for assignment in RoleUserAssignment.objects.prefetch_related('content_object')} == {a_foo, inventory, a_foo_uuid}
 
 
 @pytest.mark.django_db

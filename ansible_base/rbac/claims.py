@@ -1,16 +1,23 @@
 import hashlib
 import json
+import logging
 from collections import defaultdict
-from typing import Union
+from typing import Optional, Tuple, Union
 
 from django.apps import apps
 from django.conf import settings
 from django.db.models import F, Model, OuterRef, QuerySet
+from django.db.utils import IntegrityError
 
 from ansible_base.lib.utils.auth import get_team_model
 
 from .models.content_type import DABContentType
-from .models.role import RoleDefinition
+from .models.role import RoleDefinition, RoleUserAssignment
+
+logger = logging.getLogger(__name__)
+
+
+# ---- for claims serialization ----
 
 
 def get_user_object_roles(user: Model) -> QuerySet:
@@ -231,6 +238,136 @@ def get_user_claims(user: Model) -> dict[str, Union[list[str], dict[str, Union[s
 
     # Build final claims structure
     return {'objects': object_arrays, 'object_roles': object_roles, 'global_roles': global_roles}
+
+
+# ---- for claims saving ----
+
+
+def get_role_definition(name: str) -> Optional[Model]:
+    """Simply get the RoleDefinition from the database if it exists and handler corner cases
+
+    If this is the name of a managed role for which we have a corresponding definition in code,
+    and that role can not be found in the database, it may be created here
+    """
+    try:
+        return RoleDefinition.objects.get(name=name)
+    except RoleDefinition.DoesNotExist:
+
+        # Delayed import just in case of initialization problems
+        from .permission_registry import permission_registry
+
+        constructor = permission_registry.get_managed_role_constructor_by_name(name)
+        if constructor:
+            rd, _ = constructor.get_or_create(apps)
+            return rd
+    return None
+
+
+def get_or_create_resource(objects: dict, content_type: str, data: dict) -> Tuple[Optional[Model], Optional[Model]]:
+    """
+    Gets or creates a resource from a content type and its default data
+
+    This can only build or get organizations or teams
+    """
+    object_ansible_id = data['ansible_id']
+    resource_cls = apps.get_model('dab_resource_registry', 'Resource')
+    resource_type_cls = apps.get_model('dab_resource_registry', 'ResourceType')
+    try:
+        resource = resource_cls.objects.get(ansible_id=object_ansible_id)
+        logger.debug(f"Resource {object_ansible_id} already exists")
+        return resource, resource.content_object
+    except resource_cls.DoesNotExist:
+        pass
+
+    # The resource was missing so we need to create its stub
+    if content_type == 'team':
+        # For a team we first have to make sure the org is there
+        org_id = data['org']
+        organization_data = objects["organization"][org_id]
+
+        # Now that we have the org we can build a team
+        org_resource, _ = get_or_create_resource(objects, "organization", organization_data)
+
+        resource = resource_cls.create_resource(
+            resource_type_cls.objects.get(name="shared.team"),
+            {"name": data["name"], "organization": org_resource.ansible_id},
+            ansible_id=data["ansible_id"],
+        )
+
+        return resource, resource.content_object
+
+    elif content_type == 'organization':
+        resource = resource_cls.create_resource(
+            resource_type_cls.objects.get(name="shared.organization"),
+            {"name": data["name"]},
+            ansible_id=data["ansible_id"],
+        )
+
+        return resource, resource.content_object
+    else:
+        logger.error(f"build_resource_stub does not know how to build an object of type {type}")
+        return None, None
+
+
+def save_user_claims(user: Model, objects: dict, object_roles: dict, global_roles: list) -> None:
+    """
+    Apply RBAC permissions from claims data
+    """
+    role_diff = RoleUserAssignment.objects.filter(user=user, role_definition__name__in=settings.ANSIBLE_BASE_JWT_MANAGED_ROLES)
+
+    for system_role_name in global_roles:
+        logger.debug(f"Processing system role {system_role_name} for {user.username}")
+        rd = get_role_definition(system_role_name)
+        if rd:
+            if rd.name in settings.ANSIBLE_BASE_JWT_MANAGED_ROLES:
+                assignment = rd.give_global_permission(user)
+                role_diff = role_diff.exclude(pk=assignment.pk)
+                logger.info(f"Granted user {user.username} global role {system_role_name}")
+            else:
+                logger.error(f"Unable to grant {user.username} system level role {system_role_name} because it is not a JWT managed role")
+        else:
+            logger.error(f"Unable to grant {user.username} system level role {system_role_name} because it does not exist")
+            continue
+
+    for object_role_name in object_roles.keys():
+        rd = get_role_definition(object_role_name)
+        if rd is None:
+            logger.error(f"Unable to grant {user.username} object role {object_role_name} because it does not exist")
+            continue
+        elif rd.name not in settings.ANSIBLE_BASE_JWT_MANAGED_ROLES:
+            logger.error(f"Unable to grant {user.username} object role {object_role_name} because it is not a JWT managed role")
+            continue
+
+        object_type = object_roles[object_role_name]['content_type']
+        object_indexes = object_roles[object_role_name]['objects']
+
+        for index in object_indexes:
+            object_data = objects[object_type][index]
+            try:
+                resource, obj = get_or_create_resource(objects, object_type, object_data)
+            except IntegrityError as e:
+                logger.warning(
+                    f"Got integrity error ({e}) on {object_data}. Skipping {object_type} assignment. "
+                    "Please make sure the sync task is running to prevent this warning in the future."
+                )
+                continue
+
+            if resource is not None:
+                assignment = rd.give_permission(user, obj)
+                role_diff = role_diff.exclude(pk=assignment.pk)
+                logger.info(f"Granted user {user.username} role {object_role_name} to object {obj.name} with ansible_id {object_data['ansible_id']}")
+
+    # Remove all permissions not authorized by the JWT
+    for role_assignment in role_diff:
+        rd = role_assignment.role_definition
+        content_object = role_assignment.content_object
+        if content_object:
+            rd.remove_permission(user, content_object)
+        else:
+            rd.remove_global_permission(user)
+
+
+# ---- for claims hashing ----
 
 
 def get_user_claims_hashable_form(claims: dict) -> dict[str, Union[list[str], dict[str, list[str]]]]:

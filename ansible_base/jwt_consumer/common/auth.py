@@ -1,14 +1,11 @@
 import logging
 import uuid
 from datetime import datetime
-from typing import Optional, Tuple
+from typing import Optional
 
 import jwt
-from django.apps import apps
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ObjectDoesNotExist
-from django.db.models import Model
 from django.db.utils import IntegrityError
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
@@ -19,7 +16,7 @@ from ansible_base.jwt_consumer.common.exceptions import HTTP_498_INVALID_TOKEN, 
 from ansible_base.lib.logging.runtime import log_excess_runtime
 from ansible_base.lib.utils.auth import get_user_by_ansible_id
 from ansible_base.lib.utils.translations import translatableConditionally as _
-from ansible_base.rbac.claims import get_claims_hash, get_user_claims, get_user_claims_hashable_form
+from ansible_base.rbac.claims import get_claims_hash, get_user_claims, get_user_claims_hashable_form, save_user_claims
 from ansible_base.resource_registry.models import Resource, ResourceType
 from ansible_base.resource_registry.rest_client import get_resource_server_client
 from ansible_base.resource_registry.signals.handlers import no_reverse_sync
@@ -35,18 +32,6 @@ default_mapped_user_fields = [
     "email",
     "is_superuser",
 ]
-
-_permission_registry = None
-
-
-def permission_registry():
-    global _permission_registry
-
-    if not _permission_registry:
-        from ansible_base.rbac.permission_registry import permission_registry as permission_registry_singleton
-
-        _permission_registry = permission_registry_singleton
-    return _permission_registry
 
 
 class JWTCommonAuth:
@@ -241,24 +226,6 @@ class JWTCommonAuth:
             algorithms=["RS256"],
         )
 
-    def get_role_definition(self, name: str) -> Optional[Model]:
-        """Simply get the RoleDefinition from the database if it exists and handler corner cases
-
-        If this is the name of a managed role for which we have a corresponding definition in code,
-        and that role can not be found in the database, it may be created here
-        """
-        from ansible_base.rbac.models import RoleDefinition
-
-        try:
-            return RoleDefinition.objects.get(name=name)
-        except RoleDefinition.DoesNotExist:
-
-            constructor = permission_registry().get_managed_role_constructor_by_name(name)
-            if constructor:
-                rd, _ = constructor.get_or_create(apps)
-                return rd
-        return None
-
     def process_rbac_permissions(self):
         """
         Process RBAC permissions using claims hash logic
@@ -313,7 +280,7 @@ class JWTCommonAuth:
             global_roles = gateway_claims.get('global_roles', [])
 
             # Process the RBAC permissions with the gateway claims
-            self._apply_rbac_permissions(objects, object_roles, global_roles)
+            save_user_claims(self.user, objects, object_roles, global_roles)
 
             # Update cache with the new hash
             self.cache.cache_claims_hash(user_ansible_id, jwt_claims_hash)
@@ -343,108 +310,6 @@ class JWTCommonAuth:
         except Exception as e:
             logger.error(f"Error fetching claims from gateway: {e}")
             return None
-
-    def _apply_rbac_permissions(self, objects, object_roles, global_roles):
-        """
-        Apply RBAC permissions from claims data
-        """
-        from ansible_base.rbac.models import RoleUserAssignment
-
-        role_diff = RoleUserAssignment.objects.filter(user=self.user, role_definition__name__in=settings.ANSIBLE_BASE_JWT_MANAGED_ROLES)
-
-        for system_role_name in global_roles:
-            logger.debug(f"Processing system role {system_role_name} for {self.user.username}")
-            rd = self.get_role_definition(system_role_name)
-            if rd:
-                if rd.name in settings.ANSIBLE_BASE_JWT_MANAGED_ROLES:
-                    assignment = rd.give_global_permission(self.user)
-                    role_diff = role_diff.exclude(pk=assignment.pk)
-                    logger.info(f"Granted user {self.user.username} global role {system_role_name}")
-                else:
-                    logger.error(f"Unable to grant {self.user.username} system level role {system_role_name} because it is not a JWT managed role")
-            else:
-                logger.error(f"Unable to grant {self.user.username} system level role {system_role_name} because it does not exist")
-                continue
-
-        for object_role_name in object_roles.keys():
-            rd = self.get_role_definition(object_role_name)
-            if rd is None:
-                logger.error(f"Unable to grant {self.user.username} object role {object_role_name} because it does not exist")
-                continue
-            elif rd.name not in settings.ANSIBLE_BASE_JWT_MANAGED_ROLES:
-                logger.error(f"Unable to grant {self.user.username} object role {object_role_name} because it is not a JWT managed role")
-                continue
-
-            object_type = object_roles[object_role_name]['content_type']
-            object_indexes = object_roles[object_role_name]['objects']
-
-            for index in object_indexes:
-                object_data = objects[object_type][index]
-                try:
-                    resource, obj = self.get_or_create_resource(object_type, object_data)
-                except IntegrityError as e:
-                    logger.warning(
-                        f"Got integrity error ({e}) on {object_data}. Skipping {object_type} assignment. "
-                        "Please make sure the sync task is running to prevent this warning in the future."
-                    )
-                    continue
-
-                if resource is not None:
-                    assignment = rd.give_permission(self.user, obj)
-                    role_diff = role_diff.exclude(pk=assignment.pk)
-                    logger.info(f"Granted user {self.user.username} role {object_role_name} to object {obj.name} with ansible_id {object_data['ansible_id']}")
-
-        # Remove all permissions not authorized by the JWT
-        for role_assignment in role_diff:
-            rd = role_assignment.role_definition
-            content_object = role_assignment.content_object
-            if content_object:
-                rd.remove_permission(self.user, content_object)
-            else:
-                rd.remove_global_permission(self.user)
-
-    def get_or_create_resource(self, content_type: str, data: dict) -> Tuple[Optional[Resource], Optional[Model]]:
-        """
-        Gets or creates a resource from a content type and its default data
-
-        This can only build or get organizations or teams
-        """
-        object_ansible_id = data['ansible_id']
-        try:
-            resource = Resource.objects.get(ansible_id=object_ansible_id)
-            logger.debug(f"Resource {object_ansible_id} already exists")
-            return resource, resource.content_object
-        except Resource.DoesNotExist:
-            pass
-
-        # The resource was missing so we need to create its stub
-        if content_type == 'team':
-            # For a team we first have to make sure the org is there
-            org_id = data['org']
-            organization_data = self.token['objects']["organization"][org_id]
-
-            # Now that we have the org we can build a team
-            org_resource, _ = self.get_or_create_resource("organization", organization_data)
-
-            resource = Resource.create_resource(
-                ResourceType.objects.get(name="shared.team"),
-                {"name": data["name"], "organization": org_resource.ansible_id},
-                ansible_id=data["ansible_id"],
-            )
-
-            return resource, resource.content_object
-
-        elif content_type == 'organization':
-            resource = Resource.create_resource(
-                ResourceType.objects.get(name="shared.organization"),
-                {"name": data["name"]},
-                ansible_id=data["ansible_id"],
-            )
-
-            return resource, resource.content_object
-        else:
-            logger.error(f"build_resource_stub does not know how to build an object of type {type}")
-            return None, None
 
 
 class JWTAuthentication(BaseAuthentication):

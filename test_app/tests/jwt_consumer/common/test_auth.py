@@ -14,12 +14,15 @@ from ansible_base.jwt_consumer.common.auth import JWTAuthentication, JWTCommonAu
 from ansible_base.jwt_consumer.common.cert import JWTCert, JWTCertException
 from ansible_base.jwt_consumer.common.exceptions import InvalidTokenException
 from ansible_base.lib.utils.translations import translatableConditionally as _
+from ansible_base.rbac.claims import get_or_create_resource, save_user_claims
 from ansible_base.rbac.models import RoleDefinition, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.resource_registry.models import Resource
 from test_app.models import Organization, Team
 
 default_logger = 'ansible_base.jwt_consumer.common.auth.logger'
+
+claims_logger = 'ansible_base.rbac.claims.logger'
 
 
 @pytest.fixture
@@ -300,8 +303,8 @@ class TestJWTCommonAuth:
         authentication = JWTCommonAuth()
         authentication.user = admin_user
         if logs_error:
-            with expected_log(default_logger, 'error', 'Unable to grant'):
-                authentication._apply_rbac_permissions({}, {}, global_roles)
+            with expected_log(claims_logger, 'error', 'Unable to grant'):
+                save_user_claims(authentication.user, {}, {}, global_roles)
         elif logs_error is not None:
             # Make sure we have a System Auditor role
             RoleDefinition.objects.get_or_create(
@@ -311,17 +314,17 @@ class TestJWTCommonAuth:
                     'managed': True,
                 },
             )
-            with expected_log(default_logger, 'info', 'Granted user'):
-                authentication._apply_rbac_permissions({}, {}, global_roles)
+            with expected_log(claims_logger, 'info', 'Granted user'):
+                save_user_claims(authentication.user, {}, {}, global_roles)
         else:
-            authentication._apply_rbac_permissions({}, {}, global_roles)
+            save_user_claims(authentication.user, {}, {}, global_roles)
 
     def test_apply_rbac_permissions_object_roles_role_dne(self, expected_log, admin_user):
         authentication = JWTCommonAuth()
         authentication.user = admin_user
         object_roles = {'Junk': ['a']}
-        with expected_log(default_logger, 'error', 'Unable to grant'):
-            authentication._apply_rbac_permissions({}, object_roles, [])
+        with expected_log(claims_logger, 'error', 'Unable to grant'):
+            save_user_claims(authentication.user, {}, object_roles, [])
 
     @pytest.mark.parametrize(
         "object_roles,log_level,log_substring",
@@ -337,16 +340,16 @@ class TestJWTCommonAuth:
         authentication.user = admin_user
         objects = {'organization': [{'ansible_id': organization.resource.ansible_id, 'name': organization.name}]}
         if log_level:
-            with expected_log(default_logger, log_level, log_substring):
-                authentication._apply_rbac_permissions(objects, object_roles, [])
+            with expected_log(claims_logger, log_level, log_substring):
+                save_user_claims(authentication.user, objects, object_roles, [])
 
     def test_apply_rbac_permissions_org_duplicate_name_error(self, expected_log, admin_user, organization, organization_admin_role):
         authentication = JWTCommonAuth()
         authentication.user = admin_user
         objects = {'organization': [{'ansible_id': str(uuid4()), 'name': organization.name}]}
         object_roles = {"Organization Admin": {'content_type': 'organization', 'objects': [0]}}
-        with expected_log(default_logger, "warning", "Got integrity error"):
-            authentication._apply_rbac_permissions(objects, object_roles, [])
+        with expected_log(claims_logger, "warning", "Got integrity error"):
+            save_user_claims(authentication.user, objects, object_roles, [])
 
     def test_apply_rbac_permissions_removed_when_removed_from_jwt(self, admin_user, organization, organization_admin_role):
         # Make sure we have a System Auditor role
@@ -364,27 +367,25 @@ class TestJWTCommonAuth:
         object_roles = {organization_admin_role.name: {'content_type': 'organization', 'objects': [0]}}
         global_roles = ["Platform Auditor"]
 
-        authentication._apply_rbac_permissions(objects, object_roles, global_roles)
+        save_user_claims(authentication.user, objects, object_roles, global_roles)
 
         assert RoleUserAssignment.objects.filter(user=admin_user).count() == 2
 
         # Test removing all roles
-        authentication._apply_rbac_permissions({}, {}, [])
+        save_user_claims(authentication.user, {}, {}, [])
 
         assert RoleUserAssignment.objects.filter(user=admin_user).count() == 0
 
     @pytest.mark.django_db
     def test_get_or_create_resource_invalid_content_type(self):
-        authentication = JWTCommonAuth()
-        assert authentication.get_or_create_resource('junk', {'ansible_id': uuid4()}) == (None, None)
+        assert get_or_create_resource({}, 'junk', {'ansible_id': uuid4()}) == (None, None)
 
     @pytest.mark.django_db
     def test_get_or_create_resource_organization(self):
-        authentication = JWTCommonAuth()
         data = {'ansible_id': uuid4(), 'name': 'Test Organization'}
         assert not Organization.objects.filter(name=data['name']).exists()
         assert not Resource.objects.filter(ansible_id=data['ansible_id']).exists()
-        resource, obj = authentication.get_or_create_resource('organization', data)
+        resource, obj = get_or_create_resource(data, 'organization', data)
         assert resource is not None and obj is not None
         assert Organization.objects.filter(name=data['name']).exists()
         assert Resource.objects.filter(ansible_id=data['ansible_id']).exists()
@@ -411,7 +412,7 @@ class TestJWTCommonAuth:
         assert not Team.objects.filter(name=data['name']).exists()
         assert not Organization.objects.filter(name=org_name).exists()
         assert not Resource.objects.filter(ansible_id=data['ansible_id']).exists()
-        resource, obj = authentication.get_or_create_resource('team', data)
+        resource, obj = get_or_create_resource(authentication.token['objects'], 'team', data)
         assert resource is not None and obj is not None
         assert Organization.objects.filter(name=org_name).exists()
         assert Resource.objects.filter(ansible_id=data['ansible_id']).exists()
@@ -483,7 +484,7 @@ class TestJWTCommonAuth:
             mock.patch('ansible_base.jwt_consumer.common.auth.get_user_claims_hashable_form') as mock_get_hashable,
             mock.patch('ansible_base.jwt_consumer.common.auth.get_claims_hash') as mock_get_hash,
             mock.patch.object(authentication, '_fetch_jwt_claims_from_gateway') as mock_gateway,
-            mock.patch.object(authentication, '_apply_rbac_permissions') as mock_apply,
+            mock.patch('ansible_base.jwt_consumer.common.auth.save_user_claims') as mock_apply,
         ):
 
             # Setup mocks
@@ -532,7 +533,7 @@ class TestJWTCommonAuth:
 
             # Verify RBAC application behavior
             if expected_rbac_call:
-                mock_apply.assert_called_once()
+                mock_apply.assert_called_once_with(admin_user, gateway_response['objects'], gateway_response['object_roles'], gateway_response['global_roles'])
             else:
                 mock_apply.assert_not_called()
 
