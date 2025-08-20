@@ -300,6 +300,7 @@ def create_local_assignment(assignment_tuple: AssignmentTuple) -> bool:
         actor = resource.content_object
 
         # Get the object if it's not a global assignment
+        content_object = None
         if assignment_tuple.ansible_id_or_pk:
             content_object = get_content_object(role_definition, assignment_tuple)
         # Use the role definition's give methods
