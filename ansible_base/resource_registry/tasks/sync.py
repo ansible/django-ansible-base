@@ -709,9 +709,9 @@ class SyncExecutor:
             self.write(f"Assignment sync completed: Created {created_count} | Deleted {deleted_count} | Errors {error_count}")
 
             # Store results for reporting
-            self.results["assignments_created"] = created_count
-            self.results["assignments_deleted"] = deleted_count
-            self.results["assignment_errors"] = error_count
+            self.results["assignments_created"] = [created_count]
+            self.results["assignments_deleted"] = [deleted_count]
+            self.results["assignment_errors"] = [error_count]
 
         except Exception as e:
             self.write(f"Assignment sync failed: {e}")
