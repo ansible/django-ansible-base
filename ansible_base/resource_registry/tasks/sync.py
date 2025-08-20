@@ -78,7 +78,7 @@ class AssignmentTuple:
     """Represents an assignment as a 3-tuple for comparison"""
 
     actor_ansible_id: str  # user_ansible_id or team_ansible_id
-    object_id: str | None  # object_id or object_ansible_id (None for global)
+    ansible_id_or_pk: str | None  # object_id or object_ansible_id (None for global)
     role_definition_name: str
     assignment_type: str  # 'user' or 'team'
 
@@ -148,11 +148,11 @@ def get_remote_assignments(api_client: ResourceAPIClient) -> set[AssignmentTuple
             user_data = user_resp.json()
             for assignment in user_data.get('results', []):
                 # Handle both object_id and object_ansible_id
-                object_id = assignment.get('object_id') or assignment.get('object_ansible_id')
+                object_id = assignment.get('object_ansible_id') or assignment.get('object_id')
                 assignments.add(
                     AssignmentTuple(
                         actor_ansible_id=assignment['user_ansible_id'],
-                        object_id=object_id,
+                        ansible_id_or_pk=object_id,
                         role_definition_name=assignment['role_definition'],
                         assignment_type='user',
                     )
@@ -167,11 +167,11 @@ def get_remote_assignments(api_client: ResourceAPIClient) -> set[AssignmentTuple
             team_data = team_resp.json()
             for assignment in team_data.get('results', []):
                 # Handle both object_id and object_ansible_id
-                object_id = assignment.get('object_id') or assignment.get('object_ansible_id')
+                object_id = assignment.get('object_ansible_id') or assignment.get('object_id')
                 assignments.add(
                     AssignmentTuple(
                         actor_ansible_id=assignment['team_ansible_id'],
-                        object_id=object_id,
+                        ansible_id_or_pk=object_id,
                         role_definition_name=assignment['role_definition'],
                         assignment_type='team',
                     )
@@ -209,7 +209,7 @@ def get_local_assignments() -> set[AssignmentTuple]:
             assignments.add(
                 AssignmentTuple(
                     actor_ansible_id=str(user_ansible_id),
-                    object_id=str(object_id) if object_id else None,
+                    ansible_id_or_pk=str(object_id) if object_id else None,
                     role_definition_name=assignment.role_definition.name,
                     assignment_type='user',
                 )
@@ -239,7 +239,7 @@ def get_local_assignments() -> set[AssignmentTuple]:
             assignments.add(
                 AssignmentTuple(
                     actor_ansible_id=str(team_ansible_id),
-                    object_id=str(object_id) if object_id else None,
+                    ansible_id_or_pk=str(object_id) if object_id else None,
                     role_definition_name=assignment.role_definition.name,
                     assignment_type='team',
                 )
@@ -264,22 +264,21 @@ def delete_local_assignment(assignment_tuple: AssignmentTuple) -> bool:
 
         # Get the object if it's not a global assignment
         content_object = None
-        if assignment_tuple.object_id:
-            try:
-                # Try to find by ansible_id first
-                object_resource = Resource.objects.get(ansible_id=assignment_tuple.object_id)
+        if assignment_tuple.ansible_id_or_pk:
+            if role_definition.content_type.model in ('organization', 'team'):
+                object_resource = Resource.objects.get(ansible_id=assignment_tuple.ansible_id_or_pk)
                 content_object = object_resource.content_object
-            except Resource.DoesNotExist:
-                # Fall back to finding by object_id (for cases where we stored the raw object_id)
-                if assignment_tuple.assignment_type == 'user':
-                    assignment = RoleUserAssignment.objects.filter(user=actor, role_definition=role_definition, object_id=assignment_tuple.object_id).first()
-                else:
-                    assignment = RoleTeamAssignment.objects.filter(team=actor, role_definition=role_definition, object_id=assignment_tuple.object_id).first()
+            else:
+                model = role_definition.content_type.model_class()
+                content_object = model.objects.get(pk=assignment_tuple.ansible_id_or_pk)
 
-                if assignment:
-                    assignment.delete()
-                    return True
-                return False
+            if assignment_tuple.assignment_type == 'user':
+                assignment = RoleUserAssignment.objects.filter(user=actor, role_definition=role_definition, object_id=assignment_tuple.ansible_id_or_pk).first()
+            else:
+                assignment = RoleTeamAssignment.objects.filter(team=actor, role_definition=role_definition, object_id=assignment_tuple.ansible_id_or_pk).first()
+
+            if assignment:
+                assignment.delete()
 
         # Use the role definition's remove methods
         if content_object:
@@ -307,9 +306,13 @@ def create_local_assignment(assignment_tuple: AssignmentTuple) -> bool:
 
         # Get the object if it's not a global assignment
         content_object = None
-        if assignment_tuple.object_id:
-            object_resource = Resource.objects.get(ansible_id=assignment_tuple.object_id)
-            content_object = object_resource.content_object
+        if assignment_tuple.ansible_id_or_pk:
+            if role_definition.content_type.model in ('organization', 'team'):
+                object_resource = Resource.objects.get(ansible_id=assignment_tuple.ansible_id_or_pk)
+                content_object = object_resource.content_object
+            else:
+                model = role_definition.content_type.model_class()
+                content_object = model.objects.get(pk=assignment_tuple.ansible_id_or_pk)
 
         # Use the role definition's give methods
         if content_object:
@@ -695,7 +698,7 @@ class SyncExecutor:
                     deleted_count += 1
                     self.write(
                         f"DELETED assignment {assignment_tuple.assignment_type} {assignment_tuple.actor_ansible_id}"
-                        " -> {assignment_tuple.role_definition_name} on {assignment_tuple.object_id or 'global'}"
+                        " -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
                     )
                 else:
                     error_count += 1
@@ -706,7 +709,7 @@ class SyncExecutor:
                     created_count += 1
                     self.write(
                         f"CREATED assignment {assignment_tuple.assignment_type} {assignment_tuple.actor_ansible_id}"
-                        " -> {assignment_tuple.role_definition_name} on {assignment_tuple.object_id or 'global'}"
+                        " -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
                     )
                 else:
                     error_count += 1
