@@ -267,7 +267,7 @@ def test_role_assignment_resource_sync(mock_delete, mock_create, static_api_clie
     with mock.patch(
         "ansible_base.resource_registry.tasks.sync.get_remote_assignments",
         return_value={
-            AssignmentTuple(actor_ansible_id='97447387-8596-404f-b0d0-6429b04c8d22', object_id='1', role_definition_name='Team Member', assignment_type='user'),
+            AssignmentTuple(actor_ansible_id='97447387-8596-404f-b0d0-6429b04c8d22', ansible_id_or_pk='1', role_definition_name='Team Member', assignment_type='user'),
         },
     ):
         executor = SyncExecutor(api_client=static_api_client, stdout=stdout)
@@ -282,7 +282,7 @@ def test_role_assignment_resource_sync(mock_delete, mock_create, static_api_clie
     with mock.patch(
         "ansible_base.resource_registry.tasks.sync.get_local_assignments",
         return_value={
-            AssignmentTuple(actor_ansible_id='97447387-8596-404f-b0d0-6429b04c8d22', object_id='1', role_definition_name='Team Member', assignment_type='user'),
+            AssignmentTuple(actor_ansible_id='97447387-8596-404f-b0d0-6429b04c8d22', ansible_id_or_pk='1', role_definition_name='Team Member', assignment_type='user'),
         },
     ):
         executor = SyncExecutor(api_client=static_api_client, stdout=stdout)

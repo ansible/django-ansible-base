@@ -253,7 +253,7 @@ def get_local_assignments() -> set[AssignmentTuple]:
 
 def delete_local_assignment(assignment_tuple: AssignmentTuple) -> bool:
     """Delete a local assignment based on the tuple."""
-    from ansible_base.rbac.models.role import RoleDefinition, RoleTeamAssignment, RoleUserAssignment
+    from ansible_base.rbac.models.role import RoleDefinition
 
     try:
         role_definition = RoleDefinition.objects.get(name=assignment_tuple.role_definition_name)
