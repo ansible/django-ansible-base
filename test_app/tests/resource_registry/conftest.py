@@ -3,7 +3,9 @@ from unittest import mock
 
 import pytest
 
+from ansible_base.rbac import permission_registry
 from ansible_base.resource_registry import apps
+from test_app.models import Organization
 
 
 @pytest.fixture
@@ -34,3 +36,10 @@ def enable_reverse_sync(settings):
         apps.connect_resource_signals(sender=None)
 
     return f
+
+
+@pytest.fixture
+def foo_type():
+    "Idea is that this is a remote type, in this case, the foo type"
+    org_ct = permission_registry.content_type_model.objects.get_for_model(Organization)
+    return permission_registry.content_type_model.objects.create(service='foo', model='foo', app_label='foo', parent_content_type=org_ct)

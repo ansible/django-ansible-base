@@ -207,7 +207,8 @@ class ResourceAPIClient:
             if ct.service == 'shared':
                 data['object_ansible_id'] = str(content_object.resource.ansible_id)
             else:
-                data['object_id'] = content_object.pk
+                # Convert pk to string to handle UUID objects for JSON serialization
+                data["object_id"] = str(content_object.pk)
 
         return self._sync_assignment(data, giving=False)
 

@@ -53,7 +53,7 @@ jobs:
       - name: Run tox
         run: |
           echo "::remove-matcher owner=python::"  # Disable annoying annotations from setup-python
-          tox -e ${{ matrix.tests.env }}
+          tox --colored yes -e ${{ matrix.tests.env }}
 
       - name: Inject PR number into coverage.xml
         if: matrix.tests.sonar
