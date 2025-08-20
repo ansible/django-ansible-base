@@ -225,6 +225,7 @@ def get_local_assignments() -> set[AssignmentTuple]:
         user_ansible_id = user_resource.ansible_id
         # Handle both object-scoped and global assignments
         object_id = assignment.object_id
+        ansible_id_or_pk = None
         if object_id and assignment.content_type:
             ansible_id_or_pk = get_ansible_id_or_pk(assignment)
 
@@ -248,6 +249,7 @@ def get_local_assignments() -> set[AssignmentTuple]:
 
         # Handle both object-scoped and global assignments
         object_id = assignment.object_id
+        ansible_id_or_pk = None
         if object_id and assignment.content_type:
             # For object-scoped assignments, try to get the object's ansible_id
             ansible_id_or_pk = get_ansible_id_or_pk(assignment)
