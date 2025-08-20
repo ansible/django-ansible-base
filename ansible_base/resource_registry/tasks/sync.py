@@ -8,6 +8,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
 from io import StringIO, TextIOBase
+from typing import Any
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -17,6 +18,7 @@ from django.db.models import QuerySet
 from django.db.utils import Error, IntegrityError
 from requests import HTTPError
 
+from ansible_base.rbac.models.role import AssignmentBase, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.resource_registry.models import Resource, ResourceType
 from ansible_base.resource_registry.models.service_identifier import service_id
 from ansible_base.resource_registry.registry import get_registry
@@ -137,6 +139,32 @@ def fetch_manifest(
     return [ManifestItem(**row) for row in csv_reader]
 
 
+def get_ansible_id_or_pk(assignment: AssignmentBase) -> str:
+    # For object-scoped assignments, try to get the object's ansible_id
+    if assignment.content_type.model in ('organization', 'team'):
+        object_resource = Resource.objects.filter(object_id=assignment.object_id, content_type__model=assignment.content_type.model).first()
+        if object_resource:
+            ansible_id_or_pk = object_resource.ansible_id
+        else:
+            raise RuntimeError(f"Error: {assignment.content_type.model} {assignment.object_id} was found without an associated Resource.")
+    else:
+        ansible_id_or_pk = assignment.object_id
+
+    return str(ansible_id_or_pk)
+
+
+def get_content_object(role_definition: RoleDefinition, assignment_tuple: AssignmentTuple) -> Any:
+    content_object = None
+    if role_definition.content_type.model in ('organization', 'team'):
+        object_resource = Resource.objects.get(ansible_id=assignment_tuple.ansible_id_or_pk)
+        content_object = object_resource.content_object
+    else:
+        model = role_definition.content_type.model_class()
+        content_object = model.objects.get(pk=assignment_tuple.ansible_id_or_pk)
+
+    return content_object
+
+
 def get_remote_assignments(api_client: ResourceAPIClient) -> set[AssignmentTuple]:
     """Fetch remote assignments from the resource server and convert to tuples."""
     assignments = set()
@@ -148,11 +176,11 @@ def get_remote_assignments(api_client: ResourceAPIClient) -> set[AssignmentTuple
             user_data = user_resp.json()
             for assignment in user_data.get('results', []):
                 # Handle both object_id and object_ansible_id
-                object_id = assignment.get('object_ansible_id') or assignment.get('object_id')
+                ansible_id_or_pk = assignment.get('object_ansible_id') or assignment.get('object_id')
                 assignments.add(
                     AssignmentTuple(
                         actor_ansible_id=assignment['user_ansible_id'],
-                        ansible_id_or_pk=object_id,
+                        ansible_id_or_pk=ansible_id_or_pk,
                         role_definition_name=assignment['role_definition'],
                         assignment_type='user',
                     )
@@ -167,11 +195,11 @@ def get_remote_assignments(api_client: ResourceAPIClient) -> set[AssignmentTuple
             team_data = team_resp.json()
             for assignment in team_data.get('results', []):
                 # Handle both object_id and object_ansible_id
-                object_id = assignment.get('object_ansible_id') or assignment.get('object_id')
+                ansible_id_or_pk = assignment.get('object_ansible_id') or assignment.get('object_id')
                 assignments.add(
                     AssignmentTuple(
                         actor_ansible_id=assignment['team_ansible_id'],
-                        ansible_id_or_pk=object_id,
+                        ansible_id_or_pk=ansible_id_or_pk,
                         role_definition_name=assignment['role_definition'],
                         assignment_type='team',
                     )
@@ -184,77 +212,60 @@ def get_remote_assignments(api_client: ResourceAPIClient) -> set[AssignmentTuple
 
 def get_local_assignments() -> set[AssignmentTuple]:
     """Get local assignments and convert to tuples."""
-    from ansible_base.rbac.models.role import RoleTeamAssignment, RoleUserAssignment
-
     assignments = set()
 
     # Get user assignments
     for assignment in RoleUserAssignment.objects.select_related('user', 'role_definition').all():
         try:
             user_resource = Resource.get_resource_for_object(assignment.user)
-            user_ansible_id = user_resource.ansible_id
-
-            # Handle both object-scoped and global assignments
-            object_id = assignment.object_id
-            if object_id and assignment.content_type:
-                # For object-scoped assignments, try to get the object's ansible_id
-                try:
-                    object_resource = Resource.objects.filter(object_id=object_id, content_type=assignment.content_type).first()
-                    if object_resource:
-                        object_id = object_resource.ansible_id
-                except Exception:
-                    # If we can't get ansible_id, keep the original object_id
-                    pass
-
-            assignments.add(
-                AssignmentTuple(
-                    actor_ansible_id=str(user_ansible_id),
-                    ansible_id_or_pk=str(object_id) if object_id else None,
-                    role_definition_name=assignment.role_definition.name,
-                    assignment_type='user',
-                )
-            )
-        except (Resource.DoesNotExist, AttributeError):
-            # Skip assignments where the user doesn't have a resource
+        except Resource.DoesNotExist:
+        # Skip assignments where the user doesn't have a resource
             continue
+
+        user_ansible_id = user_resource.ansible_id
+        # Handle both object-scoped and global assignments
+        object_id = assignment.object_id
+        if object_id and assignment.content_type:
+            ansible_id_or_pk = get_ansible_id_or_pk(assignment)
+
+        assignments.add(
+            AssignmentTuple(
+                actor_ansible_id=str(user_ansible_id),
+                ansible_id_or_pk=ansible_id_or_pk if ansible_id_or_pk else None,
+                role_definition_name=assignment.role_definition.name,
+                assignment_type='user',
+            )
+        )
 
     # Get team assignments
     for assignment in RoleTeamAssignment.objects.select_related('team', 'role_definition').all():
         try:
             team_resource = Resource.get_resource_for_object(assignment.team)
-            team_ansible_id = team_resource.ansible_id
-
-            # Handle both object-scoped and global assignments
-            object_id = assignment.object_id
-            if object_id and assignment.content_type:
-                # For object-scoped assignments, try to get the object's ansible_id
-                try:
-                    object_resource = Resource.objects.filter(object_id=object_id, content_type=assignment.content_type).first()
-                    if object_resource:
-                        object_id = object_resource.ansible_id
-                except Exception:
-                    # If we can't get ansible_id, keep the original object_id
-                    pass
-
-            assignments.add(
-                AssignmentTuple(
-                    actor_ansible_id=str(team_ansible_id),
-                    ansible_id_or_pk=str(object_id) if object_id else None,
-                    role_definition_name=assignment.role_definition.name,
-                    assignment_type='team',
-                )
-            )
-        except (Resource.DoesNotExist, AttributeError):
-            # Skip assignments where the team doesn't have a resource
+        except Resource.DoesNotExist:
+        # Skip assignments where the user doesn't have a resource
             continue
+        team_ansible_id = team_resource.ansible_id
+
+        # Handle both object-scoped and global assignments
+        object_id = assignment.object_id
+        if object_id and assignment.content_type:
+            # For object-scoped assignments, try to get the object's ansible_id
+            ansible_id_or_pk = get_ansible_id_or_pk(assignment)
+
+        assignments.add(
+            AssignmentTuple(
+                actor_ansible_id=str(team_ansible_id),
+                ansible_id_or_pk=ansible_id_or_pk if ansible_id_or_pk else None,
+                role_definition_name=assignment.role_definition.name,
+                assignment_type='team',
+            )
+        )
 
     return assignments
 
 
 def delete_local_assignment(assignment_tuple: AssignmentTuple) -> bool:
     """Delete a local assignment based on the tuple."""
-    from ansible_base.rbac.models.role import RoleDefinition
-
     try:
         role_definition = RoleDefinition.objects.get(name=assignment_tuple.role_definition_name)
 
@@ -265,13 +276,7 @@ def delete_local_assignment(assignment_tuple: AssignmentTuple) -> bool:
         # Get the object if it's not a global assignment
         content_object = None
         if assignment_tuple.ansible_id_or_pk:
-            if role_definition.content_type.model in ('organization', 'team'):
-                object_resource = Resource.objects.get(ansible_id=assignment_tuple.ansible_id_or_pk)
-                content_object = object_resource.content_object
-            else:
-                model = role_definition.content_type.model_class()
-                content_object = model.objects.get(pk=assignment_tuple.ansible_id_or_pk)
-
+            content_object = get_content_object(role_definition, assignment_tuple)
         # Use the role definition's remove methods
         if content_object:
             role_definition.remove_permission(actor, content_object)
@@ -287,8 +292,6 @@ def delete_local_assignment(assignment_tuple: AssignmentTuple) -> bool:
 
 def create_local_assignment(assignment_tuple: AssignmentTuple) -> bool:
     """Create a local assignment based on the tuple."""
-    from ansible_base.rbac.models.role import RoleDefinition
-
     try:
         role_definition = RoleDefinition.objects.get(name=assignment_tuple.role_definition_name)
 
@@ -297,15 +300,8 @@ def create_local_assignment(assignment_tuple: AssignmentTuple) -> bool:
         actor = resource.content_object
 
         # Get the object if it's not a global assignment
-        content_object = None
         if assignment_tuple.ansible_id_or_pk:
-            if role_definition.content_type.model in ('organization', 'team'):
-                object_resource = Resource.objects.get(ansible_id=assignment_tuple.ansible_id_or_pk)
-                content_object = object_resource.content_object
-            else:
-                model = role_definition.content_type.model_class()
-                content_object = model.objects.get(pk=assignment_tuple.ansible_id_or_pk)
-
+            content_object = get_content_object(role_definition, assignment_tuple)
         # Use the role definition's give methods
         if content_object:
             role_definition.give_permission(actor, content_object)
