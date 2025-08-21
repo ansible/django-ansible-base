@@ -186,8 +186,13 @@ class PermissionRegistry:
 
     @cached_property
     def org_ct_id(self):
-        team_parent_model = self.get_parent_model(self.team_model)
-        return self.content_type_model.objects.get_for_model(team_parent_model).id
+        # This should be safe to import at top of file because it is ansible_base.lib
+        # but it is not because of issue:
+        # https://github.com/ansible/django-ansible-base/issues/443
+        from ansible_base.lib.utils.auth import get_organization_model
+
+        org_model = get_organization_model()
+        return self.content_type_model.objects.get_for_model(org_model).id
 
     @property
     def permission_qs(self):

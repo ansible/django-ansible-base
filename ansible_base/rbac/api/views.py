@@ -334,7 +334,7 @@ class UserAccessViewSet(
         actor_qs = actor_cls.objects.filter(role_assignments__in=assignment_qs)
         if actor_cls._meta.model_name == 'user':
             actor_qs |= actor_cls.objects.filter(is_superuser=True)
-        return actor_qs
+        return actor_qs.distinct()
 
     def get_serializer(self, *args, **kwargs):
         """Awkwardly override this method, because eda-server uses a custom base viewset class.

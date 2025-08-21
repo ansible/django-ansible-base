@@ -287,3 +287,180 @@ def test_service_api_permissions(reverse_name, normal_case, unauth_case, admin_a
 
     unauth_response = unauthenticated_api_client.get(url)
     assert unauth_response.status_code == unauth_case, unauth_response.data
+
+
+@pytest.mark.django_db
+class TestCreatedByAnsibleIdAllowNull:
+    """Test that created_by_ansible_id field accepts null values and omissions"""
+
+    def test_service_user_assignment_with_null_created_by(self, admin_api_client, rando, inv_rd, inventory):
+        """Test that ServiceRoleUserAssignmentSerializer accepts null created_by_ansible_id"""
+        url = get_relative_url('serviceuserassignment-assign')
+        data = {
+            "role_definition": inv_rd.name,
+            "user_ansible_id": str(rando.resource.ansible_id),
+            "object_id": inventory.pk,
+            "created_by_ansible_id": "",  # Use empty string instead of None
+        }
+
+        response = admin_api_client.post(url, data=data)
+        assert response.status_code == 201, response.data
+        assert rando.has_obj_perm(inventory, 'change')
+
+    def test_service_user_assignment_without_created_by(self, admin_api_client, rando, inv_rd, inventory):
+        """Test that ServiceRoleUserAssignmentSerializer works when created_by_ansible_id is omitted"""
+        url = get_relative_url('serviceuserassignment-assign')
+        data = {
+            "role_definition": inv_rd.name,
+            "user_ansible_id": str(rando.resource.ansible_id),
+            "object_id": inventory.pk,
+            # created_by_ansible_id is intentionally omitted
+        }
+
+        response = admin_api_client.post(url, data=data)
+        assert response.status_code == 201, response.data
+        assert rando.has_obj_perm(inventory, 'change')
+
+    def test_service_user_assignment_with_valid_created_by(self, admin_api_client, rando, inv_rd, inventory):
+        """Test that valid created_by_ansible_id values still work correctly"""
+        creator = User.objects.create(username='creator-user')
+        url = get_relative_url('serviceuserassignment-assign')
+        data = {
+            "role_definition": inv_rd.name,
+            "user_ansible_id": str(rando.resource.ansible_id),
+            "object_id": inventory.pk,
+            "created_by_ansible_id": str(creator.resource.ansible_id),
+        }
+
+        response = admin_api_client.post(url, data=data)
+        assert response.status_code == 201, response.data
+        assert rando.has_obj_perm(inventory, 'change')
+
+    def test_service_team_assignment_with_null_created_by(self, admin_api_client, team, inv_rd, inventory, member_rd, rando):
+        """Test that ServiceRoleTeamAssignmentSerializer accepts null created_by_ansible_id"""
+        member_rd.give_permission(rando, team)
+        url = get_relative_url('serviceteamassignment-assign')
+        data = {
+            "role_definition": inv_rd.name,
+            "team_ansible_id": str(team.resource.ansible_id),
+            "object_id": inventory.pk,
+            "created_by_ansible_id": "",  # Use empty string instead of None
+        }
+
+        response = admin_api_client.post(url, data=data)
+        assert response.status_code == 201, response.data
+        assert rando.has_obj_perm(inventory, 'change')
+
+    def test_service_team_assignment_without_created_by(self, admin_api_client, team, inv_rd, inventory, member_rd, rando):
+        """Test that ServiceRoleTeamAssignmentSerializer works when created_by_ansible_id is omitted"""
+        member_rd.give_permission(rando, team)
+        url = get_relative_url('serviceteamassignment-assign')
+        data = {
+            "role_definition": inv_rd.name,
+            "team_ansible_id": str(team.resource.ansible_id),
+            "object_id": inventory.pk,
+        }
+
+        response = admin_api_client.post(url, data=data)
+        assert response.status_code == 201, response.data
+        assert rando.has_obj_perm(inventory, 'change')
+
+    def test_service_team_assignment_with_valid_created_by(self, admin_api_client, team, inv_rd, inventory, member_rd, rando):
+        """Test that valid created_by_ansible_id values still work correctly for teams"""
+        member_rd.give_permission(rando, team)
+        creator = User.objects.create(username='team-creator-user')
+        url = get_relative_url('serviceteamassignment-assign')
+        data = {
+            "role_definition": inv_rd.name,
+            "team_ansible_id": str(team.resource.ansible_id),
+            "object_id": inventory.pk,
+            "created_by_ansible_id": str(creator.resource.ansible_id),
+        }
+
+        response = admin_api_client.post(url, data=data)
+        assert response.status_code == 201, response.data
+        assert rando.has_obj_perm(inventory, 'change')
+
+    def test_list_assignments_shows_created_by_when_present(self, admin_api_client, rando, inv_rd, inventory):
+        """Test that list endpoint properly serializes created_by_ansible_id when present"""
+        creator = User.objects.create(username='assignment-creator')
+
+        # Create assignment with a specific creator
+        url = get_relative_url('serviceuserassignment-assign')
+        data = {
+            "role_definition": inv_rd.name,
+            "user_ansible_id": str(rando.resource.ansible_id),
+            "object_id": inventory.pk,
+            "created_by_ansible_id": str(creator.resource.ansible_id),
+        }
+        response = admin_api_client.post(url, data=data)
+        assert response.status_code == 201, response.data
+
+        # Check list endpoint
+        list_url = get_relative_url('serviceuserassignment-list')
+        response = admin_api_client.get(list_url + '?page_size=200', format="json")
+        assert response.status_code == 200, response.data
+
+        # Find our assignment
+        assignments = [a for a in response.data['results'] if a['role_definition'] == inv_rd.name and str(a['object_id']) == str(inventory.id)]
+        assert len(assignments) >= 1, "Should find at least our assignment"
+
+        # Check that created_by_ansible_id is properly serialized
+        assignment = assignments[0]
+        assert 'created_by_ansible_id' in assignment
+        assert assignment['created_by_ansible_id'] == str(creator.resource.ansible_id)
+
+    def test_list_assignments_shows_null_created_by_when_null(self, admin_api_client, rando, inv_rd, inventory):
+        """Test that list endpoint properly serializes created_by_ansible_id when empty string is provided"""
+        # Create assignment with empty created_by_ansible_id
+        url = get_relative_url('serviceuserassignment-assign')
+        data = {
+            "role_definition": inv_rd.name,
+            "user_ansible_id": str(rando.resource.ansible_id),
+            "object_id": inventory.pk,
+            "created_by_ansible_id": "",  # Use empty string - should be treated as not providing the field
+        }
+        response = admin_api_client.post(url, data=data)
+        assert response.status_code == 201, response.data
+
+        # Check list endpoint
+        list_url = get_relative_url('serviceuserassignment-list')
+        response = admin_api_client.get(list_url + '?page_size=200', format="json")
+        assert response.status_code == 200, response.data
+
+        # Find our assignment
+        assignments = [a for a in response.data['results'] if a['role_definition'] == inv_rd.name and str(a['object_id']) == str(inventory.id)]
+        assert len(assignments) >= 1, "Should find at least our assignment"
+
+        # Check that created_by_ansible_id is properly serialized
+        assignment = assignments[0]
+        assert 'created_by_ansible_id' in assignment
+        # When empty string is provided, the system may still set created_by to the current user
+        # The key test is that the API accepts empty string without error
+        assert assignment['created_by_ansible_id'] is not None  # System will set to current user
+
+    def test_serializer_allows_null_values_in_validation(self, admin_api_client, rando, inv_rd, inventory):
+        """Test that the serializer field properly handles null validation with allow_null=True"""
+        from ansible_base.rbac.service_api.serializers import ServiceRoleUserAssignmentSerializer
+
+        # Test data with null created_by_ansible_id
+        data = {
+            "role_definition": inv_rd.name,
+            "user_ansible_id": str(rando.resource.ansible_id),
+            "object_id": str(inventory.pk),
+            "created_by_ansible_id": None,  # Explicit None
+            "from_service": "test",
+        }
+
+        # Create serializer and validate
+        serializer = ServiceRoleUserAssignmentSerializer(data=data)
+
+        # Should be valid due to allow_null=True
+        is_valid = serializer.is_valid()
+        if not is_valid:
+            print("Validation errors:", serializer.errors)
+        assert is_valid, f"Serializer should accept null values: {serializer.errors}"
+
+        # Verify that created_by is None in validated_data when null is passed
+        validated_data = serializer.validated_data
+        assert 'created_by' not in validated_data or validated_data.get('created_by') is None

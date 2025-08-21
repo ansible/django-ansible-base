@@ -328,7 +328,7 @@ class UserAccessListMixin(AccessListMixin, serializers.ModelSerializer):
     object_role_assignments = serializers.SerializerMethodField()
     url = serializers.SerializerMethodField()
     related = serializers.SerializerMethodField('_get_related')
-    _expected_fields = ['id', 'url', 'related', 'username', 'is_superuser', 'object_role_assignments']
+    _expected_fields = ['id', 'url', 'related', 'username', 'is_superuser', 'first_name', 'last_name', 'object_role_assignments']
 
 
 class TeamAccessListMixin(AccessListMixin, AbstractCommonModelSerializer):

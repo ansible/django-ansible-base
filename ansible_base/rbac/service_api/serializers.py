@@ -53,7 +53,7 @@ assignment_common_fields = ('created', 'created_by_ansible_id', 'object_id', 'ob
 class BaseAssignmentSerializer(serializers.ModelSerializer):
     content_type = serializers.SlugRelatedField(read_only=True, slug_field='api_slug')
     role_definition = serializers.SlugRelatedField(slug_field='name', queryset=RoleDefinition.objects.all())
-    created_by_ansible_id = ActorAnsibleIdField(source='created_by', required=False)
+    created_by_ansible_id = ActorAnsibleIdField(source='created_by', required=False, allow_null=True)
     object_ansible_id = ObjectIDAnsibleIDField(source='object_id', required=False, allow_null=True)
     object_id = serializers.CharField(allow_blank=True, required=False, allow_null=True)
     from_service = serializers.CharField(write_only=True)

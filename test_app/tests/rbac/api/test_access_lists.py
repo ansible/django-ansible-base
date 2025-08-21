@@ -10,7 +10,7 @@ from test_app.models import Team, User
 def test_user_access_list(admin_api_client, inv_rd, org_inv_rd, inventory, member_rd):
     url = get_relative_url('role-user-access', kwargs={'pk': inventory.pk, 'model_name': 'aap.inventory'})
 
-    u1 = User.objects.create(username='direct-inv-access')
+    u1 = User.objects.create(username='direct-inv-access', first_name='user', last_name='one')
     inv_rd.give_permission(u1, inventory)
 
     u2 = User.objects.create(username='org-level-access')
@@ -33,6 +33,9 @@ def test_user_access_list(admin_api_client, inv_rd, org_inv_rd, inventory, membe
         assert detail_resp.status_code == 200, detail_resp.data
         # This should have the same entries in a list view as the access list had in the assignments list
         assert detail_resp.data['count'] == len(user_detail['object_role_assignments'])
+        if user_detail['username'] == u1.username:
+            assert user_detail['first_name'] == 'user'
+            assert user_detail['last_name'] == 'one'
 
     assert u1.username in user_data
     assert len(user_data[u1.username]) == 1
@@ -112,3 +115,26 @@ def test_intermediary_role_display(admin_api_client, inventory, organization, me
     intermediary_names = [entry['role_definition']['name'] for entry in intermediary]
     assert org_admin_inv_rd.name in intermediary_names
     assert org_view_inv_rd.name in intermediary_names
+
+
+@pytest.mark.django_db
+def test_no_duplicates(rando, inv_rd, inventory, org_inv_rd, admin_api_client):
+    inv_rd.give_permission(rando, inventory)
+    org_inv_rd.give_permission(rando, inventory.organization)
+
+    # the admin user themselves will show up, so filter superusers out
+    url = get_relative_url('role-user-access', kwargs={'pk': inventory.pk, 'model_name': 'aap.inventory'}) + '?is_superuser=false'
+    response = admin_api_client.get(url)
+    assert response.status_code == 200, response.data
+    assert response.data['count'] == 1, response.data
+
+
+@pytest.mark.django_db
+def test_no_duplicates_team(team, inv_rd, inventory, org_inv_rd, admin_api_client):
+    inv_rd.give_permission(team, inventory)
+    org_inv_rd.give_permission(team, inventory.organization)
+
+    url = get_relative_url('role-team-access', kwargs={'pk': inventory.pk, 'model_name': 'aap.inventory'})
+    response = admin_api_client.get(url)
+    assert response.status_code == 200, response.data
+    assert response.data['count'] == 1, response.data
