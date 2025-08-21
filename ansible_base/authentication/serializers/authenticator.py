@@ -35,7 +35,10 @@ class AuthenticatorSerializer(NamedCommonModelSerializer, ImmutableFieldsMixin):
             "slug": {
                 "allow_blank": True,
                 "required": False,
-            }
+            },
+            "configuration": {
+                "required": True,
+            },
         }
 
     # TODO: Do we need/want to delve into dicts and search their keys?
