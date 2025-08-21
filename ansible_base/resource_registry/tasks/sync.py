@@ -169,41 +169,67 @@ def get_remote_assignments(api_client: ResourceAPIClient) -> set[AssignmentTuple
     """Fetch remote assignments from the resource server and convert to tuples."""
     assignments = set()
 
-    # Fetch user assignments
+    # Fetch user assignments with pagination
     try:
-        user_resp = api_client.list_user_assignments()
-        if user_resp.status_code == 200:
-            user_data = user_resp.json()
-            for assignment in user_data.get('results', []):
-                # Handle both object_id and object_ansible_id
-                ansible_id_or_pk = assignment.get('object_ansible_id') or assignment.get('object_id')
-                assignments.add(
-                    AssignmentTuple(
-                        actor_ansible_id=assignment['user_ansible_id'],
-                        ansible_id_or_pk=ansible_id_or_pk,
-                        role_definition_name=assignment['role_definition'],
-                        assignment_type='user',
+        page = 1
+        while True:
+            filters = {'page': page}
+            user_resp = api_client.list_user_assignments(filters=filters)
+            if user_resp.status_code == 200:
+                user_data = user_resp.json()
+                for assignment in user_data.get('results', []):
+                    # Handle both object_id and object_ansible_id
+                    ansible_id_or_pk = assignment.get('object_ansible_id') or assignment.get('object_id')
+                    assignments.add(
+                        AssignmentTuple(
+                            actor_ansible_id=assignment['user_ansible_id'],
+                            ansible_id_or_pk=ansible_id_or_pk,
+                            role_definition_name=assignment['role_definition'],
+                            assignment_type='user',
+                        )
                     )
-                )
+
+                # Check if there's a next page
+                if not user_data.get('next'):
+                    break
+
+                page += 1
+                logger.info(f"Fetching next page {page} of user assignments")
+            else:
+                logger.warning(f"Failed to fetch user assignments page {page}: HTTP {user_resp.status_code}")
+                break
     except Exception as e:
         logger.warning(f"Failed to fetch remote user assignments: {e}")
 
-    # Fetch team assignments
+    # Fetch team assignments with pagination
     try:
-        team_resp = api_client.list_team_assignments()
-        if team_resp.status_code == 200:
-            team_data = team_resp.json()
-            for assignment in team_data.get('results', []):
-                # Handle both object_id and object_ansible_id
-                ansible_id_or_pk = assignment.get('object_ansible_id') or assignment.get('object_id')
-                assignments.add(
-                    AssignmentTuple(
-                        actor_ansible_id=assignment['team_ansible_id'],
-                        ansible_id_or_pk=ansible_id_or_pk,
-                        role_definition_name=assignment['role_definition'],
-                        assignment_type='team',
+        page = 1
+        while True:
+            filters = {'page': page}
+            team_resp = api_client.list_team_assignments(filters=filters)
+            if team_resp.status_code == 200:
+                team_data = team_resp.json()
+                for assignment in team_data.get('results', []):
+                    # Handle both object_id and object_ansible_id
+                    ansible_id_or_pk = assignment.get('object_ansible_id') or assignment.get('object_id')
+                    assignments.add(
+                        AssignmentTuple(
+                            actor_ansible_id=assignment['team_ansible_id'],
+                            ansible_id_or_pk=ansible_id_or_pk,
+                            role_definition_name=assignment['role_definition'],
+                            assignment_type='team',
+                        )
                     )
-                )
+
+                # Check if there's a next page
+                if not team_data.get('next'):
+                    break
+
+                page += 1
+                logger.info(f"Fetching next page {page} of team assignments")
+            else:
+                logger.warning(f"Failed to fetch team assignments page {page}: HTTP {team_resp.status_code}")
+                break
     except Exception as e:
         logger.warning(f"Failed to fetch remote team assignments: {e}")
 
