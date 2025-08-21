@@ -268,13 +268,20 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Open
             )
         return None
 
-    def _get_jwt_algorithms(self) -> list[str]:
+    def setting(self, name, default=None):
+        if name == "JWT_ALGORITHMS":
+            existing_setting = self.strategy.setting(name, backend=self)
+            return self._get_jwt_algorithms(existing_setting)
+        return self.strategy.setting(name, backend=self)
+
+    def _get_jwt_algorithms(self, existing_setting) -> list[str]:
         """
         Get the JWT algorithms to pass to the decode
         """
-        if self.setting("JWT_ALGORITHMS"):
+        algorithms = []
+        if existing_setting:
             # If the admin specified the algorithms then use them
-            return self.setting("JWT_ALGORITHMS")
+            algorithms = existing_setting
         else:
             # Try to get the algorithms from the .well-known/openid-configuration
             try:
@@ -283,13 +290,18 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Open
                 idp_algorithms = config.get("id_token_encryption_alg_values_supported")
                 if idp_algorithms:
                     logger.debug(f"JWT algorithms supported by the IDP: {idp_algorithms}")
-                    return idp_algorithms
-                raise Exception("No algorithms found in OIDC config")
+                    algorithms = idp_algorithms
+                else:
+                    raise Exception("No algorithms found in OIDC config")
             except Exception as e:
                 # In controller 2.4 we did not have the ability to set the JWT algorithms so we will use the default algorithms
-                lib_defaults = getattr(settings, 'JWT_ALGORITHMS', super().JWT_ALGORITHMS)
+                # We can't load the setting here because it was already loaded in the strategy
+                lib_defaults = OpenIdConnectAuth.JWT_ALGORITHMS
                 logger.error(f"Unable to get JWT algorithms from the .well-known/openid-configuration, defaulting to {lib_defaults}: {e}")
-                return lib_defaults
+                algorithms = lib_defaults
+        # There is a properly on self that we can also set that is used in some places
+        self.JWT_ALGORITHMS = algorithms
+        return algorithms
 
     def user_data(self, access_token, *args, **kwargs):
         """
@@ -303,21 +315,32 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Open
         user_data = self.request(self.userinfo_url(), headers={"Authorization": f"Bearer {access_token}"})
         if user_data.headers["Content-Type"] == "application/jwt":
             # If the content type is application/jwt than we can assume that the token is encrypted. Otherwise it should be application/json
+
             pubkey = self.public_key()
-            if not pubkey:
-                logger.error("OIDC client sent encrypted user info response, but no public key found.")
+            if not pubkey and self.JWT_ALGORITHMS != ['none']:
+                logger.warning("OIDC client sent encrypted user info response, but no public key found.")
                 return None
-            # Get the algorithms to pass to the decode
-            algorithms = self._get_jwt_algorithms()
-            options = {}
-            if algorithms == ['none']:
+
+
+
+
+            # TODO: Remove this before merging!!!
+            # Adding a bunch of white space to also invoke the linter error here
+            options = {'verify_iat': False}
+
+
+
+
+
+
+            if self.setting('JWT_ALGORITHMS') == ['none']:
                 logger.info("JWT decryption algorithm is set to ['none'], will proceed but this is insecure")
                 options['verify_signature'] = False
             try:
                 data = jwt.decode(
                     access_token,
                     key=pubkey,
-                    algorithms=algorithms,
+                    algorithms=self.setting('JWT_ALGORITHMS'),
                     audience=self.setting("KEY"),
                     options=options,
                 )
