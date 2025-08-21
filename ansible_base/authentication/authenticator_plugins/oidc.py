@@ -123,7 +123,11 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
     )
 
     JWT_ALGORITHMS = ListField(
-        help_text=_("The algorithm(s) for decoding JWT responses from the IDP."),
+        help_text=_(
+            "The algorithm(s) for decoding JWT responses from the IDP. "
+            "Leave blank to extract from the .well-known configuration (if that fails we will attempt the default algorithms). "
+            "Set to ['none'] to not use encrypted tokens (the provider must send unencrypted tokens for this to work)"
+        ),
         default=None,
         allow_null=True,
         validators=[JWTAlgorithmListFieldValidator()],
@@ -300,3 +304,56 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Open
             return preferred_username
 
         return None
+
+    def _discover_algorithms_from_config(self, config):
+        """
+        Discover JWT algorithms from OIDC configuration
+        """
+        # Try signing algorithms first (most common)
+        algorithms = config.get("id_token_signing_alg_values_supported")
+        if algorithms:
+            logger.debug(f"JWT signing algorithms supported by the IDP: {algorithms}")
+            return algorithms
+
+        # Fallback to encryption algorithms
+        algorithms = config.get("id_token_encryption_alg_values_supported")
+        if algorithms:
+            logger.debug(f"JWT encryption algorithms supported by the IDP: {algorithms}")
+            return algorithms
+
+        # Try userinfo signing algorithms as final fallback
+        algorithms = config.get("userinfo_signing_alg_values_supported")
+        if algorithms:
+            logger.debug(f"JWT userinfo signing algorithms supported by the IDP: {algorithms}")
+            return algorithms
+
+        return None
+
+    def _get_jwt_algorithms(self, existing_setting=None) -> list[str]:
+        """
+        Get the JWT algorithms to pass to the decode
+        """
+        if existing_setting:
+            algorithms = existing_setting
+        else:
+            try:
+                logger.debug("Attempting to get the JWT algorithms from the .well-known/openid-configuration")
+                config = self.oidc_config()
+                algorithms = self._discover_algorithms_from_config(config)
+
+                if not algorithms:
+                    raise Exception("No algorithms found in OIDC config")
+
+            except Exception as e:
+                # Fallback to default algorithms if discovery fails
+                lib_defaults = OpenIdConnectAuth.JWT_ALGORITHMS
+                logger.error(f"Unable to get JWT algorithms from the .well-known/openid-configuration, defaulting to {lib_defaults}: {e}")
+                algorithms = lib_defaults
+
+        # Ensure we always return a list
+        if not isinstance(algorithms, list):
+            algorithms = [algorithms] if algorithms else []
+
+        # Set the property for use elsewhere
+        self.JWT_ALGORITHMS = algorithms
+        return algorithms
