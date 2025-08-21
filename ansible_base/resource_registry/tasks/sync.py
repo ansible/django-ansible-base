@@ -194,7 +194,7 @@ def get_remote_assignments(api_client: ResourceAPIClient) -> set[AssignmentTuple
                     break
 
                 page += 1
-                logger.info(f"Fetching next page {page} of user assignments")
+                logger.debug(f"Fetching next page {page} of user assignments")
             else:
                 logger.warning(f"Failed to fetch user assignments page {page}: HTTP {user_resp.status_code}")
                 break
@@ -226,7 +226,7 @@ def get_remote_assignments(api_client: ResourceAPIClient) -> set[AssignmentTuple
                     break
 
                 page += 1
-                logger.info(f"Fetching next page {page} of team assignments")
+                logger.debug(f"Fetching next page {page} of team assignments")
             else:
                 logger.warning(f"Failed to fetch team assignments page {page}: HTTP {team_resp.status_code}")
                 break
