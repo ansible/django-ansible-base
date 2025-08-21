@@ -740,7 +740,7 @@ class SyncExecutor:
 
         except Exception as e:
             self.write(f"Assignment sync failed: {e}")
-            logger.exception(f"Assignment sync failed")
+            logger.exception("Assignment sync failed")
 
     def run(self):
         """Run the sync workflow.
