@@ -1,6 +1,7 @@
 import logging
 
 import jwt
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.utils.translation import gettext_lazy as _
@@ -123,7 +124,11 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
     )
 
     JWT_ALGORITHMS = ListField(
-        help_text=_("The algorithm(s) for decoding JWT responses from the IDP."),
+        help_text=_(
+            "The algorithm(s) for decoding JWT responses from the IDP. "
+            "Leave blank to extract from the .well-known configuration (if that fails we will attempt the default algorithms). "
+            "Set to ['none'] to not use encrypted tokens (the provider must send unencrypted tokens for this to work)"
+        ),
         default=None,
         allow_null=True,
         validators=[JWTAlgorithmListFieldValidator()],
@@ -263,6 +268,29 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Open
             )
         return None
 
+    def _get_jwt_algorithms(self) -> list[str]:
+        """
+        Get the JWT algorithms to pass to the decode
+        """
+        if self.setting("JWT_ALGORITHMS"):
+            # If the admin specified the algorithms then use them
+            return self.setting("JWT_ALGORITHMS")
+        else:
+            # Try to get the algorithms from the .well-known/openid-configuration
+            try:
+                logger.debug("Attempting to get the JWT algorithms from the .well-known/openid-configuration")
+                config = self.oidc_config()
+                idp_algorithms = config.get("id_token_encryption_alg_values_supported")
+                if idp_algorithms:
+                    logger.debug(f"JWT algorithms supported by the IDP: {idp_algorithms}")
+                    return idp_algorithms
+                raise Exception("No algorithms found in OIDC config")
+            except Exception as e:
+                # In controller 2.4 we did not have the ability to set the JWT algorithms so we will use the default algorithms
+                lib_defaults = getattr(settings, 'JWT_ALGORITHMS', super().JWT_ALGORITHMS)
+                logger.error(f"Unable to get JWT algorithms from the .well-known/openid-configuration, defaulting to {lib_defaults}: {e}")
+                return lib_defaults
+
     def user_data(self, access_token, *args, **kwargs):
         """
         This function overrides the one in social auth class OpenIdConnectAuth, since
@@ -277,18 +305,25 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Open
             # If the content type is application/jwt than we can assume that the token is encrypted. Otherwise it should be application/json
             pubkey = self.public_key()
             if not pubkey:
-                logger.error(_("OIDC client sent encrypted user info response, but no public key found."))
+                logger.error("OIDC client sent encrypted user info response, but no public key found.")
                 return None
+            # Get the algorithms to pass to the decode
+            algorithms = self._get_jwt_algorithms()
+            options = {}
+            if algorithms == ['none']:
+                logger.info("JWT decryption algorithm is set to ['none'], will proceed but this is insecure")
+                options['verify_signature'] = False
             try:
                 data = jwt.decode(
                     access_token,
                     key=pubkey,
-                    algorithms=self.setting("JWT_ALGORITHMS"),
+                    algorithms=algorithms,
                     audience=self.setting("KEY"),
+                    options=options,
                 )
                 return data
             except PyJWTError as e:
-                logger.error(_(f"Unable to decode user info response JWT: {e}"))
+                logger.error(f"Unable to decode user info response JWT: {e}")
                 return None
         return user_data.json()
 
