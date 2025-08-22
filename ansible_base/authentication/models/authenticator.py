@@ -52,6 +52,31 @@ class Authenticator(UniqueNamedCommonModel):
         on_delete=SET_NULL,
     )
 
+    def save_default_jwt_algorithms(self):
+        try:
+            # Create a proper plugin instance with the database instance
+            from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_class
+
+            authenticator_class = get_authenticator_class(self.type)
+            plugin_instance = authenticator_class(database_instance=self)
+
+            # Try to get algorithms from .well-known endpoint
+            import logging
+
+            logger = logging.getLogger('ansible_base.authentication.models.authenticator')
+            logger.info("Auto-populating JWT algorithms for OIDC authenticator from .well-known endpoint")
+
+            algorithms = plugin_instance._get_jwt_algorithms()
+            if algorithms:
+                self.configuration['JWT_ALGORITHMS'] = algorithms
+                logger.info(f"Successfully populated JWT algorithms: {algorithms}")
+        except Exception as e:
+            import logging
+
+            logger = logging.getLogger('ansible_base.authentication.models.authenticator')
+            logger.warning(f"Could not auto-populate JWT algorithms for OIDC authenticator: {e}")
+            # Don't fail the save operation, just log the warning
+
     def save(self, *args, **kwargs):
         from ansible_base.lib.utils.encryption import ansible_encryption
 
@@ -64,6 +89,10 @@ class Authenticator(UniqueNamedCommonModel):
         for field in getattr(authenticator, 'configuration_encrypted_fields', []):
             if field in self.configuration:
                 self.configuration[field] = ansible_encryption.encrypt_string(self.configuration[field])
+
+        # Auto-populate JWT algorithms for OIDC authenticators if not set
+        if self.type == "ansible_base.authentication.authenticator_plugins.oidc" and self.configuration and not self.configuration.get('JWT_ALGORITHMS'):
+            self.save_default_jwt_algorithms()
 
         if not self.slug:
             self.slug = generate_authenticator_slug()
