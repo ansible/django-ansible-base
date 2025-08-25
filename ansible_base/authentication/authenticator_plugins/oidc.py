@@ -123,11 +123,7 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
     )
 
     JWT_ALGORITHMS = ListField(
-        help_text=_(
-            "The algorithm(s) for decoding JWT responses from the IDP. "
-            "Leave blank to extract from the .well-known configuration (if that fails we will attempt the default algorithms). "
-            "Set to ['none'] to not use encrypted tokens (the provider must send unencrypted tokens for this to work)"
-        ),
+        help_text=_("The algorithm(s) for decoding JWT responses from the IDP."),
         default=OpenIdConnectAuth.JWT_ALGORITHMS,
         allow_null=True,
         validators=[JWTAlgorithmListFieldValidator()],
