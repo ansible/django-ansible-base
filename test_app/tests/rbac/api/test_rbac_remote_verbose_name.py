@@ -2,7 +2,7 @@ import pytest
 from django.test.utils import override_settings
 
 from ansible_base.lib.utils.response import get_relative_url
-from ansible_base.rbac.models import DABPermission, DABContentType
+from ansible_base.rbac.models import DABContentType, DABPermission
 from ansible_base.rbac.remote import get_local_resource_prefix
 
 
@@ -16,9 +16,7 @@ def test_create_remote_role_missing_view_returns_400_with_clear_message(admin_ap
     """
     # Ensure a remote content type exists (service not shared/local)
     local_service = get_local_resource_prefix()
-    remote_ct = (
-        DABContentType.objects.exclude(service__in=("shared", local_service)).first()
-    )
+    remote_ct = DABContentType.objects.exclude(service__in=("shared", local_service)).first()
     if remote_ct is None:
         # Create a representative remote content type (e.g., awx.inventory)
         remote_ct, _ = DABContentType.objects.get_or_create(
@@ -54,4 +52,4 @@ def test_create_remote_role_missing_view_returns_400_with_clear_message(admin_ap
     # Expected: 400 with message indicating view is required
     assert response.status_code == 400, response.data
     msg = str(response.data).lower()
-    assert 'view' in msg and ('needs to include view' in msg or 'required' in msg) 
+    assert 'view' in msg and ('needs to include view' in msg or 'required' in msg)
