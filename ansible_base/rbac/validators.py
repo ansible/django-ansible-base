@@ -132,8 +132,9 @@ def check_view_permission_criteria(codename_set: set[str], permissions_by_model:
             model_permissions = set(valid_model_permissions) & codename_set
             local_codenames = {codename for codename in model_permissions if not is_add_perm(codename)}
             if local_codenames and not any('view' in codename for codename in local_codenames):
+                model_label = getattr(cls._meta, 'verbose_name', getattr(cls._meta, 'model_name', 'model'))
                 raise ValidationError(
-                    {'permissions': f'Permissions for model {cls._meta.verbose_name} needs to include view, got: {prnt_codenames(local_codenames)}'}
+                    {'permissions': f'Permissions for model {model_label} needs to include view, got: {prnt_codenames(local_codenames)}'}
                 )
 
 
