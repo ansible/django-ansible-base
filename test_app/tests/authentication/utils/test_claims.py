@@ -2213,3 +2213,221 @@ class TestClaimsHelperFunctions:
         result = claims._normalize_user_value(user_value)
         assert result == expected
         assert isinstance(result, list)
+
+
+class TestRoleUserAssignmentsCache:
+    """Test cases for the RoleUserAssignmentsCache class, specifically the cache_existing method"""
+
+    @pytest.fixture
+    def cache_instance(self):
+        """Create a fresh cache instance for each test"""
+        return claims.RoleUserAssignmentsCache()
+
+    @pytest.fixture
+    def mock_role_definition(self):
+        """Create a mock role definition"""
+        role_def = mock.Mock()
+        role_def.name = "Test Role"
+        role_def.id = 1
+        return role_def
+
+    @pytest.fixture
+    def mock_content_type(self):
+        """Create a mock content type"""
+        content_type = mock.Mock()
+        content_type.id = 10
+        return content_type
+
+    @pytest.fixture
+    def mock_content_object(self):
+        """Create a mock content object (Organization or Team)"""
+        content_obj = mock.Mock()
+        content_obj.id = 100
+        return content_obj
+
+    def create_mock_role_assignment(self, role_definition=None, content_type_id=None, object_id=None, content_object=None, role_definition_id=None):
+        """Helper to create a mock role assignment"""
+        assignment = mock.Mock()
+        assignment.role_definition = role_definition
+        assignment.content_type_id = content_type_id
+        assignment.object_id = object_id
+        assignment.content_object = content_object
+        assignment.role_definition_id = role_definition_id or (role_definition.id if role_definition else 1)
+        return assignment
+
+    @pytest.mark.parametrize(
+        "content_type_id, object_id, expected_content_type_key, expected_object_key, should_have_content_object",
+        [
+            # System-wide role (None object_id)
+            pytest.param(None, None, None, None, False, id="system_wide_role"),
+            # Integer object_id
+            pytest.param(10, 100, 10, 100, True, id="integer_object_id"),
+            # UUID object_id
+            pytest.param(10, "uuid", 10, "uuid", True, id="uuid_object_id"),
+        ],
+    )
+    def test_cache_existing_with_valid_object_ids(
+        self,
+        cache_instance,
+        mock_role_definition,
+        mock_content_object,
+        content_type_id,
+        object_id,
+        expected_content_type_key,
+        expected_object_key,
+        should_have_content_object,
+    ):
+        """Test caching role assignments with various valid object_id types"""
+        from uuid import uuid4
+
+        # Handle UUID case
+        if object_id == "uuid":
+            object_id = uuid4()
+            expected_object_key = object_id
+
+        assignment = self.create_mock_role_assignment(
+            role_definition=mock_role_definition,
+            content_type_id=content_type_id,
+            object_id=object_id,
+            content_object=mock_content_object if should_have_content_object else None,
+        )
+
+        cache_instance.cache_existing([assignment])
+
+        # Verify cache structure
+        assert "Test Role" in cache_instance.cache
+        assert expected_content_type_key in cache_instance.cache["Test Role"]
+        assert expected_object_key in cache_instance.cache["Test Role"][expected_content_type_key]
+
+        cached_entry = cache_instance.cache["Test Role"][expected_content_type_key][expected_object_key]
+        expected_object = mock_content_object if should_have_content_object else None
+        assert cached_entry['object'] == expected_object
+        assert cached_entry['status'] == cache_instance.STATUS_EXISTING
+
+        # Verify role definition is cached
+        assert "Test Role" in cache_instance.role_definitions
+        assert cache_instance.role_definitions["Test Role"] == mock_role_definition
+
+    @pytest.mark.parametrize(
+        "object_id, expected_key, expected_log_message, log_level",
+        [
+            # Valid string to int conversion
+            pytest.param("123", 123, None, None, id="valid_string_to_int"),
+            pytest.param("0", 0, None, None, id="zero_string_to_int"),
+            pytest.param("-1", -1, None, None, id="negative_string_to_int"),
+            # Invalid string conversion
+            pytest.param("not-a-number", None, "Could not convert not-a-number to int using None for object cache", "warning", id="invalid_string"),
+            # Invalid object_id type
+            pytest.param({'invalid': 'dict'}, None, "Could validate object_id", "error", id="invalid_dict_type"),
+            pytest.param([], None, "Could validate object_id", "error", id="invalid_list_type"),
+        ],
+    )
+    def test_cache_existing_with_object_id_conversion_and_errors(
+        self, cache_instance, mock_role_definition, caplog, object_id, expected_key, expected_log_message, log_level
+    ):
+        """Test caching role assignments with object_id conversion and error handling"""
+        assignment = self.create_mock_role_assignment(role_definition=mock_role_definition, content_type_id=10, object_id=object_id, content_object=mock.Mock())
+
+        cache_instance.cache_existing([assignment])
+
+        # Verify logging if expected
+        if expected_log_message:
+            assert expected_log_message in caplog.text
+
+        # Verify cache structure
+        cached_entry = cache_instance.cache["Test Role"][10][expected_key]
+        # For error cases, object should be None
+        if expected_log_message:
+            assert cached_entry['object'] is None
+        else:
+            assert cached_entry['object'] is not None
+        assert cached_entry['status'] == cache_instance.STATUS_EXISTING
+
+    def test_cache_existing_multiple_assignments(self, cache_instance, mock_content_object):
+        """Test caching multiple role assignments"""
+        role_def1 = mock.Mock()
+        role_def1.name = "Role 1"
+        role_def1.id = 1
+
+        role_def2 = mock.Mock()
+        role_def2.name = "Role 2"
+        role_def2.id = 2
+
+        assignments = [
+            self.create_mock_role_assignment(role_definition=role_def1, content_type_id=10, object_id=100, content_object=mock_content_object),
+            self.create_mock_role_assignment(role_definition=role_def2, content_type_id=None, object_id=None, content_object=None),
+            self.create_mock_role_assignment(role_definition=role_def1, content_type_id=20, object_id=200, content_object=mock.Mock()),
+        ]
+
+        cache_instance.cache_existing(assignments)
+
+        # Verify all assignments are cached
+        assert "Role 1" in cache_instance.cache
+        assert "Role 2" in cache_instance.cache
+
+        # Verify Role 1 has two entries (different content types)
+        assert 10 in cache_instance.cache["Role 1"]
+        assert 20 in cache_instance.cache["Role 1"]
+        assert 100 in cache_instance.cache["Role 1"][10]
+        assert 200 in cache_instance.cache["Role 1"][20]
+
+        # Verify Role 2 has system-wide entry
+        assert None in cache_instance.cache["Role 2"]
+        assert None in cache_instance.cache["Role 2"][None]
+
+        # Verify all role definitions are cached
+        assert len(cache_instance.role_definitions) == 2
+        assert cache_instance.role_definitions["Role 1"] == role_def1
+        assert cache_instance.role_definitions["Role 2"] == role_def2
+
+    def test_cache_existing_role_definition_already_cached(self, cache_instance, mock_role_definition):
+        """Test that role definition is not overwritten if already cached"""
+        # Pre-cache a role definition
+        cache_instance.role_definitions["Test Role"] = mock_role_definition
+
+        # Create assignment with different role definition object but same name
+        different_role_def = mock.Mock()
+        different_role_def.name = "Test Role"
+        different_role_def.id = 1
+
+        assignment = self.create_mock_role_assignment(role_definition=different_role_def, content_type_id=10, object_id=100, content_object=mock.Mock())
+
+        # Mock _rd_by_id to return the pre-cached role definition
+        with mock.patch.object(cache_instance, '_rd_by_id', return_value=mock_role_definition):
+            cache_instance.cache_existing([assignment])
+
+        # Verify original role definition is preserved
+        assert cache_instance.role_definitions["Test Role"] == mock_role_definition
+
+    def test_cache_existing_empty_list(self, cache_instance):
+        """Test caching with empty list of assignments"""
+        cache_instance.cache_existing([])
+
+        # Cache should remain empty
+        assert len(cache_instance.cache) == 0
+        assert len(cache_instance.role_definitions) == 0
+
+    def test_cache_existing_preserves_existing_cache(self, cache_instance, mock_role_definition, mock_content_object):
+        """Test that existing cache entries are preserved when adding new ones"""
+        # First, cache one assignment
+        assignment1 = self.create_mock_role_assignment(
+            role_definition=mock_role_definition, content_type_id=10, object_id=100, content_object=mock_content_object
+        )
+        cache_instance.cache_existing([assignment1])
+
+        # Verify first assignment is cached
+        assert cache_instance.cache["Test Role"][10][100]['status'] == cache_instance.STATUS_EXISTING
+
+        # Now add another assignment
+        role_def2 = mock.Mock()
+        role_def2.name = "Another Role"
+        role_def2.id = 2
+
+        assignment2 = self.create_mock_role_assignment(role_definition=role_def2, content_type_id=20, object_id=200, content_object=mock.Mock())
+        cache_instance.cache_existing([assignment2])
+
+        # Verify both assignments are in cache
+        assert "Test Role" in cache_instance.cache
+        assert "Another Role" in cache_instance.cache
+        assert cache_instance.cache["Test Role"][10][100]['status'] == cache_instance.STATUS_EXISTING
+        assert cache_instance.cache["Another Role"][20][200]['status'] == cache_instance.STATUS_EXISTING

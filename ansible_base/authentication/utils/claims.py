@@ -4,7 +4,7 @@ import logging
 import re
 from enum import Enum, auto
 from typing import Any, List, Optional, Union
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -21,6 +21,7 @@ from ansible_base.authentication.utils.authenticator_map import check_role_type,
 from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam, CommonModel
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 from ansible_base.lib.utils.string import is_empty
+from ansible_base.rbac.claims import get_user_object_roles
 from ansible_base.rbac.models import DABContentType
 
 from .trigger_definition import TRIGGER_DEFINITION
@@ -733,9 +734,7 @@ class ReconcileUser:
         Processes the user claims (key `rbac_roles`)
         and adds/removes RBAC permissions (a.k.a. role_user_assignments)
         """
-        # NOTE(cutwater): Here `prefetch_related` is used to prevent N+1 problem when accessing `content_object`
-        #  attribute in `RoleUserAssignmentsCache.cache_existing` method.
-        role_assignments = self.user.role_assignments.prefetch_related('content_object').all()
+        role_assignments = get_user_object_roles(self.user)
         self.permissions_cache.cache_existing(role_assignments)
 
         # System roles
@@ -905,9 +904,28 @@ class RoleUserAssignmentsCache:
             # Cache Role User Assignment
             self._init_cache_key(role_definition.name, content_type_id=role_assignment.content_type_id)
 
-            # object_id is TEXT db type
-            object_id = int(role_assignment.object_id) if role_assignment.object_id is not None else None
-            obj = role_assignment.content_object if object_id else None
+            has_valid_object_id = False
+            object_id = role_assignment.object_id  # Initialize with the original value
+
+            if role_assignment.object_id is None:
+                # If we have None we will cache with a None object
+                pass
+            elif isinstance(role_assignment.object_id, UUID) or isinstance(role_assignment.object_id, int):
+                # If we got an int or a UUID we should have a valid object already
+                has_valid_object_id = True
+            elif isinstance(role_assignment.object_id, str):
+                # If we got a string, try to convert it to an int
+                try:
+                    object_id = int(role_assignment.object_id)
+                    has_valid_object_id = True
+                except ValueError:
+                    logger.warning(f'Could not convert {role_assignment.object_id} to int using None for object cache')
+                    object_id = None  # Use None for invalid string conversions
+            else:
+                logger.error(f'Could validate object_id {role_assignment.object_id} with type {type(role_assignment.object_id)}, using None for object cache')
+                object_id = None  # Use None for invalid object_id types
+
+            obj = role_assignment.content_object if has_valid_object_id else None
 
             self.cache[role_definition.name][role_assignment.content_type_id][object_id] = {'object': obj, 'status': self.STATUS_EXISTING}
 
