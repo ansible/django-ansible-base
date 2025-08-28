@@ -52,6 +52,12 @@ class StandinMeta:
         self.app_label = ct.app_label
         self.abstract = abstract
 
+        # Provide Django-like labels for error messaging and display
+        # e.g., "inventory" -> "inventory" (or title-cased if preferred)
+        human_label = self.model_name.replace('_', ' ')
+        self.verbose_name = human_label
+        self.verbose_name_plural = f"{human_label}s"
+
         self.pk = StandInPK(ct)
 
 
