@@ -269,6 +269,7 @@ def test_filter_assignment_list(admin_api_client, rando, inv_rd, view_inv_rd, or
 @pytest.mark.parametrize(
     'reverse_name,normal_case,unauth_case',
     [
+        ('service-index-root', 200, 401),
         ('dabcontenttype-list', 200, 401),  # could change unauthenticated case, depends on need
         ('dabpermission-list', 200, 401),
         ('resource-list', 403, 401),
@@ -287,6 +288,32 @@ def test_service_api_permissions(reverse_name, normal_case, unauth_case, admin_a
 
     unauth_response = unauthenticated_api_client.get(url)
     assert unauth_response.status_code == unauth_case, unauth_response.data
+
+
+@pytest.mark.django_db
+def test_role_types_and_permissions_payload_shape(user_api_client):
+    """Minimal payload-shape checks for role types and permissions when accessed by normal user."""
+    # role types
+    url_ct = get_relative_url('dabcontenttype-list')
+    resp_ct = user_api_client.get(url_ct)
+    assert resp_ct.status_code == 200, resp_ct.data
+    # Results should be paginated list; spot-check first item fields if present
+    if resp_ct.data.get('count', 0) and resp_ct.data.get('results'):
+        item = resp_ct.data['results'][0]
+        for key in ('api_slug', 'service', 'app_label', 'model', 'pk_field_type'):
+            assert key in item
+        # parent_content_type is allowed to be null
+        assert 'parent_content_type' in item
+
+    # role permissions
+    url_perm = get_relative_url('dabpermission-list')
+    resp_perm = user_api_client.get(url_perm)
+    assert resp_perm.status_code == 200, resp_perm.data
+    if resp_perm.data.get('count', 0) and resp_perm.data.get('results'):
+        item = resp_perm.data['results'][0]
+        for key in ('api_slug', 'codename', 'name'):
+            assert key in item
+        assert 'content_type' in item  # slug of related content type
 
 
 @pytest.mark.django_db

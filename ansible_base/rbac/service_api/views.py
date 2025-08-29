@@ -1,5 +1,5 @@
 from django.db import transaction
-from rest_framework import status
+from rest_framework import permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet, mixins
@@ -22,6 +22,7 @@ class RoleContentTypeViewSet(
 
     queryset = DABContentType.objects.prefetch_related('parent_content_type').all()
     serializer_class = service_serializers.DABContentTypeSerializer
+    permission_classes = try_add_oauth2_scope_permission([permissions.IsAuthenticated])
 
 
 class RolePermissionTypeViewSet(
@@ -33,6 +34,7 @@ class RolePermissionTypeViewSet(
 
     queryset = DABPermission.objects.prefetch_related('content_type').all()
     serializer_class = service_serializers.DABPermissionSerializer
+    permission_classes = try_add_oauth2_scope_permission([permissions.IsAuthenticated])
 
 
 # NOTE: role definitions are exchanged via the resources endpoint, so not included here
