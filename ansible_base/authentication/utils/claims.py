@@ -21,7 +21,6 @@ from ansible_base.authentication.utils.authenticator_map import check_role_type,
 from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam, CommonModel
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 from ansible_base.lib.utils.string import is_empty
-from ansible_base.rbac.claims import get_user_object_roles
 from ansible_base.rbac.models import DABContentType
 from ansible_base.rbac.remote import get_local_resource_prefix
 
@@ -735,7 +734,9 @@ class ReconcileUser:
         Processes the user claims (key `rbac_roles`)
         and adds/removes RBAC permissions (a.k.a. role_user_assignments)
         """
-        role_assignments = get_user_object_roles(self.user)
+        # NOTE(cutwater): Here `prefetch_related` is used to prevent N+1 problem when accessing `content_object`
+        #  attribute in `RoleUserAssignmentsCache.cache_existing` method.
+        role_assignments = self.user.role_assignments.prefetch_related('content_object').all()
         self.permissions_cache.cache_existing(role_assignments)
 
         # System roles
@@ -910,11 +911,11 @@ class RoleUserAssignmentsCache:
                 try:
                     # object_id should be TEXT db type
                     object_id = int(role_assignment.object_id) if role_assignment.object_id is not None else None
-                    obj = role_assignment.content_object if object_id else None
+                    obj = role_assignment.content_object if object_id is not None else None
 
                     self.cache[role_definition.name][role_assignment.content_type_id][object_id] = {'object': obj, 'status': self.STATUS_EXISTING}
                 # Intended to catch any int casting errors, since we're assuming object_ids are text values cast-able to integers
-                except ValueError:
+                except (ValueError, TypeError):
                     logger.exception(f'Unable to cache object_id {role_assignment.object_id}: Could not cast to type int')
 
     def rd_by_name(self, role_name: str) -> Optional[CommonModel]:
