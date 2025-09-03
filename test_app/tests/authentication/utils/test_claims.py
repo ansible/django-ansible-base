@@ -2219,7 +2219,7 @@ class TestRoleUserAssignmentsCache:
     """Test cases for the RoleUserAssignmentsCache class, specifically the cache_existing method"""
 
     @pytest.fixture
-    def cache_instance(self):
+    def cache_instance(self, db):
         """Create a fresh cache instance for each test"""
         return claims.RoleUserAssignmentsCache()
 
@@ -2245,14 +2245,27 @@ class TestRoleUserAssignmentsCache:
         content_obj.id = 100
         return content_obj
 
-    def create_mock_role_assignment(self, role_definition=None, content_type_id=None, object_id=None, content_object=None, role_definition_id=None):
+    def create_mock_role_assignment(
+        self, role_definition=None, content_type_id=None, object_id=None, content_object=None, role_definition_id=None, content_type_service=None
+    ):
         """Helper to create a mock role assignment"""
+        from ansible_base.rbac.remote import get_local_resource_prefix
+
         assignment = mock.Mock()
         assignment.role_definition = role_definition
         assignment.content_type_id = content_type_id
         assignment.object_id = object_id
         assignment.content_object = content_object
         assignment.role_definition_id = role_definition_id or (role_definition.id if role_definition else 1)
+
+        # Set up content_type mock for local role assignment filtering
+        if content_type_id is None:
+            assignment.content_type = None
+        else:
+            content_type_mock = mock.Mock()
+            content_type_mock.service = content_type_service or get_local_resource_prefix()  # Default to local for caching
+            assignment.content_type = content_type_mock
+
         return assignment
 
     @pytest.mark.parametrize(
@@ -2262,8 +2275,8 @@ class TestRoleUserAssignmentsCache:
             pytest.param(None, None, None, None, False, id="system_wide_role"),
             # Integer object_id
             pytest.param(10, 100, 10, 100, True, id="integer_object_id"),
-            # UUID object_id
-            pytest.param(10, "uuid", 10, "uuid", True, id="uuid_object_id"),
+            # String that converts to integer object_id
+            pytest.param(10, "100", 10, 100, True, id="string_to_int_object_id"),
         ],
     )
     def test_cache_existing_with_valid_object_ids(
@@ -2278,12 +2291,6 @@ class TestRoleUserAssignmentsCache:
         should_have_content_object,
     ):
         """Test caching role assignments with various valid object_id types"""
-        from uuid import uuid4
-
-        # Handle UUID case
-        if object_id == "uuid":
-            object_id = uuid4()
-            expected_object_key = object_id
 
         assignment = self.create_mock_role_assignment(
             role_definition=mock_role_definition,
@@ -2309,21 +2316,21 @@ class TestRoleUserAssignmentsCache:
         assert cache_instance.role_definitions["Test Role"] == mock_role_definition
 
     @pytest.mark.parametrize(
-        "object_id, expected_key, expected_log_message, log_level",
+        "object_id, expected_key, expected_log_message, should_be_cached",
         [
             # Valid string to int conversion
-            pytest.param("123", 123, None, None, id="valid_string_to_int"),
-            pytest.param("0", 0, None, None, id="zero_string_to_int"),
-            pytest.param("-1", -1, None, None, id="negative_string_to_int"),
-            # Invalid string conversion
-            pytest.param("not-a-number", None, "Could not convert not-a-number to int using None for object cache", "warning", id="invalid_string"),
-            # Invalid object_id type
-            pytest.param({'invalid': 'dict'}, None, "Could validate object_id", "error", id="invalid_dict_type"),
-            pytest.param([], None, "Could validate object_id", "error", id="invalid_list_type"),
+            pytest.param("123", 123, None, True, id="valid_string_to_int"),
+            pytest.param("0", 0, None, True, id="zero_string_to_int"),
+            pytest.param("-1", -1, None, True, id="negative_string_to_int"),
+            # Invalid string conversion - not cached
+            pytest.param("not-a-number", None, "Unable to cache object_id not-a-number: Could not cast to type int", False, id="invalid_string"),
+            # Invalid object_id type - not cached
+            pytest.param({'invalid': 'dict'}, None, "Unable to cache object_id", False, id="invalid_dict_type"),
+            pytest.param([], None, "Unable to cache object_id", False, id="invalid_list_type"),
         ],
     )
     def test_cache_existing_with_object_id_conversion_and_errors(
-        self, cache_instance, mock_role_definition, caplog, object_id, expected_key, expected_log_message, log_level
+        self, cache_instance, mock_role_definition, caplog, object_id, expected_key, expected_log_message, should_be_cached
     ):
         """Test caching role assignments with object_id conversion and error handling"""
         assignment = self.create_mock_role_assignment(role_definition=mock_role_definition, content_type_id=10, object_id=object_id, content_object=mock.Mock())
@@ -2334,14 +2341,16 @@ class TestRoleUserAssignmentsCache:
         if expected_log_message:
             assert expected_log_message in caplog.text
 
-        # Verify cache structure
-        cached_entry = cache_instance.cache["Test Role"][10][expected_key]
-        # For error cases, object should be None
-        if expected_log_message:
-            assert cached_entry['object'] is None
-        else:
+        # Verify cache structure based on whether it should be cached
+        if should_be_cached:
+            cached_entry = cache_instance.cache["Test Role"][10][expected_key]
             assert cached_entry['object'] is not None
-        assert cached_entry['status'] == cache_instance.STATUS_EXISTING
+            assert cached_entry['status'] == cache_instance.STATUS_EXISTING
+        else:
+            # For error cases, nothing should be cached at the object_id level
+            if "Test Role" in cache_instance.cache and 10 in cache_instance.cache["Test Role"]:
+                # If the role exists, ensure the problematic object_id is not there
+                assert expected_key not in cache_instance.cache["Test Role"][10]
 
     def test_cache_existing_multiple_assignments(self, cache_instance, mock_content_object):
         """Test caching multiple role assignments"""
