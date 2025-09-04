@@ -941,8 +941,9 @@ class RoleUserAssignmentsCache:
         }
 
         Notes:
-            - Only caches local role assignments (where content_type.service is local or "shared")
-            - System roles have content_type_id=None and object_id=None
+            - Caches both global/system roles and local object role assignments
+            - Global/system roles have content_type_id=None and object_id=None
+            - Local object roles are cached only if content_type.service is local or "shared"
             - Organization/Team roles have specific content_type_id and object_id values
             - All cached assignments are marked with STATUS_EXISTING status
             - Role definitions are also cached separately in self.role_definitions
@@ -956,17 +957,34 @@ class RoleUserAssignmentsCache:
             # Cache Role User Assignment
             self._init_cache_key(role_definition.name, content_type_id=role_assignment.content_type_id)
 
-            # Only should cache local role assignments
-            if (role_assignment.content_type is not None) and role_assignment.content_type.service in [get_local_resource_prefix(), "shared"]:
-                try:
-                    # object_id should be TEXT db type
-                    object_id = int(role_assignment.object_id) if role_assignment.object_id is not None else None
-                    obj = role_assignment.content_object if object_id is not None else None
+            # Cache global roles (content_type=None) and local role assignments
+            should_cache = False
+            if role_assignment.content_type is None:
+                # Global/system roles (e.g., System Auditor)
+                should_cache = True
+            elif role_assignment.content_type.service in [get_local_resource_prefix(), "shared"]:
+                # Local object roles (e.g., Organization Admin, Team Member)
+                should_cache = True
 
+            if should_cache:
+                # For global roles, both object_id and content_object are None
+                # For object roles, object_id should be TEXT db type cast to int
+                if role_assignment.content_type is None:
+                    # Global role
+                    object_id = None
+                    obj = None
                     self.cache[role_definition.name][role_assignment.content_type_id][object_id] = {'object': obj, 'status': self.STATUS_EXISTING}
-                # Intended to catch any int casting errors, since we're assuming object_ids are text values cast-able to integers
-                except (ValueError, TypeError):
-                    logger.exception(f'Unable to cache object_id {role_assignment.object_id}: Could not cast to type int')
+                else:
+                    # Object role - try to convert object_id to int
+                    try:
+                        object_id = int(role_assignment.object_id) if role_assignment.object_id is not None else None
+                    except (ValueError, TypeError):
+                        # Intended to catch any int casting errors, since we're assuming object_ids are text values cast-able to integers
+                        logger.exception(f'Unable to cache object_id {role_assignment.object_id}: Could not cast to type int')
+                        continue  # Skip this role assignment if we can't convert the object_id
+
+                    obj = role_assignment.content_object if object_id is not None else None
+                    self.cache[role_definition.name][role_assignment.content_type_id][object_id] = {'object': obj, 'status': self.STATUS_EXISTING}
 
     def rd_by_name(self, role_name: str) -> Optional[CommonModel]:
         """Returns RoleDefinition by its name. Caches it if requested for first time"""
