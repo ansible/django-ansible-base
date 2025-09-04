@@ -3,7 +3,7 @@ import importlib
 import logging
 import re
 from enum import Enum, auto
-from typing import Any, List, Optional, Union
+from typing import Any, Iterable, List, Optional, Union
 from uuid import uuid4
 
 from django.conf import settings
@@ -895,8 +895,58 @@ class RoleUserAssignmentsCache:
         """
         return self.cache.items()
 
-    def cache_existing(self, role_assignments):
-        """Caches given role_assignments associated with one user in form of dict (see method `items()`)"""
+    def cache_existing(self, role_assignments: Iterable[models.Model]) -> None:
+        """
+        Caches given role_assignments associated with one user in the internal cache dictionary.
+
+        This method processes role assignments and stores them in a nested dictionary structure
+        for efficient lookup during permission reconciliation.
+
+        Args:
+            role_assignments: An iterable of role assignment model instances (typically from
+                            user.role_assignments.all() QuerySet) that contain role_definition,
+                            content_type, content_object, and object_id attributes.
+
+        Cache Structure:
+        The internal cache will be populated in the following format:
+        {
+            "System Auditor": {                    # role_name (str)
+                None: {                            # content_type_id (None for system roles)
+                    None: {                        # object_id (None for system roles)
+                        'object': None,            # content_object (None for system roles)
+                        'status': 'existing'       # STATUS_EXISTING constant
+                    }
+                }
+            },
+            "Organization Admin": {                # role_name (str)
+                15: {                             # content_type_id (int, e.g., Organization content type)
+                    42: {                         # object_id (int, specific organization ID)
+                        'object': <Organization>, # content_object (Organization instance)
+                        'status': 'existing'      # STATUS_EXISTING constant
+                    },
+                    43: {                         # object_id (int, another organization ID)
+                        'object': <Organization>, # content_object (Organization instance)
+                        'status': 'existing'      # STATUS_EXISTING constant
+                    }
+                }
+            },
+            "Team Member": {                      # role_name (str)
+                16: {                            # content_type_id (int, e.g., Team content type)
+                    7: {                         # object_id (int, specific team ID)
+                        'object': <Team>,        # content_object (Team instance)
+                        'status': 'existing'     # STATUS_EXISTING constant
+                    }
+                }
+            }
+        }
+
+        Notes:
+            - Only caches local role assignments (where content_type.service is local or "shared")
+            - System roles have content_type_id=None and object_id=None
+            - Organization/Team roles have specific content_type_id and object_id values
+            - All cached assignments are marked with STATUS_EXISTING status
+            - Role definitions are also cached separately in self.role_definitions
+        """
         for role_assignment in role_assignments:
             # Cache role definition
             if (role_definition := self._rd_by_id(role_assignment)) is None:
