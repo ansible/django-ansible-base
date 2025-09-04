@@ -907,7 +907,7 @@ class RoleUserAssignmentsCache:
             self._init_cache_key(role_definition.name, content_type_id=role_assignment.content_type_id)
 
             # Only should cache local role assignments
-            if role_assignment.content_type is None or role_assignment.content_type.service in [get_local_resource_prefix(), "shared"]:
+            if (role_assignment.content_type is not None) and role_assignment.content_type.service in [get_local_resource_prefix(), "shared"]:
                 try:
                     # object_id should be TEXT db type
                     object_id = int(role_assignment.object_id) if role_assignment.object_id is not None else None
