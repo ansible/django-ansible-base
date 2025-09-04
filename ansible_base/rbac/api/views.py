@@ -296,6 +296,7 @@ class UserAccessViewSet(
     """
 
     serializer_mixin = UserAccessListMixin
+    permission_classes = try_add_oauth2_scope_permission([permissions.IsAuthenticated])
 
     def get_data_from_url(self):
         if not hasattr(self, 'related_object'):
@@ -378,6 +379,7 @@ class UserAccessAssignmentViewSet(
     """
 
     serializer_class = UserAccessAssignmentSerializer
+    permission_classes = try_add_oauth2_scope_permission([permissions.IsAuthenticated])
 
     def get_url_actor(self):
         actor_pk = self.kwargs.get("actor_pk")

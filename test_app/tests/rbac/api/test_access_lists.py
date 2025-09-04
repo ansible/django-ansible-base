@@ -138,3 +138,43 @@ def test_no_duplicates_team(team, inv_rd, inventory, org_inv_rd, admin_api_clien
     response = admin_api_client.get(url)
     assert response.status_code == 200, response.data
     assert response.data['count'] == 1, response.data
+
+
+@pytest.mark.django_db
+def test_org_admin_role_user_access_bug(organization, org_admin_rd):
+    """
+    Test for AAP-52187: Org admin gets 403 on role_user_access despite having proper permissions.
+
+    This test demonstrates the RBAC evaluation bug where:
+    - Org admin can GET /organizations/X/ (works correctly)
+    - Same org admin gets 403 on /role_user_access/shared.organization/X/ (bug)
+    - Both should work since the user has shared.view_organization permission
+    """
+    from rest_framework.test import APIClient
+
+    # Create org admin user for AAP-52187 reproduction
+    org_admin_user = User.objects.create(username='aap52187-org-admin-test-user')
+
+    # Give user Organization Admin role on the organization
+    org_admin_rd.give_permission(org_admin_user, organization)
+
+    # Create API client for the org admin user
+    client = APIClient()
+    client.force_authenticate(user=org_admin_user)
+
+    # Test 1: Org admin should be able to view the organization directly
+    org_detail_url = get_relative_url('organization-detail', kwargs={'pk': organization.pk})
+    response = client.get(org_detail_url)
+    assert response.status_code == 200, f"Org admin should be able to view organization directly: {response.data}"
+
+    # Test 2: Org admin should be able to view role user access for the same organization
+    # This is currently broken due to has_obj_perm evaluation bug in UserAccessViewSet
+    role_access_url = get_relative_url('role-user-access', kwargs={'pk': organization.pk, 'model_name': 'shared.organization'})
+    response = client.get(role_access_url)
+
+    # This assertion will fail with current bug, demonstrating the issue
+    assert response.status_code == 200, (
+        f"AAP-52187 BUG: Org admin should be able to view role access for organization they manage. "
+        f"User has shared.view_organization permission and can access org detail endpoint, "
+        f"but role_user_access fails with: {response.status_code} {response.data}"
+    )
