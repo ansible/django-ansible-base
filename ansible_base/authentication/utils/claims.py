@@ -954,37 +954,43 @@ class RoleUserAssignmentsCache:
                 role_definition = role_assignment.role_definition
                 self.role_definitions[role_definition.name] = role_definition
 
-            # Cache Role User Assignment
+            # Skip role assignments that should not be cached
+            if not (
+                role_assignment.content_type is None  # Global/system roles (e.g., System Auditor)
+                or role_assignment.content_type.service in [get_local_resource_prefix(), "shared"]
+            ):  # Local object roles
+                continue
+
+            # Cache Role User Assignment - only initialize cache key for assignments we're actually caching
             self._init_cache_key(role_definition.name, content_type_id=role_assignment.content_type_id)
 
-            # Cache global roles (content_type=None) and local role assignments
-            should_cache = False
-            if role_assignment.content_type is None:
-                # Global/system roles (e.g., System Auditor)
-                should_cache = True
-            elif role_assignment.content_type.service in [get_local_resource_prefix(), "shared"]:
-                # Local object roles (e.g., Organization Admin, Team Member)
-                should_cache = True
+            # Cache the role assignment
+            self._cache_role_assignment(role_definition, role_assignment)
 
-            if should_cache:
-                # For global roles, both object_id and content_object are None
-                # For object roles, object_id should be TEXT db type cast to int
-                if role_assignment.content_type is None:
-                    # Global role
-                    object_id = None
-                    obj = None
-                    self.cache[role_definition.name][role_assignment.content_type_id][object_id] = {'object': obj, 'status': self.STATUS_EXISTING}
-                else:
-                    # Object role - try to convert object_id to int
-                    try:
-                        object_id = int(role_assignment.object_id) if role_assignment.object_id is not None else None
-                    except (ValueError, TypeError):
-                        # Intended to catch any int casting errors, since we're assuming object_ids are text values cast-able to integers
-                        logger.exception(f'Unable to cache object_id {role_assignment.object_id}: Could not cast to type int')
-                        continue  # Skip this role assignment if we can't convert the object_id
+    def _cache_role_assignment(self, role_definition: models.Model, role_assignment: models.Model) -> None:
+        """
+        Cache a single role assignment.
 
-                    obj = role_assignment.content_object if object_id is not None else None
-                    self.cache[role_definition.name][role_assignment.content_type_id][object_id] = {'object': obj, 'status': self.STATUS_EXISTING}
+        Args:
+            role_definition: The role definition associated with this assignment
+            role_assignment: The role assignment to cache
+        """
+        if role_assignment.content_type is None:
+            # Global role - both object_id and content_object are None
+            object_id = None
+            obj = None
+        else:
+            # Object role - try to convert object_id to int
+            try:
+                object_id = int(role_assignment.object_id) if role_assignment.object_id is not None else None
+            except (ValueError, TypeError):
+                # Intended to catch any int casting errors, since we're assuming object_ids are text values cast-able to integers
+                logger.exception(f'Unable to cache object_id {role_assignment.object_id}: Could not cast to type int')
+                return  # Skip this role assignment if we can't convert the object_id
+
+            obj = role_assignment.content_object if object_id is not None else None
+
+        self.cache[role_definition.name][role_assignment.content_type_id][object_id] = {'object': obj, 'status': self.STATUS_EXISTING}
 
     def rd_by_name(self, role_name: str) -> Optional[CommonModel]:
         """Returns RoleDefinition by its name. Caches it if requested for first time"""
