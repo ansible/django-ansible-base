@@ -890,6 +890,27 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
             claims.TriggerResult.SKIP,
             id="in operator with string value (invalid) should be ignored",
         ),
+        pytest.param(
+            {"cn": {"ends_with": "_admin"}, "employeeType": {"equals": "manager"}, "join_condition": "and"},
+            {"cn": ["ldap_admin"]},
+            False,
+            claims.TriggerResult.SKIP,
+            id="missing attribute required by 'and' condition should result in skip",
+        ),
+        pytest.param(
+            {"cn": {"ends_with": "_admin"}, "employeeType": {"equals": "manager"}, "join_condition": "or"},
+            {"cn": ["ldap_admin"]},
+            False,
+            claims.TriggerResult.ALLOW,
+            id="missing attribute when using 'or' condition should result in allow",
+        ),
+        pytest.param(
+            {"cn": {"ends_with": "_admin"}, "employeeType": {"equals": "manager"}, "join_condition": "and"},
+            {"cn": ["ldap_org_admin"], "employeeType": ["manager"]},
+            False,
+            claims.TriggerResult.ALLOW,
+            id="all attribute required by 'and' condition should result in allow",
+        ),
     ],
 )
 @pytest.mark.django_db
