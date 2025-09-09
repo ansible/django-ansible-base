@@ -714,14 +714,14 @@ class SyncExecutor:
                 if delete_local_assignment(assignment_tuple):
                     delete_msg = (
                         f"DELETED assignment {assignment_tuple.assignment_type} {assignment_tuple.actor_ansible_id}"
-                        " -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
+                        f" -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
                     )
                     self.write(delete_msg)
                     self.results["deleted_assignments"].append(delete_msg)
                 else:
                     error_msg = (
                         f"ERRORED while DELETING assignment {assignment_tuple.assignment_type} {assignment_tuple.actor_ansible_id}"
-                        " -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
+                        f" -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
                     )
                     self.write(error_msg)
                     self.results["errored_assignments"].append(error_msg)
@@ -731,14 +731,14 @@ class SyncExecutor:
                 if create_local_assignment(assignment_tuple):
                     created_msg = (
                         f"CREATED assignment {assignment_tuple.assignment_type} {assignment_tuple.actor_ansible_id}"
-                        " -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
+                        f" -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
                     )
                     self.write(created_msg)
                     self.results["created_assigments"].append(created_msg)
                 else:
                     error_msg = (
                         f"ERRORED while CREATING assignment {assignment_tuple.assignment_type} {assignment_tuple.actor_ansible_id}"
-                        " -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
+                        f" -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
                     )
                     self.write(error_msg)
                     self.results["errored_assignments"].append(error_msg)
