@@ -459,7 +459,15 @@ def process_user_attributes(trigger_condition: dict, attributes: dict, map_id: i
         # Check if user has the attribute
         user_value = attributes.get(attribute, None)
         if user_value is None:
-            _prefixed_debug(map_id, tracking_id, f"Attr [{attribute}] is not present in user attributes, skipping")
+            # if condition is not "and", the attribute value is not required, just move on
+            if join_condition != 'and':
+                _prefixed_debug(map_id, tracking_id, f"Attr [{attribute}] is not present in user attributes, skipping")
+            # else, condition is "and" which means the attribute value IS required, set access to False
+            else:
+                _prefixed_debug(
+                    map_id, tracking_id, f"Attr [{attribute}] is not present in user attributes but is required by condition 'and' changing access to false"
+                )
+                has_access = has_access_with_join(has_access, False, join_condition)
             continue
 
         # Normalize user value and process
