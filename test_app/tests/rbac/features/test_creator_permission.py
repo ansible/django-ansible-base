@@ -1,3 +1,5 @@
+from unittest import mock
+
 import pytest
 from django.apps import apps
 from django.test.utils import override_settings
@@ -76,3 +78,14 @@ def test_creator_permission_for_unregistered_model(rando):
     assert DABContentType.objects.count() == prior_ct  # did not create anything
     assert RoleUserAssignment.objects.count() == prior_assignments
     assert RoleDefinition.objects.count() == prior_rds
+
+
+@pytest.mark.django_db
+def test_creator_permission_does_reverse_sync(rando, inventory):
+    # mock maybe_reverse_sync_assignment
+    with mock.patch('ansible_base.rbac.models.role.maybe_reverse_sync_assignment') as mock_maybe_reverse_sync_assignment:
+        RoleDefinition.objects.give_creator_permissions(rando, inventory)
+        mock_maybe_reverse_sync_assignment.assert_called_once()
+        RoleDefinition.objects.give_creator_permissions(rando, inventory)
+        # assert mock was not called another time
+        mock_maybe_reverse_sync_assignment.assert_called_once()
