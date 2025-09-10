@@ -51,3 +51,14 @@ def maybe_reverse_sync_unassignment(role_definition, actor, content_object):
 
     client = get_current_user_resource_client()
     client.sync_unassignment(role_definition, actor, content_object)
+
+
+def maybe_reverse_sync_object_deletion(content_object):
+    """Sync object deletion to Gateway for cleanup of all related role assignments"""
+    if not reverse_sync_enabled_all_conditions(content_object):
+        return
+    
+    from ansible_base.resource_registry.utils.sync_to_resource_server import get_current_user_resource_client
+
+    client = get_current_user_resource_client()
+    client.sync_object_deletion(content_object)

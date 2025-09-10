@@ -212,6 +212,30 @@ class ResourceAPIClient:
 
         return self._sync_assignment(data, giving=False)
 
+    def sync_object_deletion(self, content_object):
+        """Sync object deletion to Gateway for cleanup of all related role assignments"""
+        from django.contrib.contenttypes.models import ContentType
+        
+        # Get the content type information
+        content_type = ContentType.objects.get_for_model(content_object)
+        
+        data = {
+            'resource_type': f'{content_type.app_label}.{content_type.model}',
+            'resource_pk': str(content_object.pk)  # Convert pk to string for JSON serialization
+        }
+        
+        # Make API call to the object_delete endpoint
+        user_response = self._make_request("post", "role-user-assignments/object_delete/", data=data)
+        team_response = self._make_request("post", "role-team-assignments/object_delete/", data=data)
+        
+        # Return combined results
+        return {
+            'user_assignments_deleted': user_response.json() if user_response.status_code == 200 else None,
+            'team_assignments_deleted': team_response.json() if team_response.status_code == 200 else None,
+            'user_status_code': user_response.status_code,
+            'team_status_code': team_response.status_code
+        }
+
     def _sync_assignment(self, data, giving=True):
         if giving:
             sub_url = 'assign'
