@@ -102,8 +102,7 @@ class BaseSerivceRoleAssignmentViewSet(
 
     def _object_delete(self, request):
         """Delete ALL role assignments for a specific object"""
-        from django.contrib.contenttypes.models import ContentType
-        from ..models import ObjectRole
+        from ..models import DABContentType, ObjectRole
         
         # Validate required fields
         data = request.data
@@ -116,7 +115,7 @@ class BaseSerivceRoleAssignmentViewSet(
         try:
             # Get content type for the resource
             app_label, model = data['resource_type'].split('.')
-            content_type = ContentType.objects.get(app_label=app_label, model=model)
+            content_type = DABContentType.objects.get(app_label=app_label, model=model)
             
             # Delete ALL assignments for this object (bulk operation)
             with transaction.atomic():

@@ -214,10 +214,10 @@ class ResourceAPIClient:
 
     def sync_object_deletion(self, content_object):
         """Sync object deletion to Gateway for cleanup of all related role assignments"""
-        from django.contrib.contenttypes.models import ContentType
+        from ansible_base.rbac.models import DABContentType
         
         # Get the content type information
-        content_type = ContentType.objects.get_for_model(content_object)
+        content_type = DABContentType.objects.get_for_model(content_object)
         
         data = {
             'resource_type': f'{content_type.app_label}.{content_type.model}',
