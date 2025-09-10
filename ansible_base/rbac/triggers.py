@@ -257,22 +257,7 @@ def rbac_post_delete_remove_object_roles(instance, *args, **kwargs):
         ObjectRole.objects.filter(users__isnull=True, teams__isnull=True).delete()
 
     ct = permission_registry.content_type_model.objects.get_for_model(instance)
-    
-    # Check if there are any object-level role assignments before deleting them
-    # This enables conditional triggering for performance optimization
-    existing_object_roles = ObjectRole.objects.filter(content_type=ct, object_id=instance.pk)
-    has_object_level_assignments = existing_object_roles.exists()
-    
-    # Trigger cross-service cleanup if object-level assignments existed
-    if has_object_level_assignments:
-        try:
-            from ..sync import maybe_reverse_sync_object_deletion
-            maybe_reverse_sync_object_deletion(instance)
-        except Exception as e:
-            logger.warning(f'Failed to sync object deletion to Gateway for {instance}: {e}')
-    
-    # Local cleanup - delete object roles and assignments
-    existing_object_roles.delete()
+    ObjectRole.objects.filter(content_type=ct, object_id=instance.pk).delete()
 
     parent_field_name = permission_registry.get_parent_fd_name(instance)
     if parent_field_name:
