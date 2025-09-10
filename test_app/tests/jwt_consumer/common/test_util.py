@@ -37,12 +37,12 @@ class TestValidateTrustedProxy:
             # Assert this header is valid if used right away
             assert validate_x_trusted_proxy_header(header) is True
 
-            # By default the header is only valid for 300ms so a 1/2 second sleep will expire it
-            time.sleep(0.5)
+            # By default the header is only valid for 1000ms so a 1.1 second sleep will expire it
+            time.sleep(1.1)
             with expected_log(
                 'ansible_base.jwt_consumer.common.util.logger',
                 'warning',
-                'was too old to be valid alter trusted_header_timeout_in_ns if needed',
+                'was too old by',
             ):
                 assert validate_x_trusted_proxy_header(header) is False
 
