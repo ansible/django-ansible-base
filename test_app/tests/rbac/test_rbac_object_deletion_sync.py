@@ -152,8 +152,8 @@ def test_sync_import_failure_handling(inventory, rando, inv_rd):
     # Create assignment to trigger sync path
     inv_rd.give_permission(rando, inventory)
 
-    # Mock import failure for the sync module specifically
-    with patch('ansible_base.rbac.triggers.maybe_reverse_sync_object_deletion', side_effect=ImportError("No module named 'ansible_base'")):
+    # Mock import failure for the sync module specifically - patch where it's imported in triggers.py
+    with patch('ansible_base.rbac.sync.maybe_reverse_sync_object_deletion', side_effect=ImportError("No module named 'ansible_base'")):
 
         with patch('ansible_base.rbac.triggers.logger') as mock_logger:
             # Delete should succeed despite import failure

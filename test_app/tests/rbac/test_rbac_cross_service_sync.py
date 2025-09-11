@@ -203,7 +203,10 @@ def test_sync_service_token_authentication(inventory, enable_reverse_sync):  # n
 
                     from ansible_base.rbac.sync import maybe_reverse_sync_object_deletion
 
-                    maybe_reverse_sync_object_deletion(inventory)
+                    # Force JWT refresh by ensuring no cached JWT exists
+                    with patch('ansible_base.resource_registry.rest_client.ResourceAPIClient._jwt', None):
+                        with patch('ansible_base.resource_registry.rest_client.ResourceAPIClient._jwt_timeout', None):
+                            maybe_reverse_sync_object_deletion(inventory)
 
                     # Verify service token was generated
                     mock_token.assert_called_once()
