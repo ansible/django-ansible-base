@@ -204,17 +204,17 @@ def test_sync_service_token_authentication(inventory, enable_reverse_sync):  # n
                 # Verify that sync attempted to make a request through the ResourceAPIClient
                 assert mock_request.called
                 call_kwargs = mock_request.call_args[1]
-                
+
                 # Verify the request was properly structured for the object-delete endpoint
                 assert call_kwargs['method'] == 'post'
                 assert 'object-delete' in call_kwargs['path']
-                
+
                 # Verify the request has the expected data format
                 data = call_kwargs['data']
                 assert 'resource_type' in data
                 assert 'resource_pk' in data
                 assert data['resource_pk'] == str(inventory.pk)
-                
+
                 # ResourceAPIClient handles authentication internally - we just need to verify
                 # it went through the proper client methods that would add auth headers
 
