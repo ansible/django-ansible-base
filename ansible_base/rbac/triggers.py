@@ -258,17 +258,16 @@ def rbac_post_delete_remove_object_roles(instance, *args, **kwargs):
 
     ct = permission_registry.content_type_model.objects.get_for_model(instance)
     
-    # Check if there were object-level assignments before deletion
-    had_object_assignments = ObjectRole.objects.filter(content_type=ct, object_id=instance.pk).exists()
-    
-    ObjectRole.objects.filter(content_type=ct, object_id=instance.pk).delete()
+    # Use bulk delete return value to determine if object-level assignments existed
+    # This avoids the inefficient .exists() query and works correctly for team deletion cases
+    deleted_count, _ = ObjectRole.objects.filter(content_type=ct, object_id=instance.pk).delete()
+    had_object_assignments = deleted_count > 0
 
     parent_field_name = permission_registry.get_parent_fd_name(instance)
     if parent_field_name:
         # Delete all evaluations from inherited permissions
         get_evaluation_model(instance).objects.filter(content_type_id=ct.id, object_id=instance.pk).delete()
 
-    # NEW: Conditionally trigger cross-service cleanup for orphaned assignments in Gateway
     # Only sync when object-level assignments existed - this is the key performance optimization
     if had_object_assignments:
         try:
