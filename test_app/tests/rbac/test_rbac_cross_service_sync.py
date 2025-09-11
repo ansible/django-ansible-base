@@ -43,14 +43,15 @@ def test_sync_object_deletion_success(inventory, enable_reverse_sync):  # noqa: 
                 # Verify the request was made
                 assert mock_request.called
 
-                # Verify request details - _make_request uses keyword arguments
+                # Verify request details - _make_request uses positional arguments
                 call_args = mock_request.call_args
+                call_positional = call_args[0]  # Positional arguments
                 call_kwargs = call_args[1]  # Keyword arguments
 
-                assert 'method' in call_kwargs
-                assert call_kwargs['method'] == 'post'
-                assert 'path' in call_kwargs
-                assert 'object-delete' in call_kwargs['path']
+                # Check positional arguments: method and path
+                assert len(call_positional) >= 2
+                assert call_positional[0] == 'post'  # method
+                assert 'object-delete' in call_positional[1]  # path
                 assert 'data' in call_kwargs
 
                 data = call_kwargs['data']
@@ -203,11 +204,13 @@ def test_sync_service_token_authentication(inventory, enable_reverse_sync):  # n
 
                 # Verify that sync attempted to make a request through the ResourceAPIClient
                 assert mock_request.called
-                call_kwargs = mock_request.call_args[1]
+                call_args = mock_request.call_args
+                call_positional = call_args[0]  # Positional arguments
+                call_kwargs = call_args[1]  # Keyword arguments
 
                 # Verify the request was properly structured for the object-delete endpoint
-                assert call_kwargs['method'] == 'post'
-                assert 'object-delete' in call_kwargs['path']
+                assert call_positional[0] == 'post'  # method
+                assert 'object-delete' in call_positional[1]  # path
 
                 # Verify the request has the expected data format
                 data = call_kwargs['data']
@@ -260,10 +263,11 @@ def test_sync_url_construction(inventory, enable_reverse_sync):  # noqa: F811
                 maybe_reverse_sync_object_deletion(inventory)
 
                 # Verify URL construction
-                call_kwargs = mock_request.call_args[1]
+                call_args = mock_request.call_args
+                call_positional = call_args[0]  # Positional arguments
 
                 # Should be a POST request to the create endpoint
-                assert call_kwargs['method'] == 'post'
+                assert call_positional[0] == 'post'  # method
 
                 # Should include object-delete endpoint
-                assert 'object-delete' in call_kwargs['path']
+                assert 'object-delete' in call_positional[1]  # path
