@@ -53,10 +53,11 @@ def validate_x_trusted_proxy_header(header_value: str, ignore_cache=False) -> bo
         logger.warning("Failed to validate x-trusted-proxy-header, malformed, expected value to contain a -")
         return False
 
-    # Validate that the header has been cut within the last 300ms (by default)
+    # Validate that the header has been cut within the last 1000ms (by default)
     try:
-        if time.time_ns() - int(timestamp) > get_setting('trusted_header_timeout_in_ns', 300000000):
-            logger.warning(f"Timestamp {timestamp} was too old to be valid alter trusted_header_timeout_in_ns if needed")
+        header_age_ms = round((time.time_ns() - int(timestamp)) / 1000000)
+        if header_age_ms > get_setting('trusted_header_timeout', 1000):
+            logger.warning(f"Timestamp {timestamp} was too old by {header_age_ms}ms to be valid-alter trusted_header_timeout if needed")
             return False
     except ValueError:
         logger.warning(f"Unable to convert timestamp (base64) {b64encode(timestamp.encode('UTF-8'))} into an integer")

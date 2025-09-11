@@ -38,7 +38,7 @@ from ansible_base.rest_filters.rest_framework import ansible_id_backend
 from ..models import DABContentType, DABPermission, get_evaluation_model
 from ..policies import check_content_obj_permission
 from ..remote import RemoteObject, get_resource_prefix
-from ..sync import maybe_reverse_sync_assignment, maybe_reverse_sync_unassignment
+from ..sync import maybe_reverse_sync_assignment, maybe_reverse_sync_role_definition, maybe_reverse_sync_unassignment
 from .queries import assignment_qs_user_to_obj, assignment_qs_user_to_obj_perm
 
 
@@ -120,9 +120,26 @@ class RoleDefinitionViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
         if instance.managed is True:
             raise ValidationError(_('Role is managed by the system'))
 
+    def perform_create(self, serializer):
+        from ansible_base.resource_registry.signals.handlers import no_reverse_sync
+
+        with no_reverse_sync():
+            super().perform_create(serializer)
+
+        # Manually sync after permissions are fully saved
+        maybe_reverse_sync_role_definition(serializer.instance, "create")
+
     def perform_update(self, serializer):
+        from ansible_base.resource_registry.signals.handlers import no_reverse_sync
+
         self._error_if_managed(serializer.instance)
-        return super().perform_update(serializer)
+
+        with no_reverse_sync():
+            super().perform_update(serializer)
+
+        # Manually sync after permissions are fully saved
+        serializer.instance.refresh_from_db()
+        maybe_reverse_sync_role_definition(serializer.instance, "update")
 
     def perform_destroy(self, instance):
         self._error_if_managed(instance)

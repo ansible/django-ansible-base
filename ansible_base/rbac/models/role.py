@@ -21,6 +21,7 @@ from ansible_base.lib.abstract_models.common import CommonModel, ImmutableCommon
 from ansible_base.lib.utils.models import is_add_perm
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.prefetch import TypesPrefetch
+from ansible_base.rbac.sync import maybe_reverse_sync_assignment
 from ansible_base.rbac.validators import validate_assignment, validate_permissions_for_model
 from ansible_base.resource_registry.fields import AnsibleResourceField
 
@@ -96,6 +97,7 @@ class RoleDefinitionManager(models.Manager):
 
         has_permissions = set(RoleEvaluation.get_permissions(user, obj))
         has_permissions.update(user.singleton_permissions())
+
         if set(needed_perms) - set(has_permissions):
             kwargs = {'permissions': needed_perms, 'name': settings.ANSIBLE_BASE_ROLE_CREATOR_NAME.format(obj=obj, cls=type(obj))}
             defaults = {'content_type': DABContentType.objects.get_for_model(obj)}
@@ -106,7 +108,10 @@ class RoleDefinitionManager(models.Manager):
                 defaults['managed'] = True
                 rd, _ = self.get_or_create(defaults=defaults, **kwargs)
 
-            return rd.give_permission(user, obj)
+            assignment = rd.give_permission(user, obj)
+            # reverse sync the assignment
+            maybe_reverse_sync_assignment(assignment)
+            return assignment
 
     def get_or_create(self, permissions=(), defaults=None, **kwargs):
         "Add extra feature on top of existing get_or_create to use permissions list"
