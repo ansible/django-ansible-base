@@ -224,16 +224,12 @@ class ResourceAPIClient:
             'resource_pk': str(content_object.pk)  # Convert pk to string for JSON serialization
         }
         
-        # Make API call to the object_delete endpoint
-        user_response = self._make_request("post", "role-user-assignments/object_delete/", data=data)
-        team_response = self._make_request("post", "role-team-assignments/object_delete/", data=data)
+        # Make single API call to the new object-delete endpoint
+        response = self._make_request("post", "object-delete/", data=data)
         
-        # Return combined results
-        return {
-            'user_assignments_deleted': user_response.json() if user_response.status_code == 200 else None,
-            'team_assignments_deleted': team_response.json() if team_response.status_code == 200 else None,
-            'user_status_code': user_response.status_code,
-            'team_status_code': team_response.status_code
+        return response.json() if response.status_code == 200 else {
+            'error': f'Failed with status {response.status_code}',
+            'status_code': response.status_code
         }
 
     def _sync_assignment(self, data, giving=True):

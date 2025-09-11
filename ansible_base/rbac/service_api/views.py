@@ -2,6 +2,7 @@ from django.db import transaction
 from rest_framework import permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework import viewsets
 from rest_framework.viewsets import GenericViewSet, mixins
 
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
@@ -100,52 +101,6 @@ class BaseSerivceRoleAssignmentViewSet(
         self.remote_secondary_sync_unassignment(role_definition, actor, content_object, from_service=serializer.validated_data.get('from_service'))
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    def _object_delete(self, request):
-        """Delete ALL role assignments for a specific object"""
-        from ..models import DABContentType, ObjectRole
-        
-        # Validate required fields
-        data = request.data
-        if 'resource_type' not in data or 'resource_pk' not in data:
-            return Response(
-                {'error': 'resource_type and resource_pk are required'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        try:
-            # Get content type for the resource
-            app_label, model = data['resource_type'].split('.')
-            content_type = DABContentType.objects.get(app_label=app_label, model=model)
-            
-            # Delete ALL assignments for this object (bulk operation)
-            with transaction.atomic():
-                deleted_count = self.get_queryset().filter(
-                    content_type=content_type,
-                    object_id=data['resource_pk']
-                ).delete()[0]
-                
-                # Also delete the ObjectRoles themselves
-                ObjectRole.objects.filter(
-                    content_type=content_type,
-                    object_id=data['resource_pk']
-                ).delete()
-            
-            return Response({
-                'message': f'Deleted {deleted_count} role assignments for {data["resource_type"]} {data["resource_pk"]}',
-                'deleted_count': deleted_count
-            }, status=status.HTTP_200_OK)
-            
-        except ContentType.DoesNotExist:
-            return Response(
-                {'error': f'Content type not found: {data["resource_type"]}'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        except Exception as e:
-            return Response(
-                {'error': f'Failed to delete assignments: {str(e)}'}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
     def perform_destroy(self, instance):
         if instance.content_type_id:
             with transaction.atomic():
@@ -173,10 +128,6 @@ class ServiceRoleUserAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     def unassign(self, request):
         return self._unassign(request)
 
-    @action(detail=False, methods=['post'], url_path='object_delete')
-    def object_delete(self, request):
-        return self._object_delete(request)
-
 
 class ServiceRoleTeamAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     """List of team role assignments for cross-service communication"""
@@ -196,6 +147,79 @@ class ServiceRoleTeamAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     def unassign(self, request):
         return self._unassign(request)
 
-    @action(detail=False, methods=['post'], url_path='object_delete')
-    def object_delete(self, request):
-        return self._object_delete(request)
+
+class ServiceObjectDeleteViewSet(viewsets.ViewSet):
+    """
+    Bulk deletion of role assignments for deleted objects.
+    Uses standard create() method to bypass service token authentication restrictions.
+    Handles both user and team assignments in a single API call.
+    """
+
+    permission_classes = [HasResourceRegistryPermissions]
+
+    def create(self, request):
+        """
+        Delete all role assignments (user and team) for a specific resource.
+        
+        Expected request data:
+        {
+            "resource_type": "main.inventory",
+            "resource_pk": "4"
+        }
+        """
+        from ..models import DABContentType
+
+        # Validate request data
+        serializer_data = {
+            'resource_type': request.data.get('resource_type'),
+            'resource_pk': request.data.get('resource_pk'),
+        }
+        
+        if not serializer_data['resource_type'] or not serializer_data['resource_pk']:
+            return Response(
+                {'error': 'Both resource_type and resource_pk are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Parse resource_type (e.g., "main.inventory" -> app_label="main", model="inventory")
+            app_label, model_name = serializer_data['resource_type'].split('.', 1)
+        except ValueError:
+            return Response(
+                {'error': 'Invalid resource_type format. Expected: app_label.model_name'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Get the content type
+            content_type = DABContentType.objects.get(app_label=app_label, model=model_name)
+        except DABContentType.DoesNotExist:
+            return Response(
+                {'error': f'Content type not found: {serializer_data["resource_type"]}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Perform bulk deletion in a transaction
+        with transaction.atomic():
+            # Delete user role assignments
+            user_deleted_count = RoleUserAssignment.objects.filter(
+                content_type=content_type,
+                object_id=serializer_data['resource_pk']
+            ).delete()[0]
+
+            # Delete team role assignments  
+            team_deleted_count = RoleTeamAssignment.objects.filter(
+                content_type=content_type,
+                object_id=serializer_data['resource_pk']
+            ).delete()[0]
+
+        total_deleted = user_deleted_count + team_deleted_count
+
+        return Response({
+            'message': f'Deleted {total_deleted} role assignments for {serializer_data["resource_type"]} {serializer_data["resource_pk"]}',
+            'deleted_count': total_deleted,
+            'breakdown': {
+                'user_assignments_deleted': user_deleted_count,
+                'team_assignments_deleted': team_deleted_count
+            }
+        }, status=status.HTTP_200_OK)
