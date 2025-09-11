@@ -255,6 +255,9 @@ def rbac_post_delete_remove_object_roles(instance, *args, **kwargs):
 
         # Similar to user deletion, clean up any orphaned object roles
         ObjectRole.objects.filter(users__isnull=True, teams__isnull=True).delete()
+        deleted_count, _ = ObjectRole.objects.filter(users__isnull=True, teams__isnull=True).delete()
+        if deleted_count:
+            had_object_assignments = True
 
     ct = permission_registry.content_type_model.objects.get_for_model(instance)
 
