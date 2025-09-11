@@ -257,12 +257,28 @@ def rbac_post_delete_remove_object_roles(instance, *args, **kwargs):
         ObjectRole.objects.filter(users__isnull=True, teams__isnull=True).delete()
 
     ct = permission_registry.content_type_model.objects.get_for_model(instance)
+    
+    # Check if there were object-level assignments before deletion
+    had_object_assignments = ObjectRole.objects.filter(content_type=ct, object_id=instance.pk).exists()
+    
     ObjectRole.objects.filter(content_type=ct, object_id=instance.pk).delete()
 
     parent_field_name = permission_registry.get_parent_fd_name(instance)
     if parent_field_name:
         # Delete all evaluations from inherited permissions
         get_evaluation_model(instance).objects.filter(content_type_id=ct.id, object_id=instance.pk).delete()
+
+    # NEW: Conditionally trigger cross-service cleanup for orphaned assignments in Gateway
+    # Only sync when object-level assignments existed - this is the key performance optimization
+    if had_object_assignments:
+        try:
+            from ansible_base.rbac.sync import maybe_reverse_sync_object_deletion
+            maybe_reverse_sync_object_deletion(instance)
+        except Exception:
+            # Continue with local deletion even if cross-service sync fails
+            # This ensures we don't break local operations due to network/auth issues
+            logger.exception(f"Failed to sync object deletion for {instance}")
+            pass
 
 
 def rbac_post_user_delete(instance, *args, **kwargs):
