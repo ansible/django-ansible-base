@@ -257,7 +257,7 @@ def rbac_post_delete_remove_object_roles(instance, *args, **kwargs):
         ObjectRole.objects.filter(users__isnull=True, teams__isnull=True).delete()
 
     ct = permission_registry.content_type_model.objects.get_for_model(instance)
-    
+
     # Use bulk delete return value to determine if object-level assignments existed
     # This avoids the inefficient .exists() query and works correctly for team deletion cases
     deleted_count, _ = ObjectRole.objects.filter(content_type=ct, object_id=instance.pk).delete()
@@ -272,6 +272,7 @@ def rbac_post_delete_remove_object_roles(instance, *args, **kwargs):
     if had_object_assignments:
         try:
             from ansible_base.rbac.sync import maybe_reverse_sync_object_deletion
+
             maybe_reverse_sync_object_deletion(instance)
         except Exception:
             # Continue with local deletion even if cross-service sync fails
