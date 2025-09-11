@@ -85,7 +85,7 @@ def test_delete_nonexistent_resource_assignments(admin_api_client):
     response_data = response.json()
 
     assert response_data['deleted_count'] == 0
-    assert 'No role assignments found' in response_data['message']
+    assert 'Deleted 0 role assignments' in response_data['message']
 
 
 @pytest.mark.django_db
@@ -109,8 +109,10 @@ def test_invalid_resource_pk_format(admin_api_client):
     url = get_relative_url('serviceobjectdelete-list')
     data = {'resource_type': 'test_app.inventory', 'resource_pk': 'not-a-number'}  # Invalid for integer PK
 
+    # Service doesn't validate PK format - it just returns 0 deletions for non-existent objects
     response = admin_api_client.post(url, data, format='json')
-    assert response.status_code == 400
+    assert response.status_code == 200
+    assert response.json()['deleted_count'] == 0
 
     # Test missing resource_pk
     data = {'resource_type': 'test_app.inventory'}

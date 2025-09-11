@@ -75,10 +75,16 @@ def maybe_reverse_sync_object_deletion(content_object):
 
     logger.debug(f"Performing reverse-sync object deletion for {content_object}")
 
-    from ansible_base.resource_registry.utils.sync_to_resource_server import get_current_user_resource_client
+    try:
+        from ansible_base.resource_registry.utils.sync_to_resource_server import get_current_user_resource_client
 
-    client = get_current_user_resource_client()
-    client.sync_object_deletion(content_object)
+        client = get_current_user_resource_client()
+        client.sync_object_deletion(content_object)
+        logger.debug(f"Successfully synced object deletion for {content_object}")
+    except Exception as e:
+        # Log the error but don't let sync failures break local deletion
+        logger.warning(f"Failed to sync object deletion for {content_object}: {e}")
+        return
 
 
 def maybe_reverse_sync_role_definition(instance, action="update"):

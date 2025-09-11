@@ -104,9 +104,8 @@ def test_team_deletion_special_case(team, rando, member_rd):
     with patch('ansible_base.rbac.models.ObjectRole.objects.filter') as mock_filter:
         mock_queryset = mock_filter.return_value
 
-        # First call: team's member roles cleanup (returns some deletions)
-        # Second call: regular object role deletion (simulates team had assignments)
-        mock_queryset.delete.side_effect = [(1, {'test_app.ObjectRole': 1}), (2, {'test_app.ObjectRole': 2})]
+        # Simulate team deletion finding object assignments
+        mock_queryset.delete.return_value = (2, {'test_app.ObjectRole': 2})
 
         with patch('ansible_base.rbac.sync.maybe_reverse_sync_object_deletion') as mock_sync:
             # Delete team
@@ -153,15 +152,8 @@ def test_sync_import_failure_handling(inventory, rando, inv_rd):
     # Create assignment to trigger sync path
     inv_rd.give_permission(rando, inventory)
 
-    # Mock import failure
-    with patch('builtins.__import__') as mock_import:
-
-        def import_side_effect(name, *args, **kwargs):
-            if name == 'ansible_base.rbac.sync':
-                raise ImportError("No module named 'ansible_base'")
-            return mock_import.return_value
-
-        mock_import.side_effect = import_side_effect
+    # Mock import failure for the sync module specifically
+    with patch('ansible_base.rbac.triggers.maybe_reverse_sync_object_deletion', side_effect=ImportError("No module named 'ansible_base'")):
 
         with patch('ansible_base.rbac.triggers.logger') as mock_logger:
             # Delete should succeed despite import failure

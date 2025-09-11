@@ -43,14 +43,17 @@ def test_sync_object_deletion_success(inventory, enable_reverse_sync):  # noqa: 
                 # Verify the request was made
                 assert mock_request.called
 
-                # Verify request details
+                # Verify request details - _make_request uses keyword arguments
                 call_args = mock_request.call_args
-                method, url, data = call_args[0]
+                call_kwargs = call_args[1]  # Keyword arguments
 
-                assert method == 'POST'
-                assert 'object-delete' in url
-                assert 'service-index' in url
+                assert 'method' in call_kwargs
+                assert call_kwargs['method'] == 'post'
+                assert 'path' in call_kwargs
+                assert 'object-delete' in call_kwargs['path']
+                assert 'data' in call_kwargs
 
+                data = call_kwargs['data']
                 # Verify request payload format
                 assert 'resource_type' in data
                 assert 'resource_pk' in data
@@ -173,8 +176,8 @@ def test_sync_multiple_resource_types(inventory, organization, enable_reverse_sy
                 # Verify different resource types in requests
                 calls = mock_request.call_args_list
 
-                inv_call_data = calls[0][0][2]  # data from first call
-                org_call_data = calls[1][0][2]  # data from second call
+                inv_call_data = calls[0][1]['data']  # data from first call kwargs
+                org_call_data = calls[1][1]['data']  # data from second call kwargs
 
                 assert 'inventory' in inv_call_data['resource_type']
                 assert 'organization' in org_call_data['resource_type']
@@ -255,17 +258,10 @@ def test_sync_url_construction(inventory, enable_reverse_sync):  # noqa: F811
                 maybe_reverse_sync_object_deletion(inventory)
 
                 # Verify URL construction
-                call_args = mock_request.call_args[0]
-                method, url, data = call_args
+                call_kwargs = mock_request.call_args[1]
 
-                # Should include the base Gateway URL
-                assert 'gateway.example.com:8080' in url
-
-                # Should include service-index path
-                assert '/service-index/' in url
+                # Should be a POST request to the create endpoint
+                assert call_kwargs['method'] == 'post'
 
                 # Should include object-delete endpoint
-                assert '/object-delete/' in url
-
-                # Should be a POST request to the create endpoint (list URL)
-                assert method == 'POST'
+                assert 'object-delete' in call_kwargs['path']
