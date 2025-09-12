@@ -281,7 +281,6 @@ def rbac_post_delete_remove_object_roles(instance, *args, **kwargs):
             # Continue with local deletion even if cross-service sync fails
             # This ensures we don't break local operations due to network/auth issues
             logger.exception(f"Failed to sync object deletion for {instance}")
-            pass
 
 
 def rbac_post_user_delete(instance, *args, **kwargs):
