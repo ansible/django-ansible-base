@@ -1,4 +1,5 @@
 import logging
+from copy import deepcopy
 
 from django.utils.translation import gettext_lazy as _
 from social_core.backends.azuread import AzureADOAuth2
@@ -26,15 +27,15 @@ class AzureADConfiguration(BaseAuthenticatorConfiguration):
     )
 
     KEY = CharField(
-        help_text=_("The OIDC key (Client ID) from your IDP. Will also be used as the 'audience' for JWT decoding."),
+        help_text=_("The Client ID (OIDC Key) from Azure AD. Will also be used as the 'audience' for JWT decoding."),
         allow_null=False,
-        ui_field_label=_('OIDC Key'),
+        ui_field_label=_('Client ID'),
     )
 
     SECRET = CharField(
-        help_text=_("'The OIDC secret (Client Secret) from your IDP."),
+        help_text=_("'The Client Secret (OIDC Secret) from Azure AD."),
         allow_null=True,
-        ui_field_label=_('OIDC Secret'),
+        ui_field_label=_('Secret'),
     )
 
     GROUPS_CLAIM = CharField(
@@ -46,7 +47,11 @@ class AzureADConfiguration(BaseAuthenticatorConfiguration):
     )
 
     USERNAME_FIELD = CharField(
-        help_text=_("The name of the field from the assertion to use as the username. If not set will default to name"),
+        help_text=_(
+            "The name of the field to use as the username. "
+            "This field can be in: the assertion, the id token or the standard user info. "
+            "If not available this will default to the username."
+        ),
         required=False,
         allow_null=True,
         ui_field_label=_("Field to use as username"),
@@ -74,6 +79,25 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Azur
         This method is an override from social-core/social_core/backends/azuread.py
         It allows us to control what the username is.
         """
+        # start with the assertion we got back
+        user_details = deepcopy(response)
+        # At this point the response has not been overlaid with the info in the id token
+        # so we need to get the info from the id token and overlay it
+        if 'access_token' in response and 'id_token' in response:
+            user_details.update(self.user_data(response['access_token'], response=response))
+        # Finally overlay the fields from what we want to return initially
         return_object = super().get_user_details(response)
-        return_object['username'] = response.get(self.setting("USERNAME_FIELD"), return_object['username'])
+        user_details.update(return_object)
+
+        if self.setting("USERNAME_FIELD"):
+            alternate_username = user_details.get(self.setting("USERNAME_FIELD"))
+            if alternate_username:
+                return_object['username'] = alternate_username
+            else:
+                valid_keys = list(user_details.keys())
+                valid_keys.sort()
+                logger.warning(
+                    f"Username field '{self.setting('USERNAME_FIELD')}' not found in AD response, using default username of {return_object['username']}."
+                )
+                logger.warning(f"Valid keys are: {valid_keys}")
         return return_object
