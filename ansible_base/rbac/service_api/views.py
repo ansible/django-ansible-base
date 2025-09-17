@@ -154,7 +154,7 @@ class ServiceObjectDeleteViewSet(viewsets.ViewSet):
     Handles both user and team assignments in a single API call.
     """
 
-    permission_classes = [HasResourceRegistryPermissions]
+    permission_classes = try_add_oauth2_scope_permission([HasResourceRegistryPermissions])
 
     def create(self, request):
         """
