@@ -562,21 +562,28 @@ def _process_user_value(
 
     evaluate_fn = operators[operator]
 
+    if not user_value:
+        _prefixed_debug(map_id, tracking_id, f"Attr [{attribute}] present but empty, skipping")
+        return has_access_with_join(has_access, False, join_condition)
+
+    per_attr_match = False
     for a_user_value in user_value:
         # Normalize user value for comparison
         user_str = f"{a_user_value}".casefold() if _is_case_insensitivity_enabled() else f"{a_user_value}"
 
         # Evaluate condition
         result = evaluate_fn(user_str, trigger_value)
-        has_access = has_access_with_join(has_access, result, join_condition)
 
         # Log result
         header = f"Attr [{attribute}] value [{user_str}]"
         message = _get_operator_messages(operator, result)
         _prefixed_debug(map_id, tracking_id, f"{header} {message} [{trigger_value}], {_result_suffix(result)}")
 
-    return has_access
+        if result:
+            per_attr_match = True
+            break
 
+    return has_access_with_join(has_access, per_attr_match, join_condition)
 
 def _result_suffix(result: bool) -> str:
     return "allowing" if result else "skipping"

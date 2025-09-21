@@ -747,8 +747,8 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
             {"email": {"equals": "foo@example.com"}, "join_condition": "and"},
             {"email": ["bar@example.com", "foo@example.com"]},
             False,
-            claims.TriggerResult.SKIP,
-            id="user attribute is list, one match, explicit 'and', negative",
+            claims.TriggerResult.ALLOW,
+            id="user attribute is list, one match, explicit 'and', positive",
         ),
         pytest.param(
             {"email": {"equals": "foo@example.com"}, "join_condition": "and"},
@@ -910,6 +910,35 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
             False,
             claims.TriggerResult.ALLOW,
             id="all attribute required by 'and' condition should result in allow",
+        ),
+        pytest.param(
+            {
+                "cn": {"contains": "ldap"},
+                "employeeType": {"contains": "manager"},
+                "join_condition": "and",
+            },
+            {"cn": ["ldap_admin"], "employeeType": ["manager", "executor"]},
+            False,
+            claims.TriggerResult.ALLOW,
+            id="regression_any_semantics_and_across_attrs_positive",
+        ),
+        pytest.param(
+            {
+                "cn": {"contains": "ldap"},
+                "employeeType": {"contains": "manager"},
+                "join_condition": "and",
+            },
+            {"cn": ["ldap_admin"], "employeeType": ["executor"]},
+            False,
+            claims.TriggerResult.SKIP,
+            id="regression_any_semantics_and_across_attrs_negative",
+        ),
+        pytest.param(
+            {"cn": {"contains": "ldap"}, "employeeType": {"contains": "manager"}, "join_condition": "or"},
+            {"cn": ["zzz"], "employeeType": ["manager", "executor"]},
+            False,
+            claims.TriggerResult.ALLOW,
+            id="regression_any_semantics_or_across_attrs_positive_one_side",
         ),
     ],
 )
