@@ -59,6 +59,8 @@ optional-dependencies.redis_client = { file = [ "requirements/requirements_redis
 optional-dependencies.oauth2_provider = { file = [ "requirements/requirements_oauth2_provider.in" ] }
 optional-dependencies.resource_registry = { file = [ "requirements/requirements_resource_registry.in" ] }
 optional-dependencies.feature_flags = { file = [ "requirements/requirements_feature_flags.in" ] }
+optional-dependencies.dev = { file = [ "requirements/requirements_dev.txt" ] }
+
 
 [build-system]
 requires = ["setuptools>=64", "setuptools_scm>=8"]
