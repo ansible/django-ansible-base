@@ -16,7 +16,6 @@ from ansible_base.jwt_consumer.common.exceptions import HTTP_498_INVALID_TOKEN, 
 from ansible_base.lib.logging.runtime import log_excess_runtime
 from ansible_base.lib.utils.auth import get_user_by_ansible_id
 from ansible_base.lib.utils.translations import translatableConditionally as _
-from ansible_base.rbac.claims import get_claims_hash, get_user_claims, get_user_claims_hashable_form, save_user_claims
 from ansible_base.resource_registry.models import Resource, ResourceType
 from ansible_base.resource_registry.rest_client import get_resource_server_client
 from ansible_base.resource_registry.signals.handlers import no_reverse_sync
@@ -230,6 +229,8 @@ class JWTCommonAuth:
         """
         Process RBAC permissions using claims hash logic
         """
+        from ansible_base.rbac.claims import get_claims_hash, get_user_claims, get_user_claims_hashable_form, save_user_claims
+
         if self.token is None or self.user is None:
             logger.error("Unable to process rbac permissions because user or token is not defined")
             return

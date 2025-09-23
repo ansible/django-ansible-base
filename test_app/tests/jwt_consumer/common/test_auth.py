@@ -480,11 +480,11 @@ class TestJWTCommonAuth:
         with (
             mock.patch.object(authentication.cache, 'get_cached_claims_hash') as mock_get_cache,
             mock.patch.object(authentication.cache, 'cache_claims_hash') as mock_set_cache,
-            mock.patch('ansible_base.jwt_consumer.common.auth.get_user_claims') as mock_get_claims,
-            mock.patch('ansible_base.jwt_consumer.common.auth.get_user_claims_hashable_form') as mock_get_hashable,
-            mock.patch('ansible_base.jwt_consumer.common.auth.get_claims_hash') as mock_get_hash,
+            mock.patch('ansible_base.rbac.claims.get_user_claims') as mock_get_claims,
+            mock.patch('ansible_base.rbac.claims.get_user_claims_hashable_form') as mock_get_hashable,
+            mock.patch('ansible_base.rbac.claims.get_claims_hash') as mock_get_hash,
             mock.patch.object(authentication, '_fetch_jwt_claims_from_gateway') as mock_gateway,
-            mock.patch('ansible_base.jwt_consumer.common.auth.save_user_claims') as mock_apply,
+            mock.patch('ansible_base.rbac.claims.save_user_claims') as mock_apply,
         ):
 
             # Setup mocks
