@@ -68,7 +68,7 @@ class Entry(ImmutableCommonModel):
             operation_text = self.get_operation_display()
             created_by_text = str(self.created_by) if self.created_by else "Unknown"
             return f'[{self.created}] Role assignment {operation_text.lower()} by {created_by_text}'
-        
+
         # Standard format for other entry types
         return f'[{self.created}] {self.get_operation_display()} by {self.created_by}: {self.content_type} {self.object_id}'
 

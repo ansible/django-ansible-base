@@ -56,12 +56,11 @@ def test_role_user_assignment_activity_stream_lifecycle(system_user, admin_user,
     assert assignment.activity_stream_entries.count() == 1
     create_entry = assignment.activity_stream_entries.last()
     verify_activity_entry_fields(create_entry, 'create', admin_user, test_user.id, role_def.id, 'user')
-    
+
     # Verify enhanced string representation
     entry_str = str(create_entry)
     assert "created" in entry_str.lower()
     assert str(admin_user) in entry_str
-
 
     # Delete assignment and verify DELETE entry
     assignment_id = assignment.id
@@ -79,7 +78,7 @@ def test_role_user_assignment_activity_stream_lifecycle(system_user, admin_user,
     assert assignment_entries.count() == 2
     delete_entry = assignment_entries.last()
     verify_activity_entry_fields(delete_entry, 'delete', admin_user, test_user.id, role_def.id, 'user')
-    
+
     # Verify enhanced string representation for delete
     delete_str = str(delete_entry)
     assert "deleted" in delete_str.lower()
