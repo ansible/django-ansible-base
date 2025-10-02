@@ -9,7 +9,7 @@ authors = [
 ]
 description = "A Django app used by ansible services"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 keywords = ["ansible", "django"]
 license = {text = "Apache-2.0"}
 classifiers = [
@@ -23,9 +23,9 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
 ]
 dynamic = ["version", "dependencies", "optional-dependencies"]
 
@@ -98,12 +98,12 @@ legacy_tox_ini = """
     no_package = true
     env_list =
         check
-        py39
+        py312
         py310
         py311
         py311sqlite
     labels =
-        test = py39, py310, py311, py311sqlite, check
+        test = py312, py310, py311, py311sqlite, check
         lint = flake8, black, isort
 
     [testenv]

@@ -103,7 +103,7 @@ def test_get_remote_hosts_alternate_headers_behind_trusted_proxy(rsa_keypair):
             assert remote_hosts == ['5.6.7.8', '9.10.11.12', '5.6.7.8', 'a.b.c.d']
 
 
-@mock.patch("ansible_base.lib.utils.requests.validate_x_trusted_proxy_header", side_effect=Exception)
+@mock.patch("ansible_base.jwt_consumer.common.util.validate_x_trusted_proxy_header", side_effect=Exception)
 def test_get_remote_hosts_validate_trusted_proxy_header_exception(mock_validate: mock.MagicMock, rsa_keypair, caplog):
     with override_settings(ANSIBLE_BASE_JWT_KEY=rsa_keypair.public):
         headers = {

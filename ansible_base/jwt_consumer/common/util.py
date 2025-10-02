@@ -7,7 +7,6 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
-from ansible_base.jwt_consumer.common.cert import JWTCert, JWTCertException
 from ansible_base.lib.utils.settings import get_setting
 
 logger = logging.getLogger('ansible_base.jwt_consumer.common.util')
@@ -32,6 +31,8 @@ def generate_x_trusted_proxy_header(key: str) -> str:
 
 
 def validate_x_trusted_proxy_header(header_value: str, ignore_cache=False) -> bool:
+    from ansible_base.jwt_consumer.common.cert import JWTCert, JWTCertException
+
     try:
         cert = JWTCert()
         cert.get_decryption_key(ignore_cache=ignore_cache)

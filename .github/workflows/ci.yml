@@ -18,8 +18,8 @@ jobs:
             python-version: "3.11"
             sonar: false
             junit-xml-upload: false
-          - env: py39
-            python-version: "3.9"
+          - env: py312
+            python-version: "3.12"
             sonar: false
             junit-xml-upload: false
           - env: py310

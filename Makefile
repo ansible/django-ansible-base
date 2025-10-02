@@ -49,6 +49,7 @@ check_flake8:
 check_isort:
 	tox -e isort -- --check $(CHECK_SYNTAX_FILES)
 
+
 ## Starts a postgres container in the background if one is not running
 # Options:
 #  -d, --detatch: run the container in background

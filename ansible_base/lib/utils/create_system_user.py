@@ -1,11 +1,12 @@
-import logging
-from typing import Optional, Tuple, Type
+from __future__ import annotations
 
-from django.core.exceptions import ImproperlyConfigured
-from django.db import models
-from django.utils.translation import gettext as _
+import logging
+from typing import TYPE_CHECKING, Optional, Tuple, Type
 
 from ansible_base.lib.utils.settings import get_setting
+
+if TYPE_CHECKING:
+    from django.db import models
 
 logger = logging.getLogger('ansible_base.lib.utils.create_system_user')
 
@@ -14,7 +15,8 @@ These functions are in its own file because it is loaded during migrations so it
 """
 
 
-def create_system_user(user_model: Type[models.Model]) -> models.Model:  # Note: We can't load models here so we can typecast to anything better than Model
+def create_system_user(user_model: Type[models.Model]) -> models.Model:
+    # Note: We can't load models here so we can typecast to anything better than Model
     from ansible_base.lib.abstract_models.user import AbstractDABUser
 
     #
@@ -63,4 +65,8 @@ def get_system_username() -> Tuple[Optional[str], str]:
         return str(value), setting_name
 
     logger.error(f"Expected get_setting to return a string for {setting_name}, got {type(value)}")
+
+    from django.core.exceptions import ImproperlyConfigured
+    from django.utils.translation import gettext as _
+
     raise ImproperlyConfigured(_("Setting %(setting_name)s needs to be a string not a %(type)s") % {'setting_name': setting_name, 'type': type(value)})

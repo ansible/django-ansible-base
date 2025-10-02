@@ -13,7 +13,7 @@ class TestValidateTrustedProxy:
             {"key": rsa_keypair.public, "cached": False},
         ]
         with override_settings(ANSIBLE_BASE_JWT_KEY=rsa_keypair.public):
-            with mock.patch("ansible_base.jwt_consumer.common.util.JWTCert.get_decryption_key", create_mock_method(field_dicts)):
+            with mock.patch("ansible_base.jwt_consumer.common.cert.JWTCert.get_decryption_key", create_mock_method(field_dicts)):
                 assert validate_x_trusted_proxy_header(generate_x_trusted_proxy_header(rsa_keypair.private))
 
     def test_validate_trusted_proxy_header_no_key(self, caplog):

@@ -1,11 +1,12 @@
+from __future__ import annotations
+
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-from crum import get_current_request
-from django.http import HttpRequest
-
-from ansible_base.jwt_consumer.common.util import validate_x_trusted_proxy_header
 from ansible_base.lib.utils.settings import get_setting
+
+if TYPE_CHECKING:
+    from django.http import HttpRequest
 
 logger = logging.getLogger('ansible_base.lib.uitls.requests')
 
@@ -43,6 +44,8 @@ def get_remote_hosts(request: HttpRequest, get_first_only: bool = False) -> list
     # If we are connected to from a trusted proxy then we can add some additional headers
     try:
         if 'HTTP_X_TRUSTED_PROXY' in request.META:
+            from ansible_base.jwt_consumer.common.util import validate_x_trusted_proxy_header
+
             if validate_x_trusted_proxy_header(request.META['HTTP_X_TRUSTED_PROXY']):
                 # The last entry in x-forwarded-for from envoy can be trusted implicitly
                 # https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_conn_man/headers#x-forwarded-for
@@ -68,10 +71,14 @@ def get_remote_hosts(request: HttpRequest, get_first_only: bool = False) -> list
 def is_proxied_request(request: Optional[HttpRequest] = None) -> bool:
     "Return true if request claims to be from a proxy and the header validates as such."
     if request is None:
+        from crum import get_current_request
+
         request = get_current_request()
     if request is None:
         # e.g. being called by CLI or something
         return False
     if x_trusted_proxy := request.META.get("HTTP_X_TRUSTED_PROXY"):
+        from ansible_base.jwt_consumer.common.util import validate_x_trusted_proxy_header
+
         return validate_x_trusted_proxy_header(x_trusted_proxy)
     return False

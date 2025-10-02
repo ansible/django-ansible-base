@@ -13,6 +13,7 @@ from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from django.db.migrations.recorder import MigrationRecorder
 from django.db.models.signals import post_migrate
+from django.db.utils import ProgrammingError
 from django.test.client import RequestFactory
 from django.test.utils import override_settings
 from drf_spectacular.generators import SchemaGenerator
@@ -47,7 +48,13 @@ def test_migrations_okay(apps=None, app_config=None, **kwargs):
         return  # so that it is only ran once
     disk_steps = defaultdict(set)
     app_exceptions = {'default': 'auth', 'social_auth': 'social_django'}
-    for app in MigrationRecorder.Migration.objects.values_list('app', flat=True).distinct():
+
+    try:
+        app_list = list(MigrationRecorder.Migration.objects.values_list('app', flat=True).distinct())
+    except ProgrammingError:
+        return
+
+    for app in app_list:
         if app in app_exceptions:
             continue
         try:

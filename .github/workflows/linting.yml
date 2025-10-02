@@ -22,6 +22,8 @@ jobs:
             command: check_black
           - name: api-isort
             command: check_isort
+          - name: pure-python-imports
+            command: check_pure_python_imports
     steps:
       - name: Install make
         run: sudo apt install make
@@ -38,5 +40,18 @@ jobs:
       - name: Install requirments
         run: pip3.11 install -r requirements/requirements_dev.txt
 
+      - name: Install test dependencies for pure-python-imports
+        if: matrix.tests.name == 'pure-python-imports'
+        run: |
+          pip3.11 install -r requirements/requirements.in
+          pip3.11 install -r requirements/requirements_testing.txt
+          pip3.11 install -r requirements/requirements_channels.in
+          pip3.11 install -r requirements/requirements_redis_client.in
+
+      - name: Run pure-python-imports check
+        if: matrix.tests.name == 'pure-python-imports'
+        run: python tools/scripts/check_pure_python_imports.py
+
       - name: Run check ${{ matrix.tests.name }}
+        if: matrix.tests.name != 'pure-python-imports'
         run: make ${{ matrix.tests.command }}
