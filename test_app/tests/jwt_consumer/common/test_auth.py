@@ -539,14 +539,14 @@ class TestJWTCommonAuth:
 
     @pytest.mark.django_db
     @pytest.mark.parametrize(
-        "is_super_user_value,should_skip",
+        "is_superuser_value,should_skip",
         [
             (True, True),   # Should skip when True
             (False, False),  # Should not skip when False
             (None, False),   # Should not skip when None
         ],
     )
-    def test_process_rbac_permissions_superuser_skip(self, admin_user, is_super_user_value, should_skip):
+    def test_process_rbac_permissions_superuser_skip(self, admin_user, is_superuser_value, should_skip):
         """Test process_rbac_permissions skips processing for superusers"""
         authentication = JWTCommonAuth()
         authentication.user = admin_user
@@ -554,7 +554,7 @@ class TestJWTCommonAuth:
             "sub": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
             "claims_hash": "a1b2c3d4",
             "user_data": {
-                "is_super_user": is_super_user_value
+                "is_superuser": is_superuser_value
             }
         }
 
