@@ -235,7 +235,7 @@ class JWTCommonAuth:
             logger.error("Unable to process rbac permissions because user or token is not defined")
             return
 
-        if self.token.get('user_data', {}).get("is_super_user", None) is True:
+        if self.token.get('user_data', {}).get("is_superuser", None) is True:
             logger.debug("User is a superuser, skipping RBAC permissions")
             return
 
