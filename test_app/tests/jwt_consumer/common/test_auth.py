@@ -538,6 +538,86 @@ class TestJWTCommonAuth:
                 mock_apply.assert_not_called()
 
     @pytest.mark.django_db
+    @pytest.mark.parametrize(
+        "is_super_user_value,should_skip",
+        [
+            (True, True),   # Should skip when True
+            (False, False),  # Should not skip when False
+            (None, False),   # Should not skip when None
+        ],
+    )
+    def test_process_rbac_permissions_superuser_skip(self, admin_user, is_super_user_value, should_skip):
+        """Test process_rbac_permissions skips processing for superusers"""
+        authentication = JWTCommonAuth()
+        authentication.user = admin_user
+        authentication.token = {
+            "sub": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+            "claims_hash": "a1b2c3d4",
+            "user_data": {
+                "is_super_user": is_super_user_value
+            }
+        }
+
+        with (
+            mock.patch('ansible_base.jwt_consumer.common.auth.logger') as mock_logger,
+            mock.patch.object(authentication.cache, 'get_cached_claims_hash') as mock_get_cache,
+            mock.patch('ansible_base.rbac.claims.get_user_claims') as mock_get_claims,
+            mock.patch('ansible_base.rbac.claims.get_user_claims_hashable_form') as mock_get_hashable,
+            mock.patch('ansible_base.rbac.claims.get_claims_hash') as mock_get_hash,
+            mock.patch('ansible_base.rbac.claims.save_user_claims') as mock_save_claims,
+        ):
+            # Setup mocks for non-skip scenario
+            mock_get_cache.return_value = "a1b2c3d4"  # Cache hit
+            mock_get_claims.return_value = {}
+            mock_get_hashable.return_value = {}
+            mock_get_hash.return_value = "a1b2c3d4"
+
+            authentication.process_rbac_permissions()
+
+            if should_skip:
+                # Verify the debug message was logged
+                mock_logger.debug.assert_called_with("User is a superuser, skipping RBAC permissions")
+
+                # Verify that no further processing occurred
+                mock_get_cache.assert_not_called()
+                mock_get_claims.assert_not_called()
+                mock_save_claims.assert_not_called()
+            else:
+                # Verify processing continued normally (cache was checked)
+                mock_get_cache.assert_called_once_with("f47ac10b-58cc-4372-a567-0e02b2c3d479")
+                # In cache hit scenario, no claims are saved
+                mock_save_claims.assert_not_called()
+
+    @pytest.mark.django_db
+    def test_process_rbac_permissions_superuser_skip_missing_user_data(self, admin_user):
+        """Test process_rbac_permissions continues when user_data is missing"""
+        authentication = JWTCommonAuth()
+        authentication.user = admin_user
+        authentication.token = {
+            "sub": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+            "claims_hash": "a1b2c3d4",
+            # No user_data key at all
+        }
+
+        with (
+            mock.patch('ansible_base.jwt_consumer.common.auth.logger') as mock_logger,
+            mock.patch.object(authentication.cache, 'get_cached_claims_hash') as mock_get_cache,
+        ):
+            # Setup mocks for cache hit scenario
+            mock_get_cache.return_value = "a1b2c3d4"
+
+            authentication.process_rbac_permissions()
+
+            # Verify processing continued (cache was checked)
+            mock_get_cache.assert_called_once_with("f47ac10b-58cc-4372-a567-0e02b2c3d479")
+            # Verify the superuser message was not logged (check all debug call args)
+            superuser_message_logged = any(
+                call_args[0][0] == "User is a superuser, skipping RBAC permissions"
+                for call_args in mock_logger.debug.call_args_list
+            )
+            assert not superuser_message_logged, "Superuser skip message should not be logged when user_data is missing"
+
+    @pytest.mark.django_db
     def test_process_rbac_permissions_missing_token_data(self):
         """Test process_rbac_permissions with missing required token data"""
         authentication = JWTCommonAuth()
