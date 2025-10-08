@@ -23,6 +23,15 @@ from ansible_base.resource_registry.signals.handlers import no_reverse_sync
 logger = logging.getLogger("ansible_base.jwt_consumer.common.auth")
 
 
+class GatewayLockedException(Exception):
+    """
+    Exception raised when the gateway is locked (returns 423 status).
+    This typically happens when migrations are in progress.
+    """
+
+    pass
+
+
 # These fields are used to both map the user as well as to validate the JWT token
 default_mapped_user_fields = [
     "username",
@@ -235,10 +244,6 @@ class JWTCommonAuth:
             logger.error("Unable to process rbac permissions because user or token is not defined")
             return
 
-        if self.token.get('user_data', {}).get("is_superuser", None) is True:
-            logger.debug("User is a superuser, skipping RBAC permissions")
-            return
-
         jwt_claims_hash = self.token.get("claims_hash")
         if not jwt_claims_hash:
             logger.error("No claims_hash found in JWT token")
@@ -276,9 +281,8 @@ class JWTCommonAuth:
 
         # Claims hash mismatch - fetch from gateway
         logger.info(f"Claims hash mismatch for user {user_ansible_id}. JWT: {jwt_claims_hash}, Local: {local_claims_hash}. Fetching from gateway.")
-        gateway_claims = self._fetch_jwt_claims_from_gateway(user_ansible_id)
-
-        if gateway_claims:
+        try:
+            gateway_claims = self._fetch_jwt_claims_from_gateway(user_ansible_id)
             # Extract claims structure from gateway response
             objects = gateway_claims.get('objects', {})
             object_roles = gateway_claims.get('object_roles', {})
@@ -289,9 +293,15 @@ class JWTCommonAuth:
 
             # Update cache with the new hash
             self.cache.cache_claims_hash(user_ansible_id, jwt_claims_hash)
-        else:
+        except GatewayLockedException:
+            if self.token.get('user_data', {}).get("is_superuser", False) is False:
+                self.log_and_raise(
+                    _("User %(user_ansible_id)s is not a superuser and gateway is locked, denying access!"), {"user_ansible_id": user_ansible_id}
+                )
+        except Exception as e:
             self.log_and_raise(
-                _("Unable to validate user permissions - gateway claims fetch failed for user %(user_ansible_id)s"), {"user_ansible_id": user_ansible_id}
+                _("Unable to validate user permissions - gateway claims fetch or processing failed for user %(user_ansible_id)s: %(e)s"),
+                {"user_ansible_id": user_ansible_id, "e": e},
             )
 
     def _fetch_jwt_claims_from_gateway(self, user_ansible_id: str) -> Optional[dict]:
@@ -304,17 +314,16 @@ class JWTCommonAuth:
 
             logger.debug(f"Fetching claims from gateway for user {user_ansible_id}")
             response = client._make_request("GET", f"jwt_claims/{user_ansible_id}/")
+        except Exception:
+            raise
 
-            if response.status_code == 200:
-                claims_data = response.json()
-                return claims_data
-            else:
-                logger.error(f"Gateway request failed with status {response.status_code}")
-                return None
-
-        except Exception as e:
-            logger.error(f"Error fetching claims from gateway: {e}")
-            return None
+        if response.status_code == 200:
+            claims_data = response.json()
+            return claims_data
+        elif response.status_code == 423:
+            raise GatewayLockedException("Gateway is locked")
+        else:
+            raise Exception(f"Gateway request failed with status {response.status_code}")
 
 
 class JWTAuthentication(BaseAuthentication):

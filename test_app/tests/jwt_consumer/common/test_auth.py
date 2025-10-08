@@ -539,83 +539,57 @@ class TestJWTCommonAuth:
 
     @pytest.mark.django_db
     @pytest.mark.parametrize(
-        "is_superuser_value,should_skip",
+        "is_superuser_value,should_allow",
         [
-            (True, True),   # Should skip when True
-            (False, False),  # Should not skip when False
-            (None, False),   # Should not skip when None
+            (True, True),  # Superuser should be allowed when gateway is locked
+            (False, False),  # Non-superuser should be denied when gateway is locked
         ],
     )
-    def test_process_rbac_permissions_superuser_skip(self, admin_user, is_superuser_value, should_skip):
-        """Test process_rbac_permissions skips processing for superusers"""
+    def test_process_rbac_permissions_gateway_locked(self, admin_user, is_superuser_value, should_allow):
+        """Test process_rbac_permissions handles GatewayLockedException based on superuser status"""
+        from ansible_base.jwt_consumer.common.auth import GatewayLockedException
+
         authentication = JWTCommonAuth()
         authentication.user = admin_user
-        authentication.token = {
-            "sub": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-            "claims_hash": "a1b2c3d4",
-            "user_data": {
-                "is_superuser": is_superuser_value
-            }
-        }
+        authentication.token = {"sub": "f47ac10b-58cc-4372-a567-0e02b2c3d479", "claims_hash": "a1b2c3d4", "user_data": {"is_superuser": is_superuser_value}}
 
         with (
-            mock.patch('ansible_base.jwt_consumer.common.auth.logger') as mock_logger,
             mock.patch.object(authentication.cache, 'get_cached_claims_hash') as mock_get_cache,
-            mock.patch('ansible_base.rbac.claims.get_user_claims') as mock_get_claims,
-            mock.patch('ansible_base.rbac.claims.get_user_claims_hashable_form') as mock_get_hashable,
-            mock.patch('ansible_base.rbac.claims.get_claims_hash') as mock_get_hash,
-            mock.patch('ansible_base.rbac.claims.save_user_claims') as mock_save_claims,
+            mock.patch.object(authentication, '_fetch_jwt_claims_from_gateway') as mock_gateway,
         ):
-            # Setup mocks for non-skip scenario
-            mock_get_cache.return_value = "a1b2c3d4"  # Cache hit
-            mock_get_claims.return_value = {}
-            mock_get_hashable.return_value = {}
-            mock_get_hash.return_value = "a1b2c3d4"
+            # Setup mocks - cache miss to trigger gateway call
+            mock_get_cache.return_value = None
+            mock_gateway.side_effect = GatewayLockedException("Gateway is locked")
 
-            authentication.process_rbac_permissions()
-
-            if should_skip:
-                # Verify the debug message was logged
-                mock_logger.debug.assert_called_with("User is a superuser, skipping RBAC permissions")
-
-                # Verify that no further processing occurred
-                mock_get_cache.assert_not_called()
-                mock_get_claims.assert_not_called()
-                mock_save_claims.assert_not_called()
+            if should_allow:
+                # Superuser should be allowed - no exception raised
+                authentication.process_rbac_permissions()
             else:
-                # Verify processing continued normally (cache was checked)
-                mock_get_cache.assert_called_once_with("f47ac10b-58cc-4372-a567-0e02b2c3d479")
-                # In cache hit scenario, no claims are saved
-                mock_save_claims.assert_not_called()
+                # Non-superuser should be denied
+                with pytest.raises(Exception) as exc_info:
+                    authentication.process_rbac_permissions()
+                assert "not a superuser and gateway is locked" in str(exc_info.value)
 
     @pytest.mark.django_db
-    def test_process_rbac_permissions_superuser_skip_missing_user_data(self, admin_user):
-        """Test process_rbac_permissions continues when user_data is missing"""
+    def test_process_rbac_permissions_gateway_fetch_exception(self, admin_user):
+        """Test process_rbac_permissions handles generic exceptions from gateway fetch"""
         authentication = JWTCommonAuth()
         authentication.user = admin_user
-        authentication.token = {
-            "sub": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-            "claims_hash": "a1b2c3d4",
-            # No user_data key at all
-        }
+        authentication.token = {"sub": "f47ac10b-58cc-4372-a567-0e02b2c3d479", "claims_hash": "a1b2c3d4", "user_data": {"is_superuser": False}}
 
         with (
-            mock.patch('ansible_base.jwt_consumer.common.auth.logger') as mock_logger,
             mock.patch.object(authentication.cache, 'get_cached_claims_hash') as mock_get_cache,
+            mock.patch.object(authentication, '_fetch_jwt_claims_from_gateway') as mock_gateway,
         ):
-            # Setup mocks for cache hit scenario
-            mock_get_cache.return_value = "a1b2c3d4"
+            # Setup mocks - cache miss to trigger gateway call
+            mock_get_cache.return_value = None
+            mock_gateway.side_effect = Exception("Network error")
 
-            authentication.process_rbac_permissions()
-
-            # Verify processing continued (cache was checked)
-            mock_get_cache.assert_called_once_with("f47ac10b-58cc-4372-a567-0e02b2c3d479")
-            # Verify the superuser message was not logged (check all debug call args)
-            superuser_message_logged = any(
-                call_args[0][0] == "User is a superuser, skipping RBAC permissions"
-                for call_args in mock_logger.debug.call_args_list
-            )
-            assert not superuser_message_logged, "Superuser skip message should not be logged when user_data is missing"
+            # Should raise an exception with the error details
+            with pytest.raises(Exception) as exc_info:
+                authentication.process_rbac_permissions()
+            assert "unable to validate user permissions" in str(exc_info.value).lower()
+            assert "network error" in str(exc_info.value).lower()
 
     @pytest.mark.django_db
     def test_process_rbac_permissions_missing_token_data(self):
@@ -846,9 +820,29 @@ class TestJWTAuthentication:
             mock_client._make_request.return_value = mock_response
             mock_get_client.return_value = mock_client
 
-            result = authentication._fetch_jwt_claims_from_gateway(user_ansible_id)
+            # Should raise an exception for non-200 status codes
+            with pytest.raises(Exception) as exc_info:
+                authentication._fetch_jwt_claims_from_gateway(user_ansible_id)
+            assert "gateway request failed with status 404" in str(exc_info.value).lower()
+            mock_get_client.assert_called_once_with(service_path='api/gateway/v1')
+            mock_client._make_request.assert_called_once_with('GET', f'jwt_claims/{user_ansible_id}/')
 
-            assert result is None
+    def test__fetch_jwt_claims_from_gateway_423_locked(self):
+        authentication = JWTCommonAuth()
+        user_ansible_id = '12345678-1234-5678-9abc-123456789012'
+        from ansible_base.jwt_consumer.common.auth import GatewayLockedException
+
+        with mock.patch('ansible_base.jwt_consumer.common.auth.get_resource_server_client') as mock_get_client:
+            mock_client = mock.Mock()
+            mock_response = mock.Mock()
+            mock_response.status_code = 423
+            mock_client._make_request.return_value = mock_response
+            mock_get_client.return_value = mock_client
+
+            # Should raise GatewayLockedException for 423 status
+            with pytest.raises(GatewayLockedException) as exc_info:
+                authentication._fetch_jwt_claims_from_gateway(user_ansible_id)
+            assert "gateway is locked" in str(exc_info.value).lower()
             mock_get_client.assert_called_once_with(service_path='api/gateway/v1')
             mock_client._make_request.assert_called_once_with('GET', f'jwt_claims/{user_ansible_id}/')
 
@@ -856,8 +850,8 @@ class TestJWTAuthentication:
         authentication = JWTCommonAuth()
         user_ansible_id = '12345678-1234-5678-9abc-123456789012'
 
-        with mock.patch('ansible_base.jwt_consumer.common.auth.get_resource_server_client', side_effect=Exception('boom')) as mock_get_client:
-            result = authentication._fetch_jwt_claims_from_gateway(user_ansible_id)
-
-            assert result is None
-            mock_get_client.assert_called_once_with(service_path='api/gateway/v1')
+        with mock.patch('ansible_base.jwt_consumer.common.auth.get_resource_server_client', side_effect=Exception('boom')):
+            # Should re-raise the exception
+            with pytest.raises(Exception) as exc_info:
+                authentication._fetch_jwt_claims_from_gateway(user_ansible_id)
+            assert "boom" in str(exc_info.value)
