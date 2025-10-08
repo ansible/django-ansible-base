@@ -32,6 +32,14 @@ class GatewayLockedException(Exception):
     pass
 
 
+class InvalidGatewayResponseException(Exception):
+    """
+    Exception raised when the gateway response is not 200 or 423
+    """
+
+    pass
+
+
 # These fields are used to both map the user as well as to validate the JWT token
 default_mapped_user_fields = [
     "username",
@@ -308,14 +316,11 @@ class JWTCommonAuth:
         """
         Fetch JWT claims from the gateway endpoint using resource server client
         """
-        try:
-            # Use the resource server client to make the request
-            client = get_resource_server_client(service_path="api/gateway/v1")
+        # Use the resource server client to make the request
+        client = get_resource_server_client(service_path="api/gateway/v1")
 
-            logger.debug(f"Fetching claims from gateway for user {user_ansible_id}")
-            response = client._make_request("GET", f"jwt_claims/{user_ansible_id}/")
-        except Exception:
-            raise
+        logger.debug(f"Fetching claims from gateway for user {user_ansible_id}")
+        response = client._make_request("GET", f"jwt_claims/{user_ansible_id}/")
 
         if response.status_code == 200:
             claims_data = response.json()
@@ -323,7 +328,7 @@ class JWTCommonAuth:
         elif response.status_code == 423:
             raise GatewayLockedException("Gateway is locked")
         else:
-            raise Exception(f"Gateway request failed with status {response.status_code}")
+            raise InvalidGatewayResponseException(f"Gateway request failed with status {response.status_code}")
 
 
 class JWTAuthentication(BaseAuthentication):

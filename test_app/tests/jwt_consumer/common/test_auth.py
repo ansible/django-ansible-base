@@ -812,6 +812,7 @@ class TestJWTAuthentication:
     def test__fetch_jwt_claims_from_gateway_non_200(self):
         authentication = JWTCommonAuth()
         user_ansible_id = '12345678-1234-5678-9abc-123456789012'
+        from ansible_base.jwt_consumer.common.auth import InvalidGatewayResponseException
 
         with mock.patch('ansible_base.jwt_consumer.common.auth.get_resource_server_client') as mock_get_client:
             mock_client = mock.Mock()
@@ -820,8 +821,8 @@ class TestJWTAuthentication:
             mock_client._make_request.return_value = mock_response
             mock_get_client.return_value = mock_client
 
-            # Should raise an exception for non-200 status codes
-            with pytest.raises(Exception) as exc_info:
+            # Should raise InvalidGatewayResponseException for non-200/423 status codes
+            with pytest.raises(InvalidGatewayResponseException) as exc_info:
                 authentication._fetch_jwt_claims_from_gateway(user_ansible_id)
             assert "gateway request failed with status 404" in str(exc_info.value).lower()
             mock_get_client.assert_called_once_with(service_path='api/gateway/v1')
