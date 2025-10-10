@@ -1,5 +1,6 @@
 import importlib
 import logging
+import os
 from typing import Any
 
 from django.conf import settings
@@ -80,3 +81,13 @@ def is_aoc_instance():
     except ValueError:
         logger.error(f'{managed_cloud_setting} was set but could not be converted to a boolean, assuming false')
         return False
+
+
+def is_testing() -> bool:
+    # Present during setup/call/teardown of tests
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return True
+    # Present for xdist workers for the whole session
+    if os.environ.get("PYTEST_XDIST_WORKER"):
+        return True
+    return False

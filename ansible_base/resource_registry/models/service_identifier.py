@@ -1,8 +1,9 @@
-import sys
 import uuid
 
 from django.conf import settings
 from django.db import IntegrityError, models, transaction
+
+from ansible_base.lib.utils.settings import is_testing
 
 
 class ServiceID(models.Model):
@@ -27,7 +28,7 @@ def service_id():
     if not _service_id:
         obj = ServiceID.objects.first()
         if obj is None:
-            if settings.DEBUG or "pytest" in sys.argv:
+            if settings.DEBUG or is_testing():
                 try:
                     with transaction.atomic():
                         obj = ServiceID.objects.create()
