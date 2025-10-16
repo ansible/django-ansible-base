@@ -642,7 +642,7 @@ class TestJWTAuthentication:
     @pytest.mark.django_db()
     @pytest.mark.parametrize(
         "original_is_superuser, token_is_superuser, expected_is_superuser",
-        [(True, False, True), (False, True, True), (True, True, True), (False, False, False)],
+        [(True, False, False), (False, True, True), (True, True, True), (False, False, False)],
     )
     def test_authenticate_is_superuser(
         self, jwt_token, django_user_model, mocked_http, test_encryption_public_key, original_is_superuser, token_is_superuser, expected_is_superuser
