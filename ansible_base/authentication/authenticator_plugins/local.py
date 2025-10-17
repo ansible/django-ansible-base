@@ -11,6 +11,7 @@ from requests.auth import HTTPBasicAuth
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.utils.authentication import get_or_create_authenticator_user
 from ansible_base.authentication.utils.claims import update_user_claims
+from ansible_base.lib.utils.duration import convert_to_seconds
 from ansible_base.lib.utils.settings import get_setting
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.local')
@@ -132,7 +133,7 @@ class AuthenticatorPlugin(ModelBackend, AbstractAuthenticatorPlugin):
         controller_url = urljoin(controller_base_domain, "/api/controller/v2/me/")
 
         timeout = get_setting('GRPC_SERVER_AUTH_SERVICE_TIMEOUT')
-        timeout = self._convert_to_seconds(timeout)
+        timeout = convert_to_seconds(timeout)
 
         try:
             response = requests.get(controller_url, auth=HTTPBasicAuth(username, password), timeout=int(timeout))
@@ -189,36 +190,3 @@ class AuthenticatorPlugin(ModelBackend, AbstractAuthenticatorPlugin):
 
         user.save(update_fields=update_fields)
         logger.info(f"Updated user {username} gateway account")
-
-    def _convert_to_seconds(self, s):
-        """
-        Converts a time string like '15s', '5m', '1h', '2d', '3w' to seconds.
-        """
-        default = 10
-        try:
-            unit = s[-1].lower()
-            value = int(s[:-1])
-
-            ret_val = 0
-            # Check units
-            if unit == '-':
-                ret_val = default
-            elif unit == 's':
-                ret_val = value
-            elif unit == 'm':
-                ret_val = value * 60
-            elif unit == 'h':
-                ret_val = value * 3600  # 60 * 60
-            elif unit == 'd':
-                ret_val = value * 86400  # 60 * 60 * 24
-            elif unit == 'w':
-                ret_val = value * 604800  # 60 * 60 * 24 * 7
-            else:
-                ret_val = int(s)
-            # If less than or equal to 0, return default
-            if ret_val <= 0:
-                ret_val = default
-            return ret_val
-        except Exception:
-            logger.warning(f"Invalid duration format: '{s}'")
-            return default

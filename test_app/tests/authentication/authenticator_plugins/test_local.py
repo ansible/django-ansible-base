@@ -770,50 +770,6 @@ def test_authenticate_without_request_object(user, local_authenticator):
                 assert result is None
 
 
-# Tests for _convert_to_seconds method
-@pytest.mark.django_db()
-def test_convert_to_seconds():
-    """Test _convert_to_seconds with seconds unit."""
-    plugin = AuthenticatorPlugin()
-    # Test Seconds
-    assert plugin._convert_to_seconds('15s') == 15
-    assert plugin._convert_to_seconds('1s') == 1
-    assert plugin._convert_to_seconds('0s') == 10  # Default value
-    # Test minutes
-    assert plugin._convert_to_seconds('5m') == 300  # 5 * 60
-    assert plugin._convert_to_seconds('1m') == 60
-    assert plugin._convert_to_seconds('10m') == 600
-    # Test hours
-    assert plugin._convert_to_seconds('1h') == 3600  # 1 * 3600
-    assert plugin._convert_to_seconds('2h') == 7200  # 2 * 3600
-    assert plugin._convert_to_seconds('24h') == 86400  # 24 * 3600
-    # Test days
-    assert plugin._convert_to_seconds('1d') == 86400  # 1 * 86400
-    assert plugin._convert_to_seconds('7d') == 604800  # 7 * 86400
-    assert plugin._convert_to_seconds('30d') == 2592000  # 30 * 86400
-    # Test weeks
-    assert plugin._convert_to_seconds('1w') == 604800  # 1 * 604800
-    assert plugin._convert_to_seconds('2w') == 1209600  # 2 * 604800
-    assert plugin._convert_to_seconds('4w') == 2419200  # 4 * 604800
-    # Test without unit
-    assert plugin._convert_to_seconds('30') == 30
-    assert plugin._convert_to_seconds('120') == 120
-    assert plugin._convert_to_seconds('0') == 10  # Default value
-    # Test uppercase
-    assert plugin._convert_to_seconds('15S') == 15
-    assert plugin._convert_to_seconds('5M') == 300
-    assert plugin._convert_to_seconds('1H') == 3600
-    assert plugin._convert_to_seconds('1D') == 86400
-    assert plugin._convert_to_seconds('1W') == 604800
-    # Test invalid values
-    assert plugin._convert_to_seconds('invalid') == 10  # Default value
-    assert plugin._convert_to_seconds('xs') == 10  # Default value
-    assert plugin._convert_to_seconds('') == 10  # Default value
-    assert plugin._convert_to_seconds(None) == 10  # Default value
-    assert plugin._convert_to_seconds('-5s') == 10  # Default value
-    assert plugin._convert_to_seconds('-10') == 10  # Default value
-
-
 # Test for enterprise user password check
 @pytest.mark.django_db()
 def test_can_authenticate_from_controller_enterprise_user(user, expected_log):
