@@ -3,6 +3,14 @@ set -ue
 
 PYTHON=python3.11
 
+# Ensure script is run from the requirements/ directory
+if [[ "$(basename $(pwd))" != "requirements" ]]; then
+	echo "ERROR: This script must be run from the requirements/ directory"
+	echo "Current directory: $(pwd)"
+	echo "Please run: cd requirements && ./updater.sh [run|upgrade]"
+	exit 1
+fi
+
 for FILE in requirements.in requirements_all.txt ; do
 	if [ ! -f ${FILE} ] ; then
 		touch ${FILE}

@@ -102,8 +102,11 @@ legacy_tox_ini = """
         py310
         py311
         py311sqlite
+        py310-django4
+        py311-django4
+        py312-django4
     labels =
-        test = py312, py310, py311, py311sqlite, check
+        test = py312, py310, py311, py311sqlite, py310-django4, py311-django4, py312-django4, check
         lint = flake8, black, isort
 
     [testenv]
@@ -127,6 +130,30 @@ legacy_tox_ini = """
     docker = db
     setenv =
         DJANGO_SETTINGS_MODULE = test_app.sqlite3settings
+
+    [testenv:py310-django4]
+    deps =
+        -r{toxinidir}/requirements/requirements_all.txt
+        -r{toxinidir}/requirements/requirements_dev.txt
+    commands_pre =
+        python -m pip install --upgrade "Django>=4.2.21,<4.3.0"
+    docker = db
+
+    [testenv:py311-django4]
+    deps =
+        -r{toxinidir}/requirements/requirements_all.txt
+        -r{toxinidir}/requirements/requirements_dev.txt
+    commands_pre =
+        python -m pip install --upgrade "Django>=4.2.21,<4.3.0"
+    docker = db
+
+    [testenv:py312-django4]
+    deps =
+        -r{toxinidir}/requirements/requirements_all.txt
+        -r{toxinidir}/requirements/requirements_dev.txt
+    commands_pre =
+        python -m pip install --upgrade "Django>=4.2.21,<4.3.0"
+    docker = db
 
     [docker:db]
     dockerfile = {toxinidir}/tools/dev_postgres/Dockerfile

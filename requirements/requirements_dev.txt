@@ -1,7 +1,7 @@
 ansible                 # Used in build process to generate some configs
 black==25.1.0           # Linting tool, if changed update pyproject.toml as well
 build
-django==4.2.21
+django==5.2.7
 django-debug-toolbar
 django-extensions
 djangorestframework
