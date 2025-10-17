@@ -1,8 +1,6 @@
 from unittest import mock
 
 import pytest
-import requests
-from django.contrib.auth import get_user_model
 from django.test.client import RequestFactory
 
 from ansible_base.authentication.authenticator_plugins.local import AuthenticatorPlugin
@@ -10,35 +8,6 @@ from ansible_base.authentication.session import SessionAuthentication
 from ansible_base.lib.utils.response import get_relative_url
 
 authenticated_test_page = "authenticator-list"
-
-
-def mock_get_setting(setting_name):
-    """Helper function to mock get_setting with appropriate values for different settings."""
-    if setting_name == 'gateway_proxy_url':
-        return 'http://controller.example.com'
-    elif setting_name == 'GRPC_SERVER_AUTH_SERVICE_TIMEOUT':
-        return '30s'  # Return a valid duration format
-    else:
-        return None
-
-
-@pytest.fixture
-def controller_auth_mocks(user):
-    """
-    Helper fixture that provides common mocks for controller authentication tests.
-    Returns a context manager that sets up the basic mocks needed for controller auth.
-    """
-    from contextlib import contextmanager
-
-    @contextmanager
-    def mock_controller_auth():
-        with (
-            mock.patch.object(user, 'use_controller_password', True, create=True),
-            mock.patch('ansible_base.authentication.authenticator_plugins.local.UserModel._default_manager.get_by_natural_key', return_value=user),
-        ):
-            yield
-
-    return mock_controller_auth
 
 
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
@@ -81,13 +50,18 @@ def test_local_auth_failure(unauthenticated_api_client, local_authenticator, use
     "configuration, expected_status_code",
     [
         ('{}', 201),
+        ('{"fallback_authentication": ["aap_gateway_api.authentication.fallbacks.controller"]}', 201),
         ('{"anything": "here"}', 400),
+        ('{"fallback_authentication": "not_a_list"}', 400),
+        ('{"fallback_authentication": [123]}', 400),  # Not strings
+        ('{"fallback_authentication": ["nodots"]}', 400),  # Invalid module path format (no dots)
+        ('{"fallback_authentication": ["has spaces"]}', 400),  # Invalid module path with spaces
     ],
 )
-def test_local_auth_create_configuration_must_be_empty(admin_api_client, configuration, expected_status_code, shut_up_logging):
+def test_local_auth_create_configuration_validates_properly(admin_api_client, configuration, expected_status_code, shut_up_logging):
     """
-    Attempt to create a local authenticator with invalid configuration and test
-    that it fails.
+    Attempt to create a local authenticator with various configurations and test
+    that it validates properly.
     """
     url = get_relative_url("authenticator-list")
     data = {
@@ -103,14 +77,44 @@ def test_local_auth_create_configuration_must_be_empty(admin_api_client, configu
 
 
 def test_local_auth_configuration_validate():
-    # Technically if you try to add anything the validator should report this as an invalid field but lets force the issue
-    from django.core.exceptions import ValidationError
+    from rest_framework.serializers import ValidationError
 
     from ansible_base.authentication.authenticator_plugins.local import LocalConfiguration
 
     config = LocalConfiguration()
-    with pytest.raises(ValidationError):
-        config.validate({'something', 'here'})
+
+    # Valid: empty configuration
+    result = config.validate({})
+    assert result == {}
+
+    # Valid: with fallback_authentication
+    result = config.validate({'fallback_authentication': ['module.path.to.fallback']})
+    assert result['fallback_authentication'] == ['module.path.to.fallback']
+
+    # Valid: multiple fallbacks
+    result = config.validate({'fallback_authentication': ['module.path.one', 'module.path.two']})
+    assert len(result['fallback_authentication']) == 2
+
+    # Invalid: fallback_authentication is not a list (test via serializer)
+    with pytest.raises(ValidationError) as exc_info:
+        # This will fail during serialization before validate() is called
+        config.to_internal_value({'fallback_authentication': 'not_a_list'})
+    assert 'fallback_authentication' in str(exc_info.value)
+
+    # Invalid: fallback_authentication contains non-strings
+    with pytest.raises(ValidationError) as exc_info:
+        config.validate({'fallback_authentication': [123]})
+    assert 'fallback_authentication' in str(exc_info.value)
+
+    # Invalid: fallback_authentication contains path without dots
+    with pytest.raises(ValidationError) as exc_info:
+        config.validate({'fallback_authentication': ['nodots']})
+    assert 'fallback_authentication' in str(exc_info.value)
+
+    # Invalid: fallback_authentication contains path with invalid characters
+    with pytest.raises(ValidationError) as exc_info:
+        config.validate({'fallback_authentication': ['invalid path!']})
+    assert 'fallback_authentication' in str(exc_info.value)
 
 
 def test_local_auth_instance_not_enabled(local_authenticator, expected_log):
@@ -130,874 +134,515 @@ def test_local_auth_no_db_instance():
     assert plugin.authenticate(request=RequestFactory(), username='jane', password='doe') is None
 
 
-@pytest.mark.django_db()
-def test_can_authenticate_from_controller_nonexistent_user():
-    """
-    Test that _can_authenticate_from_controller returns False for a non-existent user.
-    """
-    plugin = AuthenticatorPlugin()
-    result = plugin._can_authenticate_from_controller("nonexistent_user", "password")
-    assert result is False
+# ============================================================================
+# Tests for fallback authentication functionality
+# ============================================================================
 
 
-@pytest.mark.django_db()
-def test_can_authenticate_from_controller_success(user, controller_auth_mocks):
-    """
-    Test that _can_authenticate_from_controller returns True when all conditions are met.
-    """
-    plugin = AuthenticatorPlugin()
+class MockFallbackAuthenticator:
+    """Mock fallback authenticator for testing."""
 
-    # Set user password to encrypted (indicating partial migration)
-    user.password = "$encrypted$"
-    user.save()
+    def __init__(self, database_instance=None, configuration=None):
+        self.database_instance = database_instance
+        self.configuration = configuration or {}
+        self.authenticate_called = False
 
-    # Use fixture for common mocks and add specific controller user response
-    with controller_auth_mocks(), mock.patch.object(plugin, '_get_controller_user', return_value={"ldap_dn": "", "password": "$encrypted$"}):
-        result = plugin._can_authenticate_from_controller(user.username, "password")
-        assert result is True
+    def authenticate(self, request, username, password, **kwargs):
+        self.authenticate_called = True
+        return None  # Return None by default, override in tests
 
 
-@pytest.mark.django_db()
-def test_can_authenticate_from_controller_no_controller_user(user):
-    """
-    Test that _can_authenticate_from_controller returns False when controller user not found.
-    """
-    plugin = AuthenticatorPlugin()
+class MockSuccessfulFallback(MockFallbackAuthenticator):
+    """Mock fallback that returns a user."""
 
-    # Mock the controller user response to return None
-    with mock.patch.object(plugin, '_get_controller_user', return_value=None):
-        result = plugin._can_authenticate_from_controller(user.username, "password")
-        assert result is False
+    def authenticate(self, request, username, password, **kwargs):
+        self.authenticate_called = True
+        # Return a mock user
+        from test_app.models import User
+
+        return User.objects.get(username=username)
 
 
-@pytest.mark.django_db()
-def test_can_authenticate_from_controller_invalid_format(user):
-    """
-    Test that _can_authenticate_from_controller returns False when controller user format is invalid.
-    """
-    plugin = AuthenticatorPlugin()
+class MockFailingFallback(MockFallbackAuthenticator):
+    """Mock fallback that always fails."""
 
-    # Mock the controller user response to return invalid format (False)
-    with mock.patch.object(plugin, '_get_controller_user', return_value=False):
-        result = plugin._can_authenticate_from_controller(user.username, "password")
-        assert result is False
+    def authenticate(self, request, username, password, **kwargs):
+        self.authenticate_called = True
+        return None
 
 
-@pytest.mark.django_db()
-def test_can_authenticate_from_controller_missing_ldap_dn_with_encrypted_password(user):
-    """
-    Test that _can_authenticate_from_controller returns False when ldap_dn is missing and password is encrypted.
-    """
-    plugin = AuthenticatorPlugin()
+class MockExceptionFallback(MockFallbackAuthenticator):
+    """Mock fallback that raises an exception."""
 
-    # Set user password to encrypted (indicating partial migration)
-    user.password = "$encrypted$"
-    user.save()
-
-    # Mock the controller user response without ldap_dn
-    with mock.patch.object(plugin, '_get_controller_user', return_value={"username": "testuser"}):
-        result = plugin._can_authenticate_from_controller(user.username, "password")
-        assert result is False
+    def authenticate(self, request, username, password, **kwargs):
+        raise Exception("Fallback error")
 
 
-@pytest.mark.django_db()
-def test_can_authenticate_from_controller_non_local_user_with_encrypted_password(user):
-    """
-    Test that _can_authenticate_from_controller returns False when user is not local and password is encrypted.
-    """
-    plugin = AuthenticatorPlugin()
-
-    # Set user password to encrypted (indicating partial migration)
-    user.password = "$encrypted$"
-    user.save()
-
-    # Mock the controller user response with non-empty ldap_dn
-    with mock.patch.object(plugin, '_get_controller_user', return_value={"ldap_dn": "cn=testuser,ou=users,dc=example,dc=com"}):
-        result = plugin._can_authenticate_from_controller(user.username, "password")
-        assert result is False
+# ============================================================================
+# Tests for _load_fallback_plugin()
+# ============================================================================
 
 
-@pytest.mark.django_db()
-def test_can_authenticate_from_controller_non_local_user_with_regular_password(user):
-    """
-    Test that _can_authenticate_from_controller returns False when user is not local (has ldap_dn).
-    """
-    plugin = AuthenticatorPlugin()
+class TestLoadFallbackPlugin:
+    """Tests for the plugin loading mechanism."""
 
-    # Set user password to regular password (not encrypted)
-    user.set_password("regular_password")
-    user.save()
+    def test_load_valid_plugin(self, local_authenticator):
+        """Test loading a valid fallback plugin."""
+        plugin = AuthenticatorPlugin(database_instance=local_authenticator)
 
-    # Mock the controller user response with non-empty ldap_dn (LDAP user)
-    with mock.patch.object(plugin, '_get_controller_user', return_value={"ldap_dn": "cn=testuser,ou=users,dc=example,dc=com", "password": "regular_password"}):
-        result = plugin._can_authenticate_from_controller(user.username, "password")
-        assert result is False
+        # Mock a valid module with FallbackAuthenticator class
+        with mock.patch('importlib.import_module') as mock_import:
+            mock_module = mock.Mock()
+            mock_module.FallbackAuthenticator = MockFallbackAuthenticator
+            mock_import.return_value = mock_module
+
+            result = plugin._load_fallback_plugin('test.module.path')
+
+            assert result == MockFallbackAuthenticator
+            mock_import.assert_called_once_with('test.module.path')
+
+    def test_load_plugin_import_error(self, local_authenticator):
+        """Test handling of ImportError when loading plugin."""
+        plugin = AuthenticatorPlugin(database_instance=local_authenticator)
+
+        with mock.patch('importlib.import_module', side_effect=ImportError("Module not found")):
+            with pytest.raises(ImportError):
+                plugin._load_fallback_plugin('nonexistent.module')
+
+    def test_load_plugin_missing_class(self, local_authenticator):
+        """Test handling when module doesn't have FallbackAuthenticator class."""
+        plugin = AuthenticatorPlugin(database_instance=local_authenticator)
+
+        with mock.patch('importlib.import_module') as mock_import:
+            mock_module = mock.Mock()
+            # Remove FallbackAuthenticator attribute
+            mock_module.configure_mock(**{'FallbackAuthenticator': mock.Mock(side_effect=AttributeError)})
+            del mock_module.FallbackAuthenticator
+            mock_import.return_value = mock_module
+
+            with pytest.raises(AttributeError):
+                plugin._load_fallback_plugin('test.module.path')
 
 
-@pytest.mark.django_db()
-def test_get_controller_user_success(user):
-    """
-    Test that _get_controller_user returns user data when successful.
-    """
-    plugin = AuthenticatorPlugin()
-
-    with mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting):
-        with mock.patch('requests.get') as mock_get:
-            mock_response = mock.Mock()
-            mock_response.raise_for_status.return_value = None
-            mock_response.json.return_value = {"count": 1, "results": [{"ldap_dn": ""}]}
-            mock_get.return_value = mock_response
-
-            result = plugin._get_controller_user(user.username, "password")
-            assert result == {"ldap_dn": ""}
+# ============================================================================
+# Tests for _try_fallback_authenticators()
+# ============================================================================
 
 
-@pytest.mark.django_db()
-def test_get_controller_user_no_gateway_proxy_url(user):
-    """
-    Test that _get_controller_user returns None when gateway_proxy_url is not set.
-    """
-    plugin = AuthenticatorPlugin()
+class TestTryFallbackAuthenticators:
+    """Tests for the fallback orchestration logic."""
 
-    with mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', return_value=None):
-        result = plugin._get_controller_user(user.username, "password")
+    @pytest.fixture
+    def mock_request(self):
+        """Create a mock request."""
+        return RequestFactory().post('/login')
+
+    def test_no_fallbacks_configured(self, local_authenticator, mock_request):
+        """Test when no fallback authenticators are configured."""
+        local_authenticator.configuration = {}
+        local_authenticator.save()
+
+        plugin = AuthenticatorPlugin(database_instance=local_authenticator)
+        result = plugin._try_fallback_authenticators(mock_request, 'testuser', 'password')
+
         assert result is None
 
+    def test_empty_fallbacks_list(self, local_authenticator, mock_request):
+        """Test when fallback_authentication is an empty list."""
+        local_authenticator.configuration = {'fallback_authentication': []}
+        local_authenticator.save()
 
-@pytest.mark.django_db()
-def test_get_controller_user_http_error(user):
-    """
-    Test that _get_controller_user returns None when HTTP error occurs.
-    """
-    plugin = AuthenticatorPlugin()
+        plugin = AuthenticatorPlugin(database_instance=local_authenticator)
+        result = plugin._try_fallback_authenticators(mock_request, 'testuser', 'password')
 
-    with mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting):
-        with mock.patch('requests.get') as mock_get:
-            mock_get.side_effect = requests.exceptions.HTTPError("HTTP Error")
+        assert result is None
 
-            result = plugin._get_controller_user(user.username, "password")
+    def test_single_successful_fallback(self, local_authenticator, mock_request, user):
+        """Test successful authentication with a single fallback."""
+        local_authenticator.configuration = {'fallback_authentication': ['test.fallback.mock']}
+        local_authenticator.save()
+
+        plugin = AuthenticatorPlugin(database_instance=local_authenticator)
+
+        with mock.patch.object(plugin, '_load_fallback_plugin', return_value=MockSuccessfulFallback):
+            result = plugin._try_fallback_authenticators(mock_request, user.username, 'password')
+
+            assert result == user
+
+    def test_single_failing_fallback(self, local_authenticator, mock_request):
+        """Test when single fallback fails to authenticate."""
+        local_authenticator.configuration = {'fallback_authentication': ['test.fallback.mock']}
+        local_authenticator.save()
+
+        plugin = AuthenticatorPlugin(database_instance=local_authenticator)
+
+        with mock.patch.object(plugin, '_load_fallback_plugin', return_value=MockFailingFallback):
+            result = plugin._try_fallback_authenticators(mock_request, 'testuser', 'password')
+
             assert result is None
 
+    def test_multiple_fallbacks_first_succeeds(self, local_authenticator, mock_request, user):
+        """Test multiple fallbacks where the first one succeeds."""
+        local_authenticator.configuration = {'fallback_authentication': ['test.fallback.success', 'test.fallback.never_called']}
+        local_authenticator.save()
 
-@pytest.mark.django_db()
-def test_get_controller_user_invalid_count(user):
-    """
-    Test that _get_controller_user returns None when count is invalid.
-    """
-    plugin = AuthenticatorPlugin()
+        plugin = AuthenticatorPlugin(database_instance=local_authenticator)
+        first_fallback = MockSuccessfulFallback()
+        second_fallback = MockFallbackAuthenticator()
 
-    with mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting):
-        with mock.patch('requests.get') as mock_get:
-            mock_response = mock.Mock()
-            mock_response.raise_for_status.return_value = None
-            mock_response.json.return_value = {"count": 0}  # Invalid count
-            mock_get.return_value = mock_response
+        def mock_load(path):
+            if 'success' in path:
+                return lambda *args, **kwargs: first_fallback
+            return lambda *args, **kwargs: second_fallback
 
-            result = plugin._get_controller_user(user.username, "password")
+        with mock.patch.object(plugin, '_load_fallback_plugin', side_effect=mock_load):
+            result = plugin._try_fallback_authenticators(mock_request, user.username, 'password')
+
+            assert result == user
+            assert first_fallback.authenticate_called
+            assert not second_fallback.authenticate_called  # Should not be tried
+
+    def test_multiple_fallbacks_second_succeeds(self, local_authenticator, mock_request, user):
+        """Test multiple fallbacks where the second one succeeds."""
+        local_authenticator.configuration = {'fallback_authentication': ['test.fallback.fails', 'test.fallback.success']}
+        local_authenticator.save()
+
+        plugin = AuthenticatorPlugin(database_instance=local_authenticator)
+        first_fallback = MockFailingFallback()
+        second_fallback = MockSuccessfulFallback()
+
+        def mock_load(path):
+            if 'fails' in path:
+                return lambda *args, **kwargs: first_fallback
+            return lambda *args, **kwargs: second_fallback
+
+        with mock.patch.object(plugin, '_load_fallback_plugin', side_effect=mock_load):
+            result = plugin._try_fallback_authenticators(mock_request, user.username, 'password')
+
+            assert result == user
+            assert first_fallback.authenticate_called
+            assert second_fallback.authenticate_called
+
+    def test_all_fallbacks_fail(self, local_authenticator, mock_request):
+        """Test when all configured fallbacks fail."""
+        local_authenticator.configuration = {'fallback_authentication': ['test.fallback.fails1', 'test.fallback.fails2', 'test.fallback.fails3']}
+        local_authenticator.save()
+
+        plugin = AuthenticatorPlugin(database_instance=local_authenticator)
+
+        with mock.patch.object(plugin, '_load_fallback_plugin', return_value=MockFailingFallback):
+            result = plugin._try_fallback_authenticators(mock_request, 'testuser', 'password')
+
             assert result is None
 
+    def test_fallback_import_error_continues(self, local_authenticator, mock_request, user, expected_log):
+        """Test that ImportError in one fallback doesn't stop others."""
+        local_authenticator.configuration = {'fallback_authentication': ['test.fallback.bad_import', 'test.fallback.success']}
+        local_authenticator.save()
 
-@pytest.mark.django_db()
-def test_get_controller_user_empty_results(user):
-    """
-    Test that _get_controller_user returns None when results are empty.
-    """
-    plugin = AuthenticatorPlugin()
+        plugin = AuthenticatorPlugin(database_instance=local_authenticator)
 
-    with mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting):
-        with mock.patch('requests.get') as mock_get:
-            mock_response = mock.Mock()
-            mock_response.raise_for_status.return_value = None
-            mock_response.json.return_value = {"count": 1, "results": []}
-            mock_get.return_value = mock_response
+        def mock_load(path):
+            if 'bad_import' in path:
+                raise ImportError("Module not found")
+            return MockSuccessfulFallback
 
-            result = plugin._get_controller_user(user.username, "password")
-            assert result is None
+        with expected_log('ansible_base.authentication.authenticator_plugins.local.logger', 'error', 'Failed to load fallback authenticator plugin'):
+            with mock.patch.object(plugin, '_load_fallback_plugin', side_effect=mock_load):
+                result = plugin._try_fallback_authenticators(mock_request, user.username, 'password')
 
-
-def test_authenticate_with_controller_validation_success(user, local_authenticator):
-    """
-    Test that authentication works when controller validation succeeds.
-    """
-    from ansible_base.authentication.models import AuthenticatorUser
-
-    # Create an AuthenticatorUser entry for the user with local authenticator
-    AuthenticatorUser.objects.create(uid=user.username, user=user, provider=local_authenticator)
-
-    plugin = AuthenticatorPlugin(database_instance=local_authenticator)
-
-    # Mock controller authentication to succeed
-    with mock.patch.object(plugin, '_can_authenticate_from_controller', return_value=True):
-        # Mock the super().authenticate to return None first (simulating initial auth failure)
-        # then return the user on the second call (after password update)
-        with mock.patch('django.contrib.auth.backends.ModelBackend.authenticate') as mock_auth:
-            mock_auth.side_effect = [None, user]  # First call returns None, second returns user
-
-            with mock.patch.object(plugin, 'update_gateway_user') as mock_update:
-                request = RequestFactory().get('/api/gateway/v1/login/')
-                result = plugin.authenticate(request=request, username=user.username, password="password")
-
-                assert result is not None
-                assert result == user
-                mock_update.assert_called_once_with(user.username, "password")
-
-
-def test_authenticate_non_gateway_path_skips_validation(user, local_authenticator):
-    """
-    Test that controller validation is skipped when request path doesn't start with /api/gateway/v1/login/.
-    """
-    from ansible_base.authentication.models import AuthenticatorUser
-
-    # Create an AuthenticatorUser entry for the user with local authenticator
-    AuthenticatorUser.objects.create(uid=user.username, user=user, provider=local_authenticator)
-
-    plugin = AuthenticatorPlugin(database_instance=local_authenticator)
-
-    # Create a request with different path
-    request = RequestFactory().get('/some/other/path/')
-
-    with mock.patch.object(plugin, '_can_authenticate_from_controller', return_value=False) as mock_check:
-        with mock.patch('django.contrib.auth.backends.ModelBackend.authenticate', return_value=None):
-            with mock.patch.object(plugin, 'update_gateway_user') as mock_update:
-                result = plugin.authenticate(request=request, username=user.username, password="password")
-
-                # _can_authenticate_from_controller is not called because path doesn't match
-                mock_check.assert_not_called()
-                # But update_gateway_user should not be called because path doesn't match
-                mock_update.assert_not_called()
-                assert result is None
-
-
-def test_update_gateway_user(user):
-    """
-    Test that update_gateway_user correctly updates the user's password.
-    """
-    plugin = AuthenticatorPlugin()
-    original_password = user.password
-
-    plugin.update_gateway_user(user.username, "new_password")
-
-    # Refresh user from database
-    user.refresh_from_db()
-    assert user.password != original_password
-    assert user.check_password("new_password")
-
-
-def test_authenticate_logs_warning_after_controller_validation(user, local_authenticator, expected_log):
-    """
-    Test that authenticate logs a warning after successful controller validation.
-    """
-    from ansible_base.authentication.models import AuthenticatorUser
-
-    # Create an AuthenticatorUser entry for the user with local authenticator
-    AuthenticatorUser.objects.create(uid=user.username, user=user, provider=local_authenticator)
-
-    plugin = AuthenticatorPlugin(database_instance=local_authenticator)
-
-    # Mock controller authentication to succeed
-    with mock.patch.object(plugin, '_can_authenticate_from_controller', return_value=True):
-        # Mock the super().authenticate to return None first, then return the user
-        with mock.patch('django.contrib.auth.backends.ModelBackend.authenticate') as mock_auth:
-            mock_auth.side_effect = [None, user]  # First call returns None, second returns user
-
-            with mock.patch.object(plugin, 'update_gateway_user') as mock_update:
-                with expected_log('ansible_base.authentication.authenticator_plugins.local.logger', "warning", "User has been validated by controller"):
-                    # Create request with gateway login path
-                    request = RequestFactory().get('/api/gateway/v1/login/')
-                    result = plugin.authenticate(request=request, username=user.username, password="password")
-
-                    assert result is not None
-                    assert result == user
-                    mock_update.assert_called_once_with(user.username, "password")
-
-
-# Logging tests for _can_authenticate_from_controller
-@pytest.mark.django_db()
-def test_can_authenticate_from_controller_logs_warning_for_nonexistent_user(expected_log):
-    """
-    Test that _can_authenticate_from_controller logs a warning for non-existent users.
-    """
-    plugin = AuthenticatorPlugin()
-
-    with expected_log('ansible_base.authentication.authenticator_plugins.local.logger', "warning", "does not exist in the database"):
-        result = plugin._can_authenticate_from_controller("nonexistent_user", "password")
-        assert result is False
-
-
-@pytest.mark.django_db()
-def test_can_authenticate_from_controller_logs_warning_invalid_format(user, expected_log):
-    """
-    Test that _can_authenticate_from_controller logs a warning for invalid controller user format.
-    """
-    plugin = AuthenticatorPlugin()
-
-    # Mock use_controller_password to True to enable controller authentication
-    mock_response = mock.Mock()
-    mock_response.raise_for_status.return_value = None
-    mock_response.json.return_value = {"count": 1, "results": ["invalid_string_not_dict"]}
-
-    with (
-        mock.patch.object(user, 'use_controller_password', True, create=True),
-        mock.patch('ansible_base.authentication.authenticator_plugins.local.UserModel._default_manager.get_by_natural_key', return_value=user),
-        mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting),
-        mock.patch('requests.get', return_value=mock_response),
-        expected_log('ansible_base.authentication.authenticator_plugins.local.logger', "warning", "user was not a dictionary"),
-    ):
-        result = plugin._can_authenticate_from_controller(user.username, "password")
-        assert result is False
-
-
-@pytest.mark.django_db()
-def test_can_authenticate_from_controller_logs_warning_not_local_user(user, expected_log):
-    """
-    Test that _can_authenticate_from_controller logs a warning when user cannot be confirmed as local.
-    """
-    plugin = AuthenticatorPlugin()
-
-    # Set user password to encrypted (indicating partial migration)
-    user.password = "$encrypted$"
-    user.save()
-
-    # Mock use_controller_password to True to enable controller authentication
-    with (
-        mock.patch.object(user, 'use_controller_password', True, create=True),
-        mock.patch('ansible_base.authentication.authenticator_plugins.local.UserModel._default_manager.get_by_natural_key', return_value=user),
-        mock.patch.object(plugin, '_get_controller_user', return_value={"ldap_dn": "cn=user,dc=example,dc=com", "password": "$encrypted$"}),
-        expected_log('ansible_base.authentication.authenticator_plugins.local.logger', "warning", "is an ldap user and can not be authenticated"),
-    ):
-        result = plugin._can_authenticate_from_controller(user.username, "password")
-        assert result is False
-
-
-@pytest.mark.django_db()
-def test_authenticate_logs_fallback_condition_not_met(user, local_authenticator, expected_log):
-    """
-    Test that authenticate logs when fallback authentication condition is not met.
-    """
-    from ansible_base.authentication.models import AuthenticatorUser
-
-    # Create an AuthenticatorUser entry for the user with local authenticator
-    AuthenticatorUser.objects.create(uid=user.username, user=user, provider=local_authenticator)
-
-    plugin = AuthenticatorPlugin(database_instance=local_authenticator)
-
-    # Mock regular authentication to fail
-    with mock.patch('django.contrib.auth.backends.ModelBackend.authenticate', return_value=None):
-        # Mock _can_authenticate_from_controller to return False so condition fails
-        with mock.patch.object(plugin, '_can_authenticate_from_controller', return_value=False) as mock_check:
-            with expected_log('ansible_base.authentication.authenticator_plugins.local.logger', "info", "Fallback authentication condition not met"):
-                # Create request with gateway login path but controller auth will fail
-                request = RequestFactory().get('/api/gateway/v1/login/')
-                result = plugin.authenticate(request=request, username=user.username, password="password")
-
-                # Verify the method was called and returned None
-                mock_check.assert_called_once_with(user.username, "password")
-                assert result is None
-
-
-@pytest.mark.django_db()
-def test_get_controller_user_logs_warning_for_invalid_count(user, expected_log):
-    """
-    Test that _get_controller_user logs a warning for invalid count.
-    """
-    plugin = AuthenticatorPlugin()
-
-    with mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting):
-        with mock.patch('requests.get') as mock_get:
-            mock_response = mock.Mock()
-            mock_response.raise_for_status.return_value = None
-            mock_response.json.return_value = {"count": 0}
-            mock_get.return_value = mock_response
-
-            with expected_log('ansible_base.authentication.authenticator_plugins.local.logger', "warning", "Unable to authenticate user"):
-                result = plugin._get_controller_user(user.username, "password")
-                assert result is None
-
-
-@pytest.mark.django_db()
-def test_get_controller_user_logs_warning_for_empty_results(user, expected_log):
-    """
-    Test that _get_controller_user logs a warning for empty results.
-    """
-    plugin = AuthenticatorPlugin()
-
-    with mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting):
-        with mock.patch('requests.get') as mock_get:
-            mock_response = mock.Mock()
-            mock_response.raise_for_status.return_value = None
-            mock_response.json.return_value = {"count": 1, "results": []}
-            mock_get.return_value = mock_response
-
-            with expected_log('ansible_base.authentication.authenticator_plugins.local.logger', "info", "Invalid or empty results"):
-                result = plugin._get_controller_user(user.username, "password")
-                assert result is None
-
-
-# Comprehensive update_gateway_user tests
-@pytest.mark.django_db()
-def test_update_gateway_user_nonexistent_user():
-    """
-    Test that update_gateway_user raises exception for non-existent user.
-    """
-    plugin = AuthenticatorPlugin()
-    UserModel = get_user_model()
-
-    with pytest.raises(UserModel.DoesNotExist):
-        plugin.update_gateway_user("nonexistent_user", "password")
-
-
-@pytest.mark.django_db()
-def test_update_gateway_user_logs_success(user, expected_log):
-    """
-    Test that update_gateway_user logs success message.
-    """
-    plugin = AuthenticatorPlugin()
-
-    with expected_log('ansible_base.authentication.authenticator_plugins.local.logger', "info", f"Updated user {user.username} gateway account"):
-        plugin.update_gateway_user(user.username, "new_password")
-
-    # Verify changes
-    user.refresh_from_db()
-    assert user.check_password("new_password")
-
-
-@pytest.mark.django_db()
-def test_update_gateway_user_updates_resource_flag(user):
-    """
-    Test that update_gateway_user properly updates the user password.
-    """
-    plugin = AuthenticatorPlugin()
-
-    plugin.update_gateway_user(user.username, "new_password")
-
-    # Verify password was updated
-    user.refresh_from_db()
-    assert user.check_password("new_password")
-
-
-# Authentication flow edge cases
-@pytest.mark.django_db()
-def test_authenticate_regular_auth_success_skips_controller_validation(user, local_authenticator):
-    """
-    Test that authentication skips controller validation when regular authentication succeeds.
-    """
-    from ansible_base.authentication.models import AuthenticatorUser
-
-    # Create an AuthenticatorUser entry for the user with local authenticator
-    AuthenticatorUser.objects.create(uid=user.username, user=user, provider=local_authenticator)
-
-    plugin = AuthenticatorPlugin(database_instance=local_authenticator)
-
-    with mock.patch.object(plugin, '_can_authenticate_from_controller', return_value=False) as mock_check:
-        with mock.patch('django.contrib.auth.backends.ModelBackend.authenticate', return_value=user):
-            with mock.patch.object(plugin, 'update_gateway_user') as mock_update:
-                # Create request with gateway login path
-                request = RequestFactory().get('/api/gateway/v1/login/')
-                result = plugin.authenticate(request=request, username=user.username, password="password")
-
-                # _can_authenticate_from_controller should not be called since regular auth succeeded
-                mock_check.assert_not_called()
-                # update_gateway_user should not be called since regular auth succeeded
-                mock_update.assert_not_called()
-                assert result is not None
-
-
-# Test missing parameters and edge cases in _get_controller_user
-@pytest.mark.django_db()
-def test_get_controller_user_missing_count_field(user):
-    """
-    Test that _get_controller_user handles missing count field.
-    """
-    plugin = AuthenticatorPlugin()
-
-    with mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting):
-        with mock.patch('requests.get') as mock_get:
-            mock_response = mock.Mock()
-            mock_response.raise_for_status.return_value = None
-            mock_response.json.return_value = {"results": [{"ldap_dn": ""}]}  # Missing count
-            mock_get.return_value = mock_response
-
-            result = plugin._get_controller_user(user.username, "password")
-            assert result is None
-
-
-@pytest.mark.django_db()
-def test_get_controller_user_non_list_results(user):
-    """
-    Test that _get_controller_user handles non-list results field.
-    """
-    plugin = AuthenticatorPlugin()
-
-    with mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting):
-        with mock.patch('requests.get') as mock_get:
-            mock_response = mock.Mock()
-            mock_response.raise_for_status.return_value = None
-            mock_response.json.return_value = {"count": 1, "results": "not_a_list"}
-            mock_get.return_value = mock_response
-
-            result = plugin._get_controller_user(user.username, "password")
-            assert result is None
-
-
-# Test successful authentication flow with all components
-@pytest.mark.django_db()
-def test_authenticate_successful_controller_validation_full_flow(user, local_authenticator):
-    """
-    Test complete successful authentication flow with controller validation.
-    """
-    from ansible_base.authentication.models import AuthenticatorUser
-
-    # Create an AuthenticatorUser entry for the user with local authenticator
-    AuthenticatorUser.objects.create(uid=user.username, user=user, provider=local_authenticator)
-
-    plugin = AuthenticatorPlugin(database_instance=local_authenticator)
-
-    # Set user password to encrypted (indicating partial migration)
-    user.password = "$encrypted$"
-    user.save()
-
-    # Mock use_controller_password to True to enable controller authentication
-    with mock.patch.object(user, 'use_controller_password', True, create=True):
-        # Mock the database lookup to return our mocked user
-        with mock.patch('ansible_base.authentication.authenticator_plugins.local.UserModel._default_manager.get_by_natural_key', return_value=user):
-            # Mock all the components for a successful flow
-            with (
-                mock.patch.object(plugin, '_get_controller_user', return_value={"ldap_dn": "", "password": "$encrypted$"}),
-                mock.patch('django.contrib.auth.backends.ModelBackend.authenticate') as mock_auth,
-                mock.patch.object(plugin, 'update_gateway_user') as mock_update,
-            ):
-                mock_auth.side_effect = [None, user]  # First call fails, second succeeds after password update
-
-                # Create request with gateway login path
-                request = RequestFactory().get('/api/gateway/v1/login/')
-                result = plugin.authenticate(request=request, username=user.username, password="password")
-
-                # Verify successful authentication
-                assert result is not None
                 assert result == user
 
-                # Verify update_gateway_user was called
-                mock_update.assert_called_once_with(user.username, "password")
+    def test_fallback_attribute_error_continues(self, local_authenticator, mock_request, user, expected_log):
+        """Test that AttributeError in one fallback doesn't stop others."""
+        local_authenticator.configuration = {'fallback_authentication': ['test.fallback.bad_class', 'test.fallback.success']}
+        local_authenticator.save()
+
+        plugin = AuthenticatorPlugin(database_instance=local_authenticator)
+
+        def mock_load(path):
+            if 'bad_class' in path:
+                raise AttributeError("FallbackAuthenticator not found")
+            return MockSuccessfulFallback
+
+        with expected_log('ansible_base.authentication.authenticator_plugins.local.logger', 'error', 'Failed to load fallback authenticator plugin'):
+            with mock.patch.object(plugin, '_load_fallback_plugin', side_effect=mock_load):
+                result = plugin._try_fallback_authenticators(mock_request, user.username, 'password')
+
+                assert result == user
+
+    def test_fallback_runtime_exception_continues(self, local_authenticator, mock_request, user, expected_log):
+        """Test that runtime exception in one fallback doesn't stop others."""
+        local_authenticator.configuration = {'fallback_authentication': ['test.fallback.exception', 'test.fallback.success']}
+        local_authenticator.save()
+
+        plugin = AuthenticatorPlugin(database_instance=local_authenticator)
+        exception_fallback = MockExceptionFallback()
+        success_fallback = MockSuccessfulFallback()
+
+        def mock_load(path):
+            if 'exception' in path:
+                return lambda *args, **kwargs: exception_fallback
+            return lambda *args, **kwargs: success_fallback
+
+        with expected_log('ansible_base.authentication.authenticator_plugins.local.logger', 'error', 'Error in fallback authenticator'):
+            with mock.patch.object(plugin, '_load_fallback_plugin', side_effect=mock_load):
+                result = plugin._try_fallback_authenticators(mock_request, user.username, 'password')
+
+                assert result == user
+
+    def test_fallback_passes_correct_parameters(self, local_authenticator, mock_request):
+        """Test that fallback receives correct parameters from configuration."""
+        test_config = {'fallback_authentication': ['test.fallback.mock'], 'custom_setting': 'value'}
+        local_authenticator.configuration = test_config
+        local_authenticator.save()
+
+        plugin = AuthenticatorPlugin(database_instance=local_authenticator)
+        fallback_instance = None
+
+        class ParameterCapturingFallback:
+            def __init__(self, database_instance=None, configuration=None):
+                nonlocal fallback_instance
+                fallback_instance = self
+                self.database_instance = database_instance
+                self.configuration = configuration
+
+            def authenticate(self, request, username, password, **kwargs):
+                return None
+
+        with mock.patch.object(plugin, '_load_fallback_plugin', return_value=ParameterCapturingFallback):
+            plugin._try_fallback_authenticators(mock_request, 'testuser', 'password', extra='param')
+
+            assert fallback_instance is not None
+            assert fallback_instance.database_instance == local_authenticator
+            assert fallback_instance.configuration == test_config
 
 
-# Test connection and timeout errors
-@pytest.mark.django_db()
-def test_get_controller_user_connection_error(user):
-    """
-    Test that _get_controller_user handles connection errors gracefully.
-    """
-    plugin = AuthenticatorPlugin()
-
-    with mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting):
-        with mock.patch('requests.get') as mock_get:
-            mock_get.side_effect = requests.exceptions.ConnectionError("Connection failed")
-
-            result = plugin._get_controller_user(user.username, "password")
-            assert result is None
+# ============================================================================
+# Tests for authenticate() integration
+# ============================================================================
 
 
-@pytest.mark.django_db()
-def test_get_controller_user_timeout_error(user):
-    """
-    Test that _get_controller_user handles timeout errors gracefully.
-    """
-    plugin = AuthenticatorPlugin()
+class TestAuthenticateIntegration:
+    """Tests for the main authenticate() method with fallback support."""
 
-    with mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting):
-        with mock.patch('requests.get') as mock_get:
-            mock_get.side_effect = requests.exceptions.Timeout("Request timed out")
+    @pytest.fixture
+    def mock_request(self):
+        """Create a mock request."""
+        return RequestFactory().post('/login')
 
-            result = plugin._get_controller_user(user.username, "password")
-            assert result is None
+    def test_successful_primary_auth_skips_fallback(self, local_authenticator, user, mock_request):
+        """Test that successful primary authentication doesn't try fallbacks."""
+        local_authenticator.configuration = {'fallback_authentication': ['test.fallback.mock']}
+        local_authenticator.save()
 
+        plugin = AuthenticatorPlugin(database_instance=local_authenticator)
+        fallback = MockFallbackAuthenticator()
 
-@pytest.mark.django_db()
-def test_get_controller_user_general_request_exception(user):
-    """
-    Test that _get_controller_user handles general request exceptions gracefully.
-    """
-    plugin = AuthenticatorPlugin()
+        # Mock super().authenticate() to succeed
+        with mock.patch.object(plugin, '_load_fallback_plugin', return_value=lambda *a, **k: fallback):
+            with mock.patch('django.contrib.auth.backends.ModelBackend.authenticate', return_value=user):
+                result = plugin.authenticate(mock_request, user.username, 'password')
 
-    with mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting):
-        with mock.patch('requests.get') as mock_get:
-            mock_get.side_effect = requests.exceptions.RequestException("General request error")
+                assert result == user
+                assert not fallback.authenticate_called  # Fallback should not be tried
 
-            result = plugin._get_controller_user(user.username, "password")
-            assert result is None
+    def test_failed_primary_auth_tries_fallback(self, local_authenticator, user, mock_request):
+        """Test that failed primary authentication tries fallbacks."""
+        local_authenticator.configuration = {'fallback_authentication': ['test.fallback.success']}
+        local_authenticator.save()
 
+        plugin = AuthenticatorPlugin(database_instance=local_authenticator)
 
-# Test JSON parsing error handling
-@pytest.mark.django_db()
-def test_get_controller_user_json_decode_error(user):
-    """
-    Test that _get_controller_user handles JSON decode errors gracefully.
-    """
-    plugin = AuthenticatorPlugin()
-
-    with mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting):
-        with mock.patch('requests.get') as mock_get:
-            mock_response = mock.Mock()
-            mock_response.raise_for_status.return_value = None
-            mock_response.json.side_effect = ValueError("Invalid JSON")
-            mock_get.return_value = mock_response
-
-            result = plugin._get_controller_user(user.username, "password")
-            assert result is None
-
-
-# Test authentication without request object
-@pytest.mark.django_db()
-def test_authenticate_without_request_object(user, local_authenticator):
-    """
-    Test authentication behavior when no request object is provided.
-    """
-    from ansible_base.authentication.models import AuthenticatorUser
-
-    # Create an AuthenticatorUser entry for the user with local authenticator
-    AuthenticatorUser.objects.create(uid=user.username, user=user, provider=local_authenticator)
-
-    plugin = AuthenticatorPlugin(database_instance=local_authenticator)
-
-    with mock.patch.object(plugin, '_can_authenticate_from_controller', return_value=False) as mock_check:
+        # Mock super().authenticate() to fail
         with mock.patch('django.contrib.auth.backends.ModelBackend.authenticate', return_value=None):
-            with mock.patch.object(plugin, 'update_gateway_user') as mock_update:
-                result = plugin.authenticate(request=None, username=user.username, password="password")
+            with mock.patch.object(plugin, '_try_fallback_authenticators', return_value=user) as mock_fallback:
+                result = plugin.authenticate(mock_request, user.username, 'password')
 
-                # _can_authenticate_from_controller should not be called without request
-                mock_check.assert_not_called()
-                # But update_gateway_user should not be called without request
-                mock_update.assert_not_called()
+                assert result == user
+                mock_fallback.assert_called_once_with(mock_request, user.username, 'password')
+
+    def test_failed_primary_and_fallback_returns_none(self, local_authenticator, mock_request):
+        """Test that None is returned when both primary and fallback fail."""
+        local_authenticator.configuration = {'fallback_authentication': ['test.fallback.fails']}
+        local_authenticator.save()
+
+        plugin = AuthenticatorPlugin(database_instance=local_authenticator)
+
+        # Mock both to fail
+        with mock.patch('django.contrib.auth.backends.ModelBackend.authenticate', return_value=None):
+            with mock.patch.object(plugin, '_try_fallback_authenticators', return_value=None):
+                result = plugin.authenticate(mock_request, 'testuser', 'wrongpassword')
+
                 assert result is None
 
+    @pytest.mark.parametrize(
+        'username,password',
+        [
+            (None, 'password'),
+            ('username', None),
+            (None, None),
+            ('', 'password'),
+            ('username', ''),
+        ],
+    )
+    def test_missing_credentials_returns_none(self, local_authenticator, mock_request, username, password):
+        """Test that missing credentials return None immediately."""
+        plugin = AuthenticatorPlugin(database_instance=local_authenticator)
 
-# Test for enterprise user password check
-@pytest.mark.django_db()
-def test_can_authenticate_from_controller_enterprise_user(user, expected_log):
-    """
-    Test that _can_authenticate_from_controller returns False for enterprise users (password != "$encrypted$").
-    """
-    plugin = AuthenticatorPlugin()
+        result = plugin.authenticate(mock_request, username, password)
 
-    # Mock use_controller_password to True to enable controller authentication
-    with (
-        mock.patch.object(user, 'use_controller_password', True, create=True),
-        mock.patch('ansible_base.authentication.authenticator_plugins.local.UserModel._default_manager.get_by_natural_key', return_value=user),
-        mock.patch.object(plugin, '_get_controller_user', return_value={"ldap_dn": "", "password": "regular_password"}),
-        expected_log('ansible_base.authentication.authenticator_plugins.local.logger', "warning", "is an enterprise user and can not be authenticated"),
-    ):
-        result = plugin._can_authenticate_from_controller(user.username, "password")
-        assert result is False
-
-
-@pytest.mark.django_db()
-def test_can_authenticate_from_controller_enterprise_user_missing_password(user, expected_log):
-    """
-    Test that _can_authenticate_from_controller returns False for enterprise users when password field is missing.
-    """
-    plugin = AuthenticatorPlugin()
-
-    # Mock use_controller_password to True to enable controller authentication
-    with (
-        mock.patch.object(user, 'use_controller_password', True, create=True),
-        mock.patch('ansible_base.authentication.authenticator_plugins.local.UserModel._default_manager.get_by_natural_key', return_value=user),
-        mock.patch.object(plugin, '_get_controller_user', return_value={"ldap_dn": "", "username": "testuser"}),
-        expected_log('ansible_base.authentication.authenticator_plugins.local.logger', "warning", "is an enterprise user and can not be authenticated"),
-    ):
-        result = plugin._can_authenticate_from_controller(user.username, "password")
-        assert result is False
-
-
-@pytest.mark.django_db()
-def test_can_authenticate_from_controller_enterprise_user_none_password(user, expected_log):
-    """
-    Test that _can_authenticate_from_controller returns False for enterprise users when password is None.
-    """
-    plugin = AuthenticatorPlugin()
-
-    # Mock use_controller_password to True to enable controller authentication
-    with (
-        mock.patch.object(user, 'use_controller_password', True, create=True),
-        mock.patch('ansible_base.authentication.authenticator_plugins.local.UserModel._default_manager.get_by_natural_key', return_value=user),
-        mock.patch.object(plugin, '_get_controller_user', return_value={"ldap_dn": "", "password": None}),
-        expected_log('ansible_base.authentication.authenticator_plugins.local.logger', "warning", "is an enterprise user and can not be authenticated"),
-    ):
-        result = plugin._can_authenticate_from_controller(user.username, "password")
-        assert result is False
-
-
-# Test for timeout handling - if not timeout
-@pytest.mark.django_db()
-def test_get_controller_user_no_timeout_setting(user):
-    """
-    Test that _get_controller_user uses default timeout when GRPC_SERVER_AUTH_SERVICE_TIMEOUT is not set.
-    """
-    plugin = AuthenticatorPlugin()
-
-    def mock_get_setting_no_timeout(setting_name):
-        if setting_name == 'gateway_proxy_url':
-            return 'http://controller.example.com'
-        elif setting_name == 'GRPC_SERVER_AUTH_SERVICE_TIMEOUT':
-            return None  # No timeout setting
-        else:
-            return None
-
-    with mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting_no_timeout):
-        with mock.patch('requests.get') as mock_get:
-            mock_response = mock.Mock()
-            mock_response.raise_for_status.return_value = None
-            mock_response.json.return_value = {"count": 1, "results": [{"ldap_dn": ""}]}
-            mock_get.return_value = mock_response
-
-            result = plugin._get_controller_user(user.username, "password")
-
-            # Verify that requests.get was called with the default timeout of 10
-            mock_get.assert_called_once_with('http://controller.example.com/api/controller/v2/me/', auth=mock.ANY, timeout=10)  # Default timeout should be 10
-            assert result == {"ldap_dn": ""}
-
-
-@pytest.mark.django_db()
-def test_get_controller_user_zero_timeout_setting(user):
-    """
-    Test that _get_controller_user uses default timeout when GRPC_SERVER_AUTH_SERVICE_TIMEOUT converts to 0.
-    """
-    plugin = AuthenticatorPlugin()
-
-    def mock_get_setting_zero_timeout(setting_name):
-        if setting_name == 'gateway_proxy_url':
-            return 'http://controller.example.com'
-        elif setting_name == 'GRPC_SERVER_AUTH_SERVICE_TIMEOUT':
-            return '0s'  # Zero timeout
-        else:
-            return None
-
-    with mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting_zero_timeout):
-        with mock.patch('requests.get') as mock_get:
-            mock_response = mock.Mock()
-            mock_response.raise_for_status.return_value = None
-            mock_response.json.return_value = {"count": 1, "results": [{"ldap_dn": ""}]}
-            mock_get.return_value = mock_response
-
-            result = plugin._get_controller_user(user.username, "password")
-
-            # Verify that requests.get was called with the default timeout of 10 (since 0 is falsy)
-            mock_get.assert_called_once_with('http://controller.example.com/api/controller/v2/me/', auth=mock.ANY, timeout=10)  # Default timeout should be 10
-            assert result == {"ldap_dn": ""}
-
-
-@pytest.mark.django_db()
-def test_get_controller_user_invalid_timeout_format(user):
-    """
-    Test that _get_controller_user handles invalid timeout format and raises ValueError.
-    """
-    plugin = AuthenticatorPlugin()
-
-    def mock_get_setting_invalid_timeout(setting_name):
-        if setting_name == 'gateway_proxy_url':
-            return 'http://controller.example.com'
-        elif setting_name == 'GRPC_SERVER_AUTH_SERVICE_TIMEOUT':
-            return 'invalid_format'  # Invalid timeout format
-        else:
-            return None
-
-    with mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting_invalid_timeout):
-        # The ValueError should be raised by _convert_to_seconds, which will be caught in the generic exception handler
-        result = plugin._get_controller_user(user.username, "password")
         assert result is None
 
 
-# Test for generic exception handling
-@pytest.mark.django_db()
-def test_get_controller_user_generic_exception(user):
-    """
-    Test that _get_controller_user handles generic exceptions gracefully.
-    """
-    plugin = AuthenticatorPlugin()
-
-    with mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting):
-        with mock.patch('requests.get') as mock_get:
-            # Force a generic exception (not HTTP, Connection, Timeout, or JSON related)
-            mock_get.side_effect = Exception("Unexpected error")
-
-            result = plugin._get_controller_user(user.username, "password")
-            assert result is None
+# ============================================================================
+# Tests for parallel execution safety
+# ============================================================================
 
 
-@pytest.mark.django_db()
-def test_get_controller_user_generic_exception_from_conversion(user):
-    """
-    Test that _get_controller_user handles generic exceptions from _convert_to_seconds.
-    """
-    plugin = AuthenticatorPlugin()
+class TestParallelExecutionSafety:
+    """Tests to ensure fallback authentication works correctly in parallel test execution."""
 
-    def mock_get_setting_exception(setting_name):
-        if setting_name == 'gateway_proxy_url':
-            return 'http://controller.example.com'
-        elif setting_name == 'GRPC_SERVER_AUTH_SERVICE_TIMEOUT':
-            return 'invalid_format'  # This will cause ValueError in _convert_to_seconds
-        else:
-            return None
+    def test_isolated_fallback_configurations(self, local_authenticator):
+        """Test that different authenticator instances have isolated configurations."""
+        config1 = {'fallback_authentication': ['fallback.one']}
+        config2 = {'fallback_authentication': ['fallback.two']}
 
-    with mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting_exception):
-        result = plugin._get_controller_user(user.username, "password")
+        local_authenticator.configuration = config1
+        local_authenticator.save()
+
+        plugin1 = AuthenticatorPlugin(database_instance=local_authenticator)
+
+        # Simulate another worker/thread modifying the configuration
+        local_authenticator.configuration = config2
+        local_authenticator.save()
+
+        plugin2 = AuthenticatorPlugin(database_instance=local_authenticator)
+
+        # Each plugin should read the current configuration from the database
+        assert plugin1.database_instance.configuration == config2  # DB was updated
+        assert plugin2.database_instance.configuration == config2
+
+    def test_fallback_state_not_shared(self, local_authenticator, user):
+        """Test that fallback authenticator state is not shared between calls."""
+        local_authenticator.configuration = {'fallback_authentication': ['test.fallback.mock']}
+        local_authenticator.save()
+
+        plugin = AuthenticatorPlugin(database_instance=local_authenticator)
+        request = RequestFactory().post('/login')
+
+        # Create two fallback instances to simulate parallel calls
+        fallback1 = MockFallbackAuthenticator()
+        fallback2 = MockFallbackAuthenticator()
+
+        call_count = [0]
+
+        def mock_load(path):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return lambda *a, **k: fallback1
+            return lambda *a, **k: fallback2
+
+        with mock.patch.object(plugin, '_load_fallback_plugin', side_effect=mock_load):
+            with mock.patch('django.contrib.auth.backends.ModelBackend.authenticate', return_value=None):
+                # First call
+                plugin._try_fallback_authenticators(request, user.username, 'password')
+                # Second call
+                plugin._try_fallback_authenticators(request, user.username, 'password')
+
+                # Both should have been called independently
+                assert fallback1.authenticate_called
+                assert fallback2.authenticate_called
+
+
+# ============================================================================
+# Tests for edge cases
+# ============================================================================
+
+
+class TestEdgeCases:
+    """Tests for edge cases and boundary conditions."""
+
+    def test_fallback_with_none_database_instance(self):
+        """Test handling when database_instance is None."""
+        plugin = AuthenticatorPlugin(database_instance=None)
+        request = RequestFactory().post('/login')
+
+        result = plugin.authenticate(request, 'testuser', 'password')
+
         assert result is None
 
+    def test_fallback_with_kwargs_passed_through(self, local_authenticator, user):
+        """Test that kwargs are passed through to fallback authenticators."""
+        local_authenticator.configuration = {'fallback_authentication': ['test.fallback.mock']}
+        local_authenticator.save()
 
-@pytest.mark.django_db()
-def test_get_controller_user_generic_exception_during_urljoin(user):
-    """
-    Test that _get_controller_user handles generic exceptions during URL joining.
-    """
-    plugin = AuthenticatorPlugin()
+        plugin = AuthenticatorPlugin(database_instance=local_authenticator)
+        request = RequestFactory().post('/login')
+        captured_kwargs = {}
 
-    def mock_get_setting_none_url(setting_name):
-        if setting_name == 'gateway_proxy_url':
-            return None  # This will cause early return
-        elif setting_name == 'GRPC_SERVER_AUTH_SERVICE_TIMEOUT':
-            return '30s'
-        else:
-            return None
-
-    with mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting_none_url):
-        result = plugin._get_controller_user(user.username, "password")
-        assert result is None
-
-
-@pytest.mark.django_db()
-def test_get_controller_user_generic_exception_with_logging(user, expected_log):
-    """
-    Test that _get_controller_user logs generic exceptions properly.
-    """
-    plugin = AuthenticatorPlugin()
-
-    with mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting):
-        with mock.patch('requests.get') as mock_get:
-            # Create a custom exception that will be caught by the generic handler
-            class CustomException(Exception):
+        class KwargsCapturingFallback:
+            def __init__(self, database_instance=None, configuration=None):
                 pass
 
-            mock_get.side_effect = CustomException("Custom error")
+            def authenticate(self, request, username, password, **kwargs):
+                captured_kwargs.update(kwargs)
+                return None
 
-            with expected_log('ansible_base.authentication.authenticator_plugins.local.logger', "warning", "An unexpected error occurred"):
-                result = plugin._get_controller_user(user.username, "password")
-                assert result is None
+        with mock.patch.object(plugin, '_load_fallback_plugin', return_value=KwargsCapturingFallback):
+            with mock.patch('django.contrib.auth.backends.ModelBackend.authenticate', return_value=None):
+                plugin.authenticate(request, user.username, 'password', custom_param='value', another='param')
 
+                assert captured_kwargs['custom_param'] == 'value'
+                assert captured_kwargs['another'] == 'param'
 
-@pytest.mark.django_db()
-def test_get_controller_user_timeout_conversion_exception_handling(user):
-    """
-    Test that _get_controller_user handles timeout conversion exceptions correctly.
-    """
-    plugin = AuthenticatorPlugin()
+    def test_very_long_fallback_list(self, local_authenticator, user):
+        """Test handling of a very long list of fallbacks."""
+        # Create a list of 20 fallback paths
+        fallback_list = [f'test.fallback.mock_{i}' for i in range(20)]
+        local_authenticator.configuration = {'fallback_authentication': fallback_list}
+        local_authenticator.save()
 
-    def mock_get_setting_bad_timeout(setting_name):
-        if setting_name == 'gateway_proxy_url':
-            return 'http://controller.example.com'
-        elif setting_name == 'GRPC_SERVER_AUTH_SERVICE_TIMEOUT':
-            return 'not_a_valid_duration'
-        else:
-            return None
+        plugin = AuthenticatorPlugin(database_instance=local_authenticator)
+        request = RequestFactory().post('/login')
 
-    with mock.patch('ansible_base.authentication.authenticator_plugins.local.get_setting', side_effect=mock_get_setting_bad_timeout):
-        # This should handle the ValueError from _convert_to_seconds in the generic exception handler
-        result = plugin._get_controller_user(user.username, "password")
-        assert result is None
+        # Make the last one succeed
+        call_count = [0]
+
+        def mock_load(path):
+            call_count[0] += 1
+            if call_count[0] == 20:  # Last one
+                return MockSuccessfulFallback
+            return MockFailingFallback
+
+        with mock.patch.object(plugin, '_load_fallback_plugin', side_effect=mock_load):
+            with mock.patch('django.contrib.auth.backends.ModelBackend.authenticate', return_value=None):
+                result = plugin._try_fallback_authenticators(request, user.username, 'password')
+
+                assert result == user
+                assert call_count[0] == 20  # All were tried
+
+    def test_fallback_with_special_characters_in_username(self, local_authenticator, user):
+        """Test fallback authentication with special characters in username."""
+        local_authenticator.configuration = {'fallback_authentication': ['test.fallback.mock']}
+        local_authenticator.save()
+
+        plugin = AuthenticatorPlugin(database_instance=local_authenticator)
+        request = RequestFactory().post('/login')
+        special_username = "user@example.com"
+        captured_username = None
+
+        class UsernameCapturingFallback:
+            def __init__(self, database_instance=None, configuration=None):
+                pass
+
+            def authenticate(self, request, username, password, **kwargs):
+                nonlocal captured_username
+                captured_username = username
+                return None
+
+        with mock.patch.object(plugin, '_load_fallback_plugin', return_value=UsernameCapturingFallback):
+            with mock.patch('django.contrib.auth.backends.ModelBackend.authenticate', return_value=None):
+                plugin.authenticate(request, special_username, 'password')
+
+                assert captured_username == special_username
