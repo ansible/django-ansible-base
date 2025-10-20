@@ -1,5 +1,6 @@
 import importlib
 import logging
+import re
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
@@ -48,15 +49,18 @@ class LocalConfiguration(BaseAuthenticatorConfiguration):
         # Validate fallback_authentication module paths
         fallback_paths = attrs.get('fallback_authentication', [])
         if fallback_paths:
+            # Regex pattern for valid Python module paths:
+            # - Each segment must start with a letter or underscore
+            # - Followed by letters, digits, or underscores
+            # - Must have at least one dot separating segments
+            module_path_pattern = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)+$')
+
             errors = {}
             for index, path in enumerate(fallback_paths):
                 if not isinstance(path, str):
                     errors[index] = _('Must be a string representing a Python module path')
-                elif '.' not in path:
-                    errors[index] = _('Must be a module path with at least one dot (e.g., "myapp.fallbacks.handler")')
-                # Validate that the path looks like a reasonable module path
-                elif not path.replace('.', '').replace('_', '').isalnum():
-                    errors[index] = _('Invalid module path format')
+                elif not module_path_pattern.match(path):
+                    errors[index] = _('Invalid module path format. Must be a valid Python module path with at least one dot (e.g., "myapp.fallbacks.handler")')
 
             if errors:
                 raise ValidationError({'fallback_authentication': errors})
