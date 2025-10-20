@@ -20,6 +20,12 @@ logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.lo
 
 UserModel = get_user_model()
 
+# Regex pattern for valid Python module paths:
+# - Each segment must start with a letter or underscore
+# - Followed by letters, digits, or underscores
+# - Must have at least one dot separating segments
+MODULE_PATH_PATTERN = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)+$')
+
 
 class LocalConfiguration(BaseAuthenticatorConfiguration):
     documentation_url = "https://docs.djangoproject.com/en/4.2/ref/contrib/auth/#django.contrib.auth.backends.ModelBackend"
@@ -49,17 +55,11 @@ class LocalConfiguration(BaseAuthenticatorConfiguration):
         # Validate fallback_authentication module paths
         fallback_paths = attrs.get('fallback_authentication', [])
         if fallback_paths:
-            # Regex pattern for valid Python module paths:
-            # - Each segment must start with a letter or underscore
-            # - Followed by letters, digits, or underscores
-            # - Must have at least one dot separating segments
-            module_path_pattern = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)+$')
-
             errors = {}
             for index, path in enumerate(fallback_paths):
                 if not isinstance(path, str):
                     errors[index] = _('Must be a string representing a Python module path')
-                elif not module_path_pattern.match(path):
+                elif not MODULE_PATH_PATTERN.match(path):
                     errors[index] = _('Invalid module path format. Must be a valid Python module path with at least one dot (e.g., "myapp.fallbacks.handler")')
 
             if errors:
