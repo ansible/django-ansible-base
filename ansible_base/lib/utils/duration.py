@@ -48,7 +48,7 @@ def convert_to_seconds(duration_string: Optional[str], default: int = 10) -> int
     """
     try:
         unit = duration_string[-1].lower()
-        
+
         # Check if last character is a valid unit
         if unit == '-':
             return default

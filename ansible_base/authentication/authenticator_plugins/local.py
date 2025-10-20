@@ -168,8 +168,8 @@ class AuthenticatorPlugin(ModelBackend, AbstractAuthenticatorPlugin):
                 # Load the fallback plugin
                 fallback_class = self._load_fallback_plugin(module_path)
 
-                # Instantiate the fallback authenticator with required parameters
-                fallback_authenticator = fallback_class(database_instance=self.database_instance, configuration=configuration)
+                # Instantiate the fallback authenticator
+                fallback_authenticator = fallback_class()
 
                 logger.info(f"Attempting fallback authenticator: {module_path}")
 
