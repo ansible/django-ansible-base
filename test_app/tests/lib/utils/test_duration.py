@@ -115,27 +115,18 @@ def test_convert_to_seconds_invalid_inputs(invalid_input, default_value, expecte
 
 
 @pytest.mark.parametrize(
-    "duration_input,expected_seconds",
+    "duration_input,default_value,expected_seconds",
     [
-        pytest.param("15s", 15, id="consistency_15_seconds"),
-        pytest.param("5m", 300, id="consistency_5_minutes"),
-        pytest.param("1h", 3600, id="consistency_1_hour"),
-        pytest.param("2d", 172800, id="consistency_2_days"),
-        pytest.param("1w", 604800, id="consistency_1_week"),
-        pytest.param("-5s", -5, id="consistency_negative_5_seconds"),
-        pytest.param("-1h", -3600, id="consistency_negative_1_hour"),
-        pytest.param("30", 30, id="consistency_plain_integer_30"),
-        pytest.param("0s", 0, id="consistency_zero_seconds"),
-        pytest.param("0m", 0, id="consistency_zero_minutes"),
-        pytest.param("0h", 0, id="consistency_zero_hours"),
-        pytest.param("0d", 0, id="consistency_zero_days"),
-        pytest.param("0w", 0, id="consistency_zero_weeks"),
-        pytest.param("0", 0, id="consistency_plain_integer_zero"),
+        # Verify that valid inputs ignore the default parameter
+        pytest.param("15s", 999, 15, id="valid_15s_ignores_default_999"),
+        pytest.param("5m", 42, 300, id="valid_5m_ignores_default_42"),
+        pytest.param("1h", 0, 3600, id="valid_1h_ignores_default_0"),
+        pytest.param("2d", -1, 172800, id="valid_2d_ignores_default_negative_1"),
+        pytest.param("30", 100, 30, id="valid_plain_30_ignores_default_100"),
+        pytest.param("-5s", 999, -5, id="valid_negative_5s_ignores_default_999"),
+        pytest.param("0s", 42, 0, id="valid_0s_ignores_default_42"),
     ],
 )
-def test_convert_to_seconds_consistency(duration_input, expected_seconds):
-    """Test that convert_to_seconds returns consistent results across multiple calls."""
-    result1 = convert_to_seconds(duration_input)
-    result2 = convert_to_seconds(duration_input)
-    result3 = convert_to_seconds(duration_input)
-    assert result1 == result2 == result3 == expected_seconds
+def test_convert_to_seconds_valid_inputs_ignore_default(duration_input, default_value, expected_seconds):
+    """Test that valid duration strings ignore the default parameter and return converted value."""
+    assert convert_to_seconds(duration_input, default=default_value) == expected_seconds
