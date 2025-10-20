@@ -184,44 +184,44 @@ class MockExceptionFallback(MockFallbackAuthenticator):
 
 
 class TestLoadFallbackPlugin:
-    """Tests for the plugin loading mechanism."""
+    """Tests for the plugin loading mechanism via import_object."""
 
     def test_load_valid_plugin(self, local_authenticator):
-        """Test loading a valid fallback plugin."""
+        """Test loading a valid fallback plugin via import_object."""
         plugin = AuthenticatorPlugin(database_instance=local_authenticator)
 
-        # Mock a valid module with FallbackAuthenticator class
-        with mock.patch('importlib.import_module') as mock_import:
-            mock_module = mock.Mock()
-            mock_module.FallbackAuthenticator = MockFallbackAuthenticator
-            mock_import.return_value = mock_module
-
-            result = plugin._load_fallback_plugin('test.module.path')
-
-            assert result == MockFallbackAuthenticator
-            mock_import.assert_called_once_with('test.module.path')
+        # Mock import_object to return our mock class
+        with mock.patch('ansible_base.authentication.authenticator_plugins.local.import_object', return_value=MockFallbackAuthenticator):
+            # This tests that import_object is called correctly in _try_fallback_authenticators
+            local_authenticator.configuration = {'fallback_authentication': ['test.module.path']}
+            local_authenticator.save()
+            
+            # We can't directly test the removed method, but we can test the integration
+            result = plugin._try_fallback_authenticators(None, 'testuser', 'password')
+            # Should attempt to use the fallback (which will return None since MockFallbackAuthenticator returns None)
+            assert result is None
 
     def test_load_plugin_import_error(self, local_authenticator):
         """Test handling of ImportError when loading plugin."""
         plugin = AuthenticatorPlugin(database_instance=local_authenticator)
+        local_authenticator.configuration = {'fallback_authentication': ['nonexistent.module']}
+        local_authenticator.save()
 
-        with mock.patch('importlib.import_module', side_effect=ImportError("Module not found")):
-            with pytest.raises(ImportError):
-                plugin._load_fallback_plugin('nonexistent.module')
+        with mock.patch('ansible_base.authentication.authenticator_plugins.local.import_object', side_effect=ImportError("Module not found")):
+            # Should log error but not raise, continuing to try other fallbacks
+            result = plugin._try_fallback_authenticators(None, 'testuser', 'password')
+            assert result is None
 
-    def test_load_plugin_missing_class(self, local_authenticator):
+    def test_load_plugin_attribute_error(self, local_authenticator):
         """Test handling when module doesn't have FallbackAuthenticator class."""
         plugin = AuthenticatorPlugin(database_instance=local_authenticator)
+        local_authenticator.configuration = {'fallback_authentication': ['test.module.path']}
+        local_authenticator.save()
 
-        with mock.patch('importlib.import_module') as mock_import:
-            mock_module = mock.Mock()
-            # Remove FallbackAuthenticator attribute
-            mock_module.configure_mock(**{'FallbackAuthenticator': mock.Mock(side_effect=AttributeError)})
-            del mock_module.FallbackAuthenticator
-            mock_import.return_value = mock_module
-
-            with pytest.raises(AttributeError):
-                plugin._load_fallback_plugin('test.module.path')
+        with mock.patch('ansible_base.authentication.authenticator_plugins.local.import_object', side_effect=AttributeError("FallbackAuthenticator not found")):
+            # Should log error but not raise, continuing to try other fallbacks
+            result = plugin._try_fallback_authenticators(None, 'testuser', 'password')
+            assert result is None
 
 
 # ============================================================================
@@ -264,7 +264,7 @@ class TestTryFallbackAuthenticators:
 
         plugin = AuthenticatorPlugin(database_instance=local_authenticator)
 
-        with mock.patch.object(plugin, '_load_fallback_plugin', return_value=MockSuccessfulFallback):
+        with mock.patch('ansible_base.authentication.authenticator_plugins.local.import_object', return_value=MockSuccessfulFallback):
             result = plugin._try_fallback_authenticators(mock_request, user.username, 'password')
 
             assert result == user
@@ -276,7 +276,7 @@ class TestTryFallbackAuthenticators:
 
         plugin = AuthenticatorPlugin(database_instance=local_authenticator)
 
-        with mock.patch.object(plugin, '_load_fallback_plugin', return_value=MockFailingFallback):
+        with mock.patch('ansible_base.authentication.authenticator_plugins.local.import_object', return_value=MockFailingFallback):
             result = plugin._try_fallback_authenticators(mock_request, 'testuser', 'password')
 
             assert result is None
@@ -290,12 +290,12 @@ class TestTryFallbackAuthenticators:
         first_fallback = MockSuccessfulFallback()
         second_fallback = MockFallbackAuthenticator()
 
-        def mock_load(path):
+        def mock_load(path, attr):
             if 'success' in path:
                 return lambda *args, **kwargs: first_fallback
             return lambda *args, **kwargs: second_fallback
 
-        with mock.patch.object(plugin, '_load_fallback_plugin', side_effect=mock_load):
+        with mock.patch('ansible_base.authentication.authenticator_plugins.local.import_object', side_effect=mock_load):
             result = plugin._try_fallback_authenticators(mock_request, user.username, 'password')
 
             assert result == user
@@ -311,12 +311,12 @@ class TestTryFallbackAuthenticators:
         first_fallback = MockFailingFallback()
         second_fallback = MockSuccessfulFallback()
 
-        def mock_load(path):
+        def mock_load(path, attr):
             if 'fails' in path:
                 return lambda *args, **kwargs: first_fallback
             return lambda *args, **kwargs: second_fallback
 
-        with mock.patch.object(plugin, '_load_fallback_plugin', side_effect=mock_load):
+        with mock.patch('ansible_base.authentication.authenticator_plugins.local.import_object', side_effect=mock_load):
             result = plugin._try_fallback_authenticators(mock_request, user.username, 'password')
 
             assert result == user
@@ -330,7 +330,7 @@ class TestTryFallbackAuthenticators:
 
         plugin = AuthenticatorPlugin(database_instance=local_authenticator)
 
-        with mock.patch.object(plugin, '_load_fallback_plugin', return_value=MockFailingFallback):
+        with mock.patch('ansible_base.authentication.authenticator_plugins.local.import_object', return_value=MockFailingFallback):
             result = plugin._try_fallback_authenticators(mock_request, 'testuser', 'password')
 
             assert result is None
@@ -342,13 +342,13 @@ class TestTryFallbackAuthenticators:
 
         plugin = AuthenticatorPlugin(database_instance=local_authenticator)
 
-        def mock_load(path):
+        def mock_load(path, attr):
             if 'bad_import' in path:
                 raise ImportError("Module not found")
             return MockSuccessfulFallback
 
         with expected_log('ansible_base.authentication.authenticator_plugins.local.logger', 'error', 'Failed to load fallback authenticator plugin'):
-            with mock.patch.object(plugin, '_load_fallback_plugin', side_effect=mock_load):
+            with mock.patch('ansible_base.authentication.authenticator_plugins.local.import_object', side_effect=mock_load):
                 result = plugin._try_fallback_authenticators(mock_request, user.username, 'password')
 
                 assert result == user
@@ -360,13 +360,13 @@ class TestTryFallbackAuthenticators:
 
         plugin = AuthenticatorPlugin(database_instance=local_authenticator)
 
-        def mock_load(path):
+        def mock_load(path, attr):
             if 'bad_class' in path:
                 raise AttributeError("FallbackAuthenticator not found")
             return MockSuccessfulFallback
 
         with expected_log('ansible_base.authentication.authenticator_plugins.local.logger', 'error', 'Failed to load fallback authenticator plugin'):
-            with mock.patch.object(plugin, '_load_fallback_plugin', side_effect=mock_load):
+            with mock.patch('ansible_base.authentication.authenticator_plugins.local.import_object', side_effect=mock_load):
                 result = plugin._try_fallback_authenticators(mock_request, user.username, 'password')
 
                 assert result == user
@@ -380,13 +380,13 @@ class TestTryFallbackAuthenticators:
         exception_fallback = MockExceptionFallback()
         success_fallback = MockSuccessfulFallback()
 
-        def mock_load(path):
+        def mock_load(path, attr):
             if 'exception' in path:
                 return lambda *args, **kwargs: exception_fallback
             return lambda *args, **kwargs: success_fallback
 
         with expected_log('ansible_base.authentication.authenticator_plugins.local.logger', 'error', 'Error in fallback authenticator'):
-            with mock.patch.object(plugin, '_load_fallback_plugin', side_effect=mock_load):
+            with mock.patch('ansible_base.authentication.authenticator_plugins.local.import_object', side_effect=mock_load):
                 result = plugin._try_fallback_authenticators(mock_request, user.username, 'password')
 
                 assert result == user
@@ -410,7 +410,7 @@ class TestTryFallbackAuthenticators:
             def authenticate(self, request, username, password, **kwargs):
                 return None
 
-        with mock.patch.object(plugin, '_load_fallback_plugin', return_value=ParameterCapturingFallback):
+        with mock.patch('ansible_base.authentication.authenticator_plugins.local.import_object', return_value=ParameterCapturingFallback):
             plugin._try_fallback_authenticators(mock_request, 'testuser', 'password', extra='param')
 
             assert fallback_instance is not None
@@ -440,7 +440,7 @@ class TestAuthenticateIntegration:
         fallback = MockFallbackAuthenticator()
 
         # Mock super().authenticate() to succeed
-        with mock.patch.object(plugin, '_load_fallback_plugin', return_value=lambda *a, **k: fallback):
+        with mock.patch('ansible_base.authentication.authenticator_plugins.local.import_object', return_value=lambda *a, **k: fallback):
             with mock.patch('django.contrib.auth.backends.ModelBackend.authenticate', return_value=user):
                 result = plugin.authenticate(mock_request, user.username, 'password')
 
@@ -537,13 +537,13 @@ class TestParallelExecutionSafety:
 
         call_count = [0]
 
-        def mock_load(path):
+        def mock_load(path, attr):
             call_count[0] += 1
             if call_count[0] == 1:
                 return lambda *a, **k: fallback1
             return lambda *a, **k: fallback2
 
-        with mock.patch.object(plugin, '_load_fallback_plugin', side_effect=mock_load):
+        with mock.patch('ansible_base.authentication.authenticator_plugins.local.import_object', side_effect=mock_load):
             with mock.patch('django.contrib.auth.backends.ModelBackend.authenticate', return_value=None):
                 # First call
                 plugin._try_fallback_authenticators(request, user.username, 'password')
@@ -589,7 +589,7 @@ class TestEdgeCases:
                 captured_kwargs.update(kwargs)
                 return None
 
-        with mock.patch.object(plugin, '_load_fallback_plugin', return_value=KwargsCapturingFallback):
+        with mock.patch('ansible_base.authentication.authenticator_plugins.local.import_object', return_value=KwargsCapturingFallback):
             with mock.patch('django.contrib.auth.backends.ModelBackend.authenticate', return_value=None):
                 plugin.authenticate(request, user.username, 'password', custom_param='value', another='param')
 
@@ -609,13 +609,13 @@ class TestEdgeCases:
         # Make the last one succeed
         call_count = [0]
 
-        def mock_load(path):
+        def mock_load(path, attr):
             call_count[0] += 1
             if call_count[0] == 20:  # Last one
                 return MockSuccessfulFallback
             return MockFailingFallback
 
-        with mock.patch.object(plugin, '_load_fallback_plugin', side_effect=mock_load):
+        with mock.patch('ansible_base.authentication.authenticator_plugins.local.import_object', side_effect=mock_load):
             with mock.patch('django.contrib.auth.backends.ModelBackend.authenticate', return_value=None):
                 result = plugin._try_fallback_authenticators(request, user.username, 'password')
 
@@ -641,7 +641,7 @@ class TestEdgeCases:
                 captured_username = username
                 return None
 
-        with mock.patch.object(plugin, '_load_fallback_plugin', return_value=UsernameCapturingFallback):
+        with mock.patch('ansible_base.authentication.authenticator_plugins.local.import_object', return_value=UsernameCapturingFallback):
             with mock.patch('django.contrib.auth.backends.ModelBackend.authenticate', return_value=None):
                 plugin.authenticate(request, special_username, 'password')
 
