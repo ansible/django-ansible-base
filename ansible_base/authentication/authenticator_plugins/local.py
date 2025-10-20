@@ -24,7 +24,7 @@ UserModel = get_user_model()
 # - Each segment must start with a letter or underscore
 # - Followed by letters, digits, or underscores
 # - Must have at least one dot separating segments
-MODULE_PATH_PATTERN = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)+$')
+MODULE_PATH_PATTERN = re.compile(r'^[a-zA-Z_]\w*(\.[a-zA-Z_]\w*)+$')
 
 
 class LocalConfiguration(BaseAuthenticatorConfiguration):

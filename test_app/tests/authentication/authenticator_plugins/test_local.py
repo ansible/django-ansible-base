@@ -195,7 +195,7 @@ class TestLoadFallbackPlugin:
             # This tests that import_object is called correctly in _try_fallback_authenticators
             local_authenticator.configuration = {'fallback_authentication': ['test.module.path']}
             local_authenticator.save()
-            
+
             # We can't directly test the removed method, but we can test the integration
             result = plugin._try_fallback_authenticators(None, 'testuser', 'password')
             # Should attempt to use the fallback (which will return None since MockFallbackAuthenticator returns None)

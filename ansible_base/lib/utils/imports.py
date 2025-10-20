@@ -9,7 +9,7 @@ from typing import Any, Optional
 # Pattern for full import paths (module.path.Attribute)
 # Captures module path in group(1) and attribute name in group(2)
 # Requires at least one dot separator between module and attribute
-FULL_IMPORT_PATTERN = re.compile(r'^([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\.([a-zA-Z_][a-zA-Z0-9_]*)$')
+FULL_IMPORT_PATTERN = re.compile(r'^([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)*)\.([a-zA-Z_]\w*)$')
 
 
 def import_object(import_path: str, default_attr: Optional[str] = None) -> Any:
