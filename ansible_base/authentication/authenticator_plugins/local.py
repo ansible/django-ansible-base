@@ -1,5 +1,4 @@
 import logging
-import re
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
@@ -11,7 +10,7 @@ from ansible_base.authentication.authenticator_plugins.base import AbstractAuthe
 from ansible_base.authentication.utils.authentication import get_or_create_authenticator_user
 from ansible_base.authentication.utils.claims import update_user_claims
 from ansible_base.lib.serializers.fields import ListField
-from ansible_base.lib.utils.imports import import_object
+from ansible_base.lib.utils.imports import MODULE_PATH_PATTERN, import_object
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.local')
 
@@ -19,12 +18,6 @@ logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.lo
 # TODO: Change the validator to not allow it to be deleted or a second one added
 
 UserModel = get_user_model()
-
-# Regex pattern for valid Python module paths:
-# - Each segment must start with a letter or underscore
-# - Followed by letters, digits, or underscores
-# - Must have at least one dot separating segments
-MODULE_PATH_PATTERN = re.compile(r'^[a-zA-Z_]\w*(\.[a-zA-Z_]\w*)+$')
 
 
 class LocalConfiguration(BaseAuthenticatorConfiguration):

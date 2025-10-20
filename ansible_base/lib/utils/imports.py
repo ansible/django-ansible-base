@@ -6,10 +6,24 @@ import importlib
 import re
 from typing import Any, Optional
 
+# Pattern components for Python identifiers
+# Python identifiers must start with a letter or underscore
+_IDENTIFIER_START = r'[a-zA-Z_]'
+# Pattern string for a single module path segment (identifier)
+_MODULE_SEGMENT = rf'{_IDENTIFIER_START}\w*'
+
+# Pattern for valid Python module paths:
+# - Each segment must start with a letter or underscore
+# - Followed by letters, digits, or underscores (\w)
+# - Must have at least one dot separating segments
+# Used for validating module paths before attempting imports
+MODULE_PATH_PATTERN = re.compile(rf'^{_MODULE_SEGMENT}(\.{_MODULE_SEGMENT})+$')
+
 # Pattern for full import paths (module.path.Attribute)
 # Captures module path in group(1) and attribute name in group(2)
 # Requires at least one dot separator between module and attribute
-FULL_IMPORT_PATTERN = re.compile(r'^([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)*)\.([a-zA-Z_]\w*)$')
+# Reuses _MODULE_SEGMENT for consistency
+FULL_IMPORT_PATTERN = re.compile(rf'^({_MODULE_SEGMENT}(?:\.{_MODULE_SEGMENT})*)\.({_MODULE_SEGMENT})$')
 
 
 def import_object(import_path: str, default_attr: Optional[str] = None) -> Any:
