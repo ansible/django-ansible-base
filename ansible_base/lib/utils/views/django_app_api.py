@@ -4,7 +4,7 @@ from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from rest_framework.settings import api_settings, import_from_string
 
-from ansible_base.lib.utils.settings import get_from_import
+from ansible_base.lib.utils.imports import import_object
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 
 logger = logging.getLogger('ansible_base.lib.utils.views.django_app_api')
@@ -21,7 +21,7 @@ if parent_view:
         if not module_name or not class_name:
             logger.error(_("ANSIBLE_BASE_CUSTOM_VIEW_PARENT must be in the format package.subpackage.view, defaulting to AnsibleBaseView"))
         else:
-            parent_view_class = get_from_import(module_name, class_name)
+            parent_view_class = import_object(module_name, class_name)
     except ModuleNotFoundError:
         logger.error(_("Failed to find parent view class {parent_view}, defaulting to AnsibleBaseView".format(parent_view=parent_view)))
     except ImportError:

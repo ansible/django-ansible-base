@@ -65,10 +65,7 @@ def convert_to_seconds(duration_string: Optional[str], default: int = 10) -> int
     """
     # Validate that default is an integer (but not a boolean, which is a subclass of int in Python)
     if isinstance(default, bool) or not isinstance(default, int):
-        logger.warning(
-            f"Invalid default value: '{default}' (type: {type(default).__name__}). Must be an integer. Using default of 10.",
-            stack_info=True
-        )
+        logger.warning(f"Invalid default value: '{default}' (type: {type(default).__name__}). Must be an integer. Using default of 10.", stack_info=True)
         default = 10
 
     try:

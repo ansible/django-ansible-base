@@ -1,10 +1,11 @@
-import importlib
 import logging
+import warnings
 from typing import Any
 
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 
+from ansible_base.lib.utils.imports import import_object
 from ansible_base.lib.utils.validation import to_python_boolean
 
 logger = logging.getLogger('ansible_base.lib.utils.settings')
@@ -41,10 +42,8 @@ def get_function_from_setting(setting_name: str) -> Any:
         return None
 
     try:
-        module_name, _junk, function_name = setting.rpartition('.')
-        the_function = getattr(importlib.import_module(module_name), function_name)
-        return the_function
-    except Exception:
+        return import_object(setting)
+    except (ValueError, ImportError, AttributeError):
         logger.exception(_('{setting_name} was set but we were unable to import its reference as a function.').format(setting_name=setting_name))
         return None
 
@@ -68,9 +67,26 @@ def replace_trusted_origins(func):
 
 
 def get_from_import(module_name, attr):
-    "Thin wrapper around importlib.import_module, mostly exists so that we can safely mock this in tests"
-    module = importlib.import_module(module_name, package=attr)
-    return getattr(module, attr)
+    """
+    Thin wrapper around import_object.
+
+    .. deprecated::
+        This function is deprecated and will be removed in a future version.
+        Use :func:`ansible_base.lib.utils.imports.import_object` directly instead.
+
+    Args:
+        module_name: The module path to import from
+        attr: The attribute name to retrieve from the module
+
+    Returns:
+        The imported object
+    """
+    warnings.warn(
+        "get_from_import is deprecated. Use ansible_base.lib.utils.imports.import_object directly.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return import_object(module_name, attr)
 
 
 def is_aoc_instance():

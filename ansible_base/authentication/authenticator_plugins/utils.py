@@ -8,6 +8,8 @@ from django.conf import settings
 from django.db.models.fields import uuid
 from django.utils.text import slugify
 
+from ansible_base.lib.utils.imports import import_object
+
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.utils')
 setting = 'ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES'
 
@@ -33,9 +35,8 @@ def get_authenticator_class(authenticator_type: str):
         raise ImportError("Must pass authenticator type to import")
     try:
         logger.debug(f"Attempting to load class {authenticator_type}")
-        auth_class = __import__(authenticator_type, globals(), locals(), ['AuthenticatorPlugin'], 0)
-        return auth_class.AuthenticatorPlugin
-    except Exception as e:
+        return import_object(authenticator_type, 'AuthenticatorPlugin')
+    except (ValueError, ImportError, AttributeError) as e:
         logger.exception(f"The specified authenticator type {authenticator_type} could not be loaded, see exception below")
         raise ImportError(f"The specified authenticator type {authenticator_type} could not be loaded") from e
 

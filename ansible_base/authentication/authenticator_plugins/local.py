@@ -1,4 +1,3 @@
-import importlib
 import logging
 import re
 
@@ -12,6 +11,7 @@ from ansible_base.authentication.authenticator_plugins.base import AbstractAuthe
 from ansible_base.authentication.utils.authentication import get_or_create_authenticator_user
 from ansible_base.authentication.utils.claims import update_user_claims
 from ansible_base.lib.serializers.fields import ListField
+from ansible_base.lib.utils.imports import import_object
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.local')
 
@@ -113,26 +113,6 @@ class AuthenticatorPlugin(ModelBackend, AbstractAuthenticatorPlugin):
             )
         return update_user_claims(user, self.database_instance, [])
 
-    def _load_fallback_plugin(self, module_path):
-        """
-        Load a fallback authenticator plugin from a module path.
-
-        The module must contain a class named 'FallbackAuthenticator'.
-
-        Args:
-            module_path: Python module path (e.g., 'my_service.authentication.fallbacks.my_fallback_service')
-
-        Returns:
-            The FallbackAuthenticator class from the module
-
-        Raises:
-            ImportError: If the module cannot be imported
-            AttributeError: If the module doesn't have a FallbackAuthenticator class
-        """
-        module = importlib.import_module(module_path)
-        fallback_class = getattr(module, 'FallbackAuthenticator')
-        return fallback_class
-
     def _try_fallback_authenticators(self, request, username, password, **kwargs):
         """
         Try each configured fallback authenticator in order.
@@ -163,14 +143,10 @@ class AuthenticatorPlugin(ModelBackend, AbstractAuthenticatorPlugin):
         configuration = self.database_instance.configuration if self.database_instance else {}
         fallback_paths = configuration.get('fallback_authentication', [])
 
-        if not fallback_paths:
-            logger.debug("No fallback authenticators configured")
-            return None
-
         for module_path in fallback_paths:
             try:
-                # Load the fallback plugin
-                fallback_class = self._load_fallback_plugin(module_path)
+                # Load the fallback plugin (must contain a class named 'FallbackAuthenticator')
+                fallback_class = import_object(module_path, 'FallbackAuthenticator')
 
                 # Instantiate the fallback authenticator
                 fallback_authenticator = fallback_class()
@@ -182,15 +158,18 @@ class AuthenticatorPlugin(ModelBackend, AbstractAuthenticatorPlugin):
 
                 # If fallback returned a user, use it
                 if user:
-                    logger.info(f"Fallback authenticator {module_path} returned user")
+                    logger.info(f"Fallback authenticator {module_path} returned user {user.username}")
                     return user
 
-            except (ImportError, AttributeError) as e:
+            except (ImportError, AttributeError, ValueError) as e:
                 logger.error(f"Failed to load fallback authenticator plugin from {module_path}: {e}")
                 continue
             except Exception as e:
                 logger.error(f"Error in fallback authenticator {module_path}: {e}")
                 continue
 
-        logger.debug("All fallback authenticators exhausted, authentication failed")
+        if not fallback_paths:
+            logger.debug("No fallback authenticators configured")
+        else:
+            logger.debug("All fallback authenticators exhausted, authentication failed")
         return None
