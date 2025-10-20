@@ -33,7 +33,8 @@ def convert_to_seconds(duration_string: Optional[str], default: int = 10) -> int
                         d (days), w (weeks). Can also be a plain integer string
                         for seconds. Negative values are supported. Case-insensitive.
         default: The default value to return if the input is invalid or cannot
-                be parsed. Defaults to 10 seconds.
+                be parsed. Must be an integer. Defaults to 10 seconds. If a non-integer
+                value is provided, a warning with stack trace is logged and 10 is used instead.
 
     Returns:
         int: The duration in seconds (can be negative), or the default value if invalid.
@@ -57,7 +58,19 @@ def convert_to_seconds(duration_string: Optional[str], default: int = 10) -> int
         -86400
         >>> convert_to_seconds('invalid')
         10
+        >>> convert_to_seconds('invalid', default=42)
+        42
+        >>> convert_to_seconds('invalid', default='not_an_int')  # Logs warning with stack trace, returns 10
+        10
     """
+    # Validate that default is an integer (but not a boolean, which is a subclass of int in Python)
+    if isinstance(default, bool) or not isinstance(default, int):
+        logger.warning(
+            f"Invalid default value: '{default}' (type: {type(default).__name__}). Must be an integer. Using default of 10.",
+            stack_info=True
+        )
+        default = 10
+
     try:
         if duration_string is None:
             raise ValueError("Duration string is None")

@@ -96,17 +96,6 @@ def test_convert_to_seconds_valid_inputs(duration_input, expected_seconds):
         pytest.param("12.5s", 10, 10, id="float_not_supported_with_default_10"),
         pytest.param("1h30m", 10, 10, id="multiple_units_not_supported_with_default_10"),
         pytest.param(None, 10, 10, id="none_input_with_default_10"),
-        # Custom default values
-        pytest.param("invalid", 0, 0, id="invalid_string_with_default_0"),
-        pytest.param("invalid", 100, 100, id="invalid_string_with_default_100"),
-        pytest.param("invalid", -1, -1, id="invalid_string_with_default_negative_1"),
-        # Empty value with unit and custom default
-        pytest.param("s", 42, 42, id="unit_only_s_with_default_42"),
-        pytest.param("m", 42, 42, id="unit_only_m_with_default_42"),
-        # Lone minus sign with various defaults
-        pytest.param("-", 42, 42, id="lone_minus_with_default_42"),
-        pytest.param("-", 0, 0, id="lone_minus_with_default_0"),
-        pytest.param("-", -1, -1, id="lone_minus_with_default_negative_1"),
     ],
 )
 def test_convert_to_seconds_invalid_inputs(invalid_input, default_value, expected_result):
@@ -115,18 +104,75 @@ def test_convert_to_seconds_invalid_inputs(invalid_input, default_value, expecte
 
 
 @pytest.mark.parametrize(
-    "duration_input,default_value,expected_seconds",
+    "duration_input,default_value,expected_result",
     [
-        # Verify that valid inputs ignore the default parameter
-        pytest.param("15s", 999, 15, id="valid_15s_ignores_default_999"),
-        pytest.param("5m", 42, 300, id="valid_5m_ignores_default_42"),
-        pytest.param("1h", 0, 3600, id="valid_1h_ignores_default_0"),
-        pytest.param("2d", -1, 172800, id="valid_2d_ignores_default_negative_1"),
-        pytest.param("30", 100, 30, id="valid_plain_30_ignores_default_100"),
-        pytest.param("-5s", 999, -5, id="valid_negative_5s_ignores_default_999"),
-        pytest.param("0s", 42, 0, id="valid_0s_ignores_default_42"),
+        # Test 1: Invalid input, no custom default → returns function default (10)
+        pytest.param("invalid", 10, 10, id="invalid_no_custom_default_returns_10"),
+        pytest.param("", 10, 10, id="empty_no_custom_default_returns_10"),
+        pytest.param(None, 10, 10, id="none_no_custom_default_returns_10"),
+        # Test 2: Invalid input, custom default → returns custom default (not 10)
+        pytest.param("invalid", 0, 0, id="invalid_custom_default_0"),
+        pytest.param("invalid", 42, 42, id="invalid_custom_default_42"),
+        pytest.param("invalid", 100, 100, id="invalid_custom_default_100"),
+        pytest.param("invalid", -1, -1, id="invalid_custom_default_negative_1"),
+        pytest.param("-", 42, 42, id="lone_minus_custom_default_42"),
+        pytest.param("s", 99, 99, id="unit_only_custom_default_99"),
+        # Test 3: Valid input, no custom default → returns converted value (ignores implicit 10)
+        pytest.param("15s", 10, 15, id="valid_15s_no_custom_default"),
+        pytest.param("5m", 10, 300, id="valid_5m_no_custom_default"),
+        pytest.param("0", 10, 0, id="valid_0_no_custom_default"),
+        # Test 4: Valid input, custom default → returns converted value (ignores custom default)
+        pytest.param("15s", 999, 15, id="valid_15s_ignores_custom_default_999"),
+        pytest.param("5m", 42, 300, id="valid_5m_ignores_custom_default_42"),
+        pytest.param("1h", 0, 3600, id="valid_1h_ignores_custom_default_0"),
+        pytest.param("2d", -1, 172800, id="valid_2d_ignores_custom_default_negative_1"),
+        pytest.param("30", 100, 30, id="valid_plain_30_ignores_custom_default_100"),
+        pytest.param("-5s", 999, -5, id="valid_negative_5s_ignores_custom_default_999"),
+        pytest.param("0s", 42, 0, id="valid_0s_ignores_custom_default_42"),
     ],
 )
-def test_convert_to_seconds_valid_inputs_ignore_default(duration_input, default_value, expected_seconds):
-    """Test that valid duration strings ignore the default parameter and return converted value."""
-    assert convert_to_seconds(duration_input, default=default_value) == expected_seconds
+def test_convert_to_seconds_default_behavior(duration_input, default_value, expected_result):
+    """
+    Test all default parameter scenarios in one comprehensive test.
+
+    This test covers four key scenarios:
+    1. Invalid input with function's default (10) → returns 10
+    2. Invalid input with custom default → returns custom default
+    3. Valid input with function's default (10) → returns converted value, ignores 10
+    4. Valid input with custom default → returns converted value, ignores custom default
+    """
+    assert convert_to_seconds(duration_input, default=default_value) == expected_result
+
+
+@pytest.mark.parametrize(
+    "invalid_default_value,expected_result",
+    [
+        # Boolean defaults (bool is subclass of int in Python, so needs explicit check)
+        pytest.param(True, 10, id="bool_true_logs_warning_returns_10"),
+        pytest.param(False, 10, id="bool_false_logs_warning_returns_10"),
+    ],
+)
+def test_convert_to_seconds_invalid_default_type(invalid_default_value, expected_result, caplog):
+    """
+    Test that non-integer default values log a warning with stack trace and use 10 instead.
+
+    Note: Only booleans are tested here because the project uses typeguard for runtime
+    type checking, which prevents other invalid types (str, float, list, dict, None)
+    from even reaching the function. This is the expected behavior - typeguard provides
+    the first line of defense, and our isinstance check catches booleans (which are
+    technically ints in Python but should not be accepted as defaults).
+
+    The stack_info=True in the logger call provides developers with a full stack trace
+    showing exactly where convert_to_seconds was called with an invalid default.
+    """
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        result = convert_to_seconds("invalid", default=invalid_default_value)
+
+    assert result == expected_result
+    assert "Invalid default value" in caplog.text
+    assert "Must be an integer" in caplog.text
+    assert "Using default of 10" in caplog.text
+    # Verify stack trace is included
+    assert "Stack (most recent call last)" in caplog.text
