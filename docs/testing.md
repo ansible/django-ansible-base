@@ -28,6 +28,11 @@ tox will automatically create/start and stop/destroy the postgres container.  If
 
 Tox will also create code coverage reports when run. These can be found in various places. For example, git ignored, `coverage.xml` and `coverage.json` will be crated in the root folders. For human consumption you will also see an `htmlcov` folder in which is an index.html file. If you open this file in a browser you will be presented with a coverage report. If you change the tests, run again and reload the file the report should be updated.
 
+# Fedora SAML python library issue
+
+If you hit a `gcc` error similar to the one described in [this](https://github.com/xmlsec/python-xmlsec/issues/323) github issue, try running the tests with the below `CFLAGS`.
+
+`CFLAGS="-Wno-error=incompatible-pointer-types" tox -e 311`
 
 # OS X SAML python library issue
 With the SAML adapter we need to include python xmlsec library.
