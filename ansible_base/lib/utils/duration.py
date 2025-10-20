@@ -58,18 +58,16 @@ def convert_to_seconds(duration_string: Optional[str], default: int = 10) -> int
         >>> convert_to_seconds('invalid')
         10
     """
-    if duration_string is None:
-        logger.warning(f"Invalid duration format: '{duration_string}', return default of {default}")
-        return default
-
     try:
+        if duration_string is None:
+            raise ValueError("Duration string is None")
+
         if matches := DURATION_RE.match(duration_string.lower()):
             number = int(matches.group(1))  # The numeric part (can be negative)
             unit = matches.group(2) or 's'  # The unit character, default to 's'
             return number * DURATION_CHAR_TO_SECONDS[unit]
         else:
-            logger.warning(f"Invalid duration format: '{duration_string}', return default of {default}")
-            return default
-    except Exception:
-        logger.warning(f"Invalid duration format: '{duration_string}', return default of {default}")
+            raise ValueError("Invalid duration format")
+    except Exception as e:
+        logger.warning(f"Invalid duration format: '{duration_string}' ({e}), return default of {default}")
         return default
