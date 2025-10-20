@@ -3,9 +3,21 @@ Utility functions for parsing and converting duration/time strings.
 """
 
 import logging
+import re
 from typing import Optional
 
 logger = logging.getLogger('ansible_base.lib.utils.duration')
+
+
+DURATION_CHAR_TO_SECONDS = {
+    's': 1,
+    'm': 60,
+    'h': 3600,
+    'd': 86400,
+    'w': 604800,
+}
+
+DURATION_RE = re.compile(r"^(-?\d+)([smhdw]?)$")
 
 
 def convert_to_seconds(duration_string: Optional[str], default: int = 10) -> int:
@@ -46,28 +58,18 @@ def convert_to_seconds(duration_string: Optional[str], default: int = 10) -> int
         >>> convert_to_seconds('invalid')
         10
     """
-    try:
-        unit = duration_string[-1].lower()
+    if duration_string is None:
+        logger.warning(f"Invalid duration format: '{duration_string}', return default of {default}")
+        return default
 
-        # Check if last character is a valid unit
-        if unit == '-':
-            return default
-        elif unit in ('s', 'm', 'h', 'd', 'w'):
-            # Parse the value before the unit
-            value = int(duration_string[:-1])
-            if unit == 's':
-                return value
-            elif unit == 'm':
-                return value * 60
-            elif unit == 'h':
-                return value * 3600  # 60 * 60
-            elif unit == 'd':
-                return value * 86400  # 60 * 60 * 24
-            elif unit == 'w':
-                return value * 604800  # 60 * 60 * 24 * 7
+    try:
+        if matches := DURATION_RE.match(duration_string.lower()):
+            number = int(matches.group(1))  # The numeric part (can be negative)
+            unit = matches.group(2) or 's'  # The unit character, default to 's'
+            return number * DURATION_CHAR_TO_SECONDS[unit]
         else:
-            # No valid unit found, try to parse the entire string as an integer
-            return int(duration_string)
+            logger.warning(f"Invalid duration format: '{duration_string}', return default of {default}")
+            return default
     except Exception:
-        logger.warning(f"Invalid duration format: '{duration_string}'")
+        logger.warning(f"Invalid duration format: '{duration_string}', return default of {default}")
         return default
