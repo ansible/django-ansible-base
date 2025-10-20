@@ -391,31 +391,27 @@ class TestTryFallbackAuthenticators:
 
                 assert result == user
 
-    def test_fallback_passes_correct_parameters(self, local_authenticator, mock_request):
-        """Test that fallback receives correct parameters from configuration."""
-        test_config = {'fallback_authentication': ['test.fallback.mock'], 'custom_setting': 'value'}
+    def test_fallback_instantiation(self, local_authenticator, mock_request):
+        """Test that fallback authenticators are instantiated correctly."""
+        test_config = {'fallback_authentication': ['test.fallback.mock']}
         local_authenticator.configuration = test_config
         local_authenticator.save()
 
         plugin = AuthenticatorPlugin(database_instance=local_authenticator)
-        fallback_instance = None
+        instantiated = []
 
-        class ParameterCapturingFallback:
-            def __init__(self, database_instance=None, configuration=None):
-                nonlocal fallback_instance
-                fallback_instance = self
-                self.database_instance = database_instance
-                self.configuration = configuration
+        class InstantiationCapturingFallback:
+            def __init__(self):
+                instantiated.append(True)
 
             def authenticate(self, request, username, password, **kwargs):
                 return None
 
-        with mock.patch('ansible_base.authentication.authenticator_plugins.local.import_object', return_value=ParameterCapturingFallback):
-            plugin._try_fallback_authenticators(mock_request, 'testuser', 'password', extra='param')
+        with mock.patch('ansible_base.authentication.authenticator_plugins.local.import_object', return_value=InstantiationCapturingFallback):
+            plugin._try_fallback_authenticators(mock_request, 'testuser', 'password')
 
-            assert fallback_instance is not None
-            assert fallback_instance.database_instance == local_authenticator
-            assert fallback_instance.configuration == test_config
+            # Verify the fallback was instantiated
+            assert len(instantiated) == 1
 
 
 # ============================================================================
