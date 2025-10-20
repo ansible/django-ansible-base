@@ -110,20 +110,19 @@ def test_convert_to_seconds_invalid(duration_string, default, expected):
     assert convert_to_seconds(duration_string, default=default) == expected
 
 
-def test_convert_to_seconds_default_parameter():
-    """Test that default parameter works when omitted."""
-    # Should return 10 (the default value)
-    assert convert_to_seconds("invalid") == 10
-
-
-def test_convert_to_seconds_zero_default():
-    """Test convert_to_seconds with zero as default."""
-    assert convert_to_seconds("invalid", default=0) == 0
-
-
-def test_convert_to_seconds_negative_default():
-    """Test convert_to_seconds with negative default."""
-    assert convert_to_seconds("invalid", default=-5) == -5
+@pytest.mark.parametrize(
+    "default,expected",
+    [
+        (10, 10),  # Default value when not specified
+        (0, 0),  # Zero as default
+        (-5, -5),  # Negative default
+        (100, 100),  # Large default
+        (-1, -1),  # Negative one default
+    ],
+)
+def test_convert_to_seconds_with_defaults(default, expected):
+    """Test that default parameter works correctly with various values."""
+    assert convert_to_seconds("invalid", default=default) == expected
 
 
 @pytest.mark.parametrize(
@@ -148,18 +147,31 @@ def test_convert_to_seconds_consistency(duration_string):
     assert result1 == result2 == result3
 
 
-def test_convert_to_seconds_edge_case_just_minus():
+@pytest.mark.parametrize(
+    "default,expected",
+    [
+        (10, 10),
+        (42, 42),
+        (0, 0),
+        (-1, -1),
+    ],
+)
+def test_convert_to_seconds_edge_case_just_minus(default, expected):
     """Test that a lone minus sign returns default."""
-    assert convert_to_seconds("-") == 10
-    assert convert_to_seconds("-", default=42) == 42
+    assert convert_to_seconds("-", default=default) == expected
 
 
-def test_convert_to_seconds_edge_case_zero_values():
+@pytest.mark.parametrize(
+    "duration_string",
+    [
+        "0s",
+        "0m",
+        "0h",
+        "0d",
+        "0w",
+        "0",
+    ],
+)
+def test_convert_to_seconds_edge_case_zero_values(duration_string):
     """Test that zero values work correctly for all units."""
-    assert convert_to_seconds("0s") == 0
-    assert convert_to_seconds("0m") == 0
-    assert convert_to_seconds("0h") == 0
-    assert convert_to_seconds("0d") == 0
-    assert convert_to_seconds("0w") == 0
-    assert convert_to_seconds("0") == 0
-
+    assert convert_to_seconds(duration_string) == 0
