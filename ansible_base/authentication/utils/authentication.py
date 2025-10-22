@@ -137,7 +137,10 @@ def determine_username_from_uid_social(**kwargs) -> dict:
     if authenticator.setting('USERNAME_IS_FULL_EMAIL', False):
         selected_username = kwargs.get('details', {}).get('email', None)
     else:
-        selected_username = kwargs.get('details', {}).get('username', None)
+        if authenticator.type == 'SAML':
+            selected_username = kwargs.get('uid', None)
+        else:
+            selected_username = kwargs.get('details', {}).get('username', None)
     if not selected_username:
         raise_auth_exception(
             _('Unable to get associated username from details, expected entry "username". Full user details: %(details)s')
