@@ -85,7 +85,7 @@ class TestAuthenticationUtilsAuthentication:
         # Use different log levels based on the scenario
         log_level = 'warning' if related_authenticator == 'ldap' else 'info'
         with expected_log(self.logger, log_level, info_message):
-            new_username = authentication.determine_username_from_uid(uid, "", local_authenticator)
+            new_username = authentication.determine_username_from_uid(uid=uid, email="", authenticator=local_authenticator)
             if expected_username:
                 assert new_username == random_user.username
             else:
@@ -173,7 +173,7 @@ class TestAuthenticationUtilsAuthentication:
         uid = settings.SYSTEM_USERNAME
         authenticator = request.getfixturevalue(auth_fixture)
         with pytest.raises(AuthException):
-            authentication.determine_username_from_uid(uid, "", authenticator)
+            authentication.determine_username_from_uid(uid=uid, email="", authenticator=authenticator)
         with pytest.raises(AuthException):
             authentication.get_or_create_authenticator_user(uid=uid, email="", authenticator=authenticator, user_details={}, extra_data={})
 
@@ -267,3 +267,113 @@ class TestAuthenticationUtilsAuthentication:
                 )
             except AuthException:
                 pass
+
+    @pytest.mark.parametrize(
+        "uid_param, expected_uid_filter",
+        [
+            ("user123", ["testuser", "user123"]),  # When uid is provided, should include both selected_username and uid
+            (None, ["testuser"]),  # When uid is None, should only include selected_username
+            ("", ["testuser"]),  # When uid is empty string, should only include selected_username
+        ],
+    )
+    def test_determine_username_from_uid_social_uid_filter_construction(self, ldap_authenticator, uid_param, expected_uid_filter):
+        """Test that uid_filter is constructed correctly in determine_username_from_uid_social."""
+        from unittest.mock import patch
+
+        authenticator_class = get_authenticator_class(ldap_authenticator.type)(database_instance=ldap_authenticator)
+
+        # Mock migrate_from_existing_authenticator to return None (no migration)
+        # Mock determine_username_from_uid to capture the uid_filter parameter
+        with patch('ansible_base.authentication.utils.authentication.migrate_from_existing_authenticator') as mock_migrate:
+            mock_migrate.return_value = None
+
+            with patch('ansible_base.authentication.utils.authentication.determine_username_from_uid') as mock_determine_uid:
+                mock_determine_uid.return_value = 'testuser'
+
+                kwargs = {
+                    'details': {'username': 'testuser', 'email': 'test@example.com'},
+                    'backend': authenticator_class,
+                }
+                if uid_param is not None:
+                    kwargs['uid'] = uid_param
+
+                response = authentication.determine_username_from_uid_social(**kwargs)
+
+                # Verify determine_username_from_uid was called with correct uid_filter
+                mock_determine_uid.assert_called_once_with(
+                    uid='testuser', uid_filter=expected_uid_filter, email='test@example.com', authenticator=ldap_authenticator
+                )
+                assert response == {'username': 'testuser'}
+
+    def test_determine_username_from_uid_social_uid_filter_with_email_username(self, ldap_authenticator):
+        """Test uid_filter construction when USERNAME_IS_FULL_EMAIL is True."""
+        from unittest.mock import patch
+
+        authenticator_class = get_authenticator_class(ldap_authenticator.type)(database_instance=ldap_authenticator)
+
+        # Mock migrate_from_existing_authenticator to return None (no migration)
+        # Mock the setting method to return True for USERNAME_IS_FULL_EMAIL
+        with patch('ansible_base.authentication.utils.authentication.migrate_from_existing_authenticator') as mock_migrate:
+            mock_migrate.return_value = None
+
+            with patch.object(authenticator_class, 'setting') as mock_setting:
+                mock_setting.return_value = True
+
+                with patch('ansible_base.authentication.utils.authentication.determine_username_from_uid') as mock_determine_uid:
+                    mock_determine_uid.return_value = 'user@example.com'
+
+                    response = authentication.determine_username_from_uid_social(
+                        details={'username': 'testuser', 'email': 'user@example.com'}, backend=authenticator_class, uid='uid123'
+                    )
+
+                    # When USERNAME_IS_FULL_EMAIL is True, selected_username should be the email
+                    mock_determine_uid.assert_called_once_with(
+                        uid='user@example.com', uid_filter=['user@example.com', 'uid123'], email='user@example.com', authenticator=ldap_authenticator
+                    )
+                    assert response == {'username': 'user@example.com'}
+
+    def test_determine_username_from_uid_social_uid_filter_no_migration(self, ldap_authenticator):
+        """Test that uid_filter is passed to determine_username_from_uid when migration doesn't occur."""
+        from unittest.mock import patch
+
+        authenticator_class = get_authenticator_class(ldap_authenticator.type)(database_instance=ldap_authenticator)
+
+        with patch('ansible_base.authentication.utils.authentication.migrate_from_existing_authenticator') as mock_migrate:
+            mock_migrate.return_value = None  # No migration
+
+            with patch('ansible_base.authentication.utils.authentication.determine_username_from_uid') as mock_determine_uid:
+                mock_determine_uid.return_value = 'finaluser'
+
+                response = authentication.determine_username_from_uid_social(
+                    details={'username': 'originaluser', 'email': 'test@example.com'}, backend=authenticator_class, uid='uid456'
+                )
+
+                # Verify migration was attempted first
+                mock_migrate.assert_called_once_with(uid='uid456', alt_uid=None, authenticator=ldap_authenticator, preferred_username='originaluser')
+
+                # Verify determine_username_from_uid was called with correct uid_filter
+                mock_determine_uid.assert_called_once_with(
+                    uid='originaluser', uid_filter=['originaluser', 'uid456'], email='test@example.com', authenticator=ldap_authenticator
+                )
+                assert response == {'username': 'finaluser'}
+
+    def test_determine_username_from_uid_social_uid_filter_with_migration(self, ldap_authenticator):
+        """Test that determine_username_from_uid is not called when migration succeeds."""
+        from unittest.mock import patch
+
+        authenticator_class = get_authenticator_class(ldap_authenticator.type)(database_instance=ldap_authenticator)
+
+        with patch('ansible_base.authentication.utils.authentication.migrate_from_existing_authenticator') as mock_migrate:
+            mock_migrate.return_value = 'migrated_user'  # Migration succeeded
+
+            with patch('ansible_base.authentication.utils.authentication.determine_username_from_uid') as mock_determine_uid:
+                response = authentication.determine_username_from_uid_social(
+                    details={'username': 'originaluser', 'email': 'test@example.com'}, backend=authenticator_class, uid='uid789'
+                )
+
+                # Verify migration was attempted
+                mock_migrate.assert_called_once_with(uid='uid789', alt_uid=None, authenticator=ldap_authenticator, preferred_username='originaluser')
+
+                # determine_username_from_uid should NOT be called when migration succeeds
+                mock_determine_uid.assert_not_called()
+                assert response == {'username': 'migrated_user'}

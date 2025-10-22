@@ -286,27 +286,3 @@ class TestUidFilterParameter:
         # Should create new unique username since no match and different email
         assert username != 'john'
         assert 'different_uid' in username or username == 'different_uid'
-
-    def test_uid_filter_preserves_order_priority(self, github_authenticator):
-        """Test that uid_filter preserves order priority when multiple matches exist."""
-        # Create three users with different UIDs for same authenticator
-        user1 = User.objects.create(username='user1', email='user1@example.com')
-        user2 = User.objects.create(username='user2', email='user2@example.com')
-        user3 = User.objects.create(username='user3', email='user3@example.com')
-
-        AuthenticatorUser.objects.create(user=user1, uid='uid1', provider=github_authenticator, extra_data={})
-        AuthenticatorUser.objects.create(user=user2, uid='uid2', provider=github_authenticator, extra_data={})
-        AuthenticatorUser.objects.create(user=user3, uid='uid3', provider=github_authenticator, extra_data={})
-
-        # Test different orders to verify first match is returned
-        username1 = determine_username_from_uid(
-            uid='different_uid', uid_filter=['uid2', 'uid1', 'uid3'], email='test@example.com', authenticator=github_authenticator  # uid2 should be first match
-        )
-
-        username2 = determine_username_from_uid(
-            uid='different_uid', uid_filter=['uid3', 'uid2', 'uid1'], email='test@example.com', authenticator=github_authenticator  # uid3 should be first match
-        )
-
-        # The first UID in filter should determine the match
-        # Note: This test might need adjustment based on actual Django ORM behavior
-        # but it tests the intended behavior of respecting filter order
