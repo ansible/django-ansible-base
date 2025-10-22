@@ -1,6 +1,6 @@
 import importlib
 import logging
-from typing import Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -137,16 +137,16 @@ def determine_username_from_uid_social(**kwargs) -> dict:
     if authenticator.setting('USERNAME_IS_FULL_EMAIL', False):
         selected_username = kwargs.get('details', {}).get('email', None)
     else:
-        if authenticator.type == 'SAML':
-            selected_username = kwargs.get('uid', None)
-        else:
-            selected_username = kwargs.get('details', {}).get('username', None)
+        selected_username = kwargs.get('details', {}).get('username', None)
     if not selected_username:
         raise_auth_exception(
             _('Unable to get associated username from details, expected entry "username". Full user details: %(details)s')
             % {'details': kwargs.get("details", None)},
             backend=authenticator,
         )
+    # Different authenticators use different fields for AuthenticatorUser lookup
+    # Create a filter list
+    uid_filter = [selected_username, kwargs.get('uid')] if kwargs.get('uid', None) else [selected_username]
 
     alt_uid = authenticator.get_alternative_uid(**kwargs)
     email = kwargs.get('details', {}).get('email', None)
@@ -156,7 +156,7 @@ def determine_username_from_uid_social(**kwargs) -> dict:
     ):
         username = migrated_username
     else:
-        username = determine_username_from_uid(selected_username, email, authenticator.database_instance)
+        username = determine_username_from_uid(uid=selected_username, uid_filter=uid_filter, email=email, authenticator=authenticator.database_instance)
 
     return {"username": username}
 
@@ -238,7 +238,9 @@ def _handle_email_fallback_strategy(uid: str, email: Union[str, list[str], None]
 #         return new_username
 
 
-def determine_username_from_uid(uid: str = None, email: Union[str, list[str], None] = None, authenticator: Authenticator = None) -> str:
+def determine_username_from_uid(
+    uid: str, uid_filter: Union[List[str], None] = None, email: Union[str, list[str], None] = None, authenticator: Authenticator = None
+) -> str:
     """
     Determine what the username for the User object will be from the given uid and authenticator
     This will take uid like "bella" and search for an AuthenticatorUser and return:
@@ -259,7 +261,11 @@ def determine_username_from_uid(uid: str = None, email: Union[str, list[str], No
         raise
 
     # If we have an AuthenticatorUser with the exact uid and provider than we have a match
-    if (exact_match := AuthenticatorUser.objects.filter(uid=uid, provider=authenticator)).exists():
+    if uid_filter:
+        exact_match = AuthenticatorUser.objects.filter(uid__in=uid_filter, provider=authenticator)
+    else:
+        exact_match = AuthenticatorUser.objects.filter(uid=uid, provider=authenticator)
+    if exact_match.exists():
         new_username = exact_match.first().user.username
         logger.info(f"Authenticator {authenticator.name} already authenticated {uid} as {new_username}")
         return new_username
@@ -319,7 +325,7 @@ def get_or_create_authenticator_user(
     if migrated_username := migrate_from_existing_authenticator(uid=uid, alt_uid=None, authenticator=authenticator, preferred_username=uid):
         username = migrated_username
     else:
-        username = determine_username_from_uid(uid, email, authenticator)
+        username = determine_username_from_uid(uid=uid, uid_filter=[uid], email=email, authenticator=authenticator)
 
     # Step 2: Now that the username is finalized, try to find the AuthenticatorUser.
     auth_user = None
