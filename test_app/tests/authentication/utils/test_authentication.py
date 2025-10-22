@@ -249,6 +249,27 @@ class TestAuthenticationUtilsAuthentication:
         )
         assert response == {'username': 'Bob'}
 
+    @pytest.mark.parametrize(
+        "auth_fixture, expected_username, uid_param, details_username",
+        [
+            # SAML authenticator uses uid parameter (line 141)
+            ("saml_authenticator", "SamlUser", "SamlUser", "should_not_be_used"),
+            # Non-SAML authenticators use details['username'] (line 143)
+            ("ldap_authenticator", "LdapUser", "should_not_be_used", "LdapUser"),
+            ("oidc_authenticator", "OidcUser", "should_not_be_used", "OidcUser"),
+            ("keycloak_authenticator", "KeycloakUser", "should_not_be_used", "KeycloakUser"),
+        ],
+    )
+    def test_determine_username_from_uid_social_authenticator_types(self, request, auth_fixture, expected_username, uid_param, details_username):
+        """Test username selection logic for different authenticator types (lines 140-143)"""
+        authenticator = request.getfixturevalue(auth_fixture)
+        response = authentication.determine_username_from_uid_social(
+            details={'username': details_username},
+            backend=get_authenticator_class(authenticator.type)(database_instance=authenticator),
+            uid=uid_param,
+        )
+        assert response == {'username': expected_username}
+
     def test_raise_auth_exception(self):
         try:
             authentication.raise_auth_exception('testing')
