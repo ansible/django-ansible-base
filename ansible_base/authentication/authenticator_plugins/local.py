@@ -38,7 +38,6 @@ class LocalConfiguration(BaseAuthenticatorConfiguration):
         child=serializers.CharField(),
     )
 
-    # test
     def validate(self, attrs):
         """
         Validate the configuration and ensure fallback authenticators are valid module paths.
