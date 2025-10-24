@@ -353,3 +353,7 @@ class JWTAuthentication(BaseAuthentication):
             self.common_auth.process_rbac_permissions()
         else:
             logger.info("process_permissions was not overridden for JWTAuthentication")
+
+
+class RbacEnabledJWTAuthentication(JWTAuthentication):
+    use_rbac_permissions = True
