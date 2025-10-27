@@ -200,3 +200,59 @@ def test_authenticators_cli_enable_disable_nonexisting(flag):
         call_command('authenticators', flag, 1337, stdout=out, stderr=err)
 
     assert "Authenticator 1337 does not exist" in str(e.value)
+
+
+@pytest.mark.parametrize(
+    "fallback_setting,expected_config",
+    [
+        (["test_fallback_auth"], {"fallback_authentication": ["test_fallback_auth"]}),
+        (["auth1", "auth2"], {"fallback_authentication": ["auth1", "auth2"]}),
+        ([], {}),
+        (None, {}),
+    ],
+)
+def test_authenticators_cli_initialize_with_fallback_setting(django_user_model, fallback_setting, expected_config):
+    """
+    Test that the ANSIBLE_BASE_AUTHENTICATION_LOCAL_FALLBACK_AUTHENTICATORS setting
+    is properly applied when initializing the local authenticator.
+    """
+    out = StringIO()
+    err = StringIO()
+
+    # Ensure no authenticators exist initially
+    assert Authenticator.objects.count() == 0
+
+    # Create admin user for the test
+    django_user_model.objects.create(username="admin")
+
+    with override_settings(ANSIBLE_BASE_AUTHENTICATION_LOCAL_FALLBACK_AUTHENTICATORS=fallback_setting):
+        call_command('authenticators', "--initialize", stdout=out, stderr=err)
+
+        assert Authenticator.objects.count() == 1
+        authenticator = Authenticator.objects.first()
+        assert authenticator.name == "Local Database Authenticator"
+        assert authenticator.type == "ansible_base.authentication.authenticator_plugins.local"
+        assert authenticator.configuration == expected_config
+
+
+def test_authenticators_cli_initialize_fallback_setting_preserves_existing_config(django_user_model, local_authenticator):
+    """
+    Test that when a local authenticator already exists, the initialize command
+    doesn't modify its configuration even if the fallback setting is present.
+    """
+    out = StringIO()
+    err = StringIO()
+
+    # Store the original configuration
+    original_config = local_authenticator.configuration.copy()
+
+    with override_settings(ANSIBLE_BASE_AUTHENTICATION_LOCAL_FALLBACK_AUTHENTICATORS=["test_fallback"]):
+        call_command('authenticators', "--initialize", stdout=out, stderr=err)
+
+        # Should still only have one authenticator
+        assert Authenticator.objects.count() == 1
+        authenticator = Authenticator.objects.first()
+
+        # Configuration should remain unchanged
+        assert authenticator.configuration == original_config
+        assert "Local authenticator already exists, skipping" in out.getvalue()
