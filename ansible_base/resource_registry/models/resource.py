@@ -95,11 +95,11 @@ class Resource(models.Model):
 
     @property
     def resource_type(self):
-        return resource_type_cache(self.content_type.pk).name
+        return resource_type_cache(self.content_type_id).name
 
     @property
     def resource_type_obj(self):
-        return resource_type_cache(self.content_type.pk)
+        return resource_type_cache(self.content_type_id)
 
     class Meta:
         unique_together = ('content_type', 'object_id')

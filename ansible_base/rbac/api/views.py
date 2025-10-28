@@ -63,10 +63,19 @@ class RoleMetadataView(AnsibleBaseDjangoAppApiView, GenericAPIView):
     permission_classes = try_add_oauth2_scope_permission([permissions.IsAuthenticated])
     serializer_class = RoleMetadataSerializer
 
+    def __init__(self, *args, **kwargs):
+        self.permission_cache = {}
+
     def dispatch(self, request, *args, **kwargs):
         # Warm cache to avoid hits to basically all types from serializer
         DABContentType.objects.get_for_models(*permission_registry.all_registered_models)
         return super().dispatch(request, *args, **kwargs)
+
+    def get_for_codename(self, codename):
+        if codename not in self.permission_cache:
+            for permission in permission_registry.permission_qs.all():
+                self.permission_cache[permission.codename] = permission
+        return self.permission_cache[codename]
 
     def get(self, request, format=None):
         data = OrderedDict()
@@ -84,7 +93,7 @@ class RoleMetadataView(AnsibleBaseDjangoAppApiView, GenericAPIView):
                 cls_repr = f"{get_resource_prefix(cls)}.{cls._meta.model_name}"
             allowed_permissions[cls_repr] = []
             for codename in list_combine_values(permissions_allowed_for_role(cls)):
-                perm = permission_registry.permission_qs.get(codename=codename)
+                perm = self.get_for_codename(codename)
                 ct = permission_registry.content_type_model.objects.get_for_id(perm.content_type_id)
                 perm_repr = f"{get_resource_prefix(ct.model_class())}.{codename}"
                 allowed_permissions[cls_repr].append(perm_repr)
@@ -107,7 +116,7 @@ class RoleDefinitionViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
     but can be assigned to users.
     """
 
-    queryset = RoleDefinition.objects.prefetch_related('created_by', 'modified_by', 'content_type', 'permissions')
+    queryset = RoleDefinition.objects.prefetch_related('created_by', 'modified_by', 'content_type', 'permissions', 'resource')
     serializer_class = RoleDefinitionSerializer
     permission_classes = try_add_oauth2_scope_permission([RoleDefinitionPermissions])
 
@@ -216,7 +225,7 @@ class RoleTeamAssignmentViewSet(BaseAssignmentViewSet):
     """
 
     serializer_class = RoleTeamAssignmentSerializer
-    prefetch_related = ('team',)
+    prefetch_related = ('team__resource',)
     filter_backends = BaseAssignmentViewSet.filter_backends + [
         ansible_id_backend.TeamAnsibleIdAliasFilterBackend,
         ansible_id_backend.RoleAssignmentFilterBackend,
@@ -236,7 +245,7 @@ class RoleUserAssignmentViewSet(BaseAssignmentViewSet):
     """
 
     serializer_class = RoleUserAssignmentSerializer
-    prefetch_related = ('user',)
+    prefetch_related = ('user__resource',)
     filter_backends = BaseAssignmentViewSet.filter_backends + [
         ansible_id_backend.UserAnsibleIdAliasFilterBackend,
         ansible_id_backend.RoleAssignmentFilterBackend,

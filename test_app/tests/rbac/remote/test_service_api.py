@@ -491,3 +491,76 @@ class TestCreatedByAnsibleIdAllowNull:
         # Verify that created_by is None in validated_data when null is passed
         validated_data = serializer.validated_data
         assert 'created_by' not in validated_data or validated_data.get('created_by') is None
+
+
+@pytest.mark.django_db
+class TestValidationErrors:
+    """Test validation error cases in service API serializers"""
+
+    def test_system_role_with_object_id_error(self, admin_api_client, rando):
+        """Test that providing object_id for system role raises validation error"""
+        from ansible_base.rbac.models import RoleDefinition
+
+        # Get a system role (no content_type)
+        system_rd = RoleDefinition.objects.managed.sys_auditor
+        assert system_rd.content_type_id is None, "Should be a system role"
+
+        url = get_relative_url('serviceuserassignment-assign')
+        data = {
+            "role_definition": system_rd.name,
+            "user_ansible_id": str(rando.resource.ansible_id),
+            "object_id": "12345",  # This should cause error for system role
+        }
+
+        response = admin_api_client.post(url, data=data)
+        assert response.status_code == 400, response.data
+        assert "Can not provide either 'object_id' or 'object_ansible_id' for system role" in str(response.data)
+
+    def test_system_role_with_object_ansible_id_error(self, admin_api_client, rando, organization):
+        """Test that providing object_ansible_id for system role raises validation error"""
+        from ansible_base.rbac.models import RoleDefinition
+
+        # Get a system role (no content_type)
+        system_rd = RoleDefinition.objects.managed.sys_auditor
+        assert system_rd.content_type_id is None, "Should be a system role"
+
+        url = get_relative_url('serviceuserassignment-assign')
+        data = {
+            "role_definition": system_rd.name,
+            "user_ansible_id": str(rando.resource.ansible_id),
+            "object_ansible_id": str(organization.resource.ansible_id),  # This should cause error for system role
+        }
+
+        response = admin_api_client.post(url, data=data)
+        assert response.status_code == 400, response.data
+        assert "Can not provide either 'object_id' or 'object_ansible_id' for system role" in str(response.data)
+
+    def test_object_role_without_valid_object_error(self, admin_api_client, rando, inv_rd):
+        """Test that object role without valid object raises validation error"""
+        url = get_relative_url('serviceuserassignment-assign')
+        data = {
+            "role_definition": inv_rd.name,
+            "user_ansible_id": str(rando.resource.ansible_id),
+            "object_id": "99999",  # Non-existent inventory ID
+        }
+
+        response = admin_api_client.post(url, data=data)
+        assert response.status_code == 400, response.data
+        # Check if the error is about object not existing
+        error_msg = str(response.data)
+        assert "does not exist" in error_msg.lower()
+
+    def test_object_role_without_object_specified_error(self, admin_api_client, rando, inv_rd):
+        """Test that object role without object_id raises validation error"""
+        url = get_relative_url('serviceuserassignment-assign')
+        data = {
+            "role_definition": inv_rd.name,
+            "user_ansible_id": str(rando.resource.ansible_id),
+            # No object_id or object_ansible_id provided
+        }
+
+        response = admin_api_client.post(url, data=data)
+        assert response.status_code == 400, response.data
+        # Check if the error is about missing object_id or object_ansible_id
+        error_msg = str(response.data)
+        assert "You must provide either 'object_id' or 'object_ansible_id'" in error_msg

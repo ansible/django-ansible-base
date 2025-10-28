@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.db.models import OuterRef, Subquery
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -6,6 +7,7 @@ from rest_framework.viewsets import GenericViewSet, mixins
 
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.lib.utils.views.permissions import try_add_oauth2_scope_permission
+from ansible_base.resource_registry.models import Resource
 from ansible_base.resource_registry.views import HasResourceRegistryPermissions
 from ansible_base.rest_filters.rest_framework import ansible_id_backend
 
@@ -109,10 +111,23 @@ class BaseSerivceRoleAssignmentViewSet(
                 instance.role_definition.remove_global_permission(instance.actor)
 
 
+def resource_ansible_id_expr(ct_field='content_type_id', oid_field='object_id'):
+    return Subquery(
+        Resource.objects.filter(
+            content_type_id=OuterRef(ct_field),
+            object_id=OuterRef(oid_field),
+        ).values(
+            'ansible_id'
+        )[:1]
+    )
+
+
 class ServiceRoleUserAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     """List of user assignments for cross-service communication"""
 
-    queryset = RoleUserAssignment.objects.prefetch_related('user__resource', *prefetch_related)
+    queryset = RoleUserAssignment.objects.prefetch_related('user__resource__content_type', *prefetch_related).annotate(
+        _object_ansible_id_annotation=resource_ansible_id_expr()
+    )
     serializer_class = service_serializers.ServiceRoleUserAssignmentSerializer
     filter_backends = AnsibleBaseDjangoAppApiView.filter_backends + [
         ansible_id_backend.UserAnsibleIdAliasFilterBackend,
@@ -131,7 +146,9 @@ class ServiceRoleUserAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
 class ServiceRoleTeamAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     """List of team role assignments for cross-service communication"""
 
-    queryset = RoleTeamAssignment.objects.prefetch_related('team__resource', *prefetch_related)
+    queryset = RoleTeamAssignment.objects.prefetch_related('team__resource__content_type', *prefetch_related).annotate(
+        _object_ansible_id_annotation=resource_ansible_id_expr()
+    )
     serializer_class = service_serializers.ServiceRoleTeamAssignmentSerializer
     filter_backends = AnsibleBaseDjangoAppApiView.filter_backends + [
         ansible_id_backend.TeamAnsibleIdAliasFilterBackend,

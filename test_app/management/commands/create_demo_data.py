@@ -8,7 +8,7 @@ from django.core.management.base import BaseCommand, CommandError
 from ansible_base.authentication.models import Authenticator, AuthenticatorUser
 from ansible_base.oauth2_provider.models import OAuth2Application
 from ansible_base.rbac import permission_registry
-from ansible_base.rbac.models import DABContentType, RoleDefinition
+from ansible_base.rbac.models import DABContentType, DABPermission, RoleDefinition
 from test_app.models import EncryptionModel, InstanceGroup, Inventory, Organization, Team, User
 
 
@@ -20,6 +20,9 @@ class Command(BaseCommand):
         start = time.time()
         self.stdout.write('')
         self.stdout.write('About to create large demo data set. This will take a while.')
+
+        # Create standard models first
+        created_org_ids = []
         for cls in (Organization, Team, User):
             count = data_counts[cls._meta.model_name]
             for i in range(count):
@@ -28,9 +31,74 @@ class Command(BaseCommand):
                 if cls is User:
                     data = {'username': name}
                 elif cls is Team:
-                    data['organization_id'] = i + 1  # fudged, teams fewer than orgs
-                cls.objects.create(**data)
+                    # Use actual created organization IDs, cycling through them
+                    if created_org_ids:
+                        data['organization_id'] = created_org_ids[i % len(created_org_ids)]
+                    else:
+                        raise ValueError("Teams cannot be created before organizations")
+                obj = cls.objects.create(**data)
+                # Collect organization IDs for team creation
+                if cls is Organization:
+                    created_org_ids.append(obj.id)
             self.stdout.write(f'Created {count} {cls._meta.model_name}')
+
+        # Create RoleDefinitions with permissions
+        if 'roledefinition' in data_counts:
+            rd_count = data_counts['roledefinition']
+            org_ct = DABContentType.objects.get_for_model(Organization)
+
+            for i in range(rd_count):
+                # Create some sample permissions for each role definition
+                perm1 = DABPermission.objects.create(name=f'Can view large role {i}', codename=f'view_large_role_{i}', content_type=org_ct)
+                perm2 = DABPermission.objects.create(name=f'Can edit large role {i}', codename=f'edit_large_role_{i}', content_type=org_ct)
+
+                # Create role definition with Organization content type
+                rd = RoleDefinition.objects.create(name=f'Large Role Definition {i}', description=f'Large demo role definition {i}', content_type=org_ct)
+
+                # Add permissions to the role definition
+                rd.permissions.add(perm1, perm2)
+
+            self.stdout.write(f'Created {rd_count} role definitions with permissions')
+
+        # Create permission assignments for users and teams
+        if created_org_ids and 'user' in data_counts and 'team' in data_counts:
+            # Get created users and teams
+            large_users = list(User.objects.filter(username__startswith='large_user_'))
+            large_teams = list(Team.objects.filter(name__startswith='large_team_'))
+            large_orgs = list(Organization.objects.filter(name__startswith='large_organization_'))
+            large_rds = list(RoleDefinition.objects.filter(name__startswith='Large Role Definition'))
+
+            # Give over 25 permissions to users
+            user_permissions_given = 0
+            for user in large_users:
+                for rd in large_rds:
+                    for org in large_orgs:
+                        rd.give_permission(user, org)
+                        user_permissions_given += 1
+                        if user_permissions_given >= 25:
+                            break
+                    if user_permissions_given >= 25:
+                        break
+                if user_permissions_given >= 25:
+                    break
+
+            # Give over 25 permissions to teams
+            team_permissions_given = 0
+            for team in large_teams:
+                for rd in large_rds:
+                    for org in large_orgs:
+                        rd.give_permission(team, org)
+                        team_permissions_given += 1
+                        if team_permissions_given >= 25:
+                            break
+                    if team_permissions_given >= 25:
+                        break
+                if team_permissions_given >= 25:
+                    break
+
+            self.stdout.write(f'Assigned {user_permissions_given} permissions to users')
+            self.stdout.write(f'Assigned {team_permissions_given} permissions to teams')
+
         self.stdout.write(f'Finished creating large demo data in {time.time() - start:.2f} seconds')
 
     def handle(self, *args, **kwargs):
