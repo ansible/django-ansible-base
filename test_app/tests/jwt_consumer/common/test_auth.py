@@ -10,7 +10,7 @@ from django.test.utils import override_settings
 from jwt.exceptions import DecodeError
 from rest_framework.exceptions import AuthenticationFailed
 
-from ansible_base.jwt_consumer.common.auth import JWTAuthentication, JWTCommonAuth, default_mapped_user_fields
+from ansible_base.jwt_consumer.common.auth import JWTAuthentication, JWTCommonAuth, RbacAwareJWTAuthentication, default_mapped_user_fields
 from ansible_base.jwt_consumer.common.cert import JWTCert, JWTCertException
 from ansible_base.jwt_consumer.common.exceptions import InvalidTokenException
 from ansible_base.lib.utils.translations import translatableConditionally as _
@@ -856,3 +856,37 @@ class TestJWTAuthentication:
             with pytest.raises(Exception) as exc_info:
                 authentication._fetch_jwt_claims_from_gateway(user_ansible_id)
             assert "boom" in str(exc_info.value)
+
+
+class TestRbacAwareJWTAuthentication:
+    @pytest.mark.django_db
+    @override_settings(INSTALLED_APPS=['django.contrib.auth', 'django.contrib.contenttypes', 'test_app', 'ansible_base.resource_registry', 'ansible_base.rbac'])
+    def test_use_rbac_permissions_true_when_rbac_installed(self):
+        """Test that use_rbac_permissions is True when ansible_base.rbac is in INSTALLED_APPS"""
+        auth = RbacAwareJWTAuthentication()
+        assert auth.use_rbac_permissions is True
+
+    @pytest.mark.django_db
+    @override_settings(INSTALLED_APPS=['django.contrib.auth', 'django.contrib.contenttypes', 'test_app', 'ansible_base.resource_registry'])
+    def test_use_rbac_permissions_false_when_rbac_not_installed(self):
+        """Test that use_rbac_permissions is False when ansible_base.rbac is not in INSTALLED_APPS"""
+        auth = RbacAwareJWTAuthentication()
+        assert auth.use_rbac_permissions is False
+
+    @pytest.mark.django_db
+    @override_settings(INSTALLED_APPS=['django.contrib.auth', 'django.contrib.contenttypes', 'test_app', 'ansible_base.resource_registry', 'ansible_base.rbac'])
+    def test_process_permissions_calls_rbac_when_enabled(self):
+        """Test that process_permissions calls RBAC processing when RBAC is installed"""
+        with mock.patch('ansible_base.jwt_consumer.common.auth.JWTCommonAuth.process_rbac_permissions') as mock_process:
+            auth = RbacAwareJWTAuthentication()
+            auth.process_permissions()
+            mock_process.assert_called_once()
+
+    @pytest.mark.django_db
+    @override_settings(INSTALLED_APPS=['django.contrib.auth', 'django.contrib.contenttypes', 'test_app', 'ansible_base.resource_registry'])
+    def test_process_permissions_skips_rbac_when_disabled(self, caplog, shut_up_logging):
+        """Test that process_permissions logs info message when RBAC is not installed"""
+        with caplog.at_level(logging.INFO):
+            auth = RbacAwareJWTAuthentication()
+            auth.process_permissions()
+            assert "process_permissions was not overridden for JWTAuthentication" in caplog.text

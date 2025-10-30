@@ -14,6 +14,7 @@ from ansible_base.jwt_consumer.common.cache import JWTCache
 from ansible_base.jwt_consumer.common.cert import JWTCert, JWTCertException
 from ansible_base.jwt_consumer.common.exceptions import HTTP_498_INVALID_TOKEN, InvalidTokenException
 from ansible_base.lib.logging.runtime import log_excess_runtime
+from ansible_base.lib.utils.apps import is_rbac_installed
 from ansible_base.lib.utils.auth import get_user_by_ansible_id
 from ansible_base.lib.utils.translations import translatableConditionally as _
 from ansible_base.resource_registry.models import Resource, ResourceType
@@ -355,5 +356,5 @@ class JWTAuthentication(BaseAuthentication):
             logger.info("process_permissions was not overridden for JWTAuthentication")
 
 
-class RbacEnabledJWTAuthentication(JWTAuthentication):
-    use_rbac_permissions = True
+class RbacAwareJWTAuthentication(JWTAuthentication):
+    use_rbac_permissions = is_rbac_installed()
