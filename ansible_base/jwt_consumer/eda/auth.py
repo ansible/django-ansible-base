@@ -2,7 +2,7 @@ import logging
 
 from drf_spectacular.extensions import OpenApiAuthenticationExtension
 
-from ansible_base.jwt_consumer.common.auth import JWTAuthentication, RbacEnabledJWTAuthentication
+from ansible_base.jwt_consumer.common.auth import JWTAuthentication, RbacAwareJWTAuthentication
 
 logger = logging.getLogger("ansible_base.jwt_consumer.eda.auth")
 
@@ -12,8 +12,8 @@ class EDAJWTAuthentication(JWTAuthentication):
 
 
 class EDAJWTAuthScheme(OpenApiAuthenticationExtension):
-    target_class = RbacEnabledJWTAuthentication
-    name = "RbacEnabledJWTAuthentication"
+    target_class = RbacAwareJWTAuthentication
+    name = "RbacAwareJWTAuthentication"
 
     def get_security_definition(self, auto_schema):
         return {"type": "apiKey", "name": "X-DAB-JW-TOKEN", "in": "header"}
