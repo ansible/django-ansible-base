@@ -2,7 +2,7 @@ import logging
 
 from drf_spectacular.extensions import OpenApiAuthenticationExtension
 
-from ansible_base.jwt_consumer.common.auth import JWTAuthentication, RbacAwareJWTAuthentication
+from ansible_base.jwt_consumer.common.auth import JWTAuthentication
 
 logger = logging.getLogger("ansible_base.jwt_consumer.eda.auth")
 
