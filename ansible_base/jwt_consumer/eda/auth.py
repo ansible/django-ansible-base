@@ -12,8 +12,8 @@ class EDAJWTAuthentication(JWTAuthentication):
 
 
 class EDAJWTAuthScheme(OpenApiAuthenticationExtension):
-    target_class = RbacAwareJWTAuthentication
-    name = "RbacAwareJWTAuthentication"
+    target_class = EDAJWTAuthentication
+    name = "EDAJWTAuthentication"
 
     def get_security_definition(self, auto_schema):
         return {"type": "apiKey", "name": "X-DAB-JW-TOKEN", "in": "header"}
