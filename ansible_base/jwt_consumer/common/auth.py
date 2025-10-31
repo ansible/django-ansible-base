@@ -357,4 +357,8 @@ class JWTAuthentication(BaseAuthentication):
 
 
 class RbacAwareJWTAuthentication(JWTAuthentication):
-    use_rbac_permissions = is_rbac_installed()
+    use_rbac_permissions = False
+
+    def __init__(self):
+        super().__init__()
+        self.use_rbac_permissions = is_rbac_installed()
