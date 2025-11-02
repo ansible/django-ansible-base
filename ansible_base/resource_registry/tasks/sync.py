@@ -445,7 +445,8 @@ def _attempt_update_resource(
 ) -> SyncResult:
     """Try to update existing resource."""
     try:
-        resource.update_resource(resource_data, partial=True, **kwargs)
+        if not resource.update_resource(resource_data, partial=True, **kwargs):
+            return SyncResult(SyncStatus.NOOP, manifest_item)
     except IntegrityError:  # pragma: no cover
         # This typically means that there was a duplicate key error. To mitigate this
         # we will attempt to hanlde the conflicting resource and perform the operation

@@ -10,7 +10,14 @@ from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.models import RoleDefinition
 from ansible_base.resource_registry.models import Resource, ResourceType
 from ansible_base.resource_registry.models.service_identifier import service_id
-from ansible_base.resource_registry.tasks.sync import AssignmentTuple, ManifestItem, ResourceSyncHTTPError, SyncExecutor, _attempt_create_resource
+from ansible_base.resource_registry.tasks.sync import (
+    AssignmentTuple,
+    ManifestItem,
+    ResourceSyncHTTPError,
+    SyncExecutor,
+    _attempt_create_resource,
+    _attempt_update_resource,
+)
 
 
 @pytest.fixture(scope="function")
@@ -209,6 +216,71 @@ def test_resource_sync_create_non_local_role_definition(static_api_client, stdou
     assert result.status == 'noop'
 
     assert not RoleDefinition.objects.filter(name="Remote Role").exists()
+
+
+@pytest.mark.parametrize(
+    "name,expected_status",
+    [
+        ("Platform Auditor", "noop"),  # Same name as existing resource, should skip
+        ("Platform Auditor DIFFERENCE", "updated"),  # Different name, should update
+    ],
+)
+@pytest.mark.django_db
+def test_resource_sync_update_scenarios(static_api_client, resource_to_update, name, expected_status):
+    """Test resource sync update scenarios with different names."""
+    # Get the existing resource that was created by the fixture
+    resource = Resource.objects.get(ansible_id="97447387-8596-404f-b0d0-6429b04c8d22")
+    auditor_rd = RoleDefinition.objects.managed.sys_auditor
+    resource = auditor_rd.resource
+
+    # Create manifest item and resource data with invalid content_type
+    item_data = {
+        'name': name,
+        'description': 'Has view permissions to all objects',
+        'managed': True,
+        'content_type': None,
+        'permissions': [
+            'eda.view_activation',
+            'galaxy.view_ansiblerepository',
+            'eda.view_auditrule',
+            'galaxy.view_collection',
+            'galaxy.view_collectionimport',
+            'galaxy.view_collectionremote',
+            'galaxy.view_containernamespace',
+            'galaxy.view_containerregistryremote',
+            'galaxy.view_containerrepository',
+            'awx.view_credential',
+            'eda.view_credentialinputsource',
+            'eda.view_decisionenvironment',
+            'eda.view_edacredential',
+            'eda.view_eventstream',
+            'awx.view_instancegroup',
+            'awx.view_inventory',
+            'shared.view_organization',
+            'awx.view_jobtemplate',
+            'galaxy.view_namespace',
+            'awx.view_notificationtemplate',
+            'awx.view_project',
+            'eda.view_project',
+            'eda.view_rulebook',
+            'eda.view_rulebookprocess',
+            'galaxy.view_task',
+            'shared.view_team',
+            'awx.view_workflowjobtemplate',
+        ],
+    }
+    item_data['permissions'] += [perm.api_slug for perm in auditor_rd.permissions.all()]
+    manifest_item = ManifestItem("97447387-8596-404f-b0d0-6429b04c8d22", str(uuid4()), item_data)
+
+    # Test the update behavior
+    result = _attempt_update_resource(
+        manifest_item=manifest_item,
+        resource=resource,
+        resource_data=item_data,
+        api_client=static_api_client,
+    )
+
+    assert result.status == expected_status
 
 
 @pytest.mark.django_db

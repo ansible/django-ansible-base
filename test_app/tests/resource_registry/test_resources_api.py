@@ -376,7 +376,7 @@ def test_processor_save(admin_api_client):
         def save(self, validated_data, is_new=False):
             self.instance.name = "HELLO " + validated_data["name"]
             self.instance.save()
-            return self.instance
+            return (True, self.instance)
 
     class PatchedConfig(APIConfig):
         custom_resource_processors = {"shared.organization": CustomProcessor}

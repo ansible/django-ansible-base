@@ -1,6 +1,6 @@
 import uuid
 from functools import lru_cache
-from typing import Union
+from typing import TYPE_CHECKING, Union
 
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
@@ -10,6 +10,9 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import ValidationError
 
 from .service_identifier import service_id
+
+if TYPE_CHECKING:
+    from ..utils.resource_type_processor import ResourceTypeProcessor
 
 
 @lru_cache(maxsize=None)
@@ -152,11 +155,11 @@ class Resource(models.Model):
         serializer = resource_type.serializer_class(data=resource_data)
         serializer.is_valid(raise_exception=True)
         resource_data = serializer.validated_data
-        processor = serializer.get_processor()
+        processor: type["ResourceTypeProcessor"] = serializer.get_processor()
 
         with transaction.atomic():
             ObjModel = c_type.model_class()
-            content_object = processor(ObjModel())
+            content_object: "ResourceTypeProcessor" = processor(ObjModel())
             with no_reverse_sync():
                 content_object.save(resource_data, is_new=True)
             resource = cls.objects.get(object_id=content_object.instance.pk, content_type=c_type)
@@ -170,7 +173,9 @@ class Resource(models.Model):
 
             return resource
 
-    def update_resource(self, resource_data: dict, ansible_id=None, is_partially_migrated=None, partial=False, service_id: Union[str, uuid.UUID, None] = None):
+    def update_resource(
+        self, resource_data: dict, ansible_id=None, is_partially_migrated=None, partial=False, service_id: Union[str, uuid.UUID, None] = None
+    ) -> bool:
         from ..signals.handlers import no_reverse_sync
 
         resource_type = self.content_type.resource_type
@@ -179,20 +184,26 @@ class Resource(models.Model):
         serializer.is_valid(raise_exception=True)
         resource_data = serializer.validated_data
 
-        processor = serializer.get_processor()
+        processor: type["ResourceTypeProcessor"] = serializer.get_processor()
 
+        changed_metadata = False
         with transaction.atomic():
             if ansible_id:
                 self.ansible_id = ansible_id
+                changed_metadata = True
             if service_id:
                 self.service_id = service_id
+                changed_metadata = True
             if is_partially_migrated is not None:
                 self.is_partially_migrated = is_partially_migrated
+                changed_metadata = True
             self.save()
 
-            content_object = processor(self.content_object)
+            content_object: "ResourceTypeProcessor" = processor(self.content_object)
             with no_reverse_sync():
-                content_object.save(resource_data)
+                (changed_data, _) = content_object.save(resource_data)
+
+        return changed_data or changed_metadata
 
 
 # This is a separate function so that it can work with models from apps in the
