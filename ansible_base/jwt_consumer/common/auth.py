@@ -7,7 +7,6 @@ import jwt
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.utils import IntegrityError
-from drf_spectacular.extensions import OpenApiAuthenticationExtension
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
@@ -365,9 +364,16 @@ class RbacAwareJWTAuthentication(JWTAuthentication):
         self.use_rbac_permissions = is_rbac_installed()
 
 
-class RbacAwareJWTAuthScheme(OpenApiAuthenticationExtension):
-    target_class = RbacAwareJWTAuthentication
-    name = "RbacAwareJWTAuthentication"
+try:
+    from drf_spectacular.extensions import OpenApiAuthenticationExtension
 
-    def get_security_definition(self, auto_schema):
-        return {"type": "apiKey", "name": "X-DAB-JW-TOKEN", "in": "header"}
+    class RbacAwareJWTAuthScheme(OpenApiAuthenticationExtension):
+        target_class = RbacAwareJWTAuthentication
+        name = "RbacAwareJWTAuthentication"
+
+        def get_security_definition(self, auto_schema):
+            return {"type": "apiKey", "name": "X-DAB-JW-TOKEN", "in": "header"}
+
+except ImportError:
+    # drf_spectacular is not available, skip the schema definition
+    pass
