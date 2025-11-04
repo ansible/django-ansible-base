@@ -15,21 +15,111 @@ SKIP_AI_DESCRIPTION_PREFIXES = set()
 RESOURCE_PURPOSE_MAP = {}
 
 # Global storage for ViewSet class names by operation_id prefix
-# Maps operation_id prefix (e.g. "authenticators") -> (ViewSet class name, path_parts_count)
+# Maps operation_id prefix (e.g. "authenticators") -> (ViewSet class name, path_parts_count, path_parts)
 # This is shared with postprocessing_hooks.py
 # We store the count to resolve collisions: fewer path parts = main resource, gets simple prefix
+# We store path_parts to generate correct compound prefixes when resolving collisions
 OPERATION_CLASS_MAP = {}
 
 
-def mark_skip_ai_description(endpoints, **kwargs):
+def _get_view_class(view):
+    """Extract the ViewSet class from a view, handling DRF's view wrapping."""
+    if hasattr(view, 'cls'):
+        return view.cls
+    return view.__class__
+
+
+def _extract_prefix_from_path(path):
+    """Extract the operation_id prefix from a URL path."""
+    path_parts = parse_path_segments(path)
+    if not path_parts:
+        return None, None, None
+
+    prefix = path_parts[-1]
+    path_parts_count = len(path_parts)
+    return prefix, path_parts, path_parts_count
+
+
+def _create_compound_prefix(path_parts, fallback_prefix):
+    """Create compound prefix from path parts (e.g., 'orgs_teams') to resolve collisions."""
+    if len(path_parts) >= 2:
+        return '_'.join(path_parts[-2:])
+    return fallback_prefix
+
+
+def _handle_prefix_collision(prefix, class_name, path_parts_count, path_parts, operation_class_map):
     """
-    Preprocessing hook that identifies views with skip_ai_description = True
-    and extracts resource_purpose values.
+    Handle collision when multiple ViewSets use the same operation_id prefix.
+    ViewSet with fewer path parts gets simple prefix; the other gets compound prefix.
+    """
+    existing_class, existing_count, existing_path_parts = operation_class_map[prefix]
 
-    This stores ViewSet class names and resource purposes globally so the
-    postprocessing hook can use them when generating x-ai-description fields.
+    # Same ViewSet class - no collision
+    if existing_class == class_name:
+        return prefix
 
-    Preprocessing hooks receive: endpoints list
+    # Different ViewSet - resolve collision
+    if path_parts_count < existing_count:
+        # Current is main resource - move existing to compound prefix
+        # Use the existing entry's path_parts to create the correct compound prefix
+        compound_prefix = _create_compound_prefix(existing_path_parts, prefix)
+        operation_class_map[compound_prefix] = (existing_class, existing_count, existing_path_parts)
+        operation_class_map[prefix] = (class_name, path_parts_count, path_parts)
+        logger.debug(f"Resource collision: {class_name} (main, {path_parts_count} parts) owns '{prefix}', " f"{existing_class} moved to '{compound_prefix}'")
+        return prefix
+    else:
+        # Existing is main resource - current gets compound prefix
+        compound_prefix = _create_compound_prefix(path_parts, prefix)
+        operation_class_map[compound_prefix] = (class_name, path_parts_count, path_parts)
+        logger.debug(f"Resource collision: {existing_class} (main, {existing_count} parts) keeps '{prefix}', " f"{class_name} stored at '{compound_prefix}'")
+        return compound_prefix
+
+
+def _register_skip_ai_description(view_class, class_name, prefix):
+    """Register a ViewSet that should skip AI description generation."""
+    if getattr(view_class, 'skip_ai_description', False):
+        SKIP_AI_DESCRIPTION_PREFIXES.add(prefix)
+        logger.info(f"View class {class_name} (prefix: {prefix}) has skip_ai_description=True")
+
+
+def _register_resource_purpose(view_class, class_name, prefix):
+    """Register a ViewSet's resource_purpose for description generation."""
+    resource_purpose = getattr(view_class, 'resource_purpose', None)
+    if resource_purpose:
+        RESOURCE_PURPOSE_MAP[class_name] = resource_purpose
+        logger.debug(f"View class {class_name} (prefix: {prefix}) has resource_purpose: {resource_purpose[:50]}...")
+
+
+def collect_ai_description_metadata(endpoints, **kwargs):
+    """
+    Preprocessing hook for drf-spectacular that collects metadata from ViewSets for AI description generation.
+
+    This hook runs before OpenAPI schema generation and inspects all registered ViewSets/APIViews
+    to collect metadata that will be used by the postprocessing hook to generate x-ai-description fields.
+
+    The hook collects three types of metadata:
+    1. skip_ai_description flags - ViewSets that have opted out of AI description generation
+    2. resource_purpose values - Custom purpose strings for template-based description generation
+    3. Operation ID mappings - Relationships between operation prefixes and ViewSet classes
+
+    When multiple ViewSets share the same operation prefix (e.g., nested resources), the hook
+    automatically resolves naming collisions by giving the ViewSet with fewer path parts the
+    simple prefix, and assigning compound prefixes to nested resources.
+
+    The collected metadata is stored in global variables (SKIP_AI_DESCRIPTION_PREFIXES,
+    RESOURCE_PURPOSE_MAP, OPERATION_CLASS_MAP) that are shared with the postprocessing hook.
+
+    Args:
+        endpoints: List of endpoint tuples (path, path_regex, method, view)
+        **kwargs: Additional keyword arguments (unused)
+
+    Returns:
+        The unmodified endpoints list
+
+    Side effects:
+        - Clears and repopulates SKIP_AI_DESCRIPTION_PREFIXES set
+        - Clears and repopulates RESOURCE_PURPOSE_MAP dict
+        - Clears and repopulates OPERATION_CLASS_MAP dict
     """
     global SKIP_AI_DESCRIPTION_PREFIXES, RESOURCE_PURPOSE_MAP, OPERATION_CLASS_MAP
     SKIP_AI_DESCRIPTION_PREFIXES.clear()
@@ -41,68 +131,26 @@ def mark_skip_ai_description(endpoints, **kwargs):
 
     for path, path_regex, method, view in endpoints:
         try:
-            if hasattr(view, 'cls'):
-                view_class = view.cls
-            else:
-                view_class = view.__class__
-
+            # Extract ViewSet class from the view
+            view_class = _get_view_class(view)
             class_name = view_class.__name__
 
-            # Extract the resource prefix from the path
-            # This will be used as the operation_id prefix by drf-spectacular
-            # e.g., /api/gateway/v1/teams/ -> "teams"
-            # e.g., /api/gateway/v1/users/{id}/teams/ -> "users_teams"
-            path_parts = parse_path_segments(path)
-            if not path_parts:
+            # Extract operation_id prefix from path
+            prefix, path_parts, path_parts_count = _extract_prefix_from_path(path)
+            if prefix is None:
                 continue
 
-            # For nested resources, join all path parts to create compound prefix
-            # This matches how drf-spectacular generates operation_ids
-            prefix = path_parts[-1]
-
-            # Store mapping: operation_id prefix -> (ViewSet class name, path_parts_count)
-            # Handle both simple and nested resources
-            # Main resources (fewer path parts) get the simple prefix
-            # Nested resources (more path parts) get compound prefixes
-            path_parts_count = len(path_parts)
-
+            # Store or handle collision for this prefix
             if prefix not in OPERATION_CLASS_MAP:
-                # First time seeing this prefix - store it with path count
-                OPERATION_CLASS_MAP[prefix] = (class_name, path_parts_count)
+                # First time seeing this prefix - store it
+                OPERATION_CLASS_MAP[prefix] = (class_name, path_parts_count, path_parts)
             else:
-                existing_class, existing_count = OPERATION_CLASS_MAP[prefix]
+                # Handle collision (different ViewSet with same prefix)
+                prefix = _handle_prefix_collision(prefix, class_name, path_parts_count, path_parts, OPERATION_CLASS_MAP)
 
-                if existing_class != class_name:
-                    # Collision: different ViewSet for same prefix
-                    # The ViewSet with FEWER path parts should own the simple prefix
-                    if path_parts_count < existing_count:
-                        # Current ViewSet is the main resource - it gets the simple prefix
-                        # Move existing ViewSet to compound prefix
-                        compound_prefix = '_'.join(path_parts[-2:]) if len(path_parts) >= 2 else prefix
-                        OPERATION_CLASS_MAP[compound_prefix] = (existing_class, existing_count)
-                        OPERATION_CLASS_MAP[prefix] = (class_name, path_parts_count)
-                        logger.debug(
-                            f"Resource collision: {class_name} (main, {path_parts_count} parts) owns '{prefix}', {existing_class} moved to '{compound_prefix}'"
-                        )
-                    else:
-                        # Existing ViewSet is the main resource - current one gets compound prefix
-                        compound_prefix = '_'.join(path_parts[-2:]) if len(path_parts) >= 2 else prefix
-                        OPERATION_CLASS_MAP[compound_prefix] = (class_name, path_parts_count)
-                        logger.debug(
-                            f"Resource collision: {existing_class} (main, {existing_count} parts) keeps '{prefix}', {class_name} stored at '{compound_prefix}'"
-                        )
-
-            # Check if view has skip_ai_description attribute
-            if getattr(view_class, 'skip_ai_description', False):
-                SKIP_AI_DESCRIPTION_PREFIXES.add(prefix)
-                logger.info(f"View class {class_name} (prefix: {prefix}) has skip_ai_description=True")
-
-            # Check if view has resource_purpose attribute
-            # Store by class name to avoid collisions between different ViewSets
-            resource_purpose = getattr(view_class, 'resource_purpose', None)
-            if resource_purpose:
-                RESOURCE_PURPOSE_MAP[class_name] = resource_purpose
-                logger.debug(f"View class {class_name} (prefix: {prefix}) has resource_purpose: {resource_purpose[:50]}...")
+            # Register ViewSet attributes for AI description generation
+            _register_skip_ai_description(view_class, class_name, prefix)
+            _register_resource_purpose(view_class, class_name, prefix)
 
         except Exception as e:
             logger.debug(f"Error checking view metadata for {path} {method}: {e}")

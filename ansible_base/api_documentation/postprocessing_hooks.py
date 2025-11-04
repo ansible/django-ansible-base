@@ -1,6 +1,11 @@
 import logging
 
-from ansible_base.api_documentation.path_utils import extract_operation_action, extract_operation_prefix, parse_path_segments
+from ansible_base.api_documentation.path_utils import (
+    extract_operation_action,
+    extract_operation_prefix,
+    filter_api_prefixes,
+    parse_path_segments,
+)
 from ansible_base.api_documentation.preprocessing_hooks import OPERATION_CLASS_MAP, RESOURCE_PURPOSE_MAP, SKIP_AI_DESCRIPTION_PREFIXES
 
 logger = logging.getLogger('ansible_base.api_documentation.postprocessing_hooks')
@@ -27,19 +32,10 @@ IRREGULAR_PLURALS = {
 }
 
 # No longer needed - we use a generic "for" preposition for all nested resources
-# COMPOUND_RESOURCE_PATTERNS removed in favor of algorithmic approach
 
 
 def singularize_resource(resource_name):
-    """
-    Convert a resource name to singular form, handling irregular plurals.
-
-    Args:
-        resource_name: The resource name to singularize (e.g., 'teams', 'status')
-
-    Returns:
-        The singular form of the resource name
-    """
+    """Convert resource name to singular form, handling irregular plurals."""
     # Check for irregular plurals first
     if resource_name in IRREGULAR_PLURALS:
         return IRREGULAR_PLURALS[resource_name]
@@ -59,55 +55,78 @@ def singularize_resource(resource_name):
     return resource_name
 
 
+def _extract_resource_parts_from_operation_id(operation_id, action):
+    """Extract resource parts from operation_id by removing the action suffix."""
+    # Handle special case of "partial_update" which has two underscores
+    if action == 'partial_update' and '_partial_update' in operation_id:
+        return operation_id.split('_')[:-2] if operation_id.count('_') >= 2 else []
+
+    # Standard case: remove the last segment (the action)
+    if '_' in operation_id:
+        return operation_id.split('_')[:-1]
+
+    return []
+
+
+def _has_segments_after_placeholder(parts, placeholder_index):
+    """Check if there are non-placeholder resource segments after a placeholder."""
+    remaining_parts = [p for p in parts[placeholder_index + 1 :] if p and not p.startswith('{')]
+    return bool(remaining_parts)
+
+
+def _extract_parent_from_prefix(parts, placeholder_index):
+    """Extract parent resource name (singular) from path segments before a placeholder."""
+    parent_prefix = '/'.join(parts[: placeholder_index + 1])
+    parent_segments = parse_path_segments(parent_prefix)
+
+    if parent_segments:
+        return singularize_resource(parent_segments[-1])
+
+    return None
+
+
+def _find_parent_resource_from_path(path, placeholders=None):
+    """
+    Find parent resource in nested REST path by detecting placeholders with segments after.
+    Returns singular parent resource name or None if not nested.
+    """
+    if placeholders is None:
+        placeholders = ['{id}', '{pk}']
+
+    # Check if any placeholder exists in the path
+    if not any(placeholder in path for placeholder in placeholders):
+        return None
+
+    # Split path into segments
+    parts = path.split('/')
+
+    # Find the first parameter placeholder
+    placeholder_index = next((i for i, part in enumerate(parts) if part in placeholders), -1)
+
+    if placeholder_index == -1:
+        return None
+
+    # Check if there are resource segments after the placeholder
+    if not _has_segments_after_placeholder(parts, placeholder_index):
+        return None  # Not truly nested
+
+    # Extract and return parent resource name
+    return _extract_parent_from_prefix(parts, placeholder_index)
+
+
 def extract_action_and_resource(operation_id, path):
     """
-    Extract the action and resource parts from an operation_id.
-
-    Args:
-        operation_id: The operation ID (e.g., 'teams_users_list')
-        path: The URL path (e.g., '/api/gateway/v1/teams/{id}/users/')
-
-    Returns:
-        Tuple of (action, resource_parts, parent_resource)
+    Extract action, resource parts, and parent resource from operation_id and path.
+    Returns: (action, resource_parts, parent_resource)
     """
     # Extract action using utility function
     action = extract_operation_action(operation_id)
 
     # Extract resource parts from operation_id
-    # Handle special case of "partial_update" which has two underscores
-    if '_partial_update' in operation_id:
-        resource_parts = operation_id.split('_')[:-2] if operation_id.count('_') >= 2 else []
-    elif '_' in operation_id:
-        resource_parts = operation_id.split('_')[:-1]
-    else:
-        resource_parts = []
+    resource_parts = _extract_resource_parts_from_operation_id(operation_id, action)
 
     # Detect parent-child relationships from path
-    # e.g., /teams/{id}/users/ -> parent='team', child='user'
-    parent_resource = None
-    if '{id}' in path or '{pk}' in path:
-        # This is a nested resource - check if there are segments after the {id}
-        # Split path to find the parameter placeholder
-        parts = path.split('/')
-
-        # Find index of {id} or {pk}
-        id_index = -1
-        for i, part in enumerate(parts):
-            if part in ['{id}', '{pk}']:
-                id_index = i
-                break
-
-        # If there are path segments AFTER the {id}, then this is a nested resource
-        # e.g., /teams/{id}/users/ -> remaining_parts = ['users']
-        remaining_parts = [p for p in parts[id_index + 1 :] if p and not p.startswith('{')]
-
-        if remaining_parts:
-            # This is truly nested - extract parent from segments before {id}
-            # Use parse_path_segments on the prefix to get clean parent segments
-            parent_prefix = '/'.join(parts[: id_index + 1])
-            parent_segments = parse_path_segments(parent_prefix)
-            if parent_segments:
-                parent_resource = singularize_resource(parent_segments[-1])
+    parent_resource = _find_parent_resource_from_path(path)
 
     # Fallback to extracting from path if no resource_parts
     if not resource_parts:
@@ -119,23 +138,8 @@ def extract_action_and_resource(operation_id, path):
 
 def format_compound_resource(resource_parts, parent_resource, action):
     """
-    Format compound resource names with proper prepositions.
-
-    For nested resources, uses a generic "for" preposition to indicate the relationship
-    without requiring a hardcoded pattern dictionary.
-
-    Args:
-        resource_parts: List of resource name parts (e.g., ['teams', 'users'])
-        parent_resource: Parent resource name if nested (e.g., 'team')
-        action: The action being performed (e.g., 'list', 'create')
-
-    Returns:
-        Formatted resource description with prepositions if applicable
-
-    Examples:
-        - List /teams/{id}/users/ -> "users for a team"
-        - Create /teams/{id}/users/ -> "user for a team"
-        - List /http_ports/{id}/routes/ -> "routes for an HTTP port"
+    Format compound resource names with proper prepositions for nested resources.
+    E.g., "users for a team", "route for an HTTP port"
     """
     resource_name = ' '.join(resource_parts).replace('_', ' ')
 
@@ -157,59 +161,28 @@ def format_compound_resource(resource_parts, parent_resource, action):
     return resource_name
 
 
-def generate_description_from_purpose(resource_purpose, action, resource_parts, parent_resource):
-    """
-    Generate x-ai-description from a resource_purpose string.
-
-    Templates are designed to keep descriptions concise and under 200 chars when possible.
-
-    Args:
-        resource_purpose: The purpose string from the ViewSet (e.g., "audit trail entries...")
-        action: The action being performed (e.g., 'list', 'create', 'retrieve')
-        resource_parts: List of resource name parts (e.g., ['teams', 'users'])
-        parent_resource: Parent resource name if nested (e.g., 'team')
-
-    Returns:
-        Generated x-ai-description string
-    """
+def generate_description_from_purpose(resource_purpose, action):
+    """Generate x-ai-description from resource_purpose using action templates."""
     # Templates optimized for MCP tool understanding
-    if action == 'list':
-        return f"List {resource_purpose}"
-    elif action in ['retrieve', 'read']:
-        # Singularize the purpose if it's plural
-        singular_purpose = singularize_resource_purpose(resource_purpose)
-        return f"Retrieve a {singular_purpose}"
-    elif action == 'create':
-        singular_purpose = singularize_resource_purpose(resource_purpose)
-        return f"Create a {singular_purpose}"
-    elif action in ['update', 'partial_update']:
-        singular_purpose = singularize_resource_purpose(resource_purpose)
-        return f"Update a {singular_purpose}"
-    elif action in ['destroy', 'delete']:
-        singular_purpose = singularize_resource_purpose(resource_purpose)
-        return f"Delete a {singular_purpose}"
-    else:
-        # For custom actions, just use the purpose as-is
-        return resource_purpose
+    action_templates = {
+        'list': lambda p: f"List {p}",
+        'retrieve': lambda p: f"Retrieve a {singularize_resource_purpose(p)}",
+        'read': lambda p: f"Retrieve a {singularize_resource_purpose(p)}",
+        'create': lambda p: f"Create a {singularize_resource_purpose(p)}",
+        'update': lambda p: f"Update a {singularize_resource_purpose(p)}",
+        'partial_update': lambda p: f"Update a {singularize_resource_purpose(p)}",
+        'destroy': lambda p: f"Delete a {singularize_resource_purpose(p)}",
+        'delete': lambda p: f"Delete a {singularize_resource_purpose(p)}",
+    }
+
+    template = action_templates.get(action)
+    return template(resource_purpose) if template else resource_purpose
 
 
 def singularize_resource_purpose(purpose):
     """
-    Attempt to singularize a resource_purpose string.
-
-    This handles common patterns like:
-    - "audit trail entries for tracking..." -> "audit trail entry for tracking..."
-    - "authentication providers for configuring..." -> "authentication provider for configuring..."
-    - "user accounts in the AAP platform" -> "user account in the AAP platform"
-
-    The pattern expected is: "<plural noun phrase> <preposition> <context>"
-    We singularize only the noun phrase before the preposition.
-
-    Args:
-        purpose: The resource purpose string
-
-    Returns:
-        Singularized version of the purpose
+    Singularize resource_purpose by finding prepositions and singularizing the noun phrase before.
+    E.g., "audit trail entries for tracking..." -> "audit trail entry for tracking..."
     """
     # Common prepositions that separate noun phrase from context
     prepositions = [' for ', ' in ', ' of ', ' from ', ' to ', ' with ', ' on ']
@@ -246,16 +219,64 @@ def singularize_resource_purpose(purpose):
     return ' '.join(words)
 
 
+def generate_associate_description(operation_id, path, resource_name):
+    """Generate description for associate/disassociate operations."""
+    is_associate = operation_id.endswith('_associate_create')
+
+    # Filter out API prefixes (everything up to version string) using generic approach
+    path_parts = filter_api_prefixes(parse_path_segments(path))
+
+    # Remove associate/disassociate if it's the last segment (special action marker)
+    if path_parts and path_parts[-1] in ['associate', 'disassociate']:
+        path_parts = path_parts[:-1]
+
+    if len(path_parts) >= 2:
+        child = path_parts[-1].replace('_', ' ')
+        parent_singular = singularize_resource(path_parts[-2])
+        parent_readable = parent_singular.replace('_', ' ')
+        article = 'an' if parent_readable[0].lower() in 'aeiou' else 'a'
+
+        verb = "Associate" if is_associate else "Disassociate"
+        preposition = "with" if is_associate else "from"
+        return f"{verb} {child} {preposition} {article} {parent_readable}"
+
+    # Fallback if pattern doesn't match
+    verb = "Associate" if is_associate else "Disassociate"
+    return f"{verb} {resource_name}"
+
+
+def generate_crud_description(action, operation_name, resource_name, parent_resource):
+    """Generate description for standard CRUD operations."""
+    # For list operations, use the name as-is (already formatted)
+    if action == 'list':
+        return f"{operation_name} {resource_name}"
+
+    # For partial_update, use special formatting
+    if action == 'partial_update':
+        if parent_resource:
+            return f"Partially update existing {resource_name}"
+        return f"Partially update existing {singularize_resource(resource_name)}"
+
+    # For other CRUD operations (retrieve, read, create, update, destroy, delete)
+    if action in ['retrieve', 'read', 'create', 'update', 'destroy', 'delete']:
+        if parent_resource:
+            # Compound resources already formatted
+            return f"{operation_name} {resource_name}"
+        # Simple resources need singularization
+        return f"{operation_name} {singularize_resource(resource_name)}"
+
+    return None  # Indicate that this isn't a standard CRUD operation
+
+
+def generate_custom_action_description(operation_name, resource_name, operation):
+    """Generate description for custom actions."""
+    base_description = operation.get('description', '').strip()
+    clean_desc = clean_base_description(base_description)
+    return f"{operation_name} {clean_desc}" if clean_desc else f"{operation_name} {resource_name}"
+
+
 def clean_base_description(description):
-    """
-    Clean up base description by removing common boilerplate.
-
-    Args:
-        description: The base description from the ViewSet/APIView
-
-    Returns:
-        Cleaned description string
-    """
+    """Clean up base description by removing common boilerplate."""
     if not description:
         return ""
 
@@ -292,22 +313,133 @@ def clean_base_description(description):
     return clean_desc.strip()
 
 
+def _should_skip_operation(method):
+    """Check if a method key should be skipped (is not an HTTP operation)."""
+    return method not in ['get', 'post', 'put', 'patch', 'delete', 'head', 'options']
+
+
+def _should_skip_ai_description(operation_id):
+    """Check if an operation should skip AI description generation."""
+    if not operation_id:
+        return False
+
+    prefix = operation_id.split('_')[0] if '_' in operation_id else operation_id
+    if prefix in SKIP_AI_DESCRIPTION_PREFIXES:
+        return True
+    return False
+
+
+def _lookup_resource_purpose(operation_id):
+    """Look up resource_purpose for an operation via its prefix and ViewSet class."""
+    prefix = extract_operation_prefix(operation_id)
+    class_info = OPERATION_CLASS_MAP.get(prefix)
+
+    if not class_info:
+        return None, None
+
+    class_name, _, _ = class_info  # Extract class name from (class_name, path_parts_count, path_parts) tuple
+    resource_purpose = RESOURCE_PURPOSE_MAP.get(class_name)
+    return resource_purpose, class_name
+
+
+def _generate_from_resource_purpose(resource_purpose, action):
+    """Generate description from resource_purpose if action is supported."""
+    if not resource_purpose:
+        return None
+
+    if action in ['list', 'retrieve', 'read', 'create', 'update', 'partial_update', 'destroy', 'delete']:
+        return generate_description_from_purpose(resource_purpose, action)
+
+    return None
+
+
+def _generate_description_auto(operation_id, action, resource_parts, parent_resource, path, operation):
+    """Auto-generate description from resource names and operation type."""
+    # Format the resource name with proper grammar
+    resource_name = format_compound_resource(resource_parts, parent_resource, action)
+
+    # Get the descriptive operation name
+    operation_name = OPERATION_DESCRIPTIVE_NAMES.get(action, action.replace('_', ' ').capitalize())
+
+    # Handle associate/disassociate operations
+    if operation_id.endswith('_associate_create') or operation_id.endswith('_disassociate_create'):
+        return generate_associate_description(operation_id, path, resource_name)
+
+    # Try standard CRUD operation
+    ai_description = generate_crud_description(action, operation_name, resource_name, parent_resource)
+
+    # Fall back to custom action if not CRUD
+    if ai_description is None:
+        ai_description = generate_custom_action_description(operation_name, resource_name, operation)
+
+    return ai_description
+
+
+def _enforce_character_limit(description, max_length=300):
+    """Enforce character limit on description, truncating if necessary."""
+    if len(description) > max_length:
+        return description[: max_length - 3] + "..."
+    return description
+
+
+def _process_operation(operation, method, path):
+    """Process a single operation to add x-ai-description (modifies operation in-place)."""
+    # Skip if already has x-ai-description (respect explicit definitions)
+    if 'x-ai-description' in operation:
+        logger.debug(f"x-ai-description already defined for {path} {method.upper()}. Respecting existing value.")
+        return
+
+    # Get operation ID
+    operation_id = operation.get('operationId', '')
+
+    # Check if the ViewSet has opted out of AI description generation
+    if _should_skip_ai_description(operation_id):
+        return
+
+    # Extract action, resource parts, and parent resource
+    action, resource_parts, parent_resource = extract_action_and_resource(operation_id, path)
+
+    # Try to generate description with priority order:
+    # 1. resource_purpose field (if defined on ViewSet)
+    # 2. Auto-generation from resource names and operation type
+
+    # Priority 1: Check for resource_purpose
+    resource_purpose, _ = _lookup_resource_purpose(operation_id)
+    ai_description = _generate_from_resource_purpose(resource_purpose, action)
+
+    # Priority 2: Fall back to auto-generation
+    if ai_description is None:
+        ai_description = _generate_description_auto(operation_id, action, resource_parts, parent_resource, path, operation)
+
+    # Enforce character limit and add to operation
+    operation['x-ai-description'] = _enforce_character_limit(ai_description)
+
+
 def add_x_ai_description(result, generator, request, public):
     """
-    Postprocessing hook for drf-spectacular that adds x-ai-description to all operations.
+    Postprocessing hook for drf-spectacular that adds x-ai-description fields to all operations.
 
-    This hook:
-    - Respects explicitly defined x-ai-description values (highest priority)
-    - Respects skip_ai_description = True on ViewSets/APIViews
-    - Uses resource_purpose field for template-based generation (if defined)
-    - Falls back to auto-generation from resource names and docstrings
-    - Enforces character limits (< 300 chars required, < 200 chars preferred)
+    This hook runs after OpenAPI schema generation and automatically generates x-ai-description
+    fields for all API operations. These descriptions are used by MCP (Model Context Protocol)
+    servers to provide better context to AI tools when selecting which API endpoints to call.
 
-    ViewSets can opt-out by setting:
+    The hook uses a three-tier priority system for generating descriptions:
+    1. Explicit x-ai-description - If defined via @extend_schema, use as-is (highest priority)
+    2. resource_purpose field - Generate from ViewSet's resource_purpose using action templates
+    3. Auto-generation - Generate from resource names, operation types, and docstrings (fallback)
+
+    ViewSets can opt out of automatic generation by setting skip_ai_description = True.
+    ViewSets can provide custom purpose-based descriptions by defining a resource_purpose field.
+
+    All generated descriptions are enforced to be under 300 characters (with 200 preferred).
+
+    Example ViewSet configurations:
+
+        # Opt out of AI description generation
         class MyViewSet(ModelViewSet):
             skip_ai_description = True
 
-    ViewSets can provide purpose-based descriptions by setting:
+        # Provide purpose-based descriptions for CRUD operations
         class MyViewSet(ModelViewSet):
             resource_purpose = "audit trail entries for tracking system changes"
 
@@ -325,134 +457,10 @@ def add_x_ai_description(result, generator, request, public):
     for path, path_item in paths.items():
         for method, operation in path_item.items():
             # Skip non-operation keys (like 'parameters')
-            if method not in ['get', 'post', 'put', 'patch', 'delete', 'head', 'options']:
+            if _should_skip_operation(method):
                 continue
 
-            # Check if the view has opted out of x-ai-description generation
-            # Check operation_id prefix against skip list
-            operation_id = operation.get('operationId', '')
-            if operation_id:
-                # Extract prefix (e.g., "teams_list" -> "teams")
-                prefix = operation_id.split('_')[0] if '_' in operation_id else operation_id
-                if prefix in SKIP_AI_DESCRIPTION_PREFIXES:
-                    logger.debug(f"Operation {operation_id} has skip_ai_description=True (prefix: {prefix}). " f"Skipping x-ai-description generation.")
-                    continue
-
-            # Skip if already has x-ai-description
-            if 'x-ai-description' in operation:
-                logger.debug(f"x-ai-description already defined for {path} {method.upper()}. " f"Respecting existing value.")
-                continue
-
-            # Get operation ID to determine action
-            operation_id = operation.get('operationId', '')
-
-            # Extract action, resource parts, and parent resource
-            action, resource_parts, parent_resource = extract_action_and_resource(operation_id, path)
-
-            # Check if this resource has a resource_purpose defined
-            # Two-step lookup: operation_id prefix → ViewSet class name → resource_purpose
-            # Extract prefix from operation_id (everything before the action)
-            prefix = extract_operation_prefix(operation_id)
-
-            # Look up ViewSet class name, then resource_purpose
-            # OPERATION_CLASS_MAP now stores (class_name, path_parts_count) tuples
-            class_info = OPERATION_CLASS_MAP.get(prefix)
-            if class_info:
-                class_name, _ = class_info  # Extract just the class name from tuple
-                resource_purpose = RESOURCE_PURPOSE_MAP.get(class_name)
-            else:
-                resource_purpose = None
-                class_name = None
-
-            # Try to generate description using resource_purpose
-            ai_description = None
-
-            # Priority 1: resource_purpose field
-            if resource_purpose and action in ['list', 'retrieve', 'read', 'create', 'update', 'partial_update', 'destroy', 'delete']:
-                ai_description = generate_description_from_purpose(resource_purpose, action, resource_parts, parent_resource)
-
-            # Priority 2: Fall back to auto-generation logic
-            if ai_description is None:
-                # Format the resource name with proper grammar
-                resource_name = format_compound_resource(resource_parts, parent_resource, action)
-
-                # Get the descriptive operation name
-                operation_name = OPERATION_DESCRIPTIVE_NAMES.get(action, action.replace('_', ' ').capitalize())
-
-                # Handle special case: associate/disassociate operations
-                # Pattern: {parent}_{child}_{associate|disassociate}_create
-                if operation_id.endswith('_associate_create') or operation_id.endswith('_disassociate_create'):
-                    is_associate = operation_id.endswith('_associate_create')
-
-                    # Extract parent and child from path (more reliable than operation_id for compound names)
-                    # e.g., "/api/gateway/v1/http_ports/{id}/routes/associate/" -> ["http_ports", "routes"]
-                    # Start with standard path parsing, then filter out associate/disassociate and API version
-                    path_parts = [p for p in parse_path_segments(path) if p not in ['api', 'gateway', 'v1', 'associate', 'disassociate']]
-
-                    if len(path_parts) >= 2:
-                        # Last part is the child resource (e.g., "routes", "users", "service_types")
-                        child_raw = path_parts[-1]
-                        child = child_raw.replace('_', ' ')
-
-                        # Second to last is the parent (e.g., "http_ports", "service_clusters")
-                        parent_raw = path_parts[-2]
-                        parent_singular = singularize_resource(parent_raw)
-                        parent_readable = parent_singular.replace('_', ' ')
-
-                        # Determine article (a/an) based on parent resource
-                        article = 'an' if parent_readable[0].lower() in 'aeiou' else 'a'
-
-                        # Generate description
-                        if is_associate:
-                            ai_description = f"Associate {child} with {article} {parent_readable}"
-                        else:
-                            ai_description = f"Disassociate {child} from {article} {parent_readable}"
-                    else:
-                        # Fallback if pattern doesn't match expectations
-                        verb = "Associate" if is_associate else "Disassociate"
-                        ai_description = f"{verb} {resource_name}"
-                # Generate x-ai-description based on action for standard CRUD operations
-                # Note: format_compound_resource already handles singular/plural for compound resources
-                elif action == 'list':
-                    # Use plural/formatted name as-is
-                    ai_description = f"{operation_name} {resource_name}"
-                elif action in ['retrieve', 'read']:
-                    # Singularize only if it's not a compound resource
-                    if parent_resource:
-                        # Already formatted by format_compound_resource
-                        ai_description = f"{operation_name} {resource_name}"
-                    else:
-                        singular_name = singularize_resource(resource_name)
-                        ai_description = f"{operation_name} {singular_name}"
-                elif action in ['create', 'update', 'destroy', 'delete']:
-                    # Singularize only if it's not a compound resource
-                    if parent_resource:
-                        # Already formatted by format_compound_resource
-                        ai_description = f"{operation_name} {resource_name}"
-                    else:
-                        singular_name = singularize_resource(resource_name)
-                        ai_description = f"{operation_name} {singular_name}"
-                elif action == 'partial_update':
-                    # Singularize only if it's not a compound resource
-                    if parent_resource:
-                        ai_description = f"Partially update existing {resource_name}"
-                    else:
-                        singular_name = singularize_resource(resource_name)
-                        ai_description = f"Partially update existing {singular_name}"
-                else:
-                    # For custom actions, include the cleaned description if available
-                    base_description = operation.get('description', '').strip()
-                    clean_desc = clean_base_description(base_description)
-                    if clean_desc:
-                        ai_description = f"{operation_name} {clean_desc}"
-                    else:
-                        ai_description = f"{operation_name} {resource_name}"
-
-            # Enforce character limit
-            if len(ai_description) > 300:
-                ai_description = ai_description[:297] + "..."
-
-            # Add to operation
-            operation['x-ai-description'] = ai_description
+            # Process this operation to add x-ai-description
+            _process_operation(operation, method, path)
 
     return result

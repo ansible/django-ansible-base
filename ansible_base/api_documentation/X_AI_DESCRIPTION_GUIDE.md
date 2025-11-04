@@ -207,6 +207,27 @@ After adding or updating `resource_purpose` fields:
    - Stay under 200 characters (preferred) or 300 characters (maximum)
    - Provide useful context for MCP tool selection
 
+## Enabling Automatic x-ai-description Generation
+
+To enable automatic `x-ai-description` generation for your OpenAPI schema, register the preprocessing and postprocessing hooks in your Django settings.
+
+### Configuration
+
+Add or update the `SPECTACULAR_SETTINGS` dictionary in your Django settings file:
+
+```python
+SPECTACULAR_SETTINGS = {
+    # ... your existing settings ...
+
+    'PREPROCESSING_HOOKS': [
+        'ansible_base.api_documentation.preprocessing_hooks.collect_ai_description_metadata',
+    ],
+    'POSTPROCESSING_HOOKS': [
+        'ansible_base.api_documentation.postprocessing_hooks.add_x_ai_description',
+    ],
+}
+```
+
 ## Implementation Details
 
 See the hook implementations:
