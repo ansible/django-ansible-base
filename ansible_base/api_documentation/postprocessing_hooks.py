@@ -1,5 +1,6 @@
 import logging
 
+from ansible_base.api_documentation.path_utils import extract_operation_action, extract_operation_prefix, parse_path_segments
 from ansible_base.api_documentation.preprocessing_hooks import RESOURCE_PURPOSE_MAP, SKIP_AI_DESCRIPTION_PREFIXES, OPERATION_CLASS_MAP
 
 logger = logging.getLogger('ansible_base.api_documentation.postprocessing_hooks')
@@ -69,15 +70,16 @@ def extract_action_and_resource(operation_id, path):
     Returns:
         Tuple of (action, resource_parts, parent_resource)
     """
-    # Handle special cases like "partial_update"
+    # Extract action using utility function
+    action = extract_operation_action(operation_id)
+
+    # Extract resource parts from operation_id
+    # Handle special case of "partial_update" which has two underscores
     if '_partial_update' in operation_id:
-        action = 'partial_update'
         resource_parts = operation_id.split('_')[:-2] if operation_id.count('_') >= 2 else []
     elif '_' in operation_id:
-        action = operation_id.split('_')[-1]
         resource_parts = operation_id.split('_')[:-1]
     else:
-        action = 'get'  # fallback
         resource_parts = []
 
     # Detect parent-child relationships from path
@@ -85,7 +87,7 @@ def extract_action_and_resource(operation_id, path):
     parent_resource = None
     if '{id}' in path or '{pk}' in path:
         # This is a nested resource - check if there are segments after the {id}
-        # Split path and find the {id} or {pk}
+        # Split path to find the parameter placeholder
         parts = path.split('/')
 
         # Find index of {id} or {pk}
@@ -96,18 +98,20 @@ def extract_action_and_resource(operation_id, path):
                 break
 
         # If there are path segments AFTER the {id}, then this is a nested resource
-        # e.g., /teams/{id}/users/ -> ['', 'api', 'gateway', 'v1', 'teams', '{id}', 'users', '']
+        # e.g., /teams/{id}/users/ -> remaining_parts = ['users']
         remaining_parts = [p for p in parts[id_index+1:] if p and not p.startswith('{')]
 
         if remaining_parts:
-            # This is truly nested - the parent is the segment before {id}
-            parent_segments = [p for p in parts[:id_index] if p and not p.startswith('{')]
+            # This is truly nested - extract parent from segments before {id}
+            # Use parse_path_segments on the prefix to get clean parent segments
+            parent_prefix = '/'.join(parts[:id_index+1])
+            parent_segments = parse_path_segments(parent_prefix)
             if parent_segments:
                 parent_resource = singularize_resource(parent_segments[-1])
 
     # Fallback to extracting from path if no resource_parts
     if not resource_parts:
-        path_parts = [p for p in path.split('/') if p and not p.startswith('{')]
+        path_parts = parse_path_segments(path)
         resource_parts = [path_parts[-1]] if path_parts else ['resource']
 
     return action, resource_parts, parent_resource
@@ -360,12 +364,7 @@ def add_x_ai_description(result, generator, request, public):
             # Check if this resource has a resource_purpose defined
             # Two-step lookup: operation_id prefix → ViewSet class name → resource_purpose
             # Extract prefix from operation_id (everything before the action)
-            if '_partial_update' in operation_id:
-                prefix = operation_id.rsplit('_partial_update', 1)[0]
-            elif '_' in operation_id:
-                prefix = operation_id.rsplit('_', 1)[0]
-            else:
-                prefix = operation_id
+            prefix = extract_operation_prefix(operation_id)
 
             # Look up ViewSet class name, then resource_purpose
             # OPERATION_CLASS_MAP now stores (class_name, path_parts_count) tuples
@@ -399,9 +398,10 @@ def add_x_ai_description(result, generator, request, public):
 
                     # Extract parent and child from path (more reliable than operation_id for compound names)
                     # e.g., "/api/gateway/v1/http_ports/{id}/routes/associate/" -> ["http_ports", "routes"]
+                    # Start with standard path parsing, then filter out associate/disassociate and API version
                     path_parts = [
-                        p for p in path.split('/')
-                        if p and p not in ['api', 'gateway', 'v1', '{id}', '{pk}', 'associate', 'disassociate']
+                        p for p in parse_path_segments(path)
+                        if p not in ['api', 'gateway', 'v1', 'associate', 'disassociate']
                     ]
 
                     if len(path_parts) >= 2:

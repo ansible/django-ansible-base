@@ -1,5 +1,7 @@
 import logging
 
+from ansible_base.api_documentation.path_utils import parse_path_segments
+
 logger = logging.getLogger('ansible_base.api_documentation.preprocessing_hooks')
 
 # Global storage for skip_ai_description operation ID prefixes
@@ -50,7 +52,7 @@ def mark_skip_ai_description(endpoints, **kwargs):
             # This will be used as the operation_id prefix by drf-spectacular
             # e.g., /api/gateway/v1/teams/ -> "teams"
             # e.g., /api/gateway/v1/users/{id}/teams/ -> "users_teams"
-            path_parts = [p for p in path.split('/') if p and not p.startswith(('<', '{'))]
+            path_parts = parse_path_segments(path)
             if not path_parts:
                 continue
 
