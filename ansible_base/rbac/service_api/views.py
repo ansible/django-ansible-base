@@ -178,9 +178,7 @@ class ServiceObjectDeleteViewSet(viewsets.ViewSet):
 
     permission_classes = try_add_oauth2_scope_permission([HasResourceRegistryPermissions])
 
-    @extend_schema(
-        extensions={'x-ai-description': 'Remove all role assignments for a resource indexed from connected AAP services'}
-    )
+    @extend_schema(extensions={'x-ai-description': 'Remove all role assignments for a resource indexed from connected AAP services'})
     def create(self, request):
         """
         Delete all role assignments (user and team) for a specific resource.

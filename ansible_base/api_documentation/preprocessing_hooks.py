@@ -81,12 +81,16 @@ def mark_skip_ai_description(endpoints, **kwargs):
                         compound_prefix = '_'.join(path_parts[-2:]) if len(path_parts) >= 2 else prefix
                         OPERATION_CLASS_MAP[compound_prefix] = (existing_class, existing_count)
                         OPERATION_CLASS_MAP[prefix] = (class_name, path_parts_count)
-                        logger.debug(f"Resource collision: {class_name} (main, {path_parts_count} parts) owns '{prefix}', {existing_class} moved to '{compound_prefix}'")
+                        logger.debug(
+                            f"Resource collision: {class_name} (main, {path_parts_count} parts) owns '{prefix}', {existing_class} moved to '{compound_prefix}'"
+                        )
                     else:
                         # Existing ViewSet is the main resource - current one gets compound prefix
                         compound_prefix = '_'.join(path_parts[-2:]) if len(path_parts) >= 2 else prefix
                         OPERATION_CLASS_MAP[compound_prefix] = (class_name, path_parts_count)
-                        logger.debug(f"Resource collision: {existing_class} (main, {existing_count} parts) keeps '{prefix}', {class_name} stored at '{compound_prefix}'")
+                        logger.debug(
+                            f"Resource collision: {existing_class} (main, {existing_count} parts) keeps '{prefix}', {class_name} stored at '{compound_prefix}'"
+                        )
 
             # Check if view has skip_ai_description attribute
             if getattr(view_class, 'skip_ai_description', False):

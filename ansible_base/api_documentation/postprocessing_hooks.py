@@ -1,7 +1,7 @@
 import logging
 
 from ansible_base.api_documentation.path_utils import extract_operation_action, extract_operation_prefix, parse_path_segments
-from ansible_base.api_documentation.preprocessing_hooks import RESOURCE_PURPOSE_MAP, SKIP_AI_DESCRIPTION_PREFIXES, OPERATION_CLASS_MAP
+from ansible_base.api_documentation.preprocessing_hooks import OPERATION_CLASS_MAP, RESOURCE_PURPOSE_MAP, SKIP_AI_DESCRIPTION_PREFIXES
 
 logger = logging.getLogger('ansible_base.api_documentation.postprocessing_hooks')
 
@@ -99,12 +99,12 @@ def extract_action_and_resource(operation_id, path):
 
         # If there are path segments AFTER the {id}, then this is a nested resource
         # e.g., /teams/{id}/users/ -> remaining_parts = ['users']
-        remaining_parts = [p for p in parts[id_index+1:] if p and not p.startswith('{')]
+        remaining_parts = [p for p in parts[id_index + 1 :] if p and not p.startswith('{')]
 
         if remaining_parts:
             # This is truly nested - extract parent from segments before {id}
             # Use parse_path_segments on the prefix to get clean parent segments
-            parent_prefix = '/'.join(parts[:id_index+1])
+            parent_prefix = '/'.join(parts[: id_index + 1])
             parent_segments = parse_path_segments(parent_prefix)
             if parent_segments:
                 parent_resource = singularize_resource(parent_segments[-1])
@@ -172,12 +172,6 @@ def generate_description_from_purpose(resource_purpose, action, resource_parts, 
     Returns:
         Generated x-ai-description string
     """
-    # For nested resources, we need to extract just the child resource
-    if parent_resource and len(resource_parts) >= 2:
-        child_resource = resource_parts[-1]
-    else:
-        child_resource = resource_parts[-1] if resource_parts else 'resource'
-
     # Templates optimized for MCP tool understanding
     if action == 'list':
         return f"List {resource_purpose}"
@@ -278,7 +272,7 @@ def clean_base_description(description):
 
     for prefix in prefixes_to_remove:
         if clean_desc.startswith(prefix):
-            clean_desc = clean_desc[len(prefix):].strip()
+            clean_desc = clean_desc[len(prefix) :].strip()
             break
 
     # Remove trailing period
@@ -341,18 +335,12 @@ def add_x_ai_description(result, generator, request, public):
                 # Extract prefix (e.g., "teams_list" -> "teams")
                 prefix = operation_id.split('_')[0] if '_' in operation_id else operation_id
                 if prefix in SKIP_AI_DESCRIPTION_PREFIXES:
-                    logger.debug(
-                        f"Operation {operation_id} has skip_ai_description=True (prefix: {prefix}). "
-                        f"Skipping x-ai-description generation."
-                    )
+                    logger.debug(f"Operation {operation_id} has skip_ai_description=True (prefix: {prefix}). " f"Skipping x-ai-description generation.")
                     continue
 
             # Skip if already has x-ai-description
             if 'x-ai-description' in operation:
-                logger.debug(
-                    f"x-ai-description already defined for {path} {method.upper()}. "
-                    f"Respecting existing value."
-                )
+                logger.debug(f"x-ai-description already defined for {path} {method.upper()}. " f"Respecting existing value.")
                 continue
 
             # Get operation ID to determine action
@@ -399,10 +387,7 @@ def add_x_ai_description(result, generator, request, public):
                     # Extract parent and child from path (more reliable than operation_id for compound names)
                     # e.g., "/api/gateway/v1/http_ports/{id}/routes/associate/" -> ["http_ports", "routes"]
                     # Start with standard path parsing, then filter out associate/disassociate and API version
-                    path_parts = [
-                        p for p in parse_path_segments(path)
-                        if p not in ['api', 'gateway', 'v1', 'associate', 'disassociate']
-                    ]
+                    path_parts = [p for p in parse_path_segments(path) if p not in ['api', 'gateway', 'v1', 'associate', 'disassociate']]
 
                     if len(path_parts) >= 2:
                         # Last part is the child resource (e.g., "routes", "users", "service_types")
