@@ -65,13 +65,13 @@ def _handle_prefix_collision(prefix, class_name, path_parts_count, path_parts, o
         compound_prefix = _create_compound_prefix(existing_path_parts, prefix)
         operation_class_map[compound_prefix] = (existing_class, existing_count, existing_path_parts)
         operation_class_map[prefix] = (class_name, path_parts_count, path_parts)
-        logger.debug(f"Resource collision: {class_name} (main, {path_parts_count} parts) owns '{prefix}', " f"{existing_class} moved to '{compound_prefix}'")
+        logger.debug(f"Resource collision: {class_name} (main, {path_parts_count} parts) owns '{prefix}', {existing_class} moved to '{compound_prefix}'")
         return prefix
     else:
         # Existing is main resource - current gets compound prefix
         compound_prefix = _create_compound_prefix(path_parts, prefix)
         operation_class_map[compound_prefix] = (class_name, path_parts_count, path_parts)
-        logger.debug(f"Resource collision: {existing_class} (main, {existing_count} parts) keeps '{prefix}', " f"{class_name} stored at '{compound_prefix}'")
+        logger.debug(f"Resource collision: {existing_class} (main, {existing_count} parts) keeps '{prefix}', {class_name} stored at '{compound_prefix}'")
         return compound_prefix
 
 

@@ -210,6 +210,36 @@ class CityViewSet(TestAppViewSet):
 
 
 ################################################
+# Test ViewSets for api_documentation preprocessing hooks
+################################################
+
+
+class TestViewSetWithSkipAI(TestAppViewSet):
+    """ViewSet for testing skip_ai_description attribute."""
+
+    skip_ai_description = True
+    serializer_class = serializers.TeamSerializer
+    queryset = models.Team.objects.all()
+
+
+class TestViewSetWithResourcePurpose(TestAppViewSet):
+    """ViewSet for testing resource_purpose attribute."""
+
+    resource_purpose = "test resources for validating purpose-based descriptions"
+    serializer_class = serializers.TeamSerializer
+    queryset = models.Team.objects.all()
+
+
+class TestViewSetWithBothAttributes(TestAppViewSet):
+    """ViewSet for testing both skip_ai_description and resource_purpose."""
+
+    skip_ai_description = True
+    resource_purpose = "test resources that should be skipped"
+    serializer_class = serializers.TeamSerializer
+    queryset = models.Team.objects.all()
+
+
+################################################
 # FRONTEND
 ################################################
 
