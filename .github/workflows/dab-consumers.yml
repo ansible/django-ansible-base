@@ -27,7 +27,7 @@ jobs:
           cat <<EOF > awx-dockerfile/Dockerfile
           FROM ghcr.io/ansible/awx_devel:devel
           COPY . /opt/dab/
-          RUN pip install -e /opt/dab/
+          RUN pip install -e /opt/dab/[api_documentation]
           RUN pip install jq
           EOF
           docker build -t awx-with-dab:latest -f awx-dockerfile/Dockerfile .
@@ -98,6 +98,6 @@ jobs:
           cd /tmp/eda-server
           pipx install poetry
           poetry install -E all --only main,test
-          poetry run pip install -e "$DAB_PATH"
+          poetry run pip install -e "$DAB_PATH[api_documentation]"
           poetry run pip show django-ansible-base
           poetry run pytest
