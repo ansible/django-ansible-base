@@ -89,6 +89,8 @@ class ResourceViewSet(
     Index of all the resources in the system.
     """
 
+    resource_purpose = "resources indexed from connected AAP services for cross-service resource management"
+
     queryset = Resource.objects.select_related("content_type__resource_type").all()
     serializer_class = ResourceSerializer
     lookup_field = "ansible_id"
@@ -113,6 +115,8 @@ class ResourceTypeViewSet(
     """
     Index of the resource types that are configured in the system.
     """
+
+    resource_purpose = "resource type definitions from AAP services describing available resource schemas"
 
     queryset = ResourceType.objects.all()
     serializer_class = ResourceTypeSerializer

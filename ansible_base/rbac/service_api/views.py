@@ -1,5 +1,6 @@
 from django.db import transaction
 from django.db.models import OuterRef, Subquery
+from drf_spectacular.utils import extend_schema
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -125,6 +126,8 @@ def resource_ansible_id_expr(ct_field='content_type_id', oid_field='object_id'):
 class ServiceRoleUserAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     """List of user assignments for cross-service communication"""
 
+    resource_purpose = "RBAC role assignments for users on resources indexed from connected AAP services"
+
     queryset = RoleUserAssignment.objects.prefetch_related('user__resource__content_type', *prefetch_related).annotate(
         _object_ansible_id_annotation=resource_ansible_id_expr()
     )
@@ -145,6 +148,8 @@ class ServiceRoleUserAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
 
 class ServiceRoleTeamAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     """List of team role assignments for cross-service communication"""
+
+    resource_purpose = "RBAC role assignments for teams on resources indexed from connected AAP services"
 
     queryset = RoleTeamAssignment.objects.prefetch_related('team__resource__content_type', *prefetch_related).annotate(
         _object_ansible_id_annotation=resource_ansible_id_expr()
@@ -173,6 +178,9 @@ class ServiceObjectDeleteViewSet(viewsets.ViewSet):
 
     permission_classes = try_add_oauth2_scope_permission([HasResourceRegistryPermissions])
 
+    @extend_schema(
+        extensions={'x-ai-description': 'Remove all role assignments for a resource indexed from connected AAP services'}
+    )
     def create(self, request):
         """
         Delete all role assignments (user and team) for a specific resource.

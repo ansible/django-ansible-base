@@ -6,80 +6,150 @@ The `x-ai-description` field is automatically generated for all API endpoints an
 
 ## How It Works
 
-The postprocessing hook automatically:
-1. Extracts the operation type (list, create, update, delete, etc.)
-2. Prepends an action verb to your endpoint's description
-3. Generates concise, AI-friendly descriptions
+The system uses a **two-tier approach** to generate descriptions:
+
+### Priority 1: Explicit x-ai-description (Highest Priority)
+If you define `x-ai-description` explicitly using `@extend_schema`, it will be used as-is.
+
+### Priority 2: resource_purpose Field (Recommended)
+If you define a `resource_purpose` field on your ViewSet, the hook will generate contextual descriptions for standard CRUD operations.
+
+### Fallback: Auto-generation
+If neither of the above are present, the hook generates basic descriptions from resource names and operation types.
 
 ### Example Transformations
 
-| Your Description | Operation | Generated x-ai-description |
+With `resource_purpose`:
+
+| resource_purpose | Operation | Generated x-ai-description |
 |------------------|-----------|---------------------------|
-| "groups to be viewed or edited" | GET (list) | "List all groups" |
-| "groups to be viewed or edited" | POST (create) | "Create new group" |
-| "groups to be viewed or edited" | DELETE (destroy) | "Delete existing group" |
-| "status of platform services" | GET (retrieve) | "Retrieve single status of platform services" |
+| "audit trail entries for tracking system changes" | GET (list) | "List audit trail entries for tracking system changes" |
+| "audit trail entries for tracking system changes" | POST (create) | "Create an audit trail entry for tracking system changes" |
+| "audit trail entries for tracking system changes" | GET (retrieve) | "Retrieve an audit trail entry for tracking system changes" |
+| "audit trail entries for tracking system changes" | DELETE (destroy) | "Delete an audit trail entry for tracking system changes" |
 
 ## Writing Good Descriptions
 
-### Guidelines
+### Using resource_purpose (Recommended)
 
-**DO write descriptions that explain WHAT and WHY:**
-- ✅ "teams for organizing users and managing group permissions"
-- ✅ "activity stream entries for auditing system changes"
-- ✅ "HTTP port configurations for routing traffic to backend services"
+The `resource_purpose` field should describe:
+- **WHAT** the resource is (plural noun phrase)
+- **WHY** it exists or when an MCP tool would use it
 
-**DON'T include the action verb (it's added automatically):**
-- ❌ "List all teams"
-- ❌ "Create a new organization"
-- ❌ "Retrieve user details"
-
-**DON'T use generic boilerplate:**
-- ❌ "API endpoint that allows teams to be viewed or edited"
-- ❌ "API endpoint for managing users"
-
-### Sentence Structure
-
-Use this pattern in your ViewSet/APIView docstrings:
-
+**Pattern:**
 ```
-"<resource> for <purpose/why it's used>"
+"<resource_plural> for <purpose/use_case>"
 ```
 
 **Examples:**
-```python
-class TeamViewSet(ModelViewSet):
-    """
-    teams for organizing users and managing group permissions
-    """
-    queryset = Team.objects.all()
-    serializer_class = TeamSerializer
-```
 
 ```python
 class ActivityStreamViewSet(ReadOnlyModelViewSet):
-    """
-    activity stream entries for auditing system changes and compliance tracking
-    """
+    """API endpoint for activity stream entries."""
+
+    resource_purpose = "audit trail entries for tracking system changes and user actions"
+
     queryset = ActivityStream.objects.all()
     serializer_class = ActivityStreamSerializer
 ```
 
 ```python
-class StatusView(APIView):
-    """
-    platform service status for monitoring system health
-    """
-    def get(self, request):
-        ...
+class AuthenticatorViewSet(ModelViewSet):
+    """API endpoint for authenticators."""
+
+    resource_purpose = "authentication providers for configuring user login methods (LDAP, SAML, OAuth)"
+
+    queryset = Authenticator.objects.all()
+    serializer_class = AuthenticatorSerializer
 ```
+
+```python
+class RoleDefinitionViewSet(ModelViewSet):
+    """API endpoint for role definitions."""
+
+    resource_purpose = "RBAC role templates defining permissions that can be assigned to users and teams"
+
+    queryset = RoleDefinition.objects.all()
+    serializer_class = RoleDefinitionSerializer
+```
+
+### Guidelines for resource_purpose
+
+**DO explain WHAT and WHY:**
+- ✅ "authentication providers for configuring user login methods (LDAP, SAML, OAuth)"
+- ✅ "audit trail entries for tracking system changes and user actions"
+- ✅ "HTTP listener ports for routing incoming traffic to backend services"
+
+**DON'T include action verbs (they're added automatically):**
+- ❌ "List authentication providers"
+- ❌ "Create new audit trail entries"
+- ❌ "Manage HTTP ports"
+
+**DON'T use generic boilerplate:**
+- ❌ "resources that can be viewed or edited"
+- ❌ "objects for managing system configuration"
+
+**DO use plural nouns** (the hook will singularize for create/update/delete/retrieve):
+- ✅ "audit trail entries" → becomes "audit trail entry" for create/retrieve
+- ✅ "authentication providers" → becomes "authentication provider" for update
+- ✅ "HTTP listener ports" → becomes "HTTP listener port" for delete
 
 ## Character Limits
 
 - **Preferred:** < 200 characters
 - **Maximum:** < 300 characters (enforced with truncation)
 
-The hook will log warnings if descriptions exceed these limits.
+The hook will automatically truncate descriptions that exceed 300 characters.
+
+**Tips for staying under 200 chars:**
+- Focus on the essential purpose
+- Use parentheses for examples: "(LDAP, SAML, OAuth)"
+- Avoid redundant words: "for" instead of "used for"
+
+## When to Use Each Approach
+
+### Use `resource_purpose` when:
+- ✅ The resource is **domain-specific** or uses technical jargon (e.g., "RBAC role templates", "JWT signing keys", "authentication providers")
+- ✅ The resource purpose isn't immediately obvious from its name (e.g., "authenticator maps" → "attribute mapping rules")
+- ✅ The resource needs contextual explanation for MCP tool selection (e.g., "audit trail entries for tracking system changes")
+- ✅ You have standard CRUD operations that all share the same core purpose
+
+### Use `@extend_schema` with explicit `x-ai-description` when:
+- ✅ You have custom actions beyond CRUD
+- ✅ An operation needs unique context different from the resource purpose
+- ✅ You need fine-grained control over the description
+
+### Prefer auto-generation (no resource_purpose) when:
+- ✅ The resource is **self-explanatory** (e.g., "teams", "users", "organizations")
+- ✅ The resource name clearly conveys its purpose
+- ✅ No domain-specific context is needed for MCP tool selection
+
+**Philosophy:** `resource_purpose` should be used sparingly. Docstrings serve human developers; `resource_purpose` serves AI tool selection. Only add `resource_purpose` when it provides meaningful context that auto-generation cannot capture.
+
+### Example combining both:
+
+```python
+from drf_spectacular.utils import extend_schema
+from rest_framework.decorators import action
+
+class AuthenticatorViewSet(ModelViewSet):
+    """API endpoint for authenticators."""
+
+    # Handles list, create, retrieve, update, delete automatically
+    resource_purpose = "authentication providers for configuring user login methods (LDAP, SAML, OAuth)"
+
+    queryset = Authenticator.objects.all()
+    serializer_class = AuthenticatorSerializer
+
+    # Custom action needs explicit description
+    @extend_schema(
+        extensions={'x-ai-description': 'Test authenticator connection and validate configuration'}
+    )
+    @action(detail=True, methods=['post'])
+    def test(self, request, pk=None):
+        """Test authenticator connectivity"""
+        ...
+```
 
 ## Opting Out
 
@@ -92,82 +162,53 @@ class MyCustomViewSet(ModelViewSet):
     serializer_class = MySerializer
 ```
 
-## Explicit Override
+## Separation of Concerns
 
-To provide a custom x-ai-description for a specific operation, use `@extend_schema`:
-
+**Docstrings are for human developers:**
 ```python
-from drf_spectacular.utils import extend_schema
-
 class TeamViewSet(ModelViewSet):
-    """teams for organizing users"""
+    """
+    API endpoint for managing teams.
 
-    @extend_schema(
-        operation_id='teams_special_action',
-        responses={200: TeamSerializer},
-        **{'x-ai-description': 'Perform special team synchronization operation'}
-    )
-    @action(detail=False, methods=['post'])
-    def sync(self, request):
-        ...
+    Teams organize users and control group-based permissions.
+    """
+    queryset = Team.objects.all()
+    serializer_class = TeamSerializer
 ```
 
-## Current State Analysis
-
-Based on existing Gateway endpoints, most descriptions follow this pattern:
-- ❌ "API endpoint that allows X to be viewed or edited"
-
-**Recommended migration:**
-- ✅ "X for <purpose>"
-
-### Migration Examples
-
-**Before:**
+**resource_purpose is for AI/MCP tool selection:**
 ```python
-"""API endpoint that allows teams to be viewed or edited."""
+class AuthenticatorMapViewSet(ModelViewSet):
+    """API endpoint for authenticator maps."""
+
+    resource_purpose = "attribute mapping rules for mapping external user attributes to AAP user fields"
+
+    queryset = AuthenticatorMap.objects.all()
+    serializer_class = AuthenticatorMapSerializer
 ```
 
-**After:**
-```python
-"""teams for organizing users and managing group permissions"""
-```
-
----
-
-**Before:**
-```python
-"""API endpoint that allows authenticators to be viewed or edited."""
-```
-
-**After:**
-```python
-"""authenticators for configuring user authentication methods (LDAP, SAML, OAuth)"""
-```
-
----
-
-**Before:**
-```python
-"""API endpoint that shows status of platform services."""
-```
-
-**After:**
-```python
-"""platform service status for monitoring system health and availability"""
-```
+This separation ensures:
+- ✅ Docstrings can be detailed and conversational for developers
+- ✅ resource_purpose stays concise and optimized for AI tool selection
+- ✅ Each serves its intended audience without compromise
 
 ## Testing Your Descriptions
 
-After updating descriptions, verify the generated x-ai-description by:
+After adding or updating `resource_purpose` fields:
 
-1. Regenerating the OpenAPI schema
-2. Checking the x-ai-description field for your endpoints
-3. Ensuring descriptions are:
-   - Clear and concise
-   - Under 200 characters (preferred) or 300 characters (maximum)
-   - Describe WHAT and WHY, not HOW
+1. Regenerate the OpenAPI schema
+2. Check the generated x-ai-description fields
+3. Validate using the validation script:
+   ```bash
+   python tools/validate_ai_descriptions.py /path/to/schema.json
+   ```
+4. Ensure descriptions:
+   - Are clear and explain WHAT and WHY
+   - Stay under 200 characters (preferred) or 300 characters (maximum)
+   - Provide useful context for MCP tool selection
 
-## Questions?
+## Implementation Details
 
-See the postprocessing hook implementation at:
-`ansible_base/api_documentation/postprocessing_hooks.py`
+See the hook implementations:
+- Preprocessing: `ansible_base/api_documentation/preprocessing_hooks.py`
+- Postprocessing: `ansible_base/api_documentation/postprocessing_hooks.py`
