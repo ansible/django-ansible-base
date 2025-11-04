@@ -217,7 +217,7 @@ def _add_rbac_role_mapping(has_permission, role_mapping, role, organization=None
 
 
 def _is_case_insensitivity_enabled() -> bool:
-    return flag_enabled("FEATURE_CASE_INSENSITIVE_AUTH_MAPS")
+    return flag_enabled("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
 
 
 def _lowercase_group_triggers(trigger_condition: dict) -> dict:

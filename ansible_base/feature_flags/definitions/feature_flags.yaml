@@ -23,7 +23,7 @@
   ui_name: Gateway IPv6 Enablement
   visibility: False
   condition: boolean
-  value: 'False'
+  value: 'True'
   support_level: TECHNOLOGY_PREVIEW
   description: The feature flag represents enabling IPv6 only traffic to be allowed through the gateway component and does not include all components of the platform.
   support_url: https://access.redhat.com/articles/7116569
@@ -52,3 +52,13 @@
   labels:
     - eda
     - controller
+- name: FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED
+  ui_name: Case Insensitive Authentication Maps
+  visibility: False
+  condition: boolean
+  value: 'True'
+  support_level: DEVELOPER_PREVIEW
+  description: Enable case-insensitive comparison for authentication mapping attributes and group names.
+  support_url: ''
+  labels:
+    - platform

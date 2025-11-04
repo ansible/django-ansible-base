@@ -131,7 +131,7 @@ def test_validate_flags_yaml_against_json_schema():
         with open(feature_flags_schema, 'r') as file:
             schema = json.load(file)
         validate(instance=feature_flags_file, schema=schema)
-        assert True, "Validation succeeded as expected."
+        # Test passes if no exception is raised during validation
     except FileNotFoundError as e:
         pytest.fail(f"Could not find a necessary file: {e}. Make sure schema.json and valid_data.yaml exist.")
     except Exception as e:

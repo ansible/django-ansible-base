@@ -425,7 +425,7 @@ def _handle_conflict(resource_data: dict, resource_type: ResourceType, api_clien
     if resp.status_code == 404:
         delete_resource(conflict_resource)
 
-    # If the resource does exist, lets update it first. Hopefully this desn't also result
+    # If the resource does exist, lets update it first. Hopefully this doesn't also result
     # in a duplicate key error. If it does, we're cooked.
     elif resp.status_code == 200:
         data = resp.json()
@@ -449,7 +449,7 @@ def _attempt_update_resource(
             return SyncResult(SyncStatus.NOOP, manifest_item)
     except IntegrityError:  # pragma: no cover
         # This typically means that there was a duplicate key error. To mitigate this
-        # we will attempt to hanlde the conflicting resource and perform the operation
+        # we will attempt to handle the conflicting resource and perform the operation
         # again.
         try:
             _handle_conflict(resource_data, resource.resource_type_obj, api_client)
@@ -484,7 +484,7 @@ def _attempt_create_resource(
         return SyncResult(SyncStatus.NOOP, manifest_item)
     except IntegrityError:
         # This typically means that there was a duplicate key error. To mitigate this
-        # we will attempt to hanlde the conflicting resource and perform the operation
+        # we will attempt to handle the conflicting resource and perform the operation
         # again.
         try:
             _handle_conflict(resource_data, resource_type, api_client)
@@ -696,7 +696,7 @@ class SyncExecutor:
             self.attempts += 1
 
     def _dispatch_sync_process(self, manifest_list: list[ManifestItem]):
-        """Sync all the items from the manifest using either asyncio or sequentialy."""
+        """Sync all the items from the manifest using either asyncio or sequentially."""
         if self.asyncio is True:  # pragma: no cover
             self.write(f"Processing {len(manifest_list)} resources with asyncio executor.")
             self.write()

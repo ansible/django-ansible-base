@@ -1,7 +1,6 @@
 from unittest import mock
 
 import pytest
-from django.conf import settings
 from django.db import connection
 
 from ansible_base.authentication.models import AuthenticatorMap, AuthenticatorUser
@@ -418,15 +417,23 @@ def test_create_claims_revoke(local_authenticator_map, process_function, trigger
     ],
 )
 @pytest.mark.django_db
-def test_process_groups(trigger_condition, groups, case_insensitive, has_access, settings_override_mutable):
+def test_process_groups(trigger_condition, groups, case_insensitive, has_access):
     """
     Test the process_groups function.
     """
-    with settings_override_mutable("FLAGS"):
-        settings.FLAGS["FEATURE_CASE_INSENSITIVE_AUTH_MAPS"][0]["value"] = case_insensitive
-        res = claims.process_groups(trigger_condition, groups, map_id=1, tracking_id="xxx")
+    from flags.state import disable_flag, enable_flag
 
-    assert res is has_access
+    if case_insensitive:
+        enable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
+    else:
+        disable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
+
+    try:
+        res = claims.process_groups(trigger_condition, groups, map_id=1, tracking_id="xxx")
+        assert res is has_access
+    finally:
+        # Clean up: disable the flag after test
+        disable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
 
 
 @pytest.mark.parametrize(
@@ -914,12 +921,20 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
     ],
 )
 @pytest.mark.django_db
-def test_process_user_attributes(trigger_condition, attributes, expected, case_insensitive, settings_override_mutable):
-    with settings_override_mutable("FLAGS"):
-        settings.FLAGS["FEATURE_CASE_INSENSITIVE_AUTH_MAPS"][0]["value"] = case_insensitive
-        res = claims.process_user_attributes(trigger_condition, attributes, map_id=1, tracking_id="xxx")
+def test_process_user_attributes(trigger_condition, attributes, expected, case_insensitive):
+    from flags.state import disable_flag, enable_flag
 
-    assert res is expected
+    if case_insensitive:
+        enable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
+    else:
+        disable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
+
+    try:
+        res = claims.process_user_attributes(trigger_condition, attributes, map_id=1, tracking_id="xxx")
+        assert res is expected
+    finally:
+        # Clean up: disable the flag after test
+        disable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
 
 
 def test_update_user_claims_extra_data(user, local_authenticator_map):
@@ -2207,17 +2222,22 @@ class TestClaimsHelperFunctions:
             ),
         ],
     )
-    def test_prepare_case_insensitive_data(
-        self, case_insensitive_enabled, trigger_condition, attributes, expected_trigger, expected_attrs, settings_override_mutable
-    ):
+    def test_prepare_case_insensitive_data(self, case_insensitive_enabled, trigger_condition, attributes, expected_trigger, expected_attrs):
         """Test _prepare_case_insensitive_data with case insensitivity enabled/disabled"""
-        with settings_override_mutable("FLAGS"):
-            settings.FLAGS["FEATURE_CASE_INSENSITIVE_AUTH_MAPS"][0]["value"] = case_insensitive_enabled
+        from flags.state import disable_flag, enable_flag
 
+        if case_insensitive_enabled:
+            enable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
+        else:
+            disable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
+
+        try:
             result_trigger, result_attrs = claims._prepare_case_insensitive_data(trigger_condition, attributes, 1, "test-id")
-
             assert result_trigger == expected_trigger
             assert result_attrs == expected_attrs
+        finally:
+            # Clean up: disable the flag after test
+            disable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
 
     @pytest.mark.parametrize(
         "user_value, expected",

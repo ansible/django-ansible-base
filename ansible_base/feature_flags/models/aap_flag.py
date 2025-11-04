@@ -11,6 +11,19 @@ def validate_feature_flag_name(value: str):
         raise ValidationError(_("Feature flag names must follow the format of `FEATURE_<flag-name>_ENABLED`"))
 
 
+def validate_labels(value):
+    """Validate that labels is a list of strings."""
+    if value is None:
+        return  # Allow null values
+
+    if not isinstance(value, list):
+        raise ValidationError(_("Labels must be a list."))
+
+    for item in value:
+        if not isinstance(item, str):
+            raise ValidationError(_("All labels must be strings."))
+
+
 class AAPFlag(NamedCommonModel):
     class Meta:
         app_label = "dab_feature_flags"
@@ -48,12 +61,16 @@ class AAPFlag(NamedCommonModel):
         max_length=25,
         null=False,
         help_text=_("The support criteria for the feature flag. Must be one of (DEVELOPER_PREVIEW or TECHNOLOGY_PREVIEW)."),
-        choices=(('DEVELOPER_PREVIEW', 'Developer Preview'), ('TECHNOLOGY_PREVIEW', 'Technology Preview')),
+        choices=(
+            ("DEVELOPER_PREVIEW", "Developer Preview"),
+            ("TECHNOLOGY_PREVIEW", "Technology Preview"),
+        ),
         blank=False,
+        editable=False,
     )
     visibility = models.BooleanField(
         default=False,
-        help_text=_("The visibility of the feature flag. If false, flag is hidden."),
+        help_text=_("Controls whether the feature is visible in the UI."),
     )
     toggle_type = models.CharField(
         max_length=20,
@@ -64,4 +81,4 @@ class AAPFlag(NamedCommonModel):
     )
     description = models.CharField(max_length=500, null=False, default="", help_text=_("A detailed description giving an overview of the feature flag."))
     support_url = models.CharField(max_length=250, null=False, default="", blank=True, help_text="A link to the documentation support URL for the feature")
-    labels = models.JSONField(null=True, default=list, help_text=_("A list of labels for the feature flag."), blank=True)
+    labels = models.JSONField(null=True, default=list, help_text=_("A list of labels for the feature flag."), blank=True, validators=[validate_labels])

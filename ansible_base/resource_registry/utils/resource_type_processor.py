@@ -55,7 +55,7 @@ class ResourceTypeProcessor:
 
 class RoleDefinitionProcessor(ResourceTypeProcessor):
     def save(self, validated_data: Dict[str, Any], is_new: bool = False, skip_keys: List[str] = []) -> Tuple[bool, RoleDefinition]:
-        (changed, instance) = super().save(validated_data, is_new=is_new, skip_keys=skip_keys + ['permissions'])
+        (changed, self.instance) = super().save(validated_data, is_new=is_new, skip_keys=skip_keys + ['permissions'])
         permissions = None  # many-to-many field
         for k, val in validated_data.items():
             if k == 'permissions':

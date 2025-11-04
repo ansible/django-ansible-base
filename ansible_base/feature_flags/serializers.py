@@ -20,7 +20,6 @@ class FeatureFlagStatesSerializer(NamedCommonModelSerializer):
         fields = ["name", "state"]
 
     def to_representation(self, instance=None) -> dict:
-        instance.state = True
         ret = super().to_representation(instance)
         return ret
 
