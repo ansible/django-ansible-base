@@ -153,7 +153,8 @@ class AuthenticatorViewSet(ModelViewSet):
 
 ## Opting Out
 
-If you need to disable automatic x-ai-description generation for a specific ViewSet/APIView, set:
+If you need to disable automatic x-ai-description generation for a specific ViewSet/APIView, set the
+`skip_ai_description` field on the ViewSet, as seen in the following example:
 
 ```python
 class MyCustomViewSet(ModelViewSet):
@@ -196,13 +197,36 @@ This separation ensures:
 
 After adding or updating `resource_purpose` fields:
 
-1. Regenerate the OpenAPI schema
-2. Check the generated x-ai-description fields
-3. Validate using the validation script:
-   ```bash
-   python tools/validate_ai_descriptions.py /path/to/schema.json
-   ```
-4. Ensure descriptions:
+1. **Generate the OpenAPI schema** using your application's schema generation method
+2. **Inspect the x-ai-description fields** in the generated schema
+
+Example using `jq` to extract all x-ai-description fields:
+
+```bash
+# If schema is available as JSON file
+jq '.. | ."x-ai-description"? // empty' schema.json
+
+# Or extract specific operations
+jq '.paths[][] | select(."x-ai-description") | ."x-ai-description"' schema.json
+```
+
+Example using Python:
+
+```python
+import json
+
+with open('schema.json') as f:
+    schema = json.load(f)
+
+# Find all x-ai-description fields
+for path, operations in schema.get('paths', {}).items():
+    for method, operation in operations.items():
+        if isinstance(operation, dict) and 'x-ai-description' in operation:
+            print(f"{method.upper()} {path}")
+            print(f"  {operation['x-ai-description']}\n")
+```
+
+3. **Verify descriptions:**
    - Are clear and explain WHAT and WHY
    - Stay under 200 characters (preferred) or 300 characters (maximum)
    - Provide useful context for MCP tool selection
@@ -227,9 +251,3 @@ SPECTACULAR_SETTINGS = {
     ],
 }
 ```
-
-## Implementation Details
-
-See the hook implementations:
-- Preprocessing: `ansible_base/api_documentation/preprocessing_hooks.py`
-- Postprocessing: `ansible_base/api_documentation/postprocessing_hooks.py`
