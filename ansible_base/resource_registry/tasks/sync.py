@@ -365,7 +365,7 @@ def get_orphan_resources(
     manifest_list: list[ManifestItem],
 ) -> QuerySet:
     """QuerySet with orphaned managed resources to be deleted."""
-    return (
+    queryset = (
         Resource.objects.filter(
             content_type__resource_type__name=resource_type_name,
         )
@@ -375,6 +375,16 @@ def get_orphan_resources(
             is_partially_migrated=False,
         )
     )
+
+    # Exclude system user from deletion, consistent with manifest endpoint
+    if resource_type_name == "shared.user":
+        from ansible_base.lib.utils.models import get_system_user
+
+        system_user = get_system_user()
+        if system_user:
+            queryset = queryset.exclude(object_id=system_user.id)
+
+    return queryset
 
 
 def delete_resource(resource: Resource):
