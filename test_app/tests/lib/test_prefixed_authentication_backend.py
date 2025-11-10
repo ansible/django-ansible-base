@@ -6,14 +6,14 @@ from test_app.models import User
 
 
 @pytest.fixture
-@pytest.mark.django_db(transaction=True)
-def prefixed_user(local_authenticator):
+def prefixed_user(local_authenticator, db):
     user = User.objects.create(username='dab:foo')
     user.set_password("pass")
     user.save()
     return user
 
 
+@pytest.mark.django_db
 def test_prefixed_user_can_login_with_original_username(prefixed_user):
     url = get_relative_url("rest_framework:login")
     me_url = get_relative_url("user-me")
@@ -27,6 +27,7 @@ def test_prefixed_user_can_login_with_original_username(prefixed_user):
     assert resp.data["username"] == "dab:foo"
 
 
+@pytest.mark.django_db
 def test_prefixed_user_can_login_with_prefixed_username(prefixed_user):
     url = get_relative_url("rest_framework:login")
     me_url = get_relative_url("user-me")
