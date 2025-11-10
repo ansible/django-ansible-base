@@ -10,7 +10,7 @@ class AuthenticatorMapViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
     API endpoint that allows authenticator maps to be viewed or edited.
     """
 
-    resource_purpose = "conditional rules for granting permissions and assigning users to organizations or teams based on external authentication attributes"
+    resource_purpose = "conditional rule for granting access, membership or roles based on user attributes or groups"
 
     queryset = AuthenticatorMap.objects.all().order_by("id")
     serializer_class = AuthenticatorMapSerializer
