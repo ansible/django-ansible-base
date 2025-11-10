@@ -206,16 +206,6 @@ RENAMED_USERNAME_PREFIX = "dab:"
 
 JUST_A_TEST = 41
 
-# Configure OpenAPI schema generation hooks for x-ai-description
-SPECTACULAR_SETTINGS = {
-    'PREPROCESSING_HOOKS': [
-        'ansible_base.api_documentation.preprocessing_hooks.collect_ai_description_metadata',
-    ],
-    'POSTPROCESSING_HOOKS': [
-        'ansible_base.api_documentation.postprocessing_hooks.add_x_ai_description',
-    ],
-}
-
 FLAGS = {
     "FEATURE_SOME_PLATFORM_FLAG_ENABLED": [
         {

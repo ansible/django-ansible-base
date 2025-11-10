@@ -4,12 +4,16 @@
 
 The `x-ai-description` field is automatically generated for all API endpoints and is used by MCP (Model Context Protocol) servers to provide better context to AI tools about API operations.
 
+**NOTE:** The generation uses the `ansible_base.lib.utils.schema.extend_schema_if_available` decorator. It functions
+as a simple wrapper around `drf_spectacular.utils.extend_schema` that fails gracefully when the `drf_spectacular` dependency
+is not found.
+
 ## How It Works
 
 The system uses a **two-tier approach** to generate descriptions:
 
 ### Priority 1: Explicit x-ai-description (Highest Priority)
-If you define `x-ai-description` explicitly using `@extend_schema`, it will be used as-is 
+If you define `x-ai-description` explicitly using `@extend_schema_if_available`, it will be used as-is 
 [as seen in this example](#using-extend_schema).
 
 ### Priority 2: resource_purpose Field (Recommended)
@@ -107,7 +111,7 @@ resource_purpose = "HTTP listener ports for routing incoming traffic to backend 
 
 ## When to Use Each Approach
 
-### Use `@extend_schema` with explicit `x-ai-description` when:
+### Use `@extend_schema_if_available` with explicit `x-ai-description` when:
 - ✅ You have custom actions beyond CRUD
 - ✅ An operation needs unique context different from the resource purpose
 - ✅ You need fine-grained control over the description
@@ -186,14 +190,14 @@ class RoleDefinitionViewSet(ModelViewSet):
     serializer_class = RoleDefinitionSerializer
 ```
 
-### Using `@extend_schema`
+### Using `@extend_schema_if_available`
 
 Example with explicit `x-ai-description`:
 
 ```python
-from drf_spectacular.utils import extend_schema
+from ansible_base.lib.utils.schema import extend_schema_if_available
 
-@extend_schema(extensions={"x-ai-description": "Retrieves details regarding the currently authenticated user"})
+@extend_schema_if_available(extensions={"x-ai-description": "Retrieves details regarding the currently authenticated user"})
 class MeViewSet(viewsets.ReadOnlyModelViewSet, AnsibleBaseView):
     model = User
     serializer_class = UserSerializer
@@ -202,11 +206,12 @@ class MeViewSet(viewsets.ReadOnlyModelViewSet, AnsibleBaseView):
 
 ### Combining Both Approaches
 
-Using `resource_purpose` for CRUD operations and `@extend_schema` for custom actions:
+Using `resource_purpose` for CRUD operations and `@extend_schema_if_available` for custom actions:
 
 ```python
-from drf_spectacular.utils import extend_schema
 from rest_framework.decorators import action
+
+from ansible_base.lib.utils.schema import extend_schema_if_available
 
 class AuthenticatorViewSet(ModelViewSet):
     """API endpoint for authenticators."""
@@ -218,7 +223,7 @@ class AuthenticatorViewSet(ModelViewSet):
     serializer_class = AuthenticatorSerializer
 
     # Custom action needs explicit description
-    @extend_schema(
+    @extend_schema_if_available(
         extensions={'x-ai-description': 'Test authenticator connection and validate configuration'}
     )
     @action(detail=True, methods=['post'])
@@ -314,20 +319,27 @@ for path, operations in schema.get('paths', {}).items():
 
 ## Enabling Automatic x-ai-description Generation
 
-To enable automatic `x-ai-description` generation for your OpenAPI schema, register the preprocessing and postprocessing hooks in your Django settings.
+Automatic `x-ai-description` generation should be enabled by default, as they are defined in the `DEFAULT_SPECTACULAR_SETTINGS`
+dynamic settings. If you have explicit `PREPROCESSING_HOOKS` or `POSTPROCESSING_HOOKS` defined in your Django settings, then
+these hooks will need to be explicitly registered using the following step.
 
 ### Configuration
 
-Add or update the `SPECTACULAR_SETTINGS` dictionary in your Django settings file:
+Include the `SPECTACULAR_SETTINGS` dictionary in your Django settings file:
+
+**NOTE:** Again, this is only needed if you are already defining these values. If these are undefined, then no additional
+configuration is required.
 
 ```python
 SPECTACULAR_SETTINGS = {
     # ... your existing settings ...
 
     'PREPROCESSING_HOOKS': [
+        ...,
         'ansible_base.api_documentation.preprocessing_hooks.collect_ai_description_metadata',
     ],
     'POSTPROCESSING_HOOKS': [
+        ...,
         'ansible_base.api_documentation.postprocessing_hooks.add_x_ai_description',
     ],
 }
