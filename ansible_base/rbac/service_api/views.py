@@ -1,11 +1,11 @@
 from django.db import transaction
 from django.db.models import OuterRef, Subquery
-from drf_spectacular.utils import extend_schema
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet, mixins
 
+from ansible_base.lib.utils.schema import extend_schema_if_available
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.lib.utils.views.permissions import try_add_oauth2_scope_permission
 from ansible_base.resource_registry.models import Resource
@@ -178,7 +178,7 @@ class ServiceObjectDeleteViewSet(viewsets.ViewSet):
 
     permission_classes = try_add_oauth2_scope_permission([HasResourceRegistryPermissions])
 
-    @extend_schema(extensions={'x-ai-description': 'Remove all role assignments for a resource indexed from connected AAP services'})
+    @extend_schema_if_available(extensions={'x-ai-description': 'Remove all role assignments for a resource indexed from connected AAP services'})
     def create(self, request):
         """
         Delete all role assignments (user and team) for a specific resource.

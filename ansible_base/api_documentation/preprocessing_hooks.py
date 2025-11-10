@@ -1,6 +1,6 @@
 import logging
 
-from ansible_base.api_documentation.path_utils import parse_path_segments
+from ansible_base.lib.utils.api_path_utils import parse_path_segments
 
 logger = logging.getLogger('ansible_base.api_documentation.preprocessing_hooks')
 
@@ -126,34 +126,32 @@ def collect_ai_description_metadata(endpoints, **kwargs):
     RESOURCE_PURPOSE_MAP.clear()
     OPERATION_CLASS_MAP.clear()
 
-    if not endpoints:
-        return endpoints
+    if endpoints:
+        for path, path_regex, method, view in endpoints:
+            try:
+                # Extract ViewSet class from the view
+                view_class = _get_view_class(view)
+                class_name = view_class.__name__
 
-    for path, path_regex, method, view in endpoints:
-        try:
-            # Extract ViewSet class from the view
-            view_class = _get_view_class(view)
-            class_name = view_class.__name__
+                # Extract operation_id prefix from path
+                prefix, path_parts, path_parts_count = _extract_prefix_from_path(path)
+                if prefix is None:
+                    continue
 
-            # Extract operation_id prefix from path
-            prefix, path_parts, path_parts_count = _extract_prefix_from_path(path)
-            if prefix is None:
+                # Store or handle collision for this prefix
+                if prefix not in OPERATION_CLASS_MAP:
+                    # First time seeing this prefix - store it
+                    OPERATION_CLASS_MAP[prefix] = (class_name, path_parts_count, path_parts)
+                else:
+                    # Handle collision (different ViewSet with same prefix)
+                    prefix = _handle_prefix_collision(prefix, class_name, path_parts_count, path_parts, OPERATION_CLASS_MAP)
+
+                # Register ViewSet attributes for AI description generation
+                _register_skip_ai_description(view_class, class_name, prefix)
+                _register_resource_purpose(view_class, class_name, prefix)
+
+            except Exception as e:
+                logger.debug(f"Error checking view metadata for {path} {method}: {e}")
                 continue
-
-            # Store or handle collision for this prefix
-            if prefix not in OPERATION_CLASS_MAP:
-                # First time seeing this prefix - store it
-                OPERATION_CLASS_MAP[prefix] = (class_name, path_parts_count, path_parts)
-            else:
-                # Handle collision (different ViewSet with same prefix)
-                prefix = _handle_prefix_collision(prefix, class_name, path_parts_count, path_parts, OPERATION_CLASS_MAP)
-
-            # Register ViewSet attributes for AI description generation
-            _register_skip_ai_description(view_class, class_name, prefix)
-            _register_resource_purpose(view_class, class_name, prefix)
-
-        except Exception as e:
-            logger.debug(f"Error checking view metadata for {path} {method}: {e}")
-            continue
 
     return endpoints

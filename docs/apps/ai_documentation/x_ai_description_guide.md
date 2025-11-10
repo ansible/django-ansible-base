@@ -9,23 +9,28 @@ The `x-ai-description` field is automatically generated for all API endpoints an
 The system uses a **two-tier approach** to generate descriptions:
 
 ### Priority 1: Explicit x-ai-description (Highest Priority)
-If you define `x-ai-description` explicitly using `@extend_schema`, it will be used as-is.
+If you define `x-ai-description` explicitly using `@extend_schema`, it will be used as-is 
+[as seen in this example](#using-extend_schema).
 
 ### Priority 2: resource_purpose Field (Recommended)
-If you define a `resource_purpose` field on your ViewSet, the hook will generate contextual descriptions for standard CRUD operations.
+If you define a `resource_purpose` field on your ViewSet, the hook will generate contextual descriptions for standard CRUD operations
+[as seen in this example](#using-resource_purpose).
 
 ### Fallback: Auto-generation
-If neither of the above are present, the hook generates basic descriptions from resource names and operation types.
+If neither of the above are present, the hook generates basic descriptions from resource names and operation types
+[as seen in this example](#auto-generated-descriptions).
 
 ### Example Transformations
 
-With `resource_purpose`:
+With `resource_purpose`, the hook automatically generates descriptions for all CRUD operations:
 
 | resource_purpose | Operation | Generated x-ai-description |
 |------------------|-----------|---------------------------|
 | "audit trail entries for tracking system changes" | GET (list) | "List audit trail entries for tracking system changes" |
 | "audit trail entries for tracking system changes" | POST (create) | "Create an audit trail entry for tracking system changes" |
 | "audit trail entries for tracking system changes" | GET (retrieve) | "Retrieve an audit trail entry for tracking system changes" |
+| "audit trail entries for tracking system changes" | PUT (update) | "Update an audit trail entry for tracking system changes" |
+| "audit trail entries for tracking system changes" | PATCH (partial_update) | "Update an audit trail entry for tracking system changes" |
 | "audit trail entries for tracking system changes" | DELETE (destroy) | "Delete an audit trail entry for tracking system changes" |
 
 ## Writing Good Descriptions
@@ -41,37 +46,7 @@ The `resource_purpose` field should describe:
 "<resource_plural> for <purpose/use_case>"
 ```
 
-**Examples:**
-
-```python
-class ActivityStreamViewSet(ReadOnlyModelViewSet):
-    """API endpoint for activity stream entries."""
-
-    resource_purpose = "audit trail entries for tracking system changes and user actions"
-
-    queryset = ActivityStream.objects.all()
-    serializer_class = ActivityStreamSerializer
-```
-
-```python
-class AuthenticatorViewSet(ModelViewSet):
-    """API endpoint for authenticators."""
-
-    resource_purpose = "authentication providers for configuring user login methods (LDAP, SAML, OAuth)"
-
-    queryset = Authenticator.objects.all()
-    serializer_class = AuthenticatorSerializer
-```
-
-```python
-class RoleDefinitionViewSet(ModelViewSet):
-    """API endpoint for role definitions."""
-
-    resource_purpose = "RBAC role templates defining permissions that can be assigned to users and teams"
-
-    queryset = RoleDefinition.objects.all()
-    serializer_class = RoleDefinitionSerializer
-```
+[See examples](#using-resource_purpose)
 
 ### Guidelines for resource_purpose
 
@@ -106,18 +81,42 @@ The hook will automatically truncate descriptions that exceed 300 characters.
 - Use parentheses for examples: "(LDAP, SAML, OAuth)"
 - Avoid redundant words: "for" instead of "used for"
 
+### Bad Examples
+
+**❌ Too long (exceeds 300 character limit):**
+```python
+resource_purpose = "authentication configuration mappings that define how external identity provider attributes should be transformed and applied to local user accounts, including complex rule-based matching for organizational membership, team assignments, and role-based access control permissions based on SAML assertions, LDAP group memberships, or OAuth claims"
+# Gets truncated with "..." - loses important information
+```
+
+**✅ Better (concise, under 200 chars):**
+```python
+resource_purpose = "attribute mapping rules for mapping users to organizations or teams based on external attributes"
+```
+
+**❌ Not LLM friendly (buries key information after 180 chars):**
+```python
+resource_purpose = "configuration objects used internally by the system's HTTP routing layer and primarily consumed by the proxy service for managing network traffic distribution. These define listener ports"
+# Key term "listener ports" appears too late; LLMs weight early tokens more heavily
+```
+
+**✅ Better (key terms first):**
+```python
+resource_purpose = "HTTP listener ports for routing incoming traffic to backend services"
+```
+
 ## When to Use Each Approach
+
+### Use `@extend_schema` with explicit `x-ai-description` when:
+- ✅ You have custom actions beyond CRUD
+- ✅ An operation needs unique context different from the resource purpose
+- ✅ You need fine-grained control over the description
 
 ### Use `resource_purpose` when:
 - ✅ The resource is **domain-specific** or uses technical jargon (e.g., "RBAC role templates", "JWT signing keys", "authentication providers")
 - ✅ The resource purpose isn't immediately obvious from its name (e.g., "authenticator maps" → "attribute mapping rules")
 - ✅ The resource needs contextual explanation for MCP tool selection (e.g., "audit trail entries for tracking system changes")
 - ✅ You have standard CRUD operations that all share the same core purpose
-
-### Use `@extend_schema` with explicit `x-ai-description` when:
-- ✅ You have custom actions beyond CRUD
-- ✅ An operation needs unique context different from the resource purpose
-- ✅ You need fine-grained control over the description
 
 ### Prefer auto-generation (no resource_purpose) when:
 - ✅ The resource is **self-explanatory** (e.g., "teams", "users", "organizations")
@@ -126,7 +125,84 @@ The hook will automatically truncate descriptions that exceed 300 characters.
 
 **Philosophy:** `resource_purpose` should be used sparingly. Docstrings serve human developers; `resource_purpose` serves AI tool selection. Only add `resource_purpose` when it provides meaningful context that auto-generation cannot capture.
 
-### Example combining both:
+## Opting Out
+
+If you need to disable automatic x-ai-description generation for a specific ViewSet/APIView, set the
+`skip_ai_description` field on the ViewSet, as seen below:
+
+```python
+class MyCustomViewSet(ModelViewSet):
+    skip_ai_description = True
+    queryset = MyModel.objects.all()
+    serializer_class = MySerializer
+```
+
+## Separation of Concerns
+
+**Docstrings are for human developers** - they can be detailed and conversational
+
+**resource_purpose is for AI/MCP tool selection** - it should be concise and optimized for tool selection
+
+[See code examples →](#docstrings-vs-resource_purpose)
+
+This separation ensures:
+- ✅ Docstrings can be detailed and conversational for developers
+- ✅ resource_purpose stays concise and optimized for AI tool selection
+- ✅ Each serves its intended audience without compromise
+
+## Examples
+
+### Using resource_purpose
+
+Basic examples with `resource_purpose` field:
+
+```python
+class ActivityStreamViewSet(ReadOnlyModelViewSet):
+    """API endpoint for activity stream entries."""
+
+    resource_purpose = "audit trail entries for tracking system changes and user actions"
+
+    queryset = ActivityStream.objects.all()
+    serializer_class = ActivityStreamSerializer
+```
+
+```python
+class AuthenticatorViewSet(ModelViewSet):
+    """API endpoint for authenticators."""
+
+    resource_purpose = "authentication providers for configuring user login methods (LDAP, SAML, OAuth)"
+
+    queryset = Authenticator.objects.all()
+    serializer_class = AuthenticatorSerializer
+```
+
+```python
+class RoleDefinitionViewSet(ModelViewSet):
+    """API endpoint for role definitions."""
+
+    resource_purpose = "RBAC role templates defining permissions that can be assigned to users and teams"
+
+    queryset = RoleDefinition.objects.all()
+    serializer_class = RoleDefinitionSerializer
+```
+
+### Using `@extend_schema`
+
+Example with explicit `x-ai-description`:
+
+```python
+from drf_spectacular.utils import extend_schema
+
+@extend_schema(extensions={"x-ai-description": "Retrieves details regarding the currently authenticated user"})
+class MeViewSet(viewsets.ReadOnlyModelViewSet, AnsibleBaseView):
+    model = User
+    serializer_class = UserSerializer
+    ...
+```
+
+### Combining Both Approaches
+
+Using `resource_purpose` for CRUD operations and `@extend_schema` for custom actions:
 
 ```python
 from drf_spectacular.utils import extend_schema
@@ -151,21 +227,10 @@ class AuthenticatorViewSet(ModelViewSet):
         ...
 ```
 
-## Opting Out
+### Docstrings vs resource_purpose
 
-If you need to disable automatic x-ai-description generation for a specific ViewSet/APIView, set the
-`skip_ai_description` field on the ViewSet, as seen in the following example:
+Demonstrating the separation of concerns:
 
-```python
-class MyCustomViewSet(ModelViewSet):
-    skip_ai_description = True
-    queryset = MyModel.objects.all()
-    serializer_class = MySerializer
-```
-
-## Separation of Concerns
-
-**Docstrings are for human developers:**
 ```python
 class TeamViewSet(ModelViewSet):
     """
@@ -177,7 +242,6 @@ class TeamViewSet(ModelViewSet):
     serializer_class = TeamSerializer
 ```
 
-**resource_purpose is for AI/MCP tool selection:**
 ```python
 class AuthenticatorMapViewSet(ModelViewSet):
     """API endpoint for authenticator maps."""
@@ -188,10 +252,27 @@ class AuthenticatorMapViewSet(ModelViewSet):
     serializer_class = AuthenticatorMapSerializer
 ```
 
-This separation ensures:
-- ✅ Docstrings can be detailed and conversational for developers
-- ✅ resource_purpose stays concise and optimized for AI tool selection
-- ✅ Each serves its intended audience without compromise
+### Auto-generated Descriptions
+
+For self-explanatory resources, no `resource_purpose` is needed:
+
+```python
+class UserViewSet(ModelViewSet):
+    """API endpoint for users."""
+
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    # Auto-generates: "List users", "Create a user", "Retrieve a user", etc.
+```
+
+```python
+class OrganizationViewSet(ModelViewSet):
+    """API endpoint for organizations."""
+
+    queryset = Organization.objects.all()
+    serializer_class = OrganizationSerializer
+    # Auto-generates: "List organizations", "Create an organization", etc.
+```
 
 ## Testing Your Descriptions
 

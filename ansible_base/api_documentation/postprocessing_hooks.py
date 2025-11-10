@@ -1,14 +1,19 @@
 import logging
 
-from ansible_base.api_documentation.path_utils import (
+from inflection import singularize
+
+from ansible_base.api_documentation.preprocessing_hooks import OPERATION_CLASS_MAP, RESOURCE_PURPOSE_MAP, SKIP_AI_DESCRIPTION_PREFIXES
+from ansible_base.lib.utils.api_path_utils import (
     extract_operation_action,
     extract_operation_prefix,
     filter_api_prefixes,
     parse_path_segments,
 )
-from ansible_base.api_documentation.preprocessing_hooks import OPERATION_CLASS_MAP, RESOURCE_PURPOSE_MAP, SKIP_AI_DESCRIPTION_PREFIXES
 
 logger = logging.getLogger('ansible_base.api_documentation.postprocessing_hooks')
+
+# Valid HTTP methods for OpenAPI operations
+HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options']
 
 # Operation name mappings for different HTTP methods and actions
 OPERATION_DESCRIPTIVE_NAMES = {
@@ -22,37 +27,18 @@ OPERATION_DESCRIPTIVE_NAMES = {
     'delete': 'Delete existing',
 }
 
-# Irregular plurals that shouldn't have 's' stripped
-IRREGULAR_PLURALS = {
-    'status': 'status',  # status -> status (same singular/plural)
-    'data': 'datum',
-    'criteria': 'criterion',
-    'analysis': 'analysis',
-    'basis': 'basis',
+# Operation description templates for generating descriptions from resource_purpose
+# These lambdas are used to create contextual descriptions for CRUD operations
+OPERATION_DESCRIPTION_TEMPLATES = {
+    'list': lambda p: f"List {p}",
+    'retrieve': lambda p: f"Retrieve a {singularize_resource_purpose(p)}",
+    'read': lambda p: f"Retrieve a {singularize_resource_purpose(p)}",
+    'create': lambda p: f"Create a {singularize_resource_purpose(p)}",
+    'update': lambda p: f"Update a {singularize_resource_purpose(p)}",
+    'partial_update': lambda p: f"Update a {singularize_resource_purpose(p)}",
+    'destroy': lambda p: f"Delete a {singularize_resource_purpose(p)}",
+    'delete': lambda p: f"Delete a {singularize_resource_purpose(p)}",
 }
-
-# No longer needed - we use a generic "for" preposition for all nested resources
-
-
-def singularize_resource(resource_name):
-    """Convert resource name to singular form, handling irregular plurals."""
-    # Check for irregular plurals first
-    if resource_name in IRREGULAR_PLURALS:
-        return IRREGULAR_PLURALS[resource_name]
-
-    # Handle common patterns
-    if resource_name.endswith('ies'):
-        # e.g., 'categories' -> 'category'
-        return resource_name[:-3] + 'y'
-    elif resource_name.endswith('ses'):
-        # e.g., 'addresses' -> 'address'
-        return resource_name[:-2]
-    elif resource_name.endswith('s') and len(resource_name) > 1:
-        # Standard plural: just remove 's'
-        return resource_name[:-1]
-
-    # Already singular or unknown pattern
-    return resource_name
 
 
 def _extract_resource_parts_from_operation_id(operation_id, action):
@@ -80,7 +66,7 @@ def _extract_parent_from_prefix(parts, placeholder_index):
     parent_segments = parse_path_segments(parent_prefix)
 
     if parent_segments:
-        return singularize_resource(parent_segments[-1])
+        return singularize(parent_segments[-1])
 
     return None
 
@@ -155,7 +141,7 @@ def format_compound_resource(resource_parts, parent_resource, action):
             return f"{child_resource} for {article} {parent_resource}"
         else:
             # For singular actions, singularize child
-            singular_child = singularize_resource(child_resource)
+            singular_child = singularize(child_resource)
             return f"{singular_child} for {article} {parent_resource}"
 
     return resource_name
@@ -163,19 +149,7 @@ def format_compound_resource(resource_parts, parent_resource, action):
 
 def generate_description_from_purpose(resource_purpose, action):
     """Generate x-ai-description from resource_purpose using action templates."""
-    # Templates optimized for MCP tool understanding
-    action_templates = {
-        'list': lambda p: f"List {p}",
-        'retrieve': lambda p: f"Retrieve a {singularize_resource_purpose(p)}",
-        'read': lambda p: f"Retrieve a {singularize_resource_purpose(p)}",
-        'create': lambda p: f"Create a {singularize_resource_purpose(p)}",
-        'update': lambda p: f"Update a {singularize_resource_purpose(p)}",
-        'partial_update': lambda p: f"Update a {singularize_resource_purpose(p)}",
-        'destroy': lambda p: f"Delete a {singularize_resource_purpose(p)}",
-        'delete': lambda p: f"Delete a {singularize_resource_purpose(p)}",
-    }
-
-    template = action_templates.get(action)
+    template = OPERATION_DESCRIPTION_TEMPLATES.get(action)
     return template(resource_purpose) if template else resource_purpose
 
 
@@ -199,7 +173,7 @@ def singularize_resource_purpose(purpose):
             words = noun_phrase.split()
             if words:
                 last_word = words[-1]
-                singular_last = singularize_resource(last_word)
+                singular_last = singularize(last_word)
                 words[-1] = singular_last
                 singular_noun = ' '.join(words)
             else:
@@ -214,7 +188,7 @@ def singularize_resource_purpose(purpose):
         return purpose
 
     last_word = words[-1]
-    singular_last = singularize_resource(last_word)
+    singular_last = singularize(last_word)
     words[-1] = singular_last
     return ' '.join(words)
 
@@ -232,7 +206,7 @@ def generate_associate_description(operation_id, path, resource_name):
 
     if len(path_parts) >= 2:
         child = path_parts[-1].replace('_', ' ')
-        parent_singular = singularize_resource(path_parts[-2])
+        parent_singular = singularize(path_parts[-2])
         parent_readable = parent_singular.replace('_', ' ')
         article = 'an' if parent_readable[0].lower() in 'aeiou' else 'a'
 
@@ -255,15 +229,15 @@ def generate_crud_description(action, operation_name, resource_name, parent_reso
     if action == 'partial_update':
         if parent_resource:
             return f"Partially update existing {resource_name}"
-        return f"Partially update existing {singularize_resource(resource_name)}"
+        return f"Partially update existing {singularize(resource_name)}"
 
-    # For other CRUD operations (retrieve, read, create, update, destroy, delete)
-    if action in ['retrieve', 'read', 'create', 'update', 'destroy', 'delete']:
+    # For other CRUD operations supported by OPERATION_DESCRIPTION_TEMPLATES
+    if action in OPERATION_DESCRIPTION_TEMPLATES.keys():
         if parent_resource:
             # Compound resources already formatted
             return f"{operation_name} {resource_name}"
         # Simple resources need singularization
-        return f"{operation_name} {singularize_resource(resource_name)}"
+        return f"{operation_name} {singularize(resource_name)}"
 
     return None  # Indicate that this isn't a standard CRUD operation
 
@@ -292,7 +266,7 @@ def clean_base_description(description):
     ]
 
     for prefix in prefixes_to_remove:
-        if clean_desc.startswith(prefix):
+        if clean_desc.lower().startswith(prefix.lower()):
             clean_desc = clean_desc[len(prefix) :].strip()
             break
 
@@ -311,11 +285,6 @@ def clean_base_description(description):
             clean_desc = first_line[:100]
 
     return clean_desc.strip()
-
-
-def _should_skip_operation(method):
-    """Check if a method key should be skipped (is not an HTTP operation)."""
-    return method not in ['get', 'post', 'put', 'patch', 'delete', 'head', 'options']
 
 
 def _should_skip_ai_description(operation_id):
@@ -347,7 +316,7 @@ def _generate_from_resource_purpose(resource_purpose, action):
     if not resource_purpose:
         return None
 
-    if action in ['list', 'retrieve', 'read', 'create', 'update', 'partial_update', 'destroy', 'delete']:
+    if action in OPERATION_DESCRIPTION_TEMPLATES.keys():
         return generate_description_from_purpose(resource_purpose, action)
 
     return None
@@ -457,7 +426,7 @@ def add_x_ai_description(result, generator, request, public):
     for path, path_item in paths.items():
         for method, operation in path_item.items():
             # Skip non-operation keys (like 'parameters')
-            if _should_skip_operation(method):
+            if method not in HTTP_METHODS:
                 continue
 
             # Process this operation to add x-ai-description

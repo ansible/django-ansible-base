@@ -116,7 +116,7 @@ class RoleDefinitionViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
     but can be assigned to users.
     """
 
-    resource_purpose = "RBAC role templates defining permissions that can be assigned to users and teams"
+    resource_purpose = "RBAC roles defining permissions that can be managed and assigned to users and teams"
 
     queryset = RoleDefinition.objects.prefetch_related('created_by', 'modified_by', 'content_type', 'permissions', 'resource')
     serializer_class = RoleDefinitionSerializer

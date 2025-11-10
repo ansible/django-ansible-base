@@ -5,6 +5,8 @@ These tests verify the behavior of functions used to generate x-ai-description
 fields in the OpenAPI spec for MCP (Model Context Protocol) server tools.
 """
 
+from inflection import singularize
+
 from ansible_base.api_documentation.postprocessing_hooks import (
     add_x_ai_description,
     clean_base_description,
@@ -14,7 +16,6 @@ from ansible_base.api_documentation.postprocessing_hooks import (
     generate_crud_description,
     generate_custom_action_description,
     generate_description_from_purpose,
-    singularize_resource,
     singularize_resource_purpose,
 )
 from ansible_base.api_documentation.preprocessing_hooks import OPERATION_CLASS_MAP, RESOURCE_PURPOSE_MAP, SKIP_AI_DESCRIPTION_PREFIXES
@@ -605,28 +606,28 @@ class TestHelperFunctions:
 
     def test_singularize_resource_standard_plural(self):
         """Test singularizing standard plural forms."""
-        assert singularize_resource('teams') == 'team'
-        assert singularize_resource('users') == 'user'
-        assert singularize_resource('routes') == 'route'
+        assert singularize('teams') == 'team'
+        assert singularize('users') == 'user'
+        assert singularize('routes') == 'route'
 
     def test_singularize_resource_ies_ending(self):
         """Test singularizing words ending in 'ies'."""
-        assert singularize_resource('categories') == 'category'
-        assert singularize_resource('entries') == 'entry'
+        assert singularize('categories') == 'category'
+        assert singularize('entries') == 'entry'
 
     def test_singularize_resource_ses_ending(self):
         """Test singularizing words ending in 'ses'."""
-        assert singularize_resource('addresses') == 'address'
+        assert singularize('addresses') == 'address'
 
     def test_singularize_resource_irregular(self):
         """Test singularizing irregular plurals."""
-        assert singularize_resource('status') == 'status'
-        assert singularize_resource('data') == 'datum'
+        assert singularize('status') == 'status'
+        assert singularize('data') == 'datum'
 
     def test_singularize_resource_already_singular(self):
         """Test that already singular words are unchanged."""
-        assert singularize_resource('team') == 'team'
-        assert singularize_resource('port') == 'port'
+        assert singularize('team') == 'team'
+        assert singularize('port') == 'port'
 
     def test_singularize_resource_purpose_with_preposition(self):
         """Test singularizing resource_purpose with prepositions."""
