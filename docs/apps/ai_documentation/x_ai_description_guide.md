@@ -10,18 +10,102 @@ is not found.
 
 ## How It Works
 
-The system uses a **two-tier approach** to generate descriptions:
+The system uses a **two-phase hook process** during OpenAPI schema generation:
 
-### Priority 1: Explicit x-ai-description (Highest Priority)
-If you define `x-ai-description` explicitly using `@extend_schema_if_available`, it will be used as-is 
+### Phase 1: Preprocessing (Metadata Collection)
+
+Before the OpenAPI schema is generated, the **preprocessing hook** (`collect_ai_description_metadata`) inspects all registered ViewSets and collects metadata:
+
+1. **Scans all API endpoints** from Django's URL routing
+2. **Extracts operation prefix from URL path**:
+   - Example: `/api/v1/teams/` → prefix `"teams"`
+   - Example: `/api/v1/http_ports/` → prefix `"http_ports"`
+3. **Extracts ViewSet metadata** for each endpoint:
+   - `resource_purpose` field (if defined)
+   - `skip_ai_description` flag (if set)
+   - ViewSet class name
+4. **Creates global mappings** stored in memory:
+   - `OPERATION_CLASS_MAP`: Maps operation prefixes to ViewSet class names
+   - `RESOURCE_PURPOSE_MAP`: Maps ViewSet class names to their `resource_purpose` values
+   - `SKIP_AI_DESCRIPTION_PREFIXES`: Tracks ViewSets that have opted out
+5. **Resolves naming collisions** when multiple ViewSets share the same resource name:
+   - Example: Both `/api/v1/teams/` and `/api/v1/orgs/{id}/teams/` end with "teams"
+   - The main resource (`/teams/`) gets the simple prefix: `teams_list`, `teams_create`, etc.
+   - The nested resource (`/orgs/{id}/teams/`) gets a compound prefix: `orgs_teams_list`, `orgs_teams_create`, etc.
+
+### Phase 2: Postprocessing (Description Generation)
+
+After the OpenAPI schema is fully generated, the **postprocessing hook** (`add_x_ai_description`) adds `x-ai-description` fields:
+
+1. **Iterates through all operations** in the generated schema (`paths[path][method]`)
+2. **Extracts the operation ID** (e.g., `teams_list`, `http_ports_retrieve`)
+   - drf-spectacular generates operation IDs from URL paths, keeping it consistent with the preprocessing hook
+   - Example: `/api/v1/http_ports/` → `http_ports_list`
+3. **Extracts prefix from operation ID** to look up metadata:
+   - Example: `teams_list` → prefix `"teams"`
+   - Example: `http_ports_retrieve` → prefix `"http_ports"`
+4. **Looks up metadata** using the operation ID prefix:
+   - Checks if ViewSet opted out (`SKIP_AI_DESCRIPTION_PREFIXES`)
+   - Retrieves `resource_purpose` via `OPERATION_CLASS_MAP` → `RESOURCE_PURPOSE_MAP`
+5. **Generates x-ai-description** using a priority system (see below)
+6. **Adds the field** to the operation in the OpenAPI schema
+
+#### Example: Where x-ai-description Appears in the OpenAPI Schema
+
+For a ViewSet with `resource_purpose = "audit trail entries for tracking system changes"`, the postprocessing hook adds the `x-ai-description` field to each operation in the generated OpenAPI schema:
+
+```json
+{
+  "paths": {
+    "/api/v1/activitystream/": {
+      "get": {
+        "operationId": "activitystream_list",
+        "summary": "List Activity Streams",
+        "description": "API endpoint for activity stream entries.",
+        "x-ai-description": "List audit trail entries for tracking system changes",
+        "parameters": [...],
+        "responses": {...}
+      },
+      "post": {
+        "operationId": "activitystream_create",
+        "summary": "Create Activity Stream",
+        "description": "API endpoint for activity stream entries.",
+        "x-ai-description": "Create an audit trail entry for tracking system changes",
+        "requestBody": {...},
+        "responses": {...}
+      }
+    },
+    "/api/v1/activitystream/{id}/": {
+      "get": {
+        "operationId": "activitystream_retrieve",
+        "summary": "Retrieve Activity Stream",
+        "description": "API endpoint for activity stream entries.",
+        "x-ai-description": "Retrieve an audit trail entry for tracking system changes",
+        "parameters": [...],
+        "responses": {...}
+      }
+    }
+  }
+}
+```
+
+The hook adds `x-ai-description` at `paths[path][method]["x-ai-description"]` for each operation, using the operation ID to look up the appropriate description via the global mappings created during preprocessing.
+
+### Description Generation Priority
+
+The postprocessing hook uses a **three-tier priority system**:
+
+#### Priority 1: Explicit x-ai-description
+If you define `x-ai-description` explicitly using `@extend_schema_if_available`, it will be used as-is
 [as seen in this example](#using-extend_schema_if_available).
 
-### Priority 2: resource_purpose Field (Recommended)
+#### Priority 2: resource_purpose Field
 If you define a `resource_purpose` field on your ViewSet, the hook will generate contextual descriptions for standard CRUD operations
 [as seen in this example](#using-resource_purpose).
 
-### Fallback: Auto-generation
-If neither of the above are present, the hook generates basic descriptions from resource names and operation types
+#### Priority 3: Auto-generation
+There's a fallback mechanism to ensure the field is present if neither of the above are used. In this scenario the hook generates basic descriptions from
+resource names and operation types 
 [as seen in this example](#auto-generated-descriptions).
 
 ### Example Transformations
