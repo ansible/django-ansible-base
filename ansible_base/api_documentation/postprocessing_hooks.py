@@ -304,9 +304,11 @@ def clean_base_description(description: str) -> str:
     # Obtain the full multi-line description by joining lines
     clean_desc = ' '.join(clean_desc.split('\n'))
 
-    # Obtain the first sentence, if one exists
-    if '.' in clean_desc:
-        clean_desc = clean_desc.split('.')[0]
+    # Obtain the first sentence by splitting on sentence-ending punctuation
+    for punct in ['.', '!', '?']:
+        if punct in clean_desc:
+            clean_desc = clean_desc.split(punct)[0]
+            break
 
     # Remove trailing punctuation
     clean_desc = clean_desc.rstrip('.,;:!?')
