@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from inflection import singularize
 
@@ -399,7 +399,7 @@ def _process_operation(operation: dict, method: str, path: str) -> None:
     operation['x-ai-description'] = _enforce_character_limit(ai_description)
 
 
-def add_x_ai_description(result: dict, generator, request, public) -> dict:
+def add_x_ai_description(result: dict, generator: Any, request: Any, public: Optional[bool]) -> dict:
     """
     Postprocessing hook for drf-spectacular that adds x-ai-description fields to all operations.
 

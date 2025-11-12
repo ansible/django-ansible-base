@@ -46,7 +46,9 @@ def _create_compound_prefix(path_parts: list[str], fallback_prefix: str) -> str:
     return fallback_prefix
 
 
-def _handle_prefix_collision(prefix: str, class_name: str, path_parts_count: int, path_parts: list[str], operation_class_map: dict[str, tuple[str, int, list[str]]]) -> str:
+def _handle_prefix_collision(
+    prefix: str, class_name: str, path_parts_count: int, path_parts: list[str], operation_class_map: dict[str, tuple[str, int, list[str]]]
+) -> str:
     """
     Handle collision when multiple ViewSets use the same operation_id prefix.
     ViewSet with fewer path parts gets simple prefix; the other gets compound prefix.
