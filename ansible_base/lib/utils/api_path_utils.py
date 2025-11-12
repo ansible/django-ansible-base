@@ -13,6 +13,11 @@ def parse_path_segments(path: str) -> List[str]:
     """
     Parse URL path into segments, excluding placeholders.
     Handles both Django (<pk>) and OpenAPI ({id}) formats.
+    Examples:
+        >>> parse_path_segments('/api/v1/teams/')
+        ['api', 'v1', 'teams']
+        >>> parse_path_segments('/api/v1/teams/{id}/users/')
+        ['api', 'v1', 'teams', 'users']
     """
     return [p for p in path.split('/') if p and not p.startswith(('<', '{'))]
 
