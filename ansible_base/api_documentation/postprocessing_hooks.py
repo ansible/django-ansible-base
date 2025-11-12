@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 
 from inflection import singularize
 
@@ -41,27 +42,26 @@ OPERATION_DESCRIPTION_TEMPLATES = {
 }
 
 
-def _extract_resource_parts_from_operation_id(operation_id, action):
-    """Extract resource parts from operation_id by removing the action suffix."""
-    # Handle special case of "partial_update" which has two underscores
-    if action == 'partial_update' and '_partial_update' in operation_id:
-        return operation_id.split('_')[:-2] if operation_id.count('_') >= 2 else []
+def _has_segments_after_placeholder(parts: list[str], placeholder_index: int) -> bool:
+    """
+    Check if there are non-placeholder resource segments after a URL path parameter placeholder.
 
-    # Standard case: remove the last segment (the action)
-    if '_' in operation_id:
-        return operation_id.split('_')[:-1]
-
-    return []
-
-
-def _has_segments_after_placeholder(parts, placeholder_index):
-    """Check if there are non-placeholder resource segments after a placeholder."""
+    Placeholders are URL path parameters (any segment starting with '{') that represent specific resource instances.
+    For example, in '/api/v1/teams/{id}/users/', '{id}' is a placeholder for a specific team's ID.
+    This function checks if there are resource segments (like 'users') after the placeholder.
+    """
     remaining_parts = [p for p in parts[placeholder_index + 1 :] if p and not p.startswith('{')]
     return bool(remaining_parts)
 
 
-def _extract_parent_from_prefix(parts, placeholder_index):
-    """Extract parent resource name (singular) from path segments before a placeholder."""
+def _extract_parent_from_prefix(parts: list[str], placeholder_index: int) -> Optional[str]:
+    """
+    Extract parent resource name (singular) from path segments before a URL path parameter placeholder.
+
+    Placeholders (any segment starting with '{') represent specific resource instances.
+    For example, in '/api/v1/teams/{id}/users/', this extracts 'team' (singular)
+    from the segments before the {id} placeholder.
+    """
     parent_prefix = '/'.join(parts[: placeholder_index + 1])
     parent_segments = parse_path_segments(parent_prefix)
 
@@ -71,36 +71,43 @@ def _extract_parent_from_prefix(parts, placeholder_index):
     return None
 
 
-def _find_parent_resource_from_path(path, placeholders=None):
+def _find_parent_resource_from_path(path: str) -> Optional[str]:
     """
-    Find parent resource in nested REST path by detecting placeholders with segments after.
-    Returns singular parent resource name or None if not nested.
+    Find parent resource in nested REST path by detecting URL path parameter placeholders with segments after.
+
+    Placeholders are URL path parameters (like {id}, {pk}, {name}, {slug}, etc.) that represent specific resource instances.
+    If there are additional resource segments after a placeholder, this indicates a nested parent-child relationship.
+
+    Examples:
+        '/api/v1/teams/{id}/users/' -> Returns 'team' (parent of users)
+        '/api/v1/teams/{name}/members/' -> Returns 'team' (parent of members)
+        '/api/v1/teams/' -> Returns None (not nested)
+        '/api/v1/teams/{id}/' -> Returns None (no child resource)
+
+    Args:
+        path: The URL path to analyze
+
+    Returns:
+        Singular parent resource name or None if not nested.
     """
-    if placeholders is None:
-        placeholders = ['{id}', '{pk}']
-
-    # Check if any placeholder exists in the path
-    if not any(placeholder in path for placeholder in placeholders):
-        return None
-
     # Split path into segments
     parts = path.split('/')
 
-    # Find the first parameter placeholder
-    placeholder_index = next((i for i, part in enumerate(parts) if part in placeholders), -1)
+    # Find the first placeholder (any segment starting with '{')
+    placeholder_index = next((i for i, part in enumerate(parts) if part.startswith('{')), -1)
 
     if placeholder_index == -1:
         return None
 
     # Check if there are resource segments after the placeholder
     if not _has_segments_after_placeholder(parts, placeholder_index):
-        return None  # Not truly nested
+        return None  # Not truly nested - no child resources after placeholder
 
     # Extract and return parent resource name
     return _extract_parent_from_prefix(parts, placeholder_index)
 
 
-def extract_action_and_resource(operation_id, path):
+def extract_action_and_resource(operation_id: str, path: str) -> tuple[str, list[str], Optional[str]]:
     """
     Extract action, resource parts, and parent resource from operation_id and path.
     Returns: (action, resource_parts, parent_resource)
@@ -108,8 +115,11 @@ def extract_action_and_resource(operation_id, path):
     # Extract action using utility function
     action = extract_operation_action(operation_id)
 
-    # Extract resource parts from operation_id
-    resource_parts = _extract_resource_parts_from_operation_id(operation_id, action)
+    # Extract resource parts from operation_id (prefix before action, split into parts)
+    # Example: 'teams_users_create' -> ['teams', 'users']  (removes 'create')
+    # If prefix equals action, there are no resource parts (e.g., 'retrieve' -> no resources)
+    prefix = extract_operation_prefix(operation_id)
+    resource_parts = prefix.split('_') if prefix and prefix != action else []
 
     # Detect parent-child relationships from path
     parent_resource = _find_parent_resource_from_path(path)
@@ -117,12 +127,15 @@ def extract_action_and_resource(operation_id, path):
     # Fallback to extracting from path if no resource_parts
     if not resource_parts:
         path_parts = parse_path_segments(path)
-        resource_parts = [path_parts[-1]] if path_parts else ['resource']
+        if path_parts:
+            resource_parts = [path_parts[-1]]
+        else:
+            resource_parts = ['resource']
 
     return action, resource_parts, parent_resource
 
 
-def format_compound_resource(resource_parts, parent_resource, action):
+def format_compound_resource(resource_parts: list[str], parent_resource: Optional[str], action: str) -> str:
     """
     Format compound resource names with proper prepositions for nested resources.
     E.g., "users for a team", "route for an HTTP port"
@@ -134,7 +147,10 @@ def format_compound_resource(resource_parts, parent_resource, action):
         child_resource = resource_parts[-1]
 
         # Determine article (a/an) based on parent resource
-        article = 'an' if parent_resource[0].lower() in 'aeiou' else 'a'
+        if parent_resource[0].lower() in 'aeiou':
+            article = 'an'
+        else:
+            article = 'a'
 
         # For list actions, use plural child
         if action == 'list':
@@ -147,13 +163,15 @@ def format_compound_resource(resource_parts, parent_resource, action):
     return resource_name
 
 
-def generate_description_from_purpose(resource_purpose, action):
+def generate_description_from_purpose(resource_purpose: str, action: str) -> str:
     """Generate x-ai-description from resource_purpose using action templates."""
     template = OPERATION_DESCRIPTION_TEMPLATES.get(action)
-    return template(resource_purpose) if template else resource_purpose
+    if template:
+        return template(resource_purpose)
+    return resource_purpose
 
 
-def singularize_resource_purpose(purpose):
+def singularize_resource_purpose(purpose: str) -> str:
     """
     Singularize resource_purpose by finding prepositions and singularizing the noun phrase before.
     E.g., "audit trail entries for tracking..." -> "audit trail entry for tracking..."
@@ -167,7 +185,10 @@ def singularize_resource_purpose(purpose):
             # Split on first occurrence to separate noun phrase from context
             parts = purpose.split(prep, 1)
             noun_phrase = parts[0]
-            context = parts[1] if len(parts) > 1 else ''
+            if len(parts) > 1:
+                context = parts[1]
+            else:
+                context = ''
 
             # Singularize the noun phrase (last word)
             words = noun_phrase.split()
@@ -193,7 +214,7 @@ def singularize_resource_purpose(purpose):
     return ' '.join(words)
 
 
-def generate_associate_description(operation_id, path, resource_name):
+def generate_associate_description(operation_id: str, path: str, resource_name: str) -> str:
     """Generate description for associate/disassociate operations."""
     is_associate = operation_id.endswith('_associate_create')
 
@@ -204,22 +225,29 @@ def generate_associate_description(operation_id, path, resource_name):
     if path_parts and path_parts[-1] in ['associate', 'disassociate']:
         path_parts = path_parts[:-1]
 
+    if is_associate:
+        verb = "Associate"
+        preposition = "with"
+    else:
+        verb = "Disassociate"
+        preposition = "from"
+
     if len(path_parts) >= 2:
         child = path_parts[-1].replace('_', ' ')
         parent_singular = singularize(path_parts[-2])
         parent_readable = parent_singular.replace('_', ' ')
-        article = 'an' if parent_readable[0].lower() in 'aeiou' else 'a'
 
-        verb = "Associate" if is_associate else "Disassociate"
-        preposition = "with" if is_associate else "from"
+        if parent_readable[0].lower() in 'aeiou':
+            article = 'an'
+        else:
+            article = 'a'
         return f"{verb} {child} {preposition} {article} {parent_readable}"
 
     # Fallback if pattern doesn't match
-    verb = "Associate" if is_associate else "Disassociate"
     return f"{verb} {resource_name}"
 
 
-def generate_crud_description(action, operation_name, resource_name, parent_resource):
+def generate_crud_description(action: str, operation_name: str, resource_name: str, parent_resource: Optional[str]) -> Optional[str]:
     """Generate description for standard CRUD operations."""
     # For list operations, use the name as-is (already formatted)
     if action == 'list':
@@ -234,7 +262,8 @@ def generate_crud_description(action, operation_name, resource_name, parent_reso
     # For other CRUD operations supported by OPERATION_DESCRIPTION_TEMPLATES
     if action in OPERATION_DESCRIPTION_TEMPLATES.keys():
         if parent_resource:
-            # Compound resources already formatted
+            # Compound resources, which imply a relationship between two elements,
+            # are already formatted by format_compound_resource()
             return f"{operation_name} {resource_name}"
         # Simple resources need singularization
         return f"{operation_name} {singularize(resource_name)}"
@@ -242,14 +271,16 @@ def generate_crud_description(action, operation_name, resource_name, parent_reso
     return None  # Indicate that this isn't a standard CRUD operation
 
 
-def generate_custom_action_description(operation_name, resource_name, operation):
+def generate_custom_action_description(operation_name: str, resource_name: str, operation: dict) -> str:
     """Generate description for custom actions."""
     base_description = operation.get('description', '').strip()
     clean_desc = clean_base_description(base_description)
-    return f"{operation_name} {clean_desc}" if clean_desc else f"{operation_name} {resource_name}"
+    if clean_desc:
+        return f"{operation_name} {clean_desc}"
+    return f"{operation_name} {resource_name}"
 
 
-def clean_base_description(description):
+def clean_base_description(description: str) -> str:
     """Clean up base description by removing common boilerplate."""
     if not description:
         return ""
@@ -270,35 +301,21 @@ def clean_base_description(description):
             clean_desc = clean_desc[len(prefix) :].strip()
             break
 
-    # Remove trailing period
-    if clean_desc.endswith('.'):
-        clean_desc = clean_desc[:-1]
+    # Obtain the full multi-line description by joining lines
+    clean_desc = ' '.join(clean_desc.split('\n'))
 
-    # If description is too long or contains multiple sentences, truncate
-    # This handles cases like settings_getter where entire docstring was used
-    if len(clean_desc) > 100 or '\n' in clean_desc:
-        # Take first sentence or first 100 chars
-        first_line = clean_desc.split('\n')[0]
-        if '.' in first_line[:100]:
-            clean_desc = first_line.split('.')[0]
-        else:
-            clean_desc = first_line[:100]
+    # Obtain the first sentence, if one exists
+    if '.' in clean_desc:
+        clean_desc = clean_desc.split('.')[0]
 
+    # Remove trailing punctuation
+    clean_desc = clean_desc.rstrip('.,;:!?')
+
+    # We enforce a hard limit at the end of our processing; no need to repeat it here.
     return clean_desc.strip()
 
 
-def _should_skip_ai_description(operation_id):
-    """Check if an operation should skip AI description generation."""
-    if not operation_id:
-        return False
-
-    prefix = operation_id.split('_')[0] if '_' in operation_id else operation_id
-    if prefix in SKIP_AI_DESCRIPTION_PREFIXES:
-        return True
-    return False
-
-
-def _lookup_resource_purpose(operation_id):
+def _lookup_resource_purpose(operation_id: str) -> tuple[Optional[str], Optional[str]]:
     """Look up resource_purpose for an operation via its prefix and ViewSet class."""
     prefix = extract_operation_prefix(operation_id)
     class_info = OPERATION_CLASS_MAP.get(prefix)
@@ -311,18 +328,15 @@ def _lookup_resource_purpose(operation_id):
     return resource_purpose, class_name
 
 
-def _generate_from_resource_purpose(resource_purpose, action):
+def _generate_from_resource_purpose(resource_purpose: Optional[str], action: str) -> Optional[str]:
     """Generate description from resource_purpose if action is supported."""
-    if not resource_purpose:
-        return None
-
-    if action in OPERATION_DESCRIPTION_TEMPLATES.keys():
+    if resource_purpose and action in OPERATION_DESCRIPTION_TEMPLATES.keys():
         return generate_description_from_purpose(resource_purpose, action)
 
     return None
 
 
-def _generate_description_auto(operation_id, action, resource_parts, parent_resource, path, operation):
+def _generate_description_auto(operation_id: str, action: str, resource_parts: list[str], parent_resource: Optional[str], path: str, operation: dict) -> str:
     """Auto-generate description from resource names and operation type."""
     # Format the resource name with proper grammar
     resource_name = format_compound_resource(resource_parts, parent_resource, action)
@@ -344,14 +358,14 @@ def _generate_description_auto(operation_id, action, resource_parts, parent_reso
     return ai_description
 
 
-def _enforce_character_limit(description, max_length=300):
+def _enforce_character_limit(description: str, max_length: int = 300) -> str:
     """Enforce character limit on description, truncating if necessary."""
     if len(description) > max_length:
         return description[: max_length - 3] + "..."
     return description
 
 
-def _process_operation(operation, method, path):
+def _process_operation(operation: dict, method: str, path: str) -> None:
     """Process a single operation to add x-ai-description (modifies operation in-place)."""
     # Skip if already has x-ai-description (respect explicit definitions)
     if 'x-ai-description' in operation:
@@ -362,7 +376,8 @@ def _process_operation(operation, method, path):
     operation_id = operation.get('operationId', '')
 
     # Check if the ViewSet has opted out of AI description generation
-    if _should_skip_ai_description(operation_id):
+    if extract_operation_prefix(operation_id) in SKIP_AI_DESCRIPTION_PREFIXES:
+        logger.debug(f'ViewSet at {path} {method.upper()} is intentionally not generating a description')
         return
 
     # Extract action, resource parts, and parent resource
@@ -384,7 +399,7 @@ def _process_operation(operation, method, path):
     operation['x-ai-description'] = _enforce_character_limit(ai_description)
 
 
-def add_x_ai_description(result, generator, request, public):
+def add_x_ai_description(result: dict, generator, request, public) -> dict:
     """
     Postprocessing hook for drf-spectacular that adds x-ai-description fields to all operations.
 
@@ -425,11 +440,8 @@ def add_x_ai_description(result, generator, request, public):
 
     for path, path_item in paths.items():
         for method, operation in path_item.items():
-            # Skip non-operation keys (like 'parameters')
-            if method not in HTTP_METHODS:
-                continue
-
-            # Process this operation to add x-ai-description
-            _process_operation(operation, method, path)
+            # Ensure we're only generating values for methods we support
+            if method in HTTP_METHODS:
+                _process_operation(operation, method, path)
 
     return result

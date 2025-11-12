@@ -1,4 +1,5 @@
 import logging
+from typing import Any, Optional
 
 from ansible_base.lib.utils.api_path_utils import parse_path_segments
 
@@ -22,14 +23,12 @@ RESOURCE_PURPOSE_MAP = {}
 OPERATION_CLASS_MAP = {}
 
 
-def _get_view_class(view):
+def _get_view_class(view: Any) -> type:
     """Extract the ViewSet class from a view, handling DRF's view wrapping."""
-    if hasattr(view, 'cls'):
-        return view.cls
-    return view.__class__
+    return getattr(view, 'cls', view.__class__)
 
 
-def _extract_prefix_from_path(path):
+def _extract_prefix_from_path(path: str) -> tuple[Optional[str], Optional[list[str]], Optional[int]]:
     """Extract the operation_id prefix from a URL path."""
     path_parts = parse_path_segments(path)
     if not path_parts:
@@ -40,14 +39,14 @@ def _extract_prefix_from_path(path):
     return prefix, path_parts, path_parts_count
 
 
-def _create_compound_prefix(path_parts, fallback_prefix):
+def _create_compound_prefix(path_parts: list[str], fallback_prefix: str) -> str:
     """Create compound prefix from path parts (e.g., 'orgs_teams') to resolve collisions."""
     if len(path_parts) >= 2:
         return '_'.join(path_parts[-2:])
     return fallback_prefix
 
 
-def _handle_prefix_collision(prefix, class_name, path_parts_count, path_parts, operation_class_map):
+def _handle_prefix_collision(prefix: str, class_name: str, path_parts_count: int, path_parts: list[str], operation_class_map: dict[str, tuple[str, int, list[str]]]) -> str:
     """
     Handle collision when multiple ViewSets use the same operation_id prefix.
     ViewSet with fewer path parts gets simple prefix; the other gets compound prefix.
@@ -75,22 +74,22 @@ def _handle_prefix_collision(prefix, class_name, path_parts_count, path_parts, o
         return compound_prefix
 
 
-def _register_skip_ai_description(view_class, class_name, prefix):
+def _register_skip_ai_description(view_class: type, class_name: str, prefix: str) -> None:
     """Register a ViewSet that should skip AI description generation."""
     if getattr(view_class, 'skip_ai_description', False):
         SKIP_AI_DESCRIPTION_PREFIXES.add(prefix)
         logger.info(f"View class {class_name} (prefix: {prefix}) has skip_ai_description=True")
 
 
-def _register_resource_purpose(view_class, class_name, prefix):
+def _register_resource_purpose(view_class: type, class_name: str, prefix: str) -> None:
     """Register a ViewSet's resource_purpose for description generation."""
     resource_purpose = getattr(view_class, 'resource_purpose', None)
     if resource_purpose:
         RESOURCE_PURPOSE_MAP[class_name] = resource_purpose
-        logger.debug(f"View class {class_name} (prefix: {prefix}) has resource_purpose: {resource_purpose[:50]}...")
+        logger.debug(f"View class {class_name} (prefix: {prefix}) has resource_purpose: {resource_purpose[:50]}{'...' if len(resource_purpose) > 50 else ''}")
 
 
-def collect_ai_description_metadata(endpoints, **kwargs):
+def collect_ai_description_metadata(endpoints: Optional[list[tuple[str, str, str, Any]]], **kwargs) -> Optional[list[tuple[str, str, str, Any]]]:
     """
     Preprocessing hook for drf-spectacular that collects metadata from ViewSets for AI description generation.
 

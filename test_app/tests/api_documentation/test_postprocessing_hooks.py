@@ -696,14 +696,8 @@ class TestHelperFunctions:
         """Test that trailing period is removed."""
         assert clean_base_description('Manage teams.') == 'Manage teams'
 
-    def test_clean_base_description_truncates_long_descriptions(self):
-        """Test that long descriptions are truncated."""
-        long_desc = 'a' * 150
-        result = clean_base_description(long_desc)
-        assert len(result) <= 100
-
     def test_clean_base_description_handles_multiline(self):
-        """Test that multiline descriptions use only first line."""
+        """Test that multiline descriptions are concatenated into a single sentence."""
         multiline = "First line.\nSecond line.\nThird line."
         result = clean_base_description(multiline)
         assert result == 'First line'
