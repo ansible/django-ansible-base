@@ -14,7 +14,7 @@ The system uses a **two-tier approach** to generate descriptions:
 
 ### Priority 1: Explicit x-ai-description (Highest Priority)
 If you define `x-ai-description` explicitly using `@extend_schema_if_available`, it will be used as-is 
-[as seen in this example](#using-extend_schema).
+[as seen in this example](#using-extend_schema_if_available).
 
 ### Priority 2: resource_purpose Field (Recommended)
 If you define a `resource_purpose` field on your ViewSet, the hook will generate contextual descriptions for standard CRUD operations
@@ -50,7 +50,7 @@ The `resource_purpose` field should describe:
 "<resource_plural> for <purpose/use_case>"
 ```
 
-[See examples](#using-resource_purpose)
+[See examples](#examples)
 
 ### Guidelines for resource_purpose
 
@@ -127,7 +127,11 @@ resource_purpose = "HTTP listener ports for routing incoming traffic to backend 
 - ✅ The resource name clearly conveys its purpose
 - ✅ No domain-specific context is needed for MCP tool selection
 
-**Philosophy:** `resource_purpose` should be used sparingly. Docstrings serve human developers; `resource_purpose` serves AI tool selection. Only add `resource_purpose` when it provides meaningful context that auto-generation cannot capture.
+**Philosophy:** `resource_purpose` should be used when the auto-generated description would be insufficient for AI tool selection.
+Docstrings serve human developers; `resource_purpose` serves AI tool selection. Most simple CRUD resources don't need
+`resource_purpose` because their names are self-explanatory; however, domain-specific or technical resources, (such 
+as authenticator maps, role definitions, audit trail entries, etc.) should include `resource_purpose` to provide the necessary
+context for MCP tool selection.
 
 ## Opting Out
 
@@ -147,7 +151,7 @@ class MyCustomViewSet(ModelViewSet):
 
 **resource_purpose is for AI/MCP tool selection** - it should be concise and optimized for tool selection
 
-[See code examples →](#docstrings-vs-resource_purpose)
+[See examples of when to use each](#docstrings-vs-resource_purpose)
 
 This separation ensures:
 - ✅ Docstrings can be detailed and conversational for developers

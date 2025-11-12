@@ -5,6 +5,8 @@ from ansible_base.lib.utils.api_path_utils import parse_path_segments
 
 logger = logging.getLogger('ansible_base.api_documentation.preprocessing_hooks')
 
+# Spec generation is single-threaded, so the following globals should be safe
+
 # Global storage for skip_ai_description operation ID prefixes
 # Maps operation_id prefix (e.g. "teams") -> True for views with skip_ai_description
 # This is shared with postprocessing_hooks.py

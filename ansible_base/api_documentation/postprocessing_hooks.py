@@ -362,9 +362,15 @@ def _generate_description_auto(operation_id: str, action: str, resource_parts: l
 
 def _enforce_character_limit(description: str, max_length: int = 300) -> str:
     """Enforce character limit on description, truncating if necessary."""
-    if len(description) > max_length:
-        return description[: max_length - 3] + "..."
-    return description
+    if len(description) < max_length:
+        return description
+
+    # Break at the last word before max_length:
+    truncated = description[: max_length - 3]
+    last_space = truncated.rfind(' ')
+    if last_space > max_length * 0.7:  # Only use word boundary if we're not too far back
+        return f"{truncated[:last_space]}..."
+    return f"{truncated}..."
 
 
 def _process_operation(operation: dict, method: str, path: str) -> None:
