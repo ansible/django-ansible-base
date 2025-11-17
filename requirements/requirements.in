@@ -3,7 +3,7 @@
 # if you are add a new feature which requires dependencies they should be in a separate requirements_<feature>.in file
 #
 cryptography
-Django>=4.2.26,<6.0
+Django>=4.2.26,<6.0    # Updating for CVE-2025-64459
 djangorestframework
 django-crum
 inflection
