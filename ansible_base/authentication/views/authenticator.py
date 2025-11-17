@@ -16,6 +16,8 @@ class AuthenticatorViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
     API endpoint that allows authenticators to be viewed or edited.
     """
 
+    resource_purpose = "authentication types for configuring user login methods (LDAP, SAML, OAuth)"
+
     queryset = Authenticator.objects.all()
     serializer_class = AuthenticatorSerializer
     allow_service_token = True

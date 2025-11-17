@@ -13,6 +13,8 @@ class FeatureFlagsStateListView(AnsibleBaseView):
     A view class for displaying feature flags
     """
 
+    resource_purpose = "feature flag configurations for controlling platform capabilities"
+
     serializer_class = FeatureFlagSerializer
     filter_backends = []
     name = _('Feature Flags')

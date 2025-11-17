@@ -116,6 +116,8 @@ class RoleDefinitionViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
     but can be assigned to users.
     """
 
+    resource_purpose = "RBAC roles defining permissions that can be managed and assigned to users and teams"
+
     queryset = RoleDefinition.objects.prefetch_related('created_by', 'modified_by', 'content_type', 'permissions', 'resource')
     serializer_class = RoleDefinitionSerializer
     permission_classes = try_add_oauth2_scope_permission([RoleDefinitionPermissions])
@@ -224,6 +226,8 @@ class RoleTeamAssignmentViewSet(BaseAssignmentViewSet):
     remove those permissions.
     """
 
+    resource_purpose = "RBAC role grants assigning permissions to teams for specific resources"
+
     serializer_class = RoleTeamAssignmentSerializer
     prefetch_related = ('team__resource',)
     filter_backends = BaseAssignmentViewSet.filter_backends + [
@@ -243,6 +247,8 @@ class RoleUserAssignmentViewSet(BaseAssignmentViewSet):
     After creation, the assignment cannot be edited, but can be deleted to
     remove those permissions.
     """
+
+    resource_purpose = "RBAC role grants assigning permissions to users for specific resources"
 
     serializer_class = RoleUserAssignmentSerializer
     prefetch_related = ('user__resource',)

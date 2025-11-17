@@ -45,6 +45,11 @@ REST_FRAMEWORK = {
 }
 ```
 
+### Include `x-ai-description` field
+
+For details on automatically adding the `x-ai-description` field to generated specs, 
+see the instructions in the [x_ai_description_guide](./ai_documentation/x_ai_description_guide.md).
+
 ## URLS
 
 This feature includes URLs which you will get if you are using [dynamic urls](../..//Installation.md)
