@@ -8,6 +8,7 @@ from ansible_base.authentication.models import AuthenticatorMap
 from ansible_base.authentication.utils.authenticator_map import _EXPANSION_FIELDS, check_expansion_syntax, check_role_type, has_expansion
 from ansible_base.authentication.utils.trigger_definition import TRIGGER_DEFINITION
 from ansible_base.lib.serializers.common import NamedCommonModelSerializer
+from ansible_base.lib.serializers.fields import JSONField
 from ansible_base.lib.utils.string import is_empty
 from ansible_base.lib.utils.typing import TranslatedString
 
@@ -15,6 +16,14 @@ logger = logging.getLogger('ansible_base.authentication.serializers.authenticato
 
 
 class AuthenticatorMapSerializer(NamedCommonModelSerializer):
+    triggers = JSONField(
+        required=True,
+        allow_null=False,
+        error_messages={'required': 'Triggers must be a valid dict'},
+        help_text="Required. Trigger conditions dictionary that determines when this map applies. "
+        "See /trigger_definition/ for structure details. Only one top-level key per request.",
+    )
+
     class Meta:
         model = AuthenticatorMap
         fields = NamedCommonModelSerializer.Meta.fields + ['authenticator', 'map_type', 'role', 'organization', 'team', 'revoke', 'triggers', 'order']
