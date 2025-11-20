@@ -14,6 +14,7 @@ from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet, ModelViewSet, mixins
 
 from ansible_base.lib.utils.auth import get_team_model, get_user_model
+from ansible_base.lib.utils.schema import extend_schema_if_available
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.lib.utils.views.permissions import try_add_oauth2_scope_permission
 from ansible_base.rbac.api.permissions import RoleDefinitionPermissions
@@ -236,17 +237,24 @@ class RoleTeamAssignmentViewSet(BaseAssignmentViewSet):
     ]
 
 
-class RoleUserAssignmentViewSet(BaseAssignmentViewSet):
-    """
-    Use this endpoint to give a user permission to a resource or an organization.
-    The needed data is the user, the role definition, and the object id.
-    The object must be of the type specified in the role definition.
-    The type given in the role definition and the provided object_id are used
-    to look up the resource.
+# Schema fragments for RoleUserAssignmentViewSet OpenAPI spec
+_USER_ACTOR_ONEOF = {
+    'oneOf': [
+        {'required': ['user'], 'not': {'required': ['user_ansible_id']}},
+        {'required': ['user_ansible_id'], 'not': {'required': ['user']}},
+    ]
+}
 
-    After creation, the assignment cannot be edited, but can be deleted to
-    remove those permissions.
-    """
+_OBJECT_ID_ONEOF = {
+    'oneOf': [
+        {'properties': {'object_id': {'oneOf': [{'type': 'integer'}, {'type': 'string', 'format': 'uuid'}]}, 'object_ansible_id': False}},
+        {'properties': {'object_ansible_id': {'type': 'string', 'format': 'uuid'}, 'object_id': False}},
+        {'not': {'anyOf': [{'required': ['object_id']}, {'required': ['object_ansible_id']}]}},
+    ]
+}
+
+
+class RoleUserAssignmentViewSet(BaseAssignmentViewSet):
 
     resource_purpose = "RBAC role grants assigning permissions to users for specific resources"
 
@@ -256,6 +264,25 @@ class RoleUserAssignmentViewSet(BaseAssignmentViewSet):
         ansible_id_backend.UserAnsibleIdAliasFilterBackend,
         ansible_id_backend.RoleAssignmentFilterBackend,
     ]
+
+    @extend_schema_if_available(
+        request={
+            'application/json': {
+                'allOf': [
+                    {'$ref': '#/components/schemas/RoleUserAssignment'},
+                    _USER_ACTOR_ONEOF,
+                    _OBJECT_ID_ONEOF,
+                ]
+            },
+        },
+        description="Give a user permission to a resource, an organization, or globally (when allowed)."
+        "Must specify 'role_definition' and exactly one of 'user' or 'user_ansible_id'."
+        "Can specify at most one of 'object_id' or 'object_ansible_id' (omit both for global roles)."
+        "The content_type of the role definition and the provided object_id are used to look up the resource."
+        "After creation, the assignment cannot be edited, but can be deleted to remove those permissions.",
+    )
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
 
 
 class AccessURLMixin:
