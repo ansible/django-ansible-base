@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.authentication.models import Authenticator, AuthenticatorUser
-from ansible_base.authentication.serializers import AuthenticatorSerializer
+from ansible_base.authentication.serializers import AuthenticatorSerializer, AuthenticatorUpdateSerializer
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 
 logger = logging.getLogger('ansible_base.authentication.views.authenticator')
@@ -35,6 +35,11 @@ class AuthenticatorViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
                     kwargs["instance"] = "object"
 
         return super().get_serializer(*args, **kwargs)
+
+    def get_serializer_class(self):
+        if self.action in ['update', 'partial_update']:
+            return AuthenticatorUpdateSerializer
+        return super().get_serializer_class()
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()

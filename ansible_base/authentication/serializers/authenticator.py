@@ -146,3 +146,12 @@ class AuthenticatorSerializer(NamedCommonModelSerializer, ImmutableFieldsMixin):
             related['users'] = get_relative_url('authenticator-users-list', kwargs={'pk': obj.pk})
 
         return related
+
+
+class AuthenticatorUpdateSerializer(AuthenticatorSerializer):
+    """Specialized serializer for update operations that makes type field read-only."""
+
+    type = ChoiceField(choices=get_authenticator_plugins(), read_only=True, help_text="The type of authentication service this is.")
+
+    class Meta(AuthenticatorSerializer.Meta):
+        read_only_fields = getattr(AuthenticatorSerializer.Meta, 'read_only_fields', []) + ['type']
