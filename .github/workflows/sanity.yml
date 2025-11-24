@@ -35,3 +35,9 @@ jobs:
 
       - name: Run help text check
         run: ./manage.py help_text_check --applications=dab --ignore-file=./.help_text_check.ignore
+
+      - name: Validate OpenAPI Specification
+        run: |
+          ./manage.py spectacular --format openapi-json --file dab-openapi.json
+          openapi-spec-validator dab-openapi.json
+          echo "✅ OpenAPI schema validation passed"
