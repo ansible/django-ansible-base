@@ -13,6 +13,7 @@ jsonschema
 tox
 tox-docker
 typeguard
+openapi-spec-validator
 pytest
 pytest-asyncio
 pytest-xdist

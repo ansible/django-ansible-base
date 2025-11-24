@@ -238,19 +238,39 @@ class RoleTeamAssignmentViewSet(BaseAssignmentViewSet):
 
 
 # Schema fragments for RoleUserAssignmentViewSet OpenAPI spec
-_USER_ACTOR_ONEOF = {
-    'oneOf': [
-        {'required': ['user'], 'not': {'required': ['user_ansible_id']}},
-        {'required': ['user_ansible_id'], 'not': {'required': ['user']}},
-    ]
+# Note: These describe the valid patterns but cannot enforce mutual exclusivity in OpenAPI
+# The actual validation is handled by the serializer's validate() method
+_USER_ACTOR_REQUIREMENT = {
+    'description': 'Must provide exactly one of: user (integer ID) or user_ansible_id (UUID). Mutual exclusivity enforced by server validation.',
+    'properties': {
+        'user': {'type': 'integer', 'nullable': True, 'description': 'ID of the user to assign the role to. Mutually exclusive with user_ansible_id.'},
+        'user_ansible_id': {
+            'type': 'string',
+            'format': 'uuid',
+            'nullable': True,
+            'description': 'Ansible ID of the user to assign the role to. Mutually exclusive with user.',
+        },
+    },
 }
 
-_OBJECT_ID_ONEOF = {
-    'oneOf': [
-        {'properties': {'object_id': {'oneOf': [{'type': 'integer'}, {'type': 'string', 'format': 'uuid'}]}, 'object_ansible_id': False}},
-        {'properties': {'object_ansible_id': {'type': 'string', 'format': 'uuid'}, 'object_id': False}},
-        {'not': {'anyOf': [{'required': ['object_id']}, {'required': ['object_ansible_id']}]}},
-    ]
+_OBJECT_ID_REQUIREMENT = {
+    'description': (
+        'Can provide at most one of: object_id or object_ansible_id. '
+        'Omit both for global role assignments. Mutual exclusivity enforced by server validation.'
+    ),
+    'properties': {
+        'object_id': {
+            'oneOf': [{'type': 'integer'}, {'type': 'string', 'format': 'uuid'}],
+            'nullable': True,
+            'description': 'ID of the resource object. Mutually exclusive with object_ansible_id.',
+        },
+        'object_ansible_id': {
+            'type': 'string',
+            'format': 'uuid',
+            'nullable': True,
+            'description': 'Ansible ID of the resource object. Mutually exclusive with object_id.',
+        },
+    },
 }
 
 
@@ -270,15 +290,15 @@ class RoleUserAssignmentViewSet(BaseAssignmentViewSet):
             'application/json': {
                 'allOf': [
                     {'$ref': '#/components/schemas/RoleUserAssignment'},
-                    _USER_ACTOR_ONEOF,
-                    _OBJECT_ID_ONEOF,
+                    _USER_ACTOR_REQUIREMENT,
+                    _OBJECT_ID_REQUIREMENT,
                 ]
             },
         },
-        description="Give a user permission to a resource, an organization, or globally (when allowed)."
-        "Must specify 'role_definition' and exactly one of 'user' or 'user_ansible_id'."
-        "Can specify at most one of 'object_id' or 'object_ansible_id' (omit both for global roles)."
-        "The content_type of the role definition and the provided object_id are used to look up the resource."
+        description="Give a user permission to a resource, an organization, or globally (when allowed). "
+        "Must specify 'role_definition' and exactly one of 'user' or 'user_ansible_id'. "
+        "Can specify at most one of 'object_id' or 'object_ansible_id' (omit both for global roles). "
+        "The content_type of the role definition and the provided object_id are used to look up the resource. "
         "After creation, the assignment cannot be edited, but can be deleted to remove those permissions.",
     )
     def create(self, request, *args, **kwargs):
