@@ -1,8 +1,11 @@
+from unittest.mock import patch
+
 import pytest
+import requests
 from django.test.utils import override_settings
 
 from ansible_base.lib.utils.response import get_relative_url
-from ansible_base.rbac.models import RoleDefinition
+from ansible_base.rbac.models import RoleDefinition, RoleUserAssignment
 
 
 @pytest.mark.django_db
@@ -192,3 +195,68 @@ def test_role_definitions_post_disabled_by_settings(admin_api_client):
     assert response.status_code == 200, response.data
     print(response.data)
     assert 'POST' not in response.data.get('actions', {})
+
+
+@pytest.mark.parametrize(
+    "sync_error_status, expected_status",
+    [
+        (400, 400),  # ValidationError
+        (401, 403),  # PermissionDenied
+        (403, 403),  # PermissionDenied
+        (500, 500),  # Re-raised HTTPError → Internal Server Error
+        (None, 500),  # HTTPError with no response → Internal Server Error
+    ],
+)
+@pytest.mark.django_db
+def test_user_assignment_remote_sync_error_handling(admin_api_client, inv_rd, rando, inventory, sync_error_status, expected_status):
+    """Test that remote sync HTTP errors are handled correctly for user assignments"""
+    url = get_relative_url('roleuserassignment-list')
+    data = dict(role_definition=inv_rd.id, user=rando.id, object_id=inventory.id)
+
+    # Track initial count to verify transaction rollback
+    initial_count = RoleUserAssignment.objects.count()
+
+    # Mock the remote sync to raise HTTPError with specified status
+    if sync_error_status is not None:
+        mock_response = requests.Response()
+        mock_response.status_code = sync_error_status
+        http_error = requests.exceptions.HTTPError(response=mock_response)
+    else:
+        # Simulate HTTPError with no response (e.g., connection failed)
+        http_error = requests.exceptions.HTTPError(response=None)
+
+    with patch('ansible_base.rbac.api.views.BaseAssignmentViewSet.remote_sync_assignment') as mock_sync:
+        mock_sync.side_effect = http_error
+
+        response = admin_api_client.post(url, data=data, format="json")
+        assert response.status_code == expected_status
+        assert 'detail' in response.data
+
+        # Verify that no assignment was created due to transaction rollback
+        assert RoleUserAssignment.objects.count() == initial_count
+
+
+@pytest.mark.django_db
+def test_user_assignment_remote_sync_connection_error(admin_api_client, inv_rd, rando, inventory):
+    """Test that connection errors during remote sync cause unhandled exceptions but transaction rollback works"""
+    url = get_relative_url('roleuserassignment-list')
+    data = dict(role_definition=inv_rd.id, user=rando.id, object_id=inventory.id)
+
+    # Track initial count to verify transaction rollback
+    initial_count = RoleUserAssignment.objects.count()
+
+    # Mock the remote sync to raise ConnectionError (no HTTP response)
+    connection_error = requests.exceptions.ConnectionError("Connection failed")
+
+    with patch('ansible_base.rbac.api.views.BaseAssignmentViewSet.remote_sync_assignment') as mock_sync:
+        mock_sync.side_effect = connection_error
+
+        # ConnectionError is not currently caught, so it escapes as an unhandled exception
+        # The Django test client converts this to a 500 response, but we can also test
+        # by catching the exception directly to verify the rollback behavior
+        with pytest.raises(requests.exceptions.ConnectionError):
+            admin_api_client.post(url, data=data, format="json")
+
+        # Verify that no assignment was created due to transaction rollback
+        # This confirms that our transaction.atomic() fix works correctly
+        assert RoleUserAssignment.objects.count() == initial_count

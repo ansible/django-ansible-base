@@ -2,13 +2,14 @@ import uuid
 from collections import OrderedDict
 from typing import Type
 
+import requests
 from django.apps import apps
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.db.models import Model
 from django.utils.translation import gettext_lazy as _
 from rest_framework import permissions
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.exceptions import APIException, NotFound, PermissionDenied, ValidationError
 from rest_framework.generics import GenericAPIView
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet, ModelViewSet, mixins
@@ -192,9 +193,27 @@ class BaseAssignmentViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
         maybe_reverse_sync_unassignment(role_definition, actor, content_object)
 
     def perform_create(self, serializer):
-        ret = super().perform_create(serializer)
-        self.remote_sync_assignment(serializer.instance)
-        return ret
+        # Wrap the entire operation in a single atomic transaction
+        # This ensures that if remote sync fails, the local assignment creation is rolled back
+        # eliminating the race condition where assignments briefly exist before manual deletion
+        try:
+            with transaction.atomic():
+                super().perform_create(serializer)
+                self.remote_sync_assignment(serializer.instance)
+        except requests.exceptions.HTTPError as exc:
+            # Transaction has already rolled back automatically
+            # No need to manually delete - assignment was never committed
+            status_code = getattr(exc.response, 'status_code', None)
+            error_data = {"detail": str(exc)}
+
+            if status_code == 400:
+                raise ValidationError(error_data) from exc
+            elif status_code in [401, 403]:
+                raise PermissionDenied(error_data) from exc
+            else:
+                # For any other HTTP error (500) or HTTPError with no response
+                # Raise APIException to get a 500 Internal Server Error
+                raise APIException(error_data) from exc
 
     def perform_destroy(self, instance):
         check_can_remove_assignment(self.request.user, instance)
@@ -275,7 +294,6 @@ _OBJECT_ID_REQUIREMENT = {
 
 
 class RoleUserAssignmentViewSet(BaseAssignmentViewSet):
-
     resource_purpose = "RBAC role grants assigning permissions to users for specific resources"
 
     serializer_class = RoleUserAssignmentSerializer
