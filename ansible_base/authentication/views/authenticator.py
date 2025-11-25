@@ -37,7 +37,7 @@ class AuthenticatorViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
         return super().get_serializer(*args, **kwargs)
 
     def get_serializer_class(self):
-        if self.action in ['update', 'partial_update']:
+        if self.action in ['update', 'partial_update', 'metadata']:
             return AuthenticatorUpdateSerializer
         return super().get_serializer_class()
 
