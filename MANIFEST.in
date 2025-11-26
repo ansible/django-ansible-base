@@ -2,3 +2,4 @@ exclude manage.py
 recursive-exclude docs *
 recursive-exclude test_app *
 recursive-exclude tools *
+recursive-include ansible_base/feature_flags/definitions *
