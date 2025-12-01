@@ -47,6 +47,210 @@ class SubstringMatcher:
     __repr__ = __unicode__
 
 
+@mock.patch("ansible_base.authentication.social_auth.logger")
+def test_authenticator_strategy_redirect_logging(mock_logger):
+    """Test that AuthenticatorStrategy.redirect logs the redirect URL without mocking redirect itself."""
+    from django.http import HttpResponseRedirect
+
+    strategy = AuthenticatorStrategy(storage=AuthenticatorStorage())
+    test_url = "https://example.com/oauth/callback"
+
+    # Call the redirect method directly (not mocked)
+    result = strategy.redirect(test_url)
+
+    # Verify the logger was called with the correct message
+    mock_logger.info.assert_called_once_with(f"Redirecting user to {test_url} as part of the social auth flow for SSO authenticator.")
+
+    # Verify that the result is an HttpResponseRedirect with the correct URL
+    assert isinstance(result, HttpResponseRedirect)
+    assert result.url == test_url
+
+
+@pytest.mark.django_db
+@mock.patch("ansible_base.authentication.social_auth.logger")
+def test_social_auth_mixin_start_enabled_authenticator(mock_logger, random_user):
+    """Test that SocialAuthMixin.start logs when authentication is attempted with an enabled authenticator."""
+    from django.http import HttpResponse
+
+    from ansible_base.authentication.models import Authenticator
+
+    # Create a mock authenticator with enabled=True
+    authenticator = Authenticator.objects.create(
+        name="Test OIDC", slug="test-oidc", type="ansible_base.authentication.authenticator_plugins.oidc", enabled=True, configuration={}
+    )
+
+    class MockParent:
+        """Mock parent class to avoid dependency on actual social auth backend."""
+
+        def start(self):
+            return HttpResponse("OK")
+
+    class TestBackend(SocialAuthMixin, MockParent):
+        def __init__(self, database_instance):
+            # Mock the strategy argument requirement
+            self.strategy = AuthenticatorStrategy(storage=AuthenticatorStorage())
+            self.database_instance = database_instance
+            self.logger = None
+
+    backend = TestBackend(database_instance=authenticator)
+    result = backend.start()
+
+    # Verify info logging for starting authentication
+    mock_logger.info.assert_called_once_with("Starting Authentication attempt with authenticator 'Test OIDC' (slug: test-oidc)")
+
+    # Verify error was not called (since authenticator is enabled)
+    assert not mock_logger.error.called
+
+    # Verify that the result is an HttpResponse
+    assert isinstance(result, HttpResponse)
+
+
+@pytest.mark.django_db
+@mock.patch("ansible_base.authentication.social_auth.logger")
+def test_social_auth_mixin_start_disabled_authenticator(mock_logger):
+    """Test that SocialAuthMixin.start logs an error and returns 404 for disabled authenticator."""
+    from django.http import HttpResponseNotFound
+
+    from ansible_base.authentication.models import Authenticator
+
+    # Create a mock authenticator with enabled=False
+    authenticator = Authenticator.objects.create(
+        name="Disabled OIDC", slug="disabled-oidc", type="ansible_base.authentication.authenticator_plugins.oidc", enabled=False, configuration={}
+    )
+
+    class TestBackend(SocialAuthMixin):
+        def __init__(self, database_instance):
+            # Mock the strategy argument requirement
+            self.strategy = AuthenticatorStrategy(storage=AuthenticatorStorage())
+            self.database_instance = database_instance
+            self.logger = None
+
+    backend = TestBackend(database_instance=authenticator)
+
+    # Call start method
+    result = backend.start()
+
+    # Verify error logging for disabled authenticator
+    mock_logger.error.assert_called_once_with("Authentication attempted with disabled authenticator Disabled OIDC")
+
+    # Verify info logging was not called (since authenticator is disabled)
+    assert not mock_logger.info.called
+
+    # Verify that a 404 response was returned
+    assert isinstance(result, HttpResponseNotFound)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "authenticator_type,authenticator_name,minimal_config",
+    [
+        (
+            "ansible_base.authentication.authenticator_plugins.oidc",
+            "Test OIDC",
+            {
+                "OIDC_ENDPOINT": "https://example.com",
+                "KEY": "test-key",
+                "SECRET": "test-secret",
+            },
+        ),
+        (
+            "ansible_base.authentication.authenticator_plugins.azuread",
+            "Test Azure AD",
+            {
+                "KEY": "test-key",
+                "SECRET": "test-secret",
+            },
+        ),
+        (
+            "ansible_base.authentication.authenticator_plugins.github",
+            "Test GitHub",
+            {
+                "KEY": "test-key",
+                "SECRET": "test-secret",
+            },
+        ),
+        (
+            "ansible_base.authentication.authenticator_plugins.google_oauth2",
+            "Test Google OAuth2",
+            {
+                "KEY": "test-key",
+                "SECRET": "test-secret",
+            },
+        ),
+        (
+            "ansible_base.authentication.authenticator_plugins.keycloak",
+            "Test Keycloak",
+            {
+                "ACCESS_TOKEN_URL": "https://keycloak.example.com/token",
+                "AUTHORIZATION_URL": "https://keycloak.example.com/auth",
+                "KEY": "test-key",
+                "PUBLIC_KEY": "test-public-key",
+            },
+        ),
+    ],
+)
+@mock.patch("ansible_base.authentication.social_auth.logger")
+def test_sso_authenticators_log_redirect_and_start(mock_logger, authenticator_type, authenticator_name, minimal_config):
+    """
+    Test that all SSO authenticators log both the start message and redirect message during auth flow.
+
+    This test verifies that:
+    1. SocialAuthMixin.start() logs "Starting Authentication attempt with authenticator..."
+    2. AuthenticatorStrategy.redirect() logs "Redirecting user to ... as part of the social auth flow..."
+
+    We do NOT mock redirect itself - we verify the actual logging that happens during the flow.
+    """
+    from django.http import HttpResponseRedirect
+    from django.test import RequestFactory
+
+    from ansible_base.authentication.models import Authenticator
+
+    # Create the authenticator
+    authenticator = Authenticator.objects.create(
+        name=authenticator_name, slug=f"test-{authenticator_type.split('.')[-1]}", type=authenticator_type, enabled=True, configuration=minimal_config
+    )
+
+    # Create a mock request with session
+    factory = RequestFactory()
+    request = factory.get(f'/login/{authenticator.slug}/')
+    # Add a real session backend
+    from django.contrib.sessions.backends.db import SessionStore
+
+    request.session = SessionStore()
+    request.session.save()
+
+    # Create the strategy with the request
+    strategy = AuthenticatorStrategy(storage=AuthenticatorStorage(), request=request)
+
+    # Get the backend for this authenticator
+    backend = strategy.get_backend(authenticator.slug)
+
+    # Mock auth_url to return a URL instead of making external calls
+    with mock.patch.object(backend, 'auth_url', return_value='https://example.com/auth'):
+        # Call start() which should log both start and redirect messages
+        result = backend.start()
+
+        # Verify the result is a redirect response
+        assert isinstance(result, HttpResponseRedirect), f"{authenticator_type} did not return HttpResponseRedirect"
+
+        # Verify we got the start authentication log message
+        start_log_calls = [call for call in mock_logger.info.call_args_list if "Starting Authentication attempt with authenticator" in str(call)]
+        assert len(start_log_calls) >= 1, f"{authenticator_type} did not log start authentication message"
+
+        # Verify the start message contains the authenticator name and slug
+        start_message = str(start_log_calls[0])
+        assert authenticator_name in start_message, f"Start message missing authenticator name: {start_message}"
+        assert authenticator.slug in start_message, f"Start message missing authenticator slug: {start_message}"
+
+        # Verify we got the redirect log message
+        redirect_log_calls = [call for call in mock_logger.info.call_args_list if "Redirecting user to" in str(call) and "social auth flow" in str(call)]
+        assert len(redirect_log_calls) >= 1, f"{authenticator_type} did not log redirect message"
+
+        # Verify the redirect message contains a URL
+        redirect_message = str(redirect_log_calls[0])
+        assert "https://" in redirect_message or "http://" in redirect_message, f"Redirect message missing URL: {redirect_message}"
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize(
     "test_data,has_instance,has_slug,expected_result",

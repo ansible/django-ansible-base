@@ -60,6 +60,10 @@ class AuthenticatorStrategy(DjangoStrategy):
                 pass
         return default
 
+    def redirect(self, url):
+        logger.info(f"Redirecting user to {url} as part of the social auth flow for SSO authenticator.")
+        return super().redirect(url)
+
     # load the authenticator setting from the database object.
     def get_setting(self, name, backend):
         # try to load the value from the db.
@@ -152,6 +156,7 @@ class SocialAuthMixin:
         if not self.database_instance.enabled:
             logger.error(f"Authentication attempted with disabled authenticator {self.database_instance.name}")
             return HttpResponseNotFound()
+        logger.info(f"Starting Authentication attempt with authenticator '{self.database_instance.name}' (slug: {self.database_instance.slug})")
         return super().start()
 
     @property
