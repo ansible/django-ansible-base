@@ -1,3 +1,4 @@
+import logging
 import uuid
 from collections import OrderedDict
 from typing import Type
@@ -9,7 +10,7 @@ from django.db import transaction
 from django.db.models import Model
 from django.utils.translation import gettext_lazy as _
 from rest_framework import permissions
-from rest_framework.exceptions import APIException, NotFound, PermissionDenied, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.generics import GenericAPIView
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet, ModelViewSet, mixins
@@ -42,6 +43,8 @@ from ..policies import check_content_obj_permission
 from ..remote import RemoteObject, get_resource_prefix
 from ..sync import maybe_reverse_sync_assignment, maybe_reverse_sync_role_definition, maybe_reverse_sync_unassignment
 from .queries import assignment_qs_user_to_obj, assignment_qs_user_to_obj_perm
+
+logger = logging.getLogger(__name__)
 
 
 def list_combine_values(data: dict[Type[Model], list[str]]) -> list[str]:
@@ -195,25 +198,41 @@ class BaseAssignmentViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
     def perform_create(self, serializer):
         # Wrap the entire operation in a single atomic transaction
         # This ensures that if remote sync fails, the local assignment creation is rolled back
-        # eliminating the race condition where assignments briefly exist before manual deletion
+        # automatically. Without this, there was a race condition where:
+        # 1. Local assignment is committed to the database
+        # 2. Remote sync fails
+        # 3. Assignment must be manually deleted, but may be visible to users briefly
+        # The transaction.atomic() ensures step 1 only commits if step 2 succeeds.
         try:
             with transaction.atomic():
-                super().perform_create(serializer)
+                ret = super().perform_create(serializer)
                 self.remote_sync_assignment(serializer.instance)
+            return ret
         except requests.exceptions.HTTPError as exc:
             # Transaction has already rolled back automatically
             # No need to manually delete - assignment was never committed
             status_code = getattr(exc.response, 'status_code', None)
-            error_data = {"detail": str(exc)}
+
+            # Preserve structured error data from gateway response
+            error_data = {"detail": str(exc)}  # Fallback
+            try:
+                if exc.response and hasattr(exc.response, 'json'):
+                    response_data = exc.response.json()
+                    # Use structured data if available, fall back to string
+                    error_data = response_data if isinstance(response_data, dict) else error_data
+            except (ValueError, AttributeError):
+                pass  # Keep fallback error_data
 
             if status_code == 400:
                 raise ValidationError(error_data) from exc
             elif status_code in [401, 403]:
                 raise PermissionDenied(error_data) from exc
             else:
-                # For any other HTTP error (500) or HTTPError with no response
-                # Raise APIException to get a 500 Internal Server Error
-                raise APIException(error_data) from exc
+                # Add logging for debugging before re-raising
+                logger.error(f"Unexpected HTTP error during remote sync: {exc}")
+                # Re-raise the original HTTPError to preserve full stack trace
+                # This avoids creating a redundant 500 error and maintains debugging context
+                raise
 
     def perform_destroy(self, instance):
         check_can_remove_assignment(self.request.user, instance)
