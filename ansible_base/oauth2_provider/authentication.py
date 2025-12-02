@@ -42,8 +42,14 @@ class LoggedOAuth2Authentication(OAuth2Authentication):
         if ret:
             user, token = ret
             username = user.username if user else '<none>'
+            oauth2_application_pk = token.application.pk if token.application else "N/A"
+            oauth2_application_name = token.application.name if token.application else "Personal Access Token"
             logger.info(
-                smart_str(u"User {} performed a {} to {} through the API using OAuth 2 token {}.".format(username, request.method, request.path, token.pk))
+                smart_str(
+                    u"User {} performed a {} to {} through the API using OAuth 2 token {} for OAuth2 application {} ({}).".format(
+                        username, request.method, request.path, token.pk, oauth2_application_pk, oauth2_application_name
+                    )
+                )
             )
             # TODO: check oauth_scopes when we have RBAC in Gateway
             setattr(user, 'oauth_scopes', [x for x in token.scope.split() if x])
