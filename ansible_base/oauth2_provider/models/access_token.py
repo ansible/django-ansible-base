@@ -99,7 +99,7 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
         if not self.pk:
             self.validate_external_users()
             self.token = hash_string(self.token, hasher=hashlib.sha256, algo="sha256")
-            app_name = self.application.name if self.application else "N/A (Personal Access Token)"
-            user_name = self.user.username if self.user else "N/A"
-            logger.info(f"Creating OAuth2 access token for user '{user_name}' with application '{app_name}' and scope '{self.scope}'")
         super().save(*args, **kwargs)
+        app_name = self.application.name if self.application else "N/A (Personal Access Token)"
+        user_name = self.user.username if self.user else "N/A"
+        logger.info(f"Creating OAuth2 access token for user '{user_name}' with application '{app_name}' and scope '{self.scope}'")

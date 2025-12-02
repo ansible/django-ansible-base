@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from unittest import mock
 
 import pytest
@@ -49,6 +50,7 @@ def test_oauth2_access_token_creation_logs_with_application(mock_logger, oauth2_
         application=application,
         token=generate_token(),
         scope='write',
+        expires=datetime(2088, 1, 1, tzinfo=timezone.utc),
     )
 
     # Verify the logger was called with the correct message
@@ -70,6 +72,7 @@ def test_oauth2_access_token_creation_logs_without_application(mock_logger, admi
         application=None,
         token=generate_token(),
         scope='read',
+        expires=datetime(2088, 1, 1, tzinfo=timezone.utc),
     )
 
     # Verify the logger was called with personal access token message
@@ -93,6 +96,7 @@ def test_oauth2_refresh_token_creation_logs(mock_logger, oauth2_application_pass
         application=application,
         token=generate_token(),
         scope='write',
+        expires=datetime(2088, 1, 1, tzinfo=timezone.utc),
     )
 
     # Create a refresh token linked to the access token

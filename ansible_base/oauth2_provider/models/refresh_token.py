@@ -31,7 +31,7 @@ class OAuth2RefreshToken(CommonModel, oauth2_models.AbstractRefreshToken, activi
     def save(self, *args, **kwargs):
         if not self.pk:
             self.token = hash_string(self.token, hasher=hashlib.sha256, algo="sha256")
-            access_token_id = self.access_token.pk if hasattr(self, 'access_token') and self.access_token else "N/A"
-            user_name = self.user.username if self.user else "N/A"
-            logger.info(f"Creating OAuth2 refresh token for user '{user_name}' linked to access token {access_token_id}")
         super().save(*args, **kwargs)
+        access_token_id = self.access_token.pk if hasattr(self, 'access_token') and self.access_token else "N/A"
+        user_name = self.user.username if self.user else "N/A"
+        logger.info(f"Creating OAuth2 refresh token for user '{user_name}' linked to access token {access_token_id}")
