@@ -93,7 +93,7 @@ def test_authenticator_strategy_redirect_logging(mock_logger):
 
 @pytest.mark.django_db
 @mock.patch("ansible_base.authentication.social_auth.logger")
-def test_social_auth_mixin_start_enabled_authenticator(mock_logger, random_user):
+def test_social_auth_mixin_start_enabled_authenticator(mock_logger):
     """Test that SocialAuthMixin.start logs when authentication is attempted with an enabled authenticator."""
 
     from ansible_base.authentication.models import Authenticator
@@ -561,3 +561,96 @@ def test_create_user_claims_pipeline(mock_update_user_claims, groups_claim, user
     assert call_args[0][0] == user
     assert call_args[0][1] is None
     assert call_args[0][2].sort() == expected_groups.sort()
+
+
+@pytest.mark.django_db
+@mock.patch("ansible_base.authentication.social_auth.logger")
+def test_social_auth_mixin_start_no_redirect(mock_logger):
+    """Test that SocialAuthMixin.start returns HTML when uses_redirect() returns False."""
+    from ansible_base.authentication.models import Authenticator
+
+    # Create a mock authenticator
+    authenticator = Authenticator.objects.create(
+        name="Test HTML Auth",
+        slug="test-html-auth",
+        type="ansible_base.authentication.authenticator_plugins.oidc",
+        enabled=True,
+        configuration={},
+    )
+
+    class MockParent:
+        """Mock parent class that doesn't use redirect."""
+
+        def auth_html(self):
+            return "<html><body>Login Form</body></html>"
+
+        def uses_redirect(self):
+            return False
+
+    class TestBackend(SocialAuthMixin, MockParent):
+        def __init__(self, database_instance):
+            # Mock the strategy argument requirement
+            factory = RequestFactory()
+            request = factory.get('/login/test-html-auth/')
+            request.session = SessionStore()
+            request.session.save()
+            self.strategy = AuthenticatorStrategy(storage=AuthenticatorStorage(), request=request)
+            self.database_instance = database_instance
+            self.logger = None
+
+    backend = TestBackend(database_instance=authenticator)
+    result = backend.start()
+
+    # Verify that we didn't log the SSO redirect message (since this doesn't use redirect)
+    sso_log_calls = [call for call in mock_logger.info.call_args_list if "Starting SSO redirect" in str(call)]
+    assert len(sso_log_calls) == 0, "Should not log SSO redirect when uses_redirect() is False"
+
+    # Verify that we returned HTML response
+    from django.http import HttpResponse
+
+    assert isinstance(result, HttpResponse)
+    assert result.status_code == 200
+    assert b"Login Form" in result.content
+
+
+@pytest.mark.django_db
+@mock.patch("ansible_base.authentication.social_auth.logger")
+def test_social_auth_mixin_start_no_redirect_disabled_authenticator(mock_logger):
+    """Test that SocialAuthMixin.start returns 404 for disabled authenticator even when uses_redirect() is False."""
+    from ansible_base.authentication.models import Authenticator
+
+    # Create a disabled authenticator
+    authenticator = Authenticator.objects.create(
+        name="Disabled HTML Auth",
+        slug="disabled-html-auth",
+        type="ansible_base.authentication.authenticator_plugins.oidc",
+        enabled=False,
+        configuration={},
+    )
+
+    class MockParent:
+        """Mock parent class that doesn't use redirect."""
+
+        def auth_html(self):
+            return "<html><body>Login Form</body></html>"
+
+        def uses_redirect(self):
+            return False
+
+    class TestBackend(SocialAuthMixin, MockParent):
+        def __init__(self, database_instance):
+            self.strategy = AuthenticatorStrategy(storage=AuthenticatorStorage())
+            self.database_instance = database_instance
+            self.logger = None
+
+    backend = TestBackend(database_instance=authenticator)
+    result = backend.start()
+
+    # Verify error logging for disabled authenticator
+    mock_logger.error.assert_called_once_with("Authentication attempted with disabled authenticator Disabled HTML Auth")
+
+    # Verify that no SSO redirect logging happened
+    assert not mock_logger.info.called
+
+    # Verify that a 404 response was returned (not HTML)
+    assert isinstance(result, HttpResponseNotFound)
