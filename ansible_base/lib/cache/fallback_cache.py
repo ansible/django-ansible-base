@@ -72,7 +72,8 @@ class DABCacheWithFallback(BaseCache):
             try:
                 response = getattr(self._primary_cache, operation)(*args, **kwargs)
                 return response
-            except Exception:
+            except Exception as e:
+                logger.error(f"Failed to perform '{operation}' on primary cache: {e}")
                 with multiprocessing.Lock():
                     # Attempt to ensure one thread/process goes first
                     # dynamic settings especially are read in a batch very quickly
