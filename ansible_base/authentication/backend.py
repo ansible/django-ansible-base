@@ -6,6 +6,7 @@ from django.contrib.auth.backends import ModelBackend
 
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
 from ansible_base.authentication.models import Authenticator
+from ansible_base.lib.logging import log_auth_event
 
 logger = logging.getLogger('ansible_base.authentication.backend')
 
@@ -55,7 +56,7 @@ class AnsibleBaseAuth(ModelBackend):
                     )
                     return None
 
-                logger.info(f'User {user.username} logged in from authenticator with ID "{authenticator_id}"')
+                log_auth_event(f'User {user.username} logged in from authenticator with ID "{authenticator_id}"', logger)
                 if hasattr(user, "last_login_from"):
                     user.last_login_from = authenticator_object.database_instance
                     user.save(update_fields=['last_login_from'])
