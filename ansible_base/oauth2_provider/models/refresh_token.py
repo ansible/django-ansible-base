@@ -7,6 +7,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from ansible_base.lib.abstract_models.common import CommonModel
+from ansible_base.lib.logging import log_auth_event
 from ansible_base.lib.utils.hashing import hash_string
 from ansible_base.lib.utils.models import prevent_search
 
@@ -34,4 +35,4 @@ class OAuth2RefreshToken(CommonModel, oauth2_models.AbstractRefreshToken, activi
         super().save(*args, **kwargs)
         access_token_id = self.access_token.pk if hasattr(self, 'access_token') and self.access_token else "N/A"
         user_name = self.user.username if self.user else "N/A"
-        logger.info(f"Creating OAuth2 refresh token for user '{user_name}' linked to access token {access_token_id}")
+        log_auth_event(f"Creating OAuth2 refresh token for user '{user_name}' linked to access token {access_token_id}", second_logger=logger)

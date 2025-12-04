@@ -10,6 +10,7 @@ from django.utils.translation import gettext_lazy as _
 from oauthlib import oauth2
 
 from ansible_base.lib.abstract_models.common import CommonModel
+from ansible_base.lib.logging import log_auth_event
 from ansible_base.lib.utils.hashing import hash_string
 from ansible_base.lib.utils.models import prevent_search
 from ansible_base.lib.utils.settings import get_setting
@@ -102,4 +103,4 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
         super().save(*args, **kwargs)
         app_name = self.application.name if self.application else "N/A (Personal Access Token)"
         user_name = self.user.username if self.user else "N/A"
-        logger.info(f"Creating OAuth2 access token for user '{user_name}' with application '{app_name}' and scope '{self.scope}'")
+        log_auth_event(f"Creating OAuth2 access token for user '{user_name}' with application '{app_name}' and scope '{self.scope}'", second_logger=logger)
