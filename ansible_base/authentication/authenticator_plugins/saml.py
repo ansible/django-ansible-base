@@ -257,9 +257,15 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAML
         This became an issue when doing SSL offloading.
         Ideally, we want this to come from CALLBACK_URL which we expose as the ACS URL.
         This function overrides the default function setting the redirect_uri to our CALLBACK_URL
+
+        Additionally, we disable onelogin's debug mode which is hardcoded to True in
+        social-core. When debug is enabled, onelogin prints errors directly to stdout
+        instead of using proper logging.
         """
         self.redirect_uri = self.strategy.get_setting('CALLBACK_URL', self)
-        return super().generate_saml_config(idp=idp)
+        config = super().generate_saml_config(idp=idp)
+        config['debug'] = False
+        return config
 
     def get_login_url(self, authenticator):
         url = get_relative_url('social:begin', kwargs={'backend': authenticator.slug})
