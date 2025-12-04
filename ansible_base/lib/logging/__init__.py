@@ -24,6 +24,7 @@ def log_auth_event(message: str, second_logger: Optional[logging.Logger] = None,
     if second_logger:
         second_logger.log(level, message)
 
+
 def log_auth_warning(message: str, second_logger: Optional[logging.Logger] = None):
     log_auth_event(message, second_logger, logging.WARNING)
 

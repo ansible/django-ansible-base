@@ -259,7 +259,7 @@ class TestLogAuthEvent:
 
         log_auth_event("Test event message")
 
-        mock_auth_logger.info.assert_called_once_with("Test event message")
+        mock_auth_logger.log.assert_called_once_with(logging.INFO, "Test event message")
 
     @mock.patch("ansible_base.lib.logging.get_auth_logger")
     def test_logs_to_second_logger_mock(self, mock_get_auth_logger):
@@ -270,8 +270,8 @@ class TestLogAuthEvent:
 
         log_auth_event("Test event message", second_logger=mock_second_logger)
 
-        mock_auth_logger.info.assert_called_once_with("Test event message")
-        mock_second_logger.info.assert_called_once_with("Test event message")
+        mock_auth_logger.log.assert_called_once_with(logging.INFO, "Test event message")
+        mock_second_logger.log.assert_called_once_with(logging.INFO, "Test event message")
 
 
 class TestLogAuthWarning:
@@ -285,7 +285,7 @@ class TestLogAuthWarning:
 
         log_auth_warning("Test warning message")
 
-        mock_auth_logger.warning.assert_called_once_with("Test warning message")
+        mock_auth_logger.log.assert_called_once_with(logging.WARNING, "Test warning message")
 
     @mock.patch("ansible_base.lib.logging.get_auth_logger")
     def test_logs_to_second_logger(self, mock_get_auth_logger):
@@ -296,8 +296,8 @@ class TestLogAuthWarning:
 
         log_auth_warning("Test warning message", second_logger=mock_second_logger)
 
-        mock_auth_logger.warning.assert_called_once_with("Test warning message")
-        mock_second_logger.warning.assert_called_once_with("Test warning message")
+        mock_auth_logger.log.assert_called_once_with(logging.WARNING, "Test warning message")
+        mock_second_logger.log.assert_called_once_with(logging.WARNING, "Test warning message")
 
     @mock.patch("ansible_base.lib.logging.get_auth_logger")
     def test_only_logs_to_auth_logger_when_no_second_logger(self, mock_get_auth_logger):
@@ -307,7 +307,7 @@ class TestLogAuthWarning:
 
         log_auth_warning("Test warning message", second_logger=None)
 
-        mock_auth_logger.warning.assert_called_once_with("Test warning message")
+        mock_auth_logger.log.assert_called_once_with(logging.WARNING, "Test warning message")
 
     @mock.patch("ansible_base.lib.logging.get_auth_logger")
     def test_with_empty_message(self, mock_get_auth_logger):
@@ -317,7 +317,7 @@ class TestLogAuthWarning:
 
         log_auth_warning("")
 
-        mock_auth_logger.warning.assert_called_once_with("")
+        mock_auth_logger.log.assert_called_once_with(logging.WARNING, "")
 
     @mock.patch("ansible_base.lib.logging.get_auth_logger")
     def test_with_multiline_message(self, mock_get_auth_logger):
@@ -328,7 +328,7 @@ class TestLogAuthWarning:
 
         log_auth_warning(multiline_message)
 
-        mock_auth_logger.warning.assert_called_once_with(multiline_message)
+        mock_auth_logger.log.assert_called_once_with(logging.WARNING, multiline_message)
 
     @mock.patch("ansible_base.lib.logging.get_auth_logger")
     def test_with_special_characters(self, mock_get_auth_logger):
@@ -339,7 +339,7 @@ class TestLogAuthWarning:
 
         log_auth_warning(special_message)
 
-        mock_auth_logger.warning.assert_called_once_with(special_message)
+        mock_auth_logger.log.assert_called_once_with(logging.WARNING, special_message)
 
 
 class TestLogAuthException:
