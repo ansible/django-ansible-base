@@ -184,6 +184,7 @@ def test_last_login_from_with_attribute(local_authenticator, random_user, expect
     mock_authenticator_plugin = mock.MagicMock()
     mock_authenticator_plugin.authenticate.return_value = random_user
     mock_authenticator_plugin.database_instance = local_authenticator
+    mock_authenticator_plugin.type = "local"
 
     # Mock the save method to track calls
     with mock.patch.object(random_user, 'save') as mock_save:
@@ -195,7 +196,7 @@ def test_last_login_from_with_attribute(local_authenticator, random_user, expect
             with expected_log(
                 'ansible_base.authentication.backend.logger',
                 "info",
-                f'User {random_user.username} logged in from authenticator with ID "{local_authenticator.id}"',
+                f'User {random_user.username} logged in from {mock_authenticator_plugin.type} authenticator with ID "{local_authenticator.id}',
             ):
                 auth_return = backend.AnsibleBaseAuth().authenticate(None)
 
@@ -220,6 +221,7 @@ def test_last_login_from_without_attribute(local_authenticator, random_user, exp
     mock_authenticator_plugin = mock.MagicMock()
     mock_authenticator_plugin.authenticate.return_value = random_user
     mock_authenticator_plugin.database_instance = local_authenticator
+    mock_authenticator_plugin.type = "local"
 
     # Mock the save method to track calls
     with mock.patch.object(random_user, 'save') as mock_save:
@@ -230,7 +232,7 @@ def test_last_login_from_without_attribute(local_authenticator, random_user, exp
             with expected_log(
                 'ansible_base.authentication.backend.logger',
                 "info",
-                f'User {random_user.username} logged in from authenticator with ID "{local_authenticator.id}"',
+                f'User {random_user.username} logged in from {mock_authenticator_plugin.type} authenticator with ID "{local_authenticator.id}',
             ):
                 auth_return = backend.AnsibleBaseAuth().authenticate(None)
 
@@ -255,6 +257,7 @@ def test_last_login_from_multiple_authenticators(local_authenticator, github_ent
     mock_local_plugin = mock.MagicMock()
     mock_local_plugin.authenticate.return_value = random_user
     mock_local_plugin.database_instance = local_authenticator
+    mock_local_plugin.type = "local"
 
     # Mock the save method to track calls
     with mock.patch.object(random_user, 'save') as mock_save:
@@ -266,7 +269,7 @@ def test_last_login_from_multiple_authenticators(local_authenticator, github_ent
             with expected_log(
                 'ansible_base.authentication.backend.logger',
                 "info",
-                f'User {random_user.username} logged in from authenticator with ID "{local_authenticator.id}"',
+                f'User {random_user.username} logged in from {mock_local_plugin.type} authenticator with ID "{local_authenticator.id}',
             ):
                 auth_return = backend.AnsibleBaseAuth().authenticate(None)
 

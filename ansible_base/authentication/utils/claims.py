@@ -19,6 +19,7 @@ from rest_framework.serializers import DateTimeField
 from ansible_base.authentication.models import Authenticator, AuthenticatorMap, AuthenticatorUser
 from ansible_base.authentication.utils.authenticator_map import check_role_type, expand_syntax
 from ansible_base.lib.abstract_models import AbstractOrganization, AbstractTeam, CommonModel
+from ansible_base.lib.logging import log_auth_warning
 from ansible_base.lib.utils.apps import is_rbac_installed
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 from ansible_base.lib.utils.string import is_empty
@@ -623,7 +624,7 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
         authenticator_user.save(update_fields=["extra_data"])
 
     if results['access_allowed'] is not True:
-        logger.warning(f"User {user.username} failed an allow map and was denied access")
+        log_auth_warning(f"User {user.username} failed an allow map and was denied access via authenticator {database_authenticator.name}", logger)
         return None
 
     # Make the orgs and the teams as necessary ...
