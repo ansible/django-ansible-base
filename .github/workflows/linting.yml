@@ -32,21 +32,21 @@ jobs:
         with:
           show-progress: false
 
-      - name: Install python 3.11
+      - name: Install python 3.12
         uses: actions/setup-python@v4
         with:
-          python-version: 3.11
+          python-version: 3.12
 
       - name: Install requirments
-        run: pip3.11 install -r requirements/requirements_dev.txt
+        run: pip3.12 install -r requirements/requirements_dev.txt
 
       - name: Install test dependencies for pure-python-imports
         if: matrix.tests.name == 'pure-python-imports'
         run: |
-          pip3.11 install -r requirements/requirements.in
-          pip3.11 install -r requirements/requirements_testing.txt
-          pip3.11 install -r requirements/requirements_channels.in
-          pip3.11 install -r requirements/requirements_redis_client.in
+          pip3.12 install -r requirements/requirements.in
+          pip3.12 install -r requirements/requirements_testing.txt
+          pip3.12 install -r requirements/requirements_channels.in
+          pip3.12 install -r requirements/requirements_redis_client.in
 
       - name: Run pure-python-imports check
         if: matrix.tests.name == 'pure-python-imports'

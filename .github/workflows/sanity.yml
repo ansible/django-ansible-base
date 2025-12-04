@@ -25,13 +25,13 @@ jobs:
       - name: Install build requirements
         run: sudo apt-get update && sudo apt-get install -y libsasl2-dev libldap2-dev libssl-dev libxmlsec1-dev
 
-      - name: Install python 3.11
+      - name: Install python 3.12
         uses: actions/setup-python@v4
         with:
-          python-version: 3.11
+          python-version: 3.12
 
       - name: Install requirements
-        run: pip3.11 install -r requirements/requirements_all.txt -r requirements/requirements_dev.txt
+        run: pip3.12 install -r requirements/requirements_all.txt -r requirements/requirements_dev.txt
 
       - name: Run help text check
         run: ./manage.py help_text_check --applications=dab --ignore-file=./.help_text_check.ignore

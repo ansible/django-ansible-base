@@ -9,7 +9,7 @@ authors = [
 ]
 description = "A Django app used by ansible services"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 keywords = ["ansible", "django"]
 license = {text = "Apache-2.0"}
 classifiers = [
@@ -23,7 +23,6 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
@@ -97,17 +96,18 @@ legacy_tox_ini = """
     min_version = 4.0
     no_package = true
     env_list =
-        check
-        py312
-        py310
+        py311-check
+        py312-check
         py311
-        py311sqlite
-        py310-django4
+        py312
+        py311-sqlite
+        py312-sqlite
         py311-django4
         py312-django4
+        py311-in-files
         py312-in-files
     labels =
-        test = py312, py310, py311, py311sqlite, py310-django4, py311-django4, py312-django4, check
+        test = py311-check, py312-check, py311, py312, py311-sqlite, py312-sqlite, py312-django4, py311-in-files, py312-in-files
         lint = flake8, black, isort
 
     [testenv]
@@ -118,7 +118,7 @@ legacy_tox_ini = """
     commands = pytest -n auto --color=yes --cov=. --cov-report=xml:coverage.xml --cov-report=html --cov-report=json --cov-branch --junit-xml=django-ansible-base-test-results.xml {env:ANSIBLE_BASE_PYTEST_ARGS} {env:ANSIBLE_BASE_TEST_DIRS:test_app/tests} {posargs}
     docker = db
 
-    [testenv:check]
+    [testenv:py311-check,py312-check]
     deps =
         -r{toxinidir}/requirements/requirements_all.txt
         -r{toxinidir}/requirements/requirements_dev.txt
@@ -127,12 +127,12 @@ legacy_tox_ini = """
         python3 manage.py check
         python3 manage.py makemigrations --check
 
-    [testenv:py311sqlite]
+    [testenv:py311-sqlite,py312-sqlite]
     docker = db
     setenv =
         DJANGO_SETTINGS_MODULE = test_app.sqlite3settings
 
-    [testenv:py310-django4]
+    [testenv:py311-django4,py312-django4]
     deps =
         -r{toxinidir}/requirements/requirements_all.txt
         -r{toxinidir}/requirements/requirements_dev.txt
@@ -140,23 +140,7 @@ legacy_tox_ini = """
         python -m pip install --upgrade "Django>=4.2.21,<4.3.0"
     docker = db
 
-    [testenv:py311-django4]
-    deps =
-        -r{toxinidir}/requirements/requirements_all.txt
-        -r{toxinidir}/requirements/requirements_dev.txt
-    commands_pre =
-        python -m pip install --upgrade "Django>=4.2.21,<4.3.0"
-    docker = db
-
-    [testenv:py312-django4]
-    deps =
-        -r{toxinidir}/requirements/requirements_all.txt
-        -r{toxinidir}/requirements/requirements_dev.txt
-    commands_pre =
-        python -m pip install --upgrade "Django>=4.2.21,<4.3.0"
-    docker = db
-
-    [testenv:py312-in-files]
+    [testenv:py311-in-files,py312-in-files]
     deps =
         -r{toxinidir}/requirements/requirements.in
         -r{toxinidir}/requirements/requirements_activitystream.in

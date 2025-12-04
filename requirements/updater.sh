@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -ue
 
-PYTHON=python3.11
+PYTHON=python3.12
 
 # Ensure script is run from the requirements/ directory
 if [[ "$(basename $(pwd))" != "requirements" ]]; then
@@ -61,7 +61,7 @@ main() {
       echo ""
       NEEDS_HELP=1
     ;;
-  esac 
+  esac
 
   if [[ "$NEEDS_HELP" == "1" ]] ; then
     echo "This script generates requirements_all.txt from requirements[_*].in"
