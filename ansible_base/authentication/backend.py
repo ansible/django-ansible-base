@@ -62,4 +62,6 @@ class AnsibleBaseAuth(ModelBackend):
                     user.last_login_from = authenticator_object.database_instance
                     user.save(update_fields=['last_login_from'])
                 return user
+        provided_username = kwargs.get('username', 'Unknown')
+        log_auth_event(f"Authentication failed for username: {provided_username}", logger)
         return None
