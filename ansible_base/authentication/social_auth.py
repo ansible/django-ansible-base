@@ -14,6 +14,7 @@ from social_django.strategy import DjangoStrategy
 from ansible_base.authentication.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_class, get_authenticator_plugins
 from ansible_base.authentication.models import Authenticator, AuthenticatorUser
 from ansible_base.authentication.utils.user import normalize_and_get_email
+from ansible_base.lib.logging import log_auth_event
 from ansible_base.lib.utils.response import get_fully_qualified_url
 
 logger = logging.getLogger('ansible_base.authentication.social_auth')
@@ -154,7 +155,10 @@ class SocialAuthMixin:
             return HttpResponseNotFound()
         if self.uses_redirect():
             auth_url = self.auth_url()
-            logger.info(f"Starting SSO redirect to {auth_url} with authenticator '{self.database_instance.name}' (slug: {self.database_instance.slug})")
+            log_auth_event(
+                f"Starting SSO redirect to {auth_url} with authenticator '{self.database_instance.name}' (slug: {self.database_instance.slug})",
+                second_logger=logger,
+            )
             return self.strategy.redirect(auth_url)
         else:
             return self.strategy.html(self.auth_html())
