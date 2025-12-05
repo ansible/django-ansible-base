@@ -110,7 +110,7 @@ def test_oauth2_refresh_token_creation_logs(mock_logger, oauth2_application_pass
 
     # Verify the logger was called with the correct message
     mock_logger.log.assert_called_once_with(
-        logging.INFO, f"Created OAuth2 refresh token for user '{admin_user.username}' linked to access token {access_token.pk}"
+        logging.INFO, f"Created OAuth2 refresh token {refresh_token.pk} for user '{admin_user.username}' linked to access token {access_token.pk}"
     )
 
     # Verify the refresh token was created
