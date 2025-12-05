@@ -87,6 +87,25 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
             connection.on_commit(_update_last_used)
         return valid
 
+    def _has_non_timestamp_changes(self):
+        """Check if any non-timestamp fields have changed."""
+        if not self.pk:
+            return False
+        try:
+            old_instance = OAuth2AccessToken.objects.get(pk=self.pk)
+            # Fields to exclude from change detection (timestamp/auto-updated fields)
+            exclude_fields = {'created', 'created_by', 'modified', 'modified_by', 'last_used'}
+            # Check if any non-timestamp field has changed
+            for field in self._meta.get_fields():
+                if hasattr(field, 'name') and field.name not in exclude_fields:
+                    old_value = getattr(old_instance, field.name, None)
+                    new_value = getattr(self, field.name, None)
+                    if old_value != new_value:
+                        return True
+        except OAuth2AccessToken.DoesNotExist:
+            pass
+        return False
+
     def validate_external_users(self):
         if self.user and get_setting('ALLOW_OAUTH2_FOR_EXTERNAL_USERS') is False:
             external_account = is_external_account(self.user)
@@ -98,6 +117,8 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
 
     def save(self, *args, **kwargs):
         creating_token = not bool(self.pk)
+        modifying_token = self._has_non_timestamp_changes() if not creating_token else False
+
         if creating_token:
             self.validate_external_users()
             self.token = hash_string(self.token, hasher=hashlib.sha256, algo="sha256")
@@ -107,4 +128,8 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
         if creating_token:
             log_auth_event(
                 f"Created OAuth2 access token {self.pk} for user '{user_name}' with application '{app_name}' and scope '{self.scope}'", second_logger=logger
+            )
+        elif modifying_token:
+            log_auth_event(
+                f"Modified OAuth2 access token {self.pk} for user '{user_name}' with application '{app_name}' and scope '{self.scope}'", second_logger=logger
             )
