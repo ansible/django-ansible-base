@@ -435,7 +435,7 @@ def test_capture_oauth_email_pipeline(mock_get_or_create, mock_logger, backend_h
             expected_email = email_value[0]
         elif not isinstance(email_value, str):
             expected_email = ""
-        mock_logger.log.assert_called_with(f"Stored OAuth email {expected_email} for user testuser from Test Authenticator")
+        mock_logger.info.assert_called_with(f"Stored OAuth email {expected_email} for user testuser from Test Authenticator")
 
     # If no expected calls, verify nothing was called
     if not expected_calls:
