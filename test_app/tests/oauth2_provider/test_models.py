@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from unittest import mock
 
@@ -54,8 +55,8 @@ def test_oauth2_access_token_creation_logs_with_application(mock_logger, oauth2_
     )
 
     # Verify the logger was called with the correct message
-    mock_logger.info.assert_called_once_with(
-        f"Creating OAuth2 access token for user '{admin_user.username}' with application '{application.name}' and scope 'write'"
+    mock_logger.log.assert_called_once_with(
+        logging.INFO, f"Created OAuth2 access token {token.pk} for user '{admin_user.username}' with application '{application.name}' and scope 'write'"
     )
 
     # Verify the token was created
@@ -76,8 +77,8 @@ def test_oauth2_access_token_creation_logs_without_application(mock_logger, admi
     )
 
     # Verify the logger was called with personal access token message
-    mock_logger.info.assert_called_once_with(
-        f"Creating OAuth2 access token for user '{admin_user.username}' with application 'N/A (Personal Access Token)' and scope 'read'"
+    mock_logger.log.assert_called_once_with(
+        logging.INFO, f"Created OAuth2 access token {token.pk} for user '{admin_user.username}' with application 'N/A (Personal Access Token)' and scope 'read'"
     )
 
     # Verify the token was created
@@ -108,7 +109,9 @@ def test_oauth2_refresh_token_creation_logs(mock_logger, oauth2_application_pass
     )
 
     # Verify the logger was called with the correct message
-    mock_logger.info.assert_called_once_with(f"Creating OAuth2 refresh token for user '{admin_user.username}' linked to access token {access_token.pk}")
+    mock_logger.log.assert_called_once_with(
+        logging.INFO, f"Created OAuth2 refresh token for user '{admin_user.username}' linked to access token {access_token.pk}"
+    )
 
     # Verify the refresh token was created
     assert OAuth2RefreshToken.objects.filter(pk=refresh_token.pk).exists()

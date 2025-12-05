@@ -97,10 +97,18 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
                 )
 
     def save(self, *args, **kwargs):
-        if not self.pk:
+        creating_token = not bool(self.pk)
+        if creating_token:
             self.validate_external_users()
             self.token = hash_string(self.token, hasher=hashlib.sha256, algo="sha256")
         super().save(*args, **kwargs)
         app_name = self.application.name if self.application else "N/A (Personal Access Token)"
         user_name = self.user.username if self.user else "N/A"
-        log_auth_event(f"Creating OAuth2 access token for user '{user_name}' with application '{app_name}' and scope '{self.scope}'", second_logger=logger)
+        if creating_token:
+            log_auth_event(
+                f"Created OAuth2 access token {self.pk} for user '{user_name}' with application '{app_name}' and scope '{self.scope}'", second_logger=logger
+            )
+        else:
+            log_auth_event(
+                f"Modified OAuth2 access token {self.pk} for user '{user_name}' with application '{app_name}' and scope '{self.scope}'", second_logger=logger
+            )
