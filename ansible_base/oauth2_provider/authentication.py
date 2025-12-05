@@ -6,6 +6,7 @@ from oauth2_provider.contrib.rest_framework import OAuth2Authentication
 from oauth2_provider.oauth2_backends import OAuthLibCore as _OAuthLibCore
 from rest_framework.exceptions import UnsupportedMediaType
 
+from ansible_base.lib.logging import log_auth_event
 from ansible_base.lib.utils.hashing import hash_string
 
 logger = logging.getLogger('ansible_base.oauth2_provider.authentication')
@@ -44,7 +45,7 @@ class LoggedOAuth2Authentication(OAuth2Authentication):
             username = user.username if user else '<none>'
             oauth2_application_pk = token.application.pk if token.application else "N/A"
             oauth2_application_name = token.application.name if token.application else "Personal Access Token"
-            logger.info(
+            log_auth_event(
                 smart_str(
                     u"User {} performed a {} to {} through the API using OAuth 2 token {} for OAuth2 application {} ({}).".format(
                         username, request.method, request.path, token.pk, oauth2_application_pk, oauth2_application_name
