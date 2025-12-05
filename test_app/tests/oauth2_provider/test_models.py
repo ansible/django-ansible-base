@@ -441,3 +441,145 @@ def test_oauth2_refresh_token_no_modification_log_for_timestamp_only_changes(moc
 
     # Verify no modification log was created
     mock_logger.log.assert_not_called()
+
+
+@pytest.mark.django_db
+@mock.patch("ansible_base.oauth2_provider.models.access_token.logger")
+def test_oauth2_access_token_no_modification_log_with_update_fields_timestamp_only(mock_logger, admin_user):
+    """Test that OAuth2AccessToken does not log when update_fields contains only timestamp fields."""
+    # Create an access token
+    token = OAuth2AccessToken.objects.create(
+        user=admin_user,
+        application=None,
+        token=generate_token(),
+        scope='write',
+        expires=datetime(2088, 1, 1, tzinfo=timezone.utc),
+    )
+
+    # Reset the mock to ignore creation log
+    mock_logger.reset_mock()
+
+    # Save with update_fields containing only timestamp fields
+    token.save(update_fields=['modified', 'modified_by'])
+
+    # Verify no modification log was created
+    mock_logger.log.assert_not_called()
+
+
+@pytest.mark.django_db
+@mock.patch("ansible_base.oauth2_provider.models.access_token.logger")
+def test_oauth2_access_token_modification_log_with_update_fields_non_timestamp(mock_logger, admin_user):
+    """Test that OAuth2AccessToken logs when update_fields contains non-timestamp fields."""
+    # Create an access token
+    token = OAuth2AccessToken.objects.create(
+        user=admin_user,
+        application=None,
+        token=generate_token(),
+        scope='write',
+        expires=datetime(2088, 1, 1, tzinfo=timezone.utc),
+        description='Original',
+    )
+
+    # Reset the mock to ignore creation log
+    mock_logger.reset_mock()
+
+    # Change description and save with update_fields
+    token.description = 'Updated'
+    token.save(update_fields=['description'])
+
+    # Verify the modification was logged
+    expected_msg = (
+        f"Modified OAuth2 access token {token.pk} for user '{admin_user.username}' " f"with application 'N/A (Personal Access Token)' and scope 'write'"
+    )
+    mock_logger.log.assert_called_once_with(logging.INFO, expected_msg)
+
+
+@pytest.mark.django_db
+@mock.patch("ansible_base.oauth2_provider.models.access_token.logger")
+def test_oauth2_access_token_no_modification_log_with_update_fields_unchanged_field(mock_logger, admin_user):
+    """Test that OAuth2AccessToken does not log when update_fields specifies a field that didn't change."""
+    # Create an access token
+    token = OAuth2AccessToken.objects.create(
+        user=admin_user,
+        application=None,
+        token=generate_token(),
+        scope='write',
+        expires=datetime(2088, 1, 1, tzinfo=timezone.utc),
+        description='Same',
+    )
+
+    # Reset the mock to ignore creation log
+    mock_logger.reset_mock()
+
+    # Save with update_fields but without actually changing the field
+    token.save(update_fields=['description'])
+
+    # Verify no modification log was created (field value didn't change)
+    mock_logger.log.assert_not_called()
+
+
+@pytest.mark.django_db
+@mock.patch("ansible_base.oauth2_provider.models.refresh_token.logger")
+def test_oauth2_refresh_token_no_modification_log_with_update_fields_timestamp_only(mock_logger, admin_user, oauth2_application_password):
+    """Test that OAuth2RefreshToken does not log when update_fields contains only timestamp fields."""
+    application, _secret = oauth2_application_password
+
+    # Create tokens
+    access_token = OAuth2AccessToken.objects.create(
+        user=admin_user,
+        application=application,
+        token=generate_token(),
+        scope='write',
+        expires=datetime(2088, 1, 1, tzinfo=timezone.utc),
+    )
+
+    refresh_token = OAuth2RefreshToken.objects.create(
+        user=admin_user,
+        application=application,
+        token=generate_token(),
+        access_token=access_token,
+    )
+
+    # Reset the mock to ignore creation log
+    mock_logger.reset_mock()
+
+    # Save with update_fields containing only timestamp fields
+    refresh_token.save(update_fields=['modified', 'modified_by'])
+
+    # Verify no modification log was created
+    mock_logger.log.assert_not_called()
+
+
+@pytest.mark.django_db
+@mock.patch("ansible_base.oauth2_provider.models.refresh_token.logger")
+def test_oauth2_refresh_token_modification_log_with_update_fields_non_timestamp(mock_logger, admin_user, oauth2_application_password):
+    """Test that OAuth2RefreshToken logs when update_fields contains non-timestamp fields."""
+    application, _secret = oauth2_application_password
+
+    # Create tokens
+    access_token = OAuth2AccessToken.objects.create(
+        user=admin_user,
+        application=application,
+        token=generate_token(),
+        scope='write',
+        expires=datetime(2088, 1, 1, tzinfo=timezone.utc),
+    )
+
+    refresh_token = OAuth2RefreshToken.objects.create(
+        user=admin_user,
+        application=application,
+        token=generate_token(),
+        access_token=access_token,
+    )
+
+    # Reset the mock to ignore creation log
+    mock_logger.reset_mock()
+
+    # Change revoked status and save with update_fields
+    refresh_token.revoked = datetime(2088, 6, 1, tzinfo=timezone.utc)
+    refresh_token.save(update_fields=['revoked'])
+
+    # Verify the modification was logged
+    mock_logger.log.assert_called_once_with(
+        logging.INFO, f"Modified OAuth2 refresh token {refresh_token.pk} for user '{admin_user.username}' linked to access token {access_token.pk}"
+    )

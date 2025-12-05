@@ -29,28 +29,51 @@ class OAuth2RefreshToken(CommonModel, oauth2_models.AbstractRefreshToken, activi
     token = prevent_search(models.CharField(max_length=255, help_text=_("The refresh token value.")))
     updated = None  # Tracked in CommonModel with 'modified', no need for this
 
-    def _has_non_timestamp_changes(self):
-        """Check if any non-timestamp fields have changed."""
+    def _has_non_timestamp_changes(self, update_fields=None):
+        """Check if any non-timestamp fields have changed.
+
+        Args:
+            update_fields: Optional list/set of field names being updated. If provided,
+                          only these fields will be checked for changes.
+
+        Returns:
+            bool: True if any non-timestamp field has changed, False otherwise.
+        """
         if not self.pk:
             return False
         try:
             old_instance = OAuth2RefreshToken.objects.get(pk=self.pk)
             # Fields to exclude from change detection (timestamp/auto-updated fields)
             exclude_fields = {'created', 'created_by', 'modified', 'modified_by'}
-            # Check if any non-timestamp field has changed
-            for field in self._meta.get_fields():
-                if hasattr(field, 'name') and field.name not in exclude_fields:
-                    old_value = getattr(old_instance, field.name, None)
-                    new_value = getattr(self, field.name, None)
+
+            # If update_fields is specified, only check those fields (minus excluded ones)
+            if update_fields is not None:
+                fields_to_check = set(update_fields) - exclude_fields
+                if not fields_to_check:
+                    # Only timestamp fields are being updated
+                    return False
+                # Check only the specified fields
+                for field_name in fields_to_check:
+                    old_value = getattr(old_instance, field_name, None)
+                    new_value = getattr(self, field_name, None)
                     if old_value != new_value:
                         return True
+            else:
+                # Check all non-timestamp fields
+                for field in self._meta.get_fields():
+                    if hasattr(field, 'name') and field.name not in exclude_fields:
+                        old_value = getattr(old_instance, field.name, None)
+                        new_value = getattr(self, field.name, None)
+                        if old_value != new_value:
+                            return True
         except OAuth2RefreshToken.DoesNotExist:
             pass
         return False
 
     def save(self, *args, **kwargs):
         create_token = not bool(self.pk)
-        modifying_token = self._has_non_timestamp_changes() if not create_token else False
+        update_fields = kwargs.get('update_fields')
+        modifying_token = self._has_non_timestamp_changes(update_fields) if not create_token else False
 
         if create_token:
             self.token = hash_string(self.token, hasher=hashlib.sha256, algo="sha256")

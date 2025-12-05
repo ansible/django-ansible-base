@@ -40,7 +40,7 @@ if 'ansible_base.activitystream' in settings.INSTALLED_APPS:
 class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activitystream):
     router_basename = 'token'
     ignore_relations = ['refresh_token']
-    activity_stream_excluded_field_names = ['last_used']
+    activity_stream_excluded_field_names = ['last_used', "modified", "modified_by"]
 
     class Meta(oauth2_models.AbstractAccessToken.Meta):
         verbose_name = _('access token')
@@ -87,21 +87,43 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
             connection.on_commit(_update_last_used)
         return valid
 
-    def _has_non_timestamp_changes(self):
-        """Check if any non-timestamp fields have changed."""
+    def _has_non_timestamp_changes(self, update_fields=None):
+        """Check if any non-timestamp fields have changed.
+
+        Args:
+            update_fields: Optional list/set of field names being updated. If provided,
+                          only these fields will be checked for changes.
+
+        Returns:
+            bool: True if any non-timestamp field has changed, False otherwise.
+        """
         if not self.pk:
             return False
         try:
             old_instance = OAuth2AccessToken.objects.get(pk=self.pk)
             # Fields to exclude from change detection (timestamp/auto-updated fields)
             exclude_fields = {'created', 'created_by', 'modified', 'modified_by', 'last_used'}
-            # Check if any non-timestamp field has changed
-            for field in self._meta.get_fields():
-                if hasattr(field, 'name') and field.name not in exclude_fields:
-                    old_value = getattr(old_instance, field.name, None)
-                    new_value = getattr(self, field.name, None)
+
+            # If update_fields is specified, only check those fields (minus excluded ones)
+            if update_fields is not None:
+                fields_to_check = set(update_fields) - exclude_fields
+                if not fields_to_check:
+                    # Only timestamp fields are being updated
+                    return False
+                # Check only the specified fields
+                for field_name in fields_to_check:
+                    old_value = getattr(old_instance, field_name, None)
+                    new_value = getattr(self, field_name, None)
                     if old_value != new_value:
                         return True
+            else:
+                # Check all non-timestamp fields
+                for field in self._meta.get_fields():
+                    if hasattr(field, 'name') and field.name not in exclude_fields:
+                        old_value = getattr(old_instance, field.name, None)
+                        new_value = getattr(self, field.name, None)
+                        if old_value != new_value:
+                            return True
         except OAuth2AccessToken.DoesNotExist:
             pass
         return False
@@ -117,7 +139,8 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
 
     def save(self, *args, **kwargs):
         creating_token = not bool(self.pk)
-        modifying_token = self._has_non_timestamp_changes() if not creating_token else False
+        update_fields = kwargs.get('update_fields')
+        modifying_token = self._has_non_timestamp_changes(update_fields) if not creating_token else False
 
         if creating_token:
             self.validate_external_users()

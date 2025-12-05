@@ -26,7 +26,7 @@ def no_activity_stream():
         activitystream_enabled.enabled = previous_value
 
 
-def _store_activitystream_entry(old, new, operation):
+def _store_activitystream_entry(old, new, operation, update_fields=None):
     if not activitystream_enabled:
         return
 
@@ -38,6 +38,19 @@ def _store_activitystream_entry(old, new, operation):
 
     excluded = getattr(new, 'activity_stream_excluded_field_names', [])
     limit = getattr(new, 'activity_stream_limit_field_names', [])
+
+    # We only want to diff the fields that were updated, so we have to take the intersection of the limited fields and the update fields
+    if operation == 'update' and update_fields is not None:
+        # If limit is otherwise empty (meaning no pre-existing limit), then we just need to make the updated fields the limit
+        if not limit:
+            limit = update_fields
+        else:
+            limit = list(set(limit).intersection(set(update_fields)))
+            # If only a non-included field is updated, we can be certain that the delta will be empty;
+            # Continuing with the diff would introduce a bug where we diff all non-excluded fields.
+            if not limit:
+                return
+
     delta = diff(old, new, exclude_fields=excluded, limit_fields=limit, all_values_as_strings=True)
 
     if not delta:
@@ -124,7 +137,7 @@ def activitystream_update(sender, instance, raw, using, update_fields, **kwargs)
     except sender.DoesNotExist:
         return
 
-    _store_activitystream_entry(old, instance, 'update')
+    _store_activitystream_entry(old, instance, 'update', update_fields=update_fields)
 
 
 # pre_delete

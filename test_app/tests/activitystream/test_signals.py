@@ -330,3 +330,150 @@ def test_activitystream_user_password_sanitized(user):
     user.set_password('new_password')
     user.save()
     assert entries.last().changes['changed_fields']['password'] == [ENCRYPTED_STRING, ENCRYPTED_STRING]
+
+
+@pytest.mark.django_db
+def test_activitystream_update_fields_limits_diff():
+    """
+    Ensure that when update_fields is provided to save(), only those fields are
+    included in the activity stream entry.
+    """
+    from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
+
+    city = City.objects.create(name='New York', country='USA', population=1000)
+    initial_entry_count = city.activity_stream_entries.count()
+
+    # Update both name and country, but only save country via update_fields
+    city.name = 'Albany'
+    city.country = 'Canada'
+    city.save(update_fields=['country'])
+
+    entries = city.activity_stream_entries
+    assert entries.count() == initial_entry_count + 1
+    entry = entries.last()
+    assert entry.operation == 'update'
+
+    # Only country should be in the changed_fields, not name
+    # Note: country is encrypted (prevent_search) so values show as ENCRYPTED_STRING
+    assert 'country' in entry.changes['changed_fields']
+    assert 'name' not in entry.changes['changed_fields']
+    assert len(entry.changes['changed_fields']) == 1
+    assert entry.changes['changed_fields']['country'] == [ENCRYPTED_STRING, ENCRYPTED_STRING]
+
+
+@pytest.mark.django_db
+def test_activitystream_update_fields_no_entry_when_only_excluded_fields():
+    """
+    Ensure that when update_fields contains only fields that are in
+    activity_stream_limit_field_names, and those fields haven't changed,
+    no activity stream entry is created.
+    """
+    city = City.objects.create(name='New York', country='USA')
+    initial_entry_count = city.activity_stream_entries.count()
+
+    # Update name but not country, and save only name via update_fields
+    # Since City has activity_stream_limit_field_names = ['country'],
+    # updating only 'name' should not create an entry
+    city.name = 'Albany'
+    city.save(update_fields=['name'])
+
+    entries = city.activity_stream_entries
+    # No new entry should be created because 'name' is not in the limit_fields
+    assert entries.count() == initial_entry_count
+
+
+@pytest.mark.django_db
+def test_activitystream_update_fields_with_limit_fields_intersection():
+    """
+    Ensure that when both activity_stream_limit_field_names and update_fields
+    are provided, only the intersection of those fields is diffed.
+    """
+    city = City.objects.create(name='New York', country='USA')
+    initial_entry_count = city.activity_stream_entries.count()
+
+    # City has activity_stream_limit_field_names = ['country']
+    # If we update both name and country with update_fields=['name', 'country']
+    # only country should appear in the activity stream
+    city.name = 'Albany'
+    city.country = 'Canada'
+    city.save(update_fields=['name', 'country'])
+
+    entries = city.activity_stream_entries
+    assert entries.count() == initial_entry_count + 1
+    entry = entries.last()
+
+    # Only country should be in changed_fields (intersection of limit and update_fields)
+    assert 'country' in entry.changes['changed_fields']
+    assert 'name' not in entry.changes['changed_fields']
+    assert len(entry.changes['changed_fields']) == 1
+
+
+@pytest.mark.django_db
+def test_activitystream_update_fields_empty_delta_no_entry():
+    """
+    Ensure that when update_fields is provided but the field value hasn't
+    actually changed, no activity stream entry is created (empty delta).
+    """
+    animal = Animal.objects.create(name='Fluffy')
+    initial_entry_count = animal.activity_stream_entries.count()
+
+    # Save with update_fields but without actually changing the value
+    animal.save(update_fields=['name'])
+
+    entries = animal.activity_stream_entries
+    # No new entry should be created because there's no actual change
+    assert entries.count() == initial_entry_count
+
+
+@pytest.mark.django_db
+def test_activitystream_update_fields_multiple_fields():
+    """
+    Ensure that multiple fields can be updated via update_fields and all
+    appear in the activity stream entry.
+    """
+    animal = Animal.objects.create(name='Fluffy', age=2)
+    initial_entry_count = animal.activity_stream_entries.count()
+
+    # Update multiple fields
+    # Note: 'age' is in activity_stream_excluded_field_names, so it won't show up
+    animal.name = 'Rocky'
+    animal.age = 3
+    animal.save(update_fields=['name', 'age'])
+
+    entries = animal.activity_stream_entries
+    assert entries.count() == initial_entry_count + 1
+    entry = entries.last()
+
+    # Only name should be in changed_fields (age is excluded)
+    assert 'name' in entry.changes['changed_fields']
+    assert 'age' not in entry.changes['changed_fields']
+    assert entry.changes['changed_fields']['name'] == ['Fluffy', 'Rocky']
+
+
+@pytest.mark.django_db
+def test_activitystream_update_fields_none_with_limit_fields():
+    """
+    Ensure that when update_fields is None (not provided) and model has
+    activity_stream_limit_field_names, only limited fields are tracked.
+    """
+    from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
+
+    city = City.objects.create(name='New York', country='USA', population=1000)
+    initial_entry_count = city.activity_stream_entries.count()
+
+    # City has activity_stream_limit_field_names = ['country']
+    # So only changes to country should be tracked
+    city.name = 'Albany'
+    city.country = 'Canada'
+    city.population = 2000
+    city.save()
+
+    entries = city.activity_stream_entries
+    assert entries.count() == initial_entry_count + 1
+    entry = entries.last()
+
+    # Only country should be in changed_fields (it's the only limited field)
+    assert 'country' in entry.changes['changed_fields']
+    assert 'name' not in entry.changes['changed_fields']
+    assert 'population' not in entry.changes['changed_fields']
+    assert entry.changes['changed_fields']['country'] == [ENCRYPTED_STRING, ENCRYPTED_STRING]

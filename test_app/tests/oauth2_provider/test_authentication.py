@@ -4,6 +4,7 @@ from unittest import mock
 import pytest
 from oauthlib.common import generate_token
 
+from ansible_base.activitystream.models import Entry
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.oauth2_provider.models import OAuth2AccessToken
 
@@ -222,3 +223,37 @@ def test_oauth2_unsupported_media_type(user, user_api_client, only_oauth_scope_p
     data = b'TESTDATA'
     response = user_api_client.post(url, data=data, content_type='application/octet-stream')
     assert response.status_code == 200, response.status_code
+
+
+def test_oauth2_authentication_creates_activitystream_entry(unauthenticated_api_client, oauth2_admin_access_token, animal):
+    """
+    Ensure that authenticating with OAuth2 and making a GET request does NOT
+    create spurious activity stream entries (regression test).
+
+    This tests that using OAuth2 authentication to simply read data doesn't
+    incorrectly trigger activity stream entry creation.
+    """
+    # Get the count of all activity stream entries before the request
+    initial_entry_count = Entry.objects.count()
+
+    # Make an authenticated GET request using OAuth2 bearer token
+    url = get_relative_url("animal-detail", kwargs={"pk": animal.pk})
+    access_token_obj = oauth2_admin_access_token[0]
+    raw_token = oauth2_admin_access_token[1]
+    response = unauthenticated_api_client.get(
+        url,
+        headers={'Authorization': f'Bearer {raw_token}'},
+    )
+    assert response.status_code == 200
+    assert response.data['name'] == animal.name
+
+    # Verify OAuth2 was actually used by checking the token's last_used field was updated
+    access_token_obj.refresh_from_db()
+    assert access_token_obj.last_used is not None
+
+    # Get the count of all activity stream entries after the request
+    final_entry_count = Entry.objects.count()
+
+    # No new activity stream entries should have been created by the GET request
+    # (only the animal creation entry should exist, which was created before this test)
+    assert final_entry_count == initial_entry_count
