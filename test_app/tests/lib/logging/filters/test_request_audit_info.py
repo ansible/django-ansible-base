@@ -239,9 +239,7 @@ class TestRequestAuditInfoFilterIntegration:
         stream = io.StringIO()
         root_logger = logging.getLogger()
         handler = logging.StreamHandler(stream)
-        formatter = logging.Formatter(
-            '(test_audit_info) %(asctime)s %(levelname)-8s [%(source_ip)s] "%(user_agent)s" %(name)s %(message)s'
-        )
+        formatter = logging.Formatter('(test_audit_info) %(asctime)s %(levelname)-8s [%(source_ip)s] "%(user_agent)s" %(name)s %(message)s')
         handler.setFormatter(formatter)
 
         # Add our filter
@@ -268,4 +266,3 @@ class TestRequestAuditInfoFilterIntegration:
         finally:
             handler.close()
             root_logger.removeHandler(handler)
-
