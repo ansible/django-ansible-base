@@ -157,8 +157,10 @@ class SocialAuthMixin:
         # Before calling BaseAuth.start, we need to log any expected redirects from the parent function.
         if self.uses_redirect():
             auth_url = self.auth_url()
+            # Strip URL parameters from the auth URL for logging
+            auth_url_without_params = auth_url.split('?')[0] if auth_url else auth_url
             log_auth_event(
-                f"Starting SSO redirect to {auth_url} with authenticator '{self.database_instance.name}' (slug: {self.database_instance.slug})",
+                f"Starting SSO redirect to {auth_url_without_params} with authenticator '{self.database_instance.name}' (slug: {self.database_instance.slug})",
                 second_logger=logger,
             )
 

@@ -78,16 +78,18 @@ def test_authenticator_strategy_redirect_logging(mock_logger):
     strategy = AuthenticatorStrategy(storage=AuthenticatorStorage(), request=request)
     backend = strategy.get_backend(authenticator.slug)
 
-    # Mock auth_url to return a test URL
-    test_url = "https://example.com/oauth/callback"
+    # Mock auth_url to return a test URL with parameters
+    test_url = "https://example.com/oauth/callback?state=xyz&nonce=abc"
     with mock.patch.object(backend, 'auth_url', return_value=test_url):
         # Call start() which should log the redirect
         result = backend.start()
 
-        # Verify the logger was called with the SSO redirect message
-        mock_logger.log.assert_called_once_with(logging.INFO, f"Starting SSO redirect to {test_url} with authenticator 'Test OIDC' (slug: test-oidc)")
+        # Verify the logger was called with the SSO redirect message (without URL parameters)
+        mock_logger.log.assert_called_once_with(
+            logging.INFO, "Starting SSO redirect to https://example.com/oauth/callback with authenticator 'Test OIDC' (slug: test-oidc)"
+        )
 
-        # Verify that the result is an HttpResponseRedirect with the correct URL
+        # Verify that the result is an HttpResponseRedirect with the correct URL (with parameters)
         assert isinstance(result, HttpResponseRedirect)
         assert result.url == test_url
 
@@ -126,7 +128,7 @@ def test_social_auth_mixin_start_enabled_authenticator(mock_logger):
     backend = TestBackend(database_instance=authenticator)
     backend.start()
 
-    # Verify info logging for starting SSO redirect
+    # Verify info logging for starting SSO redirect (URL parameters stripped)
     mock_logger.log.assert_any_call(logging.INFO, "Starting SSO redirect to https://example.com/auth with authenticator 'Test OIDC' (slug: test-oidc)")
 
     # Verify error was not called (since authenticator is enabled)
@@ -160,7 +162,7 @@ def test_social_auth_mixin_start_disabled_authenticator(mock_logger):
     mock_logger.error.assert_called_once_with("Authentication attempted with disabled authenticator Disabled OIDC")
 
     # Verify info logging was not called (since authenticator is disabled)
-    assert not mock_logger.info.called
+    assert not mock_logger.log.called
 
     # Verify that a 404 response was returned
     assert isinstance(result, HttpResponseNotFound)
@@ -246,8 +248,8 @@ def test_sso_authenticators_log_redirect_and_start(mock_logger, authenticator_ty
     # Get the backend for this authenticator
     backend = strategy.get_backend(authenticator.slug)
 
-    # Mock auth_url to return a URL instead of making external calls
-    with mock.patch.object(backend, 'auth_url', return_value='https://example.com/auth'):
+    # Mock auth_url to return a URL with parameters (to verify they are stripped in logging)
+    with mock.patch.object(backend, 'auth_url', return_value='https://example.com/auth?state=xyz&nonce=abc'):
         # Call start() which should log both start and redirect messages
         result = backend.start()
 
@@ -258,11 +260,14 @@ def test_sso_authenticators_log_redirect_and_start(mock_logger, authenticator_ty
         sso_log_calls = [call for call in mock_logger.log.call_args_list if "Starting SSO redirect" in str(call)]
         assert len(sso_log_calls) >= 1, f"{authenticator_type} did not log SSO redirect message"
 
-        # Verify the message contains the authenticator name, slug, and redirect URL
+        # Verify the message contains the authenticator name, slug, and redirect URL (without parameters)
         sso_message = str(sso_log_calls[0])
         assert authenticator_name in sso_message, f"SSO message missing authenticator name: {sso_message}"
         assert authenticator.slug in sso_message, f"SSO message missing authenticator slug: {sso_message}"
         assert "https://" in sso_message or "http://" in sso_message, f"SSO message missing redirect URL: {sso_message}"
+        # Verify URL parameters were stripped from the logged message
+        assert "state=xyz" not in sso_message, f"SSO message should not contain URL parameters: {sso_message}"
+        assert "nonce=abc" not in sso_message, f"SSO message should not contain URL parameters: {sso_message}"
 
 
 @pytest.mark.django_db
@@ -430,7 +435,7 @@ def test_capture_oauth_email_pipeline(mock_get_or_create, mock_logger, backend_h
             expected_email = email_value[0]
         elif not isinstance(email_value, str):
             expected_email = ""
-        mock_logger.info.assert_called_with(f"Stored OAuth email {expected_email} for user testuser from Test Authenticator")
+        mock_logger.log.assert_called_with(f"Stored OAuth email {expected_email} for user testuser from Test Authenticator")
 
     # If no expected calls, verify nothing was called
     if not expected_calls:
@@ -607,7 +612,7 @@ def test_social_auth_mixin_start_no_redirect(mock_logger):
     backend.start()
 
     # Verify that we didn't log the SSO redirect message (since this doesn't use redirect)
-    sso_log_calls = [call for call in mock_logger.info.call_args_list if "Starting SSO redirect" in str(call)]
+    sso_log_calls = [call for call in mock_logger.log.call_args_list if "Starting SSO redirect" in str(call)]
     assert len(sso_log_calls) == 0, "Should not log SSO redirect when uses_redirect() is False"
 
 
@@ -648,7 +653,7 @@ def test_social_auth_mixin_start_no_redirect_disabled_authenticator(mock_logger)
     mock_logger.error.assert_called_once_with("Authentication attempted with disabled authenticator Disabled HTML Auth")
 
     # Verify that no SSO redirect logging happened
-    assert not mock_logger.info.called
+    assert not mock_logger.log.called
 
     # Verify that a 404 response was returned (not HTML)
     assert isinstance(result, HttpResponseNotFound)
