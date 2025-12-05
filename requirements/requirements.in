@@ -4,7 +4,7 @@
 #
 cryptography
 Django>=4.2.26,<6.0    # Updating for CVE-2025-64459
-djangorestframework
+djangorestframework<3.16 # problem with OAuth2Application.organization null handling
 django-crum
 inflection
 sqlparse>=0.5.2 # https://github.com/ansible/django-ansible-base/security/dependabot/9

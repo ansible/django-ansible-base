@@ -46,6 +46,10 @@ jobs:
             python-version: "3.12"
             sonar: false
             junit-xml-upload: false
+          - env: py312-in-files
+            python-version: "3.12"
+            sonar: false
+            junit-xml-upload: false
     steps:
       - uses: actions/checkout@v4
         with:

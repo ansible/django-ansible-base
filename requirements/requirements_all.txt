@@ -1,21 +1,21 @@
-asgiref==3.8.1
+asgiref==3.11.0
     # via
     #   -r requirements/requirements_resource_registry.in
     #   channels
     #   django
-attrs==24.2.0
+attrs==25.4.0
     # via
     #   jsonschema
     #   referencing
-certifi==2024.8.30
+certifi==2025.11.12
     # via requests
-cffi==1.17.1
+cffi==2.0.0
     # via cryptography
-channels==4.2.0
+channels==4.3.2
     # via -r requirements/requirements_channels.in
-charset-normalizer==3.4.0
+charset-normalizer==3.4.4
     # via requests
-cryptography==44.0.1
+cryptography==46.0.3
     # via
     #   -r requirements/requirements.in
     #   jwcrypto
@@ -24,7 +24,7 @@ defusedxml==0.8.0rc2
     # via
     #   python3-openid
     #   social-auth-core
-django==5.2.8
+django==5.2.9
     # via
     #   -r requirements/requirements.in
     #   channels
@@ -36,15 +36,15 @@ django==5.2.8
     #   djangorestframework
     #   drf-spectacular
     #   social-auth-app-django
-django-auth-ldap==5.1.0
+django-auth-ldap==5.2.0
     # via -r requirements/requirements_authentication.in
 django-crum==0.7.9
     # via -r requirements/requirements.in
-django-flags==5.0.13
+django-flags==5.1.0
     # via -r requirements/requirements_feature_flags.in
 django-oauth-toolkit==2.3.0
     # via -r requirements/requirements_oauth2_provider.in
-django-redis==5.4.0
+django-redis==6.0.0
     # via -r requirements/requirements_redis_client.in
 djangorestframework==3.15.2
     # via
@@ -52,9 +52,9 @@ djangorestframework==3.15.2
     #   drf-spectacular
 drf-spectacular==0.26.5
     # via -r requirements/requirements_api_documentation.in
-dynaconf==3.2.10
+dynaconf==3.2.12
     # via -r requirements/requirements.in
-idna==3.10
+idna==3.11
     # via requests
 inflection==0.5.1
     # via
@@ -62,21 +62,21 @@ inflection==0.5.1
     #   drf-spectacular
 isodate==0.7.2
     # via python3-saml
-jsonschema==4.23.0
+jsonschema==4.25.1
     # via drf-spectacular
-jsonschema-specifications==2024.10.1
+jsonschema-specifications==2025.9.1
     # via jsonschema
 jwcrypto==1.5.6
     # via django-oauth-toolkit
 ldap-filter==1.0.1
     # via -r requirements/requirements_authentication.in
-lxml==5.3.0
+lxml==6.0.2
     # via
     #   python3-saml
     #   xmlsec
 netaddr==1.3.0
     # via pyrad
-oauthlib==3.2.2
+oauthlib==3.3.1
     # via
     #   django-oauth-toolkit
     #   requests-oauthlib
@@ -85,9 +85,9 @@ pyasn1==0.6.1
     # via
     #   pyasn1-modules
     #   python-ldap
-pyasn1-modules==0.4.1
+pyasn1-modules==0.4.2
     # via python-ldap
-pycparser==2.22
+pycparser==2.23
     # via cffi
 pyjwt==2.10.1
     # via
@@ -96,7 +96,7 @@ pyjwt==2.10.1
     #   social-auth-core
 pyrad==2.4
     # via -r requirements/requirements_authentication.in
-python-ldap==3.4.4
+python-ldap==3.4.5
     # via
     #   -r requirements/requirements_authentication.in
     #   django-auth-ldap
@@ -104,17 +104,18 @@ python3-openid==3.2.0
     # via social-auth-core
 python3-saml==1.16.0
     # via -r requirements/requirements_authentication.in
-pyyaml==6.0.2
+pyyaml==6.0.3
     # via drf-spectacular
-redis==5.2.0
+redis==7.1.0
     # via
     #   -r requirements/requirements_redis_client.in
     #   django-redis
-referencing==0.35.1
+referencing==0.36.2
     # via
+    #   -r requirements/requirements_api_documentation.in
     #   jsonschema
     #   jsonschema-specifications
-requests==2.32.3
+requests==2.32.5
     # via
     #   -r requirements/requirements_jwt_consumer.in
     #   -r requirements/requirements_resource_registry.in
@@ -123,7 +124,7 @@ requests==2.32.3
     #   social-auth-core
 requests-oauthlib==2.0.0
     # via social-auth-core
-rpds-py==0.22.3
+rpds-py==0.30.0
     # via
     #   jsonschema
     #   referencing
@@ -137,7 +138,7 @@ social-auth-core==4.5.4
     # via
     #   -r requirements/requirements_authentication.in
     #   social-auth-app-django
-sqlparse==0.5.2
+sqlparse==0.5.4
     # via
     #   -r requirements/requirements.in
     #   django
@@ -145,11 +146,13 @@ tabulate==0.9.0
     # via -r requirements/requirements_authentication.in
 tacacs-plus==2.6
     # via -r requirements/requirements_authentication.in
-typing-extensions==4.12.2
-    # via jwcrypto
-uritemplate==4.1.1
+typing-extensions==4.15.0
+    # via
+    #   jwcrypto
+    #   referencing
+uritemplate==4.2.0
     # via drf-spectacular
-urllib3==2.2.3
+urllib3==2.5.0
     # via
     #   -r requirements/requirements_resource_registry.in
     #   requests

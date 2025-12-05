@@ -105,6 +105,7 @@ legacy_tox_ini = """
         py310-django4
         py311-django4
         py312-django4
+        py312-in-files
     labels =
         test = py312, py310, py311, py311sqlite, py310-django4, py311-django4, py312-django4, check
         lint = flake8, black, isort
@@ -154,6 +155,23 @@ legacy_tox_ini = """
     commands_pre =
         python -m pip install --upgrade "Django>=4.2.21,<4.3.0"
     docker = db
+
+    [testenv:py312-in-files]
+    deps =
+        -r{toxinidir}/requirements/requirements.in
+        -r{toxinidir}/requirements/requirements_activitystream.in
+        -r{toxinidir}/requirements/requirements_authentication.in
+        -r{toxinidir}/requirements/requirements_api_documentation.in
+        -r{toxinidir}/requirements/requirements_rest_filters.in
+        -r{toxinidir}/requirements/requirements_rbac.in
+        -r{toxinidir}/requirements/requirements_channels.in
+        -r{toxinidir}/requirements/requirements_jwt_consumer.in
+        -r{toxinidir}/requirements/requirements_redis_client.in
+        -r{toxinidir}/requirements/requirements_oauth2_provider.in
+        -r{toxinidir}/requirements/requirements_resource_registry.in
+        -r{toxinidir}/requirements/requirements_feature_flags.in
+        -r{toxinidir}/requirements/requirements_testing.txt
+        -r{toxinidir}/requirements/requirements_dev.txt
 
     [docker:db]
     dockerfile = {toxinidir}/tools/dev_postgres/Dockerfile

@@ -1,7 +1,7 @@
 ansible                 # Used in build process to generate some configs
 black==25.1.0           # Linting tool, if changed update pyproject.toml as well
 build
-django==5.2.8
+django<6
 django-debug-toolbar
 django-extensions
 djangorestframework
@@ -13,7 +13,7 @@ jsonschema
 tox
 tox-docker
 typeguard
-openapi-spec-validator
+openapi-spec-validator>=0.6.1  # Adapted to changing import locations in jsonschema
 pytest
 pytest-asyncio
 pytest-xdist
@@ -21,6 +21,5 @@ pytest-cov
 pytest-django
 pytest-mock
 setuptools-scm
-sqlparse==0.5.2
 psycopg[binary]
 sdb
