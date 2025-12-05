@@ -162,7 +162,7 @@ class SocialAuthMixin:
                 second_logger=logger,
             )
 
-        return super().start(self)
+        return super().start()
 
     @property
     def name(self):

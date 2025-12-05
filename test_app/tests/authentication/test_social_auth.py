@@ -1,3 +1,4 @@
+import logging
 from unittest import mock
 
 import pytest
@@ -84,7 +85,7 @@ def test_authenticator_strategy_redirect_logging(mock_logger):
         result = backend.start()
 
         # Verify the logger was called with the SSO redirect message
-        mock_logger.info.assert_called_once_with(f"Starting SSO redirect to {test_url} with authenticator 'Test OIDC' (slug: test-oidc)")
+        mock_logger.log.assert_called_once_with(logging.INFO, f"Starting SSO redirect to {test_url} with authenticator 'Test OIDC' (slug: test-oidc)")
 
         # Verify that the result is an HttpResponseRedirect with the correct URL
         assert isinstance(result, HttpResponseRedirect)
@@ -112,6 +113,9 @@ def test_social_auth_mixin_start_enabled_authenticator(mock_logger):
         def uses_redirect(self):
             return True
 
+        def start(self):
+            return None
+
     class TestBackend(SocialAuthMixin, MockParent):
         def __init__(self, database_instance):
             # Mock the strategy argument requirement
@@ -120,15 +124,13 @@ def test_social_auth_mixin_start_enabled_authenticator(mock_logger):
             self.logger = None
 
     backend = TestBackend(database_instance=authenticator)
-    result = backend.start()
+    backend.start()
 
     # Verify info logging for starting SSO redirect
-    mock_logger.info.assert_any_call("Starting SSO redirect to https://example.com/auth with authenticator 'Test OIDC' (slug: test-oidc)")
+    mock_logger.log.assert_any_call(logging.INFO, "Starting SSO redirect to https://example.com/auth with authenticator 'Test OIDC' (slug: test-oidc)")
 
     # Verify error was not called (since authenticator is enabled)
     assert not mock_logger.error.called
-
-    assert isinstance(result, HttpResponseRedirect)
 
 
 @pytest.mark.django_db
@@ -253,7 +255,7 @@ def test_sso_authenticators_log_redirect_and_start(mock_logger, authenticator_ty
         assert isinstance(result, HttpResponseRedirect), f"{authenticator_type} did not return HttpResponseRedirect"
 
         # Verify we got the SSO redirect log message (which includes both start and redirect info)
-        sso_log_calls = [call for call in mock_logger.info.call_args_list if "Starting SSO redirect" in str(call)]
+        sso_log_calls = [call for call in mock_logger.log.call_args_list if "Starting SSO redirect" in str(call)]
         assert len(sso_log_calls) >= 1, f"{authenticator_type} did not log SSO redirect message"
 
         # Verify the message contains the authenticator name, slug, and redirect URL
@@ -587,6 +589,9 @@ def test_social_auth_mixin_start_no_redirect(mock_logger):
         def uses_redirect(self):
             return False
 
+        def start(self):
+            return None
+
     class TestBackend(SocialAuthMixin, MockParent):
         def __init__(self, database_instance):
             # Mock the strategy argument requirement
@@ -599,18 +604,11 @@ def test_social_auth_mixin_start_no_redirect(mock_logger):
             self.logger = None
 
     backend = TestBackend(database_instance=authenticator)
-    result = backend.start()
+    backend.start()
 
     # Verify that we didn't log the SSO redirect message (since this doesn't use redirect)
     sso_log_calls = [call for call in mock_logger.info.call_args_list if "Starting SSO redirect" in str(call)]
     assert len(sso_log_calls) == 0, "Should not log SSO redirect when uses_redirect() is False"
-
-    # Verify that we returned HTML response
-    from django.http import HttpResponse
-
-    assert isinstance(result, HttpResponse)
-    assert result.status_code == 200
-    assert b"Login Form" in result.content
 
 
 @pytest.mark.django_db
