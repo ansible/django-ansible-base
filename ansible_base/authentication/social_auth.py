@@ -153,15 +153,16 @@ class SocialAuthMixin:
         if not self.database_instance.enabled:
             logger.error(f"Authentication attempted with disabled authenticator {self.database_instance.name}")
             return HttpResponseNotFound()
+
+        # Before calling BaseAuth.start, we need to log any expected redirects from the parent function.
         if self.uses_redirect():
             auth_url = self.auth_url()
             log_auth_event(
                 f"Starting SSO redirect to {auth_url} with authenticator '{self.database_instance.name}' (slug: {self.database_instance.slug})",
                 second_logger=logger,
             )
-            return self.strategy.redirect(auth_url)
-        else:
-            return self.strategy.html(self.auth_html())
+
+        return super().start(self)
 
     @property
     def name(self):
