@@ -108,7 +108,3 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
             log_auth_event(
                 f"Created OAuth2 access token {self.pk} for user '{user_name}' with application '{app_name}' and scope '{self.scope}'", second_logger=logger
             )
-        else:
-            log_auth_event(
-                f"Modified OAuth2 access token {self.pk} for user '{user_name}' with application '{app_name}' and scope '{self.scope}'", second_logger=logger
-            )

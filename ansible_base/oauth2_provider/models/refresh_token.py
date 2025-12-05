@@ -38,5 +38,3 @@ class OAuth2RefreshToken(CommonModel, oauth2_models.AbstractRefreshToken, activi
         user_name = self.user.username if self.user else "N/A"
         if create_token:
             log_auth_event(f"Created OAuth2 refresh token {self.pk} for user '{user_name}' linked to access token {access_token_id}", second_logger=logger)
-        else:
-            log_auth_event(f"Modified OAuth2 refresh token {self.pk} for user '{user_name}' linked to access token {access_token_id}", second_logger=logger)
