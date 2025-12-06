@@ -61,7 +61,7 @@ class OAuth2RefreshToken(CommonModel, oauth2_models.AbstractRefreshToken, activi
             else:
                 # Check all non-timestamp fields
                 for field in self._meta.get_fields():
-                    if hasattr(field, 'name') and field.name not in exclude_fields:
+                    if field.concrete and hasattr(field, 'name') and field.name not in exclude_fields:
                         old_value = getattr(old_instance, field.name, None)
                         new_value = getattr(self, field.name, None)
                         if old_value != new_value:
