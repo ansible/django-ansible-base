@@ -41,6 +41,7 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
     router_basename = 'token'
     ignore_relations = ['refresh_token']
     activity_stream_excluded_field_names = ['last_used', "modified", "modified_by"]
+    trivial_fields = activity_stream_excluded_field_names
 
     class Meta(oauth2_models.AbstractAccessToken.Meta):
         verbose_name = _('access token')

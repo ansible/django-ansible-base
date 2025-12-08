@@ -112,48 +112,6 @@ class AuditableModel(models.Model):
     # Adding field names to this list will limit the activity stream changes dictionaries to only include these fields
     activity_stream_limit_field_names = []
 
-    def _has_non_trivial_changes(self, update_fields=None):
-        """Check if any non-timestamp fields have changed.
-
-        Args:
-            update_fields: Optional list/set of field names being updated. If provided,
-                          only these fields will be checked for changes.
-
-        Returns:
-            bool: True if any non-timestamp field has changed, False otherwise.
-        """
-        if not self.pk:
-            return True
-
-        Model = self.__class__
-        try:
-            old_instance = Model.objects.get(pk=self.pk)
-        except Model.DoesNotExist:
-            pass
-            # Fields to exclude from change detection (timestamp/auto-updated fields)
-
-        # If update_fields is specified, only check those fields (minus excluded ones)
-        if update_fields is not None:
-            fields_to_check = set(update_fields) - set(self.activity_stream_excluded_field_names)
-            if not fields_to_check:
-                # Only timestamp fields are being updated
-                return False
-            # Check only the specified fields
-            for field_name in fields_to_check:
-                old_value = getattr(old_instance, field_name, None)
-                new_value = getattr(self, field_name, None)
-                if old_value != new_value:
-                    return True
-        else:
-            # Check all non-timestamp fields
-            for field in self._meta.get_fields():
-                if field.concrete and hasattr(field, 'name') and field.name not in self.activity_stream_excluded_field_names:
-                    old_value = getattr(old_instance, field.name, None)
-                    new_value = getattr(self, field.name, None)
-                    if old_value != new_value:
-                        return True
-        return False
-
     @property
     def activity_stream_entries(self):
         """

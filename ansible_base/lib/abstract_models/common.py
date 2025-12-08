@@ -41,6 +41,50 @@ class ModifiableModel(models.Model):
     class Meta:
         abstract = True
 
+    trivial_fields = ["modified", "modified_by"]
+
+    def _has_non_trivial_changes(self, update_fields=None):
+        """Check if any non-timestamp fields have changed.
+
+        Args:
+            update_fields: Optional list/set of field names being updated. If provided,
+                          only these fields will be checked for changes.
+
+        Returns:
+            bool: True if any non-timestamp field has changed, False otherwise.
+        """
+        if not self.pk:
+            return True
+
+        Model = self.__class__
+        try:
+            old_instance = Model.objects.get(pk=self.pk)
+        except Model.DoesNotExist:
+            pass
+            # Fields to exclude from change detection (timestamp/auto-updated fields)
+
+        # If update_fields is specified, only check those fields (minus excluded ones)
+        if update_fields is not None:
+            fields_to_check = set(update_fields) - set(self.trivial_fields)
+            if not fields_to_check:
+                # Only timestamp fields are being updated
+                return False
+            # Check only the specified fields
+            for field_name in fields_to_check:
+                old_value = getattr(old_instance, field_name, None)
+                new_value = getattr(self, field_name, None)
+                if old_value != new_value:
+                    return True
+        else:
+            # Check all non-timestamp fields
+            for field in self._meta.get_fields():
+                if field.concrete and hasattr(field, 'name') and field.name not in self.trivial_fields:
+                    old_value = getattr(old_instance, field.name, None)
+                    new_value = getattr(self, field.name, None)
+                    if old_value != new_value:
+                        return True
+        return False
+
     modified = models.DateTimeField(
         editable=False,
         help_text=_("The date/time this resource was created."),
