@@ -41,6 +41,8 @@ def _store_activitystream_entry(old, new, operation, update_fields=None):
 
     # We only want to diff the fields that were updated, so we have to take the intersection of the limited fields and the update fields
     if operation == 'update' and update_fields is not None:
+        if not update_fields:
+            return
         # If limit is otherwise empty (meaning no pre-existing limit), then we just need to make the updated fields the limit
         if not limit:
             limit = update_fields
