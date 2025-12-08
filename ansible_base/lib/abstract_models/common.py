@@ -66,7 +66,7 @@ class ModifiableModel(models.Model):
         if update_fields is not None:
             fields_we_can_check = set(update_fields)
         else:
-            fields_we_can_check = [field.name for field in self._meta.get_fields() if field.concrete and hasattr(field, "name")]
+            fields_we_can_check = [field.name for field in self._meta.concrete_fields if hasattr(field, "name")]
 
         fields_to_check = set(fields_we_can_check) - set(self.trivial_fields)
 
