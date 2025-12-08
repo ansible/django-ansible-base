@@ -71,7 +71,7 @@ class ModifiableModel(models.Model):
         fields_to_check = set(fields_we_can_check) - set(self.trivial_fields)
 
         if not fields_to_check:
-            # Only timestamp fields are being updated
+            # Only trivial fields are being updated
             return False
         # Check only the specified fields
         for field_name in fields_to_check:
