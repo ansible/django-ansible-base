@@ -87,47 +87,6 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
             connection.on_commit(_update_last_used)
         return valid
 
-    def _has_non_timestamp_changes(self, update_fields=None):
-        """Check if any non-timestamp fields have changed.
-
-        Args:
-            update_fields: Optional list/set of field names being updated. If provided,
-                          only these fields will be checked for changes.
-
-        Returns:
-            bool: True if any non-timestamp field has changed, False otherwise.
-        """
-        if not self.pk:
-            return False
-        try:
-            old_instance = OAuth2AccessToken.objects.get(pk=self.pk)
-            # Fields to exclude from change detection (timestamp/auto-updated fields)
-            exclude_fields = {'created', 'created_by', 'modified', 'modified_by', 'last_used'}
-
-            # If update_fields is specified, only check those fields (minus excluded ones)
-            if update_fields is not None:
-                fields_to_check = set(update_fields) - exclude_fields
-                if not fields_to_check:
-                    # Only timestamp fields are being updated
-                    return False
-                # Check only the specified fields
-                for field_name in fields_to_check:
-                    old_value = getattr(old_instance, field_name, None)
-                    new_value = getattr(self, field_name, None)
-                    if old_value != new_value:
-                        return True
-            else:
-                # Check all non-timestamp fields
-                for field in self._meta.get_fields():
-                    if field.concrete and hasattr(field, 'name') and field.name not in exclude_fields:
-                        old_value = getattr(old_instance, field.name, None)
-                        new_value = getattr(self, field.name, None)
-                        if old_value != new_value:
-                            return True
-        except OAuth2AccessToken.DoesNotExist:
-            pass
-        return False
-
     def validate_external_users(self):
         if self.user and get_setting('ALLOW_OAUTH2_FOR_EXTERNAL_USERS') is False:
             external_account = is_external_account(self.user)
@@ -138,21 +97,18 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
                 )
 
     def save(self, *args, **kwargs):
-        creating_token = not bool(self.pk)
         update_fields = kwargs.get('update_fields')
-        modifying_token = self._has_non_timestamp_changes(update_fields) if not creating_token else False
-
-        if creating_token:
+        has_non_trivial_fields = self._has_non_trivial_changes(update_fields)
+        logging_verb = 'Modified'
+        if not self.pk:
             self.validate_external_users()
             self.token = hash_string(self.token, hasher=hashlib.sha256, algo="sha256")
+            logging_verb = 'Created'
         super().save(*args, **kwargs)
         app_name = self.application.name if self.application else "N/A (Personal Access Token)"
         user_name = self.user.username if self.user else "N/A"
-        if creating_token:
+        if has_non_trivial_fields:
             log_auth_event(
-                f"Created OAuth2 access token {self.pk} for user '{user_name}' with application '{app_name}' and scope '{self.scope}'", second_logger=logger
-            )
-        elif modifying_token:
-            log_auth_event(
-                f"Modified OAuth2 access token {self.pk} for user '{user_name}' with application '{app_name}' and scope '{self.scope}'", second_logger=logger
+                f"{logging_verb} OAuth2 access token {self.pk} for user '{user_name}' with application '{app_name}' and scope '{self.scope}'",
+                second_logger=logger,
             )

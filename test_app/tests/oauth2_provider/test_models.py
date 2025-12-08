@@ -118,8 +118,8 @@ def test_oauth2_refresh_token_creation_logs(mock_logger, oauth2_application_pass
 
 
 @pytest.mark.django_db
-def test_oauth2_access_token_has_non_timestamp_changes_returns_false_for_new_token(admin_user):
-    """Test that _has_non_timestamp_changes returns False for a new token (no pk yet)."""
+def test_oauth2_access_token_has_non_trivial_changes_returns_true_for_new_token(admin_user):
+    """Test that _has_non_trivial_changes returns False for a new token (no pk yet)."""
     token = OAuth2AccessToken(
         user=admin_user,
         application=None,
@@ -127,12 +127,12 @@ def test_oauth2_access_token_has_non_timestamp_changes_returns_false_for_new_tok
         scope='write',
         expires=datetime(2088, 1, 1, tzinfo=timezone.utc),
     )
-    assert token._has_non_timestamp_changes() is False
+    assert token._has_non_trivial_changes() is True
 
 
 @pytest.mark.django_db
-def test_oauth2_access_token_has_non_timestamp_changes_returns_false_for_timestamp_only_changes(admin_user):
-    """Test that _has_non_timestamp_changes returns False when only timestamp fields change."""
+def test_oauth2_access_token_has_non_trivial_changes_returns_false_for_timestamp_only_changes(admin_user):
+    """Test that _has_non_trivial_changes returns False when only timestamp fields change."""
     token = OAuth2AccessToken.objects.create(
         user=admin_user,
         application=None,
@@ -148,12 +148,12 @@ def test_oauth2_access_token_has_non_timestamp_changes_returns_false_for_timesta
 
     # Since we can't directly modify timestamp fields without triggering other changes,
     # we just verify that if we call the method without changing any real fields, it returns False
-    assert token._has_non_timestamp_changes() is False
+    assert token._has_non_trivial_changes() is False
 
 
 @pytest.mark.django_db
-def test_oauth2_access_token_has_non_timestamp_changes_returns_true_for_scope_change(admin_user):
-    """Test that _has_non_timestamp_changes returns True when scope changes."""
+def test_oauth2_access_token_has_non_trivial_changes_returns_true_for_scope_change(admin_user):
+    """Test that _has_non_trivial_changes returns True when scope changes."""
     token = OAuth2AccessToken.objects.create(
         user=admin_user,
         application=None,
@@ -165,12 +165,12 @@ def test_oauth2_access_token_has_non_timestamp_changes_returns_true_for_scope_ch
     # Change a non-timestamp field
     token.scope = 'read'
 
-    assert token._has_non_timestamp_changes() is True
+    assert token._has_non_trivial_changes() is True
 
 
 @pytest.mark.django_db
-def test_oauth2_access_token_has_non_timestamp_changes_returns_true_for_description_change(admin_user):
-    """Test that _has_non_timestamp_changes returns True when description changes."""
+def test_oauth2_access_token_has_non_trivial_changes_returns_true_for_description_change(admin_user):
+    """Test that _has_non_trivial_changes returns True when description changes."""
     token = OAuth2AccessToken.objects.create(
         user=admin_user,
         application=None,
@@ -183,12 +183,12 @@ def test_oauth2_access_token_has_non_timestamp_changes_returns_true_for_descript
     # Change a non-timestamp field
     token.description = 'Updated description'
 
-    assert token._has_non_timestamp_changes() is True
+    assert token._has_non_trivial_changes() is True
 
 
 @pytest.mark.django_db
-def test_oauth2_access_token_has_non_timestamp_changes_returns_true_for_expires_change(admin_user):
-    """Test that _has_non_timestamp_changes returns True when expires changes."""
+def test_oauth2_access_token_has_non_trivial_changes_returns_true_for_expires_change(admin_user):
+    """Test that _has_non_trivial_changes returns True when expires changes."""
     token = OAuth2AccessToken.objects.create(
         user=admin_user,
         application=None,
@@ -200,12 +200,12 @@ def test_oauth2_access_token_has_non_timestamp_changes_returns_true_for_expires_
     # Change a non-timestamp field
     token.expires = datetime(2089, 1, 1, tzinfo=timezone.utc)
 
-    assert token._has_non_timestamp_changes() is True
+    assert token._has_non_trivial_changes() is True
 
 
 @pytest.mark.django_db
-def test_oauth2_refresh_token_has_non_timestamp_changes_returns_false_for_new_token(admin_user):
-    """Test that _has_non_timestamp_changes returns False for a new refresh token."""
+def test_oauth2_refresh_token_has_non_trivial_changes_returns_true_for_new_token(admin_user):
+    """Test that _has_non_trivial_changes returns False for a new refresh token."""
     access_token = OAuth2AccessToken.objects.create(
         user=admin_user,
         token=generate_token(),
@@ -219,12 +219,12 @@ def test_oauth2_refresh_token_has_non_timestamp_changes_returns_false_for_new_to
         access_token=access_token,
     )
 
-    assert refresh_token._has_non_timestamp_changes() is False
+    assert refresh_token._has_non_trivial_changes() is True
 
 
 @pytest.mark.django_db
-def test_oauth2_refresh_token_has_non_timestamp_changes_returns_false_for_no_changes(admin_user, oauth2_application_password):
-    """Test that _has_non_timestamp_changes returns False when nothing changed."""
+def test_oauth2_refresh_token_has_non_trivial_changes_returns_false_for_no_changes(admin_user, oauth2_application_password):
+    """Test that _has_non_trivial_changes returns False when nothing changed."""
     application, _secret = oauth2_application_password
 
     access_token = OAuth2AccessToken.objects.create(
@@ -242,12 +242,12 @@ def test_oauth2_refresh_token_has_non_timestamp_changes_returns_false_for_no_cha
         access_token=access_token,
     )
 
-    assert refresh_token._has_non_timestamp_changes() is False
+    assert refresh_token._has_non_trivial_changes() is False
 
 
 @pytest.mark.django_db
-def test_oauth2_refresh_token_has_non_timestamp_changes_returns_true_for_revoked_change(admin_user, oauth2_application_password):
-    """Test that _has_non_timestamp_changes returns True when revoked status changes."""
+def test_oauth2_refresh_token_has_non_trivial_changes_returns_true_for_revoked_change(admin_user, oauth2_application_password):
+    """Test that _has_non_trivial_changes returns True when revoked status changes."""
     application, _secret = oauth2_application_password
 
     access_token = OAuth2AccessToken.objects.create(
@@ -269,7 +269,7 @@ def test_oauth2_refresh_token_has_non_timestamp_changes_returns_true_for_revoked
     # Change revoked status
     refresh_token.revoked = None
 
-    assert refresh_token._has_non_timestamp_changes() is True
+    assert refresh_token._has_non_trivial_changes() is True
 
 
 @pytest.mark.django_db
