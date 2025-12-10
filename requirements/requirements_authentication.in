@@ -13,7 +13,7 @@ ldap-filter
 python3-saml
 tacacs_plus
 
-xmlsec==1.3.17
+xmlsec==1.3.17 # Pin for https://github.com/xmlsec/python-xmlsec/issues/320
 
 # RADIUS Authenticator Plugin
 pyrad
