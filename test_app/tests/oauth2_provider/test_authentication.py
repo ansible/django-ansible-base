@@ -3,6 +3,7 @@ from unittest import mock
 
 import pytest
 from oauthlib.common import generate_token
+from rest_framework.permissions import SAFE_METHODS
 
 from ansible_base.activitystream.models import Entry
 from ansible_base.lib.utils.response import get_relative_url
@@ -258,3 +259,157 @@ def test_oauth2_authentication_creates_activitystream_entry(unauthenticated_api_
     # No new activity stream entries should have been created by the GET request
     # (only the animal creation entry should exist, which was created before this test)
     assert final_entry_count == initial_entry_count
+
+
+# =============================================================================
+# OAuth2 Scope Validation Tests (Authentication Layer)
+# =============================================================================
+# These tests verify that scope checking happens at the authentication layer,
+# returning 403 Forbidden when a token's scope doesn't permit the HTTP method.
+# This matches the behavior of the permission-layer scope checking.
+# =============================================================================
+
+
+class TestOAuth2ScopeValidationInAuthentication:
+    """
+    Test suite for OAuth2 scope validation in the authentication layer.
+    Tokens with 'read' scope should only be allowed for safe methods (GET, HEAD, OPTIONS).
+    Tokens with 'write' scope should be allowed for all methods.
+    """
+
+    @pytest.mark.parametrize(
+        'scope, method, should_succeed',
+        [
+            # read scope: safe methods should succeed
+            ('read', 'get', True),
+            ('read', 'head', True),
+            ('read', 'options', True),
+            # read scope: unsafe methods should fail
+            ('read', 'post', False),
+            ('read', 'put', False),
+            ('read', 'patch', False),
+            ('read', 'delete', False),
+            # write scope: all methods should succeed
+            ('write', 'get', True),
+            ('write', 'head', True),
+            ('write', 'options', True),
+            ('write', 'post', True),
+            ('write', 'put', True),
+            ('write', 'patch', True),
+            ('write', 'delete', True),
+            # read write scope: all methods should succeed (test both orderings)
+            ('read write', 'post', True),
+            ('read write', 'put', True),
+            ('read write', 'patch', True),
+            ('read write', 'delete', True),
+            ('write read', 'post', True),
+            ('write read', 'put', True),
+            ('write read', 'patch', True),
+            ('write read', 'delete', True),
+        ],
+    )
+    def test_scope_method_combinations(self, unauthenticated_api_client, oauth2_admin_access_token, animal, admin_user, scope, method, should_succeed):
+        """
+        Test all combinations of scope and HTTP method to verify correct authentication behavior.
+        """
+        oauth2_admin_access_token[0].scope = scope
+        oauth2_admin_access_token[0].save()
+
+        # Determine URL and data based on method
+        if method == 'post':
+            url = get_relative_url("animal-list")
+            data = {"name": "Fido", "owner": admin_user.pk}
+        elif method in ('get', 'head', 'options', 'delete'):
+            url = get_relative_url("animal-detail", kwargs={"pk": animal.pk})
+            data = None
+        else:  # put, patch
+            url = get_relative_url("animal-detail", kwargs={"pk": animal.pk})
+            data = {"name": "Fido", "owner": admin_user.pk} if method == 'put' else {"name": "Fido"}
+
+        # Make the request
+        client_method = getattr(unauthenticated_api_client, method)
+        kwargs = {'headers': {'Authorization': f'Bearer {oauth2_admin_access_token[1]}'}}
+        if data is not None:
+            kwargs['data'] = data
+
+        response = client_method(url, **kwargs)
+
+        if should_succeed:
+            assert response.status_code != 403, f"Unexpected 403 for {method.upper()} with scope '{scope}'"
+        else:
+            assert response.status_code == 403, f"Expected 403 for {method.upper()} with scope '{scope}', got {response.status_code}"
+
+    def test_read_scope_denial_error_message(self, unauthenticated_api_client, oauth2_admin_access_token, admin_user):
+        """
+        Verify the error message when a read-only token attempts an unsafe method.
+        """
+        oauth2_admin_access_token[0].scope = 'read'
+        oauth2_admin_access_token[0].save()
+
+        url = get_relative_url("animal-list")
+        data = {"name": "Fido", "owner": admin_user.pk}
+        response = unauthenticated_api_client.post(
+            url,
+            data=data,
+            headers={'Authorization': f'Bearer {oauth2_admin_access_token[1]}'},
+        )
+
+        assert response.status_code == 403
+        error_detail = response.data.get('detail', '')
+        # Verify key parts of the error message
+        assert 'read' in error_detail.lower()
+        assert 'POST' in error_detail
+        assert 'safe methods' in error_detail.lower()
+        # Verify SAFE_METHODS are mentioned dynamically
+        for method in SAFE_METHODS:
+            assert method in error_detail
+
+    @pytest.mark.parametrize(
+        'scope, method, expected_log_keyword, expected_log_level',
+        [
+            ('read', 'post', 'attempted', 'WARNING'),  # Denied - should log WARNING with "attempted"
+            ('write', 'get', 'performed', 'INFO'),  # Allowed - should log INFO with "performed"
+            ('write', 'post', 'performed', 'INFO'),  # Allowed - should log INFO with "performed"
+        ],
+    )
+    def test_scope_logging(
+        self, unauthenticated_api_client, oauth2_admin_access_token, animal, admin_user, caplog, scope, method, expected_log_keyword, expected_log_level
+    ):
+        """
+        Verify that authentication logging uses correct terminology and log levels:
+        - 'attempted' at WARNING level for denied requests
+        - 'performed' at INFO level for successful requests
+        """
+        import logging
+
+        oauth2_admin_access_token[0].scope = scope
+        oauth2_admin_access_token[0].save()
+
+        if method == 'post':
+            url = get_relative_url("animal-list")
+            data = {"name": "Fido", "owner": admin_user.pk}
+        else:
+            url = get_relative_url("animal-detail", kwargs={"pk": animal.pk})
+            data = None
+
+        client_method = getattr(unauthenticated_api_client, method)
+        kwargs = {'headers': {'Authorization': f'Bearer {oauth2_admin_access_token[1]}'}}
+        if data is not None:
+            kwargs['data'] = data
+
+        with caplog.at_level(logging.DEBUG, logger='ansible_base.oauth2_provider.authentication'):
+            response = client_method(url, **kwargs)
+
+        # Find the relevant log record
+        matching_records = [r for r in caplog.records if expected_log_keyword in r.message]
+        assert matching_records, f"Expected log message containing '{expected_log_keyword}' not found in: {[r.message for r in caplog.records]}"
+
+        # Verify log level
+        assert matching_records[0].levelname == expected_log_level, f"Expected log level {expected_log_level}, got {matching_records[0].levelname}"
+
+        # Additional assertion: denied requests should mention "does not permit"
+        if expected_log_keyword == 'attempted':
+            assert response.status_code == 403
+            assert any(
+                'does not permit' in r.message for r in caplog.records
+            ), f"Expected denial reason in log not found in: {[r.message for r in caplog.records]}"

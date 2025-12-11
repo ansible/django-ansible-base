@@ -4,9 +4,10 @@ import logging
 from django.utils.encoding import smart_str
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication
 from oauth2_provider.oauth2_backends import OAuthLibCore as _OAuthLibCore
-from rest_framework.exceptions import UnsupportedMediaType
+from rest_framework.exceptions import PermissionDenied, UnsupportedMediaType
+from rest_framework.permissions import SAFE_METHODS
 
-from ansible_base.lib.logging import log_auth_event
+from ansible_base.lib.logging import log_auth_event, log_auth_warning
 from ansible_base.lib.utils.hashing import hash_string
 
 logger = logging.getLogger('ansible_base.oauth2_provider.authentication')
@@ -45,6 +46,27 @@ class LoggedOAuth2Authentication(OAuth2Authentication):
             username = user.username if user else '<none>'
             oauth2_application_pk = token.application.pk if token.application else "N/A"
             oauth2_application_name = token.application.name if token.application else "Personal Access Token"
+
+            # TODO: check oauth_scopes when we have RBAC in Gateway
+            setattr(user, 'oauth_scopes', [x for x in token.scope.split() if x])
+
+            # Check if token scope permits the requested method
+            if 'write' not in token.scope and request.method.upper() not in SAFE_METHODS:
+                log_auth_warning(
+                    smart_str(
+                        u"User {} attempted a {} to {} through the API using OAuth 2 token {} "
+                        u"for OAuth2 application {} ({}) but token scope '{}' does not permit this method.".format(
+                            username, request.method, request.path, token.pk, oauth2_application_pk, oauth2_application_name, token.scope
+                        )
+                    ),
+                    logger,
+                )
+                safe_methods_str = ', '.join(SAFE_METHODS)
+                raise PermissionDenied(
+                    f"Your token has scope '{token.scope}' which does not permit the '{request.method}' method. "
+                    f"Tokens with 'read' scope can only be used for safe methods ({safe_methods_str})."
+                )
+
             log_auth_event(
                 smart_str(
                     u"User {} performed a {} to {} through the API using OAuth 2 token {} for OAuth2 application {} ({}).".format(
@@ -53,6 +75,4 @@ class LoggedOAuth2Authentication(OAuth2Authentication):
                 ),
                 logger,
             )
-            # TODO: check oauth_scopes when we have RBAC in Gateway
-            setattr(user, 'oauth_scopes', [x for x in token.scope.split() if x])
         return ret
