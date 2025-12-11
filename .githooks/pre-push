@@ -25,10 +25,10 @@ echo "Number of JIRA numbers from commits matching JIRA number from branch name:
 # if no Jira or no magic marker found in branch name, fail
 echo "Checking branch name..."
 if [ "${BRANCH_JIRA}" = "" ]; then
-  echo "Warning: Branch name does not contain a JIRA number or a ${NO_JIRA_MARKER} marker."
-fi
+  echo "Fail: Branch name does not contain a JIRA number or a ${NO_JIRA_MARKER} marker."
+  exit 1
 # if branch does not have the magic marker, check the commits as well
-if [ "${BRANCH_JIRA}" != "${NO_JIRA_MARKER}" ]; then
+elif [ "${BRANCH_JIRA}" != "${NO_JIRA_MARKER}" ]; then
     echo "Checking commit messages..."
     # if there is no Jira number or magic marker, fail
     if [ ${COMMIT_JIRA_COUNT} -eq 0 ]; then
