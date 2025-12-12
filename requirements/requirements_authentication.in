@@ -13,7 +13,8 @@ ldap-filter
 python3-saml
 tacacs_plus
 
-xmlsec>=1.3.17  # Required for python 3.12
+xmlsec>=1.3.17  # Required for python 3.12, pinned for Konflux
+lxml>=6.0.2     # Required for python 3.12, pinned for Konflux
 
 # RADIUS Authenticator Plugin
 pyrad
