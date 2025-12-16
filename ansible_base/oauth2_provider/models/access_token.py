@@ -82,8 +82,7 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
             self.last_used = now()
 
             def _update_last_used():
-                if OAuth2AccessToken.objects.filter(pk=self.pk).exists():
-                    self.save(update_fields=['last_used'])
+                OAuth2AccessToken.objects.filter(pk=self.pk).update(last_used=self.last_used)
 
             connection.on_commit(_update_last_used)
         return valid
