@@ -19,16 +19,6 @@
   toggle_type: install-time
   labels:
     - eda
-- name: FEATURE_GATEWAY_IPV6_USAGE_ENABLED
-  ui_name: Gateway IPv6 Enablement
-  visibility: False
-  condition: boolean
-  value: 'True'
-  support_level: TECHNOLOGY_PREVIEW
-  description: The feature flag represents enabling IPv6 only traffic to be allowed through the gateway component and does not include all components of the platform.
-  support_url: https://access.redhat.com/articles/7116569
-  labels:
-    - gateway
 - name: FEATURE_GATEWAY_CREATE_CRC_SERVICE_TYPE_ENABLED
   ui_name: Dynamic Service Type Feature
   visibility: False

@@ -36,7 +36,6 @@ def test_feature_flags_from_db(aap_flags, feature_flag):
     "feature_flag, value",
     [
         ('FEATURE_INDIRECT_NODE_COUNTING_ENABLED', True),
-        ('FEATURE_GATEWAY_IPV6_USAGE_ENABLED', False),
     ],
 )
 def test_feature_flag_database_setting_override(feature_flag, value):
