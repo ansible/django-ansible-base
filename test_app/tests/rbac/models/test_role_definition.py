@@ -1,4 +1,7 @@
+from unittest import mock
+
 import pytest
+from django.db.utils import IntegrityError
 from rest_framework.exceptions import ValidationError
 
 from ansible_base.rbac import permission_registry
@@ -105,3 +108,114 @@ def test_change_role_definition_member_permission(organization, inventory, org_t
     # Adding it back restores them
     member_rd.permissions.add(member_perm)
     assert [u.has_obj_perm(inventory, 'change') for u in (team_user, org_team_user)] == [True, True]
+
+
+@pytest.mark.django_db
+def test_get_or_create_reuses_existing_role_by_name():
+    """
+    Test that get_or_create reuses an existing RoleDefinition when called
+    with the same name. This tests the name-based lookup path through
+    create_from_permissions() which uses Django's get_or_create internally.
+    """
+    permissions = ['view_inventory', 'change_inventory']
+
+    # First call creates the RoleDefinition
+    rd1, created1 = RoleDefinition.objects.get_or_create(permissions=permissions, name='test-role')
+    assert created1 is True
+
+    # Second call with SAME name should reuse existing (handled by create_from_permissions)
+    rd2, created2 = RoleDefinition.objects.get_or_create(permissions=permissions, name='test-role')
+    assert created2 is False
+    assert rd2 == rd1
+
+    # Verify only one RoleDefinition exists
+    assert RoleDefinition.objects.filter(name='test-role').count() == 1
+
+
+@pytest.mark.django_db
+def test_get_or_create_with_defaults():
+    """Test that get_or_create properly merges defaults into create kwargs."""
+    permissions = ['view_inventory', 'change_inventory']
+    content_type = DABContentType.objects.get_for_model(Organization)
+
+    rd, created = RoleDefinition.objects.get_or_create(permissions=permissions, name='role-with-defaults', defaults={'content_type': content_type})
+
+    assert created is True
+    assert rd.content_type == content_type
+    assert rd.name == 'role-with-defaults'
+
+
+@pytest.mark.django_db
+def test_get_or_create_without_permissions():
+    """Test that get_or_create without permissions falls through to super()."""
+    # When no permissions are provided, should use Django's default get_or_create
+    rd, created = RoleDefinition.objects.get_or_create(name='no-permissions-role')
+
+    assert created is True
+    assert rd.name == 'no-permissions-role'
+    assert rd.permissions.count() == 0
+
+    # Calling again should return existing
+    rd2, created2 = RoleDefinition.objects.get_or_create(name='no-permissions-role')
+
+    assert created2 is False
+    assert rd2 == rd
+
+
+@pytest.mark.django_db
+def test_get_or_create_reraises_integrity_error_after_max_retries():
+    """
+    Test that IntegrityError is re-raised after max retries are exhausted.
+
+    This covers the edge case where IntegrityError keeps occurring and the
+    retry loop cannot recover (e.g., database constraint violation unrelated
+    to name uniqueness).
+    """
+    permissions = ['view_inventory', 'change_inventory']
+
+    # Mock super().get_or_create to always raise IntegrityError
+    # This simulates a persistent database error that can't be recovered
+    with mock.patch.object(RoleDefinition.objects.__class__.__bases__[0], 'get_or_create', side_effect=IntegrityError('persistent database error')):
+        with pytest.raises(IntegrityError):
+            RoleDefinition.objects.get_or_create(permissions=permissions, name='will-fail')
+
+
+@pytest.mark.django_db
+def test_create_from_permissions_with_content_type_id():
+    """
+    Test that create_from_permissions correctly handles content_type_id parameter.
+
+    This covers line 189-190 in role.py where content_type_id is looked up.
+    """
+    content_type = DABContentType.objects.get_for_model(Organization)
+
+    # Use content_type_id instead of content_type
+    rd = RoleDefinition.objects.create_from_permissions(
+        permissions=['view_organization', 'change_organization'], name='role-with-ct-id', content_type_id=content_type.id
+    )
+
+    assert rd.content_type == content_type
+    assert rd.name == 'role-with-ct-id'
+
+
+@pytest.mark.django_db
+def test_create_from_permissions_reuses_existing_name():
+    """
+    Test that create_from_permissions reuses an existing RoleDefinition
+    when a name collision occurs.
+
+    This covers lines 195-199 in role.py where Django's get_or_create
+    returns an existing record on name collision.
+    """
+    permissions = ['view_inventory', 'change_inventory']
+
+    # First call creates the RoleDefinition
+    rd1 = RoleDefinition.objects.create_from_permissions(permissions=permissions, name='collision-test-role')
+    assert rd1 is not None
+
+    # Second call with SAME name should reuse existing
+    rd2 = RoleDefinition.objects.create_from_permissions(permissions=permissions, name='collision-test-role')
+    assert rd2 == rd1
+
+    # Verify only one RoleDefinition exists with this name
+    assert RoleDefinition.objects.filter(name='collision-test-role').count() == 1

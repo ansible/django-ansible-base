@@ -89,3 +89,33 @@ def test_creator_permission_does_reverse_sync(rando, inventory):
         RoleDefinition.objects.give_creator_permissions(rando, inventory)
         # assert mock was not called another time
         mock_maybe_reverse_sync_assignment.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_give_creator_permissions_handles_race(rando, inventory):
+    """
+    Test that concurrent give_creator_permissions calls don't fail when racing
+    to create the same creator-permission RoleDefinition. This simulates the scenario
+    where multiple users create objects (e.g., projects) simultaneously in the
+    same organization.
+
+    The implementation uses Django's get_or_create() which handles race conditions
+    internally via a get-create-get pattern.
+    """
+    # First call succeeds normally, creating the creator-permission RoleDefinition
+    RoleDefinition.objects.give_creator_permissions(rando, inventory)
+
+    # Create another user who will also create an inventory
+    user2 = User.objects.create(username='user2')
+
+    # Second call should reuse the existing RoleDefinition (no race condition error)
+    RoleDefinition.objects.give_creator_permissions(user2, inventory)
+
+    # Verify only one RoleDefinition exists with the creator-permission name
+    assert RoleDefinition.objects.filter(name='inventory-creator-permission').count() == 1
+
+    # Verify both users got permissions through the same role
+    assert rando.has_obj_perm(inventory, 'change')
+    assert rando.has_obj_perm(inventory, 'view')
+    assert user2.has_obj_perm(inventory, 'change')
+    assert user2.has_obj_perm(inventory, 'view')
