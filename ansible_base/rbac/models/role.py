@@ -3,6 +3,8 @@ from collections.abc import Iterable
 from typing import Optional, Type, Union
 from uuid import UUID
 
+from django.apps import apps
+
 # Django
 from django.conf import settings
 from django.db import connection, models, transaction
@@ -16,6 +18,17 @@ from rest_framework.exceptions import ValidationError
 
 # ansible_base lib functions
 from ansible_base.lib.abstract_models.common import CommonModel, ImmutableCommonModel
+
+# Conditional import for activity stream support
+#
+# The activitystream app is optional - services choose whether to enable it:
+# - Gateway/test_app: Include 'ansible_base.activitystream' in INSTALLED_APPS
+# - AWX/EDA/Hub: Don't include activitystream app (use legacy activity systems)
+if apps.is_installed('ansible_base.activitystream'):
+    from ansible_base.activitystream.models import AuditableModel
+else:
+    from .dummy_models import DummyAuditableModel as AuditableModel
+
 
 # ansible_base RBAC logic imports
 from ansible_base.lib.utils.models import is_add_perm
@@ -128,7 +141,6 @@ class RoleDefinitionManager(models.Manager):
         return super().get_or_create(defaults=defaults, **kwargs)
 
     def create_from_permissions(self, permissions=(), **kwargs):
-        "Create from a list of text-type permissions and do validation"
         perm_list: list[str] = []
         for str_perm in permissions:
             if '.' in str_perm:
@@ -429,7 +441,7 @@ class AssignmentBase(ImmutableCommonModel, ObjectRoleFields):
         return super().save(*args, **kwargs)
 
 
-class RoleUserAssignment(AssignmentBase):
+class RoleUserAssignment(AssignmentBase, AuditableModel):
     role_definition = models.ForeignKey(
         RoleDefinition,
         on_delete=models.CASCADE,
@@ -440,6 +452,9 @@ class RoleUserAssignment(AssignmentBase):
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='role_assignments', help_text=_("The user this role is assigned to.")
     )
     router_basename = 'roleuserassignment'
+
+    # Exclude object_role from activity stream - it's an internal implementation detail
+    activity_stream_excluded_field_names = ['object_role']
 
     class Meta:
         app_label = 'dab_rbac'
@@ -455,7 +470,7 @@ class RoleUserAssignment(AssignmentBase):
         return self.user
 
 
-class RoleTeamAssignment(AssignmentBase):
+class RoleTeamAssignment(AssignmentBase, AuditableModel):
     role_definition = models.ForeignKey(
         RoleDefinition,
         on_delete=models.CASCADE,
@@ -466,6 +481,9 @@ class RoleTeamAssignment(AssignmentBase):
         settings.ANSIBLE_BASE_TEAM_MODEL, on_delete=models.CASCADE, related_name='role_assignments', help_text=_("The team that receives permissions.")
     )
     router_basename = 'roleteamassignment'
+
+    # Exclude object_role from activity stream - it's an internal implementation detail
+    activity_stream_excluded_field_names = ['object_role']
 
     class Meta:
         app_label = 'dab_rbac'
