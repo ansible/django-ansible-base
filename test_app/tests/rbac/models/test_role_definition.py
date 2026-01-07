@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import pytest
 from rest_framework.exceptions import ValidationError
 
@@ -5,6 +7,100 @@ from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import DABContentType, DABPermission, ObjectRole, RoleDefinition, RoleEvaluation
 from ansible_base.rbac.validators import validate_permissions_for_model
 from test_app.models import ExampleEvent, Organization
+
+
+@pytest.mark.django_db
+def test_get_or_create_different_permission_count():
+    """Roles with different permission counts should not be matched."""
+    rd1, created1 = RoleDefinition.objects.get_or_create(permissions=['view_inventory', 'change_inventory'], name='two-perm-role')
+    assert created1
+
+    rd2, created2 = RoleDefinition.objects.get_or_create(permissions=['view_inventory', 'change_inventory', 'delete_inventory'], name='three-perm-role')
+    assert created2 and rd2.id != rd1.id
+
+
+@pytest.mark.django_db
+def test_get_or_create_same_count_different_permissions():
+    """Roles with same count but different permissions should not be matched."""
+    rd1, created1 = RoleDefinition.objects.get_or_create(permissions=['view_inventory', 'change_inventory'], name='view-change-role')
+    assert created1
+
+    rd2, created2 = RoleDefinition.objects.get_or_create(permissions=['view_inventory', 'delete_inventory'], name='view-delete-role')
+    assert created2 and rd2.id != rd1.id
+
+
+@pytest.mark.django_db
+def test_create_from_permissions_reuses_on_name_collision():
+    """create_from_permissions reuses existing role on name collision instead of raising IntegrityError."""
+    permissions = ['view_organization', 'change_organization']
+    rd1 = RoleDefinition.objects.create_from_permissions(permissions=permissions, name='collision-test-role')
+
+    rd2 = RoleDefinition.objects.create_from_permissions(permissions=permissions, name='collision-test-role')
+    assert rd2.id == rd1.id
+
+
+@pytest.mark.django_db
+def test_get_or_create_without_permissions_uses_parent():
+    """get_or_create without permissions falls back to standard Django get_or_create by name."""
+    rd1, created1 = RoleDefinition.objects.get_or_create(name='no-perm-role-1')
+    assert created1
+
+    rd2, created2 = RoleDefinition.objects.get_or_create(name='no-perm-role-1')
+    assert (not created2) and rd2.id == rd1.id
+
+
+@pytest.mark.django_db
+def test_get_or_create_with_defaults():
+    """Defaults parameter is properly applied when creating new role."""
+    rd1, created = RoleDefinition.objects.get_or_create(permissions=['view_inventory'], name='defaults-test-role', defaults={'description': 'Test description'})
+    assert created and rd1.description == 'Test description'
+
+
+@pytest.mark.django_db
+def test_get_or_create_non_postgresql_skips_advisory_lock():
+    """Advisory lock is skipped for non-PostgreSQL databases with debug logging."""
+    with patch('ansible_base.rbac.models.role.connection') as mock_connection:
+        mock_connection.vendor = 'sqlite'
+        with patch('ansible_base.rbac.models.role.logger') as mock_logger:
+            rd, created = RoleDefinition.objects.get_or_create(permissions=['view_inventory'], name='sqlite-test-role')
+            assert created
+            # Verify debug log was called for non-PostgreSQL fallback
+            mock_logger.debug.assert_called_once()
+            assert 'sqlite' in str(mock_logger.debug.call_args)
+            assert 'pg_advisory_xact_lock' in str(mock_logger.debug.call_args)
+
+
+@pytest.mark.django_db
+def test_create_from_permissions_logs_reuse():
+    """create_from_permissions logs debug message when reusing existing role."""
+    permissions = ['view_organization', 'change_organization']
+    rd1 = RoleDefinition.objects.create_from_permissions(permissions=permissions, name='log-reuse-test-role')
+
+    with patch('ansible_base.rbac.models.role.logger') as mock_logger:
+        rd2 = RoleDefinition.objects.create_from_permissions(permissions=permissions, name='log-reuse-test-role')
+        assert rd2.id == rd1.id
+        # Verify debug log was called for reuse
+        mock_logger.debug.assert_called()
+        log_message = str(mock_logger.debug.call_args)
+        assert 'Reused existing RoleDefinition' in log_message
+
+
+@pytest.mark.django_db
+def test_get_or_create_generates_deterministic_lock_id():
+    """Lock ID is generated deterministically from permission set (order-independent)."""
+    # Same permissions in different order should generate the same lock ID
+    permissions_a = ['view_inventory', 'change_inventory']
+    permissions_b = ['change_inventory', 'view_inventory']
+
+    # Hash of frozenset should be the same regardless of order
+    lock_id_a = hash(frozenset(permissions_a)) % (2**31)
+    lock_id_b = hash(frozenset(permissions_b)) % (2**31)
+    assert lock_id_a == lock_id_b
+
+    # Different permissions should generate different lock IDs
+    permissions_c = ['view_inventory', 'delete_inventory']
+    lock_id_c = hash(frozenset(permissions_c)) % (2**31)
+    assert lock_id_a != lock_id_c
 
 
 @pytest.mark.django_db

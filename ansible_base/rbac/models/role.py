@@ -6,6 +6,7 @@ from uuid import UUID
 # Django
 from django.conf import settings
 from django.db import connection, models, transaction
+from django.db.models import Count
 from django.db.models.functions import Cast
 from django.db.models.query import QuerySet
 from django.db.utils import IntegrityError
@@ -114,17 +115,43 @@ class RoleDefinitionManager(models.Manager):
             return assignment
 
     def get_or_create(self, permissions=(), defaults=None, **kwargs):
-        "Add extra feature on top of existing get_or_create to use permissions list"
+        """Add extra feature on top of existing get_or_create to use permissions list.
+
+        Uses PostgreSQL advisory lock to prevent race conditions when multiple
+        threads attempt to create roles with identical permission sets.
+        """
         if permissions:
             permissions = set(permissions)
-            for existing_rd in self.prefetch_related('permissions'):
+
+            # Generate deterministic lock ID from permission set
+            # Hash collision probability: ~1 in 2^31 (negligible)
+            lock_id = hash(frozenset(permissions)) % (2**31)
+
+            # NOTE: Caller must wrap in transaction.atomic() for advisory lock to work.
+            # pg_advisory_xact_lock is transaction-scoped - releases when transaction ends.
+            # Without outer transaction, lock acquires and releases immediately (no protection).
+            if connection.vendor == 'postgresql':
+                with connection.cursor() as cursor:
+                    cursor.execute('SELECT pg_advisory_xact_lock(%s)', [lock_id])
+            else:
+                logger.debug(f'Advisory lock skipped - {connection.vendor} does not support pg_advisory_xact_lock')
+
+            # Check for existing role with matching permissions
+            # Filter candidates by permission count only - do NOT filter on permissions__codename__in
+            target_count = len(permissions)
+            candidates = self.annotate(perm_count=Count('permissions')).filter(perm_count=target_count).prefetch_related('permissions')
+
+            for existing_rd in candidates:
                 existing_set = {perm.codename for perm in existing_rd.permissions.all()}
                 if existing_set == permissions:
                     return (existing_rd, False)
+
+            # No match found, create new role
             create_kwargs = kwargs.copy()
             if defaults:
                 create_kwargs.update(defaults)
             return (self.create_from_permissions(permissions=permissions, **create_kwargs), True)
+
         return super().get_or_create(defaults=defaults, **kwargs)
 
     def create_from_permissions(self, permissions=(), **kwargs):
@@ -144,8 +171,14 @@ class RoleDefinitionManager(models.Manager):
 
         validate_permissions_for_model(perm_list, ct, managed=kwargs.get('managed', False))
 
-        rd = self.create(**kwargs)
-        rd.permissions.add(*perm_list)
+        # Use get_or_create to handle IntegrityError from concurrent name collisions
+        # This is a safety net - the advisory lock in get_or_create() should prevent
+        # most conflicts, but direct calls to this method may still race.
+        rd, created = super(RoleDefinitionManager, self).get_or_create(**kwargs)
+        if created:
+            rd.permissions.add(*perm_list)
+        else:
+            logger.debug(f'Reused existing RoleDefinition {rd.id} due to name collision')
         return rd
 
 
