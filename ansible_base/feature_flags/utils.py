@@ -52,6 +52,7 @@ def load_feature_flags():
     """
     Loads in all feature flags into the database. Updates them if necessary.
     """
+    from ansible_base.resource_registry.models import Resource
     from ansible_base.resource_registry.signals.handlers import no_reverse_sync
 
     feature_flags_model = apps.get_model('dab_feature_flags', 'AAPFlag')
@@ -64,7 +65,12 @@ def load_feature_flags():
                 if hasattr(settings, flag['name']):
                     flag['value'] = getattr(settings, flag['name'])
                 feature_flag = feature_flags_model(**flag)
-            feature_flag.full_clean()
+            try:
+                feature_flag.full_clean()
+            except Resource.DoesNotExist:
+                # Resource may not exist yet during restore scenarios.
+                # This is safe to ignore - the resource will be created when the flag is saved.
+                logger.info(f"Resource not found for feature flag: {flag['name']} during validation, will be created on save")
             with no_reverse_sync():
                 feature_flag.save()
         except ValidationError as e:

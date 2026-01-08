@@ -349,6 +349,77 @@ class TestCreateInitialData:
         mock_created_instance.save.assert_not_called()
 
     @pytest.mark.django_db
+    def test_load_feature_flags_handles_resource_does_not_exist_during_full_clean(
+        self, mock_apps_get_model, mock_aap_flag_model_cls, mock_settings, mock_logger, mock_feature_flags_list, mocker
+    ):
+        """Test that Resource.DoesNotExist during full_clean is caught and logged, allowing save to proceed."""
+        from ansible_base.feature_flags.utils import create_initial_data
+        from ansible_base.resource_registry.models import Resource
+
+        flag_def = {'name': 'RESTORE_FLAG', 'condition': 'restore_cond', 'ui_name': 'Restore Flag'}
+        mock_feature_flags_list.return_value = [flag_def]
+
+        mock_empty_queryset = MagicMock()
+        mock_empty_queryset.first.return_value = None
+        mock_empty_queryset.__bool__ = lambda self: False
+        mock_aap_flag_model_cls.objects.filter.return_value = mock_empty_queryset
+
+        mock_created_instance = MockAAPFlagInstance(**flag_def)
+        # Simulate Resource.DoesNotExist being raised during full_clean (restore scenario)
+        mock_created_instance.full_clean.side_effect = Resource.DoesNotExist("Resource matching query does not exist.")
+
+        mock_aap_flag_model_cls.side_effect = [mock_created_instance]
+
+        mock_aap_flag_model_cls.objects.all.return_value = []
+
+        create_initial_data()
+
+        # Verify the info log was called for the Resource.DoesNotExist case
+        mock_logger.info.assert_called_with("Resource not found for feature flag: RESTORE_FLAG during validation, will be created on save")
+        # Verify that save was still called despite the exception
+        mock_created_instance.save.assert_called_once()
+        # Verify no error was logged
+        mock_logger.error.assert_not_called()
+
+    @pytest.mark.django_db
+    def test_load_feature_flags_handles_resource_does_not_exist_during_update(
+        self, mock_apps_get_model, mock_aap_flag_model_cls, mock_settings, mock_logger, mock_feature_flags_list, mocker
+    ):
+        """Test that Resource.DoesNotExist during full_clean is caught when updating an existing flag."""
+        from ansible_base.feature_flags.utils import create_initial_data
+        from ansible_base.resource_registry.models import Resource
+
+        flag_def = {'name': 'EXISTING_RESTORE_FLAG', 'condition': 'restore_cond', 'ui_name': 'Updated Name'}
+        mock_feature_flags_list.return_value = [flag_def]
+
+        # Create an existing flag in the database
+        existing_db_flag = MockAAPFlagInstance(
+            name='EXISTING_RESTORE_FLAG',
+            condition='restore_cond',
+            ui_name='Old Name',
+        )
+        # Simulate Resource.DoesNotExist being raised during full_clean (restore scenario)
+        existing_db_flag.full_clean.side_effect = Resource.DoesNotExist("Resource matching query does not exist.")
+
+        mock_existing_queryset = MagicMock()
+        mock_existing_queryset.first.return_value = existing_db_flag
+        mock_existing_queryset.__bool__ = lambda self: True
+        mock_aap_flag_model_cls.objects.filter.return_value = mock_existing_queryset
+
+        mock_aap_flag_model_cls.objects.all.return_value = [existing_db_flag]
+
+        create_initial_data()
+
+        # Verify the info log was called for the Resource.DoesNotExist case
+        mock_logger.info.assert_called_with("Resource not found for feature flag: EXISTING_RESTORE_FLAG during validation, will be created on save")
+        # Verify that save was still called despite the exception
+        existing_db_flag.save.assert_called_once()
+        # Verify the flag was updated
+        assert existing_db_flag.ui_name == 'Updated Name'
+        # Verify no error was logged
+        mock_logger.error.assert_not_called()
+
+    @pytest.mark.django_db
     def test_purge_feature_flags_removes_obsolete_flag(self, mock_apps_get_model, mock_aap_flag_model_cls, mock_logger, mock_feature_flags_list):
         from ansible_base.feature_flags.utils import create_initial_data
 
