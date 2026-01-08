@@ -3,4 +3,4 @@
 asgiref
 pyjwt
 requests
-urllib3
+urllib3>=2.6.3  # CVE-2025-66471
