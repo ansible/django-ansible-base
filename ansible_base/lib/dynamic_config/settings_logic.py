@@ -20,6 +20,13 @@ DEFAULT_SPECTACULAR_SETTINGS = {
     'PREPROCESSING_HOOKS': [
         'ansible_base.api_documentation.preprocessing_hooks.collect_ai_description_metadata',
     ],
+    'OAUTH2_FLOWS': ['authorizationCode', 'password'],
+    'OAUTH2_AUTHORIZATION_URL': '/o/authorize/',
+    'OAUTH2_TOKEN_URL': '/o/token/',
+    'OAUTH2_SCOPES': {
+        'read': 'Read access to resources',
+        'write': 'Write access to resources (includes read)',
+    },
     'POSTPROCESSING_HOOKS': [
         'ansible_base.api_documentation.postprocessing_hooks.add_x_ai_description',
     ],

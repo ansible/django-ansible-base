@@ -1,6 +1,6 @@
 from django.apps import AppConfig
 
-from ansible_base.api_documentation.customizations import apply_authentication_customizations
+from ansible_base.api_documentation.customizations import apply_authentication_customizations, apply_oauth2_customizations
 
 
 class ApiDocumentationConfig(AppConfig):
@@ -13,6 +13,9 @@ class ApiDocumentationConfig(AppConfig):
 
         if 'ansible_base.authentication' in settings.INSTALLED_APPS:
             apply_authentication_customizations()
+
+        if 'ansible_base.oauth2_provider' in settings.INSTALLED_APPS:
+            apply_oauth2_customizations()
 
         # Import filter extensions to register them with drf-spectacular
         if 'ansible_base.rest_filters' in settings.INSTALLED_APPS and 'ansible_base.api_documentation' in settings.INSTALLED_APPS:
