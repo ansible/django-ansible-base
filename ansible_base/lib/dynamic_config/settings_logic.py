@@ -20,13 +20,6 @@ DEFAULT_SPECTACULAR_SETTINGS = {
     'PREPROCESSING_HOOKS': [
         'ansible_base.api_documentation.preprocessing_hooks.collect_ai_description_metadata',
     ],
-    'OAUTH2_FLOWS': ['authorizationCode', 'password'],
-    'OAUTH2_AUTHORIZATION_URL': '/o/authorize/',
-    'OAUTH2_TOKEN_URL': '/o/token/',
-    'OAUTH2_SCOPES': {
-        'read': 'Read access to resources',
-        'write': 'Write access to resources (includes read)',
-    },
     'POSTPROCESSING_HOOKS': [
         'ansible_base.api_documentation.postprocessing_hooks.add_x_ai_description',
     ],
@@ -298,6 +291,18 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         oauth2_authentication_class = 'ansible_base.oauth2_provider.authentication.LoggedOAuth2Authentication'
         if oauth2_authentication_class not in rest_framework['DEFAULT_AUTHENTICATION_CLASSES']:
             rest_framework['DEFAULT_AUTHENTICATION_CLASSES'].insert(0, oauth2_authentication_class)
+
+        # OAuth2 OpenAPI schema settings (only apply when oauth2_provider is installed)
+        spectacular_settings.setdefault('OAUTH2_FLOWS', ['authorizationCode', 'password'])
+        spectacular_settings.setdefault('OAUTH2_AUTHORIZATION_URL', '/o/authorize/')
+        spectacular_settings.setdefault('OAUTH2_TOKEN_URL', '/o/token/')
+        spectacular_settings.setdefault(
+            'OAUTH2_SCOPES',
+            {
+                'read': 'Read access to resources',
+                'write': 'Write access to resources (includes read)',
+            },
+        )
 
         # These have to be defined for the migration to function
         dab_data['OAUTH2_PROVIDER_APPLICATION_MODEL'] = DEFAULT_OAUTH2_APPLICATION_MODEL

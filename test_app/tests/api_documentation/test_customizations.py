@@ -20,7 +20,7 @@ def test_oauth2_scheme_type_is_oauth2_not_apikey():
 
     from ansible_base.oauth2_provider.authentication import LoggedOAuth2Authentication
 
-    # Find the OAuth2 scheme registered by apps.py
+    # Intentionally access _registry to verify OAuth2Scheme is registered with expected attributes
     oauth2_schemes = [
         ext for ext in OpenApiAuthenticationExtension._registry if hasattr(ext, 'target_class') and ext.target_class == LoggedOAuth2Authentication
     ]
@@ -47,6 +47,7 @@ def test_oauth2_scheme_includes_configured_flows():
 
     from ansible_base.oauth2_provider.authentication import LoggedOAuth2Authentication
 
+    # Intentionally access _registry to verify OAuth2Scheme is registered with expected attributes
     oauth2_schemes = [
         ext for ext in OpenApiAuthenticationExtension._registry if hasattr(ext, 'target_class') and ext.target_class == LoggedOAuth2Authentication
     ]
