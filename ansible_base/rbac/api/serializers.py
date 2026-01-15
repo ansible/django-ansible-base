@@ -87,7 +87,10 @@ class BaseAssignmentSerializer(CommonModelSerializer):
         """
         super().__init__(*args, **kwargs)
         request = self.context.get('request')
-        if request:
+        # To satisfy schema generator (drf-spectacular) when database is not available
+        if self.context.get('swagger_fake_view', False):
+            qs = self.Meta.model._meta.get_field(self.actor_field).model.objects.none()
+        elif request:
             qs = self.get_actor_queryset(request.user)
         else:
             qs = self.Meta.model._meta.get_field(self.actor_field).model.objects.all()

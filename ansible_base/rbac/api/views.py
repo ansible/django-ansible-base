@@ -176,6 +176,13 @@ class BaseAssignmentViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
         model = self.serializer_class.Meta.model
         return model.objects.prefetch_related(*self.prefetch_related, *assignment_prefetch_base)
 
+    def get_serializer_context(self):
+        """Add swagger_fake_view flag to context for serializer to use during schema generation."""
+        context = super().get_serializer_context()
+        if getattr(self, 'swagger_fake_view', False):
+            context['swagger_fake_view'] = True
+        return context
+
     def filter_queryset(self, qs):
         model = self.serializer_class.Meta.model
         if has_super_permission(self.request.user, 'view'):
