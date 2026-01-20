@@ -52,3 +52,14 @@
   support_url: ''
   labels:
     - platform
+- name: FEATURE_OIDC_WORKLOAD_IDENTITY_ENABLED
+  ui_name: OIDC Workload Identity
+  visibility: False
+  condition: boolean
+  value: 'False'
+  support_level: TECHNOLOGY_PREVIEW
+  description: Enable identity provision of workloads using OIDC
+  support_url: ''
+  toggle_type: install-time
+  labels:
+    - platform

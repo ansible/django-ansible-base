@@ -33,7 +33,7 @@ def test_oauth2_token_creation_disabled_for_external_accounts(
     AuthenticatorUser.objects.get_or_create(uid=user.username, user=user, provider=local_authenticator)
     app = oauth2_application_password[0]
     secret = oauth2_application_password[1]
-    url = get_relative_url('token')
+    url = get_relative_url('oauth2_provider:token')
     settings.ALLOW_OAUTH2_FOR_EXTERNAL_USERS = allow_oauth
     data = {
         'grant_type': 'password',
@@ -68,7 +68,7 @@ def test_oauth2_existing_token_enabled_for_external_accounts(
     AuthenticatorUser.objects.get_or_create(uid=user.username, user=user, provider=local_authenticator)
     app = oauth2_application_password[0]
     secret = oauth2_application_password[1]
-    url = get_relative_url('token')
+    url = get_relative_url('oauth2_provider:token')
     settings.ALLOW_OAUTH2_FOR_EXTERNAL_USERS = True
     data = {
         'grant_type': 'password',
@@ -125,7 +125,7 @@ def test_oauth2_pat_create_and_list(request, client_fixture, user_fixture):
 def test_oauth2_pat_creation(oauth2_application_password, user, unauthenticated_api_client):
     app = oauth2_application_password[0]
     secret = oauth2_application_password[1]
-    url = get_relative_url('token')
+    url = get_relative_url('oauth2_provider:token')
     data = {
         "grant_type": "password",
         "username": "user",
@@ -349,7 +349,7 @@ def test_oauth2_refresh_access_token(oauth2_application, oauth2_admin_access_tok
     refresh_token = oauth2_admin_access_token[2]
     refresh_token_obj = oauth2_admin_access_token[0].refresh_token
 
-    url = get_relative_url('token')
+    url = get_relative_url('oauth2_provider:token')
     data = {
         'grant_type': 'refresh_token',
         'refresh_token': refresh_token,
@@ -398,7 +398,7 @@ def test_oauth2_refresh_token_expiration_is_respected(oauth2_application, oauth2
     settings.OAUTH2_PROVIDER['AUTHORIZATION_CODE_EXPIRE_SECONDS'] = 1
     time.sleep(1)
 
-    url = get_relative_url('token')
+    url = get_relative_url('oauth2_provider:token')
     data = {
         'grant_type': 'refresh_token',
         'refresh_token': refresh_token,

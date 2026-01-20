@@ -7,7 +7,7 @@ def test_oauth2_provider_authorize_view_as_admin(admin_api_client):
     """
     As an admin, accessing /o/authorize/ without client_id parameter should return a 400 error.
     """
-    url = get_relative_url("authorize")
+    url = get_relative_url("oauth2_provider:authorize")
     response = admin_api_client.get(url)
 
     assert response.status_code == 400
@@ -18,7 +18,7 @@ def test_oauth2_provider_authorize_view_anon(client, settings):
     """
     As an anonymous user, accessing /o/authorize/ should redirect to the login page.
     """
-    url = get_relative_url("authorize")
+    url = get_relative_url("oauth2_provider:authorize")
     response = client.get(url)
 
     assert response.status_code == 302
@@ -30,7 +30,7 @@ def test_oauth2_provider_authorize_view_flow(user_api_client, oauth2_application
     As a user, I should be able to complete the authorization flow and get an authorization code.
     """
     oauth2_application = oauth2_application[0]
-    url = get_relative_url("authorize")
+    url = get_relative_url("oauth2_provider:authorize")
     query_params = {
         'client_id': oauth2_application.client_id,
         'response_type': 'code',
