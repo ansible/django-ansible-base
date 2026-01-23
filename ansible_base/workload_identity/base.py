@@ -8,6 +8,7 @@ class Scope:
     Base class for OIDC workload identity scopes.
     """
 
+    name = ""
     description = ""
 
     def list_claims(self) -> list[str]:

@@ -12,6 +12,7 @@ class AutomationControllerJobScope(Scope):
     Default scope for AAP Controller automation job workload identity.
     """
 
+    name = "aap_controller_automation_job"
     description = "Default AAP Controller automation job workload identity"
 
     CLAIM_JOB_ID = 'aap_controller_job_id'
