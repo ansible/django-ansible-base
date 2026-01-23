@@ -4,10 +4,10 @@ OIDC Workload Identity Scope for AAP Controller.
 Defines the scope and claims for Controller automation job workload identity.
 """
 
-from ansible_base.workload_identity.base import Scope
+from ansible_base.workload_identity.base import BaseWorkloadIdentityScope
 
 
-class AutomationControllerJobScope(Scope):
+class AutomationControllerJobScope(BaseWorkloadIdentityScope):
     """
     Default scope for AAP Controller automation job workload identity.
     """

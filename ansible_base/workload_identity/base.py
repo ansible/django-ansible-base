@@ -3,7 +3,7 @@ Base class for OIDC workload identity scopes.
 """
 
 
-class Scope:
+class BaseWorkloadIdentityScope:
     """
     Base class for OIDC workload identity scopes.
     """
