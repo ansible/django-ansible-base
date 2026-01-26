@@ -1,10 +1,15 @@
 import json
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 import yaml
+from django.apps import apps as django_apps
 from django.core.exceptions import ValidationError
+from django.db.models.signals import post_migrate
 from jsonschema import validate
+
+from ansible_base.feature_flags.models import AAPFlag
+from ansible_base.feature_flags.utils import create_initial_data, feature_flags_list
 
 MODULE_PATH = "ansible_base.feature_flags.utils"
 
@@ -137,6 +142,47 @@ def test_validate_flags_yaml_against_json_schema():
     except Exception as e:
         # If any other exception occurs (like a ValidationError), fail the test.
         pytest.fail(f"Validation failed unexpectedly for a valid file: {e}")
+
+
+@pytest.mark.django_db
+def test_dispatcherd_feature_flag_removed_after_post_migrate():
+    flag_name = 'FEATURE_DISPATCHERD_ENABLED'
+    removed_flag_def = {
+        'name': flag_name,
+        'ui_name': 'AAP Dispatcherd background tasking system',
+        'visibility': False,
+        'condition': 'boolean',
+        'value': 'False',
+        'support_level': 'TECHNOLOGY_PREVIEW',
+        'description': (
+            'A service to run python tasks in subprocesses, designed specifically to work well '
+            'with pg_notify, but intended to be extensible to other message delivery means.'
+        ),
+        'support_url': '',
+        'toggle_type': 'install-time',
+        'labels': ['eda', 'controller'],
+    }
+
+    current_flags = feature_flags_list()
+    assert not any(flag['name'] == flag_name for flag in current_flags)  # Sanity, we removed the flag from mainifest
+
+    with patch(f"{MODULE_PATH}.feature_flags_list", return_value=list(current_flags) + [removed_flag_def]):
+        create_initial_data()
+
+    assert AAPFlag.objects.filter(name=flag_name).exists()
+
+    # Run the normal post_migrate logic in the feature flags app
+    app_config = django_apps.get_app_config('dab_feature_flags')
+    post_migrate.send(
+        sender=app_config,
+        app_config=app_config,
+        apps=django_apps,
+        verbosity=0,
+        interactive=False,
+        using='default',
+    )
+
+    assert not AAPFlag.objects.filter(name=flag_name).exists()
 
 
 class TestCreateInitialData:
