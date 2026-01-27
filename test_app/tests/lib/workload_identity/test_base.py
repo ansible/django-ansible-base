@@ -1,6 +1,6 @@
 import pytest
 
-from ansible_base.lib.workload_identity import BaseWorkloadIdentityScope
+from ansible_base.lib.workload_identity.base import BaseWorkloadIdentityScope
 
 
 def test_list_claims():
