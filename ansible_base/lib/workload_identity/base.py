@@ -13,8 +13,9 @@ class BaseWorkloadIdentityScope:
     name = ""
     description = ""
 
+    @classmethod
     @abstractmethod
-    def list_claims(self) -> list[str]:
+    def list_claims(cls) -> list[str]:
         """
         Return a list of all claim names defined in this scope.
 

@@ -40,5 +40,6 @@ class AutomationControllerJobScope(BaseWorkloadIdentityScope):
     CLAIM_INSTANCE_GROUP_NAME = 'aap_controller_instance_group_name'
     CLAIM_INSTANCE_GROUP_ID = 'aap_controller_instance_group_id'
 
-    def list_claims(self) -> list[str]:
-        return [getattr(self, attr) for attr in dir(self) if attr.startswith('CLAIM_')]
+    @classmethod
+    def list_claims(cls) -> list[str]:
+        return [getattr(cls, attr) for attr in dir(cls) if attr.startswith('CLAIM_')]
