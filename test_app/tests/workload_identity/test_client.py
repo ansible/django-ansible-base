@@ -8,7 +8,6 @@ import pytest
 import requests
 
 from ansible_base.workload_identity import (
-    InvalidTokenError,
     ServiceAuthenticationError,
     TokenRequestError,
     WorkloadIdentityClient,
