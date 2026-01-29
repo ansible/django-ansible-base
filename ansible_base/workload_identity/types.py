@@ -6,8 +6,6 @@ from typing import NamedTuple, Optional
 class WorkloadIdentityTokenRequest(NamedTuple):
     """
     Request body for workload identity token endpoint.
-
-    Aligns with the serializer defined in AAP-43414.
     """
 
     claims: dict
