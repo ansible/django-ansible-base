@@ -8,21 +8,19 @@ import logging
 import time
 from typing import Optional
 
-import jwt as pyjwt
 import requests
 
-from ansible_base.lib.workload_identity.exceptions import (
-    InvalidTokenError,
+from ansible_base.resource_registry.resource_server import get_resource_server_config, get_service_token
+from ansible_base.workload_identity.exceptions import (
     ServiceAuthenticationError,
     TokenRequestError,
 )
-from ansible_base.lib.workload_identity.types import (
+from ansible_base.workload_identity.types import (
     WorkloadIdentityTokenRequest,
     WorkloadIdentityTokenResponse,
 )
-from ansible_base.resource_registry.resource_server import get_resource_server_config, get_service_token
 
-logger = logging.getLogger("ansible_base.lib.workload_identity.client")
+logger = logging.getLogger("ansible_base.workload_identity.client")
 
 
 class WorkloadIdentityClient:
@@ -193,7 +191,6 @@ class WorkloadIdentityClient:
 
         Raises:
             TokenRequestError: If the request fails
-            InvalidTokenError: If the returned token is invalid
 
         Example:
             >>> response = client.request_token(
@@ -229,15 +226,6 @@ class WorkloadIdentityClient:
             raise TokenRequestError("Response missing 'access_token' field")
 
         access_token = response_data["access_token"]
-
-        # Validate JWT structure (basic check - don't verify signature here)
-        try:
-            # Decode without verification to check structure
-            pyjwt.decode(access_token, options={"verify_signature": False})
-            logger.debug("Access token has valid JWT structure")
-        except pyjwt.exceptions.DecodeError as e:
-            logger.error(f"Invalid JWT token structure: {e}")
-            raise InvalidTokenError(f"Invalid JWT token: {e}") from e
 
         # Create response object
         return WorkloadIdentityTokenResponse(

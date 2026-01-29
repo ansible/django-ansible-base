@@ -7,7 +7,7 @@ import jwt as pyjwt
 import pytest
 import requests
 
-from ansible_base.lib.workload_identity import (
+from ansible_base.workload_identity import (
     InvalidTokenError,
     ServiceAuthenticationError,
     TokenRequestError,
@@ -92,7 +92,7 @@ class TestWorkloadIdentityClient:
 
         assert client.base_url == "https://gateway.example.com"
 
-    @mock.patch("ansible_base.lib.workload_identity.client.get_service_token")
+    @mock.patch("ansible_base.workload_identity.client.get_service_token")
     def test_service_token_refresh(self, mock_get_service_token):
         """Test that service token is refreshed correctly."""
         mock_get_service_token.return_value = "test-service-token"
@@ -118,7 +118,7 @@ class TestWorkloadIdentityClient:
         # Verify get_service_token was called correctly
         mock_get_service_token.assert_called_once_with(1, expiration=60)
 
-    @mock.patch("ansible_base.lib.workload_identity.client.get_service_token")
+    @mock.patch("ansible_base.workload_identity.client.get_service_token")
     def test_service_token_property_auto_refresh(self, mock_get_service_token):
         """Test that jwt property automatically refreshes expired tokens."""
         mock_get_service_token.return_value = "new-token"
@@ -147,7 +147,7 @@ class TestWorkloadIdentityClient:
         assert token3 == "refreshed-token"
         assert mock_get_service_token.call_count == 2
 
-    @mock.patch("ansible_base.lib.workload_identity.client.get_service_token")
+    @mock.patch("ansible_base.workload_identity.client.get_service_token")
     def test_service_token_refresh_error(self, mock_get_service_token):
         """Test that service token refresh raises ServiceAuthenticationError on failure."""
         mock_get_service_token.side_effect = Exception("Token generation failed")
@@ -159,7 +159,7 @@ class TestWorkloadIdentityClient:
 
         assert "Failed to refresh service token" in str(exc_info.value)
 
-    @mock.patch("ansible_base.lib.workload_identity.client.get_service_token")
+    @mock.patch("ansible_base.workload_identity.client.get_service_token")
     def test_service_auth_header(self, mock_get_service_token):
         """Test that service_auth_header returns correct header."""
         mock_get_service_token.return_value = "test-service-token"
@@ -170,8 +170,8 @@ class TestWorkloadIdentityClient:
 
         assert header == {"X-ANSIBLE-SERVICE-AUTH": "test-service-token"}
 
-    @mock.patch("ansible_base.lib.workload_identity.client.get_service_token")
-    @mock.patch("ansible_base.lib.workload_identity.client.requests.request")
+    @mock.patch("ansible_base.workload_identity.client.get_service_token")
+    @mock.patch("ansible_base.workload_identity.client.requests.request")
     def test_request_token_success(self, mock_request, mock_get_service_token):
         """Test successful token request."""
         # Setup mocks
@@ -220,8 +220,8 @@ class TestWorkloadIdentityClient:
         assert call_kwargs["headers"]["X-ANSIBLE-SERVICE-AUTH"] == "service-token"
         assert call_kwargs["verify"] is True
 
-    @mock.patch("ansible_base.lib.workload_identity.client.get_service_token")
-    @mock.patch("ansible_base.lib.workload_identity.client.requests.request")
+    @mock.patch("ansible_base.workload_identity.client.get_service_token")
+    @mock.patch("ansible_base.workload_identity.client.requests.request")
     def test_request_token_http_error(self, mock_request, mock_get_service_token):
         """Test that HTTP errors raise TokenRequestError."""
         mock_get_service_token.return_value = "service-token"
@@ -239,8 +239,8 @@ class TestWorkloadIdentityClient:
 
         assert "401 Unauthorized" in str(exc_info.value)
 
-    @mock.patch("ansible_base.lib.workload_identity.client.get_service_token")
-    @mock.patch("ansible_base.lib.workload_identity.client.requests.request")
+    @mock.patch("ansible_base.workload_identity.client.get_service_token")
+    @mock.patch("ansible_base.workload_identity.client.requests.request")
     def test_request_token_missing_access_token(self, mock_request, mock_get_service_token):
         """Test that missing access_token in response raises TokenRequestError."""
         mock_get_service_token.return_value = "service-token"
@@ -260,29 +260,8 @@ class TestWorkloadIdentityClient:
 
         assert "missing 'access_token' field" in str(exc_info.value)
 
-    @mock.patch("ansible_base.lib.workload_identity.client.get_service_token")
-    @mock.patch("ansible_base.lib.workload_identity.client.requests.request")
-    def test_request_token_invalid_jwt(self, mock_request, mock_get_service_token):
-        """Test that invalid JWT in response raises InvalidTokenError."""
-        mock_get_service_token.return_value = "service-token"
-
-        mock_response = mock.Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "access_token": "not-a-valid-jwt-token",
-            "token_type": "Bearer",
-        }
-        mock_request.return_value = mock_response
-
-        client = WorkloadIdentityClient(base_url="https://gateway.example.com")
-
-        with pytest.raises(InvalidTokenError) as exc_info:
-            client.request_token(claims={"sub": "user123"}, scope="read")
-
-        assert "Invalid JWT token" in str(exc_info.value)
-
-    @mock.patch("ansible_base.lib.workload_identity.client.get_service_token")
-    @mock.patch("ansible_base.lib.workload_identity.client.requests.request")
+    @mock.patch("ansible_base.workload_identity.client.get_service_token")
+    @mock.patch("ansible_base.workload_identity.client.requests.request")
     def test_request_token_json_parse_error(self, mock_request, mock_get_service_token):
         """Test that JSON parse errors raise TokenRequestError."""
         mock_get_service_token.return_value = "service-token"
@@ -299,8 +278,8 @@ class TestWorkloadIdentityClient:
 
         assert "Failed to parse response" in str(exc_info.value)
 
-    @mock.patch("ansible_base.lib.workload_identity.client.get_service_token")
-    @mock.patch("ansible_base.lib.workload_identity.client.requests.request")
+    @mock.patch("ansible_base.workload_identity.client.get_service_token")
+    @mock.patch("ansible_base.workload_identity.client.requests.request")
     def test_request_token_network_error(self, mock_request, mock_get_service_token):
         """Test that network errors raise TokenRequestError."""
         mock_get_service_token.return_value = "service-token"
@@ -313,8 +292,8 @@ class TestWorkloadIdentityClient:
 
         assert "Request failed" in str(exc_info.value)
 
-    @mock.patch("ansible_base.lib.workload_identity.client.get_service_token")
-    @mock.patch("ansible_base.lib.workload_identity.client.requests.request")
+    @mock.patch("ansible_base.workload_identity.client.get_service_token")
+    @mock.patch("ansible_base.workload_identity.client.requests.request")
     def test_request_token_with_various_scopes(self, mock_request, mock_get_service_token):
         """Test that different scope strings are handled correctly."""
         mock_get_service_token.return_value = "service-token"
@@ -340,8 +319,8 @@ class TestWorkloadIdentityClient:
             call_kwargs = mock_request.call_args[1]
             assert call_kwargs["json"]["scope"] == scope
 
-    @mock.patch("ansible_base.lib.workload_identity.client.get_service_token")
-    @mock.patch("ansible_base.lib.workload_identity.client.requests.request")
+    @mock.patch("ansible_base.workload_identity.client.get_service_token")
+    @mock.patch("ansible_base.workload_identity.client.requests.request")
     def test_request_token_with_various_claims(self, mock_request, mock_get_service_token):
         """Test that different claims dictionaries are handled correctly."""
         mock_get_service_token.return_value = "service-token"
@@ -374,7 +353,7 @@ class TestWorkloadIdentityClient:
             call_kwargs = mock_request.call_args[1]
             assert call_kwargs["json"]["claims"] == claims
 
-    @mock.patch("ansible_base.lib.workload_identity.client.get_service_token")
+    @mock.patch("ansible_base.workload_identity.client.get_service_token")
     def test_client_with_no_https_verification(self, mock_get_service_token):
         """Test that HTTPS verification can be disabled."""
         mock_get_service_token.return_value = "service-token"
@@ -386,8 +365,8 @@ class TestWorkloadIdentityClient:
 
         assert client.verify_https is False
 
-    @mock.patch("ansible_base.lib.workload_identity.client.get_service_token")
-    @mock.patch("ansible_base.lib.workload_identity.client.requests.request")
+    @mock.patch("ansible_base.workload_identity.client.get_service_token")
+    @mock.patch("ansible_base.workload_identity.client.requests.request")
     def test_client_without_raise_on_error(self, mock_request, mock_get_service_token):
         """Test that raise_if_bad_request=False doesn't raise on HTTP errors."""
         mock_get_service_token.return_value = "service-token"
@@ -412,10 +391,10 @@ class TestWorkloadIdentityClient:
 class TestGetWorkloadIdentityClient:
     """Test the get_workload_identity_client factory function."""
 
-    @mock.patch("ansible_base.lib.workload_identity.client.get_resource_server_config")
+    @mock.patch("ansible_base.workload_identity.client.get_resource_server_config")
     def test_factory_creates_client_from_config(self, mock_get_config):
         """Test that factory function creates client with config values."""
-        from ansible_base.lib.workload_identity import get_workload_identity_client
+        from ansible_base.workload_identity import get_workload_identity_client
 
         mock_get_config.return_value = {
             "URL": "https://gateway.example.com",
@@ -428,10 +407,10 @@ class TestGetWorkloadIdentityClient:
         assert client.verify_https is True
         mock_get_config.assert_called_once()
 
-    @mock.patch("ansible_base.lib.workload_identity.client.get_resource_server_config")
+    @mock.patch("ansible_base.workload_identity.client.get_resource_server_config")
     def test_factory_passes_kwargs_to_client(self, mock_get_config):
         """Test that factory function passes additional kwargs to client."""
-        from ansible_base.lib.workload_identity import get_workload_identity_client
+        from ansible_base.workload_identity import get_workload_identity_client
 
         mock_get_config.return_value = {
             "URL": "https://gateway.example.com",
@@ -448,10 +427,10 @@ class TestGetWorkloadIdentityClient:
         assert client.jwt_expiration == 120
         assert client.raise_if_bad_request is False
 
-    @mock.patch("ansible_base.lib.workload_identity.client.get_resource_server_config")
+    @mock.patch("ansible_base.workload_identity.client.get_resource_server_config")
     def test_factory_with_https_disabled(self, mock_get_config):
         """Test that factory respects VALIDATE_HTTPS=False from config."""
-        from ansible_base.lib.workload_identity import get_workload_identity_client
+        from ansible_base.workload_identity import get_workload_identity_client
 
         mock_get_config.return_value = {
             "URL": "http://localhost:8000",
