@@ -7,7 +7,6 @@ from the Ansible Gateway service using service token authentication.
 
 from ansible_base.workload_identity.client import WorkloadIdentityClient, get_workload_identity_client
 from ansible_base.workload_identity.exceptions import (
-    InvalidTokenError,
     ServiceAuthenticationError,
     TokenRequestError,
     WorkloadIdentityError,
@@ -21,7 +20,6 @@ __all__ = [
     "WorkloadIdentityClient",
     "get_workload_identity_client",
     "WorkloadIdentityError",
-    "InvalidTokenError",
     "TokenRequestError",
     "ServiceAuthenticationError",
     "WorkloadIdentityTokenRequest",
