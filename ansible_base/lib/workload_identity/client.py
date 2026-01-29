@@ -11,7 +11,6 @@ from typing import Optional
 import jwt as pyjwt
 import requests
 
-from ansible_base.resource_registry.resource_server import get_resource_server_config, get_service_token
 from ansible_base.lib.workload_identity.exceptions import (
     InvalidTokenError,
     ServiceAuthenticationError,
@@ -21,6 +20,7 @@ from ansible_base.lib.workload_identity.types import (
     WorkloadIdentityTokenRequest,
     WorkloadIdentityTokenResponse,
 )
+from ansible_base.resource_registry.resource_server import get_resource_server_config, get_service_token
 
 logger = logging.getLogger("ansible_base.lib.workload_identity.client")
 
