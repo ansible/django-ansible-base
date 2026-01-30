@@ -61,6 +61,10 @@ class ResourceAPIClient(BaseServiceClient):
         jwt_user_id (UUID): ansible ID of the user to make the request as.
         jwt_expiration (int): number of seconds that the JWT token is valid.
         """
+        # Convert jwt_user_id to string before passing to parent (tests pass UUID objects)
+        if jwt_user_id is not None:
+            jwt_user_id = str(jwt_user_id)
+
         base_url = f"{service_url}/{service_path.strip('/')}/"
         super().__init__(
             base_url=base_url,
