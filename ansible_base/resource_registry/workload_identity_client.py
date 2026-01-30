@@ -5,21 +5,79 @@ from the Gateway workload identity endpoint with service token authentication.
 """
 
 import logging
+from typing import NamedTuple, Optional
 
 import requests
+from rest_framework.exceptions import APIException
+from rest_framework.status import HTTP_401_UNAUTHORIZED
 
 from ansible_base.resource_registry.resource_server import get_resource_server_config
 from ansible_base.resource_registry.service_client import BaseServiceClient
-from ansible_base.resource_registry.workload_identity_exceptions import (
-    ServiceAuthenticationError,
-    TokenRequestError,
-)
-from ansible_base.resource_registry.workload_identity_types import (
-    WorkloadIdentityTokenRequest,
-    WorkloadIdentityTokenResponse,
-)
 
 logger = logging.getLogger("ansible_base.resource_registry.workload_identity_client")
+
+
+class WorkloadIdentityTokenRequest(NamedTuple):
+    """Request body for workload identity token endpoint."""
+
+    claims: dict
+    """Dictionary of claims to include in the workload identity token."""
+
+    scope: str
+    """Token scope string (e.g., 'read', 'write', 'read write')."""
+
+
+class WorkloadIdentityTokenResponse(NamedTuple):
+    """Response from workload identity token endpoint."""
+
+    access_token: str
+    """The JWT access token."""
+
+    token_type: Optional[str] = "Bearer"
+    """Token type, typically 'Bearer'."""
+
+    expires_in: Optional[int] = None
+    """Token expiration time in seconds."""
+
+    scope: Optional[str] = None
+    """The scope of the token."""
+
+
+class TokenRequestError(APIException):
+    """Raised when token request fails."""
+
+    status_code = HTTP_401_UNAUTHORIZED
+    default_detail = "Failed to obtain workload identity token."
+    default_code = "token_request_failed"
+
+
+def get_workload_identity_client(**kwargs) -> 'WorkloadIdentityClient':
+    """
+    Get a WorkloadIdentityClient configured from resource server settings.
+
+    This factory function creates a client using the RESOURCE_SERVER configuration,
+    similar to get_resource_server_client() in rest_client.py.
+
+    Args:
+        **kwargs: Additional arguments passed to WorkloadIdentityClient
+
+    Returns:
+        WorkloadIdentityClient: Configured client instance
+
+    Example:
+        >>> client = get_workload_identity_client(jwt_user_id=1)
+        >>> response = client.request_workload_jwt(
+        ...     claims={"sub": "user123"},
+        ...     scope="read"
+        ... )
+    """
+    config = get_resource_server_config()
+
+    return WorkloadIdentityClient(
+        base_url=config["URL"],
+        verify_https=config["VALIDATE_HTTPS"],
+        **kwargs,
+    )
 
 
 class WorkloadIdentityClient(BaseServiceClient):
@@ -35,7 +93,7 @@ class WorkloadIdentityClient(BaseServiceClient):
         ...     jwt_user_id=1,
         ...     jwt_expiration=60
         ... )
-        >>> response = client.request_token(
+        >>> response = client.request_workload_jwt(
         ...     claims={"sub": "user123", "aud": "my-service"},
         ...     scope="read write"
         ... )
@@ -60,8 +118,6 @@ class WorkloadIdentityClient(BaseServiceClient):
             verify_https: Whether to verify HTTPS certificates (default: True)
             raise_if_bad_request: Whether to raise exceptions on HTTP errors (default: True)
         """
-        # Convert jwt_user_id to string before passing to parent
-        # (parent's type hint requires Optional[str], but users may pass int)
         if jwt_user_id is not None:
             jwt_user_id = str(jwt_user_id)
 
@@ -73,32 +129,7 @@ class WorkloadIdentityClient(BaseServiceClient):
             jwt_expiration=jwt_expiration,
         )
 
-    def refresh_jwt(self) -> None:
-        """
-        Refresh the service token with error handling.
-
-        Overrides BaseServiceClient.refresh_jwt() to wrap errors in ServiceAuthenticationError.
-
-        Raises:
-            ServiceAuthenticationError: If token refresh fails
-        """
-        try:
-            super().refresh_jwt()
-        except Exception as e:
-            logger.error(f"Failed to refresh service token: {e}")
-            raise ServiceAuthenticationError(f"Failed to refresh service token: {e}") from e
-
-    @property
-    def service_auth_header(self) -> dict:
-        """
-        Get the service authentication headers.
-
-        Returns:
-            dict: Dictionary with X-ANSIBLE-SERVICE-AUTH key and JWT token value
-        """
-        return self.requests_auth_kwargs["headers"]
-
-    def request_token(
+    def request_workload_jwt(
         self,
         claims: dict,
         scope: str,
@@ -120,19 +151,17 @@ class WorkloadIdentityClient(BaseServiceClient):
             TokenRequestError: If the request fails
 
         Example:
-            >>> response = client.request_token(
+            >>> response = client.request_workload_jwt(
             ...     claims={"sub": "user123", "aud": "my-service"},
             ...     scope="read write"
             ... )
         """
-        # Create request body
         request_body = WorkloadIdentityTokenRequest(claims=claims, scope=scope)
         data = request_body._asdict()
 
         logger.info(f"Requesting workload identity token with scope: {scope}")
         logger.debug(f"Claims: {claims}")
 
-        # Make POST request with error handling
         try:
             response = self._make_request(
                 method="POST",
@@ -143,7 +172,6 @@ class WorkloadIdentityClient(BaseServiceClient):
             logger.error(f"Request failed: {e}")
             raise TokenRequestError(f"Request failed: {e}") from e
 
-        # Parse response
         try:
             response_data = response.json()
             logger.debug(f"Response data: {response_data}")
@@ -151,46 +179,15 @@ class WorkloadIdentityClient(BaseServiceClient):
             logger.error(f"Failed to parse JSON response: {e}")
             raise TokenRequestError(f"Failed to parse response: {e}") from e
 
-        # Validate access token is present
         if "access_token" not in response_data:
             logger.error("Response missing 'access_token' field")
             raise TokenRequestError("Response missing 'access_token' field")
 
         access_token = response_data["access_token"]
 
-        # Create response object
         return WorkloadIdentityTokenResponse(
             access_token=access_token,
             token_type=response_data.get("token_type", "Bearer"),
             expires_in=response_data.get("expires_in"),
             scope=response_data.get("scope", scope),
         )
-
-
-def get_workload_identity_client(**kwargs) -> WorkloadIdentityClient:
-    """
-    Get a WorkloadIdentityClient configured from resource server settings.
-
-    This factory function creates a client using the RESOURCE_SERVER configuration,
-    similar to get_resource_server_client() in rest_client.py.
-
-    Args:
-        **kwargs: Additional arguments passed to WorkloadIdentityClient
-
-    Returns:
-        WorkloadIdentityClient: Configured client instance
-
-    Example:
-        >>> client = get_workload_identity_client(jwt_user_id=1)
-        >>> response = client.request_token(
-        ...     claims={"sub": "user123"},
-        ...     scope="read"
-        ... )
-    """
-    config = get_resource_server_config()
-
-    return WorkloadIdentityClient(
-        base_url=config["URL"],
-        verify_https=config["VALIDATE_HTTPS"],
-        **kwargs,
-    )

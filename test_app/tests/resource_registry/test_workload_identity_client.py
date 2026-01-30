@@ -7,12 +7,9 @@ import jwt as pyjwt
 import pytest
 import requests
 
-from ansible_base.resource_registry.workload_identity_client import WorkloadIdentityClient
-from ansible_base.resource_registry.workload_identity_exceptions import (
-    ServiceAuthenticationError,
+from ansible_base.resource_registry.workload_identity_client import (
     TokenRequestError,
-)
-from ansible_base.resource_registry.workload_identity_types import (
+    WorkloadIdentityClient,
     WorkloadIdentityTokenRequest,
     WorkloadIdentityTokenResponse,
 )
@@ -152,31 +149,8 @@ class TestWorkloadIdentityClient:
         assert mock_get_service_token.call_count == 2
 
     @mock.patch("ansible_base.resource_registry.service_client.get_service_token")
-    def test_service_token_refresh_error(self, mock_get_service_token):
-        """Test that service token refresh raises ServiceAuthenticationError on failure."""
-        mock_get_service_token.side_effect = Exception("Token generation failed")
-
-        client = WorkloadIdentityClient(base_url="https://gateway.example.com")
-
-        with pytest.raises(ServiceAuthenticationError) as exc_info:
-            client.refresh_jwt()
-
-        assert "Failed to refresh service token" in str(exc_info.value)
-
-    @mock.patch("ansible_base.resource_registry.service_client.get_service_token")
-    def test_service_auth_header(self, mock_get_service_token):
-        """Test that service_auth_header returns correct header."""
-        mock_get_service_token.return_value = "test-service-token"
-
-        client = WorkloadIdentityClient(base_url="https://gateway.example.com")
-
-        header = client.service_auth_header
-
-        assert header == {"X-ANSIBLE-SERVICE-AUTH": "test-service-token"}
-
-    @mock.patch("ansible_base.resource_registry.service_client.get_service_token")
     @mock.patch("ansible_base.resource_registry.service_client.requests.request")
-    def test_request_token_success(self, mock_request, mock_get_service_token):
+    def test_request_workload_jwt_success(self, mock_request, mock_get_service_token):
         """Test successful token request."""
         # Setup mocks
         mock_get_service_token.return_value = "service-token"
@@ -200,7 +174,7 @@ class TestWorkloadIdentityClient:
 
         # Make request
         client = WorkloadIdentityClient(base_url="https://gateway.example.com")
-        response = client.request_token(
+        response = client.request_workload_jwt(
             claims={"sub": "user123", "aud": "my-service"},
             scope="read write",
         )
@@ -226,7 +200,7 @@ class TestWorkloadIdentityClient:
 
     @mock.patch("ansible_base.resource_registry.service_client.get_service_token")
     @mock.patch("ansible_base.resource_registry.service_client.requests.request")
-    def test_request_token_http_error(self, mock_request, mock_get_service_token):
+    def test_request_workload_jwt_http_error(self, mock_request, mock_get_service_token):
         """Test that HTTP errors raise TokenRequestError."""
         mock_get_service_token.return_value = "service-token"
 
@@ -239,13 +213,13 @@ class TestWorkloadIdentityClient:
         client = WorkloadIdentityClient(base_url="https://gateway.example.com")
 
         with pytest.raises(TokenRequestError) as exc_info:
-            client.request_token(claims={"sub": "user123"}, scope="read")
+            client.request_workload_jwt(claims={"sub": "user123"}, scope="read")
 
         assert "401 Unauthorized" in str(exc_info.value)
 
     @mock.patch("ansible_base.resource_registry.service_client.get_service_token")
     @mock.patch("ansible_base.resource_registry.service_client.requests.request")
-    def test_request_token_missing_access_token(self, mock_request, mock_get_service_token):
+    def test_request_workload_jwt_missing_access_token(self, mock_request, mock_get_service_token):
         """Test that missing access_token in response raises TokenRequestError."""
         mock_get_service_token.return_value = "service-token"
 
@@ -260,13 +234,13 @@ class TestWorkloadIdentityClient:
         client = WorkloadIdentityClient(base_url="https://gateway.example.com")
 
         with pytest.raises(TokenRequestError) as exc_info:
-            client.request_token(claims={"sub": "user123"}, scope="read")
+            client.request_workload_jwt(claims={"sub": "user123"}, scope="read")
 
         assert "missing 'access_token' field" in str(exc_info.value)
 
     @mock.patch("ansible_base.resource_registry.service_client.get_service_token")
     @mock.patch("ansible_base.resource_registry.service_client.requests.request")
-    def test_request_token_json_parse_error(self, mock_request, mock_get_service_token):
+    def test_request_workload_jwt_json_parse_error(self, mock_request, mock_get_service_token):
         """Test that JSON parse errors raise TokenRequestError."""
         mock_get_service_token.return_value = "service-token"
 
@@ -278,13 +252,13 @@ class TestWorkloadIdentityClient:
         client = WorkloadIdentityClient(base_url="https://gateway.example.com")
 
         with pytest.raises(TokenRequestError) as exc_info:
-            client.request_token(claims={"sub": "user123"}, scope="read")
+            client.request_workload_jwt(claims={"sub": "user123"}, scope="read")
 
         assert "Failed to parse response" in str(exc_info.value)
 
     @mock.patch("ansible_base.resource_registry.service_client.get_service_token")
     @mock.patch("ansible_base.resource_registry.service_client.requests.request")
-    def test_request_token_network_error(self, mock_request, mock_get_service_token):
+    def test_request_workload_jwt_network_error(self, mock_request, mock_get_service_token):
         """Test that network errors raise TokenRequestError."""
         mock_get_service_token.return_value = "service-token"
         mock_request.side_effect = requests.exceptions.ConnectionError("Connection failed")
@@ -292,13 +266,13 @@ class TestWorkloadIdentityClient:
         client = WorkloadIdentityClient(base_url="https://gateway.example.com")
 
         with pytest.raises(TokenRequestError) as exc_info:
-            client.request_token(claims={"sub": "user123"}, scope="read")
+            client.request_workload_jwt(claims={"sub": "user123"}, scope="read")
 
         assert "Request failed" in str(exc_info.value)
 
     @mock.patch("ansible_base.resource_registry.service_client.get_service_token")
     @mock.patch("ansible_base.resource_registry.service_client.requests.request")
-    def test_request_token_with_various_scopes(self, mock_request, mock_get_service_token):
+    def test_request_workload_jwt_with_various_scopes(self, mock_request, mock_get_service_token):
         """Test that different scope strings are handled correctly."""
         mock_get_service_token.return_value = "service-token"
 
@@ -316,7 +290,7 @@ class TestWorkloadIdentityClient:
 
         # Test different scope values
         for scope in ["read", "write", "read write", "read write admin"]:
-            response = client.request_token(claims={"sub": "test"}, scope=scope)
+            response = client.request_workload_jwt(claims={"sub": "test"}, scope=scope)
             assert response.access_token == test_jwt
 
             # Verify scope was sent in request
@@ -325,7 +299,7 @@ class TestWorkloadIdentityClient:
 
     @mock.patch("ansible_base.resource_registry.service_client.get_service_token")
     @mock.patch("ansible_base.resource_registry.service_client.requests.request")
-    def test_request_token_with_various_claims(self, mock_request, mock_get_service_token):
+    def test_request_workload_jwt_with_various_claims(self, mock_request, mock_get_service_token):
         """Test that different claims dictionaries are handled correctly."""
         mock_get_service_token.return_value = "service-token"
 
@@ -350,7 +324,7 @@ class TestWorkloadIdentityClient:
         ]
 
         for claims in test_claims:
-            response = client.request_token(claims=claims, scope="read")
+            response = client.request_workload_jwt(claims=claims, scope="read")
             assert response.access_token == test_jwt
 
             # Verify claims were sent in request
@@ -389,7 +363,7 @@ class TestWorkloadIdentityClient:
         # Should not raise, but response parsing will fail
         with pytest.raises(TokenRequestError):
             # Will fail on JSON parse or missing access_token
-            client.request_token(claims={"sub": "test"}, scope="read")
+            client.request_workload_jwt(claims={"sub": "test"}, scope="read")
 
 
 class TestGetWorkloadIdentityClient:
