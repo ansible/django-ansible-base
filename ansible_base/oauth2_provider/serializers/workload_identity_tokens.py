@@ -23,19 +23,8 @@ class WorkloadIdentityTokenRequestSerializer(serializers.Serializer):
     claims = serializers.DictField(
         required=True,
         allow_empty=False,
-        help_text=_("Workload details to include in the JWT as claims. Must be a non-empty JSON object."),
+        help_text=_("Workload details to include in the JWT as claims."),
     )
-
-    def validate_claims(self, value):
-        """
-        Validate that claims is a non-empty dictionary.
-        """
-        message = _("Workload details must be a non-empty JSON object")
-        if not isinstance(value, dict):
-            raise serializers.ValidationError(message)
-        if len(value.keys()) == 0:
-            raise serializers.ValidationError(message)
-        return value
 
 
 class WorkloadIdentityTokenResponseSerializer(serializers.Serializer):
