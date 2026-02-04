@@ -51,3 +51,13 @@
   toggle_type: install-time
   labels:
     - platform
+- name: FEATURE_GATEWAY_SIDECAR_CACHE_ENABLED
+  ui_name: Gateway Sidecar Cache Mode
+  visibility: False
+  condition: boolean
+  value: 'False'
+  support_level: DEVELOPER_PREVIEW
+  description: "When enabled, sessions use database-only storage instead of cache+database. Use this in clustered deployments with sidecar caches where session invalidation (logout) must be immediately consistent across all nodes."
+  support_url: ''
+  labels:
+    - gateway
