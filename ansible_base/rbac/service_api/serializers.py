@@ -5,6 +5,7 @@ from rest_framework import serializers
 
 from ..api.fields import ActorAnsibleIdField
 from ..models import DABContentType, DABPermission, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
+from ..policies import check_content_obj_permission
 from ..remote import RemoteObject
 
 
@@ -113,6 +114,7 @@ class BaseAssignmentSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         rd = validated_data['role_definition']
         actor = validated_data[self.actor_field]
+        requesting_user = self.context['view'].request.user
 
         as_user = None
         if 'created_by' in validated_data:
@@ -140,6 +142,8 @@ class BaseAssignmentSerializer(serializers.ModelSerializer):
                 # Object role assignment
                 if not obj:
                     raise serializers.ValidationError({'object_id': _('Object must be specified for this role assignment')})
+
+                check_content_obj_permission(requesting_user, obj)
 
                 with transaction.atomic():
                     assignment = rd.give_permission(actor, obj)

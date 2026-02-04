@@ -1,6 +1,7 @@
 from copy import deepcopy
 
 import pytest
+from rest_framework.test import APIClient
 
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.models import DABContentType, DABPermission, RoleDefinition
@@ -195,6 +196,25 @@ def test_unassign_endpoint_for_team(team, org_inv_rd, inventory, admin_api_clien
     response = admin_api_client.post(url, data)
     assert response.status_code == 200, response.data
     assert not rando.has_obj_perm(inventory, 'change')
+
+
+@pytest.mark.django_db
+def test_service_user_assignment_requires_object_permission(inv_rd, inventory, rando):
+    requester = User.objects.create(username='service-requester')
+    rando.resource_api_actions = "*"  # specific to internal requests
+    client = APIClient()
+    client.force_authenticate(user=requester)
+
+    url = get_relative_url('serviceuserassignment-assign')
+    data = {"role_definition": inv_rd.name, "user_ansible_id": str(rando.resource.ansible_id), "object_id": inventory.pk}
+
+    response = client.post(url, data=data)
+    assert response.status_code == 403, response.data
+
+    # Should still get a 403 even if assignment already exists
+    inv_rd.give_permission(rando, inventory)
+    response = client.post(url, data=data)
+    assert response.status_code == 403, response.data
 
 
 @pytest.mark.django_db

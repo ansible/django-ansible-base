@@ -249,6 +249,8 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         # API clients can create custom roles that change shared resources
         'ALLOW_SHARED_RESOURCE_CUSTOM_ROLES': False,
         'MANAGE_ORGANIZATION_AUTH': True,
+        # Enforce local permission checks for RemoteObject role assignments
+        'ANSIBLE_BASE_ENFORCE_REMOTE_OBJECT_PERMISSIONS': True,
         # Alternative to permission_registry.register
         'ANSIBLE_BASE_RBAC_MODEL_REGISTRY': {},
         'ORG_ADMINS_CAN_SEE_ALL_USERS': True,
