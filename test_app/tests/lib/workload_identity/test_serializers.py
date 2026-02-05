@@ -277,11 +277,7 @@ class TestWorkloadIdentityTokenResponseSerializer:
         that the serializer accepts the JWT as-is with whitespace.
         """
         data_with_whitespace = {
-            'jwt': (
-                '  eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.'
-                'eyJzdWIiOiIxMjM0NTY3ODkwIn0.'
-                'dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U  '
-            ),
+            'jwt': ('  eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' 'eyJzdWIiOiIxMjM0NTY3ODkwIn0.' 'dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U  '),
         }
         serializer = WorkloadIdentityTokenResponseSerializer(data=data_with_whitespace)
         assert serializer.is_valid(), f"Serializer errors: {serializer.errors}"
@@ -293,11 +289,7 @@ class TestWorkloadIdentityTokenResponseSerializer:
         """
         Test creating a WorkloadIdentityTokenResponseSerializer instance with data.
         """
-        jwt_token = (
-            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.'
-            'eyJzdWIiOiIxMjM0NTY3ODkwIn0.'
-            'dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U'
-        )
+        jwt_token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' 'eyJzdWIiOiIxMjM0NTY3ODkwIn0.' 'dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U'
         serializer = WorkloadIdentityTokenResponseSerializer({'jwt': jwt_token})
         # This is a non-validated instance
         assert serializer.data == {'jwt': jwt_token}
@@ -307,11 +299,7 @@ class TestWorkloadIdentityTokenResponseSerializer:
         Test that extra fields are ignored (not raising errors).
         """
         data_with_extra = {
-            'jwt': (
-                'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.'
-                'eyJzdWIiOiIxMjM0NTY3ODkwIn0.'
-                'dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U'
-            ),
+            'jwt': ('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' 'eyJzdWIiOiIxMjM0NTY3ODkwIn0.' 'dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U'),
             'extra_field': 'should be ignored',
         }
         serializer = WorkloadIdentityTokenResponseSerializer(data=data_with_extra)
