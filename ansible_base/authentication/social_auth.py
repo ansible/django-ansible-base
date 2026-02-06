@@ -160,8 +160,7 @@ class SocialAuthMixin:
             # Strip URL parameters from the auth URL for logging
             auth_url_without_params = auth_url.split('?')[0] if auth_url else auth_url
             log_auth_event(
-                f"Starting SSO redirect to {auth_url_without_params} with authenticator '{self.database_instance.name}' (slug: {self.database_instance.slug})",
-                second_logger=logger,
+                f"Starting SSO redirect to {auth_url_without_params} with authenticator '{self.database_instance.name}' (slug: {self.database_instance.slug})"
             )
 
         return super().start()

@@ -50,8 +50,7 @@ class LoggedOAuth2Authentication(OAuth2Authentication):
                     u"User {} performed a {} to {} through the API using OAuth 2 token {} for OAuth2 application {} ({}).".format(
                         username, request.method, request.path, token.pk, oauth2_application_pk, oauth2_application_name
                     )
-                ),
-                logger,
+                )
             )
             # TODO: check oauth_scopes when we have RBAC in Gateway
             setattr(user, 'oauth_scopes', [x for x in token.scope.split() if x])

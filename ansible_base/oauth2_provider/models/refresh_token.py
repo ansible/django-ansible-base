@@ -40,6 +40,4 @@ class OAuth2RefreshToken(CommonModel, oauth2_models.AbstractRefreshToken, activi
         access_token_id = self.access_token.pk if hasattr(self, 'access_token') and self.access_token else "N/A"
         user_name = self.user.username if self.user else "N/A"
         if has_non_trivial_fields:
-            log_auth_event(
-                f"{logging_verb} OAuth2 refresh token {self.pk} for user '{user_name}' linked to access token {access_token_id}", second_logger=logger
-            )
+            log_auth_event(f"{logging_verb} OAuth2 refresh token {self.pk} for user '{user_name}' linked to access token {access_token_id}")
