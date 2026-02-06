@@ -8,12 +8,11 @@ import uuid
 from typing import Optional, Union
 from urllib.parse import quote
 
-from django.conf import settings
 from django.db import connection
 from django.utils.translation import gettext_lazy as _
 
 from ansible_base.lib.logging.context import origin_var, trace_id_var
-from ansible_base.lib.utils.settings import get_function_from_setting, get_setting
+from ansible_base.lib.utils.settings import get_setting
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +57,15 @@ class _ProfileRequestMiddleware(threading.local):
         self.profiler = DABProfiler()
 
     def __call__(self, request):
+        # Check if any profiling features are enabled
+        timing_enabled = get_setting('ANSIBLE_BASE_PROFILE_TIMING', False)
+        node_enabled = get_setting('ANSIBLE_BASE_PROFILE_NODE', False)
+        cprofile_enabled = get_setting('ANSIBLE_BASE_CPROFILE_REQUESTS', False)
+
+        # Skip entirely if no profiling is enabled (safe default for production)
+        if not (timing_enabled or node_enabled or cprofile_enabled):
+            return self.get_response(request)
+
         # Logic before the view (formerly process_request)
         self.profiler.start()
         request_id = trace_id_var.get()
@@ -71,13 +79,20 @@ class _ProfileRequestMiddleware(threading.local):
 
         elapsed, cprofile_filename = self.profiler.stop(profile_id=request_id)
 
-        if elapsed is not None:
+        # Only add timing header if enabled
+        if timing_enabled and elapsed is not None:
             response['X-API-Time'] = f'{elapsed:.3f}s'
-        if 'X-API-Node' not in response:
+
+        # Only add node header if enabled
+        if node_enabled and 'X-API-Node' not in response:
             response['X-API-Node'] = get_setting('CLUSTER_HOST_ID', _('Unknown'))
 
+        # Only add cprofile header if cprofile was actually generated
         if cprofile_filename:
             response['X-API-CProfile-File'] = cprofile_filename
+            # Also add node header when cprofile is present (needed to fetch the file)
+            if 'X-API-Node' not in response:
+                response['X-API-Node'] = get_setting('CLUSTER_HOST_ID', _('Unknown'))
             logger.debug(
                 f'request: {request}, cprofile_file: {response["X-API-CProfile-File"]}',
                 extra=dict(python_objects=dict(request=request, response=response, X_API_CPROFILE_FILE=response["X-API-CProfile-File"])),
