@@ -272,9 +272,9 @@ class TestWorkloadIdentityTokenResponseSerializer:
 
     def test_jwt_with_whitespace(self):
         """
-        Test that JWT with leading/trailing whitespace is accepted.
-        Note: DRF CharField does not trim whitespace by default, so this tests
-        that the serializer accepts the JWT as-is with whitespace.
+        Test that JWT with leading/trailing whitespace is removed.
+        Note: DRF CharField trims whitespace by default, so this tests
+        that the serializer removes the whitespace.
         """
         data_with_whitespace = {
             'jwt': ('  eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' 'eyJzdWIiOiIxMjM0NTY3ODkwIn0.' 'dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U  '),
@@ -282,8 +282,8 @@ class TestWorkloadIdentityTokenResponseSerializer:
         serializer = WorkloadIdentityTokenResponseSerializer(data=data_with_whitespace)
         assert serializer.is_valid(), f"Serializer errors: {serializer.errors}"
         assert 'jwt' in serializer.validated_data
-        # Verify whitespace is preserved (DRF default behavior)
-        assert serializer.validated_data['jwt'] == data_with_whitespace['jwt']
+        # Verify whitespace is removed (DRF CharField default behavior)
+        assert ' ' not in serializer.validated_data['jwt']
 
     def test_create_response_serializer(self):
         """
