@@ -43,9 +43,17 @@ class DABProfiler:
 
         if self.cprofiling and self.prof:
             self.prof.disable()
-            temp_dir = tempfile.gettempdir()
+
+            # Get output directory from setting or use system temp directory
+            output_dir = get_setting('ANSIBLE_BASE_CPROFILE_DIR', None)
+            if output_dir:
+                # Ensure the directory exists
+                os.makedirs(output_dir, exist_ok=True)
+            else:
+                output_dir = tempfile.gettempdir()
+
             filename = f"cprofile-{profile_id}.prof"
-            cprofile_filename = os.path.join(temp_dir, filename)
+            cprofile_filename = os.path.join(output_dir, filename)
             self.prof.dump_stats(cprofile_filename)
 
         return elapsed, cprofile_filename
