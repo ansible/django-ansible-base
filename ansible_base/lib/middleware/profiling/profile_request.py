@@ -118,11 +118,17 @@ def _sanitize_for_sql_comment(value: str) -> str:
     Sanitizes a string for safe inclusion in a SQL comment.
 
     - URL-encodes the value to handle special characters.
+    - Removes any */ sequences that could close the SQL comment.
     - Escapes the '%' character to prevent conflicts with database placeholders.
     - Truncates the string to a maximum length.
+
+    This provides defense-in-depth against SQL injection even though the input
+    is typically from trusted sources (Django URL patterns).
     """
-    # URL-encode the value
-    quoted_value = quote(str(value))
+    # URL-encode the value (handles most dangerous characters)
+    quoted_value = quote(str(value), safe='')
+    # Extra paranoia: ensure no comment-closing sequences (defense-in-depth)
+    quoted_value = quoted_value.replace('*/', '').replace('/*', '')
     # Escape the '%' character for the database driver
     sanitized_value = quoted_value.replace('%', '%%')
     # Truncate to the maximum length
