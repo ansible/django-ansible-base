@@ -46,7 +46,7 @@ ANSIBLE_BASE_PROFILE_NODE = True
 
 ### cProfile Support
 
-When the `ANSIBLE_BASE_CPROFILE_REQUESTS` setting is enabled, the middleware will also perform a cProfile analysis for each request. The resulting `.prof` file is saved to a temporary directory on the node that served the request, and its path is returned in the `X-API-CProfile-File` response header. The filename will include the request's `X-Request-ID`.
+When the `ANSIBLE_BASE_CPROFILE_REQUESTS` setting is enabled, the middleware will also perform a cProfile analysis for each request. The resulting `.prof` file is saved to a directory on the node that served the request, and its path is returned in the `X-API-CProfile-File` response header. The filename will include the request's `X-Request-ID`.
 
 When cProfile is enabled, `X-API-Node` is automatically included in the response (needed to identify which node contains the profile file).
 
@@ -55,9 +55,14 @@ To enable cProfile support, set the following in your Django settings:
 ```python
 # settings.py
 ANSIBLE_BASE_CPROFILE_REQUESTS = True
+
+# Optional: Specify where to write cProfile files (defaults to system temp directory)
+ANSIBLE_BASE_CPROFILE_DIR = '/var/log/myapp/profile'
 ```
 
 > **Note:** Enabling cProfile has significant performance implications and is intended for temporary, live debugging sessions, not for permanent use in production environments.
+>
+> **Note:** When setting `ANSIBLE_BASE_CPROFILE_DIR`, ensure the directory exists and the application has write permissions. The directory will be created automatically if it doesn't exist.
 
 ### SQL Profiling Support
 
