@@ -21,48 +21,35 @@ class TestWorkloadIdentityTokenTypes:
     def test_request_type_creation(self):
         """Test that WorkloadIdentityTokenRequest can be created with correct fields."""
         request = WorkloadIdentityTokenRequest(
-            claims={"sub": "user123", "aud": "my-service"},
-            scope="read write",
+            claims={"id": 2, "name": "my-example-job"},
+            scope="aap_controller_automation_job",
+            audience="https://vault.example.com",
         )
 
-        assert request.claims == {"sub": "user123", "aud": "my-service"}
-        assert request.scope == "read write"
+        assert request.claims == {"id": 2, "name": "my-example-job"}
+        assert request.scope == "aap_controller_automation_job"
+        assert request.audience == "https://vault.example.com"
 
     def test_request_type_as_dict(self):
         """Test that WorkloadIdentityTokenRequest can be converted to dict."""
         request = WorkloadIdentityTokenRequest(
-            claims={"sub": "user123"},
-            scope="read",
+            claims={"id": 1, "name": "test-job"},
+            scope="aap_controller_automation_job",
+            audience="https://vault.example.com",
         )
 
         request_dict = request._asdict()
         assert request_dict == {
-            "claims": {"sub": "user123"},
-            "scope": "read",
+            "claims": {"id": 1, "name": "test-job"},
+            "scope": "aap_controller_automation_job",
+            "audience": "https://vault.example.com",
         }
 
     def test_response_type_creation(self):
         """Test that WorkloadIdentityTokenResponse can be created with correct fields."""
-        response = WorkloadIdentityTokenResponse(
-            access_token="eyJhbGci...",
-            token_type="Bearer",
-            expires_in=3600,
-            scope="read write",
-        )
+        response = WorkloadIdentityTokenResponse(jwt="eyJhbGci...")
 
-        assert response.access_token == "eyJhbGci..."
-        assert response.token_type == "Bearer"
-        assert response.expires_in == 3600
-        assert response.scope == "read write"
-
-    def test_response_type_defaults(self):
-        """Test that WorkloadIdentityTokenResponse has correct defaults."""
-        response = WorkloadIdentityTokenResponse(access_token="token123")
-
-        assert response.access_token == "token123"
-        assert response.token_type == "Bearer"
-        assert response.expires_in is None
-        assert response.scope is None
+        assert response.jwt == "eyJhbGci..."
 
 
 class TestWorkloadIdentityClient:
@@ -157,34 +144,27 @@ class TestWorkloadIdentityClient:
 
         # Create a valid JWT token for the response
         test_jwt = pyjwt.encode(
-            {"sub": "user123", "aud": "my-service", "scope": "read write"},
+            {"sub": "job_2", "aud": "https://vault.example.com", "scope": "aap_controller_automation_job"},
             "secret",
             algorithm="HS256",
         )
 
         mock_response = mock.Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "access_token": test_jwt,
-            "token_type": "Bearer",
-            "expires_in": 3600,
-            "scope": "read write",
-        }
+        mock_response.json.return_value = {"jwt": test_jwt}
         mock_request.return_value = mock_response
 
         # Make request
         client = WorkloadIdentityClient(base_url="https://gateway.example.com")
         response = client.request_workload_jwt(
-            claims={"sub": "user123", "aud": "my-service"},
-            scope="read write",
+            claims={"id": 2, "name": "my-example-job"},
+            scope="aap_controller_automation_job",
+            audience="https://vault.example.com",
         )
 
         # Verify response
         assert isinstance(response, WorkloadIdentityTokenResponse)
-        assert response.access_token == test_jwt
-        assert response.token_type == "Bearer"
-        assert response.expires_in == 3600
-        assert response.scope == "read write"
+        assert response.jwt == test_jwt
 
         # Verify request was made correctly
         mock_request.assert_called_once()
@@ -192,8 +172,9 @@ class TestWorkloadIdentityClient:
         assert call_kwargs["method"] == "POST"
         assert call_kwargs["url"] == "https://gateway.example.com/api/gateway/v1/workload_identity_tokens"
         assert call_kwargs["json"] == {
-            "claims": {"sub": "user123", "aud": "my-service"},
-            "scope": "read write",
+            "claims": {"id": 2, "name": "my-example-job"},
+            "scope": "aap_controller_automation_job",
+            "audience": "https://vault.example.com",
         }
         assert call_kwargs["headers"]["X-ANSIBLE-SERVICE-AUTH"] == "service-token"
         assert call_kwargs["verify"] is True
@@ -213,30 +194,37 @@ class TestWorkloadIdentityClient:
         client = WorkloadIdentityClient(base_url="https://gateway.example.com")
 
         with pytest.raises(TokenRequestError) as exc_info:
-            client.request_workload_jwt(claims={"sub": "user123"}, scope="read")
+            client.request_workload_jwt(
+                claims={"id": 1, "name": "test"},
+                scope="aap_controller_automation_job",
+                audience="https://vault.example.com",
+            )
 
         assert "401 Unauthorized" in str(exc_info.value)
 
     @mock.patch("ansible_base.resource_registry.service_client.get_service_token")
     @mock.patch("ansible_base.resource_registry.service_client.requests.request")
-    def test_request_workload_jwt_missing_access_token(self, mock_request, mock_get_service_token):
-        """Test that missing access_token in response raises TokenRequestError."""
+    def test_request_workload_jwt_missing_jwt_field(self, mock_request, mock_get_service_token):
+        """Test that missing jwt field in response raises TokenRequestError."""
         mock_get_service_token.return_value = "service-token"
 
         mock_response = mock.Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "token_type": "Bearer",
-            # Missing access_token field
+            # Missing jwt field
         }
         mock_request.return_value = mock_response
 
         client = WorkloadIdentityClient(base_url="https://gateway.example.com")
 
         with pytest.raises(TokenRequestError) as exc_info:
-            client.request_workload_jwt(claims={"sub": "user123"}, scope="read")
+            client.request_workload_jwt(
+                claims={"id": 1, "name": "test"},
+                scope="aap_controller_automation_job",
+                audience="https://vault.example.com",
+            )
 
-        assert "missing 'access_token' field" in str(exc_info.value)
+        assert "missing 'jwt' field" in str(exc_info.value)
 
     @mock.patch("ansible_base.resource_registry.service_client.get_service_token")
     @mock.patch("ansible_base.resource_registry.service_client.requests.request")
@@ -252,7 +240,11 @@ class TestWorkloadIdentityClient:
         client = WorkloadIdentityClient(base_url="https://gateway.example.com")
 
         with pytest.raises(TokenRequestError) as exc_info:
-            client.request_workload_jwt(claims={"sub": "user123"}, scope="read")
+            client.request_workload_jwt(
+                claims={"id": 1, "name": "test"},
+                scope="aap_controller_automation_job",
+                audience="https://vault.example.com",
+            )
 
         assert "Failed to parse response" in str(exc_info.value)
 
@@ -266,7 +258,11 @@ class TestWorkloadIdentityClient:
         client = WorkloadIdentityClient(base_url="https://gateway.example.com")
 
         with pytest.raises(TokenRequestError) as exc_info:
-            client.request_workload_jwt(claims={"sub": "user123"}, scope="read")
+            client.request_workload_jwt(
+                claims={"id": 1, "name": "test"},
+                scope="aap_controller_automation_job",
+                audience="https://vault.example.com",
+            )
 
         assert "Request failed" in str(exc_info.value)
 
@@ -280,18 +276,19 @@ class TestWorkloadIdentityClient:
 
         mock_response = mock.Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "access_token": test_jwt,
-            "token_type": "Bearer",
-        }
+        mock_response.json.return_value = {"jwt": test_jwt}
         mock_request.return_value = mock_response
 
         client = WorkloadIdentityClient(base_url="https://gateway.example.com")
 
         # Test different scope values
-        for scope in ["read", "write", "read write", "read write admin"]:
-            response = client.request_workload_jwt(claims={"sub": "test"}, scope=scope)
-            assert response.access_token == test_jwt
+        for scope in ["aap_controller_automation_job", "aap_eda_automation_job", "custom_scope"]:
+            response = client.request_workload_jwt(
+                claims={"id": 1, "name": "test"},
+                scope=scope,
+                audience="https://vault.example.com",
+            )
+            assert response.jwt == test_jwt
 
             # Verify scope was sent in request
             call_kwargs = mock_request.call_args[1]
@@ -307,25 +304,26 @@ class TestWorkloadIdentityClient:
 
         mock_response = mock.Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "access_token": test_jwt,
-            "token_type": "Bearer",
-        }
+        mock_response.json.return_value = {"jwt": test_jwt}
         mock_request.return_value = mock_response
 
         client = WorkloadIdentityClient(base_url="https://gateway.example.com")
 
         # Test different claims
         test_claims = [
-            {"sub": "user123"},
-            {"sub": "user123", "aud": "my-service"},
-            {"sub": "user123", "aud": "my-service", "iss": "gateway"},
-            {"sub": "user123", "roles": ["admin", "user"], "permissions": ["read", "write"]},
+            {"id": 1, "name": "job1"},
+            {"id": 2, "name": "job2", "project": "test-project"},
+            {"id": 3, "name": "job3", "metadata": {"tags": ["prod", "critical"]}},
+            {"id": 4, "name": "job4", "organization": "my-org", "team": "devops"},
         ]
 
         for claims in test_claims:
-            response = client.request_workload_jwt(claims=claims, scope="read")
-            assert response.access_token == test_jwt
+            response = client.request_workload_jwt(
+                claims=claims,
+                scope="aap_controller_automation_job",
+                audience="https://vault.example.com",
+            )
+            assert response.jwt == test_jwt
 
             # Verify claims were sent in request
             call_kwargs = mock_request.call_args[1]
@@ -362,8 +360,12 @@ class TestWorkloadIdentityClient:
 
         # Should not raise, but response parsing will fail
         with pytest.raises(TokenRequestError):
-            # Will fail on JSON parse or missing access_token
-            client.request_workload_jwt(claims={"sub": "test"}, scope="read")
+            # Will fail on JSON parse or missing jwt field
+            client.request_workload_jwt(
+                claims={"id": 1, "name": "test"},
+                scope="aap_controller_automation_job",
+                audience="https://vault.example.com",
+            )
 
 
 class TestGetWorkloadIdentityClient:

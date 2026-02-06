@@ -5,7 +5,7 @@ from the Gateway workload identity endpoint with service token authentication.
 """
 
 import logging
-from typing import NamedTuple, Optional
+from typing import NamedTuple
 
 import requests
 from rest_framework.exceptions import APIException
@@ -21,26 +21,20 @@ class WorkloadIdentityTokenRequest(NamedTuple):
     """Request body for workload identity token endpoint."""
 
     claims: dict
-    """Dictionary of claims to include in the workload identity token."""
+    """Dictionary containing workload details (e.g., job ID, name)."""
 
     scope: str
-    """Token custom scopes string."""
+    """Token custom scopes string (e.g., 'aap_controller_automation_job')."""
+
+    audience: str
+    """Audience for the token - the external service that will validate it."""
 
 
 class WorkloadIdentityTokenResponse(NamedTuple):
     """Response from workload identity token endpoint."""
 
-    access_token: str
-    """The JWT access token."""
-
-    token_type: Optional[str] = "Bearer"
-    """Token type, typically 'Bearer'."""
-
-    expires_in: Optional[int] = None
-    """Token expiration time in seconds."""
-
-    scope: Optional[str] = None
-    """The scope of the token."""
+    jwt: str
+    """The JWT access token signed and containing."""
 
 
 class TokenRequestError(APIException):
@@ -67,8 +61,9 @@ def get_workload_identity_client(**kwargs) -> 'WorkloadIdentityClient':
     Example:
         >>> client = get_workload_identity_client(jwt_user_id=1)
         >>> response = client.request_workload_jwt(
-        ...     claims={"sub": "user123"},
-        ...     scope="read"
+        ...     claims={"id": 2, "name": "my-example-job"},
+        ...     scope="aap_controller_automation_job",
+        ...     audience="https://vault.example.com"
         ... )
     """
     config = get_resource_server_config()
@@ -94,10 +89,11 @@ class WorkloadIdentityClient(BaseServiceClient):
         ...     jwt_expiration=60
         ... )
         >>> response = client.request_workload_jwt(
-        ...     claims={"sub": "user123", "aud": "my-service"},
-        ...     scope="read write"
+        ...     claims={"id": 2, "name": "my-example-job"},
+        ...     scope="aap_controller_automation_job",
+        ...     audience="https://vault.example.com"
         ... )
-        >>> print(response.access_token)
+        >>> print(response.jwt)
     """
 
     def __init__(
@@ -133,30 +129,33 @@ class WorkloadIdentityClient(BaseServiceClient):
         self,
         claims: dict,
         scope: str,
+        audience: str,
     ) -> WorkloadIdentityTokenResponse:
         """
         Request a workload identity token.
 
         Makes a POST request to /api/gateway/v1/workload_identity_tokens
-        with the specified claims and scope.
+        with the specified claims, scope, and audience.
 
         Args:
-            claims: Dictionary of claims to include in the token
-            scope: Token scope string (e.g., 'read', 'write', 'read write')
+            claims: Dictionary containing workload details (e.g., job ID, name)
+            scope: Token custom scopes string (e.g., 'aap_controller_automation_job')
+            audience: Audience for the token - the external service that will validate it
 
         Returns:
-            WorkloadIdentityTokenResponse: Token response with access_token
+            WorkloadIdentityTokenResponse: Token response with JWT
 
         Raises:
             TokenRequestError: If the request fails
 
         Example:
             >>> response = client.request_workload_jwt(
-            ...     claims={"sub": "user123", "aud": "my-service"},
-            ...     scope="read write"
+            ...     claims={"id": 2, "name": "my-example-job"},
+            ...     scope="aap_controller_automation_job",
+            ...     audience="https://vault.example.com"
             ... )
         """
-        request_body = WorkloadIdentityTokenRequest(claims=claims, scope=scope)
+        request_body = WorkloadIdentityTokenRequest(claims=claims, scope=scope, audience=audience)
         data = request_body._asdict()
 
         logger.info(f"Requesting workload identity token with scope: {scope}")
@@ -179,15 +178,10 @@ class WorkloadIdentityClient(BaseServiceClient):
             logger.error(f"Failed to parse JSON response: {e}")
             raise TokenRequestError(f"Failed to parse response: {e}") from e
 
-        if "access_token" not in response_data:
-            logger.error("Response missing 'access_token' field")
-            raise TokenRequestError("Response missing 'access_token' field")
+        if "jwt" not in response_data:
+            logger.error("Response missing 'jwt' field")
+            raise TokenRequestError("Response missing 'jwt' field")
 
-        access_token = response_data["access_token"]
+        jwt_token = response_data["jwt"]
 
-        return WorkloadIdentityTokenResponse(
-            access_token=access_token,
-            token_type=response_data.get("token_type", "Bearer"),
-            expires_in=response_data.get("expires_in"),
-            scope=response_data.get("scope", scope),
-        )
+        return WorkloadIdentityTokenResponse(jwt=jwt_token)
