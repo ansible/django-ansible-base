@@ -24,7 +24,7 @@ class WorkloadIdentityTokenRequest(NamedTuple):
     """Dictionary of claims to include in the workload identity token."""
 
     scope: str
-    """Token scope string (e.g., 'read', 'write', 'read write')."""
+    """Token custom scopes string."""
 
 
 class WorkloadIdentityTokenResponse(NamedTuple):
