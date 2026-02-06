@@ -7,11 +7,9 @@ from django.http import HttpResponse
 from django.test import TestCase, override_settings
 from django.urls import path
 
-from ansible_base.lib.middleware.observability import ObservabilityMiddleware
 from ansible_base.lib.middleware.profiling.profile_request import (
     SQLQueryMetrics,
     _ProfileRequestMiddleware,
-    _SQLProfilingMiddleware,
 )
 from test_app.models import Organization, User
 

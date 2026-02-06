@@ -14,15 +14,41 @@ MIDDLEWARE = [
 ]
 ```
 
-The middleware always adds the following headers to the response:
+The middleware always adds the following header to the response:
 
 *   `X-Request-ID`: A unique identifier for the request. If the incoming request includes an `X-Request-ID` header, that value will be used; otherwise, a new UUID will be generated.
+
+### Request Timing
+
+When the `ANSIBLE_BASE_PROFILE_TIMING` setting is enabled, the middleware adds:
+
 *   `X-API-Time`: The total time taken to process the request, in seconds.
+
+```python
+# settings.py
+ANSIBLE_BASE_PROFILE_TIMING = True
+```
+
+> **Note:** Request timing has minimal overhead and is generally safe for production use.
+
+### Node Identification
+
+When the `ANSIBLE_BASE_PROFILE_NODE` setting is enabled, the middleware adds:
+
 *   `X-API-Node`: The cluster host ID of the node that served the request.
+
+```python
+# settings.py
+ANSIBLE_BASE_PROFILE_NODE = True
+```
+
+> **Note:** Some security-conscious deployments may not want to expose internal node identifiers. This setting allows you to control that behavior.
 
 ### cProfile Support
 
 When the `ANSIBLE_BASE_CPROFILE_REQUESTS` setting is enabled, the middleware will also perform a cProfile analysis for each request. The resulting `.prof` file is saved to a temporary directory on the node that served the request, and its path is returned in the `X-API-CProfile-File` response header. The filename will include the request's `X-Request-ID`.
+
+When cProfile is enabled, `X-API-Node` is automatically included in the response (needed to identify which node contains the profile file).
 
 To enable cProfile support, set the following in your Django settings:
 
