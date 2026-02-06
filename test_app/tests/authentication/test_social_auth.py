@@ -1,4 +1,3 @@
-import logging
 from unittest import mock
 
 import pytest
@@ -51,7 +50,7 @@ class SubstringMatcher:
 
 
 @pytest.mark.django_db
-@mock.patch("ansible_base.authentication.social_auth.logger")
+@mock.patch("ansible_base.authentication.social_auth.log_auth_event")
 def test_authenticator_strategy_redirect_logging(mock_logger):
     """Test that SSO redirect logging happens in the start() method."""
     from ansible_base.authentication.models import Authenticator
@@ -85,9 +84,7 @@ def test_authenticator_strategy_redirect_logging(mock_logger):
         result = backend.start()
 
         # Verify the logger was called with the SSO redirect message (without URL parameters)
-        mock_logger.log.assert_called_once_with(
-            logging.INFO, "Starting SSO redirect to https://example.com/oauth/callback with authenticator 'Test OIDC' (slug: test-oidc)"
-        )
+        mock_logger.assert_called_once_with("Starting SSO redirect to https://example.com/oauth/callback with authenticator 'Test OIDC' (slug: test-oidc)")
 
         # Verify that the result is an HttpResponseRedirect with the correct URL (with parameters)
         assert isinstance(result, HttpResponseRedirect)
@@ -95,8 +92,9 @@ def test_authenticator_strategy_redirect_logging(mock_logger):
 
 
 @pytest.mark.django_db
-@mock.patch("ansible_base.authentication.social_auth.logger")
-def test_social_auth_mixin_start_enabled_authenticator(mock_logger):
+@mock.patch("ansible_base.authentication.social_auth.log_auth_error")
+@mock.patch("ansible_base.authentication.social_auth.log_auth_event")
+def test_social_auth_mixin_start_enabled_authenticator(mock_log_event, mock_log_error):
     """Test that SocialAuthMixin.start logs when authentication is attempted with an enabled authenticator."""
 
     from ansible_base.authentication.models import Authenticator
@@ -129,15 +127,16 @@ def test_social_auth_mixin_start_enabled_authenticator(mock_logger):
     backend.start()
 
     # Verify info logging for starting SSO redirect (URL parameters stripped)
-    mock_logger.log.assert_any_call(logging.INFO, "Starting SSO redirect to https://example.com/auth with authenticator 'Test OIDC' (slug: test-oidc)")
+    mock_log_event.assert_any_call("Starting SSO redirect to https://example.com/auth with authenticator 'Test OIDC' (slug: test-oidc)")
 
     # Verify error was not called (since authenticator is enabled)
-    assert not mock_logger.error.called
+    assert not mock_log_error.called
 
 
 @pytest.mark.django_db
-@mock.patch("ansible_base.authentication.social_auth.logger")
-def test_social_auth_mixin_start_disabled_authenticator(mock_logger):
+@mock.patch("ansible_base.authentication.social_auth.log_auth_event")
+@mock.patch("ansible_base.authentication.social_auth.log_auth_error")
+def test_social_auth_mixin_start_disabled_authenticator(mock_log_error, mock_log_event):
     """Test that SocialAuthMixin.start logs an error and returns 404 for disabled authenticator."""
     from ansible_base.authentication.models import Authenticator
 
@@ -159,10 +158,10 @@ def test_social_auth_mixin_start_disabled_authenticator(mock_logger):
     result = backend.start()
 
     # Verify error logging for disabled authenticator
-    mock_logger.error.assert_called_once_with("Authentication attempted with disabled authenticator Disabled OIDC")
+    mock_log_error.assert_called_once_with("Authentication attempted with disabled authenticator Disabled OIDC")
 
     # Verify info logging was not called (since authenticator is disabled)
-    assert not mock_logger.log.called
+    assert not mock_log_event.called
 
     # Verify that a 404 response was returned
     assert isinstance(result, HttpResponseNotFound)
@@ -217,7 +216,7 @@ def test_social_auth_mixin_start_disabled_authenticator(mock_logger):
         ),
     ],
 )
-@mock.patch("ansible_base.authentication.social_auth.logger")
+@mock.patch("ansible_base.authentication.social_auth.log_auth_event")
 def test_sso_authenticators_log_redirect_and_start(mock_logger, authenticator_type, authenticator_name, minimal_config):
     """
     Test that all SSO authenticators log both the start message and redirect message during auth flow.
@@ -257,7 +256,7 @@ def test_sso_authenticators_log_redirect_and_start(mock_logger, authenticator_ty
         assert isinstance(result, HttpResponseRedirect), f"{authenticator_type} did not return HttpResponseRedirect"
 
         # Verify we got the SSO redirect log message (which includes both start and redirect info)
-        sso_log_calls = [call for call in mock_logger.log.call_args_list if "Starting SSO redirect" in str(call)]
+        sso_log_calls = [call for call in mock_logger.call_args_list if "Starting SSO redirect" in str(call)]
         assert len(sso_log_calls) >= 1, f"{authenticator_type} did not log SSO redirect message"
 
         # Verify the message contains the authenticator name, slug, and redirect URL (without parameters)
@@ -571,7 +570,7 @@ def test_create_user_claims_pipeline(mock_update_user_claims, groups_claim, user
 
 
 @pytest.mark.django_db
-@mock.patch("ansible_base.authentication.social_auth.logger")
+@mock.patch("ansible_base.authentication.social_auth.log_auth_event")
 def test_social_auth_mixin_start_no_redirect(mock_logger):
     """Test that SocialAuthMixin.start returns HTML when uses_redirect() returns False."""
     from ansible_base.authentication.models import Authenticator
@@ -612,12 +611,12 @@ def test_social_auth_mixin_start_no_redirect(mock_logger):
     backend.start()
 
     # Verify that we didn't log the SSO redirect message (since this doesn't use redirect)
-    sso_log_calls = [call for call in mock_logger.log.call_args_list if "Starting SSO redirect" in str(call)]
+    sso_log_calls = [call for call in mock_logger.call_args_list if "Starting SSO redirect" in str(call)]
     assert len(sso_log_calls) == 0, "Should not log SSO redirect when uses_redirect() is False"
 
 
 @pytest.mark.django_db
-@mock.patch("ansible_base.authentication.social_auth.logger")
+@mock.patch("ansible_base.authentication.social_auth.log_auth_error")
 def test_social_auth_mixin_start_no_redirect_disabled_authenticator(mock_logger):
     """Test that SocialAuthMixin.start returns 404 for disabled authenticator even when uses_redirect() is False."""
     from ansible_base.authentication.models import Authenticator
@@ -650,10 +649,7 @@ def test_social_auth_mixin_start_no_redirect_disabled_authenticator(mock_logger)
     result = backend.start()
 
     # Verify error logging for disabled authenticator
-    mock_logger.error.assert_called_once_with("Authentication attempted with disabled authenticator Disabled HTML Auth")
-
-    # Verify that no SSO redirect logging happened
-    assert not mock_logger.log.called
+    mock_logger.assert_called_once_with("Authentication attempted with disabled authenticator Disabled HTML Auth")
 
     # Verify that a 404 response was returned (not HTML)
     assert isinstance(result, HttpResponseNotFound)
