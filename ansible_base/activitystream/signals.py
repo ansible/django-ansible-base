@@ -2,7 +2,7 @@ import logging
 import threading
 from contextlib import contextmanager
 
-from ansible_base.lib.logging import log_auth_info
+from ansible_base.lib.logging import log_auth_event
 
 logger = logging.getLogger('ansible_base.activitystream.signals')
 
@@ -84,15 +84,15 @@ def _store_activitystream_entry(old, new, operation, update_fields=None):
             else:
                 all_fields.update(changes.get('removed_fields', {}))
             all_fields.update({k: v[1] if operation == 'create' else v[0] for k, v in changes.get('changed_fields', {}).items()})
-            log_auth_info(f"{operation} {model_name} {obj_str} {all_fields}")
+            log_auth_event(f"{operation} {model_name} {obj_str} {all_fields}")
         else:
             # For update, emit one line per change
             for field_name, value in changes.get('added_fields', {}).items():
-                log_auth_info(f"{operation} {model_name} {obj_str} added {field_name}='{value}'")
+                log_auth_event(f"{operation} {model_name} {obj_str} added {field_name}='{value}'")
             for field_name, value in changes.get('removed_fields', {}).items():
-                log_auth_info(f"{operation} {model_name} {obj_str} removed {field_name} (was '{value}')")
+                log_auth_event(f"{operation} {model_name} {obj_str} removed {field_name} (was '{value}')")
             for field_name, (old_val, new_val) in changes.get('changed_fields', {}).items():
-                log_auth_info(f"{operation} {model_name} {obj_str} changed {field_name} from '{old_val}' to '{new_val}'")
+                log_auth_event(f"{operation} {model_name} {obj_str} changed {field_name} from '{old_val}' to '{new_val}'")
 
     if getattr(instance_for_check, 'activity_stream_enabled', True):
         return Entry.objects.create(
@@ -126,7 +126,7 @@ def _store_activitystream_m2m(given_instance, model, operation, pk_set, reverse,
             content_model_name = content_object.__class__.__name__
             related_model_name = related_object.__class__.__name__
             preposition = 'with' if operation == 'associate' else 'from'
-            log_auth_info(f"{operation} {content_model_name} {content_object} {preposition} {related_model_name} {related_object}")
+            log_auth_event(f"{operation} {content_model_name} {content_object} {preposition} {related_model_name} {related_object}")
 
         entry = Entry(
             content_object=content_object,

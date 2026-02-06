@@ -576,7 +576,7 @@ def test_audit_log_disabled_by_default():
     """
     Ensure that audit logging is disabled by default (audit_log_enabled=False).
     """
-    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+    with mock.patch('ansible_base.activitystream.signals.log_auth_event') as mock_log:
         animal = Animal.objects.create(name='Fluffy')
         mock_log.assert_not_called()
 
@@ -601,7 +601,7 @@ def test_audit_log_enabled_on_create_delete(operation, perform_operation):
     if operation == "delete":
         # For delete, we need to create first without audit logging
         animal = Animal.objects.create(name='Fluffy')
-        with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+        with mock.patch('ansible_base.activitystream.signals.log_auth_event') as mock_log:
             animal.audit_log_enabled = True
             animal.delete()
 
@@ -610,7 +610,7 @@ def test_audit_log_enabled_on_create_delete(operation, perform_operation):
             assert call_args.startswith('delete Animal')
             assert 'Fluffy' in call_args
     else:
-        with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+        with mock.patch('ansible_base.activitystream.signals.log_auth_event') as mock_log:
             with mock.patch.object(Animal, 'audit_log_enabled', True):
                 perform_operation()
 
@@ -628,7 +628,7 @@ def test_audit_log_enabled_on_update_changed_field():
     """
     animal = Animal.objects.create(name='Fluffy')
 
-    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+    with mock.patch('ansible_base.activitystream.signals.log_auth_event') as mock_log:
         animal.audit_log_enabled = True
         animal.name = 'Rocky'
         animal.save()
@@ -649,7 +649,7 @@ def test_audit_log_enabled_on_update_multiple_fields():
     """
     animal = Animal.objects.create(name='Fluffy', kind='dog')
 
-    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+    with mock.patch('ansible_base.activitystream.signals.log_auth_event') as mock_log:
         animal.audit_log_enabled = True
         animal.name = 'Rocky'
         animal.kind = 'cat'
@@ -679,7 +679,7 @@ def test_audit_log_added_field_format():
     from test_app.models import User
     user = User.objects.create(username='testowner')
 
-    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+    with mock.patch('ansible_base.activitystream.signals.log_auth_event') as mock_log:
         animal.audit_log_enabled = True
         animal.owner = user
         animal.save()
@@ -701,7 +701,7 @@ def test_audit_log_removed_field_format():
     user = User.objects.create(username='testowner')
     animal = Animal.objects.create(name='Fluffy', owner=user)
 
-    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+    with mock.patch('ansible_base.activitystream.signals.log_auth_event') as mock_log:
         animal.audit_log_enabled = True
         animal.owner = None
         animal.save()
@@ -722,7 +722,7 @@ def test_audit_log_respects_excluded_fields():
     # Animal has 'age' in activity_stream_excluded_field_names
     animal = Animal.objects.create(name='Fluffy', age=2)
 
-    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+    with mock.patch('ansible_base.activitystream.signals.log_auth_event') as mock_log:
         animal.audit_log_enabled = True
         animal.name = 'Rocky'
         animal.age = 5  # This should not be logged
@@ -746,7 +746,7 @@ def test_audit_log_with_activity_stream_disabled():
     When activity_stream_enabled=False but audit_log_enabled=True,
     audit logs should still be generated.
     """
-    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+    with mock.patch('ansible_base.activitystream.signals.log_auth_event') as mock_log:
         with mock.patch.object(Animal, 'audit_log_enabled', True):
             with mock.patch.object(Animal, 'activity_stream_enabled', False):
                 animal = Animal.objects.create(name='Fluffy')
@@ -771,7 +771,7 @@ def test_audit_log_message_content(expected_content):
     """
     Ensure the audit log message includes expected content (model name, object str).
     """
-    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+    with mock.patch('ansible_base.activitystream.signals.log_auth_event') as mock_log:
         with mock.patch.object(Animal, 'audit_log_enabled', True):
             Animal.objects.create(name='Fluffy')
 
@@ -792,7 +792,7 @@ def test_audit_log_m2m_associate(user):
     animal = Animal.objects.create(name='Fluffy')
     animal.audit_log_enabled = True
 
-    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+    with mock.patch('ansible_base.activitystream.signals.log_auth_event') as mock_log:
         animal.people_friends.add(user)
 
         assert mock_log.call_count == 1
@@ -811,7 +811,7 @@ def test_audit_log_m2m_disassociate(user):
     animal.people_friends.add(user)  # First add without logging
     animal.audit_log_enabled = True
 
-    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+    with mock.patch('ansible_base.activitystream.signals.log_auth_event') as mock_log:
         animal.people_friends.remove(user)
 
         assert mock_log.call_count == 1
@@ -829,7 +829,7 @@ def test_audit_log_m2m_disabled_by_default(user):
     animal = Animal.objects.create(name='Fluffy')
     # audit_log_enabled is False by default
 
-    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+    with mock.patch('ansible_base.activitystream.signals.log_auth_event') as mock_log:
         animal.people_friends.add(user)
         animal.people_friends.remove(user)
 
@@ -854,7 +854,7 @@ def test_audit_log_m2m_preposition(user, operation, method_name, expected_prepos
         animal.people_friends.add(user)  # Need to add first before removing
     animal.audit_log_enabled = True
 
-    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+    with mock.patch('ansible_base.activitystream.signals.log_auth_event') as mock_log:
         method = getattr(animal.people_friends, method_name)
         method(user)
 
