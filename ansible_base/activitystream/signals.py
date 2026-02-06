@@ -2,6 +2,8 @@ import logging
 import threading
 from contextlib import contextmanager
 
+from ansible_base.lib.logging import log_auth_info
+
 logger = logging.getLogger('ansible_base.activitystream.signals')
 
 
@@ -66,11 +68,39 @@ def _store_activitystream_entry(old, new, operation, update_fields=None):
     else:
         content_object = new
 
-    return Entry.objects.create(
-        content_object=content_object,
-        operation=operation,
-        changes=delta.dict(),
-    )
+    # Determine the instance to check attributes on (prefer new, fallback to old)
+    instance_for_check = new if new is not None else old
+
+    if getattr(instance_for_check, 'audit_log_enabled', False):
+        model_name = content_object.__class__.__name__
+        obj_str = str(content_object)
+        changes = delta.dict()
+
+        if operation in ('create', 'delete'):
+            # For create/delete, dump the whole object state as a dict
+            all_fields = {}
+            if operation == 'create':
+                all_fields.update(changes.get('added_fields', {}))
+            else:
+                all_fields.update(changes.get('removed_fields', {}))
+            all_fields.update({k: v[1] if operation == 'create' else v[0] for k, v in changes.get('changed_fields', {}).items()})
+            log_auth_info(f"{operation} {model_name} {obj_str} {all_fields}")
+        else:
+            # For update, emit one line per change
+            for field_name, value in changes.get('added_fields', {}).items():
+                log_auth_info(f"{operation} {model_name} {obj_str} added {field_name}='{value}'")
+            for field_name, value in changes.get('removed_fields', {}).items():
+                log_auth_info(f"{operation} {model_name} {obj_str} removed {field_name} (was '{value}')")
+            for field_name, (old_val, new_val) in changes.get('changed_fields', {}).items():
+                log_auth_info(f"{operation} {model_name} {obj_str} changed {field_name} from '{old_val}' to '{new_val}'")
+
+    if getattr(instance_for_check, 'activity_stream_enabled', True):
+        return Entry.objects.create(
+            content_object=content_object,
+            operation=operation,
+            changes=delta.dict(),
+        )
+    return None
 
 
 def _store_activitystream_m2m(given_instance, model, operation, pk_set, reverse, field_name):
@@ -88,10 +118,20 @@ def _store_activitystream_m2m(given_instance, model, operation, pk_set, reverse,
     entries = []
 
     for instance in instances:
+        content_object = instance if reverse else given_instance
+        related_object = given_instance if reverse else instance
+
+        # Audit logging for m2m changes
+        if getattr(content_object, 'audit_log_enabled', False):
+            content_model_name = content_object.__class__.__name__
+            related_model_name = related_object.__class__.__name__
+            preposition = 'with' if operation == 'associate' else 'from'
+            log_auth_info(f"{operation} {content_model_name} {content_object} {preposition} {related_model_name} {related_object}")
+
         entry = Entry(
-            content_object=instance if reverse else given_instance,
+            content_object=content_object,
             operation=operation,
-            related_content_object=given_instance if reverse else instance,
+            related_content_object=related_object,
             related_field_name=field_name,
             created_by=user,
         )

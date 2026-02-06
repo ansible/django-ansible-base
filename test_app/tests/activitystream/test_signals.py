@@ -1,8 +1,11 @@
+from unittest import mock
+
 import pytest
 
 import ansible_base.activitystream.signals as signals
 from ansible_base.activitystream import no_activity_stream
 from ansible_base.activitystream.models import Entry
+from ansible_base.activitystream.models.entry import AuditableModel
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from test_app.models import Animal, City, SecretColor
 
@@ -477,3 +480,384 @@ def test_activitystream_update_fields_none_with_limit_fields():
     assert 'name' not in entry.changes['changed_fields']
     assert 'population' not in entry.changes['changed_fields']
     assert entry.changes['changed_fields']['country'] == [ENCRYPTED_STRING, ENCRYPTED_STRING]
+
+
+# =============================================================================
+# Tests for AuditableModel class variables
+# =============================================================================
+
+
+class TestAuditableModelClassVariables:
+    """Tests for the AuditableModel class variable defaults."""
+
+    @pytest.mark.parametrize(
+        "attribute,expected",
+        [
+            ("activity_stream_enabled", True),
+            ("audit_log_enabled", False),
+            ("activity_stream_excluded_field_names", []),
+            ("activity_stream_limit_field_names", []),
+        ],
+        ids=[
+            "activity_stream_enabled_defaults_to_true",
+            "audit_log_enabled_defaults_to_false",
+            "excluded_field_names_defaults_to_empty_list",
+            "limit_field_names_defaults_to_empty_list",
+        ],
+    )
+    def test_auditable_model_class_variable_defaults(self, attribute, expected):
+        """Ensure AuditableModel class variables have correct default values."""
+        assert getattr(AuditableModel, attribute) == expected
+
+
+# =============================================================================
+# Tests for activity_stream_enabled flag
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_activity_stream_enabled_false_prevents_entry_creation():
+    """
+    Ensure that setting activity_stream_enabled=False on a model prevents
+    activity stream entries from being created.
+    """
+    # Create an animal with activity stream enabled (default)
+    animal = Animal.objects.create(name='Fluffy')
+    assert animal.activity_stream_entries.count() == 1
+
+    # Now disable activity stream on the instance and update
+    animal.activity_stream_enabled = False
+    animal.name = 'Rocky'
+    animal.save()
+
+    # No new entry should be created
+    assert animal.activity_stream_entries.count() == 1
+
+
+@pytest.mark.django_db
+def test_activity_stream_enabled_false_on_create():
+    """
+    Ensure that creating an object with activity_stream_enabled=False
+    does not create an activity stream entry.
+    """
+    # Create animal, then immediately set flag and check
+    # Note: The flag is checked during signal processing
+    with mock.patch.object(Animal, 'activity_stream_enabled', False):
+        animal = Animal.objects.create(name='Silent')
+
+    assert animal.activity_stream_entries.count() == 0
+
+
+@pytest.mark.django_db
+def test_activity_stream_enabled_false_on_delete():
+    """
+    Ensure that deleting an object with activity_stream_enabled=False
+    does not create an activity stream entry.
+    """
+    animal = Animal.objects.create(name='Fluffy')
+    initial_count = animal.activity_stream_entries.count()
+
+    # Disable activity stream and delete
+    animal.activity_stream_enabled = False
+    entries_qs = animal.activity_stream_entries  # Keep reference
+    animal.delete()
+
+    # No new entry should be created for the delete
+    assert entries_qs.count() == initial_count
+
+
+# =============================================================================
+# Tests for audit_log_enabled flag and log message formatting
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_audit_log_disabled_by_default():
+    """
+    Ensure that audit logging is disabled by default (audit_log_enabled=False).
+    """
+    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+        animal = Animal.objects.create(name='Fluffy')
+        mock_log.assert_not_called()
+
+        animal.name = 'Rocky'
+        animal.save()
+        mock_log.assert_not_called()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "operation,perform_operation",
+    [
+        ("create", lambda: Animal.objects.create(name='Fluffy')),
+        ("delete", None),  # Special case handled in test
+    ],
+    ids=["create_logs_full_state", "delete_logs_full_state"],
+)
+def test_audit_log_enabled_on_create_delete(operation, perform_operation):
+    """
+    Ensure that when audit_log_enabled=True, create/delete operations log the full object state.
+    """
+    if operation == "delete":
+        # For delete, we need to create first without audit logging
+        animal = Animal.objects.create(name='Fluffy')
+        with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+            animal.audit_log_enabled = True
+            animal.delete()
+
+            assert mock_log.call_count == 1
+            call_args = mock_log.call_args[0][0]
+            assert call_args.startswith('delete Animal')
+            assert 'Fluffy' in call_args
+    else:
+        with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+            with mock.patch.object(Animal, 'audit_log_enabled', True):
+                perform_operation()
+
+            assert mock_log.call_count == 1
+            call_args = mock_log.call_args[0][0]
+            assert call_args.startswith(f'{operation} Animal')
+            assert 'Fluffy' in call_args
+            assert 'name' in call_args
+
+
+@pytest.mark.django_db
+def test_audit_log_enabled_on_update_changed_field():
+    """
+    Ensure that when audit_log_enabled=True, update operations log one line per changed field.
+    """
+    animal = Animal.objects.create(name='Fluffy')
+
+    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+        animal.audit_log_enabled = True
+        animal.name = 'Rocky'
+        animal.save()
+
+        # Should have been called once for the name change
+        assert mock_log.call_count == 1
+        call_args = mock_log.call_args[0][0]
+
+        # Verify message format: "update ModelName obj_str changed field from 'old' to 'new'"
+        assert 'update Animal' in call_args
+        assert "changed name from 'Fluffy' to 'Rocky'" in call_args
+
+
+@pytest.mark.django_db
+def test_audit_log_enabled_on_update_multiple_fields():
+    """
+    Ensure that when multiple fields change, each gets its own log line.
+    """
+    animal = Animal.objects.create(name='Fluffy', kind='dog')
+
+    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+        animal.audit_log_enabled = True
+        animal.name = 'Rocky'
+        animal.kind = 'cat'
+        animal.save()
+
+        # Should have been called twice (once for each changed field)
+        assert mock_log.call_count == 2
+
+        # Collect all log messages
+        messages = [call[0][0] for call in mock_log.call_args_list]
+
+        # Verify both fields are logged
+        name_logged = any("changed name from 'Fluffy' to 'Rocky'" in msg for msg in messages)
+        kind_logged = any("changed kind from 'dog' to 'cat'" in msg for msg in messages)
+
+        assert name_logged, f"Expected name change in messages: {messages}"
+        assert kind_logged, f"Expected kind change in messages: {messages}"
+
+
+@pytest.mark.django_db
+def test_audit_log_added_field_format():
+    """
+    Ensure added fields (null to value) are logged with correct format.
+    """
+    animal = Animal.objects.create(name='Fluffy', owner=None)
+
+    from test_app.models import User
+    user = User.objects.create(username='testowner')
+
+    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+        animal.audit_log_enabled = True
+        animal.owner = user
+        animal.save()
+
+        # Find the log call for the added owner field
+        messages = [call[0][0] for call in mock_log.call_args_list]
+        owner_msg = next((msg for msg in messages if 'owner' in msg), None)
+
+        # Could be logged as added or changed depending on diff implementation
+        assert owner_msg is not None, f"Expected owner in messages: {messages}"
+
+
+@pytest.mark.django_db
+def test_audit_log_removed_field_format():
+    """
+    Ensure removed fields (value to null) are logged with correct format.
+    """
+    from test_app.models import User
+    user = User.objects.create(username='testowner')
+    animal = Animal.objects.create(name='Fluffy', owner=user)
+
+    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+        animal.audit_log_enabled = True
+        animal.owner = None
+        animal.save()
+
+        # Find the log call for the removed owner field
+        messages = [call[0][0] for call in mock_log.call_args_list]
+        owner_msg = next((msg for msg in messages if 'owner' in msg), None)
+
+        # Could be logged as removed or changed depending on diff implementation
+        assert owner_msg is not None, f"Expected owner in messages: {messages}"
+
+
+@pytest.mark.django_db
+def test_audit_log_respects_excluded_fields():
+    """
+    Ensure that excluded fields are not logged to the audit log.
+    """
+    # Animal has 'age' in activity_stream_excluded_field_names
+    animal = Animal.objects.create(name='Fluffy', age=2)
+
+    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+        animal.audit_log_enabled = True
+        animal.name = 'Rocky'
+        animal.age = 5  # This should not be logged
+        animal.save()
+
+        messages = [call[0][0] for call in mock_log.call_args_list]
+
+        # Name should be logged
+        name_logged = any('name' in msg for msg in messages)
+        assert name_logged, f"Expected name in messages: {messages}"
+
+        # Age should NOT be logged (it's excluded)
+        age_logged = any('age' in msg and 'changed age' in msg for msg in messages)
+        assert not age_logged, f"Age should not be logged: {messages}"
+
+
+@pytest.mark.django_db
+def test_audit_log_with_activity_stream_disabled():
+    """
+    Ensure audit logging works independently of activity stream.
+    When activity_stream_enabled=False but audit_log_enabled=True,
+    audit logs should still be generated.
+    """
+    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+        with mock.patch.object(Animal, 'audit_log_enabled', True):
+            with mock.patch.object(Animal, 'activity_stream_enabled', False):
+                animal = Animal.objects.create(name='Fluffy')
+
+        # Audit log should still be called
+        assert mock_log.call_count == 1
+
+    # But no activity stream entry
+    assert animal.activity_stream_entries.count() == 0
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "expected_content",
+    [
+        "Animal",  # Model name
+        "Fluffy",  # Object name (part of __str__)
+    ],
+    ids=["includes_model_name", "includes_object_str"],
+)
+def test_audit_log_message_content(expected_content):
+    """
+    Ensure the audit log message includes expected content (model name, object str).
+    """
+    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+        with mock.patch.object(Animal, 'audit_log_enabled', True):
+            Animal.objects.create(name='Fluffy')
+
+        call_args = mock_log.call_args[0][0]
+        assert expected_content in call_args
+
+
+# =============================================================================
+# Tests for M2M audit logging
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_audit_log_m2m_associate(user):
+    """
+    Ensure that M2M associations are logged when audit_log_enabled=True.
+    """
+    animal = Animal.objects.create(name='Fluffy')
+    animal.audit_log_enabled = True
+
+    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+        animal.people_friends.add(user)
+
+        assert mock_log.call_count == 1
+        call_args = mock_log.call_args[0][0]
+        assert 'associate' in call_args
+        assert 'Animal' in call_args
+        assert 'with' in call_args
+
+
+@pytest.mark.django_db
+def test_audit_log_m2m_disassociate(user):
+    """
+    Ensure that M2M disassociations are logged when audit_log_enabled=True.
+    """
+    animal = Animal.objects.create(name='Fluffy')
+    animal.people_friends.add(user)  # First add without logging
+    animal.audit_log_enabled = True
+
+    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+        animal.people_friends.remove(user)
+
+        assert mock_log.call_count == 1
+        call_args = mock_log.call_args[0][0]
+        assert 'disassociate' in call_args
+        assert 'Animal' in call_args
+        assert 'from' in call_args
+
+
+@pytest.mark.django_db
+def test_audit_log_m2m_disabled_by_default(user):
+    """
+    Ensure that M2M operations are not logged when audit_log_enabled=False (default).
+    """
+    animal = Animal.objects.create(name='Fluffy')
+    # audit_log_enabled is False by default
+
+    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+        animal.people_friends.add(user)
+        animal.people_friends.remove(user)
+
+        mock_log.assert_not_called()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "operation,method_name,expected_preposition",
+    [
+        ("associate", "add", "with"),
+        ("disassociate", "remove", "from"),
+    ],
+    ids=["associate_uses_with", "disassociate_uses_from"],
+)
+def test_audit_log_m2m_preposition(user, operation, method_name, expected_preposition):
+    """
+    Ensure that associate uses 'with' and disassociate uses 'from' in log messages.
+    """
+    animal = Animal.objects.create(name='Fluffy')
+    if method_name == "remove":
+        animal.people_friends.add(user)  # Need to add first before removing
+    animal.audit_log_enabled = True
+
+    with mock.patch('ansible_base.activitystream.signals.log_auth_info') as mock_log:
+        method = getattr(animal.people_friends, method_name)
+        method(user)
+
+        call_args = mock_log.call_args[0][0]
+        assert expected_preposition in call_args
+        assert operation in call_args

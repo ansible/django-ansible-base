@@ -112,6 +112,12 @@ class AuditableModel(models.Model):
     # Adding field names to this list will limit the activity stream changes dictionaries to only include these fields
     activity_stream_limit_field_names = []
 
+    # Controls whether changes to this model are stored in the activity stream
+    activity_stream_enabled = True
+
+    # Controls whether changes to this model are logged to the audit log
+    audit_log_enabled = False
+
     @property
     def activity_stream_entries(self):
         """
