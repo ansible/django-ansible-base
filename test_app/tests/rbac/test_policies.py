@@ -1,8 +1,11 @@
 import pytest
 from django.contrib.auth.models import AnonymousUser
+from django.test.utils import override_settings
 
-from ansible_base.rbac.policies import can_change_user, visible_users
-from test_app.models import User
+from ansible_base.rbac import permission_registry
+from ansible_base.rbac.models import RoleDefinition
+from ansible_base.rbac.policies import can_change_user, visible_teams, visible_users
+from test_app.models import Organization, Team, User
 
 
 @pytest.mark.django_db
@@ -42,3 +45,133 @@ def test_visible_users_anonymous_user():
 
     qs = visible_users(AnonymousUser())
     assert not qs.exists()
+
+
+@pytest.mark.django_db
+def test_visible_teams_anonymous_user():
+    org = Organization.objects.create(name='Test Org')
+    Team.objects.create(name='Test Team', organization=org)
+
+    qs = visible_teams(AnonymousUser())
+    assert not qs.exists()
+
+
+@pytest.mark.django_db
+def test_visible_teams_superuser(admin_user):
+    org1 = Organization.objects.create(name='Org 1')
+    org2 = Organization.objects.create(name='Org 2')
+    team1 = Team.objects.create(name='Team 1', organization=org1)
+    team2 = Team.objects.create(name='Team 2', organization=org2)
+
+    qs = visible_teams(admin_user)
+    assert qs.count() == 2
+    assert set(qs.values_list('pk', flat=True)) == {team1.pk, team2.pk}
+
+
+@pytest.mark.django_db
+def test_visible_teams_user_with_no_permissions():
+    org = Organization.objects.create(name='Test Org')
+    Team.objects.create(name='Test Team', organization=org)
+
+    user = User.objects.create(username='regular_user')
+    qs = visible_teams(user)
+    assert not qs.exists()
+
+
+@pytest.mark.django_db
+def test_visible_teams_user_with_view_permission_on_one_org():
+    org1 = Organization.objects.create(name='Org 1')
+    org2 = Organization.objects.create(name='Org 2')
+    team1 = Team.objects.create(name='Team 1', organization=org1)
+    team2 = Team.objects.create(name='Team 2', organization=org2)
+
+    user = User.objects.create(username='viewer')
+    view_org_rd = RoleDefinition.objects.create_from_permissions(
+        permissions=['view_organization'],
+        name='view-org-rd',
+        content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
+    )
+    view_org_rd.give_permission(user, org1)
+
+    qs = visible_teams(user)
+    assert qs.count() == 1
+    assert qs.first().pk == team1.pk
+    assert team2.pk not in qs.values_list('pk', flat=True)
+
+
+@pytest.mark.django_db
+def test_visible_teams_user_with_view_permission_on_multiple_orgs():
+    org1 = Organization.objects.create(name='Org 1')
+    org2 = Organization.objects.create(name='Org 2')
+    org3 = Organization.objects.create(name='Org 3')
+    team1 = Team.objects.create(name='Team 1', organization=org1)
+    team2 = Team.objects.create(name='Team 2', organization=org2)
+    team3 = Team.objects.create(name='Team 3', organization=org3)
+
+    user = User.objects.create(username='multi_viewer')
+    view_org_rd = RoleDefinition.objects.create_from_permissions(
+        permissions=['view_organization'],
+        name='view-org-rd',
+        content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
+    )
+    view_org_rd.give_permission(user, org1)
+    view_org_rd.give_permission(user, org2)
+
+    qs = visible_teams(user)
+    assert qs.count() == 2
+    assert set(qs.values_list('pk', flat=True)) == {team1.pk, team2.pk}
+    assert team3.pk not in qs.values_list('pk', flat=True)
+
+
+@pytest.mark.django_db
+def test_visible_teams_with_custom_queryset():
+    org1 = Organization.objects.create(name='Org 1')
+    org2 = Organization.objects.create(name='Org 2')
+    team1 = Team.objects.create(name='Team 1', organization=org1)
+    Team.objects.create(name='Team 2', organization=org2)
+
+    user = User.objects.create(username='viewer')
+    view_org_rd = RoleDefinition.objects.create_from_permissions(
+        permissions=['view_organization'],
+        name='view-org-rd',
+        content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
+    )
+    view_org_rd.give_permission(user, org1)
+
+    # Test with custom queryset that filters by name
+    custom_qs = Team.objects.filter(name='Team 2')
+    qs = visible_teams(user, queryset=custom_qs)
+    # User can only see teams in org1, but queryset filters to team2 (org2), so result should be empty
+    assert not qs.exists()
+
+    # Test with custom queryset that matches visible org
+    custom_qs = Team.objects.filter(name='Team 1')
+    qs = visible_teams(user, queryset=custom_qs)
+    assert qs.count() == 1
+    assert qs.first().pk == team1.pk
+
+
+@pytest.mark.django_db
+def test_visible_teams_org_admin_can_view_all_users_teams(org_admin_rd):
+    org1 = Organization.objects.create(name='Org 1')
+    org2 = Organization.objects.create(name='Org 2')
+    team1 = Team.objects.create(name='Team 1', organization=org1)
+    team2 = Team.objects.create(name='Team 2', organization=org2)
+
+    org_admin = User.objects.create(username='org-admin')
+    org_admin_rd.give_permission(org_admin, org1)
+
+    # Org admin should see all teams (because can_view_all_users returns True for org admins with change permission)
+    # can_view_all_users checks for 'change' permission, and org_admin_rd gives change_organization
+    # So can_view_all_users should return True if ORG_ADMINS_CAN_SEE_ALL_USERS is True
+    # Test both scenarios
+    with override_settings(ORG_ADMINS_CAN_SEE_ALL_USERS=True):
+        qs = visible_teams(org_admin)
+        assert qs.count() == 2
+        assert set(qs.values_list('pk', flat=True)) == {team1.pk, team2.pk}
+
+    with override_settings(ORG_ADMINS_CAN_SEE_ALL_USERS=False):
+        qs = visible_teams(org_admin)
+        # Should only see teams in org1
+        assert qs.count() == 1
+        assert qs.first().pk == team1.pk
