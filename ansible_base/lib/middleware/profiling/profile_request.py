@@ -74,6 +74,11 @@ class _ProfileRequestMiddleware(threading.local):
         if not (timing_enabled or node_enabled or cprofile_enabled):
             return self.get_response(request)
 
+        logger.debug(
+            f"ProfileRequestMiddleware ENABLED: timing={timing_enabled}, node={node_enabled}, cprofile={cprofile_enabled}",
+            extra=dict(python_objects=dict(timing_enabled=timing_enabled, node_enabled=node_enabled, cprofile_enabled=cprofile_enabled)),
+        )
+
         # Logic before the view (formerly process_request)
         self.profiler.start()
         request_id = trace_id_var.get()
@@ -90,10 +95,13 @@ class _ProfileRequestMiddleware(threading.local):
         # Only add timing header if enabled
         if timing_enabled and elapsed is not None:
             response['X-API-Time'] = f'{elapsed:.3f}s'
+            logger.debug(f"Added X-API-Time header: {elapsed:.3f}s")
 
         # Only add node header if enabled
         if node_enabled and 'X-API-Node' not in response:
-            response['X-API-Node'] = get_setting('CLUSTER_HOST_ID', _('Unknown'))
+            node_id = get_setting('CLUSTER_HOST_ID', _('Unknown'))
+            response['X-API-Node'] = node_id
+            logger.debug(f"Added X-API-Node header: {node_id}")
 
         # Only add cprofile header if cprofile was actually generated
         if cprofile_filename:
