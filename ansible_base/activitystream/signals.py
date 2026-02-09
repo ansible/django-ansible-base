@@ -1,8 +1,15 @@
+from __future__ import annotations
+
 import logging
 import threading
 from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any, Dict, Generator, Optional, Set, Tuple, Type, Union
 
 from ansible_base.lib.logging import log_auth_event
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import AbstractUser
+    from django.db.models import Model
 
 logger = logging.getLogger('ansible_base.activitystream.signals')
 
@@ -19,7 +26,7 @@ activitystream_enabled = ActivityStreamEnabled()
 
 
 @contextmanager
-def no_activity_stream():
+def no_activity_stream() -> Generator[None, None, None]:
     previous_value = activitystream_enabled.enabled
     activitystream_enabled.enabled = False
     try:
@@ -28,9 +35,59 @@ def no_activity_stream():
         activitystream_enabled.enabled = previous_value
 
 
-def _store_activitystream_entry(old, new, operation, update_fields=None):
-    if not activitystream_enabled:
+def _get_actor_user_and_username() -> Tuple[Optional[AbstractUser], str]:
+    """Return (current user, username) or (None, 'unknown') if outside request."""
+    from ansible_base.lib.utils.models import current_user_or_system_user
+
+    user = current_user_or_system_user()
+    return (user, user.username if user else "unknown")
+
+
+def _log_audit_entry(
+    *,
+    content_object: Model,
+    operation: str,
+    changes: Union[Dict[str, Any], str],
+) -> None:
+    """Emit audit log lines if content_object has audit_log_enabled.
+    For create/update/delete, changes is a dict (added_fields, removed_fields, changed_fields).
+    For m2m associate/disassociate, changes is the rest of the line as a string (e.g. 'with Team Parent (2)')."""
+    if not getattr(content_object, 'audit_log_enabled', False):
         return
+    model_name = content_object.__class__.__name__
+    obj_str = f"{content_object} ({content_object.pk})"
+    _, actor_username = _get_actor_user_and_username()
+    prefix = f"User: {actor_username} "
+    if isinstance(changes, str):
+        log_auth_event(f"{prefix}{operation} {model_name} {obj_str} {changes}")
+        return
+    if operation in ('create', 'delete'):
+        # For create/delete, dump the whole object state as a dict
+        all_fields = {}
+        if operation == 'create':
+            all_fields.update(changes.get('added_fields', {}))
+        else:
+            all_fields.update(changes.get('removed_fields', {}))
+        all_fields.update({k: v[1] if operation == 'create' else v[0] for k, v in changes.get('changed_fields', {}).items()})
+        log_auth_event(f"{prefix}{operation} {model_name} {obj_str} {all_fields}")
+    else:
+        # For update, emit one line per change
+        for field_name, value in changes.get('added_fields', {}).items():
+            log_auth_event(f"{prefix}{operation} {model_name} {obj_str} added {field_name}='{value}'")
+        for field_name, value in changes.get('removed_fields', {}).items():
+            log_auth_event(f"{prefix}{operation} {model_name} {obj_str} removed {field_name} (was '{value}')")
+        for field_name, (old_val, new_val) in changes.get('changed_fields', {}).items():
+            log_auth_event(f"{prefix}{operation} {model_name} {obj_str} changed {field_name} from '{old_val}' to '{new_val}'")
+
+
+def _store_activitystream_entry(
+    old: Optional[Model],
+    new: Optional[Model],
+    operation: str,
+    update_fields: Optional[Any] = None,
+) -> Optional[Any]:
+    if not activitystream_enabled:
+        return None
 
     from ansible_base.activitystream.models import Entry
     from ansible_base.lib.utils.models import diff
@@ -68,33 +125,13 @@ def _store_activitystream_entry(old, new, operation, update_fields=None):
     else:
         content_object = new
 
-    # Determine the instance to check attributes on (prefer new, fallback to old)
-    instance_for_check = new if new is not None else old
+    _log_audit_entry(
+        content_object=content_object,
+        operation=operation,
+        changes=delta.dict(),
+    )
 
-    if getattr(instance_for_check, 'audit_log_enabled', False):
-        model_name = content_object.__class__.__name__
-        obj_str = str(content_object)
-        changes = delta.dict()
-
-        if operation in ('create', 'delete'):
-            # For create/delete, dump the whole object state as a dict
-            all_fields = {}
-            if operation == 'create':
-                all_fields.update(changes.get('added_fields', {}))
-            else:
-                all_fields.update(changes.get('removed_fields', {}))
-            all_fields.update({k: v[1] if operation == 'create' else v[0] for k, v in changes.get('changed_fields', {}).items()})
-            log_auth_event(f"{operation} {model_name} {obj_str} {all_fields}")
-        else:
-            # For update, emit one line per change
-            for field_name, value in changes.get('added_fields', {}).items():
-                log_auth_event(f"{operation} {model_name} {obj_str} added {field_name}='{value}'")
-            for field_name, value in changes.get('removed_fields', {}).items():
-                log_auth_event(f"{operation} {model_name} {obj_str} removed {field_name} (was '{value}')")
-            for field_name, (old_val, new_val) in changes.get('changed_fields', {}).items():
-                log_auth_event(f"{operation} {model_name} {obj_str} changed {field_name} from '{old_val}' to '{new_val}'")
-
-    if getattr(instance_for_check, 'activity_stream_enabled', True):
+    if getattr(content_object, 'activity_stream_enabled', True):
         return Entry.objects.create(
             content_object=content_object,
             operation=operation,
@@ -103,18 +140,24 @@ def _store_activitystream_entry(old, new, operation, update_fields=None):
     return None
 
 
-def _store_activitystream_m2m(given_instance, model, operation, pk_set, reverse, field_name):
+def _store_activitystream_m2m(
+    given_instance: Model,
+    model: Type[Model],
+    operation: str,
+    pk_set: Set[Any],
+    reverse: bool,
+    field_name: str,
+) -> None:
     if not activitystream_enabled:
         return
 
     from ansible_base.activitystream.models import Entry
-    from ansible_base.lib.utils.models import current_user_or_system_user
 
     if operation not in ('associate', 'disassociate'):
         raise ValueError("Invalid operation: {}".format(operation))
 
+    user, _ = _get_actor_user_and_username()
     instances = model.objects.filter(pk__in=pk_set)
-    user = current_user_or_system_user()
     entries = []
 
     for instance in instances:
@@ -122,11 +165,14 @@ def _store_activitystream_m2m(given_instance, model, operation, pk_set, reverse,
         related_object = given_instance if reverse else instance
 
         # Audit logging for m2m changes
-        if getattr(content_object, 'audit_log_enabled', False):
-            content_model_name = content_object.__class__.__name__
-            related_model_name = related_object.__class__.__name__
-            preposition = 'with' if operation == 'associate' else 'from'
-            log_auth_event(f"{operation} {content_model_name} {content_object} {preposition} {related_model_name} {related_object}")
+        related_model_name = related_object.__class__.__name__
+        related_str = f"{related_object} ({related_object.pk})"
+        preposition = 'with' if operation == 'associate' else 'from'
+        _log_audit_entry(
+            content_object=content_object,
+            operation=operation,
+            changes=f"{preposition} {related_model_name} {related_str}",
+        )
 
         entry = Entry(
             content_object=content_object,

@@ -1,3 +1,4 @@
+import re
 from unittest import mock
 
 import pytest
@@ -516,10 +517,10 @@ class TestAuditableModelClassVariables:
 
 
 @pytest.mark.django_db
-def test_activity_stream_enabled_false_prevents_entry_creation():
+def test_activity_stream_enabled_false_on_update():
     """
     Ensure that setting activity_stream_enabled=False on a model prevents
-    activity stream entries from being created.
+    activity stream entries from being created on update.
     """
     # Create an animal with activity stream enabled (default)
     animal = Animal.objects.create(name='Fluffy')
@@ -677,6 +678,7 @@ def test_audit_log_added_field_format():
     animal = Animal.objects.create(name='Fluffy', owner=None)
 
     from test_app.models import User
+
     user = User.objects.create(username='testowner')
 
     with mock.patch('ansible_base.activitystream.signals.log_auth_event') as mock_log:
@@ -698,6 +700,7 @@ def test_audit_log_removed_field_format():
     Ensure removed fields (value to null) are logged with correct format.
     """
     from test_app.models import User
+
     user = User.objects.create(username='testowner')
     animal = Animal.objects.create(name='Fluffy', owner=user)
 
@@ -715,9 +718,15 @@ def test_audit_log_removed_field_format():
 
 
 @pytest.mark.django_db
-def test_audit_log_respects_excluded_fields():
+def test_audit_log_respects_excluded_fields(user):
     """
     Ensure that excluded fields are not logged to the audit log.
+
+    Excluded fields (e.g. age, last_login) must never appear in audit messages.
+    This helps ensure sensitive or irrelevant data is not logged. In real
+    deployments, models should exclude passwords, tokens, API keys, and other
+    secrets via activity_stream_excluded_field_names; DAB test_app has
+    User.last_login and Animal.age as examples.
     """
     # Animal has 'age' in activity_stream_excluded_field_names
     animal = Animal.objects.create(name='Fluffy', age=2)
@@ -737,6 +746,46 @@ def test_audit_log_respects_excluded_fields():
         # Age should NOT be logged (it's excluded)
         age_logged = any('age' in msg and 'changed age' in msg for msg in messages)
         assert not age_logged, f"Age should not be logged: {messages}"
+
+        # Disallowed content: no raw password hashes (pbkdf2, sha, argon2, etc.) in messages
+        for msg in messages:
+            assert 'pbkdf2_sha256$' not in msg, "Audit log must not contain password hashes"
+            assert 'sha1$' not in msg and 'argon2$' not in msg, "Audit log must not contain raw hash algorithms"
+
+    # User password change: if password is ever logged, both old and new must appear as $encrypted$
+    with mock.patch('ansible_base.activitystream.signals.log_auth_event') as mock_log:
+        user.audit_log_enabled = True
+        user.set_password('NewSecurePass1!')
+        user.save()
+
+        messages = [call[0][0] for call in mock_log.call_args_list]
+        for msg in messages:
+            assert (
+                'pbkdf2_sha256$' not in msg and 'sha1$' not in msg and 'argon2$' not in msg
+            ), "Audit log must not contain password hashes or raw hash algorithms"
+            if 'changed password' in msg:
+                assert re.search(r"changed password from '\$encrypted\$' to '\$encrypted\$'", msg), (
+                    "Password change must show both old and new as $encrypted$: " + msg
+                )
+            if 'added password' in msg:
+                assert "'$encrypted$'" in msg, "Added password must show as $encrypted$: " + msg
+
+    # User has 'last_login' in activity_stream_excluded_field_names
+    from django.utils import timezone
+
+    with mock.patch('ansible_base.activitystream.signals.log_auth_event') as mock_log:
+        user.audit_log_enabled = True
+        user.first_name = 'Audit'
+        user.last_login = timezone.now()
+        user.save()
+
+        messages = [call[0][0] for call in mock_log.call_args_list]
+        # first_name should be logged
+        first_name_logged = any('first_name' in msg for msg in messages)
+        assert first_name_logged, f"Expected first_name in messages: {messages}"
+        # last_login should NOT be logged (it's excluded)
+        last_login_logged = any('last_login' in msg and ('changed last_login' in msg or 'added last_login' in msg) for msg in messages)
+        assert not last_login_logged, f"last_login should not be logged: {messages}"
 
 
 @pytest.mark.django_db
