@@ -124,31 +124,59 @@ def test_visible_teams_user_with_view_permission_on_multiple_orgs():
 
 
 @pytest.mark.django_db
-def test_visible_teams_with_custom_queryset():
+@pytest.mark.parametrize(
+    'user_type,org_admins_can_see_all,expected_team1_count,expected_team2_count',
+    [
+        # (user_type, org_admins_can_see_all, expected_team1_count, expected_team2_count)
+        # user_type: 'superuser', 'org_admin', 'regular_viewer'
+        ('superuser', False, 1, 1),  # Superuser sees all teams regardless of setting
+        ('superuser', True, 1, 1),  # Superuser sees all teams regardless of setting
+        ('org_admin', False, 1, 0),  # Org admin only sees teams in their org when setting is False
+        ('org_admin', True, 1, 1),  # Org admin sees all teams when setting is True
+        ('regular_viewer', False, 1, 0),  # Regular viewer only sees teams in orgs they can view
+        ('regular_viewer', True, 1, 0),  # Setting doesn't affect regular viewers without change permission
+    ],
+)
+def test_visible_teams_with_custom_queryset(user_type, org_admins_can_see_all, expected_team1_count, expected_team2_count, org_admin_rd):
     org1 = Organization.objects.create(name='Org 1')
     org2 = Organization.objects.create(name='Org 2')
     team1 = Team.objects.create(name='Team 1', organization=org1)
-    Team.objects.create(name='Team 2', organization=org2)
+    team2 = Team.objects.create(name='Team 2', organization=org2)
 
-    user = User.objects.create(username='viewer')
-    view_org_rd = RoleDefinition.objects.create_from_permissions(
-        permissions=['view_organization'],
-        name='view-org-rd',
-        content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
-    )
-    view_org_rd.give_permission(user, org1)
+    # Create user based on type
+    if user_type == 'superuser':
+        user = User.objects.create(username='superuser', is_superuser=True)
+    elif user_type == 'org_admin':
+        user = User.objects.create(username='org-admin')
+        org_admin_rd.give_permission(user, org1)
+    else:  # regular_viewer
+        user = User.objects.create(username='viewer')
+        view_org_rd = RoleDefinition.objects.create_from_permissions(
+            permissions=['view_organization'],
+            name='view-org-rd',
+            content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
+        )
+        view_org_rd.give_permission(user, org1)
 
-    # Test with custom queryset that filters by name
-    custom_qs = Team.objects.filter(name='Team 2')
-    qs = visible_teams(user, queryset=custom_qs)
-    # User can only see teams in org1, but queryset filters to team2 (org2), so result should be empty
-    assert not qs.exists()
+    with override_settings(ORG_ADMINS_CAN_SEE_ALL_USERS=org_admins_can_see_all):
+        # Test with custom queryset that filters to team1
+        custom_qs = Team.objects.filter(name='Team 1')
+        qs = visible_teams(user, queryset=custom_qs)
+        assert qs.count() == expected_team1_count
+        if expected_team1_count > 0:
+            assert qs.first().pk == team1.pk
 
-    # Test with custom queryset that matches visible org
-    custom_qs = Team.objects.filter(name='Team 1')
-    qs = visible_teams(user, queryset=custom_qs)
-    assert qs.count() == 1
-    assert qs.first().pk == team1.pk
+        # Test with custom queryset that filters to team2
+        custom_qs = Team.objects.filter(name='Team 2')
+        qs = visible_teams(user, queryset=custom_qs)
+        assert qs.count() == expected_team2_count
+        if expected_team2_count > 0:
+            assert qs.first().pk == team2.pk
+
+        # Test with custom queryset that includes both teams
+        custom_qs = Team.objects.filter(name__in=['Team 1', 'Team 2'])
+        qs = visible_teams(user, queryset=custom_qs)
+        assert qs.count() == expected_team1_count + expected_team2_count
 
 
 @pytest.mark.django_db
