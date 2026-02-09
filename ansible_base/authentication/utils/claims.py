@@ -624,7 +624,7 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
         authenticator_user.save(update_fields=["extra_data"])
 
     if results['access_allowed'] is not True:
-        log_auth_warning(f"User {user.username} failed an allow map and was denied access via authenticator {database_authenticator.name}", logger)
+        log_auth_warning(f"User {user.username} failed an allow map and was denied access via authenticator {database_authenticator.name}")
         return None
 
     # Make the orgs and the teams as necessary ...

@@ -84,6 +84,8 @@ def check_content_obj_permission(request_user, obj) -> None:
     If that is not available, then we check all object-level permissions.
     """
     if isinstance(obj, RemoteObject):
+        if not get_setting('ANSIBLE_BASE_ENFORCE_REMOTE_OBJECT_PERMISSIONS', True):
+            return
         permissions = DABPermission.objects.filter(content_type=obj.content_type)
         for permission in permissions:
             if permission.codename.startswith('change'):

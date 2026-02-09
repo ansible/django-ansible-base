@@ -1,4 +1,3 @@
-import logging
 from random import shuffle
 from types import SimpleNamespace
 from unittest import mock
@@ -158,7 +157,8 @@ def test_authenticate(request, local_authenticator, github_enterprise_authentica
 
 
 @pytest.mark.django_db
-def test_authentication_exception(expected_log):
+@mock.patch("ansible_base.authentication.backend.log_auth_exception")
+def test_authentication_exception(mock_log_exception):
     class MockAuthenticator:
         database_instance = SimpleNamespace(name='testing')
 
@@ -170,9 +170,10 @@ def test_authentication_exception(expected_log):
         "ansible_base.authentication.backend.get_authentication_backends",
         return_value={1: MockAuthenticator()},
     ):
-        # Expect the log we emit
-        with expected_log('ansible_base.authentication.backend.logger', "exception", "Exception raised while trying to authenticate with"):
-            backend.AnsibleBaseAuth().authenticate(None)
+        backend.AnsibleBaseAuth().authenticate(None)
+
+        # Verify that log_auth_exception was called with the expected message
+        mock_log_exception.assert_called_once_with("Exception raised while trying to authenticate with testing")
 
 
 @pytest.mark.django_db
@@ -195,11 +196,10 @@ def test_last_login_from_with_attribute(local_authenticator, random_user, expect
         ):
             # Expected log message when user logs in
             with mock.patch(
-                'ansible_base.authentication.backend.logger.log',
+                'ansible_base.authentication.backend.log_auth_event',
             ) as log_mock:
                 auth_return = backend.AnsibleBaseAuth().authenticate(None)
                 log_mock.assert_called_once_with(
-                    logging.INFO,
                     f'User {random_user.username} logged in from {mock_authenticator_plugin.type} authenticator with ID "{local_authenticator.id}"',
                 )
 
@@ -233,11 +233,10 @@ def test_last_login_from_without_attribute(local_authenticator, random_user, exp
             return_value={local_authenticator.id: mock_authenticator_plugin},
         ):
             with mock.patch(
-                'ansible_base.authentication.backend.logger.log',
+                'ansible_base.authentication.backend.log_auth_event',
             ) as log_mock:
                 auth_return = backend.AnsibleBaseAuth().authenticate(None)
                 log_mock.assert_called_once_with(
-                    logging.INFO,
                     f'User {random_user.username} logged in from {mock_authenticator_plugin.type} authenticator with ID "{local_authenticator.id}"',
                 )
 
@@ -272,11 +271,11 @@ def test_last_login_from_multiple_authenticators(local_authenticator, github_ent
         ):
             # Expected log message when user logs in
             with mock.patch(
-                'ansible_base.authentication.backend.logger.log',
+                'ansible_base.authentication.backend.log_auth_event',
             ) as log_mock:
                 auth_return = backend.AnsibleBaseAuth().authenticate(None)
                 log_mock.assert_called_once_with(
-                    logging.INFO, f'User {random_user.username} logged in from {mock_local_plugin.type} authenticator with ID "{local_authenticator.id}"'
+                    f'User {random_user.username} logged in from {mock_local_plugin.type} authenticator with ID "{local_authenticator.id}"'
                 )
 
             # Verify the user is returned

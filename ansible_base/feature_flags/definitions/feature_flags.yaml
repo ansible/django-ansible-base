@@ -30,18 +30,6 @@
   toggle_type: install-time
   labels:
     - gateway
-- name: FEATURE_DISPATCHERD_ENABLED
-  ui_name: AAP Dispatcherd background tasking system
-  visibility: False
-  condition: boolean
-  value: 'False'
-  support_level: TECHNOLOGY_PREVIEW
-  description: A service to run python tasks in subprocesses, designed specifically to work well with pg_notify, but intended to be extensible to other message delivery means.
-  support_url: ''
-  toggle_type: install-time
-  labels:
-    - eda
-    - controller
 - name: FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED
   ui_name: Case Insensitive Authentication Maps
   visibility: False
