@@ -394,7 +394,7 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
         group_type_class = find_class_in_modules(attrs["GROUP_TYPE"])
         if group_type_class:
             group_type_params = attrs['GROUP_TYPE_PARAMS']
-            logger.error(f"Validating group type params for {attrs['GROUP_TYPE']}")
+            logger.info(f"Validating group type params for {attrs['GROUP_TYPE']}")
             class_args = inspect.getfullargspec(group_type_class.__init__).args[1:]
             invalid_keys = set(group_type_params) - set(class_args)
             missing_keys = set(class_args) - set(group_type_params)
