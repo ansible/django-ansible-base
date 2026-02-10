@@ -10,12 +10,8 @@ import time
 from typing import Optional
 
 import requests
-import urllib3
 
 from ansible_base.resource_registry.resource_server import get_service_token
-
-# Disable only insecure request warnings (for verify_https=False scenarios)
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger('ansible_base.resource_registry.service_client')
 
