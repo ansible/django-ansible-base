@@ -103,6 +103,7 @@ class WorkloadIdentityClient(BaseServiceClient):
         jwt_expiration=60,
         verify_https: bool = True,
         raise_if_bad_request: bool = True,
+        timeout: int = 30,
     ):
         """
         Initialize the workload identity client.
@@ -113,6 +114,7 @@ class WorkloadIdentityClient(BaseServiceClient):
             jwt_expiration: Service token expiration time in seconds (default: 60)
             verify_https: Whether to verify HTTPS certificates (default: True)
             raise_if_bad_request: Whether to raise exceptions on HTTP errors (default: True)
+            timeout: Request timeout in seconds (default: 30)
         """
         if jwt_user_id is not None:
             jwt_user_id = str(jwt_user_id)
@@ -123,6 +125,7 @@ class WorkloadIdentityClient(BaseServiceClient):
             raise_if_bad_request=raise_if_bad_request,
             jwt_user_id=jwt_user_id,
             jwt_expiration=jwt_expiration,
+            timeout=timeout,
         )
 
     def request_workload_jwt(
