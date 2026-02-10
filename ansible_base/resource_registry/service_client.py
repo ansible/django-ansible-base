@@ -39,6 +39,7 @@ class BaseServiceClient:
         raise_if_bad_request: bool = False,
         jwt_user_id: Optional[str] = None,
         jwt_expiration: int = 60,
+        timeout: int = 30,
     ):
         """
         Initialize the base service client.
@@ -49,6 +50,7 @@ class BaseServiceClient:
             raise_if_bad_request: Whether to raise an exception on non-2xx responses
             jwt_user_id: Ansible ID of the user to make the request as (optional)
             jwt_expiration: Number of seconds that the JWT token is valid (default: 60)
+            timeout: Request timeout in seconds (default: 30)
         """
         if jwt_user_id is not None:
             jwt_user_id = str(jwt_user_id)
@@ -59,6 +61,7 @@ class BaseServiceClient:
         self.raise_if_bad_request = raise_if_bad_request
         self.jwt_user_id = jwt_user_id
         self.jwt_expiration = jwt_expiration
+        self.timeout = timeout
         self._jwt = None
         self._jwt_timeout = None
 
@@ -123,7 +126,13 @@ class BaseServiceClient:
         url = self.base_url + path.lstrip("/")
         logger.info(f"Making {method} request to {url}.")
 
-        kwargs = {**self.requests_auth_kwargs, "method": method, "url": url, "verify": self.verify_https}
+        kwargs = {
+            **self.requests_auth_kwargs,
+            "method": method,
+            "url": url,
+            "verify": self.verify_https,
+            "timeout": self.timeout,
+        }
 
         if data:
             kwargs["json"] = data

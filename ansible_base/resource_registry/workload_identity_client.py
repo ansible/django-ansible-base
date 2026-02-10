@@ -34,7 +34,7 @@ class WorkloadIdentityTokenResponse(NamedTuple):
     """Response from workload identity token endpoint."""
 
     jwt: str
-    """The JWT access token signed and containing."""
+    """The JWT access token signed by the Gateway and containing the workload identity claims."""
 
 
 class TokenRequestError(APIException):
@@ -173,7 +173,6 @@ class WorkloadIdentityClient(BaseServiceClient):
 
         try:
             response_data = response.json()
-            logger.debug(f"Response data: {response_data}")
         except (requests.exceptions.JSONDecodeError, ValueError) as e:
             logger.error(f"Failed to parse JSON response: {e}")
             raise TokenRequestError(f"Failed to parse response: {e}") from e
@@ -183,5 +182,6 @@ class WorkloadIdentityClient(BaseServiceClient):
             raise TokenRequestError("Response missing 'jwt' field")
 
         jwt_token = response_data["jwt"]
+        logger.debug("Successfully received workload identity token")
 
         return WorkloadIdentityTokenResponse(jwt=jwt_token)
