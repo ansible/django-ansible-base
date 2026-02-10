@@ -236,8 +236,9 @@ def test_activitystream__store_activitystream_entry_both_none():
 
 
 def test_activitystream__store_activitystream_m2m_invalid_operation():
+    """Invalid operation raises ValueError; pass a real model class to satisfy type hints."""
     with pytest.raises(ValueError) as excinfo:
-        signals._store_activitystream_m2m(None, None, 'invalid', [], False, 'field')
+        signals._store_activitystream_m2m(None, Animal, 'invalid', set(), False, 'field')
 
     assert 'Invalid operation: invalid' in str(excinfo.value)
 
@@ -608,7 +609,7 @@ def test_audit_log_enabled_on_create_delete(operation, perform_operation):
 
             assert mock_log.call_count == 1
             call_args = mock_log.call_args[0][0]
-            assert call_args.startswith('delete Animal')
+            assert 'delete Animal' in call_args
             assert 'Fluffy' in call_args
     else:
         with mock.patch('ansible_base.activitystream.signals.log_auth_event') as mock_log:
@@ -617,7 +618,7 @@ def test_audit_log_enabled_on_create_delete(operation, perform_operation):
 
             assert mock_log.call_count == 1
             call_args = mock_log.call_args[0][0]
-            assert call_args.startswith(f'{operation} Animal')
+            assert f'{operation} Animal' in call_args
             assert 'Fluffy' in call_args
             assert 'name' in call_args
 

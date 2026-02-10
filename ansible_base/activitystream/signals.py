@@ -272,10 +272,13 @@ def activitystream_m2m_changed(sender, instance, action, reverse, model, pk_set,
             # If we do: user.animal_friends.clear() - the reverse relation - we need to get the PKs of
             # every animal that is being removed from the user's animal_friends.
             # Note that in this case, model is the Animal model, and instance is the user.
-            pk_set = model.objects.filter(**{field_name: instance}).values_list('pk', flat=True)
+            pk_set = set(model.objects.filter(**{field_name: instance}).values_list('pk', flat=True))
         else:
             # If we're not reversing, then we're clearing the forward relation. So it's easy to get the PKs,
             # given we have the field name and the instance.
-            pk_set = getattr(instance, field_name).all().values_list('pk', flat=True)
+            pk_set = set(getattr(instance, field_name).all().values_list('pk', flat=True))
 
+    # Django may pass pk_set as a QuerySet (e.g. for pre_clear); normalize to set for type consistency
+    if not isinstance(pk_set, set):
+        pk_set = set(pk_set)
     _store_activitystream_m2m(instance, model, operation, pk_set, reverse, field_name)
