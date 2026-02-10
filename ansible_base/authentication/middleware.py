@@ -50,5 +50,5 @@ class SocialExceptionHandlerMiddleware(SocialAuthExceptionMiddleware):
         error_url = strategy.setting("LOGIN_ERROR_URL")
         backend = getattr(request, "backend", None)
         backend_name = getattr(backend, "name", "unknown-backend")
-        log_auth_error(f"Auth failure for backend {backend_name} - {repr(exception)}, redirecting to {error_url}", logger)
+        log_auth_error(f"Auth failure for backend {backend_name} - {repr(exception)}, redirecting to {error_url}")
         return error_url

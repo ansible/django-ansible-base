@@ -109,7 +109,4 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
         app_name = self.application.name if self.application else "N/A (Personal Access Token)"
         user_name = self.user.username if self.user else "N/A"
         if has_non_trivial_fields:
-            log_auth_event(
-                f"{logging_verb} OAuth2 access token {self.pk} for user '{user_name}' with application '{app_name}' and scope '{self.scope}'",
-                second_logger=logger,
-            )
+            log_auth_event(f"{logging_verb} OAuth2 access token {self.pk} for user '{user_name}' with application '{app_name}' and scope '{self.scope}'")

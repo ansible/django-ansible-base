@@ -14,7 +14,7 @@ from social_django.strategy import DjangoStrategy
 from ansible_base.authentication.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_class, get_authenticator_plugins
 from ansible_base.authentication.models import Authenticator, AuthenticatorUser
 from ansible_base.authentication.utils.user import normalize_and_get_email
-from ansible_base.lib.logging import log_auth_event
+from ansible_base.lib.logging import log_auth_error, log_auth_event
 from ansible_base.lib.utils.response import get_fully_qualified_url
 
 logger = logging.getLogger('ansible_base.authentication.social_auth')
@@ -151,7 +151,7 @@ class SocialAuthMixin:
     def start(self):
         # This will be run on the /login call and we want to return a 404 if the authenticator is not enabled.
         if not self.database_instance.enabled:
-            logger.error(f"Authentication attempted with disabled authenticator {self.database_instance.name}")
+            log_auth_error(f"Authentication attempted with disabled authenticator {self.database_instance.name}")
             return HttpResponseNotFound()
 
         # Before calling BaseAuth.start, we need to log any expected redirects from the parent function.
@@ -160,8 +160,7 @@ class SocialAuthMixin:
             # Strip URL parameters from the auth URL for logging
             auth_url_without_params = auth_url.split('?')[0] if auth_url else auth_url
             log_auth_event(
-                f"Starting SSO redirect to {auth_url_without_params} with authenticator '{self.database_instance.name}' (slug: {self.database_instance.slug})",
-                second_logger=logger,
+                f"Starting SSO redirect to {auth_url_without_params} with authenticator '{self.database_instance.name}' (slug: {self.database_instance.slug})"
             )
 
         return super().start()

@@ -18,23 +18,19 @@ def get_auth_logger() -> logging.Logger:
     return auth_logger
 
 
-def log_auth_event(message: str, second_logger: Optional[logging.Logger] = None, level: Optional[int] = logging.INFO):
+def log_auth_event(message: str, level: Optional[int] = logging.INFO):
     auth_logger = get_auth_logger()
     auth_logger.log(level, message)
-    if second_logger:
-        second_logger.log(level, message)
 
 
-def log_auth_error(message: str, second_logger: Optional[logging.Logger] = None):
-    log_auth_event(message, second_logger, logging.ERROR)
+def log_auth_error(message: str):
+    log_auth_event(message, logging.ERROR)
 
 
-def log_auth_warning(message: str, second_logger: Optional[logging.Logger] = None):
-    log_auth_event(message, second_logger, logging.WARNING)
+def log_auth_warning(message: str):
+    log_auth_event(message, logging.WARNING)
 
 
-def log_auth_exception(message: str, second_logger: Optional[logging.Logger] = None):
+def log_auth_exception(message: str):
     auth_logger = get_auth_logger()
     auth_logger.exception(message)
-    if second_logger:
-        second_logger.exception(message)

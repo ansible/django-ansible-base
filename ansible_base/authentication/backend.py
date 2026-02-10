@@ -41,7 +41,7 @@ class AnsibleBaseAuth(ModelBackend):
             try:
                 user = authenticator_object.authenticate(request, *args, **kwargs)
             except Exception:
-                log_auth_exception(f"Exception raised while trying to authenticate with {authenticator_object.database_instance.name}", logger)
+                log_auth_exception(f"Exception raised while trying to authenticate with {authenticator_object.database_instance.name}")
                 continue
 
             # Social Auth pipeline can return status string when update_user_claims fails (authentication maps deny access)
@@ -52,16 +52,15 @@ class AnsibleBaseAuth(ModelBackend):
                 # The local authenticator handles this but we want to check this for other authentication types
                 if not getattr(user, 'is_active', True):
                     log_auth_warning(
-                        f'User {user.username} attempted to login from authenticator with ID "{authenticator_id}" their user is inactive, denying permission',
-                        logger,
+                        f'User {user.username} attempted to login from authenticator with ID "{authenticator_id}" their user is inactive, denying permission'
                     )
                     return None
 
-                log_auth_event(f'User {user.username} logged in from {authenticator_object.type} authenticator with ID "{authenticator_id}"', logger)
+                log_auth_event(f'User {user.username} logged in from {authenticator_object.type} authenticator with ID "{authenticator_id}"')
                 if hasattr(user, "last_login_from"):
                     user.last_login_from = authenticator_object.database_instance
                     user.save(update_fields=['last_login_from'])
                 return user
         provided_username = kwargs.get('username', 'Unknown')
-        log_auth_event(f"Authentication failed for username: {provided_username}", logger)
+        log_auth_event(f"Authentication failed for username: {provided_username}")
         return None
