@@ -70,9 +70,9 @@ class BaseServiceClient:
         Refresh the service token.
 
         Generates a new service token with the configured expiration.
-        Includes a 2-second buffer to account for slower requests.
+        Includes a 2-second buffer to prevent token expiration during HTTP requests.
         """
-        # Add a buffer to the token timeout to account for slower requests.
+        # Add a 2-second buffer to prevent the service token from expiring during the HTTP request that uses it.
         self._jwt_timeout = time.time() + (self.jwt_expiration - 2)
         self._jwt = get_service_token(self.jwt_user_id, expiration=self.jwt_expiration)
         logger.debug("Service token refreshed successfully.")
