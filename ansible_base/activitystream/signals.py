@@ -80,6 +80,35 @@ def _log_audit_entry(
             log_auth_event(f"{prefix}{operation} {model_name} {obj_str} changed {field_name} from '{old_val}' to '{new_val}'")
 
 
+def _get_limit(
+    operation: str,
+    update_fields: Optional[Any],
+    limit_from_model: list,
+) -> Optional[list]:
+    """
+    Return the list of fields to include in the diff, or None to skip storing an entry.
+    For create/delete (or update without update_fields), returns limit_from_model.
+    For update with update_fields: empty update_fields or empty intersection returns None.
+    """
+    # If we are not in an update, return whatever the model limit is.
+    if operation != 'update' or update_fields is None:
+        return limit_from_model
+    # If we are an update but we don't have any update fields, then we don't want to store an entry.
+    if not update_fields:
+        return None
+    # We only want to diff the fields that were updated, so we take the intersection of
+    # the limited fields and the update fields.
+    if not limit_from_model:
+        # If limit is otherwise empty (meaning no pre-existing limit), then we just need
+        # to make the updated fields the limit.
+        return list(update_fields)
+    limit = list(set(limit_from_model).intersection(set(update_fields)))
+    # If only a non-included field is updated, we can be certain that the delta will be
+    # empty; continuing with the diff would introduce a bug where we diff all
+    # non-excluded fields.
+    return limit if limit else None
+
+
 def _store_activitystream_entry(
     old: Optional[Model],
     new: Optional[Model],
@@ -95,36 +124,22 @@ def _store_activitystream_entry(
     if operation not in ('create', 'update', 'delete'):
         raise ValueError("Invalid operation: {}".format(operation))
 
+    # Excluded/limit come from new (for create/update); for delete new is None so getattr returns []
     excluded = getattr(new, 'activity_stream_excluded_field_names', [])
-    limit = getattr(new, 'activity_stream_limit_field_names', [])
+    limit_from_model = getattr(new, 'activity_stream_limit_field_names', [])
 
-    # We only want to diff the fields that were updated, so we have to take the intersection of the limited fields and the update fields
-    if operation == 'update' and update_fields is not None:
-        if not update_fields:
-            return
-        # If limit is otherwise empty (meaning no pre-existing limit), then we just need to make the updated fields the limit
-        if not limit:
-            limit = update_fields
-        else:
-            limit = list(set(limit).intersection(set(update_fields)))
-            # If only a non-included field is updated, we can be certain that the delta will be empty;
-            # Continuing with the diff would introduce a bug where we diff all non-excluded fields.
-            if not limit:
-                return
+    limit = _get_limit(operation, update_fields, limit_from_model)
+    if limit is None:
+        return None
 
     delta = diff(old, new, exclude_fields=excluded, limit_fields=limit, all_values_as_strings=True)
-
     if not delta:
-        # No changes to store
-        return
+        # There were no changes to store, so we return None
+        return None
 
     # If only one of old or new is None, then use the existing one as content_object
     # The case where both are None is handled above (no changes to store)
-    if new is None:
-        content_object = old
-    else:
-        content_object = new
-
+    content_object = new or old
     _log_audit_entry(
         content_object=content_object,
         operation=operation,

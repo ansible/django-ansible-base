@@ -235,6 +235,37 @@ def test_activitystream__store_activitystream_entry_both_none():
     assert signals._store_activitystream_entry(None, None, 'create') is None
 
 
+@pytest.mark.parametrize(
+    "operation,update_fields,limit_from_model,expected_limit,expected_skip",
+    [
+        ('create', None, [], [], False),
+        ('delete', None, [], [], False),
+        ('update', None, ['a'], ['a'], False),
+        ('update', [], ['a'], [], True),
+        ('update', ['x'], [], ['x'], False),
+        ('update', ['a', 'b'], ['a'], ['a'], False),
+        ('update', ['x'], ['a'], [], True),
+    ],
+    ids=[
+        "create_uses_limit_from_model",
+        "delete_uses_limit_from_model",
+        "update_no_update_fields_uses_limit_from_model",
+        "update_empty_update_fields_skips",
+        "update_no_limit_uses_update_fields",
+        "update_intersection",
+        "update_empty_intersection_skips",
+    ],
+)
+def test_get_limit(operation, update_fields, limit_from_model, expected_limit, expected_skip):
+    """_get_limit returns correct limit list or None (skip) for all operations."""
+    limit = signals._get_limit(operation, update_fields, limit_from_model)
+    if expected_skip:
+        assert limit is None
+    else:
+        assert limit is not None
+        assert set(limit) == set(expected_limit)
+
+
 def test_activitystream__store_activitystream_m2m_invalid_operation():
     """Invalid operation raises ValueError; pass a real model class to satisfy type hints."""
     with pytest.raises(ValueError) as excinfo:
