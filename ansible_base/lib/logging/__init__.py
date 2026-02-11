@@ -23,10 +23,6 @@ def log_auth_event(message: str, level: Optional[int] = logging.INFO):
     auth_logger.log(level, message)
 
 
-def log_auth_info(message: str):
-    log_auth_event(message, logging.INFO)
-
-
 def log_auth_error(message: str):
     log_auth_event(message, logging.ERROR)
 
