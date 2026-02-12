@@ -1,6 +1,15 @@
+from __future__ import annotations
+
 import logging
 import threading
 from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any, Dict, Generator, Optional, Set, Tuple, Type, Union
+
+from ansible_base.lib.logging import log_auth_event
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import AbstractUser
+    from django.db.models import Model
 
 logger = logging.getLogger('ansible_base.activitystream.signals')
 
@@ -17,7 +26,7 @@ activitystream_enabled = ActivityStreamEnabled()
 
 
 @contextmanager
-def no_activity_stream():
+def no_activity_stream() -> Generator[None, None, None]:
     previous_value = activitystream_enabled.enabled
     activitystream_enabled.enabled = False
     try:
@@ -26,9 +35,88 @@ def no_activity_stream():
         activitystream_enabled.enabled = previous_value
 
 
-def _store_activitystream_entry(old, new, operation, update_fields=None):
-    if not activitystream_enabled:
+def _get_actor_user_and_username() -> Tuple[Optional[AbstractUser], str]:
+    """Return (current user, username) or (None, 'unknown') if outside request."""
+    from ansible_base.lib.utils.models import current_user_or_system_user
+
+    user = current_user_or_system_user()
+    return (user, user.username if user else "unknown")
+
+
+def _log_audit_entry(
+    *,
+    content_object: Model,
+    operation: str,
+    changes: Union[Dict[str, Any], str],
+) -> None:
+    """Emit audit log lines if content_object has audit_log_enabled.
+    For create/update/delete, changes is a dict (added_fields, removed_fields, changed_fields).
+    For m2m associate/disassociate, changes is the rest of the line as a string (e.g. 'with Team Parent (2)')."""
+    if not getattr(content_object, 'audit_log_enabled', False):
         return
+    model_name = content_object.__class__.__name__
+    obj_str = f"{content_object} ({content_object.pk})"
+    _, actor_username = _get_actor_user_and_username()
+    prefix = f"User: {actor_username} "
+    if isinstance(changes, str):
+        log_auth_event(f"{prefix}{operation} {model_name} {obj_str} {changes}")
+        return
+    if operation in ('create', 'delete'):
+        # For create/delete, dump the whole object state as a dict
+        all_fields = {}
+        if operation == 'create':
+            all_fields.update(changes.get('added_fields', {}))
+        else:
+            all_fields.update(changes.get('removed_fields', {}))
+        all_fields.update({k: v[1] if operation == 'create' else v[0] for k, v in changes.get('changed_fields', {}).items()})
+        log_auth_event(f"{prefix}{operation} {model_name} {obj_str} {all_fields}")
+    else:
+        # For update, emit one line per change
+        for field_name, value in changes.get('added_fields', {}).items():
+            log_auth_event(f"{prefix}{operation} {model_name} {obj_str} added {field_name}='{value}'")
+        for field_name, value in changes.get('removed_fields', {}).items():
+            log_auth_event(f"{prefix}{operation} {model_name} {obj_str} removed {field_name} (was '{value}')")
+        for field_name, (old_val, new_val) in changes.get('changed_fields', {}).items():
+            log_auth_event(f"{prefix}{operation} {model_name} {obj_str} changed {field_name} from '{old_val}' to '{new_val}'")
+
+
+def _get_limit(
+    operation: str,
+    update_fields: Optional[Any],
+    limit_from_model: list,
+) -> Optional[list]:
+    """
+    Return the list of fields to include in the diff, or None to skip storing an entry.
+    For create/delete (or update without update_fields), returns limit_from_model.
+    For update with update_fields: empty update_fields or empty intersection returns None.
+    """
+    # If we are not in an update, return whatever the model limit is.
+    if operation != 'update' or update_fields is None:
+        return limit_from_model
+    # If we are an update but we don't have any update fields, then we don't want to store an entry.
+    if not update_fields:
+        return None
+    # We only want to diff the fields that were updated, so we take the intersection of
+    # the limited fields and the update fields.
+    if not limit_from_model:
+        # If limit is otherwise empty (meaning no pre-existing limit), then we just need
+        # to make the updated fields the limit.
+        return list(update_fields)
+    limit = list(set(limit_from_model).intersection(set(update_fields)))
+    # If only a non-included field is updated, we can be certain that the delta will be
+    # empty; continuing with the diff would introduce a bug where we diff all
+    # non-excluded fields.
+    return limit if limit else None
+
+
+def _store_activitystream_entry(
+    old: Optional[Model],
+    new: Optional[Model],
+    operation: str,
+    update_fields: Optional[Any] = None,
+) -> Optional[Any]:
+    if not activitystream_enabled:
+        return None
 
     from ansible_base.activitystream.models import Entry
     from ansible_base.lib.utils.models import diff
@@ -36,62 +124,75 @@ def _store_activitystream_entry(old, new, operation, update_fields=None):
     if operation not in ('create', 'update', 'delete'):
         raise ValueError("Invalid operation: {}".format(operation))
 
+    # Excluded/limit come from new (for create/update); for delete new is None so getattr returns []
     excluded = getattr(new, 'activity_stream_excluded_field_names', [])
-    limit = getattr(new, 'activity_stream_limit_field_names', [])
+    limit_from_model = getattr(new, 'activity_stream_limit_field_names', [])
 
-    # We only want to diff the fields that were updated, so we have to take the intersection of the limited fields and the update fields
-    if operation == 'update' and update_fields is not None:
-        if not update_fields:
-            return
-        # If limit is otherwise empty (meaning no pre-existing limit), then we just need to make the updated fields the limit
-        if not limit:
-            limit = update_fields
-        else:
-            limit = list(set(limit).intersection(set(update_fields)))
-            # If only a non-included field is updated, we can be certain that the delta will be empty;
-            # Continuing with the diff would introduce a bug where we diff all non-excluded fields.
-            if not limit:
-                return
+    limit = _get_limit(operation, update_fields, limit_from_model)
+    if limit is None:
+        return None
 
     delta = diff(old, new, exclude_fields=excluded, limit_fields=limit, all_values_as_strings=True)
-
     if not delta:
-        # No changes to store
-        return
+        # There were no changes to store, so we return None
+        return None
 
     # If only one of old or new is None, then use the existing one as content_object
     # The case where both are None is handled above (no changes to store)
-    if new is None:
-        content_object = old
-    else:
-        content_object = new
-
-    return Entry.objects.create(
+    content_object = new or old
+    _log_audit_entry(
         content_object=content_object,
         operation=operation,
         changes=delta.dict(),
     )
 
+    if getattr(content_object, 'activity_stream_enabled', True):
+        return Entry.objects.create(
+            content_object=content_object,
+            operation=operation,
+            changes=delta.dict(),
+        )
+    return None
 
-def _store_activitystream_m2m(given_instance, model, operation, pk_set, reverse, field_name):
+
+def _store_activitystream_m2m(
+    given_instance: Model,
+    model: Type[Model],
+    operation: str,
+    pk_set: Set[Any],
+    reverse: bool,
+    field_name: str,
+) -> None:
     if not activitystream_enabled:
         return
 
     from ansible_base.activitystream.models import Entry
-    from ansible_base.lib.utils.models import current_user_or_system_user
 
     if operation not in ('associate', 'disassociate'):
         raise ValueError("Invalid operation: {}".format(operation))
 
+    user, _ = _get_actor_user_and_username()
     instances = model.objects.filter(pk__in=pk_set)
-    user = current_user_or_system_user()
     entries = []
 
     for instance in instances:
-        entry = Entry(
-            content_object=instance if reverse else given_instance,
+        content_object = instance if reverse else given_instance
+        related_object = given_instance if reverse else instance
+
+        # Audit logging for m2m changes
+        related_model_name = related_object.__class__.__name__
+        related_str = f"{related_object} ({related_object.pk})"
+        preposition = 'with' if operation == 'associate' else 'from'
+        _log_audit_entry(
+            content_object=content_object,
             operation=operation,
-            related_content_object=given_instance if reverse else instance,
+            changes=f"{preposition} {related_model_name} {related_str}",
+        )
+
+        entry = Entry(
+            content_object=content_object,
+            operation=operation,
+            related_content_object=related_object,
             related_field_name=field_name,
             created_by=user,
         )
@@ -186,10 +287,13 @@ def activitystream_m2m_changed(sender, instance, action, reverse, model, pk_set,
             # If we do: user.animal_friends.clear() - the reverse relation - we need to get the PKs of
             # every animal that is being removed from the user's animal_friends.
             # Note that in this case, model is the Animal model, and instance is the user.
-            pk_set = model.objects.filter(**{field_name: instance}).values_list('pk', flat=True)
+            pk_set = set(model.objects.filter(**{field_name: instance}).values_list('pk', flat=True))
         else:
             # If we're not reversing, then we're clearing the forward relation. So it's easy to get the PKs,
             # given we have the field name and the instance.
-            pk_set = getattr(instance, field_name).all().values_list('pk', flat=True)
+            pk_set = set(getattr(instance, field_name).all().values_list('pk', flat=True))
 
+    # Django may pass pk_set as a QuerySet (e.g. for pre_clear); normalize to set for type consistency
+    if not isinstance(pk_set, set):
+        pk_set = set(pk_set)
     _store_activitystream_m2m(instance, model, operation, pk_set, reverse, field_name)

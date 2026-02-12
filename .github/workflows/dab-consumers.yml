@@ -2,6 +2,9 @@
 name: Testing DAB Consumers
 on:
   push:
+    branches:
+      - devel
+      - "stable-*"
   pull_request:
 jobs:
   awx:

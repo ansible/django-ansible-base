@@ -5,6 +5,9 @@ env:
 on:
   pull_request:
   push:
+    branches:
+      - devel
+      - "stable-*"
 jobs:
   common-tests:
     name: ${{ matrix.tests.name }}
