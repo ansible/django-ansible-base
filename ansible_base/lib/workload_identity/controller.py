@@ -10,9 +10,6 @@ from .base import BaseWorkloadIdentityScope
 class AutomationControllerJobScope(BaseWorkloadIdentityScope):
     """
     Default scope for AAP Controller automation job workload identity.
-
-    Note: populate_claims() is not yet implemented and will be added
-    in a future iteration.
     """
 
     name = "aap_controller_automation_job"
