@@ -25,6 +25,7 @@ class BaseWorkloadIdentityScope:
         raise NotImplementedError("Subclasses must implement list_claims()")
 
     @classmethod
+    @abstractmethod
     def get_target_claim_names_to_sub_stubs(cls) -> dict[str, str]:
         """
         Return a mapping of claim names to their corresponding sub claim stubs.
