@@ -5,6 +5,9 @@ env:
 on:
   pull_request:
   push:
+    branches:
+      - devel
+      - "stable-*"
 jobs:
   help_text:
     name: Help Test Check

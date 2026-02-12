@@ -3,6 +3,9 @@ name: CI
 on:
   pull_request:
   push:
+    branches:
+      - devel
+      - "stable-*"
 jobs:
   tox:
     name: django-ansible-base - ${{ matrix.tests.env }}
