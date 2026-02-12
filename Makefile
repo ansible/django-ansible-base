@@ -5,7 +5,6 @@ PYTHON := $(notdir $(shell for i in python3.12 python3; do command -v $$i; done|
 CHECK_SYNTAX_FILES ?= .
 RM ?= /bin/rm
 UID := $(shell id -u)
-TOX_ARGS ?= ""
 COMPOSE_OPTS ?=
 COMPOSE_UP_OPTS ?=
 DOCKER_COMPOSE ?= docker compose
@@ -31,23 +30,23 @@ clean:
 
 ## Run test suite
 check:
-	tox
+	nox
 
 ## Run linters (and modify files if necessary)
 lint:
-	tox -m lint
+	nox -s flake8 black isort
 
 ## Run black syntax check
 check_black:
-	tox -e black -- --check $(CHECK_SYNTAX_FILES)
+	nox -s black -- --check $(CHECK_SYNTAX_FILES)
 
 ## Run flake8 syntax check
 check_flake8:
-	tox -e flake8 -- $(CHECK_SYNTAX_FILES)
+	nox -s flake8 -- $(CHECK_SYNTAX_FILES)
 
 ## Run isort syntax check
 check_isort:
-	tox -e isort -- --check $(CHECK_SYNTAX_FILES)
+	nox -s isort -- --check $(CHECK_SYNTAX_FILES)
 
 
 ## Starts a postgres container in the background if one is not running
