@@ -33,3 +33,32 @@ def test_list_claims():
     actual_claims = set(scope.list_claims())
 
     assert actual_claims == expected_claims
+
+
+def test_get_target_claim_names_to_sub_stubs():
+    """
+    Test that get_target_claim_names_to_sub_stubs returns the correct mapping
+    of claim names to their sub claim stubs.
+    """
+    expected_mapping = {
+        'aap_controller_job_name': 'job',
+        'aap_controller_organization_name': 'organization',
+        'aap_controller_project_name': 'project',
+        'aap_controller_job_template_name': 'job_template',
+    }
+
+    actual_mapping = AutomationControllerJobScope.get_target_claim_names_to_sub_stubs()
+
+    assert actual_mapping == expected_mapping
+
+
+def test_get_target_claim_names_to_sub_stubs_keys_are_valid_claims():
+    """
+    Test that all keys in the target claim names mapping are valid claims
+    defined in the scope.
+    """
+    mapping = AutomationControllerJobScope.get_target_claim_names_to_sub_stubs()
+    all_claims = set(AutomationControllerJobScope.list_claims())
+
+    for claim_name in mapping.keys():
+        assert claim_name in all_claims, f"{claim_name} is not a valid claim in AutomationControllerJobScope"

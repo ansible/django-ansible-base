@@ -24,15 +24,12 @@ class BaseWorkloadIdentityScope:
         """
         raise NotImplementedError("Subclasses must implement list_claims()")
 
-    @abstractmethod
-    def populate_claims(self, workload_data: dict) -> dict:
+    @classmethod
+    def get_target_claim_names_to_sub_stubs(cls) -> dict[str, str]:
         """
-        Populate claims based on the provided workload data.
+        Return a mapping of claim names to their corresponding sub claim stubs.
 
-        :param workload_data: The workload_data dictionary used to populate claim values.
-                        This workload_data identifies the AAP workload that is requesting a scope.
-        :type workload_data: dict
-        :return: A dictionary mapping claim names to their corresponding values generated from the workload_data.
-        :rtype: dict
+        :return: A dictionary mapping claim names to sub claim stubs.
+        :rtype: dict[str, str]
         """
-        raise NotImplementedError("Subclasses will implement populate_claims() in future iterations")
+        raise NotImplementedError("Subclasses must implement get_target_claim_names_to_sub_stubs()")
