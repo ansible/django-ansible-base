@@ -71,6 +71,8 @@ jobs:
         run: pip${{ matrix.tests.python-version }} install tox tox-docker
 
       - name: Run tox
+        env:
+          TOX_DOCKER_GATEWAY: "127.0.0.1"
         run: |
           echo "::remove-matcher owner=python::"  # Disable annoying annotations from setup-python
           tox --colored yes -e ${{ matrix.tests.env }}
