@@ -1,3 +1,5 @@
+import pytest
+
 from ansible_base.lib.workload_identity.controller import AutomationControllerJobScope
 
 
@@ -62,3 +64,42 @@ def test_get_target_claim_names_to_sub_stubs_keys_are_valid_claims():
 
     for claim_name in mapping.keys():
         assert claim_name in all_claims, f"{claim_name} is not a valid claim in AutomationControllerJobScope"
+
+
+@pytest.mark.parametrize(
+    "workload_details,expected_sub_claim",
+    [
+        (
+            {
+                'aap_controller_job_name': 'my-job',
+                'aap_controller_organization_name': 'my-org',
+                'aap_controller_project_name': 'my-project',
+                'aap_controller_job_template_name': 'my-template',
+            },
+            "job:my-job:organization:my-org:project:my-project:job_template:my-template",
+        ),
+        (
+            {
+                'aap_controller_job_name': 'my-job',
+                'aap_controller_organization_name': '',
+                'aap_controller_project_name': 'my-project',
+                'aap_controller_job_template_name': '',
+            },
+            "job:my-job:organization::project:my-project:job_template:",
+        ),
+        (
+            {
+                'aap_controller_job_name': 'my-job',
+                'aap_controller_project_name': 'my-project',
+            },
+            "job:my-job:organization::project:my-project:job_template:",
+        ),
+    ],
+)
+def test_generate_sub_claim(workload_details, expected_sub_claim):
+    """
+    Test that generate_sub_claim produces the correct sub claim string
+    with full values, empty values, and missing keys.
+    """
+    actual_sub_claim = AutomationControllerJobScope.generate_sub_claim(workload_details)
+    assert actual_sub_claim == expected_sub_claim

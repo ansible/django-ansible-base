@@ -18,3 +18,12 @@ def test_get_target_claim_names_to_sub_stubs():
     """
     with pytest.raises(NotImplementedError, match="Subclasses must implement get_target_claim_names_to_sub_stubs\\(\\)"):
         BaseWorkloadIdentityScope.get_target_claim_names_to_sub_stubs()
+
+
+def test_populate_claims():
+    """
+    Test that the base Scope class raises NotImplementedError for populate_claims().
+    """
+    scope = BaseWorkloadIdentityScope()
+    with pytest.raises(NotImplementedError, match="Subclasses will implement populate_claims\\(\\) in future iterations"):
+        scope.populate_claims({})
