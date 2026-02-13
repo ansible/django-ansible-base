@@ -187,6 +187,10 @@ def test_dispatcherd_feature_flag_removed_after_post_migrate():
 
 class TestCreateInitialData:
 
+    @pytest.fixture(autouse=True)
+    def mock_migrations_complete(self, mocker):
+        return mocker.patch(f"{MODULE_PATH}.migrations_are_complete", return_value=True)
+
     @pytest.mark.django_db  # May not be strictly necessary with all the mocking, but good practice
     def test_load_feature_flags_creates_new_flag_from_settings_value(
         self, mock_apps_get_model, mock_aap_flag_model_cls, mock_settings, mock_logger, mock_feature_flags_list, mocker
@@ -524,3 +528,17 @@ class TestCreateInitialData:
 
         expected_calls = [call.delete_flags(), call.load_flags()]
         assert manager.mock_calls == expected_calls
+
+    def test_create_initial_data_skips_when_migrations_incomplete(self, mocker, mock_migrations_complete, mock_logger):
+        from ansible_base.feature_flags.utils import create_initial_data
+
+        mock_migrations_complete.return_value = False
+
+        mock_delete = mocker.patch(f"{MODULE_PATH}.purge_feature_flags")
+        mock_load = mocker.patch(f"{MODULE_PATH}.load_feature_flags")
+
+        create_initial_data()
+
+        mock_delete.assert_not_called()
+        mock_load.assert_not_called()
+        mock_logger.debug.assert_called_once_with('Not running feature_flags post_migrate logic because of incomplete migration')

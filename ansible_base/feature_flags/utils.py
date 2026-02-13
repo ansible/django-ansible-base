@@ -7,6 +7,8 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from flags.sources import get_flags
 
+from ansible_base.lib.utils.db import migrations_are_complete
+
 logger = logging.getLogger('ansible_base.feature_flags.utils')
 
 
@@ -28,6 +30,10 @@ def create_initial_data(**kwargs):  # NOSONAR
     """
     Loads in platform feature flags when the server starts
     """
+    if not migrations_are_complete():
+        logger.debug('Not running feature_flags post_migrate logic because of incomplete migration')
+        return
+
     purge_feature_flags()
     load_feature_flags()
 
