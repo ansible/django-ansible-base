@@ -131,8 +131,10 @@ class BaseServiceClient:
             "method": method,
             "url": url,
             "verify": self.verify_https,
-            "timeout": self.timeout,
         }
+
+        if hasattr(self, 'timeout'):
+            kwargs["timeout"] = self.timeout
 
         if data:
             kwargs["json"] = data
