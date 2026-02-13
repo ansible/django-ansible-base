@@ -1,14 +1,12 @@
 import logging
-import time
 from collections import namedtuple
 from typing import Optional
 
-import requests
-import urllib3
 from django.apps import apps
 
 from ansible_base.lib.utils.apps import is_rbac_installed
-from ansible_base.resource_registry.resource_server import get_resource_server_config, get_service_token
+from ansible_base.resource_registry.resource_server import get_resource_server_config
+from ansible_base.resource_registry.service_client import BaseServiceClient
 
 
 def _check_rbac_installed():
@@ -24,8 +22,6 @@ ResourceRequestBody = namedtuple(
 )
 
 
-urllib3.disable_warnings()
-
 logger = logging.getLogger('ansible_base.resources_api.rest_client')
 
 
@@ -40,14 +36,10 @@ def get_resource_server_client(service_path, **kwargs) -> "ResourceAPIClient":
     )
 
 
-class ResourceAPIClient:
+class ResourceAPIClient(BaseServiceClient):
     """
     Client for Ansible services to interact with the service-index/ api
     """
-
-    header_name = "X-ANSIBLE-SERVICE-AUTH"
-    _jwt_timeout = None
-    _jwt = None
 
     def __init__(
         self,
@@ -69,65 +61,18 @@ class ResourceAPIClient:
         jwt_user_id (UUID): ansible ID of the user to make the request as.
         jwt_expiration (int): number of seconds that the JWT token is valid.
         """
+        # Convert jwt_user_id to string before passing to parent (tests pass UUID objects)
         if jwt_user_id is not None:
             jwt_user_id = str(jwt_user_id)
 
-        self.base_url = f"{service_url}/{service_path.strip('/')}/"
-        self.verify_https = verify_https
-        self.raise_if_bad_request = raise_if_bad_request
-        self.jwt_user_id = jwt_user_id
-        self.jwt_expiration = jwt_expiration
-        self._jwt = None
-        self._jwt_timeout = None
-
-    def refresh_jwt(self):
-        # Add a buffer to the token timeout to account for slower requests.
-        self._jwt_timeout = time.time() + (self.jwt_expiration - 2)
-        self._jwt = get_service_token(self.jwt_user_id, expiration=self.jwt_expiration)
-
-    @property
-    def jwt(self):
-        if self._jwt is None or self._jwt_timeout is None or time.time() >= self._jwt_timeout:
-            self.refresh_jwt()
-
-        return self._jwt
-
-    @property
-    def requests_auth_kwargs(self):
-        return {"headers": {self.header_name: self.jwt}}
-
-    def _make_request(
-        self,
-        method: str,
-        path: str,
-        data: Optional[dict] = None,
-        params: Optional[dict] = None,
-        stream: bool = False,
-    ) -> requests.Response:
-        url = self.base_url + path.lstrip("/")
-        logger.info(f"Making {method} request to {url}.")
-
-        kwargs = {**self.requests_auth_kwargs, "method": method, "url": url, "verify": self.verify_https}
-
-        if data:
-            kwargs["json"] = data
-        if params:
-            kwargs["params"] = params
-        if stream:
-            kwargs["stream"] = stream
-
-        resp = requests.request(**kwargs)
-        logger.debug(f"Response status code from {url}: {resp.status_code}")
-
-        if self.raise_if_bad_request:
-            try:
-                resp.raise_for_status()
-            except requests.exceptions.HTTPError as e:
-                content = resp.text
-
-                # Re-raise with more context
-                raise requests.exceptions.HTTPError(f"{e}\nResponse content: {content}", response=resp) from None
-        return resp
+        base_url = f"{service_url}/{service_path.strip('/')}/"
+        super().__init__(
+            base_url=base_url,
+            verify_https=verify_https,
+            raise_if_bad_request=raise_if_bad_request,
+            jwt_user_id=jwt_user_id,
+            jwt_expiration=jwt_expiration,
+        )
 
     def _get_request_dict(self, data: ResourceRequestBody):
         raw_dict = data._asdict()
