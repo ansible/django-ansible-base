@@ -36,24 +36,24 @@ class BaseWorkloadIdentityScope:
         raise NotImplementedError("Subclasses must implement get_target_claim_names_to_sub_stubs()")
 
     @classmethod
-    def generate_sub_claim(cls, workload_details: dict) -> str:
+    def generate_sub_claim(cls, workload_claims: dict) -> str:
         """
-        Generate a sub claim string from workload details using the scope's claim mapping.
+        Generate a sub claim string from workload claims using the scope's claim mapping.
 
-        Given a dictionary with the details of a workload, generates a sub claim string with the following format:
+        Given a dictionary with the claims of a workload, generates a sub claim string with the following format:
         "job:<job_name>:organization:<organization_name>:project:<project_name>:job_template:<job_template_name>"
 
         Note: The specified claim names are included in the output sub claim value even if they
         are empty. Claim validation is expected to take care of doing these checks before this
         function is called.
 
-        :param workload_details: A dictionary containing the workload details (claim names to values)
-        :type workload_details: dict
+        :param workload_claims: A dictionary containing the workload claims (claim names to values)
+        :type workload_claims: dict
         :return: A string containing the sub claim
         :rtype: str
         """
         target_claim_names_to_sub_stubs = cls.get_target_claim_names_to_sub_stubs()
-        return ":".join([f"{target_claim_names_to_sub_stubs[key]}:{workload_details.get(key, '')}" for key in target_claim_names_to_sub_stubs.keys()])
+        return ":".join([f"{target_claim_names_to_sub_stubs[key]}:{workload_claims.get(key, '')}" for key in target_claim_names_to_sub_stubs.keys()])
 
     @abstractmethod
     def populate_claims(self, workload_data: dict) -> dict:

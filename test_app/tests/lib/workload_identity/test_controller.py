@@ -67,7 +67,7 @@ def test_get_target_claim_names_to_sub_stubs_keys_are_valid_claims():
 
 
 @pytest.mark.parametrize(
-    "workload_details,expected_sub_claim",
+    "workload_claims,expected_sub_claim",
     [
         (
             {
@@ -96,10 +96,10 @@ def test_get_target_claim_names_to_sub_stubs_keys_are_valid_claims():
         ),
     ],
 )
-def test_generate_sub_claim(workload_details, expected_sub_claim):
+def test_generate_sub_claim(workload_claims, expected_sub_claim):
     """
     Test that generate_sub_claim produces the correct sub claim string
     with full values, empty values, and missing keys.
     """
-    actual_sub_claim = AutomationControllerJobScope.generate_sub_claim(workload_details)
+    actual_sub_claim = AutomationControllerJobScope.generate_sub_claim(workload_claims)
     assert actual_sub_claim == expected_sub_claim
