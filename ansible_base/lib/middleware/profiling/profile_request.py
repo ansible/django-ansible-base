@@ -22,6 +22,8 @@ class DABProfiler:
         self.cprofiling = bool(get_setting('ANSIBLE_BASE_CPROFILE_REQUESTS', False))
         self.prof = None
         self.start_time = None
+        # If DABProfiler is manually initialized by something that is not django middleware, we can change the output dir
+        self.output_dir = kwargs.get("output_dir", None)
 
     def start(self):
         self.start_time = time.time()
@@ -45,7 +47,7 @@ class DABProfiler:
             self.prof.disable()
 
             # Get output directory from setting or use system temp directory
-            output_dir = get_setting('ANSIBLE_BASE_CPROFILE_DIR', None)
+            output_dir = self.output_dir if self.output_dir else get_setting('ANSIBLE_BASE_CPROFILE_DIR', None)
             if output_dir:
                 # Ensure the directory exists
                 os.makedirs(output_dir, exist_ok=True)
@@ -59,24 +61,45 @@ class DABProfiler:
         return elapsed, cprofile_filename
 
 
+class ProfilingSettings:
+    def __init__(self, request):
+        # Check if any profiling features are enabled
+        self.timing_enabled = get_setting('ANSIBLE_BASE_PROFILE_TIMING', False)
+        self.node_enabled = get_setting('ANSIBLE_BASE_PROFILE_NODE', False)
+        self.cprofile_enabled = get_setting('ANSIBLE_BASE_CPROFILE_REQUESTS', False)
+        # Get expected header to enable profiling for the request in the format of HTTP_HEADER_NAME
+        enable_profiling_header: str = get_setting('ANSIBLE_BASE_ENABLE_PROFILE_HEADER', '')
+        # Skip entirely if the application sets a profiling request header, and that request header is not present
+        # Note that we want to always profile the request if profiling is enabled, but the profile header is not defined in settings
+        self.profiling_header_unset = enable_profiling_header and not self.get_request_header_value(request, enable_profiling_header)
+        # Skip entirely if no profiling is enabled (safe default for production)
+        self.profiling_disabled = not (self.timing_enabled or self.node_enabled or self.cprofile_enabled) or self.profiling_header_unset
+
+    # override point in case user passes in some object other than a Django HttpRequest-like object
+    def get_request_header_value(self, request, header):
+        return request.META.get(header)
+
+
 class _ProfileRequestMiddleware(threading.local):
     def __init__(self, get_response=None):
         self.get_response = get_response
         self.profiler = DABProfiler()
 
     def __call__(self, request):
-        # Check if any profiling features are enabled
-        timing_enabled = get_setting('ANSIBLE_BASE_PROFILE_TIMING', False)
-        node_enabled = get_setting('ANSIBLE_BASE_PROFILE_NODE', False)
-        cprofile_enabled = get_setting('ANSIBLE_BASE_CPROFILE_REQUESTS', False)
-
-        # Skip entirely if no profiling is enabled (safe default for production)
-        if not (timing_enabled or node_enabled or cprofile_enabled):
+        profiling_settings = ProfilingSettings(request)
+        if profiling_settings.profiling_disabled:
             return self.get_response(request)
 
         logger.debug(
-            f"ProfileRequestMiddleware ENABLED: timing={timing_enabled}, node={node_enabled}, cprofile={cprofile_enabled}",
-            extra=dict(python_objects=dict(timing_enabled=timing_enabled, node_enabled=node_enabled, cprofile_enabled=cprofile_enabled)),
+            f"ProfileRequestMiddleware ENABLED: timing={profiling_settings.timing_enabled}, "
+            + f"node={profiling_settings.node_enabled}, cprofile={profiling_settings.cprofile_enabled}",
+            extra=dict(
+                python_objects=dict(
+                    timing_enabled=profiling_settings.timing_enabled,
+                    node_enabled=profiling_settings.node_enabled,
+                    cprofile_enabled=profiling_settings.cprofile_enabled,
+                )
+            ),
         )
 
         # Logic before the view (formerly process_request)
@@ -93,12 +116,12 @@ class _ProfileRequestMiddleware(threading.local):
         elapsed, cprofile_filename = self.profiler.stop(profile_id=request_id)
 
         # Only add timing header if enabled
-        if timing_enabled and elapsed is not None:
+        if profiling_settings.timing_enabled and elapsed is not None:
             response['X-API-Time'] = f'{elapsed:.3f}s'
             logger.debug(f"Added X-API-Time header: {elapsed:.3f}s")
 
         # Only add node header if enabled
-        if node_enabled and 'X-API-Node' not in response:
+        if profiling_settings.node_enabled and 'X-API-Node' not in response:
             node_id = get_setting('CLUSTER_HOST_ID', _('Unknown'))
             response['X-API-Node'] = node_id
             logger.debug(f"Added X-API-Node header: {node_id}")
