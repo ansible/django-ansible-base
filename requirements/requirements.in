@@ -2,7 +2,7 @@
 # Only generic requirements for django-ansible-base (or the common feature) should be listed here.
 # if you are add a new feature which requires dependencies they should be in a separate requirements_<feature>.in file
 #
-cryptography
+cryptography>=46.0.5  # Update for CVE-2026-26007
 Django>=4.2.26,<6.0    # Updating for CVE-2025-64459
 djangorestframework<3.16 # problem with OAuth2Application.organization null handling
 django-crum
