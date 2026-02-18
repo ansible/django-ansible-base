@@ -17,6 +17,7 @@ class AutomationControllerJobScope(BaseWorkloadIdentityScope):
 
     name = "aap_controller_automation_job"
     description = "Default AAP Controller automation job workload identity"
+    allowed_services = {"controller"}
 
     CLAIM_JOB_ID = 'aap_controller_job_id'
     CLAIM_JOB_NAME = 'aap_controller_job_name'

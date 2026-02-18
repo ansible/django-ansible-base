@@ -12,6 +12,7 @@ class BaseWorkloadIdentityScope:
 
     name = ""
     description = ""
+    allowed_services = set()
 
     @classmethod
     @abstractmethod
