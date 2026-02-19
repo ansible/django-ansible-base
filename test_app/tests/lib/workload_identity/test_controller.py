@@ -103,3 +103,20 @@ def test_generate_sub_claim(workload_claims, expected_sub_claim):
     """
     actual_sub_claim = AutomationControllerJobScope.generate_sub_claim(workload_claims)
     assert actual_sub_claim == expected_sub_claim
+
+
+@pytest.mark.parametrize(
+    "service_name,expected_result",
+    [
+        (AutomationControllerJobScope.SERVICE_TYPE_CONTROLLER, True),
+        (AutomationControllerJobScope.SERVICE_TYPE_EDA, False),
+        (AutomationControllerJobScope.SERVICE_TYPE_HUB, False),
+        (AutomationControllerJobScope.SERVICE_TYPE_GATEWAY, False),
+        ("unknown", False),
+    ],
+)
+def test_is_service_allowed(service_name, expected_result):
+    """
+    Test that is_service_allowed correctly validates service authorization.
+    """
+    assert AutomationControllerJobScope.is_service_allowed(service_name) == expected_result

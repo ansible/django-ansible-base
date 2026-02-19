@@ -27,3 +27,12 @@ def test_populate_claims():
     scope = BaseWorkloadIdentityScope()
     with pytest.raises(NotImplementedError, match="Subclasses will implement populate_claims\\(\\) in future iterations"):
         scope.populate_claims({})
+
+
+def test_is_service_allowed_default():
+    """
+    Test that the base Scope class returns False by default for is_service_allowed().
+    """
+    assert BaseWorkloadIdentityScope.is_service_allowed(BaseWorkloadIdentityScope.SERVICE_TYPE_CONTROLLER) is False
+    assert BaseWorkloadIdentityScope.is_service_allowed(BaseWorkloadIdentityScope.SERVICE_TYPE_EDA) is False
+    assert BaseWorkloadIdentityScope.is_service_allowed("any_service") is False

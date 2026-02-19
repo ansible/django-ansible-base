@@ -17,7 +17,6 @@ class AutomationControllerJobScope(BaseWorkloadIdentityScope):
 
     name = "aap_controller_automation_job"
     description = "Default AAP Controller automation job workload identity"
-    allowed_services = {"controller"}
 
     CLAIM_JOB_ID = 'aap_controller_job_id'
     CLAIM_JOB_NAME = 'aap_controller_job_name'
@@ -53,3 +52,7 @@ class AutomationControllerJobScope(BaseWorkloadIdentityScope):
             cls.CLAIM_PROJECT_NAME: "project",
             cls.CLAIM_JOB_TEMPLATE_NAME: "job_template",
         }
+
+    @classmethod
+    def is_service_allowed(cls, service_name: str) -> bool:
+        return service_name == cls.SERVICE_TYPE_CONTROLLER
