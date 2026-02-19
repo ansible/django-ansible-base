@@ -15,7 +15,7 @@ from ansible_base.lib.utils.auth import get_team_model
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.models import RoleDefinition, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry  # careful for circular imports
-from ansible_base.rbac.policies import check_content_obj_permission, visible_users
+from ansible_base.rbac.policies import can_view_all_users, check_content_obj_permission, visible_teams, visible_users
 from ansible_base.rbac.validators import check_locally_managed, validate_permissions_for_model
 
 from ..models import DABContentType, DABPermission
@@ -109,6 +109,9 @@ class BaseAssignmentSerializer(CommonModelSerializer):
             obj = resource.content_object
             if obj._meta.model_name == 'user':
                 if not visible_users(requesting_user).filter(pk=obj.pk).exists():
+                    raise ObjectDoesNotExist
+            elif obj._meta.model_name == 'team':
+                if not visible_teams(requesting_user).filter(pk=obj.pk).exists():
                     raise ObjectDoesNotExist
             elif not requesting_user.has_obj_perm(obj, 'view'):
                 raise ObjectDoesNotExist
@@ -253,7 +256,10 @@ class RoleTeamAssignmentSerializer(BaseAssignmentSerializer):
         fields = ASSIGNMENT_FIELDS + ['team', 'team_ansible_id']
 
     def get_actor_queryset(self, requesting_user):
-        return permission_registry.team_model.access_qs(requesting_user)
+        if can_view_all_users(requesting_user):
+            return visible_teams(requesting_user)
+        else:
+            return permission_registry.team_model.access_qs(requesting_user)
 
 
 class RoleMetadataSerializer(serializers.Serializer):
