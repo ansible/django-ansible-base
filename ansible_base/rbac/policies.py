@@ -51,6 +51,30 @@ def can_view_all_users(request_user):
     )
 
 
+def visible_teams(request_user, queryset=None) -> QuerySet:
+    """Gives a queryset of teams that another user should be able to view"""
+    team_cls = permission_registry.team_model
+
+    if not getattr(request_user, "is_authenticated", False):
+        return team_cls.objects.none()
+
+    org_cls = apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL)
+
+    if can_view_all_users(request_user):
+        if queryset is not None:
+            return queryset
+        else:
+            return team_cls.objects.all()
+
+    # Teams belong directly to organizations via ForeignKey, so filter by visible organizations
+    visible_org_ids = org_cls.access_ids_qs(request_user, 'view')
+    if queryset is None:
+        queryset = team_cls.objects
+
+    queryset = queryset.filter(organization_id__in=visible_org_ids)
+    return queryset.distinct()
+
+
 def can_change_user(request_user, target_user) -> bool:
     """Tells if the request user can modify details of the target user"""
     if request_user.is_superuser:

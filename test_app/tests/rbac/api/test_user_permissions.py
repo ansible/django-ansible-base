@@ -2,7 +2,7 @@ import pytest
 from django.test import override_settings
 
 from ansible_base.lib.utils.response import get_relative_url
-from test_app.models import Organization, Team, User
+from test_app.models import Inventory, Organization, Team, User
 
 
 @pytest.mark.django_db
@@ -215,3 +215,31 @@ class TestRoleBasedAssignment:
         response = user_api_client.post(url, data=data)
         assert response.status_code == 201, response.data
         assert rando.has_obj_perm(inventory, 'change')
+
+    @override_settings(ALLOW_LOCAL_ASSIGNING_JWT_ROLES=True)
+    @pytest.mark.parametrize('org_admins_can_see_all_users', [True, False])
+    def test_org_admin_can_assign_role_to_team_in_other_org(
+        self, user, user_api_client, organization, inv_rd, org_admin_rd, member_rd, org_admins_can_see_all_users
+    ):
+        """Org admins with ORG_ADMINS_CAN_SEE_ALL_USERS=True can assign roles to any team (get_actor_queryset uses visible_teams)."""
+        other_org = Organization.objects.create(name='other-org')
+        inventory_org1 = Inventory.objects.create(name='inv-org1', organization=organization)
+        team_in_other_org = Team.objects.create(name='team-other-org', organization=other_org)
+
+        org_admin_rd.give_permission(user, organization)
+        url = get_relative_url('roleteamassignment-list')
+        data = {
+            'role_definition': inv_rd.id,
+            'object_id': inventory_org1.id,
+            'team': team_in_other_org.id,
+        }
+        with override_settings(ORG_ADMINS_CAN_SEE_ALL_USERS=org_admins_can_see_all_users):
+            response = user_api_client.post(url, data=data)
+        if org_admins_can_see_all_users:
+            assert response.status_code == 201, response.data
+            rando = User.objects.create(username='rando')
+            member_rd.give_permission(rando, team_in_other_org)
+            assert rando.has_obj_perm(inventory_org1, 'change')
+        else:
+            assert response.status_code == 400, response.data
+            assert 'object does not exist' in str(response.data.get('team', []))
