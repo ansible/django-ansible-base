@@ -1,5 +1,7 @@
+from contextlib import contextmanager
 from pathlib import Path
 
+from flags.state import disable_flag, enable_flag
 from requests import Response
 
 from ansible_base.resource_registry.rest_client import ResourceAPIClient
@@ -72,3 +74,13 @@ class StaticResourceAPIClient(ResourceAPIClient):
             response.status_code = 404
 
         return response
+
+
+@contextmanager
+def feature_flag_enabled(flag_name):
+    """Context manager to temporarily enable a feature flag"""
+    enable_flag(flag_name)
+    try:
+        yield
+    finally:
+        disable_flag(flag_name)
