@@ -39,7 +39,7 @@ oauth_urls = [
     # OIDC endpoints - flag is checked at request time, returns 404 when disabled
     flagged_re_path(
         FEATURE_OIDC_WORKLOAD_IDENTITY_ENABLED,
-        r"^\.well-known/openid-configuration$",
+        r"^\.well-known/openid-configuration/$",
         oauth_views.ConnectDiscoveryInfoView.as_view(),
         name="oidc-connect-discovery-info",
     ),
