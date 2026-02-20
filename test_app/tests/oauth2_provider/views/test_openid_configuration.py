@@ -1,6 +1,4 @@
 import pytest
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.asymmetric import rsa
 from django.test import override_settings
 
 from ansible_base.lib.testing.util import feature_flag_enabled
@@ -13,8 +11,7 @@ def test_oauth2_provider_openid_configuration_valid_issuer_url(client):
     As an anonymous user, accessing /o/.well-known/openid-configuration/ should include
     an issuer URL that ends with /o
     """
-    private_key = rsa.generate_private_key(public_exponent=65537, key_size=4096, backend=default_backend())
-    with override_settings(OAUTH2_PROVIDER={'OIDC_ENABLED': True, 'OIDC_OIDC_RSA_PRIVATE_KEY': private_key}):
+    with override_settings(OAUTH2_PROVIDER={'OIDC_ENABLED': True}):
         with feature_flag_enabled('FEATURE_OIDC_WORKLOAD_IDENTITY_ENABLED'):
             url = get_relative_url("oauth2_provider:oidc-connect-discovery-info")
             response_json = client.get(url).json()
