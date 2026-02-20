@@ -200,5 +200,3 @@ def test_authenticators_cli_enable_disable_nonexisting(flag):
         call_command('authenticators', flag, 1337, stdout=out, stderr=err)
 
     assert "Authenticator 1337 does not exist" in str(e.value)
-
-
