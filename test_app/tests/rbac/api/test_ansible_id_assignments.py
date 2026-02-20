@@ -2,10 +2,12 @@ from uuid import uuid4
 
 import pytest
 from django.contrib.contenttypes.models import ContentType
+from django.test import override_settings
 
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.models import DABContentType, ObjectRole, RoleEvaluation
 from ansible_base.resource_registry.models import Resource
+from test_app.models import Organization, Team
 
 
 @pytest.mark.django_db
@@ -106,3 +108,49 @@ def test_object_ansible_id_bad_type(admin_api_client, inv_rd, rando, organizatio
     response = admin_api_client.post(url, data=data, format="json")
     assert response.status_code == 400, response.data
     assert 'organization does not match role type of inventory' in str(response.data['object_ansible_id'])
+
+
+@pytest.mark.django_db
+@override_settings(ALLOW_LOCAL_ASSIGNING_JWT_ROLES=True)
+@pytest.mark.parametrize('org_admins_can_see_all_users', [True, False])
+def test_get_by_ansible_id_team_object_org_admins_can_see_all_users(
+    user,
+    user_api_client,
+    organization,
+    org_admin_rd,
+    member_rd,
+    admin_rd,
+    org_admins_can_see_all_users,
+):
+    """get_by_ansible_id uses visible_teams for team objects; ORG_ADMINS_CAN_SEE_ALL_USERS controls whether org admins see all teams.
+
+    When creating a RoleTeamAssignment with object_ansible_id pointing to a team in another org:
+    - ORG_ADMINS_CAN_SEE_ALL_USERS=False: team not in visible_teams → ValidationError (object does not exist)
+    - ORG_ADMINS_CAN_SEE_ALL_USERS=True: team in visible_teams → resolution succeeds (and assignment succeeds if user has change on that team)
+    """
+    org_admin_rd.give_permission(user, organization)
+    actor_team = Team.objects.create(name='actor-team', organization=organization)
+    other_org = Organization.objects.create(name='other-org')
+    target_team = Team.objects.create(name='target-team', organization=other_org)
+
+    target_team_ct = ContentType.objects.get_for_model(target_team)
+    target_team_resource = Resource.objects.get(object_id=target_team.pk, content_type=target_team_ct.pk)
+
+    url = get_relative_url('roleteamassignment-list')
+    data = {
+        'role_definition': member_rd.id,
+        'team': actor_team.id,
+        'object_ansible_id': str(target_team_resource.ansible_id),
+    }
+
+    if org_admins_can_see_all_users:
+        admin_rd.give_permission(user, target_team)
+
+    with override_settings(ORG_ADMINS_CAN_SEE_ALL_USERS=org_admins_can_see_all_users):
+        response = user_api_client.post(url, data=data, format='json')
+
+    if org_admins_can_see_all_users:
+        assert response.status_code == 201, response.data
+    else:
+        assert response.status_code == 400, response.data
+        assert 'object does not exist' in str(response.data.get('object_ansible_id', []))
