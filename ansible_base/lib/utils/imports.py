@@ -57,8 +57,8 @@ def import_object(import_path: str, default_attr: Optional[str] = None) -> Any:
         <Settings ...>
 
         Import a class using module path and attribute name:
-        >>> import_object('my_app.authentication.fallbacks.controller', 'FallbackAuthenticator')
-        <class 'FallbackAuthenticator'>
+        >>> import_object('my_app.plugins.custom_backend', 'AuthBackend')
+        <class 'AuthBackend'>
 
         Import a function using full path:
         >>> import_object('django.utils.text.slugify')

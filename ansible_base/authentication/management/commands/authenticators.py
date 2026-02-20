@@ -5,7 +5,6 @@ try:
 except ImportError:
     HAS_TABULATE = False
 
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.utils.translation import gettext_lazy as _
@@ -83,14 +82,11 @@ class Command(BaseCommand):
             creator = None
             self.stderr.write("Neither system user nor admin user were defined, local authenticator will be created without created_by set")
 
-        fallback_authenticators = getattr(settings, "ANSIBLE_BASE_AUTHENTICATION_LOCAL_FALLBACK_AUTHENTICATORS", [])
-        configuration = {"fallback_authentication": fallback_authenticators} if fallback_authenticators else {}
-
         Authenticator.objects.create(
             name='Local Database Authenticator',
             enabled=True,
             create_objects=True,
-            configuration=configuration,
+            configuration={},
             created_by=creator,
             modified_by=creator,
             remove_users=False,
