@@ -50,6 +50,8 @@ def test_local_auth_failure(unauthenticated_api_client, local_authenticator, use
     "configuration, expected_status_code",
     [
         ('{}', 201),
+        ('{}', 201),
+        ('{"fallback_authentication": ["some.module.path"]}', 400),
         ('{"anything": "here"}', 400),
     ],
 )
