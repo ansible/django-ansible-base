@@ -14,7 +14,9 @@ def test_oauth2_provider_openid_configuration_valid_issuer_url(client):
     with feature_flag_enabled('FEATURE_OIDC_WORKLOAD_IDENTITY_ENABLED'):
         with override_settings(OAUTH2_PROVIDER={'OIDC_ENABLED': True}):
             url = get_relative_url("oauth2_provider:oidc-connect-discovery-info")
-            response_json = client.get(url).json()
+            response = client.get(url)
+            assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+            response_json = response.json()
             assert response_json['issuer'].endswith(
                 '/o'
             ), "issuer in discovery metadata is expected to end with /o and match the authorization root view, otherwise discovery will fail!"
