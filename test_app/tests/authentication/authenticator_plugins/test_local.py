@@ -71,6 +71,16 @@ def test_local_auth_create_configuration_validates_properly(admin_api_client, co
     assert response.status_code == expected_status_code
 
 
+def test_local_auth_configuration_validate():
+    from rest_framework.serializers import ValidationError
+    from ansible_base.authentication.authenticator_plugins.local import LocalConfiguration
+    config = LocalConfiguration()
+
+    # Valid: empty configuration
+    result = config.validate({})
+    assert result == {}
+
+
 def test_local_auth_instance_not_enabled(local_authenticator, expected_log):
     from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
 
