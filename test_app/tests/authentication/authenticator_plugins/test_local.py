@@ -72,8 +72,6 @@ def test_local_auth_create_configuration_validates_properly(admin_api_client, co
 
 
 def test_local_auth_configuration_validate():
-    from rest_framework.serializers import ValidationError
-
     from ansible_base.authentication.authenticator_plugins.local import LocalConfiguration
 
     config = LocalConfiguration()
