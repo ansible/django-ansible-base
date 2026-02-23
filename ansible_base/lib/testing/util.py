@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from pathlib import Path
 
-from flags.state import disable_flag, enable_flag
+from flags.state import disable_flag, enable_flag, flag_state
 from requests import Response
 
 from ansible_base.resource_registry.rest_client import ResourceAPIClient
@@ -79,8 +79,10 @@ class StaticResourceAPIClient(ResourceAPIClient):
 @contextmanager
 def feature_flag_enabled(flag_name):
     """Context manager to temporarily enable a feature flag"""
+    was_enabled = flag_state(flag_name)
     enable_flag(flag_name)
     try:
         yield
     finally:
-        disable_flag(flag_name)
+        if not was_enabled:
+            disable_flag(flag_name)
