@@ -77,12 +77,27 @@ class StaticResourceAPIClient(ResourceAPIClient):
 
 
 @contextmanager
-def feature_flag_enabled(flag_name):
-    """Context manager to temporarily enable a feature flag"""
+def _feature_flag_state(flag_name, desired_state):
+    """Context manager to temporarily set a feature flag to a desired state"""
     was_enabled = flag_state(flag_name)
-    enable_flag(flag_name)
+    if desired_state:
+        enable_flag(flag_name)
+    else:
+        disable_flag(flag_name)
     try:
         yield
     finally:
-        if not was_enabled:
+        if was_enabled:
+            enable_flag(flag_name)
+        else:
             disable_flag(flag_name)
+
+
+def feature_flag_enabled(flag_name):
+    """Context manager to temporarily enable a feature flag"""
+    return _feature_flag_state(flag_name, desired_state=True)
+
+
+def feature_flag_disabled(flag_name):
+    """Context manager to temporarily disable a feature flag"""
+    return _feature_flag_state(flag_name, desired_state=False)
