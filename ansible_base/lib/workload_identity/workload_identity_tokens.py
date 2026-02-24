@@ -25,6 +25,17 @@ class WorkloadIdentityTokenRequestSerializer(serializers.Serializer):
         allow_empty=False,
         help_text=_("Workload details to include in the JWT as claims."),
     )
+    workload_ttl_seconds = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        min_value=0,
+        help_text=_(
+            "Optional workload-specific TTL override in seconds. "
+            "If provided and > 0, overrides the platform default. "
+            "If omitted or 0, uses platform fallback (jwt_default_ttl_seconds). "
+            "A 60s clock skew offset is automatically added to all JWTs."
+        ),
+    )
 
 
 class WorkloadIdentityTokenResponseSerializer(serializers.Serializer):

@@ -218,6 +218,92 @@ class TestWorkloadIdentityTokenRequestSerializer:
         # Extra fields should not appear in validated_data
         assert 'extra_field' not in serializer.validated_data
 
+    def test_workload_ttl_seconds_valid_value(self):
+        """
+        Test that valid workload_ttl_seconds is accepted.
+        """
+        valid_data = {
+            'scope': 'openid',
+            'audience': 'https://api.example.com',
+            'claims': {'job_name': 'test-job'},
+            'workload_ttl_seconds': 7200,
+        }
+        serializer = WorkloadIdentityTokenRequestSerializer(data=valid_data)
+        assert serializer.is_valid(), f"Serializer errors: {serializer.errors}"
+        assert serializer.validated_data['workload_ttl_seconds'] == 7200
+
+    def test_workload_ttl_seconds_zero(self):
+        """
+        Test that workload_ttl_seconds = 0 is accepted (means use platform default).
+        """
+        valid_data = {
+            'scope': 'openid',
+            'audience': 'https://api.example.com',
+            'claims': {'job_name': 'test-job'},
+            'workload_ttl_seconds': 0,
+        }
+        serializer = WorkloadIdentityTokenRequestSerializer(data=valid_data)
+        assert serializer.is_valid(), f"Serializer errors: {serializer.errors}"
+        assert serializer.validated_data['workload_ttl_seconds'] == 0
+
+    def test_workload_ttl_seconds_null(self):
+        """
+        Test that workload_ttl_seconds = None is accepted.
+        """
+        valid_data = {
+            'scope': 'openid',
+            'audience': 'https://api.example.com',
+            'claims': {'job_name': 'test-job'},
+            'workload_ttl_seconds': None,
+        }
+        serializer = WorkloadIdentityTokenRequestSerializer(data=valid_data)
+        assert serializer.is_valid(), f"Serializer errors: {serializer.errors}"
+        assert serializer.validated_data['workload_ttl_seconds'] is None
+
+    def test_workload_ttl_seconds_omitted(self):
+        """
+        Test that omitting workload_ttl_seconds is valid (field is optional).
+        """
+        valid_data = {
+            'scope': 'openid',
+            'audience': 'https://api.example.com',
+            'claims': {'job_name': 'test-job'},
+        }
+        serializer = WorkloadIdentityTokenRequestSerializer(data=valid_data)
+        assert serializer.is_valid(), f"Serializer errors: {serializer.errors}"
+        # Field not in validated_data when omitted
+        assert 'workload_ttl_seconds' not in serializer.validated_data
+
+    def test_workload_ttl_seconds_negative_fails(self):
+        """
+        Test that negative workload_ttl_seconds fails validation (min_value=0).
+        """
+        invalid_data = {
+            'scope': 'openid',
+            'audience': 'https://api.example.com',
+            'claims': {'job_name': 'test-job'},
+            'workload_ttl_seconds': -100,
+        }
+        serializer = WorkloadIdentityTokenRequestSerializer(data=invalid_data)
+        assert not serializer.is_valid()
+        assert 'workload_ttl_seconds' in serializer.errors
+        assert serializer.errors['workload_ttl_seconds'][0].code == 'min_value'
+
+    def test_workload_ttl_seconds_not_integer_fails(self):
+        """
+        Test that non-integer workload_ttl_seconds fails validation.
+        """
+        invalid_data = {
+            'scope': 'openid',
+            'audience': 'https://api.example.com',
+            'claims': {'job_name': 'test-job'},
+            'workload_ttl_seconds': 'not-a-number',
+        }
+        serializer = WorkloadIdentityTokenRequestSerializer(data=invalid_data)
+        assert not serializer.is_valid()
+        assert 'workload_ttl_seconds' in serializer.errors
+        assert serializer.errors['workload_ttl_seconds'][0].code == 'invalid'
+
 
 @pytest.mark.django_db
 class TestWorkloadIdentityTokenResponseSerializer:
