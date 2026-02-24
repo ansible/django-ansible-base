@@ -46,7 +46,7 @@ oauth_urls = [
         name="oidc-connect-discovery-info",
     ),
     flagged_re_path(FEATURE_OIDC_WORKLOAD_IDENTITY_ENABLED, r"^\.well-known/jwks\.json$", oauth_views.JwksInfoView.as_view(), name="jwks-info"),
-    flagged_re_path(FEATURE_OIDC_WORKLOAD_IDENTITY_ENABLED, r"^userinfo$", oauth_views.UserInfoView.as_view(), name="user-info"),
+    flagged_re_path(FEATURE_OIDC_WORKLOAD_IDENTITY_ENABLED, r"^userinfo/$", oauth_views.UserInfoView.as_view(), name="user-info"),
 ]
 
 
