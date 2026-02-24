@@ -166,6 +166,32 @@ def is_encrypted_field(model, field_name):
     return field_name in getattr(model, 'encrypted_fields', [])
 
 
+def _is_sensitive(instance, model, field_name, value, sanitize_encrypted):
+    """Check whether a field value should be replaced with ENCRYPTED_STRING.
+
+    Extends the class-level ``is_encrypted_field`` check with two additional
+    heuristics so that models with *instance-level* encryption (e.g. a
+    ``Preference`` whose ``raw_value`` is only sometimes encrypted) can
+    participate in sanitization:
+
+    1. **Instance attribute** – if the instance carries an
+       ``_encrypted_field_names`` set/list, fields listed there are treated as
+       encrypted.  Models should populate this in ``from_db()`` / ``save()``
+       when they detect that a particular field holds an encrypted value.
+    2. **Value prefix** – if the string value starts with the well-known
+       ``$encrypted$`` marker, it is replaced regardless of field metadata.
+    """
+    if not sanitize_encrypted:
+        return False
+    if is_encrypted_field(model, field_name):
+        return True
+    if instance is not None and field_name in getattr(instance, '_encrypted_field_names', set()):
+        return True
+    if isinstance(value, str) and value.startswith(ENCRYPTED_STRING):
+        return True
+    return False
+
+
 @dataclass
 class ModelDiff:
     added_fields: dict
@@ -291,18 +317,22 @@ def diff(
 
     # Get any removed fields from the old_fields - new_fields
     for field in old_fields_set - new_fields_set:
-        model_diff.removed_fields[field] = ENCRYPTED_STRING if is_encrypted_field(old_model, field) else fields['old'][field]
+        val = fields['old'][field]
+        model_diff.removed_fields[field] = ENCRYPTED_STRING if _is_sensitive(old, old_model, field, val, sanitize_encrypted) else val
 
     # Get any new fields from the new_fields - old_fields
     for field in new_fields_set - old_fields_set:
-        model_diff.added_fields[field] = ENCRYPTED_STRING if is_encrypted_field(new_model, field) else fields['new'][field]
+        val = fields['new'][field]
+        model_diff.added_fields[field] = ENCRYPTED_STRING if _is_sensitive(new, new_model, field, val, sanitize_encrypted) else val
 
     # Find any modified fields from the union of the sets
     for field in new_fields_set & old_fields_set:
         if fields['old'][field] != fields['new'][field]:
+            old_val = fields['old'][field]
+            new_val = fields['new'][field]
             model_diff.changed_fields[field] = (
-                ENCRYPTED_STRING if is_encrypted_field(old_model, field) else fields['old'][field],
-                ENCRYPTED_STRING if is_encrypted_field(new_model, field) else fields['new'][field],
+                ENCRYPTED_STRING if _is_sensitive(old, old_model, field, old_val, sanitize_encrypted) else old_val,
+                ENCRYPTED_STRING if _is_sensitive(new, new_model, field, new_val, sanitize_encrypted) else new_val,
             )
 
     return model_diff

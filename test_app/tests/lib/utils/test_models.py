@@ -313,6 +313,74 @@ def test_diff_sanitizes_encrypted_fields_removed(disable_activity_stream):
     assert 'message' not in delta.removed_fields
 
 
+@pytest.mark.django_db
+def test_diff_sanitizes_encrypted_value_prefix_changed(disable_activity_stream):
+    """Values starting with '$encrypted$' are sanitized even when the field is not in encrypted_fields."""
+    instance1 = test_app_models.ImmutableLogEntry.objects.create(message='plain_old')
+    instance2 = test_app_models.ImmutableLogEntry.objects.get(pk=instance1.pk)
+    instance2.message = f'{ENCRYPTED_STRING}UTF8$AESCBC$abc123=='
+
+    delta = models.diff(instance1, instance2)
+    assert delta.changed_fields['message'] == ('plain_old', ENCRYPTED_STRING)
+
+
+@pytest.mark.django_db
+def test_diff_sanitizes_encrypted_value_prefix_added(disable_activity_stream):
+    """A new field whose value starts with '$encrypted$' is sanitized in added_fields."""
+    logentry = test_app_models.ImmutableLogEntry.objects.create(message='hello')
+    enc = test_app_models.EncryptionModel.objects.create(name=f'{ENCRYPTED_STRING}UTF8$AESCBC$xyz==', testing1='t1', testing2='t2')
+
+    delta = models.diff(logentry, enc, require_type_match=False)
+    assert delta.added_fields['name'] == ENCRYPTED_STRING
+
+
+@pytest.mark.django_db
+def test_diff_sanitizes_encrypted_value_prefix_removed(disable_activity_stream):
+    """A removed field whose value starts with '$encrypted$' is sanitized in removed_fields."""
+    enc = test_app_models.EncryptionModel.objects.create(name=f'{ENCRYPTED_STRING}UTF8$AESCBC$xyz==', testing1='t1', testing2='t2')
+    logentry = test_app_models.ImmutableLogEntry.objects.create(message='hello')
+
+    delta = models.diff(enc, logentry, require_type_match=False)
+    assert delta.removed_fields['name'] == ENCRYPTED_STRING
+
+
+@pytest.mark.django_db
+def test_diff_sanitizes_instance_encrypted_field_names(disable_activity_stream):
+    """Instance-level _encrypted_field_names causes the field to be sanitized."""
+    instance1 = test_app_models.ImmutableLogEntry.objects.create(message='secret_old')
+    instance2 = test_app_models.ImmutableLogEntry.objects.get(pk=instance1.pk)
+    instance2.message = 'secret_new'
+    instance1._encrypted_field_names = {'message'}
+    instance2._encrypted_field_names = {'message'}
+
+    delta = models.diff(instance1, instance2)
+    assert delta.changed_fields['message'] == (ENCRYPTED_STRING, ENCRYPTED_STRING)
+
+
+@pytest.mark.django_db
+def test_diff_instance_encrypted_field_names_partial(disable_activity_stream):
+    """Only the side with _encrypted_field_names is sanitized; the other keeps its value."""
+    instance1 = test_app_models.ImmutableLogEntry.objects.create(message='plaintext_old')
+    instance2 = test_app_models.ImmutableLogEntry.objects.get(pk=instance1.pk)
+    instance2.message = f'{ENCRYPTED_STRING}UTF8$AESCBC$data=='
+    instance1._encrypted_field_names = {'message'}
+
+    delta = models.diff(instance1, instance2)
+    assert delta.changed_fields['message'] == (ENCRYPTED_STRING, ENCRYPTED_STRING)
+
+
+@pytest.mark.django_db
+def test_diff_no_sanitize_when_disabled(disable_activity_stream):
+    """When sanitize_encrypted=False, neither class-level nor instance-level encryption is sanitized."""
+    instance1 = test_app_models.ImmutableLogEntry.objects.create(message='plain')
+    instance2 = test_app_models.ImmutableLogEntry.objects.get(pk=instance1.pk)
+    instance2.message = f'{ENCRYPTED_STRING}UTF8$AESCBC$data=='
+    instance1._encrypted_field_names = {'message'}
+
+    delta = models.diff(instance1, instance2, sanitize_encrypted=False)
+    assert delta.changed_fields['message'] == ('plain', instance2.message)
+
+
 @pytest.mark.parametrize(
     "username,expected_value",
     [
