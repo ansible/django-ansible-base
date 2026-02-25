@@ -11,6 +11,7 @@ ipython
 isort==6.0.0            # Linting tool, if changed update pyproject.toml as well
 jsonschema
 tox
+chardet<6.0.0           # Dependency of tox, but newer versions break requests
 tox-docker
 typeguard
 openapi-spec-validator>=0.6.1  # Adapted to changing import locations in jsonschema
