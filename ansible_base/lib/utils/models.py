@@ -322,7 +322,7 @@ def diff(
     # Get any new fields from the new_fields - old_fields
     for field in new_fields_set - old_fields_set:
         val = fields['new'][field]
-        model_diff.added_fields[field] = ENCRYPTED_STRING if _is_sensitive(new, new_model, field, val, sanitize_encrypted) else val
+        model_diff.added_fields[field] = _sanitize_value(new, new_model, field, val, sanitize_encrypted)
 
     # Find any modified fields from the union of the sets
     for field in new_fields_set & old_fields_set:
@@ -330,8 +330,8 @@ def diff(
             old_val = fields['old'][field]
             new_val = fields['new'][field]
             model_diff.changed_fields[field] = (
-                ENCRYPTED_STRING if _is_sensitive(old, old_model, field, old_val, sanitize_encrypted) else old_val,
-                ENCRYPTED_STRING if _is_sensitive(new, new_model, field, new_val, sanitize_encrypted) else new_val,
+                _sanitize_value(old, old_model, field, old_val, sanitize_encrypted),
+                _sanitize_value(new, new_model, field, new_val, sanitize_encrypted),
             )
 
     return model_diff
