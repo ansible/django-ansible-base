@@ -137,7 +137,7 @@ class WorkloadIdentityClient(BaseServiceClient):
         """
         Request a workload identity token.
 
-        Makes a POST request to /api/gateway/v1/workload_identity_tokens
+        Makes a POST request to /api/gateway/v1/workload_identity_tokens/
         with the specified claims, scope, and audience.
 
         Args:
@@ -167,7 +167,7 @@ class WorkloadIdentityClient(BaseServiceClient):
         try:
             response = self._make_request(
                 method="POST",
-                path="/api/gateway/v1/workload_identity_tokens",
+                path="/api/gateway/v1/workload_identity_tokens/",
                 data=data,
             )
         except requests.exceptions.RequestException as e:

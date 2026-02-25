@@ -1,9 +1,17 @@
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from ansible_base.lib.abstract_models.common import NamedCommonModel
 from ansible_base.resource_registry.fields import AnsibleResourceField
+
+# Conditionally import AuditableModel if activitystream is installed
+_AuditableBase = object
+if 'ansible_base.activitystream' in settings.INSTALLED_APPS:
+    from ansible_base.activitystream.models import AuditableModel
+
+    _AuditableBase = AuditableModel
 
 
 def validate_feature_flag_name(value: str):
@@ -24,7 +32,12 @@ def validate_labels(value):
             raise ValidationError(_("All labels must be strings."))
 
 
-class AAPFlag(NamedCommonModel):
+class AAPFlag(NamedCommonModel, _AuditableBase):
+    # Enable audit log for this model (only if activitystream is installed)
+    audit_log_enabled = True
+    # Disable activity stream for this model
+    activity_stream_enabled = False
+
     class Meta:
         app_label = "dab_feature_flags"
         unique_together = ("name", "condition")
