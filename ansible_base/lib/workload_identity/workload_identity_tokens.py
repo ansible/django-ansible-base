@@ -1,6 +1,15 @@
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
+# Hard ceiling for workload-specific TTL overrides. 24 hours is intentionally
+# generous — workloads needing longer lifetimes should reconsider their design.
+# Terraform Cloud ties exp to the run timeout with no imposed ceiling for workspace
+# runs, but does enforce a max (30 min) for module test tokens. We follow the
+# bounded approach here as a safety net against misconfigured or unlimited timeouts.
+# See: https://developer.hashicorp.com/terraform/cloud-docs/dynamic-provider-credentials/workload-identity-tokens
+# A preference-driven maximum can replace this constant in a follow-up.
+WORKLOAD_TTL_MAX_SECONDS = 24 * 60 * 60  # 86400 or 24 hours
+
 
 class WorkloadIdentityTokenRequestSerializer(serializers.Serializer):
     """
@@ -28,11 +37,12 @@ class WorkloadIdentityTokenRequestSerializer(serializers.Serializer):
     workload_ttl_seconds = serializers.IntegerField(
         required=False,
         allow_null=True,
-        min_value=0,
+        min_value=1,
+        max_value=WORKLOAD_TTL_MAX_SECONDS,
         help_text=_(
-            "Optional workload-specific TTL override in seconds. "
-            "If provided and > 0, overrides the platform default. "
-            "If omitted or 0, uses platform fallback (jwt_default_ttl_seconds). "
+            f"Optional workload-specific TTL override in seconds (1–{WORKLOAD_TTL_MAX_SECONDS}). "
+            "If provided, overrides the platform default for this token. "
+            "Omit or set to null to use the platform fallback (jwt_default_ttl_seconds). "
             "A 60s clock skew offset is automatically added to all JWTs."
         ),
     )

@@ -1,6 +1,7 @@
 import pytest
 
 from ansible_base.lib.workload_identity.workload_identity_tokens import (
+    WORKLOAD_TTL_MAX_SECONDS,
     WorkloadIdentityTokenRequestSerializer,
     WorkloadIdentityTokenResponseSerializer,
 )
@@ -232,19 +233,21 @@ class TestWorkloadIdentityTokenRequestSerializer:
         assert serializer.is_valid(), f"Serializer errors: {serializer.errors}"
         assert serializer.validated_data['workload_ttl_seconds'] == 7200
 
-    def test_workload_ttl_seconds_zero(self):
+    def test_workload_ttl_seconds_zero_fails(self):
         """
-        Test that workload_ttl_seconds = 0 is accepted (means use platform default).
+        Test that workload_ttl_seconds = 0 fails validation (min_value=1).
+        Use null or omit the field to signal "use platform default" instead.
         """
-        valid_data = {
+        invalid_data = {
             'scope': 'openid',
             'audience': 'https://api.example.com',
             'claims': {'job_name': 'test-job'},
             'workload_ttl_seconds': 0,
         }
-        serializer = WorkloadIdentityTokenRequestSerializer(data=valid_data)
-        assert serializer.is_valid(), f"Serializer errors: {serializer.errors}"
-        assert serializer.validated_data['workload_ttl_seconds'] == 0
+        serializer = WorkloadIdentityTokenRequestSerializer(data=invalid_data)
+        assert not serializer.is_valid()
+        assert 'workload_ttl_seconds' in serializer.errors
+        assert serializer.errors['workload_ttl_seconds'][0].code == 'min_value'
 
     def test_workload_ttl_seconds_null(self):
         """
@@ -276,7 +279,7 @@ class TestWorkloadIdentityTokenRequestSerializer:
 
     def test_workload_ttl_seconds_negative_fails(self):
         """
-        Test that negative workload_ttl_seconds fails validation (min_value=0).
+        Test that negative workload_ttl_seconds fails validation (min_value=1).
         """
         invalid_data = {
             'scope': 'openid',
@@ -288,6 +291,21 @@ class TestWorkloadIdentityTokenRequestSerializer:
         assert not serializer.is_valid()
         assert 'workload_ttl_seconds' in serializer.errors
         assert serializer.errors['workload_ttl_seconds'][0].code == 'min_value'
+
+    def test_workload_ttl_seconds_exceeds_max_fails(self):
+        """
+        Test that workload_ttl_seconds > WORKLOAD_TTL_MAX_SECONDS fails validation.
+        """
+        invalid_data = {
+            'scope': 'openid',
+            'audience': 'https://api.example.com',
+            'claims': {'job_name': 'test-job'},
+            'workload_ttl_seconds': WORKLOAD_TTL_MAX_SECONDS + 1,
+        }
+        serializer = WorkloadIdentityTokenRequestSerializer(data=invalid_data)
+        assert not serializer.is_valid()
+        assert 'workload_ttl_seconds' in serializer.errors
+        assert serializer.errors['workload_ttl_seconds'][0].code == 'max_value'
 
     def test_workload_ttl_seconds_not_integer_fails(self):
         """
