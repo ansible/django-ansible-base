@@ -1,6 +1,6 @@
 import pytest
-from flags.state import disable_flag, enable_flag
 
+from ansible_base.lib.testing.util import feature_flag_enabled
 from ansible_base.lib.utils.response import get_relative_url
 
 
@@ -20,11 +20,8 @@ def test_oidc_endpoints_shown_when_flag_enabled(admin_api_client):
     """
     OIDC endpoints are shown when feature flag is enabled.
     """
-    enable_flag("FEATURE_OIDC_WORKLOAD_IDENTITY_ENABLED")
-    try:
+    with feature_flag_enabled("FEATURE_OIDC_WORKLOAD_IDENTITY_ENABLED"):
         url = get_relative_url("oauth2_provider:oauth_authorization_root_view")
         response = admin_api_client.get(url)
         assert 'oidc-connect-discovery-info' in response.data
         assert 'jwks-info' in response.data
-    finally:
-        disable_flag("FEATURE_OIDC_WORKLOAD_IDENTITY_ENABLED")

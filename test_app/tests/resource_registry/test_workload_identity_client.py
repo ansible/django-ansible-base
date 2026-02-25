@@ -170,7 +170,7 @@ class TestWorkloadIdentityClient:
         mock_request.assert_called_once()
         call_kwargs = mock_request.call_args[1]
         assert call_kwargs["method"] == "POST"
-        assert call_kwargs["url"] == "https://gateway.example.com/api/gateway/v1/workload_identity_tokens"
+        assert call_kwargs["url"] == "https://gateway.example.com/api/gateway/v1/workload_identity_tokens/"
         assert call_kwargs["json"] == {
             "claims": {"id": 2, "name": "my-example-job"},
             "scope": "aap_controller_automation_job",
