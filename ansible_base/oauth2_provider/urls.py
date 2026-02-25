@@ -6,6 +6,11 @@ from ansible_base.lib.routers import AssociationResourceRouter
 from ansible_base.oauth2_provider import views as oauth2_provider_views
 from ansible_base.oauth2_provider.apps import Oauth2ProviderConfig
 
+try:
+    from aap_gateway_api.views.oidc_discovery import ConnectDiscoveryInfoView
+except ImportError:
+    ConnectDiscoveryInfoView = oauth_views.ConnectDiscoveryInfoView
+
 app_name = Oauth2ProviderConfig.label
 
 router = AssociationResourceRouter()
@@ -42,7 +47,7 @@ oauth_urls = [
         # URL patterns below must match installed django-oauth-toolkit version, otherwise discovery fails
         # See https://github.com/django-oauth/django-oauth-toolkit/blob/2.3.0/oauth2_provider/urls.py#L35
         r"^\.well-known/openid-configuration/$",
-        oauth_views.ConnectDiscoveryInfoView.as_view(),
+        ConnectDiscoveryInfoView.as_view(),  # Uses custom gateway view if available
         name="oidc-connect-discovery-info",
     ),
     flagged_re_path(FEATURE_OIDC_WORKLOAD_IDENTITY_ENABLED, r"^\.well-known/jwks\.json$", oauth_views.JwksInfoView.as_view(), name="jwks-info"),
