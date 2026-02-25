@@ -166,30 +166,30 @@ def is_encrypted_field(model, field_name):
     return field_name in getattr(model, 'encrypted_fields', [])
 
 
-def _is_sensitive(instance, model, field_name, value, sanitize_encrypted):
-    """Check whether a field value should be replaced with ENCRYPTED_STRING.
+def _sanitize_value(instance, model, field_name, value, sanitize_encrypted):
+    """Return *value* unchanged or ``ENCRYPTED_STRING`` if the field is sensitive.
 
     Extends the class-level ``is_encrypted_field`` check with two additional
     heuristics so that models with *instance-level* encryption (e.g. a
     ``Preference`` whose ``raw_value`` is only sometimes encrypted) can
     participate in sanitization:
 
-    1. **Instance attribute** – if the instance carries an
+    1. **Instance attribute** -- if the instance carries an
        ``_encrypted_field_names`` set/list, fields listed there are treated as
        encrypted.  Models should populate this in ``from_db()`` / ``save()``
        when they detect that a particular field holds an encrypted value.
-    2. **Value prefix** – if the string value starts with the well-known
+    2. **Value prefix** -- if the string value starts with the well-known
        ``$encrypted$`` marker, it is replaced regardless of field metadata.
     """
     if not sanitize_encrypted:
-        return False
+        return value
     if is_encrypted_field(model, field_name):
-        return True
+        return ENCRYPTED_STRING
     if instance is not None and field_name in getattr(instance, '_encrypted_field_names', set()):
-        return True
+        return ENCRYPTED_STRING
     if isinstance(value, str) and value.startswith(ENCRYPTED_STRING):
-        return True
-    return False
+        return ENCRYPTED_STRING
+    return value
 
 
 @dataclass
