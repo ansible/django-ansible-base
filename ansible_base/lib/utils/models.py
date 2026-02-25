@@ -317,8 +317,7 @@ def diff(
 
     # Get any removed fields from the old_fields - new_fields
     for field in old_fields_set - new_fields_set:
-        val = fields['old'][field]
-        model_diff.removed_fields[field] = ENCRYPTED_STRING if _is_sensitive(old, old_model, field, val, sanitize_encrypted) else val
+        model_diff.removed_fields[field] = _sanitize_value(old, old_model, field, fields['old'][field], sanitize_encrypted)
 
     # Get any new fields from the new_fields - old_fields
     for field in new_fields_set - old_fields_set:
