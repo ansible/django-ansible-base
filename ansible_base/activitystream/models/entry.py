@@ -101,6 +101,11 @@ class AuditableModel(models.Model):
     A mixin class that provides integration to the activity stream from any
     model. A model should simply inherit from this class to have its
     create/update/delete events sent to the activity stream.
+
+    NOTE: AuditableModel must remain a pure mixin with no database fields.
+    Models conditionally inherit from AuditableModel based on whether
+    activitystream is installed (e.g., AAPFlag). Adding a DB field would
+    create environment-dependent migrations.
     """
 
     class Meta:
