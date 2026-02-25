@@ -29,6 +29,13 @@ class WorkloadIdentityTokenRequest(NamedTuple):
     audience: str
     """Audience for the token - the external service that will validate it."""
 
+    workload_ttl_seconds: int = 0
+    """Optional workload-specific TTL override in seconds.
+
+    If > 0, the Gateway uses this as the base TTL instead of the platform default.
+    Pass 0 (or omit) to use the platform fallback (jwt_default_ttl_seconds).
+    """
+
 
 class WorkloadIdentityTokenResponse(NamedTuple):
     """Response from workload identity token endpoint."""
@@ -133,6 +140,7 @@ class WorkloadIdentityClient(BaseServiceClient):
         claims: dict,
         scope: str,
         audience: str,
+        workload_ttl_seconds: int = 0,
     ) -> WorkloadIdentityTokenResponse:
         """
         Request a workload identity token.
@@ -144,6 +152,9 @@ class WorkloadIdentityClient(BaseServiceClient):
             claims: Dictionary containing workload details (e.g., job ID, name)
             scope: Token custom scopes string (e.g., 'aap_controller_automation_job')
             audience: Audience for the token - the external service that will validate it
+            workload_ttl_seconds: Optional TTL override in seconds. If > 0, the Gateway
+                uses this as the base TTL instead of the platform default (jwt_default_ttl_seconds).
+                Pass 0 to use the platform fallback.
 
         Returns:
             WorkloadIdentityTokenResponse: Token response with JWT
@@ -155,10 +166,16 @@ class WorkloadIdentityClient(BaseServiceClient):
             >>> response = client.request_workload_jwt(
             ...     claims={"id": 2, "name": "my-example-job"},
             ...     scope="aap_controller_automation_job",
-            ...     audience="https://vault.example.com"
+            ...     audience="https://vault.example.com",
+            ...     workload_ttl_seconds=3600,
             ... )
         """
-        request_body = WorkloadIdentityTokenRequest(claims=claims, scope=scope, audience=audience)
+        request_body = WorkloadIdentityTokenRequest(
+            claims=claims,
+            scope=scope,
+            audience=audience,
+            workload_ttl_seconds=workload_ttl_seconds,
+        )
         data = request_body._asdict()
 
         logger.info(f"Requesting workload identity token with scope: {scope}")
