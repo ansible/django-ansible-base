@@ -36,6 +36,8 @@ jobs:
           COPY . /opt/dab/
           RUN pip install -e /opt/dab/
           RUN pip install jq
+          RUN pip install --upgrade tox && pip uninstall -y chardet
+
           EOF
           docker build -t awx-with-dab:latest -f awx-dockerfile/Dockerfile .
 
