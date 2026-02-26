@@ -3,10 +3,6 @@ from rest_framework import serializers
 
 # Hard ceiling for workload-specific TTL overrides. 24 hours is intentionally
 # generous — workloads needing longer lifetimes should reconsider their design.
-# Terraform Cloud ties exp to the run timeout with no imposed ceiling for workspace
-# runs, but does enforce a max (30 min) for module test tokens. We follow the
-# bounded approach here as a safety net against misconfigured or unlimited timeouts.
-# See: https://developer.hashicorp.com/terraform/cloud-docs/dynamic-provider-credentials/workload-identity-tokens
 # A preference-driven maximum can replace this constant in a follow-up.
 WORKLOAD_TTL_MAX_SECONDS = 24 * 60 * 60  # 86400 or 24 hours
 
