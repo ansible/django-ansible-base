@@ -8,7 +8,12 @@ from ansible_base.lib.routers import AssociationResourceRouter
 from ansible_base.oauth2_provider import views as oauth2_provider_views
 from ansible_base.oauth2_provider.apps import Oauth2ProviderConfig
 
-if importlib.util.find_spec("aap_gateway_api.views.oidc_discovery") is not None:
+try:
+    _gateway_spec = importlib.util.find_spec("aap_gateway_api.views.oidc_discovery")
+except ModuleNotFoundError:
+    _gateway_spec = None
+
+if _gateway_spec is not None:
     from aap_gateway_api.views.oidc_discovery import ConnectDiscoveryInfoView
 else:
     ConnectDiscoveryInfoView = oauth_views.ConnectDiscoveryInfoView
