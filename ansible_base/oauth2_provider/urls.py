@@ -1,3 +1,5 @@
+import importlib.util
+
 from django.urls import include, path, re_path
 from flags.urls import flagged_re_path
 from oauth2_provider import views as oauth_views
@@ -6,9 +8,9 @@ from ansible_base.lib.routers import AssociationResourceRouter
 from ansible_base.oauth2_provider import views as oauth2_provider_views
 from ansible_base.oauth2_provider.apps import Oauth2ProviderConfig
 
-try:
+if importlib.util.find_spec("aap_gateway_api.views.oidc_discovery") is not None:
     from aap_gateway_api.views.oidc_discovery import ConnectDiscoveryInfoView
-except ImportError:
+else:
     ConnectDiscoveryInfoView = oauth_views.ConnectDiscoveryInfoView
 
 app_name = Oauth2ProviderConfig.label
