@@ -40,7 +40,7 @@ class WorkloadIdentityTokenRequestSerializer(serializers.Serializer):
         min_value=1,
         max_value=WORKLOAD_TTL_MAX_SECONDS,
         help_text=_(
-            f"Optional workload-specific TTL override in seconds (1–{WORKLOAD_TTL_MAX_SECONDS}). "
+            "Optional workload-specific TTL override in seconds (1-86400). "
             "If provided, overrides the platform default for this token. "
             "Omit or set to null to use the platform fallback (jwt_default_ttl_seconds). "
             "A 60s clock skew offset is automatically added to all JWTs."
