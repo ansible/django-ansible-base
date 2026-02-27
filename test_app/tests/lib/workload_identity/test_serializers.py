@@ -285,7 +285,6 @@ class TestWorkloadIdentityTokenRequestSerializer:
         assert 'workload_ttl_seconds' not in serializer.validated_data
 
 
-
 @pytest.mark.django_db
 class TestWorkloadIdentityTokenResponseSerializer:
     """
