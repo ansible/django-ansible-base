@@ -34,7 +34,7 @@ class WorkloadIdentityTokenRequestSerializer(serializers.Serializer):
         required=False,
         allow_null=True,
         min_value=1,
-        max_value=WORKLOAD_TTL_MAX_SECONDS,
+        max_value=get_setting('ANSIBLE_BASE_WIT_MAX_TOKEN_TTL', WORKLOAD_TTL_MAX_SECONDS),
         help_text=_(
             "Optional workload-specific TTL override in seconds (1-86400). "
             "If provided, overrides the platform default for this token. "
