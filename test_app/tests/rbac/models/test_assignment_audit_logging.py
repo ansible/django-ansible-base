@@ -28,29 +28,21 @@ ACTIVITYSTREAM_INSTALLED = 'ansible_base.activitystream' in settings.INSTALLED_A
 # -----------------------------------------------------------------------------
 
 
-@pytest.mark.django_db
-@pytest.mark.skipif(not ACTIVITYSTREAM_INSTALLED, reason="activitystream not installed")
 def test_role_user_assignment_has_audit_log_enabled():
     """RoleUserAssignment has audit_log_enabled = True to enable audit logging."""
     assert getattr(RoleUserAssignment, "audit_log_enabled", False) is True
 
 
-@pytest.mark.django_db
-@pytest.mark.skipif(not ACTIVITYSTREAM_INSTALLED, reason="activitystream not installed")
 def test_role_user_assignment_has_activity_stream_disabled():
     """RoleUserAssignment has activity_stream_enabled = False to disable activity stream."""
     assert getattr(RoleUserAssignment, "activity_stream_enabled", True) is False
 
 
-@pytest.mark.django_db
-@pytest.mark.skipif(not ACTIVITYSTREAM_INSTALLED, reason="activitystream not installed")
 def test_role_team_assignment_has_audit_log_enabled():
     """RoleTeamAssignment has audit_log_enabled = True to enable audit logging."""
     assert getattr(RoleTeamAssignment, "audit_log_enabled", False) is True
 
 
-@pytest.mark.django_db
-@pytest.mark.skipif(not ACTIVITYSTREAM_INSTALLED, reason="activitystream not installed")
 def test_role_team_assignment_has_activity_stream_disabled():
     """RoleTeamAssignment has activity_stream_enabled = False to disable activity stream."""
     assert getattr(RoleTeamAssignment, "activity_stream_enabled", True) is False
