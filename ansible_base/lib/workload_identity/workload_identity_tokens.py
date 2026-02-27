@@ -1,12 +1,13 @@
+from django.core.validators import MinValueValidator
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from ansible_base.lib.utils.settings import get_setting
 
-# Hard ceiling for workload-specific TTL overrides. 24 hours is intentionally
-# generous — workloads needing longer lifetimes should reconsider their design.
-# A preference-driven maximum can replace this constant in a follow-up.
-WORKLOAD_TTL_MAX_SECONDS = 24 * 60 * 60  # 86400 or 24 hours
+# Default ceiling for workload-specific TTL overrides. 24 hours is intentionally
+# generous -- workloads needing longer lifetimes should reconsider their design.
+# Override with the ANSIBLE_BASE_WIT_MAX_TOKEN_TTL Django setting if needed.
+WORKLOAD_TTL_MAX_SECONDS = 24 * 60 * 60  # 86400
 
 
 class WorkloadIdentityTokenRequestSerializer(serializers.Serializer):
@@ -35,8 +36,7 @@ class WorkloadIdentityTokenRequestSerializer(serializers.Serializer):
     workload_ttl_seconds = serializers.IntegerField(
         required=False,
         allow_null=True,
-        min_value=1,
-        max_value=get_setting('ANSIBLE_BASE_WIT_MAX_TOKEN_TTL', WORKLOAD_TTL_MAX_SECONDS),
+        validators=[MinValueValidator(1)],
         help_text=_(
             "Optional workload-specific TTL override in seconds. "
             "If provided, overrides the platform default for this token. "
@@ -44,6 +44,16 @@ class WorkloadIdentityTokenRequestSerializer(serializers.Serializer):
             "A 60s clock skew offset is automatically added to all JWTs."
         ),
     )
+
+    def validate_workload_ttl_seconds(self, value):
+        if value is not None:
+            max_ttl = get_setting('ANSIBLE_BASE_WIT_MAX_TOKEN_TTL', WORKLOAD_TTL_MAX_SECONDS)
+            if value > max_ttl:
+                raise serializers.ValidationError(
+                    detail=_('Ensure this value is less than or equal to %(max_value)s.') % {'max_value': max_ttl},
+                    code='max_value',
+                )
+        return value
 
 
 class WorkloadIdentityTokenResponseSerializer(serializers.Serializer):
