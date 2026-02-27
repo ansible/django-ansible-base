@@ -1,6 +1,8 @@
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
+from ansible_base.lib.utils.settings import get_setting
+
 # Hard ceiling for workload-specific TTL overrides. 24 hours is intentionally
 # generous — workloads needing longer lifetimes should reconsider their design.
 # A preference-driven maximum can replace this constant in a follow-up.
@@ -36,7 +38,7 @@ class WorkloadIdentityTokenRequestSerializer(serializers.Serializer):
         min_value=1,
         max_value=get_setting('ANSIBLE_BASE_WIT_MAX_TOKEN_TTL', WORKLOAD_TTL_MAX_SECONDS),
         help_text=_(
-            "Optional workload-specific TTL override in seconds (1-86400). "
+            "Optional workload-specific TTL override in seconds. "
             "If provided, overrides the platform default for this token. "
             "Omit or set to null to use the platform fallback (jwt_default_ttl_seconds). "
             "A 60s clock skew offset is automatically added to all JWTs."
