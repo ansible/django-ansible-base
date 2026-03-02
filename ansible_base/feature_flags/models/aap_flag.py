@@ -33,9 +33,10 @@ def validate_labels(value):
 
 
 class AAPFlag(NamedCommonModel, _AuditableBase):
-    # Enable audit log for this model (only if activitystream is installed)
+    # When activitystream is installed (_AuditableBase = AuditableModel), these flags
+    # configure AuditableModel to enable audit logging and suppress activity stream entries.
+    # When activitystream is absent, _AuditableBase = object and these flags are inert.
     audit_log_enabled = True
-    # Disable activity stream for this model
     activity_stream_enabled = False
 
     class Meta:
