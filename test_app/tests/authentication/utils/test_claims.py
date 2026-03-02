@@ -73,6 +73,18 @@ from test_app.tests.authentication.conftest import ORG_ADMIN_ROLE_NAME, ORG_MEMB
         ),
         pytest.param(
             {"always": {}},
+            "allow",
+            "",
+            {},
+            [],
+            True,
+            None,
+            {"team_membership": {}, "organization_membership": {}, 'rbac_roles': {'system': {'roles': {}}, 'organizations': {}}},
+            [{1: True, 'enabled': True}],
+            id="map_type 'allow' with trigger 'always' keeps 'access_allowed' True",
+        ),
+        pytest.param(
+            {"always": {}},
             "team",
             TEAM_MEMBER_ROLE_NAME,
             {},
@@ -272,6 +284,107 @@ def test_create_claims_bad_map_type_logged(
     # check that the log message is correct here.
     logger.error.assert_called_once()
     f"Map type bad_map_type of rule {local_authenticator_map.name} does not know how to be processed" in logger.error.call_args
+
+
+@mock.patch("ansible_base.authentication.utils.claims.logger")
+def test_create_claims_allow_grant_no_error_logged(
+    logger,
+    local_authenticator_map,
+    shut_up_logging,
+):
+    """
+    Test that map_type 'allow' with a firing trigger does NOT log an error.
+    Regression test for AAP-45047.
+    """
+    local_authenticator_map.triggers = {"always": {}}
+    local_authenticator_map.map_type = "allow"
+    local_authenticator_map.save()
+
+    authenticator = local_authenticator_map.authenticator
+    claims.create_claims(authenticator, "username", {}, [])
+
+    logger.error.assert_not_called()
+
+
+def test_create_claims_deny_all_then_allow_override(
+    local_authenticator_map,
+    local_authenticator_map_1,
+):
+    """
+    Test that a later allow map can override a deny-all map.
+    This is the documented pattern equivalent to AUTH_LDAP_REQUIRE_GROUP.
+    Regression test for AAP-45394.
+    """
+    # Map 1 (order 1): deny all
+    local_authenticator_map.triggers = {"never": {}}
+    local_authenticator_map.map_type = "allow"
+    local_authenticator_map.order = 1
+    local_authenticator_map.save()
+
+    # Map 2 (order 2): allow override
+    local_authenticator_map_1.triggers = {"always": {}}
+    local_authenticator_map_1.map_type = "allow"
+    local_authenticator_map_1.order = 2
+    local_authenticator_map_1.save()
+
+    authenticator = local_authenticator_map.authenticator
+    res = claims.create_claims(authenticator, "username", {}, [])
+
+    assert res["access_allowed"] is True
+
+
+def test_create_claims_deny_all_not_overridden_without_match(
+    local_authenticator_map,
+    local_authenticator_map_1,
+):
+    """
+    Test that a deny-all is NOT overridden when the allow map trigger does not fire.
+    Ensures the fix does not accidentally grant access to non-matching users.
+    """
+    # Map 1 (order 1): deny all
+    local_authenticator_map.triggers = {"never": {}}
+    local_authenticator_map.map_type = "allow"
+    local_authenticator_map.order = 1
+    local_authenticator_map.save()
+
+    # Map 2 (order 2): allow only users in group "aap-users"
+    local_authenticator_map_1.triggers = {"groups": {"has_or": ["aap-users"]}}
+    local_authenticator_map_1.map_type = "allow"
+    local_authenticator_map_1.order = 2
+    local_authenticator_map_1.save()
+
+    authenticator = local_authenticator_map.authenticator
+    # User is NOT in the required group
+    res = claims.create_claims(authenticator, "username", {}, ["other-group"])
+
+    assert res["access_allowed"] is False
+
+
+def test_create_claims_deny_all_overridden_with_group_match(
+    local_authenticator_map,
+    local_authenticator_map_1,
+):
+    """
+    Test that a deny-all IS overridden when the user matches the allow map group trigger.
+    End-to-end test of the deny-all + group-based allow pattern.
+    """
+    # Map 1 (order 1): deny all
+    local_authenticator_map.triggers = {"never": {}}
+    local_authenticator_map.map_type = "allow"
+    local_authenticator_map.order = 1
+    local_authenticator_map.save()
+
+    # Map 2 (order 2): allow users in group "aap-users"
+    local_authenticator_map_1.triggers = {"groups": {"has_or": ["aap-users"]}}
+    local_authenticator_map_1.map_type = "allow"
+    local_authenticator_map_1.order = 2
+    local_authenticator_map_1.save()
+
+    authenticator = local_authenticator_map.authenticator
+    # User IS in the required group
+    res = claims.create_claims(authenticator, "username", {}, ["aap-users"])
+
+    assert res["access_allowed"] is True
 
 
 def test_create_claims_multiple_same_org(
