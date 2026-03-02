@@ -46,6 +46,10 @@ class WorkloadIdentityTokenRequestSerializer(serializers.Serializer):
     )
 
     def validate_workload_ttl_seconds(self, value):
+        # max_value can't be declared on the field because this module is in
+        # ansible_base/lib/ which must be importable without Django configured
+        # (enforced by the pure-python-imports CI check). Deferring to a
+        # validate method evaluates get_setting() at runtime instead of import time.
         if value is not None:
             max_ttl = get_setting('ANSIBLE_BASE_WIT_MAX_TOKEN_TTL', WORKLOAD_TTL_MAX_SECONDS)
             if value > max_ttl:
