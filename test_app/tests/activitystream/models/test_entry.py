@@ -1,6 +1,8 @@
 import pytest
 from django.contrib.contenttypes.models import ContentType
+from django.db import models as db_models
 
+from ansible_base.activitystream.models import AuditableModel
 from ansible_base.lib.utils.response import get_relative_url
 
 
@@ -31,3 +33,18 @@ def test_activitystream_auditablemodel_related(admin_api_client, user, organizat
     response = admin_api_client.get(url)
     assert response.status_code == 200
     assert 'activity_stream' not in response.data['related']
+
+
+def test_auditable_model_has_no_db_fields():
+    """
+    AuditableModel must remain a pure mixin with no database fields.
+    Models conditionally inherit from AuditableModel based on whether
+    activitystream is installed (e.g., AAPFlag). Adding a DB field would
+    create environment-dependent migrations.
+    """
+    db_fields = [f.name for f in AuditableModel._meta.local_fields if isinstance(f, db_models.Field)]
+    assert db_fields == [], (
+        f"AuditableModel must not have DB fields (found: {db_fields}). "
+        "This would break models that conditionally inherit from it "
+        "based on whether activitystream is in INSTALLED_APPS."
+    )

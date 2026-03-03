@@ -31,6 +31,13 @@ from .content_type import DABContentType
 from .fields import FederatedForeignKey
 from .permission import DABPermission
 
+# Conditionally import AuditableModel if activitystream is installed
+_AuditableBase = object
+if 'ansible_base.activitystream' in settings.INSTALLED_APPS:
+    from ansible_base.activitystream.models import AuditableModel
+
+    _AuditableBase = AuditableModel
+
 logger = logging.getLogger('ansible_base.rbac.models')
 
 
@@ -419,13 +426,19 @@ class ObjectRoleFields(models.Model):
         return RoleEvaluation._meta.get_field('object_id').to_python(self.object_id)
 
 
-class AssignmentBase(ImmutableCommonModel, ObjectRoleFields):
+class AssignmentBase(ImmutableCommonModel, ObjectRoleFields, _AuditableBase):
     """
     This uses some parts of CommonModel to save metadata like documenting
     the user who assigned the permission and timestamp when it happened.
     This caches ObjectRole fields for purposes of serializers,
     both models are immutable, making caching easy.
     """
+
+    # When activitystream is installed (_AuditableBase = AuditableModel), these flags
+    # configure AuditableModel to enable audit logging and suppress activity stream entries.
+    # When activitystream is absent, _AuditableBase = object and these flags are inert.
+    audit_log_enabled = True
+    activity_stream_enabled = False
 
     object_role = models.ForeignKey(
         'dab_rbac.ObjectRole', on_delete=models.CASCADE, editable=False, null=True, help_text=_("A roll-up of the fields (role_definition, content_type).")
