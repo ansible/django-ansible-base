@@ -1,4 +1,3 @@
-from django.core.validators import MinValueValidator
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
@@ -36,7 +35,7 @@ class WorkloadIdentityTokenRequestSerializer(serializers.Serializer):
     workload_ttl_seconds = serializers.IntegerField(
         required=False,
         allow_null=True,
-        validators=[MinValueValidator(1)],
+        min_value=1,
         help_text=_(
             "Optional workload-specific TTL override in seconds. "
             "If provided, overrides the platform default for this token. "
