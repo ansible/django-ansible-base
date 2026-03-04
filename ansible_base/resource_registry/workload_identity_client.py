@@ -29,11 +29,12 @@ class WorkloadIdentityTokenRequest(NamedTuple):
     audience: str
     """Audience for the token - the external service that will validate it."""
 
-    workload_ttl_seconds: int = 0
+    workload_ttl_seconds: int | None = None
     """Optional workload-specific TTL override in seconds.
 
     If > 0, the Gateway uses this as the base TTL instead of the platform default.
-    Pass 0 (or omit) to use the platform fallback (jwt_default_ttl_seconds).
+    Pass None or omit to use the platform fallback (jwt_default_ttl_seconds).
+    Note: 0 is invalid — Gateway serializer rejects it (min_value=1); use None or omit.
     """
 
 
@@ -140,7 +141,7 @@ class WorkloadIdentityClient(BaseServiceClient):
         claims: dict,
         scope: str,
         audience: str,
-        workload_ttl_seconds: int = 0,
+        workload_ttl_seconds: int | None = None,
     ) -> WorkloadIdentityTokenResponse:
         """
         Request a workload identity token.
@@ -154,13 +155,13 @@ class WorkloadIdentityClient(BaseServiceClient):
             audience: Audience for the token - the external service that will validate it
             workload_ttl_seconds: Optional TTL override in seconds. If > 0, the Gateway
                 uses this as the base TTL instead of the platform default (jwt_default_ttl_seconds).
-                Pass 0 to use the platform fallback.
+                Pass None or omit to use the platform fallback. Note: 0 is invalid (Gateway rejects it).
 
         Returns:
             WorkloadIdentityTokenResponse: Token response with JWT
 
         Raises:
-            ValueError: If workload_ttl_seconds is negative
+            ValueError: If workload_ttl_seconds is 0 or negative
             TokenRequestError: If the request fails
 
         Example:
@@ -171,15 +172,17 @@ class WorkloadIdentityClient(BaseServiceClient):
             ...     workload_ttl_seconds=3600,
             ... )
         """
-        if workload_ttl_seconds < 0:
-            raise ValueError(f"workload_ttl_seconds must be >= 0, got {workload_ttl_seconds}")
-        request_body = WorkloadIdentityTokenRequest(
-            claims=claims,
-            scope=scope,
-            audience=audience,
-            workload_ttl_seconds=workload_ttl_seconds,
-        )
-        data = request_body._asdict()
+        if workload_ttl_seconds is not None and workload_ttl_seconds < 1:
+            raise ValueError(
+                f"workload_ttl_seconds must be None (platform fallback) or >= 1, got {workload_ttl_seconds}"
+            )
+        data = {
+            "claims": claims,
+            "scope": scope,
+            "audience": audience,
+        }
+        if workload_ttl_seconds is not None and workload_ttl_seconds > 0:
+            data["workload_ttl_seconds"] = workload_ttl_seconds
 
         logger.info(f"Requesting workload identity token with scope: {scope}")
         logger.debug(f"Claims: {claims}")

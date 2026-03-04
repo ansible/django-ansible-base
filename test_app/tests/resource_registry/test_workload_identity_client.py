@@ -29,7 +29,7 @@ class TestWorkloadIdentityTokenTypes:
         assert request.claims == {"id": 2, "name": "my-example-job"}
         assert request.scope == "aap_controller_automation_job"
         assert request.audience == "https://vault.example.com"
-        assert request.workload_ttl_seconds == 0
+        assert request.workload_ttl_seconds is None
 
     def test_request_type_with_custom_ttl(self):
         """Test that workload_ttl_seconds can be set on the request type."""
@@ -55,7 +55,7 @@ class TestWorkloadIdentityTokenTypes:
             "claims": {"id": 1, "name": "test-job"},
             "scope": "aap_controller_automation_job",
             "audience": "https://vault.example.com",
-            "workload_ttl_seconds": 0,
+            "workload_ttl_seconds": None,
         }
 
     def test_response_type_creation(self):
@@ -183,41 +183,64 @@ class TestWorkloadIdentityClient:
         call_kwargs = mock_request.call_args[1]
         assert call_kwargs["method"] == "POST"
         assert call_kwargs["url"] == "https://gateway.example.com/api/gateway/v1/workload_identity_tokens/"
-        assert call_kwargs["json"] == {
+        expected_json = {
             "claims": {"id": 2, "name": "my-example-job"},
             "scope": "aap_controller_automation_job",
             "audience": "https://vault.example.com",
-            "workload_ttl_seconds": 0,
         }
+        assert call_kwargs["json"] == expected_json
+        assert "workload_ttl_seconds" not in call_kwargs["json"]  # None = omitted (platform fallback)
         assert call_kwargs["headers"]["X-ANSIBLE-SERVICE-AUTH"] == "service-token"
         assert call_kwargs["verify"] is True
 
     @pytest.mark.parametrize(
-        "workload_ttl_seconds,expected",
+        "workload_ttl_seconds,expected_in_json",
         [
             (3600, 3600),
-            (0, 0),
+            (None, None),  # omitted = platform fallback
         ],
-        ids=["custom-ttl-sent-to-gateway", "zero-ttl-uses-platform-default"],
+        ids=["custom-ttl-sent-to-gateway", "none-omitted-platform-fallback"],
     )
     @mock.patch("ansible_base.resource_registry.service_client.get_service_token")
     @mock.patch("ansible_base.resource_registry.service_client.requests.request")
-    def test_request_workload_jwt_workload_ttl_seconds(self, mock_request, mock_get_service_token, workload_ttl_seconds, expected):
-        """Test that workload_ttl_seconds is forwarded verbatim in the request body.
+    def test_request_workload_jwt_workload_ttl_seconds(
+        self, mock_request, mock_get_service_token, workload_ttl_seconds, expected_in_json
+    ):
+        """Test that workload_ttl_seconds is included when set, omitted when None.
 
-        0 signals the Gateway to use its platform fallback (jwt_default_ttl_seconds).
+        None (or omit) signals the Gateway to use its platform fallback (jwt_default_ttl_seconds).
         """
         self._setup_mock_response(mock_request, mock_get_service_token)
 
-        client = WorkloadIdentityClient(base_url="https://gateway.example.com")
-        client.request_workload_jwt(
-            claims={"id": 1, "name": "test-job"},
-            scope="aap_controller_automation_job",
-            audience="https://vault.example.com",
-            workload_ttl_seconds=workload_ttl_seconds,
-        )
+        kwargs = {
+            "claims": {"id": 1, "name": "test-job"},
+            "scope": "aap_controller_automation_job",
+            "audience": "https://vault.example.com",
+        }
+        if workload_ttl_seconds is not None:
+            kwargs["workload_ttl_seconds"] = workload_ttl_seconds
 
-        assert mock_request.call_args[1]["json"]["workload_ttl_seconds"] == expected
+        client = WorkloadIdentityClient(base_url="https://gateway.example.com")
+        client.request_workload_jwt(**kwargs)
+
+        json_body = mock_request.call_args[1]["json"]
+        if expected_in_json is None:
+            assert "workload_ttl_seconds" not in json_body
+        else:
+            assert json_body["workload_ttl_seconds"] == expected_in_json
+
+    @pytest.mark.parametrize("invalid_ttl", [0, -1, -3600])
+    def test_request_workload_jwt_rejects_invalid_ttl(self, invalid_ttl):
+        """Test that workload_ttl_seconds=0 or negative raises ValueError (Gateway rejects 0)."""
+        client = WorkloadIdentityClient(base_url="https://gateway.example.com")
+
+        with pytest.raises(ValueError, match="must be None.*or >= 1"):
+            client.request_workload_jwt(
+                claims={"id": 1, "name": "test-job"},
+                scope="aap_controller_automation_job",
+                audience="https://vault.example.com",
+                workload_ttl_seconds=invalid_ttl,
+            )
 
     @mock.patch("ansible_base.resource_registry.service_client.get_service_token")
     @mock.patch("ansible_base.resource_registry.service_client.requests.request")
