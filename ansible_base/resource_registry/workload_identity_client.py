@@ -160,6 +160,7 @@ class WorkloadIdentityClient(BaseServiceClient):
             WorkloadIdentityTokenResponse: Token response with JWT
 
         Raises:
+            ValueError: If workload_ttl_seconds is negative
             TokenRequestError: If the request fails
 
         Example:
