@@ -203,9 +203,7 @@ class TestWorkloadIdentityClient:
     )
     @mock.patch("ansible_base.resource_registry.service_client.get_service_token")
     @mock.patch("ansible_base.resource_registry.service_client.requests.request")
-    def test_request_workload_jwt_workload_ttl_seconds(
-        self, mock_request, mock_get_service_token, workload_ttl_seconds, expected_in_json
-    ):
+    def test_request_workload_jwt_workload_ttl_seconds(self, mock_request, mock_get_service_token, workload_ttl_seconds, expected_in_json):
         """Test that workload_ttl_seconds is included when set, omitted when None.
 
         None (or omit) signals the Gateway to use its platform fallback (jwt_default_ttl_seconds).

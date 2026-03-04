@@ -173,9 +173,7 @@ class WorkloadIdentityClient(BaseServiceClient):
             ... )
         """
         if workload_ttl_seconds is not None and workload_ttl_seconds < 1:
-            raise ValueError(
-                f"workload_ttl_seconds must be None (platform fallback) or >= 1, got {workload_ttl_seconds}"
-            )
+            raise ValueError(f"workload_ttl_seconds must be None (platform fallback) or >= 1, got {workload_ttl_seconds}")
         data = {
             "claims": claims,
             "scope": scope,
