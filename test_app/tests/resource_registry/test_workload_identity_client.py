@@ -232,7 +232,7 @@ class TestWorkloadIdentityClient:
         """Test that workload_ttl_seconds=0 or negative raises ValueError (Gateway rejects 0)."""
         client = WorkloadIdentityClient(base_url="https://gateway.example.com")
 
-        with pytest.raises(ValueError, match="must be None.*or >= 1"):
+        with pytest.raises(ValueError, match=r"must be None.*or >= 1"):
             client.request_workload_jwt(
                 claims={"id": 1, "name": "test-job"},
                 scope="aap_controller_automation_job",
