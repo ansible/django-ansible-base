@@ -170,6 +170,8 @@ class WorkloadIdentityClient(BaseServiceClient):
             ...     workload_ttl_seconds=3600,
             ... )
         """
+        if workload_ttl_seconds < 0:
+            raise ValueError(f"workload_ttl_seconds must be >= 0, got {workload_ttl_seconds}")
         request_body = WorkloadIdentityTokenRequest(
             claims=claims,
             scope=scope,
