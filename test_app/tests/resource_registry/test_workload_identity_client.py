@@ -29,6 +29,18 @@ class TestWorkloadIdentityTokenTypes:
         assert request.claims == {"id": 2, "name": "my-example-job"}
         assert request.scope == "aap_controller_automation_job"
         assert request.audience == "https://vault.example.com"
+        assert request.workload_ttl_seconds is None
+
+    def test_request_type_with_custom_ttl(self):
+        """Test that workload_ttl_seconds can be set on the request type."""
+        request = WorkloadIdentityTokenRequest(
+            claims={"id": 2, "name": "my-example-job"},
+            scope="aap_controller_automation_job",
+            audience="https://vault.example.com",
+            workload_ttl_seconds=3600,
+        )
+
+        assert request.workload_ttl_seconds == 3600
 
     def test_request_type_as_dict(self):
         """Test that WorkloadIdentityTokenRequest can be converted to dict."""
@@ -43,6 +55,7 @@ class TestWorkloadIdentityTokenTypes:
             "claims": {"id": 1, "name": "test-job"},
             "scope": "aap_controller_automation_job",
             "audience": "https://vault.example.com",
+            "workload_ttl_seconds": None,
         }
 
     def test_response_type_creation(self):
@@ -54,6 +67,17 @@ class TestWorkloadIdentityTokenTypes:
 
 class TestWorkloadIdentityClient:
     """Test the WorkloadIdentityClient class."""
+
+    def _setup_mock_response(self, mock_request, mock_get_service_token, jwt_payload=None):
+        """Configure mocks for a successful HTTP request returning a JWT."""
+        mock_get_service_token.return_value = "service-token"
+        payload = jwt_payload or {"sub": "job_1"}
+        test_jwt = pyjwt.encode(payload, "secret", algorithm="HS256")
+        mock_response = mock.Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"jwt": test_jwt}
+        mock_request.return_value = mock_response
+        return test_jwt
 
     def test_client_initialization(self):
         """Test that client can be initialized with correct parameters."""
@@ -138,23 +162,13 @@ class TestWorkloadIdentityClient:
     @mock.patch("ansible_base.resource_registry.service_client.get_service_token")
     @mock.patch("ansible_base.resource_registry.service_client.requests.request")
     def test_request_workload_jwt_success(self, mock_request, mock_get_service_token):
-        """Test successful token request."""
-        # Setup mocks
-        mock_get_service_token.return_value = "service-token"
-
-        # Create a valid JWT token for the response
-        test_jwt = pyjwt.encode(
-            {"sub": "job_2", "aud": "https://vault.example.com", "scope": "aap_controller_automation_job"},
-            "secret",
-            algorithm="HS256",
+        """Test successful token request includes all expected fields in the request body."""
+        test_jwt = self._setup_mock_response(
+            mock_request,
+            mock_get_service_token,
+            jwt_payload={"sub": "job_2", "aud": "https://vault.example.com", "scope": "aap_controller_automation_job"},
         )
 
-        mock_response = mock.Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"jwt": test_jwt}
-        mock_request.return_value = mock_response
-
-        # Make request
         client = WorkloadIdentityClient(base_url="https://gateway.example.com")
         response = client.request_workload_jwt(
             claims={"id": 2, "name": "my-example-job"},
@@ -162,29 +176,75 @@ class TestWorkloadIdentityClient:
             audience="https://vault.example.com",
         )
 
-        # Verify response
         assert isinstance(response, WorkloadIdentityTokenResponse)
         assert response.jwt == test_jwt
 
-        # Verify request was made correctly
         mock_request.assert_called_once()
         call_kwargs = mock_request.call_args[1]
         assert call_kwargs["method"] == "POST"
         assert call_kwargs["url"] == "https://gateway.example.com/api/gateway/v1/workload_identity_tokens/"
-        assert call_kwargs["json"] == {
+        expected_json = {
             "claims": {"id": 2, "name": "my-example-job"},
             "scope": "aap_controller_automation_job",
             "audience": "https://vault.example.com",
         }
+        assert call_kwargs["json"] == expected_json
+        assert "workload_ttl_seconds" not in call_kwargs["json"]  # None = omitted (platform fallback)
         assert call_kwargs["headers"]["X-ANSIBLE-SERVICE-AUTH"] == "service-token"
         assert call_kwargs["verify"] is True
+
+    @pytest.mark.parametrize(
+        "workload_ttl_seconds,expected_in_json",
+        [
+            (3600, 3600),
+            (None, None),  # omitted = platform fallback
+        ],
+        ids=["custom-ttl-sent-to-gateway", "none-omitted-platform-fallback"],
+    )
+    @mock.patch("ansible_base.resource_registry.service_client.get_service_token")
+    @mock.patch("ansible_base.resource_registry.service_client.requests.request")
+    def test_request_workload_jwt_workload_ttl_seconds(self, mock_request, mock_get_service_token, workload_ttl_seconds, expected_in_json):
+        """Test that workload_ttl_seconds is included when set, omitted when None.
+
+        None (or omit) signals the Gateway to use its platform fallback (jwt_default_ttl_seconds).
+        """
+        self._setup_mock_response(mock_request, mock_get_service_token)
+
+        kwargs = {
+            "claims": {"id": 1, "name": "test-job"},
+            "scope": "aap_controller_automation_job",
+            "audience": "https://vault.example.com",
+        }
+        if workload_ttl_seconds:
+            kwargs["workload_ttl_seconds"] = workload_ttl_seconds
+
+        client = WorkloadIdentityClient(base_url="https://gateway.example.com")
+        client.request_workload_jwt(**kwargs)
+
+        json_body = mock_request.call_args[1]["json"]
+        if expected_in_json is None:
+            assert "workload_ttl_seconds" not in json_body
+        else:
+            assert json_body["workload_ttl_seconds"] == expected_in_json
+
+    @pytest.mark.parametrize("invalid_ttl", [0, -1, -3600])
+    def test_request_workload_jwt_rejects_invalid_ttl(self, invalid_ttl):
+        """Test that workload_ttl_seconds=0 or negative raises ValueError (Gateway rejects 0)."""
+        client = WorkloadIdentityClient(base_url="https://gateway.example.com")
+
+        with pytest.raises(ValueError, match=r"must be None.*or >= 1"):
+            client.request_workload_jwt(
+                claims={"id": 1, "name": "test-job"},
+                scope="aap_controller_automation_job",
+                audience="https://vault.example.com",
+                workload_ttl_seconds=invalid_ttl,
+            )
 
     @mock.patch("ansible_base.resource_registry.service_client.get_service_token")
     @mock.patch("ansible_base.resource_registry.service_client.requests.request")
     def test_request_workload_jwt_http_error(self, mock_request, mock_get_service_token):
         """Test that HTTP errors raise TokenRequestError."""
         mock_get_service_token.return_value = "service-token"
-
         mock_response = mock.Mock()
         mock_response.status_code = 401
         mock_response.text = "Unauthorized"
@@ -207,12 +267,9 @@ class TestWorkloadIdentityClient:
     def test_request_workload_jwt_missing_jwt_field(self, mock_request, mock_get_service_token):
         """Test that missing jwt field in response raises TokenRequestError."""
         mock_get_service_token.return_value = "service-token"
-
         mock_response = mock.Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
-            # Missing jwt field
-        }
+        mock_response.json.return_value = {}
         mock_request.return_value = mock_response
 
         client = WorkloadIdentityClient(base_url="https://gateway.example.com")
@@ -231,7 +288,6 @@ class TestWorkloadIdentityClient:
     def test_request_workload_jwt_json_parse_error(self, mock_request, mock_get_service_token):
         """Test that JSON parse errors raise TokenRequestError."""
         mock_get_service_token.return_value = "service-token"
-
         mock_response = mock.Mock()
         mock_response.status_code = 200
         mock_response.json.side_effect = ValueError("Invalid JSON")
@@ -270,18 +326,10 @@ class TestWorkloadIdentityClient:
     @mock.patch("ansible_base.resource_registry.service_client.requests.request")
     def test_request_workload_jwt_with_various_scopes(self, mock_request, mock_get_service_token):
         """Test that different scope strings are handled correctly."""
-        mock_get_service_token.return_value = "service-token"
-
-        test_jwt = pyjwt.encode({"sub": "test"}, "secret", algorithm="HS256")
-
-        mock_response = mock.Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"jwt": test_jwt}
-        mock_request.return_value = mock_response
+        test_jwt = self._setup_mock_response(mock_request, mock_get_service_token)
 
         client = WorkloadIdentityClient(base_url="https://gateway.example.com")
 
-        # Test different scope values
         for scope in ["aap_controller_automation_job", "aap_eda_automation_job", "custom_scope"]:
             response = client.request_workload_jwt(
                 claims={"id": 1, "name": "test"},
@@ -289,27 +337,16 @@ class TestWorkloadIdentityClient:
                 audience="https://vault.example.com",
             )
             assert response.jwt == test_jwt
-
-            # Verify scope was sent in request
-            call_kwargs = mock_request.call_args[1]
-            assert call_kwargs["json"]["scope"] == scope
+            assert mock_request.call_args[1]["json"]["scope"] == scope
 
     @mock.patch("ansible_base.resource_registry.service_client.get_service_token")
     @mock.patch("ansible_base.resource_registry.service_client.requests.request")
     def test_request_workload_jwt_with_various_claims(self, mock_request, mock_get_service_token):
         """Test that different claims dictionaries are handled correctly."""
-        mock_get_service_token.return_value = "service-token"
-
-        test_jwt = pyjwt.encode({"sub": "test"}, "secret", algorithm="HS256")
-
-        mock_response = mock.Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"jwt": test_jwt}
-        mock_request.return_value = mock_response
+        test_jwt = self._setup_mock_response(mock_request, mock_get_service_token)
 
         client = WorkloadIdentityClient(base_url="https://gateway.example.com")
 
-        # Test different claims
         test_claims = [
             {"id": 1, "name": "job1"},
             {"id": 2, "name": "job2", "project": "test-project"},
@@ -324,10 +361,7 @@ class TestWorkloadIdentityClient:
                 audience="https://vault.example.com",
             )
             assert response.jwt == test_jwt
-
-            # Verify claims were sent in request
-            call_kwargs = mock_request.call_args[1]
-            assert call_kwargs["json"]["claims"] == claims
+            assert mock_request.call_args[1]["json"]["claims"] == claims
 
     @mock.patch("ansible_base.resource_registry.service_client.get_service_token")
     def test_client_with_no_https_verification(self, mock_get_service_token):
