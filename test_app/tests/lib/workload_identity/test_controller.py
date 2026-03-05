@@ -43,9 +43,7 @@ def test_get_target_claim_names_to_sub_stubs():
     of claim names to their sub claim stubs.
     """
     expected_mapping = {
-        'aap_controller_job_name': 'job',
         'aap_controller_organization_name': 'organization',
-        'aap_controller_project_name': 'project',
         'aap_controller_job_template_name': 'job_template',
     }
 
@@ -71,35 +69,23 @@ def test_get_target_claim_names_to_sub_stubs_keys_are_valid_claims():
     [
         (
             {
-                'aap_controller_job_name': 'my-job',
                 'aap_controller_organization_name': 'my-org',
-                'aap_controller_project_name': 'my-project',
                 'aap_controller_job_template_name': 'my-template',
             },
-            "job:my-job:organization:my-org:project:my-project:job_template:my-template",
+            "organization:my-org:job_template:my-template",
         ),
         (
             {
-                'aap_controller_job_name': 'my-job',
                 'aap_controller_organization_name': '',
-                'aap_controller_project_name': 'my-project',
                 'aap_controller_job_template_name': '',
             },
-            "job:my-job:organization::project:my-project:job_template:",
-        ),
-        (
-            {
-                'aap_controller_job_name': 'my-job',
-                'aap_controller_project_name': 'my-project',
-            },
-            "job:my-job:organization::project:my-project:job_template:",
+            "organization::job_template:",
         ),
     ],
 )
 def test_generate_sub_claim(workload_claims, expected_sub_claim):
     """
-    Test that generate_sub_claim produces the correct sub claim string
-    with full values, empty values, and missing keys.
+    Test that generate_sub_claim produces the correct sub claim string.
     """
     actual_sub_claim = AutomationControllerJobScope.generate_sub_claim(workload_claims)
     assert actual_sub_claim == expected_sub_claim
