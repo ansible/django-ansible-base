@@ -215,7 +215,7 @@ class TestWorkloadIdentityClient:
             "scope": "aap_controller_automation_job",
             "audience": "https://vault.example.com",
         }
-        if workload_ttl_seconds is not None:
+        if workload_ttl_seconds:
             kwargs["workload_ttl_seconds"] = workload_ttl_seconds
 
         client = WorkloadIdentityClient(base_url="https://gateway.example.com")
