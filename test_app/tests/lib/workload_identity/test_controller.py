@@ -82,9 +82,7 @@ def test_get_target_claim_names_to_sub_stubs_keys_are_valid_claims():
             "organization::job_template:",
         ),
         (
-            {
-                'aap_controller_job_template_name': 'my-template'
-            },
+            {'aap_controller_job_template_name': 'my-template'},
             "organization::job_template:my-template",
         ),
     ],
