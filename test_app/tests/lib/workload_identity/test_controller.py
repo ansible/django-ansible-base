@@ -72,18 +72,18 @@ def test_get_target_claim_names_to_sub_stubs_keys_are_valid_claims():
                 'aap_controller_organization_name': 'my-org',
                 'aap_controller_job_template_name': 'my-template',
             },
-            "organization:my-org:job_template:my-template",
+            "service:controller:organization:my-org:job_template:my-template",
         ),
         (
             {
                 'aap_controller_organization_name': '',
                 'aap_controller_job_template_name': '',
             },
-            "organization::job_template:",
+            "service:controller:organization::job_template:",
         ),
         (
             {'aap_controller_job_template_name': 'my-template'},
-            "organization::job_template:my-template",
+            "service:controller:organization::job_template:my-template",
         ),
     ],
 )
