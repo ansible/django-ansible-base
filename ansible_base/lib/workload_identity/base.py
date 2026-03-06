@@ -54,9 +54,10 @@ class BaseWorkloadIdentityScope:
         :rtype: str
         """
         target_claim_names_to_sub_stubs = cls.get_target_claim_names_to_sub_stubs()
-        base_sub = ":".join([f"{target_claim_names_to_sub_stubs[key]}:{workload_claims.get(key, '')}" for key in target_claim_names_to_sub_stubs.keys()])
+        base_sub = [f"workload_type:{cls.name}"]
+        base_sub.extend([f"{target_claim_names_to_sub_stubs[key]}:{workload_claims.get(key, '')}" for key in target_claim_names_to_sub_stubs.keys()])
 
-        return f"workload_type:{cls.name}:{base_sub}"
+        return ":".join(base_sub)
 
     @abstractmethod
     def populate_claims(self, workload_data: dict) -> dict:
