@@ -40,8 +40,9 @@ class BaseWorkloadIdentityScope:
         """
         Generate a sub claim string from workload claims using the scope's claim mapping.
 
-        Given a dictionary with the claims of a workload, generates a sub claim string with the following format:
-        "job:<job_name>:organization:<organization_name>:project:<project_name>:job_template:<job_template_name>"
+        Constructs a colon-delimited string prefixed with "workload_type:{scope_name}:" followed by
+        the claim names and values specified by the scope's get_target_claim_names_to_sub_stubs()
+        method. The order is determined by the subclass implementation.
 
         Note: The specified claim names are included in the output sub claim value even if they
         are empty. Claim validation is expected to take care of doing these checks before this
@@ -49,11 +50,14 @@ class BaseWorkloadIdentityScope:
 
         :param workload_claims: A dictionary containing the workload claims (claim names to values)
         :type workload_claims: dict
-        :return: A string containing the sub claim
+        :return: A string containing the sub claim prefixed with workload type
         :rtype: str
         """
         target_claim_names_to_sub_stubs = cls.get_target_claim_names_to_sub_stubs()
-        return ":".join([f"{target_claim_names_to_sub_stubs[key]}:{workload_claims.get(key, '')}" for key in target_claim_names_to_sub_stubs.keys()])
+        base_sub = [f"workload_type:{cls.name}"]
+        base_sub.extend([f"{target_claim_names_to_sub_stubs[key]}:{workload_claims.get(key, '')}" for key in target_claim_names_to_sub_stubs.keys()])
+
+        return ":".join(base_sub)
 
     @abstractmethod
     def populate_claims(self, workload_data: dict) -> dict:

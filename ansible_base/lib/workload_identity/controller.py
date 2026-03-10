@@ -47,8 +47,6 @@ class AutomationControllerJobScope(BaseWorkloadIdentityScope):
     @classmethod
     def get_target_claim_names_to_sub_stubs(cls) -> dict[str, str]:
         return {
-            cls.CLAIM_JOB_NAME: "job",
             cls.CLAIM_ORGANIZATION_NAME: "organization",
-            cls.CLAIM_PROJECT_NAME: "project",
             cls.CLAIM_JOB_TEMPLATE_NAME: "job_template",
         }

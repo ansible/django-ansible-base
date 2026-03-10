@@ -43,9 +43,7 @@ def test_get_target_claim_names_to_sub_stubs():
     of claim names to their sub claim stubs.
     """
     expected_mapping = {
-        'aap_controller_job_name': 'job',
         'aap_controller_organization_name': 'organization',
-        'aap_controller_project_name': 'project',
         'aap_controller_job_template_name': 'job_template',
     }
 
@@ -71,28 +69,21 @@ def test_get_target_claim_names_to_sub_stubs_keys_are_valid_claims():
     [
         (
             {
-                'aap_controller_job_name': 'my-job',
                 'aap_controller_organization_name': 'my-org',
-                'aap_controller_project_name': 'my-project',
                 'aap_controller_job_template_name': 'my-template',
             },
-            "job:my-job:organization:my-org:project:my-project:job_template:my-template",
+            "workload_type:aap_controller_automation_job:organization:my-org:job_template:my-template",
         ),
         (
             {
-                'aap_controller_job_name': 'my-job',
                 'aap_controller_organization_name': '',
-                'aap_controller_project_name': 'my-project',
                 'aap_controller_job_template_name': '',
             },
-            "job:my-job:organization::project:my-project:job_template:",
+            "workload_type:aap_controller_automation_job:organization::job_template:",
         ),
         (
-            {
-                'aap_controller_job_name': 'my-job',
-                'aap_controller_project_name': 'my-project',
-            },
-            "job:my-job:organization::project:my-project:job_template:",
+            {'aap_controller_job_template_name': 'my-template'},
+            "workload_type:aap_controller_automation_job:organization::job_template:my-template",
         ),
     ],
 )
