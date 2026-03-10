@@ -19,26 +19,30 @@ class OAuthLibCore(_OAuthLibCore):
         except UnsupportedMediaType:
             return ()
 
+    def _extract_params(self, request):
+        # Hash the bearer token before oauthlib processes it, since tokens
+        # are stored as SHA-256 hashes in the database. This covers all
+        # DOT flows (verify_request, create_userinfo_response, etc.).
+        bearer_token = request.META.get('HTTP_AUTHORIZATION', '')
+        did_hash = False
+        if bearer_token.lower().startswith('bearer '):
+            token_component = bearer_token.split(' ', 1)[1]
+            hashed = hash_string(token_component, hasher=hashlib.sha256, algo="sha256")
+            request.META['HTTP_AUTHORIZATION'] = f"Bearer {hashed}"
+            did_hash = True
+
+        try:
+            return super()._extract_params(request)
+        finally:
+            if did_hash:
+                request.META['HTTP_AUTHORIZATION'] = bearer_token
+
 
 class LoggedOAuth2Authentication(OAuth2Authentication):
     def authenticate(self, request):
-        # sha256 the bearer token. We store the hash in the database
-        # and this gives us a place to hash the incoming token for comparison
-        did_hash_token = False
-        bearer_token = request.META.get('HTTP_AUTHORIZATION')
-        if bearer_token and bearer_token.lower().startswith('bearer '):
-            token_component = bearer_token.split(' ', 1)[1]
-            hashed = hash_string(token_component, hasher=hashlib.sha256, algo="sha256")
-            did_hash_token = True
-            request.META['HTTP_AUTHORIZATION'] = f"Bearer {hashed}"
-
-        # We don't /really/ want to modify the request, so after we're done authing,
-        # revert what we did above.
-        try:
-            ret = super().authenticate(request)
-        finally:
-            if did_hash_token:
-                request.META['HTTP_AUTHORIZATION'] = bearer_token
+        # Token hashing is handled by OAuthLibCore.verify_request() — no need
+        # to hash here. We only add audit logging on successful auth.
+        ret = super().authenticate(request)
 
         if ret:
             user, token = ret
