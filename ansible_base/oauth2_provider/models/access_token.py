@@ -69,7 +69,7 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
     last_used = models.DateTimeField(null=True, default=None, editable=False, help_text=_('A timestamp of when this token was last used.'))
     scope = models.CharField(
         default='write',
-        max_length=32,
+        max_length=128,
         help_text=_(
             "Allowed scopes, further restricts user permissions. Must be a simple space-separated string"
             " with allowed scopes ['read', 'write', 'openid', 'roles']."

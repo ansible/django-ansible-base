@@ -14,6 +14,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='oauth2accesstoken',
             name='scope',
-            field=models.CharField(default='write', help_text="Allowed scopes, further restricts user permissions. Must be a simple space-separated string with allowed scopes ['read', 'write', 'openid', 'roles'].", max_length=32, validators=[ansible_base.oauth2_provider.models.access_token.validate_scope]),
+            field=models.CharField(default='write', help_text="Allowed scopes, further restricts user permissions. Must be a simple space-separated string with allowed scopes ['read', 'write', 'openid', 'roles'].", max_length=128, validators=[ansible_base.oauth2_provider.models.access_token.validate_scope]),
         ),
     ]

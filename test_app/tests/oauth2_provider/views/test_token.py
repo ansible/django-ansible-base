@@ -441,6 +441,10 @@ def test_oauth2_tokens_list_for_user(
         ('read write', None),
         ('read', None),
         ('write', None),
+        ('openid', None),
+        ('roles', None),
+        ('openid roles', None),
+        ('read write openid roles', None),
         ('read write foo', 'Invalid scope: foo'),
         ('foo', 'Invalid scope: foo'),
         ('', None),  # default scope is 'write'

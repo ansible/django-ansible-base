@@ -167,6 +167,11 @@ def test_oauth2_bearer_no_activitystream(unauthenticated_api_client, oauth2_admi
         ('read write', 201),
         ('write read', 201),
         ('read', 403),
+        ('openid', 403),
+        ('roles', 403),
+        ('openid roles', 403),
+        ('read openid roles', 403),
+        ('write openid roles', 201),
     ],
 )
 @pytest.mark.django_db

@@ -57,5 +57,6 @@ class LoggedOAuth2Authentication(OAuth2Authentication):
                 )
             )
             # TODO: check oauth_scopes when we have RBAC in Gateway
-            setattr(user, 'oauth_scopes', [x for x in token.scope.split() if x])
+            if user is not None:
+                setattr(user, 'oauth_scopes', [x for x in token.scope.split() if x])
         return ret
