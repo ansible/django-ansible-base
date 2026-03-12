@@ -1,6 +1,6 @@
 import pytest
 
-from ansible_base.lib.workload_identity.controller import AutomationControllerJobScope
+from ansible_base.lib.workload_identity import AutomationControllerJobScope
 
 
 def test_list_claims():
