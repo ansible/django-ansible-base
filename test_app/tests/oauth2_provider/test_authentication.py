@@ -30,6 +30,33 @@ def test_oauth2_bearer_get_user_correct(unauthenticated_api_client, oauth2_admin
     assert response.data['username'] == oauth2_admin_access_token[0].user.username
 
 
+@pytest.mark.parametrize('prefix', ['Bearer', 'Token', 'bearer', 'token', 'BEARER', 'TOKEN'])
+def test_oauth2_token_prefix_variants(unauthenticated_api_client, oauth2_admin_access_token, animal, prefix):
+    """
+    GET an animal with Bearer or Token prefix (AAP-68669).
+    """
+    url = get_relative_url("animal-detail", kwargs={"pk": animal.pk})
+    response = unauthenticated_api_client.get(
+        url,
+        headers={'Authorization': f'{prefix} {oauth2_admin_access_token[1]}'},
+    )
+    assert response.status_code == 200
+    assert response.data['name'] == animal.name
+
+
+@pytest.mark.parametrize('prefix', ['Junk', 'Basic', 'Digest'])
+def test_oauth2_token_invalid_prefix_rejected(unauthenticated_api_client, oauth2_admin_access_token, animal, prefix):
+    """
+    Verify that valid tokens with unsupported prefixes are rejected (AAP-68669).
+    """
+    url = get_relative_url("animal-detail", kwargs={"pk": animal.pk})
+    response = unauthenticated_api_client.get(
+        url,
+        headers={'Authorization': f'{prefix} {oauth2_admin_access_token[1]}'},
+    )
+    assert response.status_code == 401
+
+
 @pytest.mark.parametrize(
     'token, expected',
     [

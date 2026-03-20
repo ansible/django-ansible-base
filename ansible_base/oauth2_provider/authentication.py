@@ -25,7 +25,9 @@ class OAuthLibCore(_OAuthLibCore):
         # DOT flows (verify_request, create_userinfo_response, etc.).
         bearer_token = request.META.get('HTTP_AUTHORIZATION', '')
         did_hash = False
-        if bearer_token.lower().startswith('bearer '):
+        # (AAP-68669) Accommodate the ansible-galaxy CLI, which sends OAuth tokens
+        # prefixed with `Token ` instead of `Bearer ` (deviates from RFC 6750).
+        if bearer_token.lower().startswith(("bearer ", "token ")):
             token_component = bearer_token.split(' ', 1)[1]
             hashed = hash_string(token_component, hasher=hashlib.sha256, algo="sha256")
             request.META['HTTP_AUTHORIZATION'] = f"Bearer {hashed}"
