@@ -156,7 +156,7 @@ def get_parent_ids(instance) -> list[tuple[Model, Union[int, UUID]]]:
     return []
 
 
-def post_save_update_obj_permissions(instance):
+def post_save_update_obj_permissions(instance, is_create=False, new_object_pk=None):
     "Utility method shared by multiple signals"
     # Account for organization roles (and other parent objects), new and old
     parent_gfks = get_parent_ids(instance)
@@ -188,7 +188,7 @@ def post_save_update_obj_permissions(instance):
         compute_team_member_roles()
 
     if to_update:
-        compute_object_role_permissions(object_roles=to_update)
+        compute_object_role_permissions(object_roles=to_update, is_create=is_create, new_object_pk=new_object_pk)
 
 
 def rbac_pre_save_identify_changes(instance, *args, **kwargs):
@@ -220,7 +220,7 @@ def rbac_post_save_update_evaluations(instance, created, *args, **kwargs):
     # If child object is created and parent object has existing ObjectRoles
     # evaluations for the parent object roles need to be added
     if created:
-        post_save_update_obj_permissions(instance)
+        post_save_update_obj_permissions(instance, is_create=True, new_object_pk=instance.pk)
         return
 
     # The parent object can not have changed if update_fields was given and did not list that field

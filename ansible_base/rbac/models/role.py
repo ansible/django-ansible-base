@@ -682,18 +682,30 @@ class ObjectRole(ObjectRoleFields):
                 expected_evaluations.add((permission.codename, eval_ct, id))
         return expected_evaluations
 
-    def needed_cache_updates(self, types_prefetch=None):
+    def needed_cache_updates(self, types_prefetch=None, is_create=False, new_object_pk=None):
         existing_partials = {}
-        for permission_partial in self.permission_partials.all():
-            existing_partials[permission_partial.obj_perm_id()] = permission_partial
-        for permission_partial in self.permission_partials_uuid.all():
-            existing_partials[permission_partial.obj_perm_id()] = permission_partial
+
+        # if we're creating a new object we don't expect any permission partials to exist
+        # and can skip this block
+        if not is_create:
+            for permission_partial in self.permission_partials.all():
+                existing_partials[permission_partial.obj_perm_id()] = permission_partial
+            for permission_partial in self.permission_partials_uuid.all():
+                existing_partials[permission_partial.obj_perm_id()] = permission_partial
 
         expected_evaluations = self.expected_direct_permissions(types_prefetch)
 
         for team in self.provides_teams.all():
             for team_role in team.has_roles.all():
                 expected_evaluations.update(team_role.expected_direct_permissions(types_prefetch))
+
+        # if we're creating a new object, filter out all expected evaluations that are unrelated
+        # to the new object. Otherwise we'd end up with a large diff because existing_partials is empty
+        if is_create and new_object_pk is not None:
+            expected_evaluations = {
+                (c, ct_id, pk) for c, ct_id, pk in expected_evaluations
+                if pk == new_object_pk
+            }
 
         existing_set = set(existing_partials.keys())
 
