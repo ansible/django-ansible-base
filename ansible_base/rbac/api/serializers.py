@@ -91,7 +91,7 @@ class BaseAssignmentSerializer(CommonModelSerializer):
             qs = self.get_actor_queryset(request.user)
         else:
             qs = self.Meta.model._meta.get_field(self.actor_field).model.objects.all()
-        self.fields[self.actor_field] = serializers.PrimaryKeyRelatedField(queryset=qs, required=False)
+        self.fields[self.actor_field] = serializers.PrimaryKeyRelatedField(queryset=qs, required=False, allow_null=True)
 
     def raise_id_fields_error(self, field1, field2):
         msg = _('Provide exactly one of %(actor_field)s or %(actor_field)s_ansible_id') % {'actor_field': self.actor_field}
@@ -121,9 +121,9 @@ class BaseAssignmentSerializer(CommonModelSerializer):
         """Validate that exactly one of actor or actor_ansible_id is provided"""
         actor_aid_field = f'{self.actor_field}_ansible_id'
 
-        # Check what was actually provided in the request
-        has_actor_in_request = self.actor_field in self.initial_data
-        has_actor_aid_in_request = actor_aid_field in self.initial_data
+        # Check what was actually provided in the request (null counts as not provided)
+        has_actor_in_request = self.initial_data.get(self.actor_field) is not None
+        has_actor_aid_in_request = self.initial_data.get(actor_aid_field) is not None
 
         # If both actor and actor_ansible_id are present or both not present than we error out
         if has_actor_in_request == has_actor_aid_in_request:

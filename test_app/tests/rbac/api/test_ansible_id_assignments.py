@@ -64,6 +64,17 @@ def test_assignment_id_validation(admin_api_client, inv_rd, team, inventory, ran
 
 
 @pytest.mark.django_db
+def test_user_assignment_ansible_id_with_null_actor(admin_api_client, inv_rd, rando, inventory):
+    """Sending user=null with a valid user_ansible_id should succeed thanks to allow_null=True."""
+    resource = Resource.objects.get(object_id=rando.pk, content_type=ContentType.objects.get_for_model(rando).pk)
+    url = get_relative_url('roleuserassignment-list')
+    data = dict(role_definition=inv_rd.id, content_type='aap.inventory', user=None, user_ansible_id=str(resource.ansible_id), object_id=inventory.id)
+    response = admin_api_client.post(url, data=data, format="json")
+    assert response.status_code == 201, response.data
+    assert rando.has_obj_perm(inventory, 'change')
+
+
+@pytest.mark.django_db
 def test_object_ansible_id_user(admin_api_client, org_inv_rd, rando, inventory, organization):
     resource = Resource.objects.get(object_id=organization.pk, content_type=ContentType.objects.get_for_model(organization).pk)
     url = get_relative_url('roleuserassignment-list')
