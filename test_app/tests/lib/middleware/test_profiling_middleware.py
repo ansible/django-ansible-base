@@ -30,6 +30,7 @@ def db_view(request):
 urlpatterns = [
     path('test/', simple_view),
     path('test-db/', db_view),
+    path('up', simple_view),
 ]
 
 
@@ -55,30 +56,19 @@ class _ProfileRequestMiddlewareTest(TestCase):
         self.assertIn('X-API-Node', response)
         self.assertEqual(response['X-API-Node'], 'test-node')
 
-    @override_settings(ANSIBLE_BASE_CPROFILE_REQUESTS=True)
-    def test_profile_request_middleware_cprofile_enabled(self):
+    def test_profile_request_middleware_cprofile(self):
         """
         Test that the _ProfileRequestMiddleware adds the X-API-CProfile-File
-        header and creates a profile file when enabled.
+        header and creates a profile file.
         """
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch('tempfile.gettempdir', return_value=tmpdir):
+            with override_settings(PROFILING_CPROFILE_DIR=tmpdir):
                 middleware = _ProfileRequestMiddleware(simple_view)
                 response = middleware(self.client.get('/test/').wsgi_request)
                 self.assertIn('X-API-CProfile-File', response)
                 profile_file = response['X-API-CProfile-File']
                 self.assertTrue(profile_file.endswith('.prof'))
                 self.assertTrue(os.path.exists(profile_file))
-
-    @override_settings(ANSIBLE_BASE_CPROFILE_REQUESTS=False)
-    def test_profile_request_middleware_cprofile_disabled(self):
-        """
-        Test that the _ProfileRequestMiddleware does not add the
-        X-API-CProfile-File header when disabled.
-        """
-        middleware = _ProfileRequestMiddleware(simple_view)
-        response = middleware(self.client.get('/test/').wsgi_request)
-        self.assertNotIn('X-API-CProfile-File', response)
 
 
 @override_settings(
@@ -95,14 +85,7 @@ class _SQLProfilingMiddlewareTest(TestCase):
         self.user = User.objects.create_user(username='testuser', password='password')
         self.client.force_login(self.user)
 
-    @override_settings(ANSIBLE_BASE_SQL_PROFILING=False)
-    def test_sql_profiling_disabled_by_default(self):
-        response = self.client.get('/test-db/')
-        self.assertNotIn('X-API-Query-Count', response)
-        self.assertNotIn('X-API-Query-Time', response)
-
-    @override_settings(ANSIBLE_BASE_SQL_PROFILING=True)
-    def test_sql_profiling_enabled_with_new_setting(self):
+    def test_sql_profiling_adds_headers(self):
         response = self.client.get('/test-db/')
         self.assertIn('X-API-Query-Count', response)
         self.assertGreaterEqual(int(response['X-API-Query-Count']), 1)
@@ -117,7 +100,6 @@ class _SQLProfilingMiddlewareTest(TestCase):
         'django.contrib.auth.middleware.AuthenticationMiddleware',
         'ansible_base.lib.middleware.profiling.profile_request._SQLProfilingMiddleware',
     ],
-    ANSIBLE_BASE_SQL_PROFILING=True,
 )
 class _SQLProfilingMiddlewareMissingContextTest(TestCase):
     def setUp(self):
@@ -128,7 +110,7 @@ class _SQLProfilingMiddlewareMissingContextTest(TestCase):
     def test_logs_warning_if_context_middleware_is_missing(self, mock_logger):
         self.client.get('/test-db/')
         mock_logger.warning.assert_called_with(
-            "ANSIBLE_BASE_SQL_PROFILING is enabled, but the trace context is not set. "
+            "SQL profiling is enabled, but the trace context is not set. "
             "Please use the ObservabilityMiddleware instead of including profiling middleware individually."
         )
 
@@ -181,8 +163,7 @@ class SQLQueryMetricsTest(TestCase):
         'django.contrib.auth.middleware.AuthenticationMiddleware',
         'ansible_base.lib.middleware.observability.ObservabilityMiddleware',
     ],
-    ANSIBLE_BASE_SQL_PROFILING=True,
-    ANSIBLE_BASE_CPROFILE_REQUESTS=True,
+    PROFILING_ENABLED=True,
     CLUSTER_HOST_ID='test-node-obs',
 )
 class ObservabilityMiddlewareTest(TestCase):
@@ -192,12 +173,11 @@ class ObservabilityMiddlewareTest(TestCase):
 
     def test_observability_middleware_all_headers(self):
         """
-        An integration test to ensure the facade middleware adds all expected
-        headers and uses the request ID consistently.
+        When PROFILING_ENABLED is True, all profiling headers should be present.
         """
         request_id = str(uuid.uuid4())
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch('tempfile.gettempdir', return_value=tmpdir):
+            with override_settings(PROFILING_CPROFILE_DIR=tmpdir):
                 response = self.client.get('/test-db/', HTTP_X_REQUEST_ID=request_id)
 
                 # 1. From _TraceContextMiddleware: Check response header
@@ -215,6 +195,63 @@ class ObservabilityMiddlewareTest(TestCase):
                 # 3. From _SQLProfilingMiddleware: Check SQL headers
                 self.assertIn('X-API-Query-Count', response)
                 self.assertIn('X-API-Query-Time', response)
+
+    @override_settings(PROFILING_ENABLED=False)
+    def test_observability_middleware_disabled(self):
+        """
+        When PROFILING_ENABLED is False, no profiling headers should be present,
+        but trace context (X-Request-ID) should still work.
+        """
+        request_id = str(uuid.uuid4())
+        response = self.client.get('/test-db/', HTTP_X_REQUEST_ID=request_id)
+
+        self.assertIn('X-Request-ID', response)
+        self.assertEqual(response['X-Request-ID'], request_id)
+
+        self.assertNotIn('X-API-Time', response)
+        self.assertNotIn('X-API-Node', response)
+        self.assertNotIn('X-API-CProfile-File', response)
+        self.assertNotIn('X-API-Query-Count', response)
+        self.assertNotIn('X-API-Query-Time', response)
+
+    def test_observability_middleware_excludes_paths(self):
+        """
+        When PROFILING_ENABLED is True but the request path matches an excluded
+        prefix, profiling headers should not be present.
+        """
+        request_id = str(uuid.uuid4())
+        response = self.client.get('/up', HTTP_X_REQUEST_ID=request_id)
+
+        # Trace context should still work
+        self.assertIn('X-Request-ID', response)
+        self.assertEqual(response['X-Request-ID'], request_id)
+
+        # Profiling headers should be absent (path is excluded)
+        self.assertNotIn('X-API-Time', response)
+        self.assertNotIn('X-API-Node', response)
+        self.assertNotIn('X-API-CProfile-File', response)
+        self.assertNotIn('X-API-Query-Count', response)
+        self.assertNotIn('X-API-Query-Time', response)
+
+
+class DABProfilerFallbackTest(TestCase):
+    def test_falls_back_to_tmpdir_on_permission_error(self):
+        """
+        When the configured directory is not writable, DABProfiler should
+        fall back to the system temp directory instead of crashing.
+        """
+        from ansible_base.lib.middleware.profiling.profile_request import DABProfiler
+
+        profiler = DABProfiler(output_dir='/nonexistent/unwritable/path')
+        profiler.start()
+        profile_id = uuid.uuid4()
+        elapsed, cprofile_filename = profiler.stop(profile_id=profile_id)
+
+        self.assertIsNotNone(elapsed)
+        self.assertIsNotNone(cprofile_filename)
+        self.assertTrue(cprofile_filename.startswith(tempfile.gettempdir()))
+        self.assertTrue(os.path.exists(cprofile_filename))
+        os.remove(cprofile_filename)
 
 
 class SQLCommentSanitizationTest(TestCase):
