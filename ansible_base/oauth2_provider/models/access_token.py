@@ -18,7 +18,7 @@ from ansible_base.oauth2_provider.utils import is_external_account
 
 logger = logging.getLogger('ansible_base.oauth2_provider.models.access_token')
 
-SCOPES = ['read', 'write']
+SCOPES = ['read', 'write', 'openid', 'roles']
 
 
 def validate_scope(value):
@@ -69,8 +69,11 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
     last_used = models.DateTimeField(null=True, default=None, editable=False, help_text=_('A timestamp of when this token was last used.'))
     scope = models.CharField(
         default='write',
-        max_length=32,
-        help_text=_("Allowed scopes, further restricts user permissions. Must be a simple space-separated string with allowed scopes ['read', 'write']."),
+        max_length=128,
+        help_text=_(
+            "Allowed scopes, further restricts user permissions. Must be a simple space-separated string"
+            " with allowed scopes ['read', 'write', 'openid', 'roles']."
+        ),
         validators=[validate_scope],
     )
     token = prevent_search(models.CharField(max_length=255, unique=True, help_text=_("The generated token value.")))

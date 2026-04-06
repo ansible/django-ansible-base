@@ -4,6 +4,8 @@ from typing import Optional
 from uuid import UUID
 
 from django.conf import settings
+from django.db import transaction
+from django.db.utils import IntegrityError
 
 from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation, RoleEvaluationUUID
 from ansible_base.rbac.permission_registry import permission_registry
@@ -121,6 +123,56 @@ def get_parent_teams_of_teams(org_team_mapping: dict) -> dict[int, list[int]]:
     return team_team_parents
 
 
+def _is_stale_objectrole_fk(exc):
+    """Return True if *exc* is specifically an FK violation from a stale ObjectRole reference.
+
+    PostgreSQL (psycopg2/psycopg3): checks SQLSTATE 23503 (foreign_key_violation)
+    and that the referenced table is ``dab_rbac_objectrole``.  Other
+    IntegrityError sub-types (unique-constraint, check-constraint, etc.) or FK
+    violations referencing a different table return False so they propagate
+    normally.
+
+    Other backends (SQLite): returns False.  The TOCTOU race requires truly
+    concurrent committed transactions, which SQLite's global write lock
+    prevents, so FK errors there indicate a real bug.
+    """
+    cause = exc.__cause__
+    if cause is None:
+        return False
+    # psycopg3 exposes .sqlstate, psycopg2 exposes .pgcode
+    sqlstate = getattr(cause, 'sqlstate', None) or getattr(cause, 'pgcode', None)
+    if sqlstate != '23503':
+        return False
+    return 'dab_rbac_objectrole' in str(cause)
+
+
+def _safe_m2m_add(team, to_add):
+    """Add ObjectRole IDs to team.member_roles, handling concurrent deletions.
+
+    A TOCTOU race exists: ObjectRole IDs collected during the read phase of
+    compute_team_member_roles() may be deleted by a concurrent transaction
+    (e.g. org deletion cascading through rbac_post_delete_remove_object_roles)
+    before this write.  The savepoint allows us to catch the FK violation
+    without aborting the outer transaction, then retry with only IDs that
+    still exist.
+    """
+    try:
+        with transaction.atomic():
+            team.member_roles.add(*to_add)
+    except IntegrityError as exc:
+        if not _is_stale_objectrole_fk(exc):
+            raise
+        to_add = set(ObjectRole.objects.filter(id__in=to_add).values_list('id', flat=True))
+        if to_add:
+            try:
+                with transaction.atomic():
+                    team.member_roles.add(*to_add)
+            except IntegrityError as exc:
+                if not _is_stale_objectrole_fk(exc):
+                    raise
+                logger.warning('Persistent IntegrityError adding member_roles for team %s, will be corrected on next recompute', team.id)
+
+
 def compute_team_member_roles():
     """
     Fills in the ObjectRole.provides_teams relationship for all teams.
@@ -154,9 +206,37 @@ def compute_team_member_roles():
         to_add = expected_ids - existing_ids
         to_remove = existing_ids - expected_ids
         if to_add:
-            team.member_roles.add(*to_add)
+            _safe_m2m_add(team, to_add)
         if to_remove:
             team.member_roles.remove(*to_remove)
+
+
+def _safe_bulk_create_evaluations(model, evaluations, ignore_conflicts):
+    """bulk_create RoleEvaluation rows, handling concurrent ObjectRole deletions.
+
+    ignore_conflicts (ON CONFLICT DO NOTHING) only suppresses unique-constraint
+    violations.  A concurrent ObjectRole deletion causes an FK violation on
+    the role_id column which is a different IntegrityError.  We use a savepoint
+    so the outer transaction stays healthy, then retry without the stale rows.
+    """
+    if not evaluations:
+        return
+    try:
+        with transaction.atomic():
+            model.objects.bulk_create(evaluations, ignore_conflicts=ignore_conflicts)
+    except IntegrityError as exc:
+        if not _is_stale_objectrole_fk(exc):
+            raise
+        existing_role_ids = set(ObjectRole.objects.filter(id__in={e.role_id for e in evaluations}).values_list('id', flat=True))
+        evaluations = [e for e in evaluations if e.role_id in existing_role_ids]
+        if evaluations:
+            try:
+                with transaction.atomic():
+                    model.objects.bulk_create(evaluations, ignore_conflicts=ignore_conflicts)
+            except IntegrityError as exc:
+                if not _is_stale_objectrole_fk(exc):
+                    raise
+                logger.warning('Persistent IntegrityError in bulk_create for %s, will be corrected on next recompute', model.__name__)
 
 
 def compute_object_role_permissions(object_roles=None, types_prefetch=None):
@@ -194,10 +274,8 @@ def compute_object_role_permissions(object_roles=None, types_prefetch=None):
                 to_add_uuid.append(evaluation)
             else:
                 raise RuntimeError(f'Could not find a place in cache for {evaluation}')
-        if to_add_int:
-            RoleEvaluation.objects.bulk_create(to_add_int, ignore_conflicts=settings.ANSIBLE_BASE_EVALUATIONS_IGNORE_CONFLICTS)
-        if to_add_uuid:
-            RoleEvaluationUUID.objects.bulk_create(to_add_uuid, ignore_conflicts=settings.ANSIBLE_BASE_EVALUATIONS_IGNORE_CONFLICTS)
+        _safe_bulk_create_evaluations(RoleEvaluation, to_add_int, settings.ANSIBLE_BASE_EVALUATIONS_IGNORE_CONFLICTS)
+        _safe_bulk_create_evaluations(RoleEvaluationUUID, to_add_uuid, settings.ANSIBLE_BASE_EVALUATIONS_IGNORE_CONFLICTS)
 
     if to_delete:
         logger.info(f'Deleting {len(to_delete)} object-permission records')

@@ -1,6 +1,5 @@
 import pytest
 
-from ansible_base.lib.testing.util import feature_flag_enabled
 from ansible_base.lib.utils.response import get_relative_url
 
 
@@ -16,12 +15,11 @@ def test_oauth2_provider_authorization_root_view(admin_api_client, unauthenticat
 
 
 @pytest.mark.django_db
-def test_oidc_endpoints_shown_when_flag_enabled(admin_api_client):
+def test_oidc_endpoints_always_shown(admin_api_client):
     """
-    OIDC endpoints are shown when feature flag is enabled.
+    OIDC endpoints are always shown in the authorization root view.
     """
-    with feature_flag_enabled("FEATURE_OIDC_WORKLOAD_IDENTITY_ENABLED"):
-        url = get_relative_url("oauth2_provider:oauth_authorization_root_view")
-        response = admin_api_client.get(url)
-        assert 'oidc-connect-discovery-info' in response.data
-        assert 'jwks-info' in response.data
+    url = get_relative_url("oauth2_provider:oauth_authorization_root_view")
+    response = admin_api_client.get(url)
+    assert 'oidc-connect-discovery-info' in response.data
+    assert 'jwks-info' in response.data
