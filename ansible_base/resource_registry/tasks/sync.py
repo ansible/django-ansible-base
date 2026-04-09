@@ -169,9 +169,32 @@ def get_content_object(role_definition, assignment_tuple: AssignmentTuple) -> An
     return content_object
 
 
-def get_remote_assignments(api_client: ResourceAPIClient) -> set[AssignmentTuple]:
-    """Fetch remote assignments from the resource server and convert to tuples."""
-    assignments = set()
+@dataclass
+class RemoteAssignmentResult:
+    """Result of fetching remote assignments, including completeness status.
+
+    When ``is_complete`` is False the caller must not use the partial
+    ``assignments`` set for deletion decisions — doing so would remove
+    local assignments that simply weren't fetched.
+    """
+
+    assignments: set[AssignmentTuple] = field(default_factory=set)
+    is_complete: bool = False
+
+
+def get_remote_assignments(api_client: ResourceAPIClient) -> RemoteAssignmentResult:
+    """Fetch remote assignments from the resource server and convert to tuples.
+
+    Returns a ``RemoteAssignmentResult`` so the caller can distinguish a
+    complete fetch from a partial one (e.g. due to HTTP errors or
+    timeouts mid-pagination).
+    """
+    assignments: set[AssignmentTuple] = set()
+    # Default to incomplete — only promote to True after both
+    # pagination loops finish without error.  This way any unexpected
+    # early return or unanticipated exception is treated as partial,
+    # preventing destructive deletions from an incomplete set.
+    is_complete = False
 
     # Fetch user assignments with pagination
     try:
@@ -201,9 +224,10 @@ def get_remote_assignments(api_client: ResourceAPIClient) -> set[AssignmentTuple
                 logger.debug(f"Fetching next page {page} of user assignments")
             else:
                 logger.warning(f"Failed to fetch user assignments page {page}: HTTP {user_resp.status_code}")
-                break
+                return RemoteAssignmentResult(assignments=assignments, is_complete=is_complete)
     except Exception as e:
         logger.warning(f"Failed to fetch remote user assignments: {e}")
+        return RemoteAssignmentResult(assignments=assignments, is_complete=is_complete)
 
     # Fetch team assignments with pagination
     try:
@@ -233,11 +257,14 @@ def get_remote_assignments(api_client: ResourceAPIClient) -> set[AssignmentTuple
                 logger.debug(f"Fetching next page {page} of team assignments")
             else:
                 logger.warning(f"Failed to fetch team assignments page {page}: HTTP {team_resp.status_code}")
-                break
+                return RemoteAssignmentResult(assignments=assignments, is_complete=is_complete)
     except Exception as e:
         logger.warning(f"Failed to fetch remote team assignments: {e}")
+        return RemoteAssignmentResult(assignments=assignments, is_complete=is_complete)
 
-    return assignments
+    # Both loops completed without error — the set is complete.
+    is_complete = True
+    return RemoteAssignmentResult(assignments=assignments, is_complete=is_complete)
 
 
 def get_local_assignments() -> set[AssignmentTuple]:
@@ -729,29 +756,48 @@ class SyncExecutor:
 
         try:
             # Get remote and local assignments
-            remote_assignments = get_remote_assignments(self.api_client)
+            remote_result = get_remote_assignments(self.api_client)
             local_assignments = get_local_assignments()
 
             # Calculate differences
-            to_delete = local_assignments - remote_assignments
-            to_create = remote_assignments - local_assignments
+            to_create = remote_result.assignments - local_assignments
 
             deleted_count = 0
             created_count = 0
             error_count = 0
 
-            # Delete local assignments that don't exist remotely
-            for assignment_tuple in to_delete:
-                if delete_local_assignment(assignment_tuple):
-                    deleted_count += 1
-                    self.write(
-                        f"DELETED assignment {assignment_tuple.assignment_type} {assignment_tuple.actor_ansible_id}"
-                        " -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
-                    )
-                else:
-                    error_count += 1
+            # Delete local assignments that don't exist remotely —
+            # but ONLY when the remote fetch was complete.  A partial
+            # fetch (HTTP error / timeout mid-pagination) would make
+            # ``to_delete`` contain assignments that simply weren't
+            # fetched, leading to destructive removal of valid data.
+            if remote_result.is_complete:
+                to_delete = local_assignments - remote_result.assignments
+                for assignment_tuple in to_delete:
+                    if delete_local_assignment(assignment_tuple):
+                        deleted_count += 1
+                        self.write(
+                            f"DELETED assignment {assignment_tuple.assignment_type} {assignment_tuple.actor_ansible_id}"
+                            " -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
+                        )
+                    else:
+                        error_count += 1
+            else:
+                skipped = len(local_assignments - remote_result.assignments)
+                self.write(
+                    f"Skipping deletion of {skipped} assignment(s) — remote fetch was incomplete. "
+                    "Will retry on next sync cycle."
+                )
+                logger.warning(
+                    "Skipping assignment deletions: remote fetch was incomplete "
+                    "(%d local, %d remote fetched). Deletions deferred to next complete sync.",
+                    len(local_assignments),
+                    len(remote_result.assignments),
+                )
 
-            # Create local assignments that exist remotely but not locally
+            # Create local assignments that exist remotely but not locally.
+            # Safe even on a partial fetch — at worst we create assignments
+            # that already exist (no-op) or create a subset of what's needed.
             for assignment_tuple in to_create:
                 if create_local_assignment(assignment_tuple):
                     created_count += 1
