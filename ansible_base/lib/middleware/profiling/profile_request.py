@@ -60,6 +60,7 @@ class DABProfiler:
 
             try:
                 os.makedirs(output_dir, exist_ok=True)
+                # profile_id is the X-Request-ID (a UUID), used to correlate .prof files with requests
                 filename = f"cprofile-{profile_id}.prof"
                 cprofile_filename = os.path.join(output_dir, filename)
                 self.prof.dump_stats(cprofile_filename)
@@ -93,7 +94,11 @@ class _ProfileRequestMiddleware(threading.local):
         self.profiler.start()
         request_id = trace_id_var.get()
 
-        response = self.get_response(request)
+        try:
+            response = self.get_response(request)
+        except Exception:
+            self.profiler.stop(profile_id=request_id)
+            raise
 
         if getattr(self.profiler, 'start_time', None) is None:
             return response
