@@ -10,7 +10,6 @@ from urllib.parse import quote
 
 from django.conf import settings
 from django.db import connection
-from django.utils.translation import gettext_lazy as _
 
 from ansible_base.lib.logging.context import origin_var, trace_id_var
 
@@ -18,18 +17,28 @@ logger = logging.getLogger(__name__)
 
 
 class DABProfiler:
+    """cProfile wrapper that writes .prof files to a configurable directory.
+
+    Output directory resolution: explicit override > PROFILING_CPROFILE_DIR setting > system temp.
+    Falls back to the system temp directory on write errors.
+    """
+
     def __init__(self, *args, **kwargs):
         self.prof = None
         self.start_time = None
-        # If DABProfiler is manually initialized by something that is not django middleware, we can change the output dir
         self.output_dir = kwargs.get("output_dir", None)
 
-    def start(self):
+    def start(self) -> None:
         self.start_time = time.time()
-        self.prof = cProfile.Profile()
-        self.prof.enable()
+        try:
+            self.prof = cProfile.Profile()
+            self.prof.enable()
+        except ValueError:
+            # Another profiler is already active on this thread (common in
+            # gRPC thread pools). Skip cProfile but still capture timing.
+            self.prof = None
 
-    def stop(self, profile_id: Optional[Union[str, uuid.UUID]] = None):
+    def stop(self, profile_id: Optional[Union[str, uuid.UUID]] = None) -> tuple[Optional[float], Optional[str]]:
         if self.start_time is None:
             logger.debug("Attempting to stop profiling without having started...")
             return None, None
@@ -56,15 +65,26 @@ class DABProfiler:
                 self.prof.dump_stats(cprofile_filename)
             except OSError:
                 logger.warning(f"Failed to write cProfile output to {output_dir}, falling back to {tempfile.gettempdir()}")
-                output_dir = tempfile.gettempdir()
-                filename = f"cprofile-{profile_id}.prof"
-                cprofile_filename = os.path.join(output_dir, filename)
-                self.prof.dump_stats(cprofile_filename)
+                try:
+                    output_dir = tempfile.gettempdir()
+                    filename = f"cprofile-{profile_id}.prof"
+                    cprofile_filename = os.path.join(output_dir, filename)
+                    self.prof.dump_stats(cprofile_filename)
+                except OSError:
+                    logger.warning(f"Failed to write cProfile output to fallback {output_dir}, discarding profile data")
+                    cprofile_filename = None
 
         return elapsed, cprofile_filename
 
 
 class _ProfileRequestMiddleware(threading.local):
+    """Adds timing and cProfile headers to HTTP responses.
+
+    Response headers:
+        X-API-Total-Time: Wall-clock request duration (e.g. "0.045s").
+        X-API-CProfile-File: Filesystem path to the .prof file on the server.
+    """
+
     def __init__(self, get_response=None):
         self.get_response = get_response
         self.profiler = DABProfiler()
@@ -81,15 +101,10 @@ class _ProfileRequestMiddleware(threading.local):
         elapsed, cprofile_filename = self.profiler.stop(profile_id=request_id)
 
         if elapsed is not None:
-            response['X-API-Time'] = f'{elapsed:.3f}s'
-
-        if 'X-API-Node' not in response:
-            response['X-API-Node'] = getattr(settings, 'CLUSTER_HOST_ID', _('Unknown'))
+            response['X-API-Total-Time'] = f'{elapsed:.3f}s'
 
         if cprofile_filename:
             response['X-API-CProfile-File'] = cprofile_filename
-            if 'X-API-Node' not in response:
-                response['X-API-Node'] = getattr(settings, 'CLUSTER_HOST_ID', _('Unknown'))
 
         return response
 
@@ -111,7 +126,7 @@ def _sanitize_for_sql_comment(value: str) -> str:
     is typically from trusted sources (Django URL patterns).
     """
     # URL-encode the value (handles most dangerous characters)
-    quoted_value = quote(str(value), safe='')
+    quoted_value = quote(str(value), safe='/-._~')
     # Extra paranoia: ensure no comment-closing sequences (defense-in-depth)
     quoted_value = quoted_value.replace('*/', '').replace('/*', '')
     # Escape the '%' character for the database driver
@@ -121,6 +136,12 @@ def _sanitize_for_sql_comment(value: str) -> str:
 
 
 class SQLQueryMetrics:
+    """Database execute wrapper that counts queries and injects trace context into SQL comments.
+
+    After the request completes, ``query_count`` and ``query_time`` contain
+    the totals for the wrapped scope.
+    """
+
     def __init__(self, request=None):
         self.request = request
         self.query_count = 0
@@ -154,6 +175,13 @@ class SQLQueryMetrics:
 
 
 class _SQLProfilingMiddleware:
+    """Adds SQL query metrics headers to HTTP responses.
+
+    Response headers:
+        X-API-Query-Count: Number of SQL queries executed during the request.
+        X-API-Query-Time: Total time spent in SQL (e.g. "0.012s").
+    """
+
     def __init__(self, get_response):
         self.get_response = get_response
 

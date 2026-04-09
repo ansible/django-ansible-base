@@ -50,7 +50,7 @@ class ObservabilityMiddleware:
         # Lightweight handler for when profiling is disabled (trace context only)
         self._trace_only_handler = _TraceContextMiddleware(get_response)
 
-    def _is_excluded(self, path):
+    def _is_excluded(self, path: str) -> bool:
         exclude_paths = getattr(settings, PROFILING_EXCLUDE_PATHS_SETTING, DEFAULT_EXCLUDE_PATHS)
         return any(path.startswith(prefix) for prefix in exclude_paths)
 

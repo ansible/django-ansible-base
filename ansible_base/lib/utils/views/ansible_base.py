@@ -1,4 +1,5 @@
 import logging
+import time
 
 from django.utils.translation import gettext_lazy as _
 from rest_framework.views import APIView
@@ -23,8 +24,10 @@ class AnsibleBaseView(APIView):
     def initialize_request(self, request, *args, **kwargs):
         """
         Store the Django REST Framework Request object as an attribute on the
-        normal Django request.
+        normal Django request, store time the request started.
         """
+        self.time_started = time.time()
+
         return super().initialize_request(request, *args, **kwargs)
 
     def finalize_response(self, request, response, *args, **kwargs):
@@ -48,7 +51,12 @@ class AnsibleBaseView(APIView):
             response['X-API-Product-Version'] = version
 
         response['X-API-Product-Name'] = get_setting('ANSIBLE_BASE_PRODUCT_NAME', _('Unnamed'))
-        # Note: X-API-Time and X-API-Node are added by ObservabilityMiddleware when profiling is enabled
+        response['X-API-Node'] = get_setting('CLUSTER_HOST_ID', _('Unknown'))
+
+        time_started = getattr(self, 'time_started', None)
+        if time_started:
+            time_elapsed = time.time() - self.time_started
+            response['X-API-Time'] = '%0.3fs' % time_elapsed
 
         if getattr(self, 'deprecated', False):
             response['Warning'] = _('This resource has been deprecated and will be removed in a future release.')

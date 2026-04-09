@@ -36,7 +36,6 @@ urlpatterns = [
 
 @override_settings(ROOT_URLCONF=__name__)
 class _ProfileRequestMiddlewareTest(TestCase):
-    @override_settings(CLUSTER_HOST_ID='test-node')
     def test_profile_request_middleware_headers(self):
         """
         Test that the _ProfileRequestMiddleware adds sensible headers.
@@ -44,17 +43,13 @@ class _ProfileRequestMiddlewareTest(TestCase):
         middleware = _ProfileRequestMiddleware(simple_view)
         response = middleware(self.client.get('/test/').wsgi_request)
 
-        # Test X-API-Time
-        self.assertIn('X-API-Time', response)
-        self.assertTrue(response['X-API-Time'].endswith('s'))
+        # Test X-API-Total-Time
+        self.assertIn('X-API-Total-Time', response)
+        self.assertTrue(response['X-API-Total-Time'].endswith('s'))
         try:
-            float(response['X-API-Time'][:-1])
+            float(response['X-API-Total-Time'][:-1])
         except ValueError:
-            self.fail("X-API-Time value is not a valid float")
-
-        # Test X-API-Node
-        self.assertIn('X-API-Node', response)
-        self.assertEqual(response['X-API-Node'], 'test-node')
+            self.fail("X-API-Total-Time value is not a valid float")
 
     def test_profile_request_middleware_cprofile(self):
         """
@@ -164,7 +159,6 @@ class SQLQueryMetricsTest(TestCase):
         'ansible_base.lib.middleware.observability.ObservabilityMiddleware',
     ],
     PROFILING_ENABLED=True,
-    CLUSTER_HOST_ID='test-node-obs',
 )
 class ObservabilityMiddlewareTest(TestCase):
     def setUp(self):
@@ -185,9 +179,7 @@ class ObservabilityMiddlewareTest(TestCase):
                 self.assertEqual(response['X-Request-ID'], request_id)
 
                 # 2. From _ProfileRequestMiddleware: Check profiling headers and filename
-                self.assertIn('X-API-Time', response)
-                self.assertIn('X-API-Node', response)
-                self.assertEqual(response['X-API-Node'], 'test-node-obs')
+                self.assertIn('X-API-Total-Time', response)
                 self.assertIn('X-API-CProfile-File', response)
                 self.assertIn(request_id, response['X-API-CProfile-File'])
                 self.assertTrue(os.path.exists(response['X-API-CProfile-File']))
@@ -208,8 +200,7 @@ class ObservabilityMiddlewareTest(TestCase):
         self.assertIn('X-Request-ID', response)
         self.assertEqual(response['X-Request-ID'], request_id)
 
-        self.assertNotIn('X-API-Time', response)
-        self.assertNotIn('X-API-Node', response)
+        self.assertNotIn('X-API-Total-Time', response)
         self.assertNotIn('X-API-CProfile-File', response)
         self.assertNotIn('X-API-Query-Count', response)
         self.assertNotIn('X-API-Query-Time', response)
@@ -227,22 +218,22 @@ class ObservabilityMiddlewareTest(TestCase):
         self.assertEqual(response['X-Request-ID'], request_id)
 
         # Profiling headers should be absent (path is excluded)
-        self.assertNotIn('X-API-Time', response)
-        self.assertNotIn('X-API-Node', response)
+        self.assertNotIn('X-API-Total-Time', response)
         self.assertNotIn('X-API-CProfile-File', response)
         self.assertNotIn('X-API-Query-Count', response)
         self.assertNotIn('X-API-Query-Time', response)
 
 
 class DABProfilerFallbackTest(TestCase):
-    def test_falls_back_to_tmpdir_on_permission_error(self):
+    @patch('ansible_base.lib.middleware.profiling.profile_request.os.makedirs', side_effect=OSError("Permission denied"))
+    def test_falls_back_to_tmpdir_on_permission_error(self, _mock_makedirs):
         """
         When the configured directory is not writable, DABProfiler should
         fall back to the system temp directory instead of crashing.
         """
         from ansible_base.lib.middleware.profiling.profile_request import DABProfiler
 
-        profiler = DABProfiler(output_dir='/nonexistent/unwritable/path')
+        profiler = DABProfiler(output_dir='/some/configured/path')
         profiler.start()
         profile_id = uuid.uuid4()
         elapsed, cprofile_filename = profiler.stop(profile_id=profile_id)
