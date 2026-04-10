@@ -461,8 +461,14 @@ def test_get_remote_assignments_incomplete_on_failure(failure_mode):
     result = get_remote_assignments(api_client)
 
     assert result.is_complete is False
-    # Page 1 assignments are still captured
-    assert AssignmentTuple(actor_ansible_id="u1", ansible_id_or_pk="o1", role_definition_name="Team Member", assignment_type="user") in result.assignments
+    # Compare fields directly — AssignmentTuple.__eq__ uses isinstance,
+    # which can fail across pytest-xdist worker forks.
+    assert len(result.assignments) == 1
+    assignment = next(iter(result.assignments))
+    assert assignment.actor_ansible_id == "u1"
+    assert assignment.ansible_id_or_pk == "o1"
+    assert assignment.role_definition_name == "Team Member"
+    assert assignment.assignment_type == "user"
 
 
 def test_get_remote_assignments_complete_on_success():
