@@ -182,6 +182,41 @@ class RemoteAssignmentResult:
     is_complete: bool = False
 
 
+def _paginate_assignments(list_fn, actor_id_key: str, assignment_type: str, assignments: set[AssignmentTuple]) -> bool:
+    """Paginate a single assignment type endpoint, adding results to *assignments*.
+
+    Returns True if all pages were fetched successfully, False on any error.
+    """
+    page = 1
+    try:
+        while True:
+            resp = list_fn(filters={'page': page})
+            if resp.status_code != 200:
+                logger.warning(f"Failed to fetch {assignment_type} assignments page {page}: HTTP {resp.status_code}")
+                return False
+
+            data = resp.json()
+            for assignment in data.get('results', []):
+                ansible_id_or_pk = assignment.get('object_ansible_id') or assignment.get('object_id')
+                assignments.add(
+                    AssignmentTuple(
+                        actor_ansible_id=assignment[actor_id_key],
+                        ansible_id_or_pk=ansible_id_or_pk,
+                        role_definition_name=assignment['role_definition'],
+                        assignment_type=assignment_type,
+                    )
+                )
+
+            if not data.get('next'):
+                return True
+
+            page += 1
+            logger.debug(f"Fetching next page {page} of {assignment_type} assignments")
+    except Exception as e:
+        logger.exception(f"Failed to fetch remote {assignment_type} assignments: {e}")
+        return False
+
+
 def get_remote_assignments(api_client: ResourceAPIClient) -> RemoteAssignmentResult:
     """Fetch remote assignments from the resource server and convert to tuples.
 
@@ -190,81 +225,11 @@ def get_remote_assignments(api_client: ResourceAPIClient) -> RemoteAssignmentRes
     timeouts mid-pagination).
     """
     assignments: set[AssignmentTuple] = set()
-    # Default to incomplete — only promote to True after both
-    # pagination loops finish without error.  This way any unexpected
-    # early return or unanticipated exception is treated as partial,
-    # preventing destructive deletions from an incomplete set.
-    is_complete = False
 
-    # Fetch user assignments with pagination
-    try:
-        page = 1
-        while True:
-            filters = {'page': page}
-            user_resp = api_client.list_user_assignments(filters=filters)
-            if user_resp.status_code == 200:
-                user_data = user_resp.json()
-                for assignment in user_data.get('results', []):
-                    # Handle both object_id and object_ansible_id
-                    ansible_id_or_pk = assignment.get('object_ansible_id') or assignment.get('object_id')
-                    assignments.add(
-                        AssignmentTuple(
-                            actor_ansible_id=assignment['user_ansible_id'],
-                            ansible_id_or_pk=ansible_id_or_pk,
-                            role_definition_name=assignment['role_definition'],
-                            assignment_type='user',
-                        )
-                    )
+    users_ok = _paginate_assignments(api_client.list_user_assignments, 'user_ansible_id', 'user', assignments)
+    teams_ok = _paginate_assignments(api_client.list_team_assignments, 'team_ansible_id', 'team', assignments)
 
-                # Check if there's a next page
-                if not user_data.get('next'):
-                    break
-
-                page += 1
-                logger.debug(f"Fetching next page {page} of user assignments")
-            else:
-                logger.warning(f"Failed to fetch user assignments page {page}: HTTP {user_resp.status_code}")
-                return RemoteAssignmentResult(assignments=assignments, is_complete=is_complete)
-    except Exception as e:
-        logger.exception(f"Failed to fetch remote user assignments: {e}")
-        return RemoteAssignmentResult(assignments=assignments, is_complete=is_complete)
-
-    # Fetch team assignments with pagination
-    try:
-        page = 1
-        while True:
-            filters = {'page': page}
-            team_resp = api_client.list_team_assignments(filters=filters)
-            if team_resp.status_code == 200:
-                team_data = team_resp.json()
-                for assignment in team_data.get('results', []):
-                    # Handle both object_id and object_ansible_id
-                    ansible_id_or_pk = assignment.get('object_ansible_id') or assignment.get('object_id')
-                    assignments.add(
-                        AssignmentTuple(
-                            actor_ansible_id=assignment['team_ansible_id'],
-                            ansible_id_or_pk=ansible_id_or_pk,
-                            role_definition_name=assignment['role_definition'],
-                            assignment_type='team',
-                        )
-                    )
-
-                # Check if there's a next page
-                if not team_data.get('next'):
-                    break
-
-                page += 1
-                logger.debug(f"Fetching next page {page} of team assignments")
-            else:
-                logger.warning(f"Failed to fetch team assignments page {page}: HTTP {team_resp.status_code}")
-                return RemoteAssignmentResult(assignments=assignments, is_complete=is_complete)
-    except Exception as e:
-        logger.exception(f"Failed to fetch remote team assignments: {e}")
-        return RemoteAssignmentResult(assignments=assignments, is_complete=is_complete)
-
-    # Both loops completed without error — the set is complete.
-    is_complete = True
-    return RemoteAssignmentResult(assignments=assignments, is_complete=is_complete)
+    return RemoteAssignmentResult(assignments=assignments, is_complete=users_ok and teams_ok)
 
 
 def get_local_assignments() -> set[AssignmentTuple]:
@@ -743,6 +708,21 @@ class SyncExecutor:
             self.write()
             self._process_manifest_list(manifest_list)
 
+    def _apply_assignment_changes(self, assignment_set, action_fn, label):
+        """Apply *action_fn* to each assignment in *assignment_set* and return (success_count, error_count)."""
+        success_count = 0
+        error_count = 0
+        for assignment_tuple in assignment_set:
+            if action_fn(assignment_tuple):
+                success_count += 1
+                self.write(
+                    f"{label} assignment {assignment_tuple.assignment_type} {assignment_tuple.actor_ansible_id}"
+                    f" -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
+                )
+            else:
+                error_count += 1
+        return success_count, error_count
+
     def _sync_assignments(self):
         """Synchronize role assignments between local and remote systems."""
         if not self.sync_assignments:
@@ -755,53 +735,27 @@ class SyncExecutor:
         self.write(">>> Syncing role assignments")
 
         try:
-            # Get remote and local assignments
             remote_result = get_remote_assignments(self.api_client)
             local_assignments = get_local_assignments()
 
-            # Calculate differences
-            to_create = remote_result.assignments - local_assignments
-
-            deleted_count = 0
-            created_count = 0
-            error_count = 0
-
-            # Delete local assignments that don't exist remotely —
-            # but ONLY when the remote fetch was complete.  A partial
-            # fetch (HTTP error / timeout mid-pagination) would make
-            # ``to_delete`` contain assignments that simply weren't
-            # fetched, leading to destructive removal of valid data.
+            # Deletions are only safe when the remote fetch was complete.
+            # A partial fetch would cause us to delete assignments that
+            # simply weren't fetched.
             if remote_result.is_complete:
                 to_delete = local_assignments - remote_result.assignments
-                for assignment_tuple in to_delete:
-                    if delete_local_assignment(assignment_tuple):
-                        deleted_count += 1
-                        self.write(
-                            f"DELETED assignment {assignment_tuple.assignment_type} {assignment_tuple.actor_ansible_id}"
-                            f" -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
-                        )
-                    else:
-                        error_count += 1
+                deleted_count, delete_errors = self._apply_assignment_changes(to_delete, delete_local_assignment, "DELETED")
             else:
                 self.write("Skipping assignment deletions — remote fetch was incomplete. Will retry on next sync cycle.")
                 logger.warning("Skipping assignment deletions: remote fetch was incomplete. Deletions deferred to next complete sync.")
+                deleted_count, delete_errors = 0, 0
 
-            # Create local assignments that exist remotely but not locally.
-            # Safe even on a partial fetch — at worst we create assignments
-            # that already exist (no-op) or create a subset of what's needed.
-            for assignment_tuple in to_create:
-                if create_local_assignment(assignment_tuple):
-                    created_count += 1
-                    self.write(
-                        f"CREATED assignment {assignment_tuple.assignment_type} {assignment_tuple.actor_ansible_id}"
-                        f" -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
-                    )
-                else:
-                    error_count += 1
+            # Creations are safe even on a partial fetch.
+            to_create = remote_result.assignments - local_assignments
+            created_count, create_errors = self._apply_assignment_changes(to_create, create_local_assignment, "CREATED")
 
+            error_count = delete_errors + create_errors
             self.write(f"Assignment sync completed: Created {created_count} | Deleted {deleted_count} | Errors {error_count}")
 
-            # Store results for reporting
             self.results["assignments_created"] = [created_count]
             self.results["assignments_deleted"] = [deleted_count]
             self.results["assignment_errors"] = [error_count]
