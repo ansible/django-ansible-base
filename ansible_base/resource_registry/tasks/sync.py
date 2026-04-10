@@ -226,7 +226,7 @@ def get_remote_assignments(api_client: ResourceAPIClient) -> RemoteAssignmentRes
                 logger.warning(f"Failed to fetch user assignments page {page}: HTTP {user_resp.status_code}")
                 return RemoteAssignmentResult(assignments=assignments, is_complete=is_complete)
     except Exception as e:
-        logger.warning(f"Failed to fetch remote user assignments: {e}")
+        logger.exception(f"Failed to fetch remote user assignments: {e}")
         return RemoteAssignmentResult(assignments=assignments, is_complete=is_complete)
 
     # Fetch team assignments with pagination
@@ -259,7 +259,7 @@ def get_remote_assignments(api_client: ResourceAPIClient) -> RemoteAssignmentRes
                 logger.warning(f"Failed to fetch team assignments page {page}: HTTP {team_resp.status_code}")
                 return RemoteAssignmentResult(assignments=assignments, is_complete=is_complete)
     except Exception as e:
-        logger.warning(f"Failed to fetch remote team assignments: {e}")
+        logger.exception(f"Failed to fetch remote team assignments: {e}")
         return RemoteAssignmentResult(assignments=assignments, is_complete=is_complete)
 
     # Both loops completed without error — the set is complete.
