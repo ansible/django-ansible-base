@@ -736,38 +736,50 @@ class SyncExecutor:
             to_delete = local_assignments - remote_assignments
             to_create = remote_assignments - local_assignments
 
-            deleted_count = 0
-            created_count = 0
-            error_count = 0
+            deleted_assignments = []
+            created_assigments = []
+            errored_assignments = []
 
             # Delete local assignments that don't exist remotely
             for assignment_tuple in to_delete:
                 if delete_local_assignment(assignment_tuple):
-                    deleted_count += 1
-                    self.write(
+                    delete_msg = (
                         f"DELETED assignment {assignment_tuple.assignment_type} {assignment_tuple.actor_ansible_id}"
-                        " -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
+                        f" -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
                     )
+                    self.write(delete_msg)
+                    self.results["deleted_assignments"].append(delete_msg)
                 else:
-                    error_count += 1
+                    error_msg = (
+                        f"ERRORED while DELETING assignment {assignment_tuple.assignment_type} {assignment_tuple.actor_ansible_id}"
+                        f" -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
+                    )
+                    self.write(error_msg)
+                    self.results["errored_assignments"].append(error_msg)
 
             # Create local assignments that exist remotely but not locally
             for assignment_tuple in to_create:
                 if create_local_assignment(assignment_tuple):
-                    created_count += 1
-                    self.write(
+                    created_msg = (
                         f"CREATED assignment {assignment_tuple.assignment_type} {assignment_tuple.actor_ansible_id}"
-                        " -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
+                        f" -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
                     )
+                    self.write(created_msg)
+                    self.results["created_assigments"].append(created_msg)
                 else:
-                    error_count += 1
+                    error_msg = (
+                        f"ERRORED while CREATING assignment {assignment_tuple.assignment_type} {assignment_tuple.actor_ansible_id}"
+                        f" -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
+                    )
+                    self.write(error_msg)
+                    self.results["errored_assignments"].append(error_msg)
 
-            self.write(f"Assignment sync completed: Created {created_count} | Deleted {deleted_count} | Errors {error_count}")
+            self.write(f"Assignment sync completed: Created {len(created_assigments)} | Deleted {len(deleted_assignments)} | Errors {len(errored_assignments)}")
 
             # Store results for reporting
-            self.results["assignments_created"] = [created_count]
-            self.results["assignments_deleted"] = [deleted_count]
-            self.results["assignment_errors"] = [error_count]
+            self.results["assignments_created"] = created_assigments
+            self.results["assignments_deleted"] = deleted_assignments
+            self.results["assignment_errors"] = errored_assignments
 
         except Exception as e:
             self.write(f"Assignment sync failed: {e}")
