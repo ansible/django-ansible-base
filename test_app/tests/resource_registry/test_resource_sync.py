@@ -442,9 +442,11 @@ def _mock_response(status_code=200, body=None):
     return resp
 
 
+@pytest.mark.django_db
 @pytest.mark.parametrize("failure_mode", ["http_error", "exception"])
 def test_get_remote_assignments_incomplete_on_failure(failure_mode):
     """is_complete must be False on HTTP error or exception mid-pagination."""
+    RoleDefinition.objects.managed.team_member  # ensure the role exists for filtering
     api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
     page1 = _mock_response(
         body={
@@ -474,6 +476,7 @@ def test_get_remote_assignments_incomplete_on_failure(failure_mode):
     api_client.list_team_assignments.assert_not_called()
 
 
+@pytest.mark.django_db
 def test_get_remote_assignments_complete_on_success():
     """is_complete must be True only when both pagination loops finish cleanly."""
     api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
@@ -485,3 +488,58 @@ def test_get_remote_assignments_complete_on_success():
 
     assert result.is_complete is True
     assert len(result.assignments) == 0
+
+
+@pytest.mark.django_db
+def test_get_remote_assignments_filters_unknown_roles(static_api_client):
+    """Assignments for roles that do not exist locally should be filtered out.
+
+    The resource server returns assignments across all services. Roles from
+    other services (e.g. Controller's 'Credential Admin') do not exist in the
+    local database and must be skipped to avoid DoesNotExist errors.
+    """
+    local_role = RoleDefinition.objects.managed.sys_auditor
+
+    user_results = {
+        'results': [
+            # Assignment for a role that exists locally — should be included
+            {
+                'user_ansible_id': 'aaaaaaaa-1111-2222-3333-444444444444',
+                'object_ansible_id': '1',
+                'role_definition': local_role.name,
+            },
+            # Assignment for a role from another service — should be filtered out
+            {
+                'user_ansible_id': 'bbbbbbbb-1111-2222-3333-444444444444',
+                'object_ansible_id': '1',
+                'role_definition': 'Credential Admin',
+            },
+        ],
+        'next': None,
+    }
+    team_results = {
+        'results': [
+            # Assignment for a role from another service — should be filtered out
+            {
+                'team_ansible_id': 'cccccccc-1111-2222-3333-444444444444',
+                'object_ansible_id': '1',
+                'role_definition': 'Some Other Service Role',
+            },
+        ],
+        'next': None,
+    }
+
+    user_response = mock.Mock(status_code=200)
+    user_response.json.return_value = user_results
+    team_response = mock.Mock(status_code=200)
+    team_response.json.return_value = team_results
+
+    static_api_client.list_user_assignments = mock.Mock(return_value=user_response)
+    static_api_client.list_team_assignments = mock.Mock(return_value=team_response)
+
+    result = get_remote_assignments(static_api_client)
+
+    assert result.is_complete is True
+    assert len(result.assignments) == 1
+    assignment = next(iter(result.assignments))
+    assert assignment.role_definition_name == local_role.name

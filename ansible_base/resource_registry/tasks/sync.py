@@ -200,6 +200,10 @@ class RemoteAssignmentFetcher:
         If user pagination fails, team pagination is skipped entirely
         because the result will be incomplete regardless.
         """
+        from ansible_base.rbac.models.role import RoleDefinition
+
+        self.local_role_names: set[str] = set(RoleDefinition.objects.values_list('name', flat=True))
+
         users_ok = self._paginate(self.api_client.list_user_assignments, 'user_ansible_id', 'user')
         if not users_ok:
             return RemoteAssignmentResult(assignments=self.assignments, is_complete=False)
@@ -222,12 +226,16 @@ class RemoteAssignmentFetcher:
 
                 data = resp.json()
                 for assignment in data.get('results', []):
+                    role_name = assignment['role_definition']
+                    if role_name not in self.local_role_names:
+                        logger.debug(f"Skipping remote {assignment_type} assignment with unknown local role: {role_name}")
+                        continue
                     ansible_id_or_pk = assignment.get('object_ansible_id') or assignment.get('object_id')
                     self.assignments.add(
                         AssignmentTuple(
                             actor_ansible_id=assignment[actor_id_key],
                             ansible_id_or_pk=ansible_id_or_pk,
-                            role_definition_name=assignment['role_definition'],
+                            role_definition_name=role_name,
                             assignment_type=assignment_type,
                         )
                     )
