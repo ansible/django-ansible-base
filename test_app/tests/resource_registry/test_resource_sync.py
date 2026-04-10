@@ -360,16 +360,19 @@ def test_role_assignment_resource_sync(mock_delete, mock_create, static_api_clie
         assert executor.results["assignment_errors"] == [0]
 
     # Mock a local assignment with no matching remote assignment to test deletion
-    with mock.patch(
-        "ansible_base.resource_registry.tasks.sync.get_remote_assignments",
-        return_value=RemoteAssignmentResult(assignments=set(), is_complete=True),
-    ), mock.patch(
-        "ansible_base.resource_registry.tasks.sync.get_local_assignments",
-        return_value={
-            AssignmentTuple(
-                actor_ansible_id='97447387-8596-404f-b0d0-6429b04c8d22', ansible_id_or_pk='1', role_definition_name='Team Member', assignment_type='user'
-            ),
-        },
+    with (
+        mock.patch(
+            "ansible_base.resource_registry.tasks.sync.get_remote_assignments",
+            return_value=RemoteAssignmentResult(assignments=set(), is_complete=True),
+        ),
+        mock.patch(
+            "ansible_base.resource_registry.tasks.sync.get_local_assignments",
+            return_value={
+                AssignmentTuple(
+                    actor_ansible_id='97447387-8596-404f-b0d0-6429b04c8d22', ansible_id_or_pk='1', role_definition_name='Team Member', assignment_type='user'
+                ),
+            },
+        ),
     ):
         executor = SyncExecutor(api_client=static_api_client, stdout=stdout)
         executor._sync_assignments()
@@ -404,15 +407,18 @@ def test_role_assignment_sync_skips_deletions_on_incomplete_fetch(mock_delete, m
         assignment_type='user',
     )
 
-    with mock.patch(
-        "ansible_base.resource_registry.tasks.sync.get_remote_assignments",
-        return_value=RemoteAssignmentResult(
-            assignments={remote_only},
-            is_complete=False,
+    with (
+        mock.patch(
+            "ansible_base.resource_registry.tasks.sync.get_remote_assignments",
+            return_value=RemoteAssignmentResult(
+                assignments={remote_only},
+                is_complete=False,
+            ),
         ),
-    ), mock.patch(
-        "ansible_base.resource_registry.tasks.sync.get_local_assignments",
-        return_value={local_only},
+        mock.patch(
+            "ansible_base.resource_registry.tasks.sync.get_local_assignments",
+            return_value={local_only},
+        ),
     ):
         executor = SyncExecutor(api_client=static_api_client, stdout=stdout)
         executor._sync_assignments()
@@ -426,7 +432,7 @@ def test_role_assignment_sync_skips_deletions_on_incomplete_fetch(mock_delete, m
         assert executor.results["assignments_created"] == [1]
 
         # Verify the skip message was logged
-        assert any('Skipping deletion' in line for line in stdout.lines)
+        assert any('Skipping assignment deletions' in line for line in stdout.lines)
 
 
 def _mock_response(status_code=200, body=None):
@@ -437,32 +443,36 @@ def _mock_response(status_code=200, body=None):
 
 
 @pytest.mark.parametrize("failure_mode", ["http_error", "exception"])
-def test_get_remote_assignments_incomplete_on_failure(static_api_client, failure_mode):
+def test_get_remote_assignments_incomplete_on_failure(failure_mode):
     """is_complete must be False on HTTP error or exception mid-pagination."""
-    page1 = _mock_response(body={
-        "results": [{"user_ansible_id": "u1", "object_ansible_id": "o1", "role_definition": "Team Member"}],
-        "next": "http://example.com/page2",
-    })
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+    page1 = _mock_response(
+        body={
+            "results": [{"user_ansible_id": "u1", "object_ansible_id": "o1", "role_definition": "Team Member"}],
+            "next": "http://example.com/page2",
+        }
+    )
 
     if failure_mode == "http_error":
-        side_effect = [page1, _mock_response(status_code=500)]
+        api_client.list_user_assignments.side_effect = [page1, _mock_response(status_code=500)]
     else:
-        side_effect = [page1, ConnectionError("reset")]
+        api_client.list_user_assignments.side_effect = [page1, ConnectionError("reset")]
 
-    with mock.patch.object(static_api_client, "list_user_assignments", side_effect=side_effect):
-        result = get_remote_assignments(static_api_client)
+    result = get_remote_assignments(api_client)
 
     assert result.is_complete is False
     # Page 1 assignments are still captured
     assert AssignmentTuple(actor_ansible_id="u1", ansible_id_or_pk="o1", role_definition_name="Team Member", assignment_type="user") in result.assignments
 
 
-def test_get_remote_assignments_complete_on_success(static_api_client):
+def test_get_remote_assignments_complete_on_success():
     """is_complete must be True only when both pagination loops finish cleanly."""
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
     ok = _mock_response()
-    with mock.patch.object(static_api_client, "list_user_assignments", return_value=ok), \
-         mock.patch.object(static_api_client, "list_team_assignments", return_value=ok):
-        result = get_remote_assignments(static_api_client)
+    api_client.list_user_assignments.return_value = ok
+    api_client.list_team_assignments.return_value = ok
+
+    result = get_remote_assignments(api_client)
 
     assert result.is_complete is True
     assert len(result.assignments) == 0

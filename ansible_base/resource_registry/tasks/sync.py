@@ -778,22 +778,13 @@ class SyncExecutor:
                         deleted_count += 1
                         self.write(
                             f"DELETED assignment {assignment_tuple.assignment_type} {assignment_tuple.actor_ansible_id}"
-                            " -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
+                            f" -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
                         )
                     else:
                         error_count += 1
             else:
-                skipped = len(local_assignments - remote_result.assignments)
-                self.write(
-                    f"Skipping deletion of {skipped} assignment(s) — remote fetch was incomplete. "
-                    "Will retry on next sync cycle."
-                )
-                logger.warning(
-                    "Skipping assignment deletions: remote fetch was incomplete "
-                    "(%d local, %d remote fetched). Deletions deferred to next complete sync.",
-                    len(local_assignments),
-                    len(remote_result.assignments),
-                )
+                self.write("Skipping assignment deletions — remote fetch was incomplete. Will retry on next sync cycle.")
+                logger.warning("Skipping assignment deletions: remote fetch was incomplete. Deletions deferred to next complete sync.")
 
             # Create local assignments that exist remotely but not locally.
             # Safe even on a partial fetch — at worst we create assignments
@@ -803,7 +794,7 @@ class SyncExecutor:
                     created_count += 1
                     self.write(
                         f"CREATED assignment {assignment_tuple.assignment_type} {assignment_tuple.actor_ansible_id}"
-                        " -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
+                        f" -> {assignment_tuple.role_definition_name} on {assignment_tuple.ansible_id_or_pk or 'global'}"
                     )
                 else:
                     error_count += 1
