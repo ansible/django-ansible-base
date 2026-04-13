@@ -182,39 +182,64 @@ class RemoteAssignmentResult:
     is_complete: bool = False
 
 
-def _paginate_assignments(list_fn, actor_id_key: str, assignment_type: str, assignments: set[AssignmentTuple]) -> bool:
-    """Paginate a single assignment type endpoint, adding results to *assignments*.
+class RemoteAssignmentFetcher:
+    """Fetches role assignments from a remote resource server with pagination.
 
-    Returns True if all pages were fetched successfully, False on any error.
+    Collects user and team assignments into a single set.  If any page
+    request fails the fetcher stops early and marks the result as
+    incomplete so the caller can skip deletions safely.
     """
-    page = 1
-    try:
-        while True:
-            resp = list_fn(filters={'page': page})
-            if resp.status_code != 200:
-                logger.warning(f"Failed to fetch {assignment_type} assignments page {page}: HTTP {resp.status_code}")
-                return False
 
-            data = resp.json()
-            for assignment in data.get('results', []):
-                ansible_id_or_pk = assignment.get('object_ansible_id') or assignment.get('object_id')
-                assignments.add(
-                    AssignmentTuple(
-                        actor_ansible_id=assignment[actor_id_key],
-                        ansible_id_or_pk=ansible_id_or_pk,
-                        role_definition_name=assignment['role_definition'],
-                        assignment_type=assignment_type,
+    def __init__(self, api_client: ResourceAPIClient):
+        self.api_client = api_client
+        self.assignments: set[AssignmentTuple] = set()
+
+    def fetch(self) -> RemoteAssignmentResult:
+        """Paginate user then team assignments and return the result.
+
+        If user pagination fails, team pagination is skipped entirely
+        because the result will be incomplete regardless.
+        """
+        users_ok = self._paginate(self.api_client.list_user_assignments, 'user_ansible_id', 'user')
+        if not users_ok:
+            return RemoteAssignmentResult(assignments=self.assignments, is_complete=False)
+
+        teams_ok = self._paginate(self.api_client.list_team_assignments, 'team_ansible_id', 'team')
+        return RemoteAssignmentResult(assignments=self.assignments, is_complete=teams_ok)
+
+    def _paginate(self, list_fn, actor_id_key: str, assignment_type: str) -> bool:
+        """Paginate a single assignment endpoint, adding results to ``self.assignments``.
+
+        Returns True if all pages were fetched successfully, False on any error.
+        """
+        page = 1
+        try:
+            while True:
+                resp = list_fn(filters={'page': page})
+                if resp.status_code != 200:
+                    logger.warning(f"Failed to fetch {assignment_type} assignments page {page}: HTTP {resp.status_code}")
+                    return False
+
+                data = resp.json()
+                for assignment in data.get('results', []):
+                    ansible_id_or_pk = assignment.get('object_ansible_id') or assignment.get('object_id')
+                    self.assignments.add(
+                        AssignmentTuple(
+                            actor_ansible_id=assignment[actor_id_key],
+                            ansible_id_or_pk=ansible_id_or_pk,
+                            role_definition_name=assignment['role_definition'],
+                            assignment_type=assignment_type,
+                        )
                     )
-                )
 
-            if not data.get('next'):
-                return True
+                if not data.get('next'):
+                    return True
 
-            page += 1
-            logger.debug(f"Fetching next page {page} of {assignment_type} assignments")
-    except Exception as e:
-        logger.exception(f"Failed to fetch remote {assignment_type} assignments: {e}")
-        return False
+                page += 1
+                logger.debug(f"Fetching next page {page} of {assignment_type} assignments")
+        except Exception as e:
+            logger.exception(f"Failed to fetch remote {assignment_type} assignments: {e}")
+            return False
 
 
 def get_remote_assignments(api_client: ResourceAPIClient) -> RemoteAssignmentResult:
@@ -224,12 +249,7 @@ def get_remote_assignments(api_client: ResourceAPIClient) -> RemoteAssignmentRes
     complete fetch from a partial one (e.g. due to HTTP errors or
     timeouts mid-pagination).
     """
-    assignments: set[AssignmentTuple] = set()
-
-    users_ok = _paginate_assignments(api_client.list_user_assignments, 'user_ansible_id', 'user', assignments)
-    teams_ok = _paginate_assignments(api_client.list_team_assignments, 'team_ansible_id', 'team', assignments)
-
-    return RemoteAssignmentResult(assignments=assignments, is_complete=users_ok and teams_ok)
+    return RemoteAssignmentFetcher(api_client).fetch()
 
 
 def get_local_assignments() -> set[AssignmentTuple]:

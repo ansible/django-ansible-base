@@ -470,6 +470,9 @@ def test_get_remote_assignments_incomplete_on_failure(failure_mode):
     assert assignment.role_definition_name == "Team Member"
     assert assignment.assignment_type == "user"
 
+    # Team pagination must be skipped when user pagination fails
+    api_client.list_team_assignments.assert_not_called()
+
 
 def test_get_remote_assignments_complete_on_success():
     """is_complete must be True only when both pagination loops finish cleanly."""
