@@ -237,8 +237,8 @@ class RemoteAssignmentFetcher:
 
                 page += 1
                 logger.debug(f"Fetching next page {page} of {assignment_type} assignments")
-        except Exception as e:
-            logger.exception(f"Failed to fetch remote {assignment_type} assignments: {e}")
+        except Exception:
+            logger.exception(f"Failed to fetch remote {assignment_type} assignments")
             return False
 
 
