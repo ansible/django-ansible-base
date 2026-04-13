@@ -1,4 +1,5 @@
 import logging
+from contextlib import contextmanager
 from typing import Union
 from uuid import UUID
 
@@ -23,6 +24,57 @@ Sounds simple, but is actually more complicated that the caching logic itself.
 
 
 dab_post_migrate = Signal()
+
+
+class _DeferredEvaluationState:
+    """Tracks whether RoleEvaluation cache updates should be deferred.
+
+    Used by defer_role_evaluation() to collect object_roles that need
+    recomputation and process them in a single batch on context exit.
+    """
+
+    def __init__(self):
+        self.enabled = False
+        self.object_roles = set()
+        self.needs_team_recompute = False
+
+
+_deferred_evaluation = _DeferredEvaluationState()
+
+
+@contextmanager
+def defer_role_evaluation():
+    """Defer RoleEvaluation cache updates until the context exits.
+
+    During bulk operations like save_user_claims(), each give_permission() /
+    remove_permission() call triggers compute_object_role_permissions()
+    individually. This context manager collects all affected object_roles
+    and processes them in a single batch when the context exits, reducing
+    N individual compute+write cycles to one.
+
+    Supports nesting by saving and restoring previous state.
+    """
+    previous_enabled = _deferred_evaluation.enabled
+    previous_roles = _deferred_evaluation.object_roles
+    previous_teams = _deferred_evaluation.needs_team_recompute
+
+    _deferred_evaluation.enabled = True
+    _deferred_evaluation.object_roles = set()
+    _deferred_evaluation.needs_team_recompute = False
+    try:
+        yield
+    finally:
+        deferred_roles = _deferred_evaluation.object_roles
+        deferred_teams = _deferred_evaluation.needs_team_recompute
+
+        _deferred_evaluation.enabled = previous_enabled
+        _deferred_evaluation.object_roles = previous_roles
+        _deferred_evaluation.needs_team_recompute = previous_teams
+
+        if deferred_teams:
+            compute_team_member_roles()
+        if deferred_roles:
+            compute_object_role_permissions(object_roles=deferred_roles)
 
 
 def team_ancestor_roles(team):
@@ -84,6 +136,11 @@ def needed_updates_on_assignment(role_definition, actor, object_role, created=Fa
 
 def update_after_assignment(update_teams, to_update):
     "Call this with the output of needed_updates_on_assignment"
+    if _deferred_evaluation.enabled:
+        _deferred_evaluation.object_roles.update(to_update)
+        _deferred_evaluation.needs_team_recompute |= update_teams
+        return
+
     if update_teams:
         compute_team_member_roles()
 
