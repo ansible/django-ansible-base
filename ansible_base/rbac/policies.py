@@ -1,5 +1,8 @@
+from typing import Optional
+
 from django.apps import apps
 from django.conf import settings
+from django.contrib.auth.models import AbstractBaseUser
 from django.db.models import Model
 from django.db.models.query import QuerySet
 from django.utils.translation import gettext_lazy as _
@@ -51,8 +54,11 @@ def can_view_all_users(request_user):
     )
 
 
-def can_change_user(request_user, target_user) -> bool:
+def can_change_user(request_user: Optional[AbstractBaseUser], target_user: Optional[AbstractBaseUser], can_self_edit: bool = True) -> bool:
     """Tells if the request user can modify details of the target user"""
+    if request_user is None or target_user is None:
+        return False
+
     if request_user.is_superuser:
         return True
     elif target_user.is_superuser:
@@ -62,7 +68,7 @@ def can_change_user(request_user, target_user) -> bool:
         return False
 
     # All users can change their own password and other details
-    if request_user.pk == target_user.pk:
+    if request_user.pk == target_user.pk and can_self_edit:
         return True
 
     # If the user is not in any organizations, answer can not consider organization permissions
