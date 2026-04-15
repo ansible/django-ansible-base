@@ -144,6 +144,13 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         # these will be combined with the actual DRF defaults in our base view
         dab_data['ANSIBLE_BASE_CUSTOM_VIEW_FILTERS'] = dab_data['ANSIBLE_BASE_ALL_REST_FILTERS']
 
+    # ObservabilityMiddleware provides request tracing (X-Request-ID) and timing (X-API-Total-Time)
+    # on every request. Set ANSIBLE_BASE_PROFILING_ENABLED=True for cProfile .prof files,
+    # and/or ANSIBLE_BASE_PROFILING_SQL_ENABLED=True for SQL query metrics.
+    observability_mw = 'ansible_base.lib.middleware.observability.ObservabilityMiddleware'
+    if observability_mw not in middleware:
+        middleware.insert(0, observability_mw)
+
     if 'ansible_base.authentication' in installed_apps:
         if 'social_django' not in installed_apps:
             installed_apps.append('social_django')

@@ -1,4 +1,5 @@
 import contextvars
+import functools
 import uuid
 
 # Define the context variables that will hold our trace information.
@@ -43,6 +44,7 @@ class trace_context:
             var.reset(token)
 
     def __call__(self, func):
+        @functools.wraps(func)
         def wrapper(*args, **kwargs):
             with self:
                 return func(*args, **kwargs)

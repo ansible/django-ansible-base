@@ -53,21 +53,22 @@ class _ProfileRequestMiddlewareTest(TestCase):
 
     def test_profile_request_middleware_cprofile(self):
         """
-        Test that the _ProfileRequestMiddleware adds the X-API-CProfile-File
-        header and creates a profile file.
+        Test that the _ProfileRequestMiddleware adds the X-API-Profile-File
+        header and creates a profile file when ANSIBLE_BASE_PROFILING_ENABLED is True.
         """
         with tempfile.TemporaryDirectory() as tmpdir:
-            with override_settings(PROFILING_CPROFILE_DIR=tmpdir):
+            with override_settings(ANSIBLE_BASE_PROFILING_ENABLED=True, ANSIBLE_BASE_PROFILING_CPROFILE_DIR=tmpdir):
                 middleware = _ProfileRequestMiddleware(simple_view)
                 response = middleware(self.client.get('/test/').wsgi_request)
-                self.assertIn('X-API-CProfile-File', response)
-                profile_file = response['X-API-CProfile-File']
+                self.assertIn('X-API-Profile-File', response)
+                profile_file = response['X-API-Profile-File']
                 self.assertTrue(profile_file.endswith('.prof'))
                 self.assertTrue(os.path.exists(profile_file))
 
 
 @override_settings(
     ROOT_URLCONF=__name__,
+    ANSIBLE_BASE_PROFILING_SQL_ENABLED=True,
     MIDDLEWARE=[
         'django.contrib.sessions.middleware.SessionMiddleware',
         'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -90,6 +91,7 @@ class _SQLProfilingMiddlewareTest(TestCase):
 
 @override_settings(
     ROOT_URLCONF=__name__,
+    ANSIBLE_BASE_PROFILING_SQL_ENABLED=True,
     MIDDLEWARE=[
         'django.contrib.sessions.middleware.SessionMiddleware',
         'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -158,7 +160,8 @@ class SQLQueryMetricsTest(TestCase):
         'django.contrib.auth.middleware.AuthenticationMiddleware',
         'ansible_base.lib.middleware.observability.ObservabilityMiddleware',
     ],
-    PROFILING_ENABLED=True,
+    ANSIBLE_BASE_PROFILING_ENABLED=True,
+    ANSIBLE_BASE_PROFILING_SQL_ENABLED=True,
 )
 class ObservabilityMiddlewareTest(TestCase):
     def setUp(self):
@@ -167,11 +170,11 @@ class ObservabilityMiddlewareTest(TestCase):
 
     def test_observability_middleware_all_headers(self):
         """
-        When PROFILING_ENABLED is True, all profiling headers should be present.
+        When both profiling flags are True, all profiling headers should be present.
         """
         request_id = str(uuid.uuid4())
         with tempfile.TemporaryDirectory() as tmpdir:
-            with override_settings(PROFILING_CPROFILE_DIR=tmpdir):
+            with override_settings(ANSIBLE_BASE_PROFILING_CPROFILE_DIR=tmpdir):
                 response = self.client.get('/test-db/', HTTP_X_REQUEST_ID=request_id)
 
                 # 1. From _TraceContextMiddleware: Check response header
@@ -180,19 +183,19 @@ class ObservabilityMiddlewareTest(TestCase):
 
                 # 2. From _ProfileRequestMiddleware: Check profiling headers and filename
                 self.assertIn('X-API-Total-Time', response)
-                self.assertIn('X-API-CProfile-File', response)
-                self.assertIn(request_id, response['X-API-CProfile-File'])
-                self.assertTrue(os.path.exists(response['X-API-CProfile-File']))
+                self.assertIn('X-API-Profile-File', response)
+                self.assertIn(request_id, response['X-API-Profile-File'])
+                self.assertTrue(os.path.exists(response['X-API-Profile-File']))
 
                 # 3. From _SQLProfilingMiddleware: Check SQL headers
                 self.assertIn('X-API-Query-Count', response)
                 self.assertIn('X-API-Query-Time', response)
 
-    @override_settings(PROFILING_ENABLED=False)
+    @override_settings(ANSIBLE_BASE_PROFILING_ENABLED=False, ANSIBLE_BASE_PROFILING_SQL_ENABLED=False)
     def test_observability_middleware_disabled(self):
         """
-        When PROFILING_ENABLED is False, no profiling headers should be present,
-        but trace context (X-Request-ID) should still work.
+        When both profiling flags are False, no profiling headers should be present,
+        but trace context (X-Request-ID) and timing (X-API-Total-Time) should still work.
         """
         request_id = str(uuid.uuid4())
         response = self.client.get('/test-db/', HTTP_X_REQUEST_ID=request_id)
@@ -200,28 +203,65 @@ class ObservabilityMiddlewareTest(TestCase):
         self.assertIn('X-Request-ID', response)
         self.assertEqual(response['X-Request-ID'], request_id)
 
-        self.assertNotIn('X-API-Total-Time', response)
-        self.assertNotIn('X-API-CProfile-File', response)
+        # Timing is always present
+        self.assertIn('X-API-Total-Time', response)
+
+        # Profiling-specific headers should be absent
+        self.assertNotIn('X-API-Profile-File', response)
         self.assertNotIn('X-API-Query-Count', response)
         self.assertNotIn('X-API-Query-Time', response)
 
     def test_observability_middleware_excludes_paths(self):
         """
-        When PROFILING_ENABLED is True but the request path matches an excluded
-        prefix, profiling headers should not be present.
+        When profiling flags are True but the request path matches an excluded
+        prefix, profiling headers should not be present but timing should.
         """
         request_id = str(uuid.uuid4())
         response = self.client.get('/up', HTTP_X_REQUEST_ID=request_id)
 
-        # Trace context should still work
+        # Trace context and timing should still work
         self.assertIn('X-Request-ID', response)
         self.assertEqual(response['X-Request-ID'], request_id)
+        self.assertIn('X-API-Total-Time', response)
 
         # Profiling headers should be absent (path is excluded)
-        self.assertNotIn('X-API-Total-Time', response)
-        self.assertNotIn('X-API-CProfile-File', response)
+        self.assertNotIn('X-API-Profile-File', response)
         self.assertNotIn('X-API-Query-Count', response)
         self.assertNotIn('X-API-Query-Time', response)
+
+    @override_settings(ANSIBLE_BASE_PROFILING_ENABLED=True, ANSIBLE_BASE_PROFILING_SQL_ENABLED=False)
+    def test_observability_middleware_cprofile_only(self):
+        """
+        When only ANSIBLE_BASE_PROFILING_ENABLED is True, cProfile headers should
+        be present but SQL headers should not.
+        """
+        request_id = str(uuid.uuid4())
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with override_settings(ANSIBLE_BASE_PROFILING_CPROFILE_DIR=tmpdir):
+                response = self.client.get('/test-db/', HTTP_X_REQUEST_ID=request_id)
+
+                self.assertIn('X-Request-ID', response)
+                self.assertIn('X-API-Total-Time', response)
+                self.assertIn('X-API-Profile-File', response)
+
+                self.assertNotIn('X-API-Query-Count', response)
+                self.assertNotIn('X-API-Query-Time', response)
+
+    @override_settings(ANSIBLE_BASE_PROFILING_ENABLED=False, ANSIBLE_BASE_PROFILING_SQL_ENABLED=True)
+    def test_observability_middleware_sql_only(self):
+        """
+        When only ANSIBLE_BASE_PROFILING_SQL_ENABLED is True, SQL headers should be present
+        but cProfile headers should not.
+        """
+        request_id = str(uuid.uuid4())
+        response = self.client.get('/test-db/', HTTP_X_REQUEST_ID=request_id)
+
+        self.assertIn('X-Request-ID', response)
+        self.assertIn('X-API-Total-Time', response)
+        self.assertIn('X-API-Query-Count', response)
+        self.assertIn('X-API-Query-Time', response)
+
+        self.assertNotIn('X-API-Profile-File', response)
 
 
 class DABProfilerFallbackTest(TestCase):

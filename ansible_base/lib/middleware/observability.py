@@ -12,9 +12,6 @@ from .request_context import _TraceContextMiddleware
 
 logger = logging.getLogger(__name__)
 
-PROFILING_SETTING = 'PROFILING_ENABLED'
-PROFILING_EXCLUDE_PATHS_SETTING = 'PROFILING_EXCLUDE_PATHS'
-
 DEFAULT_EXCLUDE_PATHS = [
     '/api/gateway/v1/ping/',
     '/up',
@@ -30,31 +27,33 @@ class ObservabilityMiddleware:
     profiling middleware in the correct order. Instead of listing all three
     in your settings, you can now just add this one.
 
-    The profiling and SQL layers are gated behind the PROFILING_ENABLED
-    setting. When disabled, only trace context is applied (request ID
-    tracking), and the profiling layers short-circuit with zero overhead.
-    Changing this setting requires a restart.
+    Every request gets:
+    - X-Request-ID (trace context)
+    - X-API-Total-Time (wall-clock timing)
 
-    Requests matching PROFILING_EXCLUDE_PATHS are always skipped, even when
-    profiling is enabled. This filters out health checks, discovery, and
-    other internal traffic.
+    cProfile and SQL metrics are individually gated:
+    - ANSIBLE_BASE_PROFILING_ENABLED: .prof file generation + X-API-Profile-File header
+    - ANSIBLE_BASE_PROFILING_SQL_ENABLED: SQL comment injection + X-API-Query-Count/Time headers
+
+    Requests matching ANSIBLE_BASE_PROFILING_EXCLUDE_PATHS skip profiling features but
+    still get trace context and timing.
     """
 
     def __init__(self, get_response):
         self.get_response = get_response
-        # Chain the middleware in the desired order. The request will flow
-        # from _TraceContextMiddleware -> _ProfileRequestMiddleware -> _SQLProfilingMiddleware.
+        # Chain: _TraceContextMiddleware -> _ProfileRequestMiddleware -> _SQLProfilingMiddleware
+        # _ProfileRequestMiddleware always adds timing; cProfile/SQL check their own flags.
         handler = _SQLProfilingMiddleware(get_response)
         handler = _ProfileRequestMiddleware(handler)
-        self._profiling_handler = _TraceContextMiddleware(handler)
-        # Lightweight handler for when profiling is disabled (trace context only)
-        self._trace_only_handler = _TraceContextMiddleware(get_response)
+        self._handler = _TraceContextMiddleware(handler)
 
     def _is_excluded(self, path: str) -> bool:
-        exclude_paths = getattr(settings, PROFILING_EXCLUDE_PATHS_SETTING, DEFAULT_EXCLUDE_PATHS)
+        exclude_paths = getattr(settings, 'ANSIBLE_BASE_PROFILING_EXCLUDE_PATHS', DEFAULT_EXCLUDE_PATHS)
         return any(path.startswith(prefix) for prefix in exclude_paths)
 
     def __call__(self, request):
-        if not getattr(settings, PROFILING_SETTING, False) or self._is_excluded(request.path):
-            return self._trace_only_handler(request)
-        return self._profiling_handler(request)
+        if self._is_excluded(request.path):
+            # Excluded paths still get trace context and timing, but
+            # skip profiling even if the flags are on.
+            request._profiling_excluded = True
+        return self._handler(request)

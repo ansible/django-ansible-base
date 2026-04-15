@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class DABProfiler:
     """cProfile wrapper that writes .prof files to a configurable directory.
 
-    Output directory resolution: explicit override > PROFILING_CPROFILE_DIR setting > system temp.
+    Output directory resolution: explicit override > ANSIBLE_BASE_PROFILING_CPROFILE_DIR setting > system temp.
     Falls back to the system temp directory on write errors.
     """
 
@@ -54,7 +54,7 @@ class DABProfiler:
             self.prof.disable()
 
             # Get output directory: explicit override > dynamic setting > system temp
-            output_dir = self.output_dir if self.output_dir else getattr(settings, 'PROFILING_CPROFILE_DIR', None)
+            output_dir = self.output_dir if self.output_dir else getattr(settings, 'ANSIBLE_BASE_PROFILING_CPROFILE_DIR', None)
             if not output_dir:
                 output_dir = tempfile.gettempdir()
 
@@ -79,11 +79,14 @@ class DABProfiler:
 
 
 class _ProfileRequestMiddleware(threading.local):
-    """Adds timing and cProfile headers to HTTP responses.
+    """Adds timing and optional cProfile headers to HTTP responses.
+
+    The timing header (X-API-Total-Time) is always set. cProfile output is
+    only produced when the ANSIBLE_BASE_PROFILING_ENABLED setting is True.
 
     Response headers:
-        X-API-Total-Time: Wall-clock request duration (e.g. "0.045s").
-        X-API-CProfile-File: Filesystem path to the .prof file on the server.
+        X-API-Total-Time: Wall-clock request duration (e.g. "0.045s"). Always set.
+        X-API-Profile-File: Filesystem path to the .prof file on the server (cProfile only).
     """
 
     def __init__(self, get_response=None):
@@ -91,25 +94,30 @@ class _ProfileRequestMiddleware(threading.local):
         self.profiler = DABProfiler()
 
     def __call__(self, request):
-        self.profiler.start()
+        cprofile_enabled = (
+            getattr(settings, 'ANSIBLE_BASE_PROFILING_ENABLED', False)
+            and not getattr(request, '_profiling_excluded', False)
+        )
         request_id = trace_id_var.get()
+
+        if cprofile_enabled:
+            self.profiler.start()
+
+        start_time = time.time()
 
         try:
             response = self.get_response(request)
         except Exception:
-            self.profiler.stop(profile_id=request_id)
+            if cprofile_enabled:
+                self.profiler.stop(profile_id=request_id)
             raise
 
-        if getattr(self.profiler, 'start_time', None) is None:
-            return response
+        response['X-API-Total-Time'] = f'{time.time() - start_time:.3f}s'
 
-        elapsed, cprofile_filename = self.profiler.stop(profile_id=request_id)
-
-        if elapsed is not None:
-            response['X-API-Total-Time'] = f'{elapsed:.3f}s'
-
-        if cprofile_filename:
-            response['X-API-CProfile-File'] = cprofile_filename
+        if cprofile_enabled:
+            _, cprofile_filename = self.profiler.stop(profile_id=request_id)
+            if cprofile_filename:
+                response['X-API-Profile-File'] = cprofile_filename
 
         return response
 
@@ -182,6 +190,9 @@ class SQLQueryMetrics:
 class _SQLProfilingMiddleware:
     """Adds SQL query metrics headers to HTTP responses.
 
+    Only active when the ANSIBLE_BASE_PROFILING_SQL_ENABLED setting is True.
+    Otherwise passes through to the next middleware with no overhead.
+
     Response headers:
         X-API-Query-Count: Number of SQL queries executed during the request.
         X-API-Query-Time: Total time spent in SQL (e.g. "0.012s").
@@ -191,6 +202,9 @@ class _SQLProfilingMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        if not getattr(settings, 'ANSIBLE_BASE_PROFILING_SQL_ENABLED', False) or getattr(request, '_profiling_excluded', False):
+            return self.get_response(request)
+
         # Check if the trace context is available. If not, log a warning.
         if trace_id_var.get() is None:
             logger.warning(
