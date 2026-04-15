@@ -94,10 +94,7 @@ class _ProfileRequestMiddleware(threading.local):
         self.profiler = DABProfiler()
 
     def __call__(self, request):
-        cprofile_enabled = (
-            getattr(settings, 'ANSIBLE_BASE_PROFILING_ENABLED', False)
-            and not getattr(request, '_profiling_excluded', False)
-        )
+        cprofile_enabled = getattr(settings, 'ANSIBLE_BASE_PROFILING_ENABLED', False) and not getattr(request, '_profiling_excluded', False)
         request_id = trace_id_var.get()
 
         if cprofile_enabled:
