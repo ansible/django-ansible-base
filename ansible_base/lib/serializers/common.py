@@ -107,6 +107,7 @@ class ImmutableCommonModelSerializer(AbstractCommonModelSerializer):
 class CommonUserSerializer(CommonModelSerializer):
     """
     Disallows editing of system user and enforces superuser requirement.
+    Prevents unauthorized email changes across all services.
     """
 
     def validate(self, data):
@@ -114,7 +115,33 @@ class CommonUserSerializer(CommonModelSerializer):
             return data
         if hasattr(self, 'instance') and hasattr(self.instance, 'id') and self.instance.id == models.get_system_user().id:
             raise ValidationError(_('System users cannot be modified'))
+
+        self._validate_email_change(data)
+
         return data
+
+    def _validate_email_change(self, data):
+        """Prevent unauthorized email changes.
+
+        Only superusers and org-admins (who administer ALL of the target
+        user's organizations) may change the email field.  Self-edits are
+        explicitly disallowed because the email address is a sensitive
+        identity field used for authenticator linkage.
+        """
+        if self.instance is None or 'email' not in data:
+            return
+
+        if data['email'] == self.instance.email:
+            return
+
+        request = self.context.get('request')
+        if request is None:
+            return
+
+        from ansible_base.rbac.policies import can_change_user
+
+        if not can_change_user(request.user, self.instance, can_self_edit=False):
+            raise ValidationError({'email': [_("You do not have permission to change the email field.")]})
 
     def validate_is_superuser(self, value):
         if value is True:

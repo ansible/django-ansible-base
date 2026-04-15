@@ -282,6 +282,47 @@ def rbac_post_delete_remove_object_roles(instance, *args, **kwargs):
             logger.exception(f"Failed to sync object deletion for {instance}")
 
 
+def rbac_post_init_stash_email(instance, **kwargs):
+    """Capture the email at load time so pre_save can detect changes
+    without an extra query, following the same pattern as
+    rbac_post_init_set_original_parent."""
+    if 'email' in instance.__dict__:
+        instance._rbac_original_email = instance.email
+
+
+def rbac_pre_save_enforce_email_policy(instance, **kwargs):
+    """Prevent non-privileged users from changing the email field.
+
+    Superusers and org-admins (of ALL the target user's orgs) are
+    allowed.  System operations with no request user (management
+    commands, migrations, forward-sync) are always allowed.
+    """
+    from crum import get_current_user
+
+    from ansible_base.rbac.policies import can_change_user
+
+    if instance.pk is None:
+        return
+
+    original = getattr(instance, '_rbac_original_email', None)
+    if original is None or original == instance.email:
+        return
+
+    update_fields = kwargs.get('update_fields')
+    if update_fields and 'email' not in update_fields:
+        return
+
+    requesting_user = get_current_user()
+    if requesting_user is None:
+        return
+
+    if not can_change_user(requesting_user, instance, can_self_edit=False):
+        from rest_framework.exceptions import ValidationError
+
+        instance.email = original
+        raise ValidationError({'email': ["You do not have permission to change the email field."]})
+
+
 def rbac_post_user_delete(instance, *args, **kwargs):
     """
     After you delete a user, all their permissions should be removed as well
