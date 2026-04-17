@@ -294,6 +294,13 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         # of DOT that we are using requires it by default.
         oauth2_provider.setdefault('PKCE_REQUIRED', False)
 
+        # RP-Initiated Logout (OIDC) settings
+        oauth2_provider.setdefault('OIDC_RP_INITIATED_LOGOUT_ENABLED', True)
+        oauth2_provider.setdefault('OIDC_RP_INITIATED_LOGOUT_DELETE_TOKENS', True)
+        oauth2_provider.setdefault('OIDC_RP_INITIATED_LOGOUT_STRICT_REDIRECT_URIS', True)
+        oauth2_provider.setdefault('OIDC_RP_INITIATED_LOGOUT_ALWAYS_PROMPT', False)
+        oauth2_provider.setdefault('OIDC_RP_INITIATED_LOGOUT_ACCEPT_EXPIRED_TOKENS', True)
+
         oauth2_provider['OAUTH2_BACKEND_CLASS'] = 'ansible_base.oauth2_provider.authentication.OAuthLibCore'
         oauth2_provider['APPLICATION_MODEL'] = DEFAULT_OAUTH2_APPLICATION_MODEL
         oauth2_provider['ACCESS_TOKEN_MODEL'] = DEFAULT_OAUTH2_ACCESS_TOKEN

@@ -39,6 +39,7 @@ oauth_urls = [
     re_path(r"^\.well-known/openid-configuration/$", oauth_views.ConnectDiscoveryInfoView.as_view(), name="oidc-connect-discovery-info"),
     re_path(r"^\.well-known/jwks\.json$", oauth_views.JwksInfoView.as_view(), name="jwks-info"),
     re_path(r"^userinfo/$", oauth_views.UserInfoView.as_view(), name="user-info"),
+    re_path(r"^logout/$", oauth_views.RPInitiatedLogoutView.as_view(), name="rp-initiated-logout"),
 ]
 
 
