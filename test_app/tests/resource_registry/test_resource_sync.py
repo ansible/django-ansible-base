@@ -13,10 +13,12 @@ from ansible_base.resource_registry.models.service_identifier import service_id
 from ansible_base.resource_registry.tasks.sync import (
     AssignmentTuple,
     ManifestItem,
+    RemoteAssignmentResult,
     ResourceSyncHTTPError,
     SyncExecutor,
     _attempt_create_resource,
     _attempt_update_resource,
+    get_remote_assignments,
 )
 
 
@@ -340,11 +342,14 @@ def test_role_assignment_resource_sync(mock_delete, mock_create, static_api_clie
     # Mock a remote assignment that does not exist locally to test creation
     with mock.patch(
         "ansible_base.resource_registry.tasks.sync.get_remote_assignments",
-        return_value={
-            AssignmentTuple(
-                actor_ansible_id='97447387-8596-404f-b0d0-6429b04c8d22', ansible_id_or_pk='1', role_definition_name='Team Member', assignment_type='user'
-            ),
-        },
+        return_value=RemoteAssignmentResult(
+            assignments={
+                AssignmentTuple(
+                    actor_ansible_id='97447387-8596-404f-b0d0-6429b04c8d22', ansible_id_or_pk='1', role_definition_name='Team Member', assignment_type='user'
+                ),
+            },
+            is_complete=True,
+        ),
     ):
         executor = SyncExecutor(api_client=static_api_client, stdout=stdout)
         executor._sync_assignments()
@@ -355,13 +360,19 @@ def test_role_assignment_resource_sync(mock_delete, mock_create, static_api_clie
         assert executor.results["assignment_errors"] == [0]
 
     # Mock a local assignment with no matching remote assignment to test deletion
-    with mock.patch(
-        "ansible_base.resource_registry.tasks.sync.get_local_assignments",
-        return_value={
-            AssignmentTuple(
-                actor_ansible_id='97447387-8596-404f-b0d0-6429b04c8d22', ansible_id_or_pk='1', role_definition_name='Team Member', assignment_type='user'
-            ),
-        },
+    with (
+        mock.patch(
+            "ansible_base.resource_registry.tasks.sync.get_remote_assignments",
+            return_value=RemoteAssignmentResult(assignments=set(), is_complete=True),
+        ),
+        mock.patch(
+            "ansible_base.resource_registry.tasks.sync.get_local_assignments",
+            return_value={
+                AssignmentTuple(
+                    actor_ansible_id='97447387-8596-404f-b0d0-6429b04c8d22', ansible_id_or_pk='1', role_definition_name='Team Member', assignment_type='user'
+                ),
+            },
+        ),
     ):
         executor = SyncExecutor(api_client=static_api_client, stdout=stdout)
         executor._sync_assignments()
@@ -370,3 +381,165 @@ def test_role_assignment_resource_sync(mock_delete, mock_create, static_api_clie
         assert executor.results["assignments_created"] == [0]
         assert executor.results["assignments_deleted"] == [1]
         assert executor.results["assignment_errors"] == [0]
+
+
+@mock.patch('ansible_base.resource_registry.tasks.sync.create_local_assignment')
+@mock.patch('ansible_base.resource_registry.tasks.sync.delete_local_assignment')
+@pytest.mark.django_db
+def test_role_assignment_sync_skips_deletions_on_incomplete_fetch(mock_delete, mock_create, static_api_client, stdout):
+    """When the remote fetch is incomplete (e.g. HTTP error mid-pagination),
+    deletions must be skipped to avoid removing valid local assignments
+    that simply weren't fetched.  Creations from the partial set are still
+    safe and should proceed."""
+    mock_delete.return_value = True
+    mock_create.return_value = True
+
+    local_only = AssignmentTuple(
+        actor_ansible_id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        ansible_id_or_pk='1',
+        role_definition_name='Team Admin',
+        assignment_type='user',
+    )
+    remote_only = AssignmentTuple(
+        actor_ansible_id='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+        ansible_id_or_pk='2',
+        role_definition_name='Team Member',
+        assignment_type='user',
+    )
+
+    with (
+        mock.patch(
+            "ansible_base.resource_registry.tasks.sync.get_remote_assignments",
+            return_value=RemoteAssignmentResult(
+                assignments={remote_only},
+                is_complete=False,
+            ),
+        ),
+        mock.patch(
+            "ansible_base.resource_registry.tasks.sync.get_local_assignments",
+            return_value={local_only},
+        ),
+    ):
+        executor = SyncExecutor(api_client=static_api_client, stdout=stdout)
+        executor._sync_assignments()
+
+        # Deletions must NOT happen — the remote set is partial
+        mock_delete.assert_not_called()
+        assert executor.results["assignments_deleted"] == [0]
+
+        # Creations from the partial set are safe and should proceed
+        mock_create.assert_called_once_with(remote_only)
+        assert executor.results["assignments_created"] == [1]
+
+        # Verify the skip message was logged
+        assert any('Skipping assignment deletions' in line for line in stdout.lines)
+
+
+def _mock_response(status_code=200, body=None):
+    resp = mock.Mock()
+    resp.status_code = status_code
+    resp.json.return_value = body or {"results": [], "next": None}
+    return resp
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("failure_mode", ["http_error", "exception"])
+def test_get_remote_assignments_incomplete_on_failure(failure_mode):
+    """is_complete must be False on HTTP error or exception mid-pagination."""
+    RoleDefinition.objects.managed.team_member  # ensure the role exists for filtering
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+    page1 = _mock_response(
+        body={
+            "results": [{"user_ansible_id": "u1", "object_ansible_id": "o1", "role_definition": "Team Member"}],
+            "next": "http://example.com/page2",
+        }
+    )
+
+    if failure_mode == "http_error":
+        api_client.list_user_assignments.side_effect = [page1, _mock_response(status_code=500)]
+    else:
+        api_client.list_user_assignments.side_effect = [page1, ConnectionError("reset")]
+
+    result = get_remote_assignments(api_client)
+
+    assert result.is_complete is False
+    # Compare fields directly — AssignmentTuple.__eq__ uses isinstance,
+    # which can fail across pytest-xdist worker forks.
+    assert len(result.assignments) == 1
+    assignment = next(iter(result.assignments))
+    assert assignment.actor_ansible_id == "u1"
+    assert assignment.ansible_id_or_pk == "o1"
+    assert assignment.role_definition_name == "Team Member"
+    assert assignment.assignment_type == "user"
+
+    # Team pagination must be skipped when user pagination fails
+    api_client.list_team_assignments.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_get_remote_assignments_complete_on_success():
+    """is_complete must be True only when both pagination loops finish cleanly."""
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+    ok = _mock_response()
+    api_client.list_user_assignments.return_value = ok
+    api_client.list_team_assignments.return_value = ok
+
+    result = get_remote_assignments(api_client)
+
+    assert result.is_complete is True
+    assert len(result.assignments) == 0
+
+
+@pytest.mark.django_db
+def test_get_remote_assignments_filters_unknown_roles(static_api_client):
+    """Assignments for roles that do not exist locally should be filtered out.
+
+    The resource server returns assignments across all services. Roles from
+    other services (e.g. Controller's 'Credential Admin') do not exist in the
+    local database and must be skipped to avoid DoesNotExist errors.
+    """
+    local_role = RoleDefinition.objects.managed.sys_auditor
+
+    user_results = {
+        'results': [
+            # Assignment for a role that exists locally — should be included
+            {
+                'user_ansible_id': 'aaaaaaaa-1111-2222-3333-444444444444',
+                'object_ansible_id': '1',
+                'role_definition': local_role.name,
+            },
+            # Assignment for a role from another service — should be filtered out
+            {
+                'user_ansible_id': 'bbbbbbbb-1111-2222-3333-444444444444',
+                'object_ansible_id': '1',
+                'role_definition': 'Credential Admin',
+            },
+        ],
+        'next': None,
+    }
+    team_results = {
+        'results': [
+            # Assignment for a role from another service — should be filtered out
+            {
+                'team_ansible_id': 'cccccccc-1111-2222-3333-444444444444',
+                'object_ansible_id': '1',
+                'role_definition': 'Some Other Service Role',
+            },
+        ],
+        'next': None,
+    }
+
+    user_response = mock.Mock(status_code=200)
+    user_response.json.return_value = user_results
+    team_response = mock.Mock(status_code=200)
+    team_response.json.return_value = team_results
+
+    static_api_client.list_user_assignments = mock.Mock(return_value=user_response)
+    static_api_client.list_team_assignments = mock.Mock(return_value=team_response)
+
+    result = get_remote_assignments(static_api_client)
+
+    assert result.is_complete is True
+    assert len(result.assignments) == 1
+    assignment = next(iter(result.assignments))
+    assert assignment.role_definition_name == local_role.name

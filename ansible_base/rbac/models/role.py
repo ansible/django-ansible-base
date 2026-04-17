@@ -31,6 +31,13 @@ from .content_type import DABContentType
 from .fields import FederatedForeignKey
 from .permission import DABPermission
 
+# Conditionally import AuditableModel if activitystream is installed
+_AuditableBase = object
+if 'ansible_base.activitystream' in settings.INSTALLED_APPS:
+    from ansible_base.activitystream.models import AuditableModel
+
+    _AuditableBase = AuditableModel
+
 logger = logging.getLogger('ansible_base.rbac.models')
 
 
@@ -419,13 +426,19 @@ class ObjectRoleFields(models.Model):
         return RoleEvaluation._meta.get_field('object_id').to_python(self.object_id)
 
 
-class AssignmentBase(ImmutableCommonModel, ObjectRoleFields):
+class AssignmentBase(ImmutableCommonModel, ObjectRoleFields, _AuditableBase):
     """
     This uses some parts of CommonModel to save metadata like documenting
     the user who assigned the permission and timestamp when it happened.
     This caches ObjectRole fields for purposes of serializers,
     both models are immutable, making caching easy.
     """
+
+    # When activitystream is installed (_AuditableBase = AuditableModel), these flags
+    # configure AuditableModel to enable audit logging and suppress activity stream entries.
+    # When activitystream is absent, _AuditableBase = object and these flags are inert.
+    audit_log_enabled = True
+    activity_stream_enabled = False
 
     object_role = models.ForeignKey(
         'dab_rbac.ObjectRole', on_delete=models.CASCADE, editable=False, null=True, help_text=_("A roll-up of the fields (role_definition, content_type).")
@@ -671,10 +684,10 @@ class ObjectRole(ObjectRoleFields):
 
     def needed_cache_updates(self, types_prefetch=None):
         existing_partials = {}
-        for permission_partial in self.permission_partials.all():
-            existing_partials[permission_partial.obj_perm_id()] = permission_partial
-        for permission_partial in self.permission_partials_uuid.all():
-            existing_partials[permission_partial.obj_perm_id()] = permission_partial
+        for eval_id, codename, content_type_id, object_id in self.permission_partials.values_list('id', 'codename', 'content_type_id', 'object_id'):
+            existing_partials[(codename, content_type_id, object_id)] = eval_id
+        for eval_id, codename, content_type_id, object_id in self.permission_partials_uuid.values_list('id', 'codename', 'content_type_id', 'object_id'):
+            existing_partials[(codename, content_type_id, object_id)] = eval_id
 
         expected_evaluations = self.expected_direct_permissions(types_prefetch)
 
@@ -685,8 +698,8 @@ class ObjectRole(ObjectRoleFields):
         existing_set = set(existing_partials.keys())
 
         to_delete = set()
-        for identifier in existing_set - expected_evaluations:
-            to_delete.add((existing_partials[identifier].id, type(identifier[-1])))
+        for codename, content_type_id, object_id in existing_set - expected_evaluations:
+            to_delete.add((existing_partials[(codename, content_type_id, object_id)], type(object_id)))
 
         to_add = []
         for codename, ct_id, obj_pk in expected_evaluations - existing_set:
@@ -741,10 +754,6 @@ class RoleEvaluationFields(models.Model):
     # NOTE: we do not form object_id and content_type into a content_object, following from AWX practice
     # this can be relaxed as we have comparative performance testing to confirm doing so does not affect permissions
     content_type_id = models.PositiveIntegerField(null=False, help_text=_("The related content type id."))
-
-    def obj_perm_id(self):
-        "Used for in-memory hashing of the type of object permission this represents"
-        return (self.codename, self.content_type_id, self.object_id)
 
     @classmethod
     def accessible_ids(cls, model_cls, actor, codename: str, content_types: Optional[Iterable[int]] = None, cast_field=None) -> QuerySet:

@@ -124,7 +124,6 @@ def collect_ai_description_metadata(endpoints: Optional[list[tuple[str, str, str
         - Clears and repopulates RESOURCE_PURPOSE_MAP dict
         - Clears and repopulates OPERATION_CLASS_MAP dict
     """
-    global SKIP_AI_DESCRIPTION_PREFIXES, RESOURCE_PURPOSE_MAP, OPERATION_CLASS_MAP
     SKIP_AI_DESCRIPTION_PREFIXES.clear()
     RESOURCE_PURPOSE_MAP.clear()
     OPERATION_CLASS_MAP.clear()

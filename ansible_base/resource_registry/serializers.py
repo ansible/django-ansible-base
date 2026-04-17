@@ -30,7 +30,7 @@ class ResourceListSerializer(serializers.ModelSerializer):
     has_serializer = serializers.SerializerMethodField()
     url = serializers.SerializerMethodField()
     resource_type = serializers.CharField(required=False)
-    resource_data = ResourceDataField(source="*", write_only=True)
+    resource_data = ResourceDataField(source="*", write_only=True, required=False, default={})
 
     class Meta:
         model = Resource
@@ -85,7 +85,7 @@ class ResourceListSerializer(serializers.ModelSerializer):
 
             return Resource.create_resource(
                 resource_type,
-                validated_data["resource_data"],
+                validated_data.get("resource_data", {}),
                 ansible_id=validated_data.get("ansible_id"),
                 service_id=validated_data.get("service_id"),
                 is_partially_migrated=validated_data.get("is_partially_migrated", False),

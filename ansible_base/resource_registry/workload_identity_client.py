@@ -29,6 +29,14 @@ class WorkloadIdentityTokenRequest(NamedTuple):
     audience: str
     """Audience for the token - the external service that will validate it."""
 
+    workload_ttl_seconds: int | None = None
+    """Optional workload-specific TTL override in seconds.
+
+    If > 0, the Gateway uses this as the base TTL instead of the platform default.
+    Pass None or omit to use the platform fallback (jwt_default_ttl_seconds).
+    Note: 0 is invalid — Gateway serializer rejects it (min_value=1); use None or omit.
+    """
+
 
 class WorkloadIdentityTokenResponse(NamedTuple):
     """Response from workload identity token endpoint."""
@@ -133,6 +141,7 @@ class WorkloadIdentityClient(BaseServiceClient):
         claims: dict,
         scope: str,
         audience: str,
+        workload_ttl_seconds: int | None = None,
     ) -> WorkloadIdentityTokenResponse:
         """
         Request a workload identity token.
@@ -144,22 +153,34 @@ class WorkloadIdentityClient(BaseServiceClient):
             claims: Dictionary containing workload details (e.g., job ID, name)
             scope: Token custom scopes string (e.g., 'aap_controller_automation_job')
             audience: Audience for the token - the external service that will validate it
+            workload_ttl_seconds: Optional TTL override in seconds. If > 0, the Gateway
+                uses this as the base TTL instead of the platform default (jwt_default_ttl_seconds).
+                Pass None or omit to use the platform fallback. Note: 0 is invalid (Gateway rejects it).
 
         Returns:
             WorkloadIdentityTokenResponse: Token response with JWT
 
         Raises:
+            ValueError: If workload_ttl_seconds is 0 or negative
             TokenRequestError: If the request fails
 
         Example:
             >>> response = client.request_workload_jwt(
             ...     claims={"id": 2, "name": "my-example-job"},
             ...     scope="aap_controller_automation_job",
-            ...     audience="https://vault.example.com"
+            ...     audience="https://vault.example.com",
+            ...     workload_ttl_seconds=3600,
             ... )
         """
-        request_body = WorkloadIdentityTokenRequest(claims=claims, scope=scope, audience=audience)
-        data = request_body._asdict()
+        if workload_ttl_seconds is not None and workload_ttl_seconds < 1:
+            raise ValueError(f"workload_ttl_seconds must be None (platform fallback) or >= 1, got {workload_ttl_seconds}")
+        data = {
+            "claims": claims,
+            "scope": scope,
+            "audience": audience,
+        }
+        if workload_ttl_seconds is not None and workload_ttl_seconds > 0:
+            data["workload_ttl_seconds"] = workload_ttl_seconds
 
         logger.info(f"Requesting workload identity token with scope: {scope}")
         logger.debug(f"Claims: {claims}")

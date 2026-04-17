@@ -24,6 +24,7 @@ class OAuth2ApplicationSerializer(NamedCommonModelSerializer):
             'redirect_uris': {'label': _('Redirect URIs')},
             'app_url': {'label': _('Application URL')},
             'skip_authorization': {'label': _('Skip Authorization')},
+            'algorithm': {'allow_blank': False, 'label': _('Algorithm')},
         }
 
     def _get_client_secret(self, obj):
