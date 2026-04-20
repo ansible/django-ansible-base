@@ -297,6 +297,9 @@ def rbac_pre_save_enforce_email_policy(instance, **kwargs):
     allowed.  System operations with no request user (management
     commands, migrations, forward-sync) are always allowed.
     """
+    if getattr(instance, 'EMAIL_ENFORCEMENT_VIA_SERIALIZER', False):
+        return
+
     from crum import get_current_user
 
     from ansible_base.rbac.policies import can_change_user

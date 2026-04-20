@@ -291,3 +291,15 @@ class TestEmailPolicySignal:
             with pytest.raises(ValidationError):
                 alice.save()
         assert alice.email == 'alice@example.com'
+
+    @pytest.mark.django_db
+    def test_signal_skipped_when_email_enforcement_via_serializer(self):
+        """When the User model sets EMAIL_ENFORCEMENT_VIA_SERIALIZER = True,
+        the pre_save signal should not block email changes, deferring
+        to serializer-level protection instead."""
+        alice = User.objects.create(username='alice', email='alice@example.com')
+        with patch('crum.get_current_user', return_value=alice), patch.object(User, 'EMAIL_ENFORCEMENT_VIA_SERIALIZER', True):
+            alice.email = 'alice-new@example.com'
+            alice.save()
+        alice.refresh_from_db()
+        assert alice.email == 'alice-new@example.com'
