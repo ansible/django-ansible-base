@@ -148,8 +148,9 @@ class PermissionRegistry:
         self.user_model.add_to_class('has_obj_perm', bound_has_obj_perm)
         self.user_model.add_to_class('singleton_permissions', bound_singleton_permissions)
         post_delete.connect(triggers.rbac_post_user_delete, sender=self.user_model, dispatch_uid='permission-registry-user-delete')
-        post_init.connect(triggers.rbac_post_init_stash_email, sender=self.user_model, dispatch_uid='permission-registry-stash-email')
-        pre_save.connect(triggers.rbac_pre_save_enforce_email_policy, sender=self.user_model, dispatch_uid='permission-registry-enforce-email')
+        if not getattr(self.user_model, 'EMAIL_ENFORCEMENT_VIA_SERIALIZER', False):
+            post_init.connect(triggers.rbac_post_init_stash_email, sender=self.user_model, dispatch_uid='permission-registry-stash-email')
+            pre_save.connect(triggers.rbac_pre_save_enforce_email_policy, sender=self.user_model, dispatch_uid='permission-registry-enforce-email')
 
         for cls in self._registry:
             triggers.connect_rbac_signals(cls)

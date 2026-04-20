@@ -292,14 +292,13 @@ class TestEmailPolicySignal:
                 alice.save()
         assert alice.email == 'alice@example.com'
 
-    @pytest.mark.django_db
-    def test_signal_skipped_when_email_enforcement_via_serializer(self):
-        """When the User model sets EMAIL_ENFORCEMENT_VIA_SERIALIZER = True,
-        the pre_save signal should not block email changes, deferring
-        to serializer-level protection instead."""
-        alice = User.objects.create(username='alice', email='alice@example.com')
-        with patch('crum.get_current_user', return_value=alice), patch.object(User, 'EMAIL_ENFORCEMENT_VIA_SERIALIZER', True):
-            alice.email = 'alice-new@example.com'
-            alice.save()
-        alice.refresh_from_db()
-        assert alice.email == 'alice-new@example.com'
+    def test_email_enforcement_signals_registered_by_default(self):
+        """Verify that email enforcement signals are registered when
+        EMAIL_ENFORCEMENT_VIA_SERIALIZER is False (the default)."""
+        from django.db.models.signals import post_init, pre_save
+
+        assert not User.EMAIL_ENFORCEMENT_VIA_SERIALIZER
+        pre_save_uids = {r[0][0] for r in pre_save.receivers}
+        post_init_uids = {r[0][0] for r in post_init.receivers}
+        assert 'permission-registry-enforce-email' in pre_save_uids
+        assert 'permission-registry-stash-email' in post_init_uids
