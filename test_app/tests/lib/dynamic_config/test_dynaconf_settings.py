@@ -60,7 +60,7 @@ def test_insert_middleware():
     settings = factory(
         "", "TEST", INSTALLED_APPS=['ansible_base.authentication'], MIDDLEWARE=['something', 'django.contrib.auth.middleware.AuthenticationMiddleware', 'else']
     )
-    assert 'ansible_base.authentication.middleware.AuthenticatorBackendMiddleware' == settings['MIDDLEWARE'][3]
+    assert 'ansible_base.authentication.middleware.AuthenticatorBackendMiddleware' == settings['MIDDLEWARE'][2]
 
 
 def test_dont_update_class_prefixes():
