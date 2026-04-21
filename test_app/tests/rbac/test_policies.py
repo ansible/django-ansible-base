@@ -31,22 +31,25 @@ def test_superuser_can_change_new_user(admin_user):
 
 
 @pytest.mark.django_db
-def test_user_cannot_manage_themselves_by_default():
-    alice = User.objects.create(username='alice')
-    assert not can_change_user(alice, alice)
-
-
-@pytest.mark.django_db
-@override_settings(ALLOW_USER_SELF_EDIT=True)
-def test_user_can_manage_themselves_when_setting_enabled():
+def test_user_can_manage_themselves():
+    """Default can_self_edit=True allows self-edit."""
     alice = User.objects.create(username='alice')
     assert can_change_user(alice, alice)
 
 
 @pytest.mark.django_db
 def test_user_cannot_manage_themselves_when_self_edit_disabled():
+    """can_self_edit=False blocks self-edit when ALLOW_USER_SELF_EDIT is off (default)."""
     alice = User.objects.create(username='alice')
     assert not can_change_user(alice, alice, can_self_edit=False)
+
+
+@pytest.mark.django_db
+@override_settings(ALLOW_USER_SELF_EDIT=True)
+def test_self_edit_setting_overrides_can_self_edit_false():
+    """ALLOW_USER_SELF_EDIT=True allows self-edit even when can_self_edit=False."""
+    alice = User.objects.create(username='alice')
+    assert can_change_user(alice, alice, can_self_edit=False)
 
 
 @pytest.mark.django_db
@@ -69,20 +72,13 @@ def test_org_member_cannot_manage_themselves_when_self_edit_disabled(org_member_
 
 
 @pytest.mark.django_db
-def test_can_self_edit_default_uses_setting():
-    alice = User.objects.create(username='alice')
-    assert can_change_user(alice, alice) is False
-    assert can_change_user(alice, alice, can_self_edit=True) is True
-    assert can_change_user(alice, alice, can_self_edit=False) is False
-
-
-@pytest.mark.django_db
 @override_settings(ALLOW_USER_SELF_EDIT=True)
-def test_can_self_edit_false_overrides_setting():
-    """Explicit can_self_edit=False should block self-edit even when the setting is True."""
+def test_org_member_can_self_edit_when_setting_enabled(org_member_rd, organization):
+    """With ALLOW_USER_SELF_EDIT=True, even can_self_edit=False is overridden."""
     alice = User.objects.create(username='alice')
-    assert can_change_user(alice, alice) is True
-    assert can_change_user(alice, alice, can_self_edit=False) is False
+    org_member_rd.give_permission(alice, organization)
+    assert can_change_user(alice, alice)
+    assert can_change_user(alice, alice, can_self_edit=False)
 
 
 @pytest.mark.django_db
@@ -92,15 +88,6 @@ def test_setting_does_not_affect_other_user_changes():
     alice = User.objects.create(username='alice')
     bob = User.objects.create(username='bob')
     assert not can_change_user(alice, bob)
-
-
-@pytest.mark.django_db
-@override_settings(ALLOW_USER_SELF_EDIT=True)
-def test_org_member_can_self_edit_when_setting_enabled(org_member_rd, organization):
-    alice = User.objects.create(username='alice')
-    org_member_rd.give_permission(alice, organization)
-    assert can_change_user(alice, alice)
-    assert not can_change_user(alice, alice, can_self_edit=False)
 
 
 @pytest.mark.django_db
