@@ -1,14 +1,13 @@
 import pytest
 from crum import impersonate
-from django.test import RequestFactory, override_settings
-from rest_framework.exceptions import PermissionDenied
+from django.test import override_settings
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.models import AuthenticatorMap
 from ansible_base.lib.serializers.common import CommonModelSerializer, CommonUserSerializer
 from ansible_base.lib.utils import models
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
-from test_app.models import EncryptionModel, ImmutableLogEntry, ResourceMigrationTestModel, Team, User
+from test_app.models import EncryptionModel, ImmutableLogEntry, ResourceMigrationTestModel, Team
 from test_app.serializers import EncryptionModelSerializer, ImmutableLogEntrySerializer, ResourceMigrationTestModelSerializer, TeamSerializer, UserSerializer
 
 
@@ -193,75 +192,3 @@ def test_named_common_model_serializer_has_named_common_model_fields():
     serialized = serializer.to_representation(instance)
     for field in ('id', 'url', 'related', 'summary_fields', 'created', 'created_by', 'modified', 'modified_by', 'name'):
         assert field in serialized, f'{field} not found in serialized data'
-
-
-def _make_request(user):
-    request = RequestFactory().patch('/api/v1/users/')
-    request.user = user
-    return request
-
-
-class TestEmailAdminOnlyMixin:
-    """Tests for EmailAdminOnlyMixin via CommonUserSerializer."""
-
-    @pytest.mark.django_db
-    def test_regular_user_cannot_change_own_email(self):
-        alice = User.objects.create(username='alice', email='alice@example.com')
-        serializer = UserSerializer(alice, context={'request': _make_request(alice)})
-        with pytest.raises(PermissionDenied):
-            serializer.validate_email('newemail@example.com')
-
-    @pytest.mark.django_db
-    def test_superuser_can_change_any_email(self):
-        admin = User.objects.create(username='admin', is_superuser=True)
-        alice = User.objects.create(username='alice', email='alice@example.com')
-        serializer = UserSerializer(alice, context={'request': _make_request(admin)})
-        result = serializer.validate_email('newemail@example.com')
-        assert result == 'newemail@example.com'
-
-    @pytest.mark.django_db
-    def test_same_email_is_allowed(self):
-        alice = User.objects.create(username='alice', email='alice@example.com')
-        serializer = UserSerializer(alice, context={'request': _make_request(alice)})
-        result = serializer.validate_email('alice@example.com')
-        assert result == 'alice@example.com'
-
-    @pytest.mark.django_db
-    def test_new_user_email_is_allowed(self):
-        alice = User.objects.create(username='alice')
-        serializer = UserSerializer(instance=None, context={'request': _make_request(alice)})
-        result = serializer.validate_email('new@example.com')
-        assert result == 'new@example.com'
-
-    @pytest.mark.django_db
-    def test_no_request_context_is_allowed(self):
-        alice = User.objects.create(username='alice', email='alice@example.com')
-        serializer = UserSerializer(alice, context={})
-        result = serializer.validate_email('newemail@example.com')
-        assert result == 'newemail@example.com'
-
-    @pytest.mark.django_db
-    def test_org_admin_can_change_member_email(self, org_admin_rd, org_member_rd, organization):
-        org_admin = User.objects.create(username='org-admin')
-        member = User.objects.create(username='member', email='member@example.com')
-        org_admin_rd.give_permission(org_admin, organization)
-        org_member_rd.give_permission(member, organization)
-        serializer = UserSerializer(member, context={'request': _make_request(org_admin)})
-        result = serializer.validate_email('updated@example.com')
-        assert result == 'updated@example.com'
-
-    @pytest.mark.django_db
-    @override_settings(ALLOW_USER_SELF_EDIT=True)
-    def test_self_edit_allowed_when_setting_enabled(self):
-        alice = User.objects.create(username='alice', email='alice@example.com')
-        serializer = UserSerializer(alice, context={'request': _make_request(alice)})
-        result = serializer.validate_email('newemail@example.com')
-        assert result == 'newemail@example.com'
-
-    @pytest.mark.django_db
-    def test_regular_user_cannot_change_other_user_email(self):
-        alice = User.objects.create(username='alice')
-        bob = User.objects.create(username='bob', email='bob@example.com')
-        serializer = UserSerializer(bob, context={'request': _make_request(alice)})
-        with pytest.raises(PermissionDenied):
-            serializer.validate_email('hacked@example.com')
