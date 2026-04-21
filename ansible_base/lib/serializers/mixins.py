@@ -1,6 +1,7 @@
 import logging
 
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 
 logger = logging.getLogger('ansible_base.lib.serializers.mixins')
 
@@ -27,3 +28,28 @@ class ImmutableFieldsMixin(serializers.ModelSerializer):
             kwargs[field]["read_only"] = bool(self.instance)
 
         return kwargs
+
+
+class EmailAdminOnlyMixin:
+    """Mixin for User serializers that restricts email changes to admins.
+
+    Uses can_change_user with can_self_edit=False so that only superusers
+    and org admins can update the email field. Services that set
+    ALLOW_USER_SELF_EDIT=True override this and allow regular users to
+    change their own email.
+    """
+
+    def validate_email(self, value):
+        if self.instance is None or value == self.instance.email:
+            return value
+
+        request = self.context.get('request')
+        if request is None:
+            return value
+
+        from ansible_base.rbac.policies import can_change_user
+
+        if not can_change_user(request.user, self.instance, can_self_edit=False):
+            raise PermissionDenied("Email updates are restricted to administrators.")
+
+        return value

@@ -8,6 +8,7 @@ from rest_framework.fields import empty
 from rest_framework.serializers import ValidationError
 
 from ansible_base.lib.abstract_models.common import get_url_for_object
+from ansible_base.lib.serializers.mixins import EmailAdminOnlyMixin
 from ansible_base.lib.serializers.validation import ValidationSerializerMixin
 from ansible_base.lib.utils import models
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
@@ -104,10 +105,10 @@ class ImmutableCommonModelSerializer(AbstractCommonModelSerializer):
         fields = AbstractCommonModelSerializer.Meta.fields + ['created', 'created_by']
 
 
-class CommonUserSerializer(CommonModelSerializer):
+class CommonUserSerializer(EmailAdminOnlyMixin, CommonModelSerializer):
     """
     Disallows editing of system user and enforces superuser requirement.
-    Prevents unauthorized email changes across all services.
+    Restricts email changes to admins via EmailAdminOnlyMixin.
     """
 
     def validate(self, data):
@@ -115,33 +116,7 @@ class CommonUserSerializer(CommonModelSerializer):
             return data
         if hasattr(self, 'instance') and hasattr(self.instance, 'id') and self.instance.id == models.get_system_user().id:
             raise ValidationError(_('System users cannot be modified'))
-
-        self._validate_email_change(data)
-
         return data
-
-    def _validate_email_change(self, data):
-        """Prevent unauthorized email changes.
-
-        Only superusers and org-admins (who administer ALL of the target
-        user's organizations) may change the email field.  Self-edits are
-        explicitly disallowed because the email address is a sensitive
-        identity field used for authenticator linkage.
-        """
-        if self.instance is None or 'email' not in data:
-            return
-
-        if data['email'] == self.instance.email:
-            return
-
-        request = self.context.get('request')
-        if request is None:
-            return
-
-        from ansible_base.rbac.policies import can_change_user
-
-        if not can_change_user(request.user, self.instance, can_self_edit=False):
-            raise ValidationError({'email': [_("You do not have permission to change the email field.")]})
 
     def validate_is_superuser(self, value):
         if value is True:
