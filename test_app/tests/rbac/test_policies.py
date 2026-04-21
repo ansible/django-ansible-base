@@ -31,7 +31,14 @@ def test_superuser_can_change_new_user(admin_user):
 
 
 @pytest.mark.django_db
-def test_user_can_manage_themselves():
+def test_user_cannot_manage_themselves_by_default():
+    alice = User.objects.create(username='alice')
+    assert not can_change_user(alice, alice)
+
+
+@pytest.mark.django_db
+@override_settings(ALLOW_USER_SELF_EDIT=True)
+def test_user_can_manage_themselves_when_setting_enabled():
     alice = User.objects.create(username='alice')
     assert can_change_user(alice, alice)
 
@@ -62,10 +69,11 @@ def test_org_member_cannot_manage_themselves_when_self_edit_disabled(org_member_
 
 
 @pytest.mark.django_db
-def test_can_self_edit_true_is_default():
+def test_can_self_edit_default_uses_setting():
     alice = User.objects.create(username='alice')
-    assert can_change_user(alice, alice) is True
+    assert can_change_user(alice, alice) is False
     assert can_change_user(alice, alice, can_self_edit=True) is True
+    assert can_change_user(alice, alice, can_self_edit=False) is False
 
 
 @pytest.mark.django_db
