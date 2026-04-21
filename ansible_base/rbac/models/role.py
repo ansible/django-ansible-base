@@ -396,7 +396,7 @@ class ObjectRoleFields(models.Model):
     @classmethod
     def _visible_items(cls, eval_cls, user, qs=None):
         permission_qs = eval_cls.objects.filter(
-            role__in=user.has_roles.all(),
+            **eval_cls._actor_role_filter(user),
             content_type_id=models.OuterRef('content_type_id'),
         )
         # NOTE: type casting is necessary in postgres but not sqlite3
@@ -755,6 +755,19 @@ class RoleEvaluationFields(models.Model):
     # this can be relaxed as we have comparative performance testing to confirm doing so does not affect permissions
     content_type_id = models.PositiveIntegerField(null=False, help_text=_("The related content type id."))
 
+    @staticmethod
+    def _actor_role_filter(actor):
+        """Return filter kwargs using a direct JOIN instead of a nested IN subquery.
+
+        Replaces ``role__in=actor.has_roles.all()`` with ``role__users=actor``
+        or ``role__teams=actor``.  The former generates a nested IN subquery that
+        PostgreSQL must materialise; the latter produces an INNER JOIN that allows
+        index-nested-loop evaluation.
+        """
+        if actor._meta.model_name == permission_registry.user_model._meta.model_name:
+            return {'role__users': actor}
+        return {'role__teams': actor}
+
     @classmethod
     def accessible_ids(cls, model_cls, actor, codename: str, content_types: Optional[Iterable[int]] = None, cast_field=None) -> QuerySet:
         """
@@ -768,7 +781,7 @@ class RoleEvaluationFields(models.Model):
         """
         # We only have a content_types exception for multiple content types for polymorphic models
         # for normal models you should not need it, but AWX unified_ models need it to get by
-        filter_kwargs = {'role__in': actor.has_roles.all(), 'codename': codename}
+        filter_kwargs = {**cls._actor_role_filter(actor), 'codename': codename}
         if content_types:
             filter_kwargs['content_type_id__in'] = content_types
         else:
@@ -791,7 +804,7 @@ class RoleEvaluationFields(models.Model):
         Returns permissions that a user has to obj from object-roles,
         does not consider permissions from user flags or system-wide roles
         """
-        return cls.objects.filter(role__in=user.has_roles.all(), content_type_id=DABContentType.objects.get_for_model(obj).id, object_id=obj.id).values_list(
+        return cls.objects.filter(**cls._actor_role_filter(user), content_type_id=DABContentType.objects.get_for_model(obj).id, object_id=obj.id).values_list(
             'codename', flat=True
         )
 
@@ -802,7 +815,7 @@ class RoleEvaluationFields(models.Model):
         method on permission classes, but it is named differently to avoid unintentionally conflicting
         """
         return cls.objects.filter(
-            role__in=user.has_roles.all(), content_type_id=DABContentType.objects.get_for_model(obj).id, object_id=obj.pk, codename=codename
+            **cls._actor_role_filter(user), content_type_id=DABContentType.objects.get_for_model(obj).id, object_id=obj.pk, codename=codename
         ).exists()
 
 
