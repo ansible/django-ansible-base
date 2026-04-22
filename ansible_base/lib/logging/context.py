@@ -37,6 +37,8 @@ class trace_context:
         if self.origin:
             self.tokens.append(origin_var.set(self.origin))
 
+        return self
+
     def __exit__(self, exc_type, exc_value, traceback):
         # Reset the context variables to their previous state
         for token in self.tokens:
@@ -46,7 +48,10 @@ class trace_context:
     def __call__(self, func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            with self:
+            # Create a fresh instance per invocation to avoid sharing
+            # mutable token state across concurrent calls.
+            ctx = trace_context(origin=self.origin, trace_id=self.trace_id)
+            with ctx:
                 return func(*args, **kwargs)
 
         return wrapper

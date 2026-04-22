@@ -4,7 +4,14 @@ The `ObservabilityMiddleware` provides request tracing, timing, cProfile analysi
 
 ## Setup
 
-The middleware is **automatically installed** at the top of the `MIDDLEWARE` stack by DAB's `settings_logic`. No manual configuration is needed.
+Add `ansible_base.lib.middleware.observability.ObservabilityMiddleware` to your `MIDDLEWARE` list. It should be placed near the top, before authentication or other request-processing middleware:
+
+```python
+MIDDLEWARE = [
+    'ansible_base.lib.middleware.observability.ObservabilityMiddleware',
+    # ... other middleware
+]
+```
 
 Every request automatically gets `X-Request-ID` (trace context) and `X-API-Total-Time` (wall-clock timing). cProfile and SQL metrics are individually opt-in:
 
@@ -52,7 +59,7 @@ The `X-Request-ID` header is the canonical request-tracking identifier across th
 3. Stores the ID in a `ContextVar` (`trace_id_var`) accessible throughout the request lifecycle.
 4. Returns the ID on the response as `X-Request-ID`.
 
-This is the same UUID available to logging via the `RequestIdFilter`, and it can be propagated to background tasks via the `trace_context` context manager (see below).
+The existing `RequestIdFilter` reads `X-Request-ID` from the HTTP request headers independently. When the client provides a valid UUID header, both mechanisms use the same value. When no header is sent, the middleware generates a UUID into `trace_id_var`, but `RequestIdFilter` will not have access to it. The trace ID can be propagated to background tasks via the `trace_context` context manager (see below).
 
 ### SQL Query Context
 

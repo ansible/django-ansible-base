@@ -75,6 +75,8 @@ class DABProfiler:
                     logger.warning(f"Failed to write cProfile output to fallback {output_dir}, discarding profile data")
                     cprofile_filename = None
 
+        self.start_time = None
+        self.prof = None
         return elapsed, cprofile_filename
 
 
@@ -106,7 +108,9 @@ class _ProfileRequestMiddleware(threading.local):
             response = self.get_response(request)
         except Exception:
             if cprofile_enabled:
-                self.profiler.stop(profile_id=request_id)
+                _, path = self.profiler.stop(profile_id=request_id)
+                if path:
+                    logger.info("Request raised an exception; cProfile data saved to: %s", path)
             raise
 
         response['X-API-Total-Time'] = f'{time.time() - start_time:.3f}s'
