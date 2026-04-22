@@ -57,7 +57,7 @@
         "type": "array",
         "items": {
           "type": "string",
-          "enum": ["controller", "eda", "gateway", "platform"]
+          "enum": ["controller", "eda", "gateway", "metrics", "platform"]
         },
         "minItems": 1,
         "uniqueItems": true
