@@ -15,7 +15,7 @@ channels==4.3.2
     # via -r requirements/requirements_channels.in
 charset-normalizer==3.4.4
     # via requests
-cryptography==46.0.3
+cryptography==46.0.5  # Components should use this or later for CVE-2026-26007
     # via
     #   -r requirements/requirements.in
     #   jwcrypto
