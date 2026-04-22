@@ -39,15 +39,15 @@ def test_user_can_manage_themselves():
 
 @pytest.mark.django_db
 def test_user_cannot_manage_themselves_when_self_edit_disabled():
-    """can_self_edit=False blocks self-edit when ALLOW_USER_SELF_EDIT is off (default)."""
+    """can_self_edit=False blocks self-edit when ALLOW_USER_EMAIL_SELF_EDIT is off (default)."""
     alice = User.objects.create(username='alice')
     assert not can_change_user(alice, alice, can_self_edit=False)
 
 
 @pytest.mark.django_db
-@override_settings(ALLOW_USER_SELF_EDIT=True)
+@override_settings(ALLOW_USER_EMAIL_SELF_EDIT=True)
 def test_self_edit_setting_overrides_can_self_edit_false():
-    """ALLOW_USER_SELF_EDIT=True allows self-edit even when can_self_edit=False."""
+    """ALLOW_USER_EMAIL_SELF_EDIT=True allows self-edit even when can_self_edit=False."""
     alice = User.objects.create(username='alice')
     assert can_change_user(alice, alice, can_self_edit=False)
 
@@ -72,9 +72,9 @@ def test_org_member_cannot_manage_themselves_when_self_edit_disabled(org_member_
 
 
 @pytest.mark.django_db
-@override_settings(ALLOW_USER_SELF_EDIT=True)
+@override_settings(ALLOW_USER_EMAIL_SELF_EDIT=True)
 def test_org_member_can_self_edit_when_setting_enabled(org_member_rd, organization):
-    """With ALLOW_USER_SELF_EDIT=True, even can_self_edit=False is overridden."""
+    """With ALLOW_USER_EMAIL_SELF_EDIT=True, even can_self_edit=False is overridden."""
     alice = User.objects.create(username='alice')
     org_member_rd.give_permission(alice, organization)
     assert can_change_user(alice, alice)
@@ -82,18 +82,18 @@ def test_org_member_can_self_edit_when_setting_enabled(org_member_rd, organizati
 
 
 @pytest.mark.django_db
-@override_settings(ALLOW_USER_SELF_EDIT=True)
+@override_settings(ALLOW_USER_EMAIL_SELF_EDIT=True)
 def test_setting_does_not_affect_other_user_changes():
-    """ALLOW_USER_SELF_EDIT only controls self-edit, not editing other users."""
+    """ALLOW_USER_EMAIL_SELF_EDIT only controls self-edit, not editing other users."""
     alice = User.objects.create(username='alice')
     bob = User.objects.create(username='bob')
     assert not can_change_user(alice, bob)
 
 
 @pytest.mark.django_db
-@override_settings(ALLOW_USER_SELF_EDIT=True, MANAGE_ORGANIZATION_AUTH=False)
+@override_settings(ALLOW_USER_EMAIL_SELF_EDIT=True, MANAGE_ORGANIZATION_AUTH=False)
 def test_self_edit_setting_requires_manage_org_auth():
-    """ALLOW_USER_SELF_EDIT should not bypass the MANAGE_ORGANIZATION_AUTH gate."""
+    """ALLOW_USER_EMAIL_SELF_EDIT should not bypass the MANAGE_ORGANIZATION_AUTH gate."""
     alice = User.objects.create(username='alice')
     assert not can_change_user(alice, alice)
 

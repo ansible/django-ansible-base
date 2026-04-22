@@ -63,7 +63,7 @@ class TestEmailAdminOnlyMixin:
         assert serializer.validate_email('updated@example.com') == 'updated@example.com'
 
     @pytest.mark.django_db
-    @override_settings(ALLOW_USER_SELF_EDIT=True)
+    @override_settings(ALLOW_USER_EMAIL_SELF_EDIT=True)
     def test_self_edit_allowed_when_setting_enabled(self):
         alice = User.objects.create(username='alice', email='alice@example.com')
         serializer = EmailTestSerializer(alice, context={'request': _make_request(alice)})
@@ -78,7 +78,7 @@ class TestEmailAdminOnlyMixin:
             serializer.validate_email('hacked@example.com')
 
     @pytest.mark.django_db
-    @override_settings(ALLOW_USER_SELF_EDIT=True)
+    @override_settings(ALLOW_USER_EMAIL_SELF_EDIT=True)
     def test_setting_does_not_allow_changing_other_user_email(self):
         alice = User.objects.create(username='alice')
         bob = User.objects.create(username='bob', email='bob@example.com')

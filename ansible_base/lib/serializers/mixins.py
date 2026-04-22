@@ -35,7 +35,7 @@ class EmailAdminOnlyMixin:
 
     Uses can_change_user with can_self_edit=False so that only superusers
     and org admins can update the email field. Services that set
-    ALLOW_USER_SELF_EDIT=True override this and allow regular users to
+    ALLOW_USER_EMAIL_SELF_EDIT=True override this and allow regular users to
     change their own email.
     """
 

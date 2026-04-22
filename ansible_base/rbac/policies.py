@@ -67,7 +67,7 @@ def can_change_user(request_user: Optional[AbstractBaseUser], target_user: Optio
     if not get_setting('MANAGE_ORGANIZATION_AUTH', False):
         return False
 
-    if request_user.pk == target_user.pk and (can_self_edit or get_setting('ALLOW_USER_SELF_EDIT', False)):
+    if request_user.pk == target_user.pk and (can_self_edit or get_setting('ALLOW_USER_EMAIL_SELF_EDIT', False)):
         return True
 
     # If the user is not in any organizations, answer can not consider organization permissions
