@@ -313,7 +313,7 @@ def rbac_pre_save_enforce_email_policy(instance, **kwargs):
         return
 
     requesting_user = get_current_user()
-    if requesting_user is None:
+    if requesting_user is None or not getattr(requesting_user, 'is_authenticated', False):
         return
 
     if not can_change_user(requesting_user, instance, can_self_edit=False):

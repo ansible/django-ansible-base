@@ -216,11 +216,22 @@ class TestEmailPolicySignal:
         assert member.email == 'member-new@example.com'
 
     @pytest.mark.django_db
-    def test_no_request_user_allows_email_change(self):
-        """System operations (management commands, forward-sync) have no
-        CRUM user and should always be allowed."""
+    @pytest.mark.parametrize(
+        'crum_user',
+        [None, 'anonymous'],
+        ids=['no-user', 'anonymous-user'],
+    )
+    def test_no_authenticated_user_allows_email_change(self, crum_user):
+        """System operations (management commands, forward-sync) and
+        pre-authentication contexts (JWT auth where CRUM returns
+        AnonymousUser) should always be allowed."""
+        from django.contrib.auth.models import AnonymousUser
+
+        if crum_user == 'anonymous':
+            crum_user = AnonymousUser()
+
         alice = User.objects.create(username='alice', email='alice@example.com')
-        with patch('crum.get_current_user', return_value=None):
+        with patch('crum.get_current_user', return_value=crum_user):
             alice.email = 'alice-synced@example.com'
             alice.save()
         alice.refresh_from_db()
