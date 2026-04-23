@@ -18,11 +18,17 @@ Every request automatically gets `X-Request-ID` (trace context) and `X-API-Total
 ```python
 # settings.py
 
-# Enable cProfile .prof file generation (heavy — use for debugging sessions only)
+# Enable cProfile .prof file generation for ALL requests (heavy — use for debugging sessions only)
 ANSIBLE_BASE_PROFILING_ENABLED = True
 
 # Enable SQL query metrics and trace context injection (moderate overhead)
 ANSIBLE_BASE_PROFILING_SQL_ENABLED = True
+```
+
+Alternatively, cProfile can be enabled on a per-request basis by sending the `X-Enable-Profiling` request header (any value). This avoids the need to restart the server or enable profiling globally:
+
+```bash
+curl -H "X-Enable-Profiling: true" https://localhost/api/v1/users/
 ```
 
 ## Settings
@@ -40,7 +46,7 @@ ANSIBLE_BASE_PROFILING_SQL_ENABLED = True
 |---|---|---|
 | `X-Request-ID` | Always | Unique request identifier. Echoes the client-provided value or generates a new UUID. |
 | `X-API-Total-Time` | Always | Wall-clock request duration (e.g. `0.045s`). |
-| `X-API-Profile-File` | `ANSIBLE_BASE_PROFILING_ENABLED` | Filesystem path to the `.prof` file **on the server**. The filename includes the request's `X-Request-ID`. |
+| `X-API-Profile-File` | `ANSIBLE_BASE_PROFILING_ENABLED` or `X-Enable-Profiling` header | Filesystem path to the `.prof` file **on the server**. The filename includes the request's `X-Request-ID`. |
 | `X-API-Query-Count` | `ANSIBLE_BASE_PROFILING_SQL_ENABLED` | Number of SQL queries executed during the request. |
 | `X-API-Query-Time` | `ANSIBLE_BASE_PROFILING_SQL_ENABLED` | Total time spent executing SQL queries (e.g. `0.012s`). |
 

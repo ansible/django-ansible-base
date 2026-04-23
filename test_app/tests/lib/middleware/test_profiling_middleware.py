@@ -247,6 +247,26 @@ class ObservabilityMiddlewareTest(TestCase):
                 self.assertNotIn('X-API-Query-Count', response)
                 self.assertNotIn('X-API-Query-Time', response)
 
+    @override_settings(ANSIBLE_BASE_PROFILING_ENABLED=False, ANSIBLE_BASE_PROFILING_SQL_ENABLED=False)
+    def test_header_enables_cprofile_without_setting(self):
+        """
+        When ANSIBLE_BASE_PROFILING_ENABLED is False but the X-Enable-Profiling
+        header is sent, cProfile should be enabled for that request only.
+        SQL profiling should remain off.
+        """
+        request_id = str(uuid.uuid4())
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with override_settings(ANSIBLE_BASE_PROFILING_CPROFILE_DIR=tmpdir):
+                response = self.client.get('/test-db/', HTTP_X_REQUEST_ID=request_id, HTTP_X_ENABLE_PROFILING='true')
+
+                self.assertIn('X-Request-ID', response)
+                self.assertIn('X-API-Total-Time', response)
+                self.assertIn('X-API-Profile-File', response)
+                self.assertTrue(os.path.exists(response['X-API-Profile-File']))
+
+                self.assertNotIn('X-API-Query-Count', response)
+                self.assertNotIn('X-API-Query-Time', response)
+
     @override_settings(ANSIBLE_BASE_PROFILING_ENABLED=False, ANSIBLE_BASE_PROFILING_SQL_ENABLED=True)
     def test_observability_middleware_sql_only(self):
         """
