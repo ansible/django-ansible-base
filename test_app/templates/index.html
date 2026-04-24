@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -18,7 +18,7 @@
                 <ul class="navbar-nav ms-auto">
 
                     <li id='user-item' class="nav-item">
-                        <a class="nav-link" href="#"></a>
+                        <a class="nav-link" href="#" aria-label="User"></a>
                     </li>
 
                     <li id='login-button' class="nav-item">
@@ -58,7 +58,7 @@
                 document.getElementById('user-item').innerHTML = `<a class="nav-link" href="#">${username}</a>`;
                 document.getElementById('login-button').innerHTML = '<a class="nav-link" href="/login/logout/">Logout</a>';
             } else {
-                document.getElementById('user-item').innerHTML = `<a class="nav-link" href="#"></a>`;
+                document.getElementById('user-item').innerHTML = `<a class="nav-link" href="#" aria-label="User"></a>`;
                 document.getElementById('login-button').innerHTML = '<a class="nav-link" href="/login/login/">Login</a>';
             }
         }

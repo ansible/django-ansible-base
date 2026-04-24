@@ -3,7 +3,7 @@ import os
 import uuid
 from collections import namedtuple
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 import pytest
@@ -265,8 +265,8 @@ def rsa_keypair_with_signed_cert(rsa_keypair_factory):
         .issuer_name(issuer)
         .public_key(root_public_key)
         .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.utcnow())
-        .not_valid_after(datetime.utcnow() + timedelta(days=365))
+        .not_valid_before(datetime.now(timezone.utc))
+        .not_valid_after(datetime.now(timezone.utc) + timedelta(days=365))
         .add_extension(
             x509.SubjectAlternativeName([x509.DNSName(u"mycompany.com")]),
             critical=False,
@@ -279,8 +279,8 @@ def rsa_keypair_with_signed_cert(rsa_keypair_factory):
         .issuer_name(issuer)
         .public_key(public_key)
         .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.utcnow())
-        .not_valid_after(datetime.utcnow() + timedelta(days=365))
+        .not_valid_before(datetime.now(timezone.utc))
+        .not_valid_after(datetime.now(timezone.utc) + timedelta(days=365))
         .add_extension(
             x509.SubjectAlternativeName([x509.DNSName(u"qa.mycompany.com")]),
             critical=False,
@@ -320,8 +320,8 @@ def rsa_keypair_with_cert(rsa_keypair_factory):
         .issuer_name(issuer)
         .public_key(public_key)
         .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.utcnow())
-        .not_valid_after(datetime.utcnow() + timedelta(days=365))
+        .not_valid_before(datetime.now(timezone.utc))
+        .not_valid_after(datetime.now(timezone.utc) + timedelta(days=365))
         .add_extension(
             x509.SubjectAlternativeName([x509.DNSName(u"mycompany.com")]),
             critical=False,

@@ -1,2 +1,2 @@
-* { color: red;  font-family: 'Comic Sans MS', 'Comic Sans'; }
+* { color: red;  font-family: 'Comic Sans MS', 'Comic Sans', cursive; }
 div > p.foo { color: blue; }
