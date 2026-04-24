@@ -34,8 +34,10 @@ jobs:
           ansible-playbook
           tools/ansible/release.yml
           -i localhost
-          -e github_token=${{ secrets.GITHUB_TOKEN }}
+          -e github_token="$GITHUB_TOKEN"
           -t build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Store the distribution packages
         uses: actions/upload-artifact@v4
@@ -113,5 +115,7 @@ jobs:
           ansible-playbook
           tools/ansible/release.yml
           -i localhost
-          -e github_token=${{ secrets.GITHUB_TOKEN }}
+          -e github_token="$GITHUB_TOKEN"
           -t github
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
