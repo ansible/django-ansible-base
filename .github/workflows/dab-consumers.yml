@@ -7,6 +7,108 @@ on:
       - "stable-*"
   pull_request:
 jobs:
+  awx:
+    name: AWX
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    strategy:
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Pull AWX devel image
+        run: docker pull ghcr.io/ansible/awx_devel:devel
+
+      # Generate a docker image that includes current DAB
+      - name: Create image for AWX devel that includes our DAB
+        run: |
+          mkdir awx-dockerfile
+          cat <<EOF > awx-dockerfile/Dockerfile
+          FROM ghcr.io/ansible/awx_devel:devel
+          COPY . /opt/dab/
+          RUN pip install -e /opt/dab/
+          RUN pip install jq
+          EOF
+          docker build -t awx-with-dab:latest -f awx-dockerfile/Dockerfile .
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ansible/awx
+          path: awx
+
+      - name: Run AWX tests in the generated image
+        run: |
+          cd awx
+          DEVEL_IMAGE_NAME=awx-with-dab:latest AWX_DOCKER_CMD=/start_tests.sh make docker-runner
+
+  eda-server:
+    name: eda-server
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    strategy:
+      fail-fast: false
+    env:
+      EDA_SECRET_KEY: 'test'
+      EDA_DB_PASSWORD: 'secret'
+    services:
+      postgres:
+        image: 'quay.io/sclorg/postgresql-15-c9s:latest'
+        env:
+          POSTGRESQL_USER: eda
+          POSTGRESQL_PASSWORD: secret
+          POSTGRESQL_ADMIN_PASSWORD: secret
+          POSTGRESQL_DATABASE: eda
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - '5432:5432'
+      redis:
+        image: 'quay.io/fedora/redis-6:latest'
+        ports:
+          - '6379:6379'
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ansible/eda-server
+          path: eda-server
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run eda-server tests
+        run: |
+          DAB_PATH="$PWD"
+          mv eda-server /tmp
+          cd /tmp/eda-server
+          pipx install poetry
+          poetry install -E all --only main,test
+          poetry run pip install -e "$DAB_PATH"
+          poetry run pip show django-ansible-base
+          poetry run pytest
+
   hub:
     name: hub
     runs-on: ubuntu-latest
@@ -38,12 +140,4 @@ jobs:
       - name: Run Hub unit tests
         working-directory: hub
         run: |
-          pwd
-          echo "--ls -la--"
-          ls -la
-          echo "--ls -la ../--"
-          ls -la ../
-          echo "--tox--"
           tox -e py312
-          .tox/py312/bin/pip show galaxy-ng
-          .tox/py312/bin/pip show django-ansible-base
