@@ -39,7 +39,11 @@ jobs:
         working-directory: hub
         run: |
           pwd
+          echo "--ls -la--"
           ls -la
-
+          echo "--ls -la ../--"
+          ls -la ../
+          echo "--tox--"
           tox -e py312
-
+          .tox/py312/bin/pip show galaxy-ng
+          .tox/py312/bin/pip show django-ansible-base
