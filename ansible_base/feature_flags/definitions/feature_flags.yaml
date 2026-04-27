@@ -59,8 +59,8 @@
   support_level: TECHNOLOGY_PREVIEW
   description: >-
     Enable data collection for the automation-reports dashboard integration.
-    When enabled, AWX job data is collected and stored to power the
-    dashboard_reports API and automation-reports UI.
+    When enabled, Controller job data is collected and stored locally in the platform
+    database to power the dashboard_reports API and automation-reports UI.
   support_url: ''
   toggle_type: run-time
   labels:
