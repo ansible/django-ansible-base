@@ -757,16 +757,16 @@ class RoleEvaluationFields(models.Model):
 
     @staticmethod
     def _actor_role_filter(actor):
-        """Return filter kwargs using a direct JOIN instead of a nested IN subquery.
+        """Return filter kwargs that skip the objectrole table entirely.
 
-        Replaces ``role__in=actor.has_roles.all()`` with ``role__users=actor``
-        or ``role__teams=actor``.  The former generates a nested IN subquery that
-        PostgreSQL must materialise; the latter produces an INNER JOIN that allows
-        index-nested-loop evaluation.
+        Uses ``role_id__in`` with a subquery on the assignment table, which
+        avoids JOINing through ``dab_rbac_objectrole``.  Both
+        ``roleevaluation.role_id`` and ``assignment.object_role_id`` reference
+        the same objectrole PK, so the intermediate table is unnecessary.
         """
         if actor._meta.model_name == permission_registry.user_model._meta.model_name:
-            return {'role__users': actor}
-        return {'role__teams': actor}
+            return {'role_id__in': RoleUserAssignment.objects.filter(user_id=actor.id).values('object_role_id')}
+        return {'role_id__in': RoleTeamAssignment.objects.filter(team_id=actor.id).values('object_role_id')}
 
     @classmethod
     def accessible_ids(cls, model_cls, actor, codename: str, content_types: Optional[Iterable[int]] = None, cast_field=None) -> QuerySet:
