@@ -18,6 +18,11 @@ jobs:
           show-progress: false
           path: django-ansible-base 
 
+      - name: install system dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y libsasl2-dev libldap2-dev libssl-dev gettext
+
       - uses: actions/checkout@v4
         with:
           repository: ansible/galaxy_ng
