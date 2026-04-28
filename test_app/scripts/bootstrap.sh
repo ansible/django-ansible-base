@@ -36,7 +36,7 @@ for i in $(seq 1 $MAX_ATTEMPTS); do
     echo "Waiting for database to come up ($i/$MAX_ATTEMPTS)"
     if python3 manage.py shell -c 'import django; django.db.connection.ensure_connection()' > /dev/null 2>&1; then
         break
-    elif [ $i -eq $MAX_ATTEMPTS ]; then
+    elif [[ $i -eq $MAX_ATTEMPTS ]]; then
         echo "Database never came up"
         exit 1
     fi
@@ -45,11 +45,11 @@ done
 
 admin_password='admin'
 
-if [ "${migrate_needed}" -ne 0 ]
+if [[ "${migrate_needed}" -ne 0 ]]
 then
     echo "Migrating database"
     python3 manage.py migrate
-    if [ "${DJANGO_SUPERUSER_PASSWORD}" ]; then
+    if [[ "${DJANGO_SUPERUSER_PASSWORD}" ]]; then
         admin_password=${DJANGO_SUPERUSER_PASSWORD}
     fi
     DJANGO_SUPERUSER_PASSWORD=$admin_password DJANGO_SUPERUSER_USERNAME=admin DJANGO_SUPERUSER_EMAIL=admin@stuff.invalid python3 manage.py createsuperuser --noinput
