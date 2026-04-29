@@ -62,6 +62,6 @@
     When enabled, Controller job data is collected and stored locally in the platform
     database to power the dashboard_reports API and automation-reports UI.
   support_url: ''
-  toggle_type: run-time
+  toggle_type: install-time
   labels:
     - metrics

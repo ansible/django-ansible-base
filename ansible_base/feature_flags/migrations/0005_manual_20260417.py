@@ -2,7 +2,7 @@
 # Addition of FEATURE_DASHBOARD_COLLECTION_ENABLED
 ###
 
-# FileHash: 2f5c26fd5d1e8a3e93ee14f76b3dd7fcebff316ab07fc27b6d3e8f22c2740e01
+# FileHash: 11f68664f09302bb83628f80405c111a9e58bf07527bd2d63adfc972226711c0
 
 from django.db import migrations
 
