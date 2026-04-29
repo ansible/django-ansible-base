@@ -128,7 +128,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install tox
-        run: pip install tox
+        run: pip install --only-binary ':all:' tox==4.53.0
 
       - name: Run Hub unit tests
         working-directory: hub
