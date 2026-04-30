@@ -62,10 +62,20 @@ class Command(BaseCommand):  # pragma: no cover
             required=False,
         )
         parser.add_argument("--asyncio", action="store_true", default=False, help="Enable asyncio executor")
+        parser.add_argument(
+            "--page-size",
+            type=int,
+            default=None,
+            dest="page_size",
+            help="Page size for pagination when fetching assignments (default: from settings, capped server-side by MAX_PAGE_SIZE)",
+            required=False,
+        )
 
     def handle(self, *args, **options):
         """Handle RESOURCE_PROVIDER sync"""
-        arguments = ["resource_type_names", "retries", "retrysleep", "asyncio"]
+        if options.get("page_size") is not None and options["page_size"] < 1:
+            raise CommandError("--page-size must be at least 1")
+        arguments = ["resource_type_names", "retries", "retrysleep", "asyncio", "page_size"]
         options = {k: v for k, v in options.items() if k in arguments}
         try:
             executor = SyncExecutor(**options, stdout=self.stdout)
