@@ -359,6 +359,7 @@ def test_oauth2_pat_create(request, org_member_rd, org_admin_rd, user, random_us
     'user_case, sees_all_tokens',
     [
         ('superuser', True),
+        ('platform_auditor', True),
         ('org_admin', False),
         ('token_owner', False),
         ('other_user', False),
@@ -404,6 +405,10 @@ def test_oauth2_token_list_filtered_by_user(
 
     if user_case == 'superuser':
         acting_user = admin_user
+    elif user_case == 'platform_auditor':
+        acting_user = request.getfixturevalue('random_user_1')
+        acting_user.is_platform_auditor = True
+        acting_user.save()
     elif user_case == 'org_admin':
         acting_user = request.getfixturevalue('random_user_1')
         RoleDefinition.objects.managed.org_admin.give_permission(acting_user, organization)
@@ -414,7 +419,7 @@ def test_oauth2_token_list_filtered_by_user(
     else:
         raise ValueError(f"Invalid user_case: {user_case}")
 
-    unauthenticated_api_client.force_login(acting_user)
+    unauthenticated_api_client.force_authenticate(acting_user)
     url = get_relative_url("token-list")
     response = unauthenticated_api_client.get(url)
     assert response.status_code == 200
