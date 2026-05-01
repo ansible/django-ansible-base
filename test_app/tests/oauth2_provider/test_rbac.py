@@ -444,6 +444,40 @@ def test_oauth2_token_list_filtered_by_user(
         assert oauth2_user_pat.id not in token_ids
 
 
+@pytest.mark.django_db
+def test_oauth2_token_list_without_rbac(
+    settings,
+    user,
+    random_user,
+    unauthenticated_api_client,
+    oauth2_user_pat,
+    oauth2_application,
+    organization,
+):
+    """Without ansible_base.rbac, users only see tokens they own — no org-admin expansion."""
+    app = oauth2_application[0]
+    app.organization = organization
+    app.save()
+    org_app_token = OAuth2AccessToken.objects.create(
+        user=random_user,
+        application=app,
+        description="App token in org",
+        expires=datetime(2088, 1, 1, tzinfo=timezone.utc),
+        token=generate_token(),
+    )
+
+    settings.INSTALLED_APPS = [a for a in settings.INSTALLED_APPS if a != 'ansible_base.rbac']
+
+    unauthenticated_api_client.force_authenticate(user)
+    url = get_relative_url("token-list")
+    response = unauthenticated_api_client.get(url)
+    assert response.status_code == 200
+
+    token_ids = {t['id'] for t in response.data['results']}
+    assert oauth2_user_pat.id in token_ids, "User should see their own PAT"
+    assert org_app_token.id not in token_ids, "Without RBAC, org-admin visibility should not apply"
+
+
 @pytest.mark.parametrize(
     'user_case, has_access',
     [
