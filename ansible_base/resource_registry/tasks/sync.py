@@ -26,6 +26,10 @@ from ansible_base.resource_registry.rest_client import ResourceAPIClient, get_re
 
 logger = logging.getLogger('ansible_base.resources_api.tasks.sync')
 
+# Must match defaults in lib/dynamic_config/settings_logic.py resource_registry_defaults
+DEFAULT_SYNC_PAGE_SIZE = 50
+DEFAULT_SYNC_JWT_EXPIRATION = 60
+
 
 class ManifestNotFound(HTTPError):
     """Raise when server returns 404 for a manifest"""
@@ -109,7 +113,7 @@ def create_api_client() -> ResourceAPIClient:
     if not service_path:
         raise ValueError("RESOURCE_SERVICE_PATH is not set.")
     params["service_path"] = service_path
-    params["jwt_expiration"] = getattr(settings, "RESOURCE_SYNC_JWT_EXPIRATION", 60)
+    params["jwt_expiration"] = getattr(settings, "RESOURCE_SYNC_JWT_EXPIRATION", DEFAULT_SYNC_JWT_EXPIRATION)
 
     client = get_resource_server_client(**params)
     return client
@@ -194,7 +198,7 @@ class RemoteAssignmentFetcher:
     def __init__(self, api_client: ResourceAPIClient, page_size: int | None = None):
         self.api_client = api_client
         self.assignments: set[AssignmentTuple] = set()
-        self.page_size = page_size if page_size is not None else getattr(settings, 'RESOURCE_SYNC_PAGE_SIZE', 50)
+        self.page_size = page_size if page_size is not None else getattr(settings, 'RESOURCE_SYNC_PAGE_SIZE', DEFAULT_SYNC_PAGE_SIZE)
 
     def fetch(self) -> RemoteAssignmentResult:
         """Paginate user then team assignments and return the result.
