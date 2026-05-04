@@ -209,12 +209,15 @@ class AbstractCommonModel(models.Model):
         for field in self._meta.fields:
             if field.name in self.ignore_relations:
                 continue  # This check is beneficial before getattr to prevent some error cases
-            if isinstance(field, models.ForeignObject) and getattr(self, field.name):
-                # ignore relations on inherited django models
-                if field.name.endswith("_ptr"):
-                    continue
-                if hasattr(getattr(self, field.name), 'summary_fields'):
-                    response[field.name] = getattr(self, field.name).summary_fields()
+            # Skip non-FK fields and inherited model pointers (e.g. user_ptr)
+            if not isinstance(field, models.ForeignObject) or field.name.endswith("_ptr"):
+                continue
+            # Check the raw FK id to skip null FKs without loading the related object
+            if getattr(self, field.attname, None) is None:
+                continue
+            related_obj = getattr(self, field.name)
+            if related_obj and hasattr(related_obj, 'summary_fields'):
+                response[field.name] = related_obj.summary_fields()
         return response
 
     def related_fields(self, request):
@@ -228,9 +231,16 @@ class AbstractCommonModel(models.Model):
             if not isinstance(field, models.ForeignKey) or field.name.endswith("_ptr"):
                 continue
 
-            if obj := getattr(self, field.name):
-                if related_url := get_url_for_object(obj):
-                    response[field.name] = related_url
+            # Use the raw FK id (e.g. modified_by_id) to build the URL without
+            # loading the related object from the database.
+            fk_id = getattr(self, field.attname)
+            if fk_id is not None:
+                related_model = field.related_model
+                basename = get_cls_view_basename(related_model)
+                try:
+                    response[field.name] = get_relative_url(f'{basename}-detail', kwargs={'pk': fk_id})
+                except NoReverseMatch:
+                    pass
 
         basename = get_cls_view_basename(self.__class__)
 
