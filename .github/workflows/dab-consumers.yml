@@ -108,3 +108,31 @@ jobs:
           poetry run pip install -e "$DAB_PATH"
           poetry run pip show django-ansible-base
           poetry run pytest
+
+  hub:
+    name: hub
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ansible/galaxy_ng
+          path: hub
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libsasl2-dev libldap2-dev libssl-dev gettext
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install tox
+        run: pip install --only-binary ':all:' tox==4.53.0
+
+      - name: Run Hub unit tests
+        working-directory: hub
+        env:
+          DJANGO_ANSIBLE_BASE_BRANCH: ${{ github.sha }}
+        run: tox -e py312
+
