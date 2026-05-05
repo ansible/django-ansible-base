@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 from django.db.utils import Error
+from django.test import override_settings
 
 from ansible_base.lib.testing.util import StaticResourceAPIClient
 from ansible_base.lib.utils.response import get_relative_url
@@ -11,13 +12,17 @@ from ansible_base.rbac.models import RoleDefinition
 from ansible_base.resource_registry.models import Resource, ResourceType
 from ansible_base.resource_registry.models.service_identifier import service_id
 from ansible_base.resource_registry.tasks.sync import (
+    DEFAULT_SYNC_JWT_EXPIRATION,
+    DEFAULT_SYNC_PAGE_SIZE,
     AssignmentTuple,
     ManifestItem,
+    RemoteAssignmentFetcher,
     RemoteAssignmentResult,
     ResourceSyncHTTPError,
     SyncExecutor,
     _attempt_create_resource,
     _attempt_update_resource,
+    create_api_client,
     get_remote_assignments,
 )
 
@@ -543,3 +548,95 @@ def test_get_remote_assignments_filters_unknown_roles(static_api_client):
     assert len(result.assignments) == 1
     assignment = next(iter(result.assignments))
     assert assignment.role_definition_name == local_role.name
+
+
+@pytest.mark.django_db
+def test_remote_assignment_fetcher_passes_page_size():
+    """page_size should be included in the pagination filters."""
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+    ok = _mock_response()
+    api_client.list_user_assignments.return_value = ok
+    api_client.list_team_assignments.return_value = ok
+
+    RemoteAssignmentFetcher(api_client, page_size=100).fetch()
+
+    api_client.list_user_assignments.assert_called_with(filters={'page': 1, 'page_size': 100})
+    api_client.list_team_assignments.assert_called_with(filters={'page': 1, 'page_size': 100})
+
+
+@pytest.mark.django_db
+def test_remote_assignment_fetcher_reads_page_size_from_settings():
+    """When page_size is not provided, it should be read from settings."""
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+    ok = _mock_response()
+    api_client.list_user_assignments.return_value = ok
+    api_client.list_team_assignments.return_value = ok
+
+    with override_settings(RESOURCE_SYNC_PAGE_SIZE=200):
+        fetcher = RemoteAssignmentFetcher(api_client)
+        assert fetcher.page_size == 200
+        fetcher.fetch()
+
+    api_client.list_user_assignments.assert_called_with(filters={'page': 1, 'page_size': 200})
+
+
+@mock.patch('ansible_base.resource_registry.tasks.sync.get_remote_assignments')
+@mock.patch('ansible_base.resource_registry.tasks.sync.get_local_assignments', return_value=set())
+@pytest.mark.django_db
+def test_sync_executor_passes_page_size(mock_local, mock_remote, static_api_client, stdout):
+    """SyncExecutor should forward page_size to get_remote_assignments."""
+    mock_remote.return_value = RemoteAssignmentResult(assignments=set(), is_complete=True)
+    executor = SyncExecutor(api_client=static_api_client, stdout=stdout, page_size=75)
+    executor._sync_assignments()
+    mock_remote.assert_called_once_with(static_api_client, page_size=75)
+
+
+@mock.patch("ansible_base.resource_registry.tasks.sync.get_resource_server_client")
+def test_create_api_client_reads_jwt_expiration(mock_get_client):
+    """create_api_client should read RESOURCE_SYNC_JWT_EXPIRATION from settings."""
+    mock_get_client.return_value = mock.Mock()
+
+    with override_settings(
+        RESOURCE_SERVICE_PATH="/api/gateway/v1/service-index/",
+        RESOURCE_SYNC_JWT_EXPIRATION=120,
+    ):
+        create_api_client()
+
+    assert mock_get_client.call_args.kwargs["jwt_expiration"] == 120
+
+
+@pytest.mark.django_db
+def test_remote_assignment_fetcher_default_page_size():
+    """When no setting is configured, page_size should fall back to DEFAULT_SYNC_PAGE_SIZE."""
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+    fetcher = RemoteAssignmentFetcher(api_client)
+    assert fetcher.page_size == DEFAULT_SYNC_PAGE_SIZE
+
+
+@mock.patch("ansible_base.resource_registry.tasks.sync.get_resource_server_client")
+def test_create_api_client_default_jwt_expiration(mock_get_client):
+    """When no setting is configured, jwt_expiration should fall back to DEFAULT_SYNC_JWT_EXPIRATION."""
+    mock_get_client.return_value = mock.Mock()
+
+    with override_settings(RESOURCE_SERVICE_PATH="/api/gateway/v1/service-index/"):
+        create_api_client()
+
+    assert mock_get_client.call_args.kwargs["jwt_expiration"] == DEFAULT_SYNC_JWT_EXPIRATION
+
+
+@pytest.mark.django_db
+def test_remote_assignment_fetcher_sends_page_size_on_all_pages():
+    """page_size should be included in filters on every page, not just the first."""
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+
+    page1 = _mock_response(body={"results": [], "next": "http://example.com/page2"})
+    page2 = _mock_response(body={"results": [], "next": None})
+    api_client.list_user_assignments.side_effect = [page1, page2]
+    api_client.list_team_assignments.return_value = _mock_response()
+
+    RemoteAssignmentFetcher(api_client, page_size=100).fetch()
+
+    user_calls = api_client.list_user_assignments.call_args_list
+    assert len(user_calls) == 2
+    assert user_calls[0] == mock.call(filters={'page': 1, 'page_size': 100})
+    assert user_calls[1] == mock.call(filters={'page': 2, 'page_size': 100})

@@ -268,6 +268,14 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         'RESOURCE_SERVICE_PATH': "/api/gateway/v1/service-index/",
         # Disable legacy SSO by default
         'ENABLE_SERVICE_BACKED_SSO': False,
+        # Interval (in seconds) between periodic resource sync runs.
+        # Not consumed by DAB directly; read by downstream schedulers
+        'RESOURCE_SYNC_INTERVAL_SECONDS': 900,
+        # Page size for assignment pagination during resource sync (capped server-side by MAX_PAGE_SIZE).
+        # Defaults must match DEFAULT_SYNC_PAGE_SIZE / DEFAULT_SYNC_JWT_EXPIRATION in tasks/sync.py.
+        'RESOURCE_SYNC_PAGE_SIZE': 50,
+        # JWT service token lifetime in seconds for resource sync API calls
+        'RESOURCE_SYNC_JWT_EXPIRATION': 60,
     }
     if 'ansible_base.resource_registry' in installed_apps:
         for key, value in resource_registry_defaults.items():

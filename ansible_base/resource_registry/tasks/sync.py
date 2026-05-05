@@ -26,6 +26,10 @@ from ansible_base.resource_registry.rest_client import ResourceAPIClient, get_re
 
 logger = logging.getLogger('ansible_base.resources_api.tasks.sync')
 
+# Must match defaults in lib/dynamic_config/settings_logic.py resource_registry_defaults
+DEFAULT_SYNC_PAGE_SIZE = 50
+DEFAULT_SYNC_JWT_EXPIRATION = 60
+
 
 class ManifestNotFound(HTTPError):
     """Raise when server returns 404 for a manifest"""
@@ -109,6 +113,7 @@ def create_api_client() -> ResourceAPIClient:
     if not service_path:
         raise ValueError("RESOURCE_SERVICE_PATH is not set.")
     params["service_path"] = service_path
+    params["jwt_expiration"] = getattr(settings, "RESOURCE_SYNC_JWT_EXPIRATION", DEFAULT_SYNC_JWT_EXPIRATION)
 
     client = get_resource_server_client(**params)
     return client
@@ -190,9 +195,10 @@ class RemoteAssignmentFetcher:
     incomplete so the caller can skip deletions safely.
     """
 
-    def __init__(self, api_client: ResourceAPIClient):
+    def __init__(self, api_client: ResourceAPIClient, page_size: int | None = None):
         self.api_client = api_client
         self.assignments: set[AssignmentTuple] = set()
+        self.page_size = page_size if page_size is not None else getattr(settings, 'RESOURCE_SYNC_PAGE_SIZE', DEFAULT_SYNC_PAGE_SIZE)
 
     def fetch(self) -> RemoteAssignmentResult:
         """Paginate user then team assignments and return the result.
@@ -219,7 +225,7 @@ class RemoteAssignmentFetcher:
         page = 1
         try:
             while True:
-                resp = list_fn(filters={'page': page})
+                resp = list_fn(filters={'page': page, 'page_size': self.page_size})
                 if resp.status_code != 200:
                     logger.warning(f"Failed to fetch {assignment_type} assignments page {page}: HTTP {resp.status_code}")
                     return False
@@ -250,14 +256,14 @@ class RemoteAssignmentFetcher:
             return False
 
 
-def get_remote_assignments(api_client: ResourceAPIClient) -> RemoteAssignmentResult:
+def get_remote_assignments(api_client: ResourceAPIClient, page_size: int | None = None) -> RemoteAssignmentResult:
     """Fetch remote assignments from the resource server and convert to tuples.
 
     Returns a ``RemoteAssignmentResult`` so the caller can distinguish a
     complete fetch from a partial one (e.g. due to HTTP errors or
     timeouts mid-pagination).
     """
-    return RemoteAssignmentFetcher(api_client).fetch()
+    return RemoteAssignmentFetcher(api_client, page_size=page_size).fetch()
 
 
 def get_local_assignments() -> set[AssignmentTuple]:
@@ -617,6 +623,7 @@ class SyncExecutor:
     asyncio: bool = False
     results: dict = field(default_factory=lambda: defaultdict(list))
     sync_assignments: bool = True
+    page_size: int | None = None
 
     def write(self, text: str = ""):
         """Write to assigned IO or simply ignores the text."""
@@ -763,7 +770,7 @@ class SyncExecutor:
         self.write(">>> Syncing role assignments")
 
         try:
-            remote_result = get_remote_assignments(self.api_client)
+            remote_result = get_remote_assignments(self.api_client, page_size=self.page_size)
             local_assignments = get_local_assignments()
 
             # Deletions are only safe when the remote fetch was complete.
