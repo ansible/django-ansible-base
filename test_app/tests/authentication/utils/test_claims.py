@@ -2740,23 +2740,21 @@ def test_create_claims_deny_all_then_allow_override(
     access remained denied.
     """
     # order=1: deny-all rule (trigger 'never' -> has_permission=False)
-    local_authenticator_map.map_type = "allow"
-    local_authenticator_map.triggers = {"never": {}}
+    local_authenticator_map.map_type = 'allow'
+    local_authenticator_map.triggers = {'never': {}}
     local_authenticator_map.order = 1
     local_authenticator_map.save()
 
     # order=2: allow-always rule (trigger 'always' -> has_permission=True)
-    local_authenticator_map_1.map_type = "allow"
-    local_authenticator_map_1.triggers = {"always": {}}
+    local_authenticator_map_1.map_type = 'allow'
+    local_authenticator_map_1.triggers = {'always': {}}
     local_authenticator_map_1.order = 2
     local_authenticator_map_1.save()
 
     authenticator = local_authenticator_map.authenticator
-    res = claims.create_claims(authenticator, "username", {}, [])
+    res = claims.create_claims(authenticator, 'username', {}, [])
 
-    assert res["access_allowed"] is True, (
-        "An allow-always map at order=2 must override a deny-all map at order=1 (AAP-45394)"
-    )
+    assert res['access_allowed'] is True, 'An allow-always map at order=2 must override a deny-all map at order=1 (AAP-45394)'
 
 
 def test_create_claims_deny_all_not_overridden_without_match(
@@ -2768,24 +2766,22 @@ def test_create_claims_deny_all_not_overridden_without_match(
     allow map's trigger, access must remain denied.
     """
     # order=1: deny-all
-    local_authenticator_map.map_type = "allow"
-    local_authenticator_map.triggers = {"never": {}}
+    local_authenticator_map.map_type = 'allow'
+    local_authenticator_map.triggers = {'never': {}}
     local_authenticator_map.order = 1
     local_authenticator_map.save()
 
-    # order=2: allow only for members of group "special-group"; user has no groups
-    local_authenticator_map_1.map_type = "allow"
-    local_authenticator_map_1.triggers = {"groups": {"has_or": ["special-group"]}}
+    # order=2: allow only for members of group 'special-group'; user has no groups
+    local_authenticator_map_1.map_type = 'allow'
+    local_authenticator_map_1.triggers = {'groups': {'has_or': ['special-group']}}
     local_authenticator_map_1.order = 2
     local_authenticator_map_1.save()
 
     authenticator = local_authenticator_map.authenticator
-    # Pass an empty groups list — the user is NOT in "special-group"
-    res = claims.create_claims(authenticator, "username", {}, [])
+    # Pass an empty groups list -- the user is NOT in 'special-group'
+    res = claims.create_claims(authenticator, 'username', {}, [])
 
-    assert res["access_allowed"] is False, (
-        "User not matching the second allow map must remain denied (AAP-45394)"
-    )
+    assert res['access_allowed'] is False, 'User not matching the second allow map must remain denied (AAP-45394)'
 
 
 def test_create_claims_deny_all_overridden_with_group_match(
@@ -2797,21 +2793,19 @@ def test_create_claims_deny_all_overridden_with_group_match(
     map's trigger, the deny from the first map must be overridden.
     """
     # order=1: deny-all
-    local_authenticator_map.map_type = "allow"
-    local_authenticator_map.triggers = {"never": {}}
+    local_authenticator_map.map_type = 'allow'
+    local_authenticator_map.triggers = {'never': {}}
     local_authenticator_map.order = 1
     local_authenticator_map.save()
 
-    # order=2: allow for members of "special-group"
-    local_authenticator_map_1.map_type = "allow"
-    local_authenticator_map_1.triggers = {"groups": {"has_or": ["special-group"]}}
+    # order=2: allow for members of 'special-group'
+    local_authenticator_map_1.map_type = 'allow'
+    local_authenticator_map_1.triggers = {'groups': {'has_or': ['special-group']}}
     local_authenticator_map_1.order = 2
     local_authenticator_map_1.save()
 
     authenticator = local_authenticator_map.authenticator
-    # Pass "special-group" in the groups list — the user IS in the group
-    res = claims.create_claims(authenticator, "username", {}, ["special-group"])
+    # Pass 'special-group' in the groups list -- the user IS in the group
+    res = claims.create_claims(authenticator, 'username', {}, ['special-group'])
 
-    assert res["access_allowed"] is True, (
-        "User matching the second allow map must have access granted despite earlier deny (AAP-45394)"
-    )
+    assert res['access_allowed'] is True, 'User matching the second allow map must have access granted despite earlier deny (AAP-45394)'
