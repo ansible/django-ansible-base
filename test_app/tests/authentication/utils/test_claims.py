@@ -73,6 +73,18 @@ from test_app.tests.authentication.conftest import ORG_ADMIN_ROLE_NAME, ORG_MEMB
         ),
         pytest.param(
             {"always": {}},
+            "allow",
+            "",
+            {},
+            [],
+            True,
+            None,
+            {"team_membership": {}, "organization_membership": {}, 'rbac_roles': {'system': {'roles': {}}, 'organizations': {}}},
+            [{1: True, 'enabled': True}],
+            id="map_type 'allow' with trigger 'always' sets 'access_allowed' to True (AAP-45394)",
+        ),
+        pytest.param(
+            {"always": {}},
             "team",
             TEAM_MEMBER_ROLE_NAME,
             {},
@@ -2710,3 +2722,96 @@ class TestRefactoredCacheExisting:
         if "Test Role" in cache_instance.cache:
             for content_type_id in expected_skipped_content_types:
                 assert content_type_id not in cache_instance.cache["Test Role"]
+
+
+# --- AAP-45394 regression tests ---
+
+
+def test_create_claims_deny_all_then_allow_override(
+    local_authenticator_map,
+    local_authenticator_map_1,
+):
+    """
+    Regression test for AAP-45394: a deny-all allow map at order=1 must be
+    recoverable by an allow-always allow map at order=2.
+
+    Before the fix the 'allow' branch only triggered when has_permission=False,
+    so the affirmative branch (has_permission=True) was silently dropped and
+    access remained denied.
+    """
+    # order=1: deny-all rule (trigger 'never' -> has_permission=False)
+    local_authenticator_map.map_type = "allow"
+    local_authenticator_map.triggers = {"never": {}}
+    local_authenticator_map.order = 1
+    local_authenticator_map.save()
+
+    # order=2: allow-always rule (trigger 'always' -> has_permission=True)
+    local_authenticator_map_1.map_type = "allow"
+    local_authenticator_map_1.triggers = {"always": {}}
+    local_authenticator_map_1.order = 2
+    local_authenticator_map_1.save()
+
+    authenticator = local_authenticator_map.authenticator
+    res = claims.create_claims(authenticator, "username", {}, [])
+
+    assert res["access_allowed"] is True, (
+        "An allow-always map at order=2 must override a deny-all map at order=1 (AAP-45394)"
+    )
+
+
+def test_create_claims_deny_all_not_overridden_without_match(
+    local_authenticator_map,
+    local_authenticator_map_1,
+):
+    """
+    Regression test for AAP-45394: when the user does NOT match the second
+    allow map's trigger, access must remain denied.
+    """
+    # order=1: deny-all
+    local_authenticator_map.map_type = "allow"
+    local_authenticator_map.triggers = {"never": {}}
+    local_authenticator_map.order = 1
+    local_authenticator_map.save()
+
+    # order=2: allow only for members of group "special-group"; user has no groups
+    local_authenticator_map_1.map_type = "allow"
+    local_authenticator_map_1.triggers = {"groups": {"has_or": ["special-group"]}}
+    local_authenticator_map_1.order = 2
+    local_authenticator_map_1.save()
+
+    authenticator = local_authenticator_map.authenticator
+    # Pass an empty groups list — the user is NOT in "special-group"
+    res = claims.create_claims(authenticator, "username", {}, [])
+
+    assert res["access_allowed"] is False, (
+        "User not matching the second allow map must remain denied (AAP-45394)"
+    )
+
+
+def test_create_claims_deny_all_overridden_with_group_match(
+    local_authenticator_map,
+    local_authenticator_map_1,
+):
+    """
+    Regression test for AAP-45394: when the user DOES match the second allow
+    map's trigger, the deny from the first map must be overridden.
+    """
+    # order=1: deny-all
+    local_authenticator_map.map_type = "allow"
+    local_authenticator_map.triggers = {"never": {}}
+    local_authenticator_map.order = 1
+    local_authenticator_map.save()
+
+    # order=2: allow for members of "special-group"
+    local_authenticator_map_1.map_type = "allow"
+    local_authenticator_map_1.triggers = {"groups": {"has_or": ["special-group"]}}
+    local_authenticator_map_1.order = 2
+    local_authenticator_map_1.save()
+
+    authenticator = local_authenticator_map.authenticator
+    # Pass "special-group" in the groups list — the user IS in the group
+    res = claims.create_claims(authenticator, "username", {}, ["special-group"])
+
+    assert res["access_allowed"] is True, (
+        "User matching the second allow map must have access granted despite earlier deny (AAP-45394)"
+    )

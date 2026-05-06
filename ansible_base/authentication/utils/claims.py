@@ -120,9 +120,8 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
         rule_responses.append({mpk: has_permission, 'enabled': auth_map.enabled})
 
         understood_map = False
-        if auth_map.map_type == 'allow' and not has_permission:
-            # If any rule does not allow we don't want to return this to true
-            access_allowed = False
+        if auth_map.map_type == 'allow':
+            access_allowed = has_permission
             understood_map = True
         elif auth_map.map_type == 'is_superuser':
             is_superuser = has_permission
