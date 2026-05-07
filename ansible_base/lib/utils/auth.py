@@ -36,7 +36,7 @@ def get_organization_model() -> Type[AbstractOrganization]:
     return get_model_from_settings('ANSIBLE_BASE_ORGANIZATION_MODEL')
 
 
-def get_object_by_ansible_id(qs: QuerySet, ansible_id: Union[str, UUID], **kwargs) -> Model:
+def get_object_by_ansible_id(qs: QuerySet, ansible_id: Union[str, UUID]) -> Model:
     resource_cls = django_apps.get_model('dab_resource_registry', 'Resource')
     content_type_cls = django_apps.get_model('contenttypes', 'ContentType')
     cls = qs.model
@@ -44,9 +44,9 @@ def get_object_by_ansible_id(qs: QuerySet, ansible_id: Union[str, UUID], **kwarg
     try:
         object_id = resource_cls.objects.values_list('object_id', flat=True).get(ansible_id=ansible_id, content_type=ct)
     except resource_cls.DoesNotExist:
-        raise cls.DoesNotExist(f"{cls.__name__} with ansible_id {ansible_id} does not exist.")
+        raise cls.DoesNotExist(f"{cls.__name__} with ansible_id {ansible_id} does not exist.") from None
     return qs.get(pk=object_id)
 
 
-def get_user_by_ansible_id(ansible_id: Union[str, UUID], **kwargs) -> Model:
+def get_user_by_ansible_id(ansible_id: Union[str, UUID]) -> Model:
     return get_object_by_ansible_id(get_user_model().objects.all(), ansible_id)
