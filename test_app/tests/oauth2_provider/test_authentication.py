@@ -13,15 +13,11 @@ from ansible_base.oauth2_provider.models import OAuth2AccessToken
 def only_oauth_scope_permission(settings):
     from ansible_base.oauth2_provider.permissions import OAuth2ScopePermission
 
-    with mock.patch(
-        "rest_framework.views.APIView.permission_classes", [OAuth2ScopePermission]
-    ):
+    with mock.patch("rest_framework.views.APIView.permission_classes", [OAuth2ScopePermission]):
         yield
 
 
-def test_oauth2_bearer_get_user_correct(
-    unauthenticated_api_client, oauth2_admin_access_token
-):
+def test_oauth2_bearer_get_user_correct(unauthenticated_api_client, oauth2_admin_access_token):
     """
     Perform a GET with a bearer token and ensure the authed user is correct.
     """
@@ -34,12 +30,8 @@ def test_oauth2_bearer_get_user_correct(
     assert response.data["username"] == oauth2_admin_access_token[0].user.username
 
 
-@pytest.mark.parametrize(
-    "prefix", ["Bearer", "Token", "bearer", "token", "BEARER", "TOKEN"]
-)
-def test_oauth2_token_prefix_variants(
-    unauthenticated_api_client, oauth2_admin_access_token, animal, prefix
-):
+@pytest.mark.parametrize("prefix", ["Bearer", "Token", "bearer", "token", "BEARER", "TOKEN"])
+def test_oauth2_token_prefix_variants(unauthenticated_api_client, oauth2_admin_access_token, animal, prefix):
     """
     GET an animal with Bearer or Token prefix (AAP-68669).
     """
@@ -53,9 +45,7 @@ def test_oauth2_token_prefix_variants(
 
 
 @pytest.mark.parametrize("prefix", ["Junk", "Basic", "Digest"])
-def test_oauth2_token_invalid_prefix_rejected(
-    unauthenticated_api_client, oauth2_admin_access_token, animal, prefix
-):
+def test_oauth2_token_invalid_prefix_rejected(unauthenticated_api_client, oauth2_admin_access_token, animal, prefix):
     """
     Verify that valid tokens with unsupported prefixes are rejected (AAP-68669).
     """
@@ -74,9 +64,7 @@ def test_oauth2_token_invalid_prefix_rejected(
         ("bad", 401),
     ],
 )
-def test_oauth2_bearer_get(
-    unauthenticated_api_client, oauth2_admin_access_token, animal, token, expected
-):
+def test_oauth2_bearer_get(unauthenticated_api_client, oauth2_admin_access_token, animal, token, expected):
     """
     GET an animal with a bearer token.
     """
@@ -107,9 +95,7 @@ def test_oauth2_token_expiry(oauth2_admin_access_token):
         ("bad", 401),
     ],
 )
-def test_oauth2_bearer_post(
-    unauthenticated_api_client, oauth2_admin_access_token, admin_user, token, expected
-):
+def test_oauth2_bearer_post(unauthenticated_api_client, oauth2_admin_access_token, admin_user, token, expected):
     """
     POST an animal with a bearer token.
     """
@@ -196,9 +182,7 @@ def test_oauth2_bearer_put(
         assert response.data["name"] == "Fido"
 
 
-def test_oauth2_bearer_no_activitystream(
-    unauthenticated_api_client, oauth2_admin_access_token, animal
-):
+def test_oauth2_bearer_no_activitystream(unauthenticated_api_client, oauth2_admin_access_token, animal):
     """
     Ensure no activitystream entries for bearer token based auth
     """
@@ -213,9 +197,7 @@ def test_oauth2_bearer_no_activitystream(
     assert response.status_code == 200
     assert response.data["name"] == animal.name
 
-    updated_token = OAuth2AccessToken.objects.get(
-        token=oauth2_admin_access_token[0].token
-    )
+    updated_token = OAuth2AccessToken.objects.get(token=oauth2_admin_access_token[0].token)
     assert len(updated_token.activity_stream_entries) == existing_as_count
 
 
@@ -262,9 +244,7 @@ def test_oauth2_scope_permission(
     assert response.status_code == status, response.status_code
 
 
-def test_oauth2_scope_permission_not_oauth(
-    user, user_api_client, only_oauth_scope_permission
-):
+def test_oauth2_scope_permission_not_oauth(user, user_api_client, only_oauth_scope_permission):
     """
     Ensure that non-OAuth (but still authenticated) requests pass through.
     """
@@ -278,9 +258,7 @@ def test_oauth2_scope_permission_not_oauth(
     assert response.status_code == 201, response.status_code
 
 
-def test_oauth2_scope_permission_not_authenticated(
-    user, unauthenticated_api_client, only_oauth_scope_permission
-):
+def test_oauth2_scope_permission_not_authenticated(user, unauthenticated_api_client, only_oauth_scope_permission):
     """
     Ensure that non-authenticated are blocked.
     """
@@ -294,14 +272,10 @@ def test_oauth2_scope_permission_not_authenticated(
     assert response.status_code == 401, response.status_code
 
 
-def test_oauth2_unsupported_media_type(
-    user, user_api_client, only_oauth_scope_permission
-):
+def test_oauth2_unsupported_media_type(user, user_api_client, only_oauth_scope_permission):
     url = get_relative_url("animal-upload")
     data = b"TESTDATA"
-    response = user_api_client.post(
-        url, data=data, content_type="application/octet-stream"
-    )
+    response = user_api_client.post(url, data=data, content_type="application/octet-stream")
     assert response.status_code == 200, response.status_code
 
 
@@ -381,9 +355,7 @@ def test_oauth2_scope_not_mutated_after_permission_check(
 
     # The in-memory token scope must still be "write" -- not "write read"
     access_token_obj.refresh_from_db()
-    assert access_token_obj.scope == "write", (
-        f"Token scope was mutated to '{access_token_obj.scope}'; expected 'write'"
-    )
+    assert access_token_obj.scope == "write", f"Token scope was mutated to '{access_token_obj.scope}'; expected 'write'"
 
     # Also make a POST request (write operation) and verify scope is unchanged
     url = get_relative_url("animal-list")
@@ -396,9 +368,7 @@ def test_oauth2_scope_not_mutated_after_permission_check(
     assert response.status_code == 201
 
     access_token_obj.refresh_from_db()
-    assert access_token_obj.scope == "write", (
-        f"Token scope was mutated to '{access_token_obj.scope}' after POST; expected 'write'"
-    )
+    assert access_token_obj.scope == "write", f"Token scope was mutated to '{access_token_obj.scope}' after POST; expected 'write'"
 
 
 @pytest.mark.django_db
@@ -435,6 +405,4 @@ def test_oauth2_scope_no_activitystream_for_scope_field(
 
     # No new activity stream entries should have been created
     final_entry_count = Entry.objects.count()
-    assert final_entry_count == initial_entry_count, (
-        f"Expected no new activity stream entries, but {final_entry_count - initial_entry_count} were created"
-    )
+    assert final_entry_count == initial_entry_count, f"Expected no new activity stream entries, but {final_entry_count - initial_entry_count} were created"
