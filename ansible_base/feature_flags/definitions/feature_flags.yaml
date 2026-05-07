@@ -52,7 +52,7 @@
   labels:
     - platform
 - name: FEATURE_DASHBOARD_COLLECTION_ENABLED
-  ui_name: Dashboard Reports Collection
+  ui_name: Automation Dashboard
   visibility: True
   condition: boolean
   value: 'False'
