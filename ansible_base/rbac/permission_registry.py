@@ -6,7 +6,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db.models import Model
 from django.db.models.base import ModelBase  # post_migrate may call with phony objects
-from django.db.models.signals import post_delete, post_init, post_migrate, pre_save
+from django.db.models.signals import post_delete, post_init, post_migrate, post_save, pre_save
 from django.utils.functional import cached_property
 
 from ansible_base.rbac.managed import ManagedRoleConstructor, get_managed_role_constructors
@@ -151,6 +151,7 @@ class PermissionRegistry:
         if not getattr(self.user_model, 'EMAIL_ENFORCEMENT_VIA_SERIALIZER', False):
             post_init.connect(triggers.rbac_post_init_stash_email, sender=self.user_model, dispatch_uid='permission-registry-stash-email')
             pre_save.connect(triggers.rbac_pre_save_enforce_email_policy, sender=self.user_model, dispatch_uid='permission-registry-enforce-email')
+            post_save.connect(triggers.rbac_post_save_refresh_email_stash, sender=self.user_model, dispatch_uid='permission-registry-refresh-email')
 
         for cls in self._registry:
             triggers.connect_rbac_signals(cls)

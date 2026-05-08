@@ -306,10 +306,66 @@ class TestEmailPolicySignal:
     def test_email_enforcement_signals_registered_by_default(self):
         """Verify that email enforcement signals are registered when
         EMAIL_ENFORCEMENT_VIA_SERIALIZER is False (the default)."""
-        from django.db.models.signals import post_init, pre_save
+        from django.db.models.signals import post_init, post_save, pre_save
 
         assert not User.EMAIL_ENFORCEMENT_VIA_SERIALIZER
         pre_save_uids = {r[0][0] for r in pre_save.receivers}
         post_init_uids = {r[0][0] for r in post_init.receivers}
+        post_save_uids = {r[0][0] for r in post_save.receivers}
         assert 'permission-registry-enforce-email' in pre_save_uids
         assert 'permission-registry-stash-email' in post_init_uids
+        assert 'permission-registry-refresh-email' in post_save_uids
+
+    @pytest.mark.django_db
+    def test_post_save_refreshes_stash(self):
+        """After a successful save the stash must reflect the new email,
+        so a subsequent save on the same Python instance does not
+        false-positive."""
+        admin = User.objects.create(username='admin-su', is_superuser=True)
+        alice = User.objects.create(username='alice', email='alice@example.com')
+        with patch('crum.get_current_user', return_value=admin):
+            alice.email = 'alice-new@example.com'
+            alice.save()
+            # Stash should now be refreshed to the new value
+            assert alice._rbac_original_email == 'alice-new@example.com'
+            # A second save (no change) should not raise
+            alice.save()
+
+    @pytest.mark.django_db
+    def test_deferred_load_enforces_via_db_lookup(self):
+        """When a user is loaded via .only() without email, then the
+        email is assigned and saved, enforcement should still work by
+        falling back to a DB lookup."""
+        alice = User.objects.create(username='alice', email='alice@example.com')
+        deferred_alice = User.objects.only('id', 'username').get(pk=alice.pk)
+        with patch('crum.get_current_user', return_value=deferred_alice):
+            deferred_alice.email = 'hacked@evil.com'
+            with pytest.raises(ValidationError):
+                deferred_alice.save()
+        alice.refresh_from_db()
+        assert alice.email == 'alice@example.com'
+
+    @pytest.mark.django_db
+    def test_deferred_load_without_email_assignment_is_not_blocked(self):
+        """Saving a deferred-loaded user without touching email should
+        not trigger enforcement."""
+        alice = User.objects.create(username='alice', email='alice@example.com')
+        deferred_alice = User.objects.only('id', 'username', 'first_name').get(pk=alice.pk)
+        with patch('crum.get_current_user', return_value=deferred_alice):
+            deferred_alice.first_name = 'Alice'
+            deferred_alice.save(update_fields=['first_name'])
+        alice.refresh_from_db()
+        assert alice.first_name == 'Alice'
+        assert alice.email == 'alice@example.com'
+
+    @pytest.mark.django_db
+    def test_non_email_save_not_blocked(self):
+        """Saving a normally-loaded user without modifying email should
+        not be blocked even when a non-admin is the current user."""
+        alice = User.objects.create(username='alice', email='alice@example.com')
+        with patch('crum.get_current_user', return_value=alice):
+            alice.first_name = 'Alice'
+            alice.save()
+        alice.refresh_from_db()
+        assert alice.first_name == 'Alice'
+        assert alice.email == 'alice@example.com'

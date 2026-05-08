@@ -100,11 +100,12 @@ def test_self_edit_setting_requires_manage_org_auth():
 
 @pytest.mark.django_db
 @override_settings(MANAGE_ORGANIZATION_AUTH=False)
-def test_org_admin_cannot_change_email_when_manage_org_auth_disabled(org_admin_rd, organization):
+def test_org_admin_cannot_change_email_when_manage_org_auth_disabled(org_admin_rd, org_member_rd, organization):
     """Org admins cannot change their own or others' email when MANAGE_ORGANIZATION_AUTH is off."""
     org_admin = User.objects.create(username='org-admin')
     member = User.objects.create(username='member')
     org_admin_rd.give_permission(org_admin, organization)
+    org_member_rd.give_permission(member, organization)
     assert not can_change_user(org_admin, org_admin, can_self_edit=False)
     assert not can_change_user(org_admin, member, can_self_edit=False)
     assert not can_change_user(org_admin, org_admin)

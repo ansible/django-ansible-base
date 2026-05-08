@@ -14,6 +14,13 @@ from ansible_base.rbac.validators import validate_team_assignment_enabled
 
 logger = logging.getLogger('ansible_base.rbac.triggers')
 
+# Sentinel used to distinguish "we never stashed the email" from "the email was
+# stashed as None".  When a User instance is loaded via .only() without the
+# email field, post_init cannot record the original value.  Using a sentinel
+# instead of None lets pre_save detect this and fall back to a DB lookup rather
+# than silently skipping enforcement.
+_UNSET = object()
+
 
 """
 As the caching module will fill in cached data,
@@ -285,9 +292,15 @@ def rbac_post_delete_remove_object_roles(instance, *args, **kwargs):
 def rbac_post_init_stash_email(instance, **kwargs):
     """Capture the email at load time so pre_save can detect changes
     without an extra query, following the same pattern as
-    rbac_post_init_set_original_parent."""
+    rbac_post_init_set_original_parent.
+
+    When the email field is deferred (e.g. ``User.objects.only('id')``),
+    we intentionally leave the attribute at the ``_UNSET`` sentinel so
+    that pre_save knows it must perform a DB lookup before deciding."""
     if 'email' in instance.__dict__:
         instance._rbac_original_email = instance.email
+    else:
+        instance._rbac_original_email = _UNSET
 
 
 def rbac_pre_save_enforce_email_policy(instance, **kwargs):
@@ -301,15 +314,33 @@ def rbac_pre_save_enforce_email_policy(instance, **kwargs):
 
     from ansible_base.rbac.policies import can_change_user
 
+    # New objects never need enforcement.
     if instance.pk is None:
         return
 
-    original = getattr(instance, '_rbac_original_email', None)
-    if original is None or original == instance.email:
-        return
-
+    # If update_fields is given and email is not among them, the email
+    # column is not being persisted -- skip enforcement.
     update_fields = kwargs.get('update_fields')
     if update_fields and 'email' not in update_fields:
+        return
+
+    # If the email field itself is not loaded into __dict__ (deferred via
+    # .only() / .defer()), there is nothing to enforce -- the field is not
+    # being written.
+    if 'email' not in instance.__dict__:
+        return
+
+    original = getattr(instance, '_rbac_original_email', _UNSET)
+
+    # If the stash was never set (deferred load), do a DB lookup so we
+    # have the persisted value to compare against.
+    if original is _UNSET:
+        try:
+            original = type(instance).objects.values_list('email', flat=True).get(pk=instance.pk)
+        except type(instance).DoesNotExist:
+            return
+
+    if original == instance.email:
         return
 
     requesting_user = get_current_user()
@@ -321,6 +352,16 @@ def rbac_pre_save_enforce_email_policy(instance, **kwargs):
 
         instance.email = original
         raise ValidationError({'email': ["You do not have permission to change the email field."]})
+
+
+def rbac_post_save_refresh_email_stash(instance, **kwargs):
+    """Refresh ``_rbac_original_email`` after a successful save so the stash
+    always reflects the persisted value.  Without this, a second ``save()``
+    on the same Python instance would compare against the stale pre-load
+    value and could produce a false-positive ValidationError for non-admin
+    callers."""
+    if 'email' in instance.__dict__:
+        instance._rbac_original_email = instance.email
 
 
 def rbac_post_user_delete(instance, *args, **kwargs):
