@@ -69,8 +69,7 @@ def needed_updates_on_assignment(role_definition, actor, object_role, created=Fa
     deleted = False
     if (not giving) and (not (object_role.users.exists() or object_role.teams.exists())):
         # time to delete the object role because it is unused
-        if object_role in to_update:
-            to_update.remove(object_role)
+        to_update.discard(object_role)
         deleted = True
 
     # giving or revoking team permissions may not change the parentage
@@ -109,8 +108,7 @@ def permissions_changed(instance, action, model, pk_set, reverse, **kwargs):
         # All team member roles that give this permission through this role need to be updated
         for role in to_recompute.copy():
             for team in role.teams.all():
-                for team_role in team.member_roles.all():
-                    to_recompute.add(team_role)
+                to_recompute.update(team.member_roles.all())
     elif action == 'post_clear':
         # unfortunately this does not give us a list of permissions to work with
         # this is slow, not ideal, but will at least be correct
