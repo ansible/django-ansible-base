@@ -100,11 +100,12 @@ def test_self_edit_setting_requires_manage_org_auth():
 
 @pytest.mark.django_db
 @override_settings(MANAGE_ORGANIZATION_AUTH=False)
-def test_org_admin_cannot_change_email_when_manage_org_auth_disabled(org_admin_rd, organization):
+def test_org_admin_cannot_change_email_when_manage_org_auth_disabled(org_admin_rd, org_member_rd, organization):
     """Org admins cannot change their own or others' email when MANAGE_ORGANIZATION_AUTH is off."""
     org_admin = User.objects.create(username='org-admin')
     member = User.objects.create(username='member')
     org_admin_rd.give_permission(org_admin, organization)
+    org_member_rd.give_permission(member, organization)
     assert not can_change_user(org_admin, org_admin, can_self_edit=False)
     assert not can_change_user(org_admin, member, can_self_edit=False)
     assert not can_change_user(org_admin, org_admin)
@@ -143,6 +144,48 @@ def test_superuser_can_still_change_user_when_manage_org_auth_disabled(admin_use
     alice = User.objects.create(username='alice')
     assert can_change_user(admin_user, alice)
     assert can_change_user(admin_user, admin_user)
+
+
+@pytest.mark.django_db
+def test_update_fields_bypass_vector(org_admin_rd, org_member_rd, organization):
+    """Partial save(update_fields=['first_name']) followed by full save must not skip enforcement."""
+    from crum import impersonate
+
+    admin = User.objects.create(username='admin-user')
+    org_admin_rd.give_permission(admin, organization)
+
+    target = User.objects.create(username='target-user', email='original@example.com')
+    org_member_rd.give_permission(target, organization)
+
+    with impersonate(admin):
+        target.first_name = 'Updated'
+        target.save(update_fields=['first_name'])
+
+        target.email = 'changed@example.com'
+        target.save()
+
+    target.refresh_from_db()
+    assert target.email == 'changed@example.com'
+    assert target.first_name == 'Updated'
+
+
+@pytest.mark.django_db
+def test_deferred_only_load_enforces_email_policy(org_member_rd, organization):
+    """User loaded via .only('id') must still enforce email policy."""
+    from crum import impersonate
+    from rest_framework.exceptions import ValidationError
+
+    member = User.objects.create(username='deferred-member', email='original@example.com')
+    org_member_rd.give_permission(member, organization)
+
+    deferred = User.objects.only('id', 'username').get(pk=member.pk)
+    with impersonate(deferred):
+        deferred.email = 'hacked@example.com'
+        with pytest.raises(ValidationError):
+            deferred.save()
+
+    member.refresh_from_db()
+    assert member.email == 'original@example.com'
 
 
 @pytest.mark.django_db

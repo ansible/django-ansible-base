@@ -14,6 +14,8 @@ from ansible_base.rbac.validators import validate_team_assignment_enabled
 
 logger = logging.getLogger('ansible_base.rbac.triggers')
 
+_SENTINEL = object()
+
 
 """
 As the caching module will fill in cached data,
@@ -288,6 +290,8 @@ def rbac_post_init_stash_email(instance, **kwargs):
     rbac_post_init_set_original_parent."""
     if 'email' in instance.__dict__:
         instance._rbac_original_email = instance.email
+    else:
+        instance._rbac_original_email = _SENTINEL
 
 
 def rbac_pre_save_enforce_email_policy(instance, **kwargs):
@@ -305,6 +309,8 @@ def rbac_pre_save_enforce_email_policy(instance, **kwargs):
         return
 
     original = getattr(instance, '_rbac_original_email', None)
+    if original is _SENTINEL:
+        original = type(instance).objects.values_list('email', flat=True).get(pk=instance.pk)
     if original is None or original == instance.email:
         return
 
@@ -321,6 +327,16 @@ def rbac_pre_save_enforce_email_policy(instance, **kwargs):
 
         instance.email = original
         raise ValidationError({'email': ["You do not have permission to change the email field."]})
+
+
+def rbac_post_save_refresh_email_stash(instance, **kwargs):
+    """Refresh the email stash after a successful save so subsequent
+    saves on the same instance do not false-positive."""
+    update_fields = kwargs.get('update_fields')
+    if update_fields is not None and 'email' not in update_fields:
+        return
+    if 'email' in instance.__dict__:
+        instance._rbac_original_email = instance.email
 
 
 def rbac_post_user_delete(instance, *args, **kwargs):
