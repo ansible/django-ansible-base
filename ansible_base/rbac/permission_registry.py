@@ -119,6 +119,7 @@ class PermissionRegistry:
         return ret
 
     def call_when_apps_ready(self, apps, app_config) -> None:
+        """Wire up RBAC signals once all Django apps are ready."""
         from ansible_base.rbac import triggers
         from ansible_base.rbac.evaluations import bound_has_obj_perm, bound_singleton_permissions, connect_rbac_methods
         from ansible_base.rbac.management import create_dab_permissions

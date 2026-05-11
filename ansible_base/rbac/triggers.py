@@ -92,6 +92,7 @@ def update_after_assignment(update_teams, to_update):
 
 
 def permissions_changed(instance, action, model, pk_set, reverse, **kwargs):
+    """Recompute object role permissions when a RoleDefinition's permissions m2m changes."""
     if action.startswith('pre_'):
         return
     to_recompute = set(ObjectRole.objects.filter(role_definition=instance).prefetch_related('teams__member_roles'))
