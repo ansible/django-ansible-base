@@ -147,25 +147,26 @@ def test_superuser_can_still_change_user_when_manage_org_auth_disabled(admin_use
 
 
 @pytest.mark.django_db
-def test_update_fields_bypass_vector(org_admin_rd, org_member_rd, organization):
-    """Partial save(update_fields=['first_name']) followed by full save must not skip enforcement."""
+def test_update_fields_bypass_vector(org_member_rd, organization):
+    """Partial save(update_fields=['first_name']) followed by full save must still enforce email policy."""
     from crum import impersonate
+    from rest_framework.exceptions import ValidationError
 
-    admin = User.objects.create(username='admin-user')
-    org_admin_rd.give_permission(admin, organization)
+    unprivileged = User.objects.create(username='unprivileged-user')
 
     target = User.objects.create(username='target-user', email='original@example.com')
     org_member_rd.give_permission(target, organization)
 
-    with impersonate(admin):
+    with impersonate(unprivileged):
         target.first_name = 'Updated'
         target.save(update_fields=['first_name'])
 
-        target.email = 'changed@example.com'
-        target.save()
+        target.email = 'hacked@example.com'
+        with pytest.raises(ValidationError):
+            target.save()
 
     target.refresh_from_db()
-    assert target.email == 'changed@example.com'
+    assert target.email == 'original@example.com'
     assert target.first_name == 'Updated'
 
 

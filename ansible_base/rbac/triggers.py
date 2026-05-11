@@ -307,9 +307,13 @@ def rbac_pre_save_enforce_email_policy(instance, **kwargs):
     if instance.pk is None:
         return
 
+    # None when post_init signal was not connected (management commands, migrations, manual construction)
     original = getattr(instance, '_rbac_original_email', None)
     if original is _SENTINEL:
-        original = type(instance).objects.values_list('email', flat=True).get(pk=instance.pk)
+        try:
+            original = type(instance).objects.values_list('email', flat=True).get(pk=instance.pk)
+        except type(instance).DoesNotExist:
+            return
     if original is None or original == instance.email:
         return
 
