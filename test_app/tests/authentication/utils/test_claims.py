@@ -2727,6 +2727,26 @@ class TestRefactoredCacheExisting:
 # --- AAP-45394 regression tests ---
 
 
+@mock.patch("ansible_base.authentication.utils.claims.logger")
+def test_create_claims_allow_grant_no_error_logged(
+    logger,
+    local_authenticator_map,
+    shut_up_logging,
+):
+    """
+    Regression test for AAP-45047: map_type 'allow' with a firing trigger
+    must NOT log an error or fall through to the catch-all else branch.
+    """
+    local_authenticator_map.triggers = {"always": {}}
+    local_authenticator_map.map_type = "allow"
+    local_authenticator_map.save()
+
+    authenticator = local_authenticator_map.authenticator
+    claims.create_claims(authenticator, "username", {}, [])
+
+    logger.error.assert_not_called()
+
+
 def test_create_claims_deny_all_then_allow_override(
     local_authenticator_map,
     local_authenticator_map_1,
