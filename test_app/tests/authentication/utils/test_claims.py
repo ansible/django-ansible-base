@@ -2809,3 +2809,85 @@ def test_create_claims_deny_all_overridden_with_group_match(
     res = claims.create_claims(authenticator, 'username', {}, ['special-group'])
 
     assert res['access_allowed'] is True, 'User matching the second allow map must have access granted despite earlier deny (AAP-45394)'
+
+
+def test_create_claims_allow_then_deny_preserves_deny(
+    local_authenticator_map,
+    local_authenticator_map_1,
+):
+    """
+    Verify the reverse ordering: allow-always at order=1, deny-all at order=2.
+    The later deny must override the earlier allow (last writer wins).
+    """
+    local_authenticator_map.map_type = 'allow'
+    local_authenticator_map.triggers = {'always': {}}
+    local_authenticator_map.order = 1
+    local_authenticator_map.save()
+
+    local_authenticator_map_1.map_type = 'allow'
+    local_authenticator_map_1.triggers = {'never': {}}
+    local_authenticator_map_1.order = 2
+    local_authenticator_map_1.save()
+
+    authenticator = local_authenticator_map.authenticator
+    res = claims.create_claims(authenticator, 'username', {}, [])
+
+    assert res['access_allowed'] is False, 'A deny-all map at order=2 must override an allow-always map at order=1'
+
+
+def test_create_claims_revoke_deny_overridden_by_later_allow(
+    local_authenticator_map,
+    local_authenticator_map_1,
+):
+    """
+    A revoke=True allow map whose trigger does not match converts SKIP to DENY.
+    A subsequent allow-always map must override that denial (last writer wins).
+    """
+    # order=1: allow for group 'admins' with revoke=True
+    # user NOT in admins -> SKIP -> revoke converts to DENY -> access_allowed=False
+    local_authenticator_map.map_type = 'allow'
+    local_authenticator_map.triggers = {'groups': {'has_or': ['admins']}}
+    local_authenticator_map.revoke = True
+    local_authenticator_map.order = 1
+    local_authenticator_map.save()
+
+    # order=2: allow-always -> access_allowed=True
+    local_authenticator_map_1.map_type = 'allow'
+    local_authenticator_map_1.triggers = {'always': {}}
+    local_authenticator_map_1.order = 2
+    local_authenticator_map_1.save()
+
+    authenticator = local_authenticator_map.authenticator
+    res = claims.create_claims(authenticator, 'username', {}, [])
+
+    assert res['access_allowed'] is True, 'An allow-always map must override a revoke-deny from an earlier map'
+
+
+def test_create_claims_three_maps_last_writer_wins(
+    local_authenticator_map,
+    local_authenticator_map_1,
+    local_authenticator_map_2,
+):
+    """
+    Three allow maps: allow(1) -> deny(2) -> allow(3).
+    The last evaluated map must win.
+    """
+    local_authenticator_map.map_type = 'allow'
+    local_authenticator_map.triggers = {'always': {}}
+    local_authenticator_map.order = 1
+    local_authenticator_map.save()
+
+    local_authenticator_map_1.map_type = 'allow'
+    local_authenticator_map_1.triggers = {'never': {}}
+    local_authenticator_map_1.order = 2
+    local_authenticator_map_1.save()
+
+    local_authenticator_map_2.map_type = 'allow'
+    local_authenticator_map_2.triggers = {'always': {}}
+    local_authenticator_map_2.order = 3
+    local_authenticator_map_2.save()
+
+    authenticator = local_authenticator_map.authenticator
+    res = claims.create_claims(authenticator, 'username', {}, [])
+
+    assert res['access_allowed'] is True, 'The last allow map (order=3, always) must win over the deny at order=2'
