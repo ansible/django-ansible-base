@@ -694,3 +694,17 @@ class TestValidationErrors:
         # Check if the error is about missing object_id or object_ansible_id
         error_msg = str(response.data)
         assert "You must provide either 'object_id' or 'object_ansible_id'" in error_msg
+
+
+@pytest.mark.django_db
+def test_object_ansible_id_in_list_response(admin_api_client, rando, org_admin_rd, organization):
+    """Verify object_ansible_id is correctly populated in list responses."""
+    org_admin_rd.give_permission(rando, organization)
+
+    url = get_relative_url('serviceuserassignment-list')
+    response = admin_api_client.get(url + '?page_size=200', format="json")
+    assert response.status_code == 200, response.data
+
+    candidates = [a for a in response.data['results'] if a['role_definition'] == org_admin_rd.name]
+    assert len(candidates) == 1
+    assert candidates[0]['object_ansible_id'] == str(organization.resource.ansible_id)
