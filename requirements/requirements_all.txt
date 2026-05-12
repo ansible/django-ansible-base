@@ -66,8 +66,10 @@ jsonschema==4.25.1
     # via drf-spectacular
 jsonschema-specifications==2025.9.1
     # via jsonschema
-jwcrypto==1.5.6
-    # via django-oauth-toolkit
+jwcrypto==1.5.7
+    # via
+    #   -r requirements/requirements_oauth2_provider.in
+    #   django-oauth-toolkit
 ldap-filter==1.0.1
     # via -r requirements/requirements_authentication.in
 lxml==5.3.0
