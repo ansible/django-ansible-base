@@ -15,6 +15,7 @@ from rest_framework.viewsets import GenericViewSet, mixins
 from ansible_base.lib.utils.response import CSVStreamResponse, get_relative_url
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.lib.utils.views.permissions import try_add_oauth2_scope_permission
+from ansible_base.resource_registry.constants import SHARED_USER_RESOURCE_TYPE
 from ansible_base.resource_registry.models import Resource, ResourceType, service_id
 from ansible_base.resource_registry.registry import get_registry
 from ansible_base.resource_registry.serializers import ResourceListSerializer, ResourceSerializer, ResourceTypeSerializer
@@ -149,7 +150,7 @@ class ResourceTypeViewSet(
 
         resources = Resource.objects.filter(content_type__resource_type=resource_type).filter(service_filter).prefetch_related("content_object")
 
-        if name == "shared.user" and (system_user := getattr(settings, "SYSTEM_USERNAME", None)):
+        if name == SHARED_USER_RESOURCE_TYPE and (system_user := getattr(settings, "SYSTEM_USERNAME", None)):
             resources = resources.exclude(name=system_user)
 
         if not resources:

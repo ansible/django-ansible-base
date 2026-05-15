@@ -19,6 +19,7 @@ from django.db.utils import Error, IntegrityError
 from requests import HTTPError
 
 from ansible_base.lib.utils.apps import is_rbac_installed
+from ansible_base.resource_registry.constants import SHARED_USER_RESOURCE_TYPE
 from ansible_base.resource_registry.models import Resource, ResourceType
 from ansible_base.resource_registry.models.service_identifier import service_id
 from ansible_base.resource_registry.registry import get_registry
@@ -403,7 +404,7 @@ def get_orphan_resources(
     )
 
     # Exclude system user from deletion, consistent with manifest endpoint
-    if resource_type_name == "shared.user":
+    if resource_type_name == SHARED_USER_RESOURCE_TYPE:
         from ansible_base.lib.utils.models import get_system_user
 
         system_user = get_system_user()

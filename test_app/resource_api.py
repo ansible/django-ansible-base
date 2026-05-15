@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model
 from ansible_base.authentication.models import Authenticator
 from ansible_base.feature_flags.models import AAPFlag
 from ansible_base.rbac.models import RoleDefinition
+from ansible_base.resource_registry.constants import SHARED_USER_RESOURCE_TYPE
 from ansible_base.resource_registry.registry import ResourceConfig, ServiceAPIConfig, SharedResource
 from ansible_base.resource_registry.shared_types import (
     FeatureFlagType,
@@ -27,7 +28,7 @@ class UserProcessor(ResourceTypeProcessor):
 
 
 class APIConfig(ServiceAPIConfig):
-    custom_resource_processors = {"shared.user": UserProcessor}
+    custom_resource_processors = {SHARED_USER_RESOURCE_TYPE: UserProcessor}
     service_type = "aap"
 
 
