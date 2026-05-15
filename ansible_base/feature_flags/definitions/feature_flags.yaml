@@ -30,16 +30,6 @@
   toggle_type: install-time
   labels:
     - gateway
-- name: FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED
-  ui_name: Case Insensitive Authentication Maps
-  visibility: False
-  condition: boolean
-  value: 'True'
-  support_level: DEVELOPER_PREVIEW
-  description: Enable case-insensitive comparison for authentication mapping attributes and group names.
-  support_url: ''
-  labels:
-    - platform
 - name: FEATURE_OIDC_WORKLOAD_IDENTITY_ENABLED
   ui_name: OIDC Workload Identity
   visibility: False

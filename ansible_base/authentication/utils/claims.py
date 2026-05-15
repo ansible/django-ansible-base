@@ -13,7 +13,6 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError, models
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
-from flags.state import flag_enabled
 from rest_framework.serializers import DateTimeField
 
 from ansible_base.authentication.models import Authenticator, AuthenticatorMap, AuthenticatorUser
@@ -216,10 +215,6 @@ def _add_rbac_role_mapping(has_permission, role_mapping, role, organization=None
             logger.warning(f"Role mapping is not possible, organization for team '{team}' is missing")
 
 
-def _is_case_insensitivity_enabled() -> bool:
-    return flag_enabled("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
-
-
 def _lowercase_group_triggers(trigger_condition: dict) -> dict:
     """
     Lowercase all group names provided to trigger
@@ -233,11 +228,10 @@ def _lowercase_group_triggers(trigger_condition: dict) -> dict:
 def process_groups(trigger_condition: dict, groups: list, map_id: int, tracking_id: str) -> TriggerResult:
     """
     Looks at a maps trigger for a group and users groups and determines if the trigger is defined for this user.
-    Group DNs are compared case-insensitively when FEATURE_CASE_INSENSITIVE_AUTH_MAPS enabled.
+    Group DNs are always compared case-insensitively.
     """
-    if _is_case_insensitivity_enabled():
-        groups = [f"{group}".casefold() for group in groups]
-        trigger_condition = _lowercase_group_triggers(trigger_condition)
+    groups = [f"{group}".casefold() for group in groups]
+    trigger_condition = _lowercase_group_triggers(trigger_condition)
 
     invalid_conditions = set(trigger_condition.keys()) - set(TRIGGER_DEFINITION['groups']['keys'].keys())
     if invalid_conditions:
@@ -392,7 +386,7 @@ def _validate_attribute_conditions(attribute: str, condition: dict, map_id: int,
 
 def _prepare_case_insensitive_data(trigger_condition: dict, attributes: dict, map_id: int, tracking_id: str) -> tuple[dict, dict]:
     """
-    Prepare trigger conditions and attributes for case-insensitive comparison if enabled.
+    Normalize trigger conditions and attributes for case-insensitive comparison.
 
     Args:
         trigger_condition: Original trigger conditions
@@ -403,10 +397,9 @@ def _prepare_case_insensitive_data(trigger_condition: dict, attributes: dict, ma
     Returns:
         Tuple of (processed_trigger_condition, processed_attributes)
     """
-    if _is_case_insensitivity_enabled():
-        _prefixed_debug(map_id, tracking_id, f"[{tracking_id}] Case insensitivity enabled, converting attributes and values to lowercase")
-        attributes = {f"{k}".casefold(): v for k, v in attributes.items()}
-        trigger_condition = _lowercase_attr_triggers(trigger_condition)
+    _prefixed_debug(map_id, tracking_id, f"[{tracking_id}] Converting attributes and values to lowercase for case-insensitive comparison")
+    attributes = {f"{k}".casefold(): v for k, v in attributes.items()}
+    trigger_condition = _lowercase_attr_triggers(trigger_condition)
 
     return trigger_condition, attributes
 
@@ -430,9 +423,8 @@ def _normalize_user_value(user_value):
 def process_user_attributes(trigger_condition: dict, attributes: dict, map_id: int, tracking_id: str) -> TriggerResult:
     """
     Looks at a maps trigger for an attribute and the users attributes and determines if the trigger is defined for this user.
-    Attribute names are compared case-insensitively when FEATURE_CASE_INSENSITIVE_AUTH_MAPS is enabled.
+    Attribute names are always compared case-insensitively.
     """
-    # Prepare data for case-insensitive comparison if needed
     trigger_condition, attributes = _prepare_case_insensitive_data(trigger_condition, attributes, map_id, tracking_id)
 
     # Extract and validate join condition
@@ -562,8 +554,7 @@ def _process_user_value(
     evaluate_fn = operators[operator]
 
     for a_user_value in user_value:
-        # Normalize user value for comparison
-        user_str = f"{a_user_value}".casefold() if _is_case_insensitivity_enabled() else f"{a_user_value}"
+        user_str = f"{a_user_value}".casefold()
 
         # Evaluate condition
         result = evaluate_fn(user_str, trigger_value)

@@ -359,93 +359,78 @@ def test_create_claims_revoke(local_authenticator_map, process_function, trigger
 
 
 @pytest.mark.parametrize(
-    "trigger_condition, groups, case_insensitive, has_access",
+    "trigger_condition, groups, has_access",
     [
         # has_or
-        ({"has_or": ["foo"]}, ["foo"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo"]}, ["bar"], False, claims.TriggerResult.SKIP),
-        ({"has_or": ["foo", "bar"]}, ["foo"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo", "bar"]}, ["bar"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo", "bar"]}, ["baz"], False, claims.TriggerResult.SKIP),
-        ({"has_or": ["foo", "bar"]}, ["foo", "bar"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo", "bar"]}, ["foo", "baz"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo", "bar"]}, ["bar", "baz"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo"]}, ["baz", "foo", "qux"], False, claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"]}, ["foo"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"]}, ["bar"], claims.TriggerResult.SKIP),
+        ({"has_or": ["foo", "bar"]}, ["foo"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo", "bar"]}, ["bar"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo", "bar"]}, ["baz"], claims.TriggerResult.SKIP),
+        ({"has_or": ["foo", "bar"]}, ["foo", "bar"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo", "bar"]}, ["foo", "baz"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo", "bar"]}, ["bar", "baz"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"]}, ["baz", "foo", "qux"], claims.TriggerResult.ALLOW),
         # has_and
-        ({"has_and": ["foo"]}, ["foo"], False, claims.TriggerResult.ALLOW),
-        ({"has_and": ["foo"]}, ["bar"], False, claims.TriggerResult.SKIP),
-        ({"has_and": ["foo", "bar"]}, ["foo", "bar"], False, claims.TriggerResult.ALLOW),
-        ({"has_and": ["foo", "bar"]}, ["bar", "foo"], False, claims.TriggerResult.ALLOW),
-        ({"has_and": ["foo", "bar"]}, ["foo"], False, claims.TriggerResult.SKIP),
-        ({"has_and": ["foo", "bar"]}, ["bar"], False, claims.TriggerResult.SKIP),
-        ({"has_and": ["foo", "bar"]}, ["baz"], False, claims.TriggerResult.SKIP),
-        ({"has_and": ["foo", "bar"]}, ["foo", "baz"], False, claims.TriggerResult.SKIP),
-        ({"has_and": ["foo", "bar"]}, ["bar", "baz"], False, claims.TriggerResult.SKIP),
+        ({"has_and": ["foo"]}, ["foo"], claims.TriggerResult.ALLOW),
+        ({"has_and": ["foo"]}, ["bar"], claims.TriggerResult.SKIP),
+        ({"has_and": ["foo", "bar"]}, ["foo", "bar"], claims.TriggerResult.ALLOW),
+        ({"has_and": ["foo", "bar"]}, ["bar", "foo"], claims.TriggerResult.ALLOW),
+        ({"has_and": ["foo", "bar"]}, ["foo"], claims.TriggerResult.SKIP),
+        ({"has_and": ["foo", "bar"]}, ["bar"], claims.TriggerResult.SKIP),
+        ({"has_and": ["foo", "bar"]}, ["baz"], claims.TriggerResult.SKIP),
+        ({"has_and": ["foo", "bar"]}, ["foo", "baz"], claims.TriggerResult.SKIP),
+        ({"has_and": ["foo", "bar"]}, ["bar", "baz"], claims.TriggerResult.SKIP),
         # has_not
-        ({"has_not": ["foo"]}, ["foo"], False, claims.TriggerResult.SKIP),
-        ({"has_not": ["foo"]}, ["bar"], False, claims.TriggerResult.ALLOW),
-        ({"has_not": ["foo", "bar"]}, ["foo"], False, claims.TriggerResult.SKIP),
-        ({"has_not": ["foo", "bar"]}, ["bar"], False, claims.TriggerResult.SKIP),
-        ({"has_not": ["foo", "bar"]}, ["baz"], False, claims.TriggerResult.ALLOW),
-        ({"has_not": ["foo", "bar"]}, ["foo", "bar"], False, claims.TriggerResult.SKIP),
-        ({"has_not": ["foo", "bar"]}, ["foo", "baz"], False, claims.TriggerResult.SKIP),
-        ({"has_not": ["foo", "bar"]}, ["bar", "baz"], False, claims.TriggerResult.SKIP),
-        ({"has_not": ["foo"]}, ["baz", "foo", "qux"], False, claims.TriggerResult.SKIP),
+        ({"has_not": ["foo"]}, ["foo"], claims.TriggerResult.SKIP),
+        ({"has_not": ["foo"]}, ["bar"], claims.TriggerResult.ALLOW),
+        ({"has_not": ["foo", "bar"]}, ["foo"], claims.TriggerResult.SKIP),
+        ({"has_not": ["foo", "bar"]}, ["bar"], claims.TriggerResult.SKIP),
+        ({"has_not": ["foo", "bar"]}, ["baz"], claims.TriggerResult.ALLOW),
+        ({"has_not": ["foo", "bar"]}, ["foo", "bar"], claims.TriggerResult.SKIP),
+        ({"has_not": ["foo", "bar"]}, ["foo", "baz"], claims.TriggerResult.SKIP),
+        ({"has_not": ["foo", "bar"]}, ["bar", "baz"], claims.TriggerResult.SKIP),
+        ({"has_not": ["foo"]}, ["baz", "foo", "qux"], claims.TriggerResult.SKIP),
         # has_or and has_and (only has_or has effect)
-        ({"has_or": ["foo"], "has_and": ["bar"]}, ["foo"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo"], "has_and": ["bar"]}, ["bar"], False, claims.TriggerResult.SKIP),
-        ({"has_or": ["foo"], "has_and": ["bar"]}, ["foo", "bar"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo"], "has_and": ["bar"]}, ["foo", "baz"], False, claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"], "has_and": ["bar"]}, ["foo"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"], "has_and": ["bar"]}, ["bar"], claims.TriggerResult.SKIP),
+        ({"has_or": ["foo"], "has_and": ["bar"]}, ["foo", "bar"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"], "has_and": ["bar"]}, ["foo", "baz"], claims.TriggerResult.ALLOW),
         # has_or and has_not (only has_or has effect)
-        ({"has_or": ["foo"], "has_not": ["bar"]}, ["foo"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo"], "has_not": ["bar"]}, ["bar"], False, claims.TriggerResult.SKIP),
-        ({"has_or": ["foo"], "has_not": ["bar"]}, ["foo", "bar"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo"], "has_not": ["bar"]}, ["foo", "baz"], False, claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"], "has_not": ["bar"]}, ["foo"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"], "has_not": ["bar"]}, ["bar"], claims.TriggerResult.SKIP),
+        ({"has_or": ["foo"], "has_not": ["bar"]}, ["foo", "bar"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"], "has_not": ["bar"]}, ["foo", "baz"], claims.TriggerResult.ALLOW),
         # has_and and has_not (only has_and has effect)
-        ({"has_and": ["foo"], "has_not": ["bar"]}, ["foo"], False, claims.TriggerResult.ALLOW),
-        ({"has_and": ["foo"], "has_not": ["bar"]}, ["bar"], False, claims.TriggerResult.SKIP),
-        ({"has_and": ["foo"], "has_not": ["bar"]}, ["foo", "bar"], False, claims.TriggerResult.ALLOW),
-        ({"has_and": ["foo"], "has_not": ["bar"]}, ["baz", "foo"], False, claims.TriggerResult.ALLOW),
+        ({"has_and": ["foo"], "has_not": ["bar"]}, ["foo"], claims.TriggerResult.ALLOW),
+        ({"has_and": ["foo"], "has_not": ["bar"]}, ["bar"], claims.TriggerResult.SKIP),
+        ({"has_and": ["foo"], "has_not": ["bar"]}, ["foo", "bar"], claims.TriggerResult.ALLOW),
+        ({"has_and": ["foo"], "has_not": ["bar"]}, ["baz", "foo"], claims.TriggerResult.ALLOW),
         # has_or, has_and, and has_not (only has_or has effect)
-        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["foo"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["bar"], False, claims.TriggerResult.SKIP),
-        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["baz"], False, claims.TriggerResult.SKIP),
-        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["foo", "bar"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["foo", "baz"], False, claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["foo"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["bar"], claims.TriggerResult.SKIP),
+        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["baz"], claims.TriggerResult.SKIP),
+        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["foo", "bar"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["foo", "baz"], claims.TriggerResult.ALLOW),
         # None of has_or, has_and, or has_not
-        ({}, ["foo"], False, claims.TriggerResult.SKIP),
-        ({"foo": "bar"}, ["foo"], False, claims.TriggerResult.SKIP),
-        # Case insensitivity (with and without flag enabled)
-        ({"has_or": ["FOO"]}, ["foo"], True, claims.TriggerResult.ALLOW),
-        ({"has_or": ["FOO"]}, ["foo"], False, claims.TriggerResult.SKIP),
-        ({"has_or": ["foo"]}, ["FOO"], True, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo"]}, ["FOO"], False, claims.TriggerResult.SKIP),
-        ({"has_or": ["bAR"]}, ["foo", "bar"], True, claims.TriggerResult.ALLOW),
-        ({"has_or": ["bAR"]}, ["foo", "bar"], False, claims.TriggerResult.SKIP),
-        ({"has_and": ["fOo", "bAr"]}, ["foo", "bar"], True, claims.TriggerResult.ALLOW),
-        ({"has_and": ["fOo", "bAr"]}, ["foo", "bar"], False, claims.TriggerResult.SKIP),
-        ({"has_not": ["FOO"]}, ["foo"], True, claims.TriggerResult.SKIP),
-        ({"has_and": ["fOo", "bAr"]}, ["foo", "BaZ"], True, claims.TriggerResult.SKIP),
+        ({}, ["foo"], claims.TriggerResult.SKIP),
+        ({"foo": "bar"}, ["foo"], claims.TriggerResult.SKIP),
+        # Case insensitivity (always enabled)
+        ({"has_or": ["FOO"]}, ["foo"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"]}, ["FOO"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["bAR"]}, ["foo", "bar"], claims.TriggerResult.ALLOW),
+        ({"has_and": ["fOo", "bAr"]}, ["foo", "bar"], claims.TriggerResult.ALLOW),
+        ({"has_not": ["FOO"]}, ["foo"], claims.TriggerResult.SKIP),
+        ({"has_and": ["fOo", "bAr"]}, ["foo", "BaZ"], claims.TriggerResult.SKIP),
     ],
 )
 @pytest.mark.django_db
-def test_process_groups(trigger_condition, groups, case_insensitive, has_access):
+def test_process_groups(trigger_condition, groups, has_access):
     """
     Test the process_groups function.
     """
-    from flags.state import disable_flag, enable_flag
-
-    if case_insensitive:
-        enable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
-    else:
-        disable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
-
-    try:
-        res = claims.process_groups(trigger_condition, groups, map_id=1, tracking_id="xxx")
-        assert res is has_access
-    finally:
-        # Clean up: disable the flag after test
-        disable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
+    res = claims.process_groups(trigger_condition, groups, map_id=1, tracking_id="xxx")
+    assert res is has_access
 
 
 @pytest.mark.parametrize(
@@ -476,89 +461,77 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
 
 
 @pytest.mark.parametrize(
-    "trigger_condition, attributes, case_insensitive, expected",
+    "trigger_condition, attributes, expected",
     [
         pytest.param(
             {"email": {"equals": "foo@example.com"}},
             {"email": "foo@example.com"},
-            False,
             claims.TriggerResult.ALLOW,
             id="equals, positive",
         ),
         pytest.param(
             {"email": {"equals": "foo@example.com"}},
             {"email": "foo@example.org"},
-            False,
             claims.TriggerResult.SKIP,
             id="equals, negative",
         ),
         pytest.param(
             {"email": {"matches": ".*@ex.*"}},
             {"email": "foo@example.com"},
-            False,
             claims.TriggerResult.ALLOW,
             id="matches, positive",
         ),
         pytest.param(
             {"email": {"matches": "^foo@.*"}},
             {"email": "foo@example.com"},
-            False,
             claims.TriggerResult.ALLOW,
             id="matches, start of line, positive",
         ),
         pytest.param(
             {"email": {"matches": "foo@.*"}},
             {"email": "bar@example.com"},
-            False,
             claims.TriggerResult.SKIP,
             id="matches, negative",
         ),
         pytest.param(
             {"email": {"matches": "^foo@.*"}},
             {"email": "bar@example.com"},
-            False,
             claims.TriggerResult.SKIP,
             id="matches, start of line, negative",
         ),
         pytest.param(
             {"email": {"contains": "@example.com"}},
             {"email": "foo@example.com"},
-            False,
             claims.TriggerResult.ALLOW,
             id="contains, positive",
         ),
         pytest.param(
             {"email": {"contains": "@example.com"}},
             {"email": "foo@example.org"},
-            False,
             claims.TriggerResult.SKIP,
             id="contains, negative",
         ),
         pytest.param(
             {"email": {"ends_with": "@example.com"}},
             {"email": "foo@example.com"},
-            False,
             claims.TriggerResult.ALLOW,
             id="ends_with, positive",
         ),
         pytest.param(
             {"email": {"ends_with": "@example.com"}},
             {"email": "foo@example.org"},
-            False,
             claims.TriggerResult.SKIP,
             id="ends_with, negative",
         ),
         pytest.param(
             {"email": {"in": ["foo@example.com", "bar@example.org"]}},
             {"email": "foo@example.com"},
-            False,
             claims.TriggerResult.ALLOW,
             id="in, positive",
         ),
         pytest.param(
             {"email": {"in": ["foo@example.com", "bar@example.org"]}},
             {"email": "baz@example.net"},
-            False,
             claims.TriggerResult.SKIP,
             id="in, negative",
         ),
@@ -571,7 +544,6 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "baz@example.net"},
-            False,
             claims.TriggerResult.SKIP,
             id="'and' join_condition, missing one attribute, negative",
         ),
@@ -584,7 +556,6 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "baz@example.net", "favorite_color": "red"},
-            False,
             claims.TriggerResult.SKIP,
             id="'and' join_condition, two false conditions, negative",
         ),
@@ -597,7 +568,6 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "foo@example.org", "favorite_color": "teal"},
-            False,
             claims.TriggerResult.SKIP,
             id="'and' join_condition, one false condition, negative",
         ),
@@ -610,7 +580,6 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "foo@example.com", "favorite_color": "teal"},
-            False,
             claims.TriggerResult.ALLOW,
             id="'and' join_condition, positive",
         ),
@@ -623,7 +592,6 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "foo@example.com", "favorite_color": "teal"},
-            False,
             claims.TriggerResult.ALLOW,
             id="'or' join_condition, both conditions true, positive",
         ),
@@ -636,7 +604,6 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "foo@example.com", "favorite_color": "red"},
-            False,
             claims.TriggerResult.ALLOW,
             id="'or' join_condition, one condition true, positive",
         ),
@@ -648,7 +615,6 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "foo@example.com", "favorite_color": "red"},
-            False,
             claims.TriggerResult.ALLOW,
             id="implicit 'or' join_condition, one condition true, positive",
         ),
@@ -660,7 +626,6 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "foo@example.org", "favorite_color": "red"},
-            False,
             claims.TriggerResult.SKIP,
             id="implicit 'or' join_condition, both conditions false, negative",
         ),
@@ -673,77 +638,66 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "foo@example.org", "favorite_color": "red"},
-            False,
             claims.TriggerResult.SKIP,
             id="'or' join_condition, both conditions false, negative",
         ),
         pytest.param(
             {"email": {"invalid": "omg hey foo@example.com bye"}},
             {"email": "foo@example.org"},
-            False,
             claims.TriggerResult.SKIP,
             id="invalid predicate in trigger conditions returns None",
         ),
         pytest.param(
             {"email": {}},
             {"email": "foo@example.org"},
-            False,
             claims.TriggerResult.ALLOW,
             id="trigger dict attribute has empty dict, becomes 'exists', positive",
         ),
         pytest.param(
             {"email": {}},
             {"favorite_color": "teal"},
-            False,
             claims.TriggerResult.SKIP,
             id="trigger dict attribute has empty dict, becomes 'exists', negative",
         ),
         pytest.param(
             {"email": {}},
             {},
-            False,
             claims.TriggerResult.SKIP,
             id="trigger dict attribute has empty dict, becomes 'exists', empty attributes, negative",
         ),
         pytest.param(
             {"email": {}, "favorite_color": {}},
             {"favorite_color": "teal"},
-            False,
             claims.TriggerResult.ALLOW,
             id="trigger dict attributes have empty dicts, becomes 'exists', implicit 'or', positive",
         ),
         pytest.param(
             {"email": {}, "favorite_color": {}, "join_condition": "or"},
             {"favorite_color": "teal"},
-            False,
             claims.TriggerResult.ALLOW,
             id="trigger dict attributes have empty dicts, becomes 'exists', explicit 'or', positive",
         ),
         pytest.param(
             {"email": {}, "favorite_color": {}, "join_condition": "and"},
             {"favorite_color": "teal"},
-            False,
             claims.TriggerResult.SKIP,
             id="trigger dict attributes have empty dicts, becomes 'exists', explicit 'and', negative",
         ),
         pytest.param(
             {"email": {}, "favorite_color": {}, "join_condition": "and"},
             {"favorite_color": "teal", "email": "foo@example.com"},
-            False,
             claims.TriggerResult.ALLOW,
             id="trigger dict attributes have empty dicts, becomes 'exists', explicit 'and', positive",
         ),
         pytest.param(
             {"email": {"contains": "example"}},
             {"email": None},
-            False,
             claims.TriggerResult.SKIP,
             id="user attribute is None, no predicate checks, returns None",
         ),
         pytest.param(
             {"email": {}},
             {"email": None},
-            False,
             claims.TriggerResult.ALLOW,
             id="user attribute is None, exists check still works, negative",
         ),
@@ -751,202 +705,154 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
         pytest.param(
             {"email": {"equals": "foo@example.com"}},
             {"email": ["bar@example.com", "baz@example.com"]},
-            False,
             claims.TriggerResult.SKIP,
             id="user attribute is list, no matches, negative",
         ),
         pytest.param(
             {"email": {"equals": "foo@example.com"}},
             {"email": ["bar@example.com", "foo@example.com"]},
-            False,
             claims.TriggerResult.ALLOW,
             id="user attribute is list, one match, implicit 'or', positive",
         ),
         pytest.param(
             {"email": {"equals": "foo@example.com"}, "join_condition": "and"},
             {"email": ["bar@example.com", "foo@example.com"]},
-            False,
             claims.TriggerResult.SKIP,
             id="user attribute is list, one match, explicit 'and', negative",
         ),
         pytest.param(
             {"email": {"equals": "foo@example.com"}, "join_condition": "and"},
             {"email": ["foo@example.com", "foo@example.com"]},
-            False,
             claims.TriggerResult.ALLOW,
             id="user attribute is list, all matches, explicit 'and', positive",
         ),
         pytest.param(
             {"email": {"equals": "foo@example.com"}, "join_condition": "or"},
             {"email": ["foo@example.com", "foo@example.com"]},
-            False,
             claims.TriggerResult.ALLOW,
             id="user attribute is list, all matches, explicit 'or', positive",
         ),
         pytest.param(
             {"email": {"equals": "foo@example.com"}, "join_condition": "and"},
             {"email": []},
-            False,
             claims.TriggerResult.SKIP,
             id="user attribute is empty list, explicit 'and', returns None",
         ),
         pytest.param(
             {"email": {"equals": "foo@example.com"}, "join_condition": "or"},
             {"email": []},
-            False,
             claims.TriggerResult.SKIP,
             id="user attribute is empty list, explicit 'or', returns None",
         ),
         pytest.param(
             {"email": {"equals": "foo@example.com"}, "join_condition": "or"},
             {"email": ["foo@example.com", "bar@example.com"]},
-            False,
             claims.TriggerResult.ALLOW,
             id="user attribute is list, explicit 'or', second match is false, positive",
         ),
         pytest.param(
             {"email": {"equals": "foo@example.com"}, "join_condition": "invalid"},
             {"email": ["foo@example.com", "bar@example.com"]},
-            False,
             claims.TriggerResult.ALLOW,
             id="join condition is invalid, defaults to or",
         ),
         pytest.param(
             {"username": {"equals": "alice"}, "join_condition": "or"},
             {"username": "bob", "email": ""},
-            False,
             claims.TriggerResult.SKIP,
             id="user attribute is string, condition equals, join condition or, negative",
         ),
+        # Case insensitivity (always enabled)
         pytest.param(
             {"username": {"equals": "lowercase"}, "join_condition": "or"},
             {"username": "LOWERCASE"},
-            True,
             claims.TriggerResult.ALLOW,
-            id="username attribute value case mismatch",
-        ),
-        pytest.param(
-            {"username": {"equals": "lowercase"}, "join_condition": "or"},
-            {"username": "LOWERCASE"},
-            False,
-            claims.TriggerResult.SKIP,
             id="username attribute value case mismatch",
         ),
         pytest.param(
             {"uSeRnAmE": {"equals": "bbelcher"}, "join_condition": "or"},
             {"username": "bbelcher"},
-            True,
             claims.TriggerResult.ALLOW,
-            id="username attribute name/key case mismatch",
-        ),
-        pytest.param(
-            {"uSeRnAmE": {"equals": "bbelcher"}, "join_condition": "or"},
-            {"username": "bbelcher"},
-            False,
-            claims.TriggerResult.SKIP,
             id="username attribute name/key case mismatch",
         ),
         pytest.param(
             {"USERNAME": {"equals": "lowercase"}, "join_condition": "or"},
             {"username": "LOWERCASE"},
-            True,
             claims.TriggerResult.ALLOW,
             id="username attribute name/key and value case mismatch",
         ),
         pytest.param(
             {"username": {"contains": "USER"}, "join_condition": "or"},
             {"username": "myusername"},
-            True,
             claims.TriggerResult.ALLOW,
             id="username attribute value case mismatch contains",
         ),
         pytest.param(
             {"username": {"in": ["BOB", "JOE", "JOHN", "TAMAR"]}, "join_condition": "or"},
             {"username": "tamar"},
-            True,
             claims.TriggerResult.ALLOW,
             id="username attribute value case mismatch in",
         ),
         pytest.param(
             {"email": {"matches": ".*@REDHAT.COM"}, "join_condition": "or"},
             {"email": "fred@redhat.com"},
-            True,
             claims.TriggerResult.ALLOW,
             id="email attribute value case mismatch matches",
         ),
         pytest.param(
             {"email": {}},
             {"email": None},
-            True,
             claims.TriggerResult.ALLOW,
-            id="user attribute is None, exists check still works, case sensitive, negative",
+            id="user attribute is None, exists check still works",
         ),
         pytest.param(
             {"department": {"in": ["Engineering", "Sales", "Marketing"]}},
             {"department": "Engineering"},
-            False,
             claims.TriggerResult.ALLOW,
             id="in operator with list value, positive match",
         ),
         pytest.param(
             {"department": {"in": ["Engineering", "Sales", "Marketing"]}},
             {"department": "HR"},
-            False,
             claims.TriggerResult.SKIP,
             id="in operator with list value, negative match",
         ),
         pytest.param(
             {"department": {"in": ["Engineering", "Sales", "Marketing"]}},
             {"department": "engineering"},
-            True,
             claims.TriggerResult.ALLOW,
             id="in operator with list value, case insensitive match",
         ),
         pytest.param(
             {"department": {"in": "Engineering"}},
             {"department": "Engineering"},
-            False,
             claims.TriggerResult.SKIP,
             id="in operator with string value (invalid) should be ignored",
         ),
         pytest.param(
             {"cn": {"ends_with": "_admin"}, "employeeType": {"equals": "manager"}, "join_condition": "and"},
             {"cn": ["ldap_admin"]},
-            False,
             claims.TriggerResult.SKIP,
             id="missing attribute required by 'and' condition should result in skip",
         ),
         pytest.param(
             {"cn": {"ends_with": "_admin"}, "employeeType": {"equals": "manager"}, "join_condition": "or"},
             {"cn": ["ldap_admin"]},
-            False,
             claims.TriggerResult.ALLOW,
             id="missing attribute when using 'or' condition should result in allow",
         ),
         pytest.param(
             {"cn": {"ends_with": "_admin"}, "employeeType": {"equals": "manager"}, "join_condition": "and"},
             {"cn": ["ldap_org_admin"], "employeeType": ["manager"]},
-            False,
             claims.TriggerResult.ALLOW,
             id="all attribute required by 'and' condition should result in allow",
         ),
     ],
 )
 @pytest.mark.django_db
-def test_process_user_attributes(trigger_condition, attributes, expected, case_insensitive):
-    from flags.state import disable_flag, enable_flag
-
-    if case_insensitive:
-        enable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
-    else:
-        disable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
-
-    try:
-        res = claims.process_user_attributes(trigger_condition, attributes, map_id=1, tracking_id="xxx")
-        assert res is expected
-    finally:
-        # Clean up: disable the flag after test
-        disable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
+def test_process_user_attributes(trigger_condition, attributes, expected):
+    res = claims.process_user_attributes(trigger_condition, attributes, map_id=1, tracking_id="xxx")
+    assert res is expected
 
 
 def test_update_user_claims_extra_data(user, local_authenticator_map):
@@ -2214,42 +2120,22 @@ class TestClaimsHelperFunctions:
         if expected_log_contains:
             assert expected_log_contains in caplog.text
 
-    @pytest.mark.django_db
     @pytest.mark.parametrize(
-        "case_insensitive_enabled, trigger_condition, attributes, expected_trigger, expected_attrs",
+        "trigger_condition, attributes, expected_trigger, expected_attrs",
         [
             (
-                False,
                 {"USERNAME": {"equals": "TestUser"}},
                 {"USERNAME": "TestUser"},
-                {"USERNAME": {"equals": "TestUser"}},  # No change when disabled
-                {"USERNAME": "TestUser"},  # No change when disabled
-            ),
-            (
-                True,
-                {"USERNAME": {"equals": "TestUser"}},
-                {"USERNAME": "TestUser"},
-                {"username": {"equals": "testuser"}},  # Lowercased when enabled
+                {"username": {"equals": "testuser"}},
                 {"username": "TestUser"},  # Keys lowercased, values unchanged
             ),
         ],
     )
-    def test_prepare_case_insensitive_data(self, case_insensitive_enabled, trigger_condition, attributes, expected_trigger, expected_attrs):
-        """Test _prepare_case_insensitive_data with case insensitivity enabled/disabled"""
-        from flags.state import disable_flag, enable_flag
-
-        if case_insensitive_enabled:
-            enable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
-        else:
-            disable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
-
-        try:
-            result_trigger, result_attrs = claims._prepare_case_insensitive_data(trigger_condition, attributes, 1, "test-id")
-            assert result_trigger == expected_trigger
-            assert result_attrs == expected_attrs
-        finally:
-            # Clean up: disable the flag after test
-            disable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
+    def test_prepare_case_insensitive_data(self, trigger_condition, attributes, expected_trigger, expected_attrs):
+        """Test _prepare_case_insensitive_data always normalizes case"""
+        result_trigger, result_attrs = claims._prepare_case_insensitive_data(trigger_condition, attributes, 1, "test-id")
+        assert result_trigger == expected_trigger
+        assert result_attrs == expected_attrs
 
     @pytest.mark.parametrize(
         "user_value, expected",
