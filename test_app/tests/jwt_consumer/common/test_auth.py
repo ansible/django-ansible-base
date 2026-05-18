@@ -154,10 +154,13 @@ class TestJWTCommonAuth:
         from crum import impersonate
 
         regular_user = django_user_model.objects.create_user(
-            username='regular', password='password',
+            username='regular',
+            password='password',
         )
         target_user = django_user_model.objects.create_user(
-            username='jwt-synced', password='password', email='old@example.com',
+            username='jwt-synced',
+            password='password',
+            email='old@example.com',
         )
 
         common_auth = JWTCommonAuth()
