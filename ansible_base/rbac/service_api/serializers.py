@@ -133,8 +133,8 @@ class BaseAssignmentSerializer(serializers.ModelSerializer):
                 else:
                     try:
                         obj = model.objects.get(pk=object_id)
-                    except model.DoesNotExist as exc:
-                        raise serializers.ValidationError({'object_id': str(exc)})
+                    except model.DoesNotExist:
+                        obj = RemoteObject(content_type=rd.content_type, object_id=object_id)
 
             # Validators not ran, because this should be an internal action
 

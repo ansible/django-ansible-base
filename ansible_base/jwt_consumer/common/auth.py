@@ -19,6 +19,8 @@ from ansible_base.lib.utils.auth import get_user_by_ansible_id
 from ansible_base.lib.utils.translations import translatableConditionally as _
 from ansible_base.resource_registry.models import Resource, ResourceType
 from ansible_base.resource_registry.rest_client import get_resource_server_client
+from crum import impersonate
+
 from ansible_base.resource_registry.signals.handlers import no_reverse_sync
 
 logger = logging.getLogger("ansible_base.jwt_consumer.common.auth")
@@ -177,7 +179,7 @@ class JWTCommonAuth:
                 setattr(self.user, attribute, new_value)
                 user_needs_save = True
         if user_needs_save:
-            with no_reverse_sync():
+            with no_reverse_sync(), impersonate(None):
                 logger.info(f"Saving user {self.user.username}")
                 self.user.save()
 
