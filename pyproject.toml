@@ -45,6 +45,7 @@ optional-dependencies.all = { file = [
     "requirements/requirements_oauth2_provider.in",
     "requirements/requirements_resource_registry.in",
     "requirements/requirements_feature_flags.in",
+    "requirements/requirements_observability.in",
 ] }
 optional-dependencies.activitystream = { file = [ "requirements/requirements_activitystream.in" ] }
 optional-dependencies.authentication = { file = [ "requirements/requirements_authentication.in" ] }
@@ -58,6 +59,7 @@ optional-dependencies.redis_client = { file = [ "requirements/requirements_redis
 optional-dependencies.oauth2_provider = { file = [ "requirements/requirements_oauth2_provider.in" ] }
 optional-dependencies.resource_registry = { file = [ "requirements/requirements_resource_registry.in" ] }
 optional-dependencies.feature_flags = { file = [ "requirements/requirements_feature_flags.in" ] }
+optional-dependencies.observability = { file = [ "requirements/requirements_observability.in" ] }
 
 [build-system]
 requires = ["setuptools>=64", "setuptools_scm>=8"]
@@ -154,6 +156,7 @@ legacy_tox_ini = """
         -r{toxinidir}/requirements/requirements_oauth2_provider.in
         -r{toxinidir}/requirements/requirements_resource_registry.in
         -r{toxinidir}/requirements/requirements_feature_flags.in
+        -r{toxinidir}/requirements/requirements_observability.in
         -r{toxinidir}/requirements/requirements_testing.txt
         -r{toxinidir}/requirements/requirements_dev.txt
 

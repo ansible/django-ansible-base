@@ -26,11 +26,18 @@ LOGGING = {
             'formatter': 'simple',
             'filters': ['request_id_filter'],
         },
+        'null': {
+            '()': 'logging.NullHandler',
+        },
     },
     'loggers': {
         'ansible_base': {
             'handlers': ['console'],
             'level': 'DEBUG',
+        },
+        'opentelemetry.exporter.otlp': {
+            'handlers': ['null'],
+            'propagate': False,
         },
         '': {
             'handlers': ['console'],
@@ -66,6 +73,7 @@ INSTALLED_APPS = [
     'ansible_base.activitystream',
     'ansible_base.help_text_check',
     'ansible_base.feature_flags',
+    'ansible_base.observability',
 ]
 
 MIDDLEWARE = [
@@ -205,3 +213,6 @@ RESOURCE_SERVER_SYNC_ENABLED = False
 RENAMED_USERNAME_PREFIX = "dab:"
 
 JUST_A_TEST = 41
+
+ANSIBLE_OBSERVABILITY_BATCH_DELAY_MS = 1000
+ANSIBLE_OBSERVABILITY_CAPTURE_HEADERS = ['user-agent', 'accept-language', 'x-correlation-.*', 'x-capture-test']

@@ -2,9 +2,13 @@ import logging
 import time
 from itertools import chain
 
+import requests as req_lib
+from django.http import JsonResponse
 from django.shortcuts import render
 from django.urls.exceptions import NoReverseMatch
 from django.urls.resolvers import URLPattern
+from opentelemetry import trace
+from opentelemetry._logs import get_logger_provider
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
@@ -245,6 +249,42 @@ class TestViewSetWithBothAttributes(TestAppViewSet):
 
 
 def index_view(request):
-    logger.debug('Rendering index view')
+    logger.info('index page loaded')
     context = {}
     return render(request, 'index.html', context)
+
+
+def observability_headers_echo(request):
+    headers = {k: v for k, v in request.META.items() if k.startswith('HTTP_')}
+    return JsonResponse({"headers": headers})
+
+
+def observability_headers_start(request):
+    echo_url = request.build_absolute_uri('/api/v1/otel/observability-headers-echo/')
+    response = req_lib.get(echo_url)
+    return JsonResponse({"upstream_headers": response.json().get("headers", {})})
+
+
+def otel_traces(request):
+    from test_app import otlp_server
+
+    # Flush any buffered spans before reading
+    provider = trace.get_tracer_provider()
+    if hasattr(provider, 'force_flush'):
+        provider.force_flush(timeout_millis=2000)
+
+    with otlp_server._lock:
+        data = list(otlp_server.recent_spans)
+    return JsonResponse({"traces": data})
+
+
+def otel_logs(request):
+    from test_app import otlp_server
+
+    provider = get_logger_provider()
+    if hasattr(provider, 'force_flush'):
+        provider.force_flush(timeout_millis=2000)
+
+    with otlp_server._lock:
+        data = list(otlp_server.recent_logs)
+    return JsonResponse({"logs": data})
