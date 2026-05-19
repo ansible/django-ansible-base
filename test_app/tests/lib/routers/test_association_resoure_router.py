@@ -3,7 +3,14 @@ import pytest
 from ansible_base.lib.routers import AssociationResourceRouter
 from ansible_base.lib.utils.response import get_relative_url
 from test_app import views
-from test_app.models import Cow, Inventory, Organization, RelatedFieldsTestModel, Team, User
+from test_app.models import (
+    Cow,
+    Inventory,
+    Organization,
+    RelatedFieldsTestModel,
+    Team,
+    User,
+)
 from test_app.router import router
 from test_app.views import TeamViewSet
 
@@ -21,11 +28,13 @@ def validate_expected_url_pattern_names(router, expected_url_pattern_names):
 def test_association_router_basic_viewset():
     router = AssociationResourceRouter()
     router.register(
-        r'organizations',
+        r"organizations",
         views.OrganizationViewSet,
-        basename='organization',
+        basename="organization",
     )
-    validate_expected_url_pattern_names(router, ['organization-list', 'organization-detail'])
+    validate_expected_url_pattern_names(
+        router, ["organization-list", "organization-detail"]
+    )
 
 
 def test_association_router_basic_viewset_no_basename():
@@ -33,42 +42,49 @@ def test_association_router_basic_viewset_no_basename():
         queryset = Organization.objects.all()
 
     router = AssociationResourceRouter()
-    router.register(r'organizations', OrganizationViewSetWithQueryset)
-    validate_expected_url_pattern_names(router, ['organization-list', 'organization-detail'])
+    router.register(r"organizations", OrganizationViewSetWithQueryset)
+    validate_expected_url_pattern_names(
+        router, ["organization-list", "organization-detail"]
+    )
 
 
 def test_association_router_associate_viewset_all_mapings():
     router = AssociationResourceRouter()
     router.register(
-        r'related_model',
+        r"related_model",
         views.RelatedFieldsTestModelViewSet,
         related_views={
-            'teams': (views.TeamViewSet, 'teams'),
-            'user': (views.UserViewSet, 'users'),
+            "teams": (views.TeamViewSet, "teams"),
+            "user": (views.UserViewSet, "users"),
         },
-        basename='my_test_basename',
+        basename="my_test_basename",
     )
     expected_urls = [
-        'my_test_basename-detail',
-        'my_test_basename-list',
-        'my_test_basename-teams-associate',
-        'my_test_basename-teams-disassociate',
-        'my_test_basename-teams-list',
-        'my_test_basename-users-associate',
-        'my_test_basename-users-disassociate',
-        'my_test_basename-users-list',
+        "my_test_basename-detail",
+        "my_test_basename-list",
+        "my_test_basename-teams-associate",
+        "my_test_basename-teams-disassociate",
+        "my_test_basename-teams-list",
+        "my_test_basename-users-associate",
+        "my_test_basename-users-disassociate",
+        "my_test_basename-users-list",
     ]
     validate_expected_url_pattern_names(router, expected_urls)
 
 
-def test_association_router_good_associate(db, admin_api_client, randname, organization):
+def test_association_router_good_associate(
+    db, admin_api_client, randname, organization
+):
     related_model = RelatedFieldsTestModel.objects.create()
     assert related_model.more_teams.count() == 0
 
-    team = Team.objects.create(name=randname('team'), organization=organization)
+    team = Team.objects.create(name=randname("team"), organization=organization)
 
-    url = get_relative_url('related_fields_test_model-more_teams-associate', kwargs={'pk': related_model.pk})
-    response = admin_api_client.post(url, data={'instances': [team.pk]})
+    url = get_relative_url(
+        "related_fields_test_model-more_teams-associate",
+        kwargs={"pk": related_model.pk},
+    )
+    response = admin_api_client.post(url, data={"instances": [team.pk]})
     assert response.status_code == 204
 
     related_model.refresh_from_db()
@@ -78,24 +94,28 @@ def test_association_router_good_associate(db, admin_api_client, randname, organ
 @pytest.mark.parametrize(
     "data,response_instances",
     [
-        ({'instances': [-1]}, ['Invalid pk "-1" - object does not exist.']),
-        ({'instances': ['a']}, ['Incorrect type. Expected pk value, received str.']),
-        ({'instances': [True]}, ['Incorrect type. Expected pk value, received bool.']),
-        ({'instances': {}}, 'Please pass in one or more instances to associate'),
-        ({'instances': []}, 'Please pass in one or more instances to associate'),
-        ({'instances': -1}, ['Expected a list of items but got type "int".']),
-        ({}, ['This field is required.']),
-        ({'not_an_instances': [1]}, ['This field is required.']),
+        ({"instances": [-1]}, ['Invalid pk "-1" - object does not exist.']),
+        ({"instances": ["a"]}, ["Incorrect type. Expected pk value, received str."]),
+        ({"instances": [True]}, ["Incorrect type. Expected pk value, received bool."]),
+        ({"instances": {}}, "Please pass in one or more instances to associate"),
+        ({"instances": []}, "Please pass in one or more instances to associate"),
+        ({"instances": -1}, ['Expected a list of items but got type "int".']),
+        ({}, ["This field is required."]),
+        ({"not_an_instances": [1]}, ["This field is required."]),
     ],
 )
-def test_association_router_associate_bad_data(db, admin_api_client, data, response_instances):
+def test_association_router_associate_bad_data(
+    db, admin_api_client, data, response_instances
+):
     related_model = RelatedFieldsTestModel.objects.create()
     assert related_model.users.count() == 0
 
-    url = get_relative_url('related_fields_test_model-users-associate', kwargs={'pk': related_model.pk})
-    response = admin_api_client.post(url, data=data, format='json')
+    url = get_relative_url(
+        "related_fields_test_model-users-associate", kwargs={"pk": related_model.pk}
+    )
+    response = admin_api_client.post(url, data=data, format="json")
     assert response.status_code == 400
-    assert response.json().get('instances') == response_instances
+    assert response.json().get("instances") == response_instances
 
 
 def test_association_router_associate_existing_item(db, admin_api_client, random_user):
@@ -104,20 +124,27 @@ def test_association_router_associate_existing_item(db, admin_api_client, random
     assert related_model.users.count() == 1
     assert User.objects.get(pk=random_user.pk) is not None
 
-    url = get_relative_url('related_fields_test_model-users-associate', kwargs={'pk': related_model.pk})
-    response = admin_api_client.post(url, data={'instances': [random_user.pk]}, format='json')
+    url = get_relative_url(
+        "related_fields_test_model-users-associate", kwargs={"pk": related_model.pk}
+    )
+    response = admin_api_client.post(
+        url, data={"instances": [random_user.pk]}, format="json"
+    )
     assert response.status_code == 204
 
 
 def test_association_router_disassociate(db, admin_api_client, randname, organization):
-    team = Team.objects.create(name=randname('team'), organization=organization)
+    team = Team.objects.create(name=randname("team"), organization=organization)
 
     related_model = RelatedFieldsTestModel.objects.create()
     related_model.more_teams.add(team)
     assert related_model.more_teams.count() == 1
 
-    url = get_relative_url('related_fields_test_model-more_teams-disassociate', kwargs={'pk': related_model.pk})
-    response = admin_api_client.post(url, data={'instances': [team.pk]})
+    url = get_relative_url(
+        "related_fields_test_model-more_teams-disassociate",
+        kwargs={"pk": related_model.pk},
+    )
+    response = admin_api_client.post(url, data={"instances": [team.pk]})
     assert response.status_code == 204
 
     related_model.refresh_from_db()
@@ -127,53 +154,72 @@ def test_association_router_disassociate(db, admin_api_client, randname, organiz
 @pytest.mark.parametrize(
     "data,response_instances",
     [
-        ({'instances': [-1]}, ['Invalid pk "-1" - object does not exist or is not associated with parent object.']),
-        ({'instances': ['a']}, ['Incorrect type. Expected pk value, received str.']),
-        ({'instances': [True]}, ['Incorrect type. Expected pk value, received bool.']),
-        ({'instances': {}}, 'Please pass in one or more instances to disassociate'),
-        ({'instances': []}, 'Please pass in one or more instances to disassociate'),
-        ({'instances': -1}, ['Expected a list of items but got type "int".']),
-        ({}, ['This field is required.']),
-        ({'not_an_instances': [1]}, ['This field is required.']),
+        (
+            {"instances": [-1]},
+            [
+                'Invalid pk "-1" - object does not exist or is not associated with parent object.'
+            ],
+        ),
+        ({"instances": ["a"]}, ["Incorrect type. Expected pk value, received str."]),
+        ({"instances": [True]}, ["Incorrect type. Expected pk value, received bool."]),
+        ({"instances": {}}, "Please pass in one or more instances to disassociate"),
+        ({"instances": []}, "Please pass in one or more instances to disassociate"),
+        ({"instances": -1}, ['Expected a list of items but got type "int".']),
+        ({}, ["This field is required."]),
+        ({"not_an_instances": [1]}, ["This field is required."]),
     ],
 )
-def test_association_router_disassociate_bad_data(db, admin_api_client, data, response_instances):
+def test_association_router_disassociate_bad_data(
+    db, admin_api_client, data, response_instances
+):
     related_model = RelatedFieldsTestModel.objects.create()
     assert related_model.more_teams.count() == 0
 
-    url = get_relative_url('related_fields_test_model-more_teams-disassociate', kwargs={'pk': related_model.pk})
-    response = admin_api_client.post(url, data=data, format='json')
+    url = get_relative_url(
+        "related_fields_test_model-more_teams-disassociate",
+        kwargs={"pk": related_model.pk},
+    )
+    response = admin_api_client.post(url, data=data, format="json")
     assert response.status_code == 400
-    assert response.json().get('instances') == response_instances
+    assert response.json().get("instances") == response_instances
 
 
-def test_association_router_disassociate_something_not_associated(db, admin_api_client, organization):
+def test_association_router_disassociate_something_not_associated(
+    db, admin_api_client, organization
+):
     related_model = RelatedFieldsTestModel.objects.create()
-    team1 = Team.objects.create(name='Team 1', organization=organization)
-    team2 = Team.objects.create(name='Team 2', organization=organization)
-    team3 = Team.objects.create(name='Team 3', organization=organization)
+    team1 = Team.objects.create(name="Team 1", organization=organization)
+    team2 = Team.objects.create(name="Team 2", organization=organization)
+    team3 = Team.objects.create(name="Team 3", organization=organization)
     related_model.more_teams.add(team1)
 
-    url = get_relative_url('related_fields_test_model-more_teams-disassociate', kwargs={'pk': related_model.pk})
-    response = admin_api_client.post(url, data={'instances': [team1.pk, team2.pk, team3.pk]}, format='json')
+    url = get_relative_url(
+        "related_fields_test_model-more_teams-disassociate",
+        kwargs={"pk": related_model.pk},
+    )
+    response = admin_api_client.post(
+        url, data={"instances": [team1.pk, team2.pk, team3.pk]}, format="json"
+    )
     assert response.status_code == 400
-    assert response.json().get('instances') == [f'Invalid pk "{team2.pk}" - object does not exist or is not associated with parent object.']
+    assert response.json().get("instances") == [
+        f'Invalid pk "{team2.pk}" - object does not exist or is not associated with parent object.'
+    ]
 
 
 def test_association_router_related_viewset_reverse_mapings(db):
     router = AssociationResourceRouter()
     router.register(
-        r'organization',
+        r"organization",
         views.OrganizationViewSet,
         related_views={
-            'teams': (views.TeamViewSet, 'teams'),
+            "teams": (views.TeamViewSet, "teams"),
         },
-        basename='my_test_basename',
+        basename="my_test_basename",
     )
     expected_urls = [
-        'my_test_basename-detail',
-        'my_test_basename-list',
-        'my_test_basename-teams-list',
+        "my_test_basename-detail",
+        "my_test_basename-list",
+        "my_test_basename-teams-list",
     ]
     validate_expected_url_pattern_names(router, expected_urls)
 
@@ -183,43 +229,49 @@ def test_association_router_related_viewset_m2m_mapings(db, user):
     obj = RelatedFieldsTestModel.objects.create()
     obj.users.add(user)
     router.register(
-        r'rel_models',
+        r"rel_models",
         views.RelatedFieldsTestModelViewSet,
         related_views={
-            'users': (views.UserViewSet, 'users'),
+            "users": (views.UserViewSet, "users"),
         },
-        basename='rel_test_basename',
+        basename="rel_test_basename",
     )
     expected_urls = [
-        'rel_test_basename-detail',
-        'rel_test_basename-list',
-        'rel_test_basename-users-list',
-        'rel_test_basename-users-associate',
-        'rel_test_basename-users-disassociate',
+        "rel_test_basename-detail",
+        "rel_test_basename-list",
+        "rel_test_basename-users-list",
+        "rel_test_basename-users-associate",
+        "rel_test_basename-users-disassociate",
     ]
     validate_expected_url_pattern_names(router, expected_urls)
 
 
 def test_sublist_filtering(organization, admin_api_client):
-    obj = Inventory.objects.create(name='first-one', organization=organization)
-    Inventory.objects.create(name='another-one', organization=organization)
-    url = get_relative_url('organization-inventories-list', kwargs={'pk': organization.pk})
+    obj = Inventory.objects.create(name="first-one", organization=organization)
+    Inventory.objects.create(name="another-one", organization=organization)
+    url = get_relative_url(
+        "organization-inventories-list", kwargs={"pk": organization.pk}
+    )
 
     # sanity, without filtering, we get the 2 inventories
     response = admin_api_client.get(url)
     assert response.status_code == 200, response.data
-    assert response.data['count'] == 2
+    assert response.data["count"] == 2
 
     # now we can filter by name for only the inventory object
-    response = admin_api_client.get(url, data={'name': obj.name})
+    response = admin_api_client.get(url, data={"name": obj.name})
     assert response.status_code == 200, response.data
-    assert response.data['count'] == 1
+    assert response.data["count"] == 1
 
 
-def test_sublist_override_filtering(organization, inventory, user_api_client, user, org_member_rd):
+def test_sublist_override_filtering(
+    organization, inventory, user_api_client, user, org_member_rd
+):
     "The organization cow list shows all cows regardless of view permission"
-    cow_url = get_relative_url('organization-cows-list', kwargs={'pk': organization.pk})
-    inventory_url = get_relative_url('organization-inventories-list', kwargs={'pk': organization.pk})
+    cow_url = get_relative_url("organization-cows-list", kwargs={"pk": organization.pk})
+    inventory_url = get_relative_url(
+        "organization-inventories-list", kwargs={"pk": organization.pk}
+    )
     Cow.objects.create(organization=organization)
 
     # User needs view permission to the parent object
@@ -229,38 +281,38 @@ def test_sublist_override_filtering(organization, inventory, user_api_client, us
     # The cow sublist is not set up this way in test_app, just for testing
     response = user_api_client.get(cow_url)
     assert response.status_code == 200, response.data
-    assert response.data['count'] == 1
+    assert response.data["count"] == 1
     response = user_api_client.get(inventory_url)
     assert response.status_code == 200, response.data
-    assert response.data['count'] == 0
+    assert response.data["count"] == 0
 
     # Assures that rest_filters still works
-    response = user_api_client.get(cow_url, data={'id': 12341234})
+    response = user_api_client.get(cow_url, data={"id": 12341234})
     assert response.status_code == 200, response.data
-    assert response.data['count'] == 0
+    assert response.data["count"] == 0
 
 
-@pytest.mark.parametrize('method', ['GET', 'PUT', 'POST', 'DELETE'])
+@pytest.mark.parametrize("method", ["GET", "PUT", "POST", "DELETE"])
 def test_related_detail_actions_get_scrubed(organization, method, admin_api_client):
     cow = Cow.objects.create(organization=organization)
     # raise Exception(reverse('organization-cows-list', kwargs={'pk': organization.pk}))
-    url = f'/api/v1/organizations/{organization.pk}/cows/{cow.pk}/'
+    url = f"/api/v1/organizations/{organization.pk}/cows/{cow.pk}/"
     # Can not use the reverse function like this, because post-fix, the view does not exist
     # url = reverse('organization-cows-detail', kwargs={'pk': organization.pk, 'cows': cow.pk})
-    if method in ('PUT', 'POST'):
+    if method in ("PUT", "POST"):
         response = admin_api_client.get(url, data={})
     else:
         response = admin_api_client.get(url)
     assert response.status_code == 404
 
 
-@pytest.mark.parametrize('method', ['GET', 'PUT', 'POST', 'DELETE'])
+@pytest.mark.parametrize("method", ["GET", "PUT", "POST", "DELETE"])
 def test_related_custom_actions_get_scrubed(organization, method, admin_api_client):
     cow = Cow.objects.create(organization=organization)
-    url = f'/api/v1/organizations/{organization.pk}/cows/{cow.pk}/cowsay/'
+    url = f"/api/v1/organizations/{organization.pk}/cows/{cow.pk}/cowsay/"
     # Can not use the reverse function like this, because post-fix, the view does not exist
     # url = reverse('organization-cows-cowsay', kwargs={'pk': organization.pk, 'cows': cow.pk})
-    if method in ('PUT', 'POST'):
+    if method in ("PUT", "POST"):
         response = admin_api_client.get(url, data={})
     else:
         response = admin_api_client.get(url)
@@ -269,32 +321,76 @@ def test_related_custom_actions_get_scrubed(organization, method, admin_api_clie
 
 def test_associated_view_description(admin_api_client, organization):
     Cow.objects.create(organization=organization)
-    url = get_relative_url('organization-cows-list', kwargs={'pk': organization.id})
+    url = get_relative_url("organization-cows-list", kwargs={"pk": organization.id})
     response = admin_api_client.options(url)
     assert response.status_code == 200, response.data
-    assert 'GET /:id/cows/ to show cows currently in the relationship' in response.data.get('description', '')
-    assert 'POST' not in response.data.get('description', '')
+    assert (
+        "GET /:id/cows/ to show cows currently in the relationship"
+        in response.data.get("description", "")
+    )
+    assert "POST" not in response.data.get("description", "")
 
 
 def test_associated_modifications_description(admin_api_client, organization):
-    url = get_relative_url('organization-users-list', kwargs={'pk': organization.id})
+    url = get_relative_url("organization-users-list", kwargs={"pk": organization.id})
     response = admin_api_client.options(url)
     assert response.status_code == 200, response.data
-    assert 'POST a list of instances to /:id/users/associate/ to add those users to the relationship' in response.data.get('description', '')
+    assert (
+        "POST a list of instances to /:id/users/associate/ to add those users to the relationship"
+        in response.data.get("description", "")
+    )
 
 
 def test_autogen_viewset_attributes():
     sublist_viewset = None
     for url, viewset, view_name in router.registry:
-        if view_name == 'organization-teams':
+        if view_name == "organization-teams":
             sublist_viewset = viewset
             break
     if not sublist_viewset:
-        raise Exception(f'Failed to find organization teams list in {router.registry}')
+        raise Exception(f"Failed to find organization teams list in {router.registry}")
 
-    for removed_method in ('retrieve', 'partial_update', 'destroy'):
+    for removed_method in ("retrieve", "partial_update", "destroy"):
         assert hasattr(TeamViewSet, removed_method)
         assert not hasattr(sublist_viewset, removed_method)
 
         assert removed_method in dir(TeamViewSet)
         assert removed_method not in dir(sublist_viewset)
+
+
+@pytest.mark.parametrize(
+    "endpoint_suffix",
+    ["associate", "disassociate"],
+)
+def test_associate_disassociate_schema_returns_204(admin_api_client, endpoint_suffix):
+    """Verify that associate/disassociate endpoints declare 204 (not 200) in the OpenAPI schema.
+
+    Regression test for AAP-57081: the auto-generated OpenAPI spec incorrectly
+    declared a 200 response with a serializer body for these endpoints, even
+    though the implementation returns HTTP 204 No Content with no body.
+    """
+    url = "/api/v1/docs/schema/"
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+
+    schema = response.data
+
+    # Find any path that ends with /{endpoint_suffix}/
+    matching_paths = {
+        path: ops
+        for path, ops in schema["paths"].items()
+        if path.rstrip("/").endswith(f"/{endpoint_suffix}")
+    }
+    assert matching_paths, f"No paths ending with /{endpoint_suffix}/ found in schema"
+
+    for path, operations in matching_paths.items():
+        post_op = operations.get("post")
+        assert post_op is not None, f"POST operation missing for {path}"
+
+        responses = post_op.get("responses", {})
+        assert "204" in responses, (
+            f"{path} should declare a 204 response, but only has: {list(responses.keys())}"
+        )
+        assert "200" not in responses, (
+            f"{path} should NOT declare a 200 response (actual return is 204 No Content)"
+        )
