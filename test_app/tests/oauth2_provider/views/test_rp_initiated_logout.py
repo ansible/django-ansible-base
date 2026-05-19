@@ -89,7 +89,7 @@ def test_logout_get_request_displays_form(client, oidc_enabled_settings):
 
 
 @pytest.mark.django_db
-def test_logout_with_post_logout_redirect_uri(client, oidc_enabled_settings, oauth2_application_with_logout_redirect):
+def test_logout_with_post_logout_redirect_uri(user_api_client, oidc_enabled_settings, oauth2_application_with_logout_redirect):
     """
     Test logout with a valid post_logout_redirect_uri parameter redirects after consent.
     """
@@ -98,7 +98,7 @@ def test_logout_with_post_logout_redirect_uri(client, oidc_enabled_settings, oau
 
     with override_settings(OAUTH2_PROVIDER=oidc_enabled_settings):
         url = get_relative_url('oauth2_provider:rp-initiated-logout')
-        response = client.post(
+        response = user_api_client.post(
             url,
             {
                 'post_logout_redirect_uri': redirect_uri,
@@ -140,7 +140,7 @@ def test_logout_with_invalid_redirect_uri_when_strict(client, oidc_enabled_setti
 
 
 @pytest.mark.django_db
-def test_logout_with_state_parameter(client, oidc_enabled_settings, oauth2_application_with_logout_redirect):
+def test_logout_with_state_parameter(user_api_client, oidc_enabled_settings, oauth2_application_with_logout_redirect):
     """
     Test that the state parameter is preserved in the redirect after logout.
     """
@@ -150,7 +150,7 @@ def test_logout_with_state_parameter(client, oidc_enabled_settings, oauth2_appli
 
     with override_settings(OAUTH2_PROVIDER=oidc_enabled_settings):
         url = get_relative_url('oauth2_provider:rp-initiated-logout')
-        response = client.post(
+        response = user_api_client.post(
             url,
             {
                 'post_logout_redirect_uri': redirect_uri,
@@ -185,7 +185,7 @@ def test_logout_endpoint_in_oidc_discovery(client, oidc_enabled_settings):
 
 
 @pytest.mark.django_db
-def test_logout_without_prompt_when_configured(client, oidc_enabled_settings, oauth2_application_with_logout_redirect):
+def test_logout_without_prompt_when_configured(user_api_client, oidc_enabled_settings, oauth2_application_with_logout_redirect):
     """
     Test logout with ALWAYS_PROMPT=False still prompts without id_token_hint,
     but proceeds with explicit consent.
@@ -200,7 +200,7 @@ def test_logout_without_prompt_when_configured(client, oidc_enabled_settings, oa
 
     with override_settings(OAUTH2_PROVIDER=no_prompt_settings):
         url = get_relative_url('oauth2_provider:rp-initiated-logout')
-        response = client.post(
+        response = user_api_client.post(
             url,
             {
                 'post_logout_redirect_uri': redirect_uri,
