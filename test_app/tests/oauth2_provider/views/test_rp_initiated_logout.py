@@ -21,6 +21,15 @@ def oidc_enabled_settings():
     }
 
 
+@pytest.fixture
+def oauth2_application_with_logout_redirect(oauth2_application):
+    """OAuth2 application configured with post_logout_redirect_uris for RP-initiated logout tests."""
+    app, secret = oauth2_application
+    app.post_logout_redirect_uris = 'https://example.com/callback'
+    app.save()
+    return app, secret
+
+
 @pytest.mark.django_db
 def test_logout_endpoint_exists(client, oidc_enabled_settings):
     """
@@ -80,14 +89,11 @@ def test_logout_get_request_displays_form(client, oidc_enabled_settings):
 
 
 @pytest.mark.django_db
-def test_logout_with_post_logout_redirect_uri(client, oidc_enabled_settings, oauth2_application):
+def test_logout_with_post_logout_redirect_uri(client, oidc_enabled_settings, oauth2_application_with_logout_redirect):
     """
-    Test logout with a valid post_logout_redirect_uri parameter.
-
-    Note: RPInitiatedLogoutView may return 400 if OIDC is not fully configured
-    (e.g., missing RSA private key for ID token verification).
+    Test logout with a valid post_logout_redirect_uri parameter redirects after consent.
     """
-    app = oauth2_application[0]
+    app = oauth2_application_with_logout_redirect[0]
     redirect_uri = 'https://example.com/callback'
 
     with override_settings(OAUTH2_PROVIDER=oidc_enabled_settings):
@@ -97,10 +103,12 @@ def test_logout_with_post_logout_redirect_uri(client, oidc_enabled_settings, oau
             {
                 'post_logout_redirect_uri': redirect_uri,
                 'client_id': app.client_id,
+                'allow': True,
             },
         )
 
-        assert response.status_code in [200, 302, 400]
+        assert response.status_code == 302
+        assert redirect_uri in response['Location']
 
 
 @pytest.mark.django_db
@@ -123,19 +131,20 @@ def test_logout_with_invalid_redirect_uri_when_strict(client, oidc_enabled_setti
             {
                 'post_logout_redirect_uri': invalid_redirect,
                 'client_id': app.client_id,
+                'allow': True,
             },
         )
 
-        assert response.status_code != 302 or invalid_redirect not in response.get('Location', '')
+        assert response.status_code == 400
         assert b'malicious-site.com' not in response.content
 
 
 @pytest.mark.django_db
-def test_logout_with_state_parameter(client, oidc_enabled_settings, oauth2_application):
+def test_logout_with_state_parameter(client, oidc_enabled_settings, oauth2_application_with_logout_redirect):
     """
-    Test that the state parameter is preserved in the redirect.
+    Test that the state parameter is preserved in the redirect after logout.
     """
-    app = oauth2_application[0]
+    app = oauth2_application_with_logout_redirect[0]
     redirect_uri = 'https://example.com/callback'
     state = 'test-state-value-123'
 
@@ -147,17 +156,16 @@ def test_logout_with_state_parameter(client, oidc_enabled_settings, oauth2_appli
                 'post_logout_redirect_uri': redirect_uri,
                 'client_id': app.client_id,
                 'state': state,
+                'allow': True,
             },
         )
 
-        if response.status_code == 302:
-            redirect_url = response['Location']
-            parsed = urlparse(redirect_url)
-            params = parse_qs(parsed.query)
-            assert 'state' in params, "state parameter was not preserved in the redirect URL"
-            assert params['state'][0] == state
-        else:
-            assert response.status_code in [200, 400]
+        assert response.status_code == 302
+        redirect_url = response['Location']
+        parsed = urlparse(redirect_url)
+        params = parse_qs(parsed.query)
+        assert 'state' in params, "state parameter was not preserved in the redirect URL"
+        assert params['state'][0] == state
 
 
 @pytest.mark.django_db
@@ -177,11 +185,12 @@ def test_logout_endpoint_in_oidc_discovery(client, oidc_enabled_settings):
 
 
 @pytest.mark.django_db
-def test_logout_without_prompt_when_configured(client, oidc_enabled_settings, oauth2_application):
+def test_logout_without_prompt_when_configured(client, oidc_enabled_settings, oauth2_application_with_logout_redirect):
     """
-    Test logout without showing prompt when ALWAYS_PROMPT is False.
+    Test logout with ALWAYS_PROMPT=False still prompts without id_token_hint,
+    but proceeds with explicit consent.
     """
-    app = oauth2_application[0]
+    app = oauth2_application_with_logout_redirect[0]
     redirect_uri = 'https://example.com/callback'
 
     no_prompt_settings = {
@@ -196,10 +205,12 @@ def test_logout_without_prompt_when_configured(client, oidc_enabled_settings, oa
             {
                 'post_logout_redirect_uri': redirect_uri,
                 'client_id': app.client_id,
+                'allow': True,
             },
         )
 
-        assert response.status_code in [200, 302, 400]
+        assert response.status_code == 302
+        assert redirect_uri in response['Location']
 
 
 @pytest.mark.django_db
@@ -233,18 +244,18 @@ def test_logout_accepts_both_get_and_post(client, oidc_enabled_settings):
     with override_settings(OAUTH2_PROVIDER=oidc_enabled_settings):
         url = get_relative_url('oauth2_provider:rp-initiated-logout')
 
-        # Test GET request - should display form
         get_response = client.get(url)
         assert get_response.status_code == 200
 
+        # POST without consent (no allow=True) is denied
         post_response = client.post(url)
-        assert post_response.status_code in [200, 302, 400]
+        assert post_response.status_code == 400
 
 
 @pytest.mark.django_db
 def test_logout_with_client_id_only(client, oidc_enabled_settings, oauth2_application):
     """
-    Test logout with only client_id parameter (no ID token hint).
+    Test logout with only client_id parameter (no ID token hint or consent) is denied.
     """
     app = oauth2_application[0]
 
@@ -257,19 +268,19 @@ def test_logout_with_client_id_only(client, oidc_enabled_settings, oauth2_applic
             },
         )
 
-        assert response.status_code in [200, 302, 400]
+        assert response.status_code == 400
 
 
 @pytest.mark.django_db
 def test_logout_without_parameters(client, oidc_enabled_settings):
     """
-    Test logout without any parameters.
+    Test that POST without any parameters (no consent) is denied.
     """
     with override_settings(OAUTH2_PROVIDER=oidc_enabled_settings):
         url = get_relative_url('oauth2_provider:rp-initiated-logout')
         response = client.post(url)
 
-        assert response.status_code in [200, 302, 400]
+        assert response.status_code == 400
 
 
 @pytest.mark.django_db
