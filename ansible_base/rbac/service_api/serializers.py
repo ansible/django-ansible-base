@@ -1,6 +1,7 @@
 import logging
 
 from crum import impersonate
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
@@ -137,7 +138,7 @@ class BaseAssignmentSerializer(serializers.ModelSerializer):
                 else:
                     try:
                         obj = model.objects.get(pk=object_id)
-                    except (model.DoesNotExist, ValueError, TypeError):
+                    except (model.DoesNotExist, ValueError, TypeError, DjangoValidationError):
                         logger.info("Object pk=%s not found locally for %s, using RemoteObject fallback", object_id, model.__name__)
                         obj = RemoteObject(content_type=rd.content_type, object_id=object_id)
 
