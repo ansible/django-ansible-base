@@ -348,6 +348,8 @@ id_token_duplicate_group = {**id_token_no_groups, "groups": ["mygroup", "myidtok
         (True, True, True, "", False),
         # Email as non-string (gets normalized to empty) - should not trigger save
         (True, True, True, 123, False),
+        # Email unchanged from existing - should not trigger save
+        (True, True, True, "already@example.com", False),
         # No backend database_instance attribute
         (False, True, True, "user@example.com", False),
         # Backend database_instance is None
@@ -376,7 +378,7 @@ def test_capture_oauth_email_pipeline(mock_logger, backend_has_instance, user_ex
         mock_backend = mock.Mock(spec=[])
 
     mock_social = mock.Mock()
-    mock_social.email = ""
+    mock_social.email = "already@example.com" if email_value == "already@example.com" else ""
 
     kwargs = {}
     if user_exists:
@@ -492,7 +494,10 @@ def test_capture_oauth_email_pipeline_fallback_lookup(mock_logger):
 
     auth_user.refresh_from_db()
     assert auth_user.email == 'octocat@example.com'
-    mock_logger.info.assert_called()
+    mock_logger.warning.assert_any_call(
+        "'social' key missing from pipeline kwargs for user octocat; falling back to DB lookup. Check SOCIAL_AUTH_PIPELINE ordering."
+    )
+    mock_logger.info.assert_called_with("Stored OAuth email for user octocat from Test GitHub")
 
 
 @pytest.mark.django_db
