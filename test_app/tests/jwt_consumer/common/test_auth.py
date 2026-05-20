@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 from django.test.utils import override_settings
 from jwt.exceptions import DecodeError
-from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.exceptions import AuthenticationFailed, ValidationError
 
 from ansible_base.jwt_consumer.common.auth import JWTAuthentication, JWTCommonAuth, RbacAwareJWTAuthentication, default_mapped_user_fields
 from ansible_base.jwt_consumer.common.cert import JWTCert, JWTCertException
@@ -140,6 +140,56 @@ class TestJWTCommonAuth:
             if should_save:
                 assert f"Saving user {user.username}" in caplog.text
                 assert user.save.called
+
+    @pytest.mark.django_db
+    def test_map_user_fields_email_change_bypasses_rbac_policy(self, django_user_model):
+        """JWT auth field sync must update email even when the RBAC email
+        policy signal would block it for a regular requesting user.
+
+        The pre_save signal rbac_pre_save_enforce_email_policy blocks email
+        changes from non-privileged CRUM users.  map_user_fields() runs during
+        JWT authentication (a trusted system operation), so it must bypass
+        the signal by clearing the CRUM user via impersonate(None).
+        """
+        from crum import impersonate
+
+        regular_user = django_user_model.objects.create_user(
+            username='regular',
+            password='password',
+        )
+        target_user = django_user_model.objects.create_user(
+            username='jwt-synced',
+            password='password',
+            email='old@example.com',
+        )
+
+        common_auth = JWTCommonAuth()
+        common_auth.user = target_user
+        common_auth.token = {
+            'user_data': {
+                'username': 'jwt-synced',
+                'first_name': '',
+                'last_name': '',
+                'email': 'new@example.com',
+                'is_superuser': False,
+            }
+        }
+
+        # Precondition: prove the signal blocks a direct save under this user
+        with impersonate(regular_user):
+            target_user.email = 'new@example.com'
+            with pytest.raises(ValidationError, match="permission to change the email"):
+                target_user.save()
+
+        target_user.refresh_from_db()
+        assert target_user.email == 'old@example.com', "precondition: direct save should have been blocked"
+
+        # The actual test: map_user_fields bypasses the signal via impersonate(None)
+        with impersonate(regular_user):
+            common_auth.map_user_fields()
+
+        target_user.refresh_from_db()
+        assert target_user.email == 'new@example.com'
 
     @pytest.mark.django_db
     @pytest.mark.parametrize(

@@ -44,6 +44,23 @@
 			<div id='authenticators'>None</div>
 		</div>
 
+		<div class="mt-4">
+			<h2>OpenTelemetry Traces</h2>
+			<textarea id="otel-traces" rows="12" class="form-control font-monospace" readonly placeholder="Waiting for traces..."></textarea>
+		</div>
+
+		<div class="mt-4 mb-4">
+			<h2>OpenTelemetry Logs</h2>
+			<textarea id="otel-logs" rows="12" class="form-control font-monospace" readonly placeholder="Waiting for logs..."></textarea>
+		</div>
+
+		<div class="mt-4 mb-4">
+			<h2>ANSIBLE_OBSERVABILITY_CAPTURE_HEADERS Test</h2>
+			<p class="text-muted">Sends a request with <code>X-Capture-Test: hello-from-browser</code> to the start endpoint, which uses the <code>requests</code> library to call the echo endpoint. Headers propagated by OTel should appear in the upstream response.</p>
+			<button class="btn btn-primary" onclick="testCaptureHeaders()">Test ANSIBLE_OBSERVABILITY_CAPTURE_HEADERS</button>
+			<textarea id="otel-capture-headers-result" rows="8" class="form-control font-monospace mt-2" readonly placeholder="Result will appear here..."></textarea>
+		</div>
+
 	</div>
 
     <!-- App -->
@@ -81,6 +98,40 @@
 
         toggleLogin()
         setAuthenticators()
+
+        function pollOtel() {
+            fetch('/api/v1/otel/traces/')
+                .then(r => r.json())
+                .then(d => {
+                    const el = document.getElementById('otel-traces');
+                    el.value = d.traces.map(t => JSON.stringify(t)).join('\n');
+                    el.scrollTop = el.scrollHeight;
+                })
+                .catch(() => {});
+
+            fetch('/api/v1/otel/logs/')
+                .then(r => r.json())
+                .then(d => {
+                    const el = document.getElementById('otel-logs');
+                    el.value = d.logs.map(l => JSON.stringify(l)).join('\n');
+                    el.scrollTop = el.scrollHeight;
+                })
+                .catch(() => {});
+        }
+
+        pollOtel();
+        setInterval(pollOtel, 2000);
+
+        function testCaptureHeaders() {
+            const resultEl = document.getElementById('otel-capture-headers-result');
+            resultEl.value = 'Sending request...';
+            fetch('/api/v1/otel/observability-headers-start/', {
+                headers: {'X-Capture-Test': 'hello-from-browser'}
+            })
+                .then(r => r.json())
+                .then(d => { resultEl.value = JSON.stringify(d, null, 2); })
+                .catch(e => { resultEl.value = 'Error: ' + e; });
+        }
     </script>
 
 </body>

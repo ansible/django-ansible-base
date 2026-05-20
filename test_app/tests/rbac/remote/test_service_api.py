@@ -665,20 +665,20 @@ class TestValidationErrors:
         assert response.status_code == 400, response.data
         assert "Can not provide either 'object_id' or 'object_ansible_id' for system role" in str(response.data)
 
-    def test_object_role_without_valid_object_error(self, admin_api_client, rando, inv_rd):
-        """Test that object role without valid object raises validation error"""
+    def test_object_role_with_nonexistent_object_creates_remote_assignment(self, admin_api_client, rando, inv_rd):
+        """Synced assignments for non-existent local objects fall back to
+        RemoteObject so that cross-service sync is not blocked by object
+        ordering (the object may not have been synced yet)."""
         url = get_relative_url('serviceuserassignment-assign')
         data = {
             "role_definition": inv_rd.name,
             "user_ansible_id": str(rando.resource.ansible_id),
-            "object_id": "99999",  # Non-existent inventory ID
+            "object_id": "99999",
         }
 
         response = admin_api_client.post(url, data=data)
-        assert response.status_code == 400, response.data
-        # Check if the error is about object not existing
-        error_msg = str(response.data)
-        assert "does not exist" in error_msg.lower()
+        assert response.status_code == 201, response.data
+        assert str(response.data["object_id"]) == "99999"
 
     def test_object_role_without_object_specified_error(self, admin_api_client, rando, inv_rd):
         """Test that object role without object_id raises validation error"""

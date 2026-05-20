@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 import jwt
+from crum import impersonate
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.utils import IntegrityError
@@ -177,7 +178,7 @@ class JWTCommonAuth:
                 setattr(self.user, attribute, new_value)
                 user_needs_save = True
         if user_needs_save:
-            with no_reverse_sync():
+            with no_reverse_sync(), impersonate(None):
                 logger.info(f"Saving user {self.user.username}")
                 self.user.save()
 
