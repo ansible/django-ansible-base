@@ -204,6 +204,10 @@ class SocialAuthValidateCallbackMixin:
 def capture_oauth_email_pipeline(*args, backend, details, **kwargs):
     """
     Pipeline function to capture and store OAuth provider email in AuthenticatorUser.
+
+    Runs AFTER associate_user so the AuthenticatorUser record already exists.
+    Updates the email field rather than creating a new record, avoiding
+    IntegrityError when the OAuth uid differs from the Django username.
     """
     if not backend or not hasattr(backend, 'database_instance') or not backend.database_instance:
         logger.warning("No backend or database_instance found in OAuth email pipeline")
@@ -224,14 +228,17 @@ def capture_oauth_email_pipeline(*args, backend, details, **kwargs):
 
     logger.debug(f"Capturing OAuth email for user {user.username}: {email}")
 
-    # Get or update the AuthenticatorUser with the email
+    social = kwargs.get('social')
     try:
-        from ansible_base.authentication.utils.authentication import get_or_create_authenticator_user
+        if social is None:
+            social = AuthenticatorUser.objects.get(uid=uid, provider=backend.database_instance)
 
-        get_or_create_authenticator_user(
-            uid=uid, email=email, authenticator=backend.database_instance, user_details=details, extra_data=kwargs.get('response', {})
-        )
+        if email and social.email != email:
+            social.email = email
+            social.save(update_fields=['email'])
         logger.info(f"Stored OAuth email {email} for user {user.username} from {backend.database_instance.name}")
+    except AuthenticatorUser.DoesNotExist:
+        logger.warning(f"No AuthenticatorUser found for uid={uid}, cannot store OAuth email for user {user.username}")
     except Exception as e:
         logger.warning(f"Failed to store OAuth email for user {user.username}: {e}")
 
