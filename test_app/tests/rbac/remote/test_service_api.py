@@ -678,6 +678,7 @@ class TestValidationErrors:
 
         response = admin_api_client.post(url, data=data)
         assert response.status_code == 201, response.data
+        assert str(response.data["object_id"]) == "99999"
 
     def test_object_role_without_object_specified_error(self, admin_api_client, rando, inv_rd):
         """Test that object role without object_id raises validation error"""

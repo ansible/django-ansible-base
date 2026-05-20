@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 from django.test.utils import override_settings
 from jwt.exceptions import DecodeError
-from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.exceptions import AuthenticationFailed, ValidationError
 
 from ansible_base.jwt_consumer.common.auth import JWTAuthentication, JWTCommonAuth, RbacAwareJWTAuthentication, default_mapped_user_fields
 from ansible_base.jwt_consumer.common.cert import JWTCert, JWTCertException
@@ -175,6 +175,16 @@ class TestJWTCommonAuth:
             }
         }
 
+        # Precondition: prove the signal blocks a direct save under this user
+        with impersonate(regular_user):
+            target_user.email = 'new@example.com'
+            with pytest.raises(ValidationError, match="permission to change the email"):
+                target_user.save()
+
+        target_user.refresh_from_db()
+        assert target_user.email == 'old@example.com', "precondition: direct save should have been blocked"
+
+        # The actual test: map_user_fields bypasses the signal via impersonate(None)
         with impersonate(regular_user):
             common_auth.map_user_fields()
 

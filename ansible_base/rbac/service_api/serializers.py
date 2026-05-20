@@ -1,3 +1,5 @@
+import logging
+
 from crum import impersonate
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
@@ -7,6 +9,8 @@ from ..api.fields import ActorAnsibleIdField
 from ..models import DABContentType, DABPermission, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
 from ..policies import check_content_obj_permission
 from ..remote import RemoteObject
+
+logger = logging.getLogger('ansible_base.rbac.service_api.serializers')
 
 
 class ObjectAnsibleIdField(serializers.Field):
@@ -134,6 +138,7 @@ class BaseAssignmentSerializer(serializers.ModelSerializer):
                     try:
                         obj = model.objects.get(pk=object_id)
                     except (model.DoesNotExist, ValueError, TypeError):
+                        logger.info("Object pk=%s not found locally for %s, using RemoteObject fallback", object_id, model.__name__)
                         obj = RemoteObject(content_type=rd.content_type, object_id=object_id)
 
             # Validators not ran, because this should be an internal action
