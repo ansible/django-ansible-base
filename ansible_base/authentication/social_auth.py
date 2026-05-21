@@ -229,19 +229,19 @@ def capture_oauth_email_pipeline(*args, backend, details, **kwargs):
     logger.debug(f"Capturing OAuth email for user {user.username}: {email}")
 
     social = kwargs.get('social')
-    try:
-        if social is None:
-            logger.warning(
-                f"'social' key missing from pipeline kwargs for user {user.username}; falling back to DB lookup. Check SOCIAL_AUTH_PIPELINE ordering."
-            )
+    if social is None:
+        logger.warning(f"'social' key missing from pipeline kwargs for user {user.username}; falling back to DB lookup. Check SOCIAL_AUTH_PIPELINE ordering.")
+        try:
             social = AuthenticatorUser.objects.get(uid=uid, provider=backend.database_instance)
+        except AuthenticatorUser.DoesNotExist:
+            logger.warning(f"No AuthenticatorUser found for uid={uid}, cannot store OAuth email for user {user.username}")
+            return
 
+    try:
         if email and social.email != email:
             social.email = email
             social.save(update_fields=['email'])
             logger.info(f"Stored OAuth email for user {user.username} from {backend.database_instance.name}")
-    except AuthenticatorUser.DoesNotExist:
-        logger.warning(f"No AuthenticatorUser found for uid={uid}, cannot store OAuth email for user {user.username}")
     except Exception as e:
         logger.warning(f"Failed to store OAuth email for user {user.username}: {e}")
 
