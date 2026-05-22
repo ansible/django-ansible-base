@@ -1,11 +1,13 @@
 import hashlib
 import json
 import logging
+import time
 from collections import defaultdict
 from typing import Optional, Tuple, Union
 
 from django.apps import apps
 from django.conf import settings
+from django.db import transaction
 from django.db.models import F, Model, OuterRef, QuerySet
 from django.db.utils import IntegrityError
 
@@ -310,61 +312,81 @@ def get_or_create_resource(objects: dict, content_type: str, data: dict) -> Tupl
 
 
 def save_user_claims(user: Model, objects: dict, object_roles: dict, global_roles: list) -> None:
-    """
-    Apply RBAC permissions from claims data
-    """
-    role_diff = RoleUserAssignment.objects.filter(user=user, role_definition__name__in=settings.ANSIBLE_BASE_JWT_MANAGED_ROLES)
+    """Apply RBAC permissions from gateway claims data.
 
-    for system_role_name in global_roles:
-        logger.debug(f"Processing system role {system_role_name} for {user.username}")
-        rd = get_role_definition(system_role_name)
-        if rd:
-            if rd.name in settings.ANSIBLE_BASE_JWT_MANAGED_ROLES:
-                assignment = rd.give_global_permission(user)
-                role_diff = role_diff.exclude(pk=assignment.pk)
-                logger.info(f"Granted user {user.username} global role {system_role_name}")
+    Wrapped in:
+    - no_reverse_sync(): Suppresses post_save signals from stub Org/Team
+      creation that would otherwise make HTTP calls back to Gateway.
+    - transaction.atomic(): Ensures partial failures roll back cleanly
+      instead of leaving the user in an inconsistent permission state.
+    - defer_role_evaluation(): Batches all RoleEvaluation cache updates
+      into a single pass instead of N individual compute cycles.
+    """
+    from ansible_base.rbac.triggers import defer_role_evaluation
+    from ansible_base.resource_registry.signals.handlers import no_reverse_sync
+
+    start = time.monotonic()
+    grants = 0
+    removals = 0
+
+    with no_reverse_sync(), transaction.atomic(), defer_role_evaluation():
+        role_diff = RoleUserAssignment.objects.filter(user=user, role_definition__name__in=settings.ANSIBLE_BASE_JWT_MANAGED_ROLES)
+
+        for system_role_name in global_roles:
+            logger.debug(f"Processing system role {system_role_name} for {user.username}")
+            rd = get_role_definition(system_role_name)
+            if rd:
+                if rd.name in settings.ANSIBLE_BASE_JWT_MANAGED_ROLES:
+                    assignment = rd.give_global_permission(user)
+                    role_diff = role_diff.exclude(pk=assignment.pk)
+                    grants += 1
+                    logger.info(f"Granted user {user.username} global role {system_role_name}")
+                else:
+                    logger.error(f"Unable to grant {user.username} system level role {system_role_name} because it is not a JWT managed role")
             else:
-                logger.error(f"Unable to grant {user.username} system level role {system_role_name} because it is not a JWT managed role")
-        else:
-            logger.error(f"Unable to grant {user.username} system level role {system_role_name} because it does not exist")
-            continue
-
-    for object_role_name in object_roles.keys():
-        rd = get_role_definition(object_role_name)
-        if rd is None:
-            logger.error(f"Unable to grant {user.username} object role {object_role_name} because it does not exist")
-            continue
-        elif rd.name not in settings.ANSIBLE_BASE_JWT_MANAGED_ROLES:
-            logger.error(f"Unable to grant {user.username} object role {object_role_name} because it is not a JWT managed role")
-            continue
-
-        object_type = object_roles[object_role_name]['content_type']
-        object_indexes = object_roles[object_role_name]['objects']
-
-        for index in object_indexes:
-            object_data = objects[object_type][index]
-            try:
-                resource, obj = get_or_create_resource(objects, object_type, object_data)
-            except IntegrityError as e:
-                logger.warning(
-                    f"Got integrity error ({e}) on {object_data}. Skipping {object_type} assignment. "
-                    "Please make sure the sync task is running to prevent this warning in the future."
-                )
+                logger.error(f"Unable to grant {user.username} system level role {system_role_name} because it does not exist")
                 continue
 
-            if resource is not None:
-                assignment = rd.give_permission(user, obj)
-                role_diff = role_diff.exclude(pk=assignment.pk)
-                logger.info(f"Granted user {user.username} role {object_role_name} to object {obj.name} with ansible_id {object_data['ansible_id']}")
+        for object_role_name in object_roles.keys():
+            rd = get_role_definition(object_role_name)
+            if rd is None:
+                logger.error(f"Unable to grant {user.username} object role {object_role_name} because it does not exist")
+                continue
+            elif rd.name not in settings.ANSIBLE_BASE_JWT_MANAGED_ROLES:
+                logger.error(f"Unable to grant {user.username} object role {object_role_name} because it is not a JWT managed role")
+                continue
 
-    # Remove all permissions not authorized by the JWT
-    for role_assignment in role_diff:
-        rd = role_assignment.role_definition
-        content_object = role_assignment.content_object
-        if content_object:
-            rd.remove_permission(user, content_object)
-        else:
-            rd.remove_global_permission(user)
+            object_type = object_roles[object_role_name]['content_type']
+            object_indexes = object_roles[object_role_name]['objects']
+
+            for index in object_indexes:
+                object_data = objects[object_type][index]
+                try:
+                    resource, obj = get_or_create_resource(objects, object_type, object_data)
+                except IntegrityError as e:
+                    logger.warning(
+                        f"Got integrity error ({e}) on {object_data}. Skipping {object_type} assignment. "
+                        "Please make sure the sync task is running to prevent this warning in the future."
+                    )
+                    continue
+
+                if resource is not None:
+                    assignment = rd.give_permission(user, obj)
+                    role_diff = role_diff.exclude(pk=assignment.pk)
+                    grants += 1
+                    logger.info(f"Granted user {user.username} role {object_role_name} to object {obj.name} with ansible_id {object_data['ansible_id']}")
+
+        for role_assignment in role_diff:
+            rd = role_assignment.role_definition
+            content_object = role_assignment.content_object
+            if content_object:
+                rd.remove_permission(user, content_object)
+            else:
+                rd.remove_global_permission(user)
+            removals += 1
+
+    elapsed = time.monotonic() - start
+    logger.info(f"save_user_claims for {user.username}: {grants} grants, {removals} removals in {elapsed:.3f}s")
 
 
 # ---- for claims hashing ----

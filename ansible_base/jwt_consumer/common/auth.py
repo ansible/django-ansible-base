@@ -1,4 +1,5 @@
 import logging
+import time
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -287,18 +288,27 @@ class JWTCommonAuth:
 
         # Claims hash mismatch - fetch from gateway
         logger.info(f"Claims hash mismatch for user {user_ansible_id}. JWT: {jwt_claims_hash}, Local: {local_claims_hash}. Fetching from gateway.")
+        reconcile_start = time.monotonic()
         try:
+            fetch_start = time.monotonic()
             gateway_claims = self._fetch_jwt_claims_from_gateway(user_ansible_id)
-            # Extract claims structure from gateway response
+            fetch_elapsed = time.monotonic() - fetch_start
+
             objects = gateway_claims.get('objects', {})
             object_roles = gateway_claims.get('object_roles', {})
             global_roles = gateway_claims.get('global_roles', [])
 
-            # Process the RBAC permissions with the gateway claims
+            save_start = time.monotonic()
             save_user_claims(self.user, objects, object_roles, global_roles)
+            save_elapsed = time.monotonic() - save_start
 
-            # Update cache with the new hash
             self.cache.cache_claims_hash(user_ansible_id, jwt_claims_hash)
+
+            total_elapsed = time.monotonic() - reconcile_start
+            logger.info(
+                f"Claims reconciliation for {user_ansible_id}: "
+                f"fetch={fetch_elapsed:.3f}s, save={save_elapsed:.3f}s, total={total_elapsed:.3f}s"
+            )
         except GatewayLockedException:
             if self.token.get('user_data', {}).get("is_superuser", False) is False:
                 self.log_and_raise(
