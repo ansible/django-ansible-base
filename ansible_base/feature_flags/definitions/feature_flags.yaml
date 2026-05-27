@@ -55,3 +55,17 @@
   toggle_type: install-time
   labels:
     - metrics
+- name: FEATURE_GATEWAY_SIDECAR_CACHE_ENABLED
+  ui_name: Gateway Sidecar Cache
+  visibility: True
+  condition: boolean
+  value: 'False'
+  support_level: TECHNOLOGY_PREVIEW
+  description: >-
+    Toggle between centralized and sidecar Redis for Gateway cache and session storage.
+    When enabled, Gateway uses a local sidecar Redis instance instead of the shared
+    centralized Redis cluster.
+  support_url: ''
+  toggle_type: run-time
+  labels:
+    - gateway
