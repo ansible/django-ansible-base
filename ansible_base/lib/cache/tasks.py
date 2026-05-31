@@ -25,12 +25,18 @@ def clear_cache(cache_keys, dependent_keys_resolver=None, post_invalidation_hook
     if dependent_keys_resolver:
         orig_len = len(all_keys)
         for i in range(orig_len):
-            for dep_key in dependent_keys_resolver(all_keys[i]):
-                all_keys.append(dep_key)
+            try:
+                for dep_key in dependent_keys_resolver(all_keys[i]):
+                    all_keys.append(dep_key)
+            except Exception:
+                logger.exception("dependent_keys_resolver failed for key %r", all_keys[i])
 
     unique_keys = set(all_keys)
     logger.debug('cache delete_many(%r)', unique_keys)
     cache.delete_many(unique_keys)
 
     if post_invalidation_hook:
-        post_invalidation_hook(unique_keys)
+        try:
+            post_invalidation_hook(unique_keys)
+        except Exception:
+            logger.exception("post_invalidation_hook failed after invalidating keys %r", unique_keys)

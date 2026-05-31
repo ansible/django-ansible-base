@@ -89,3 +89,27 @@ def test_clear_cache_no_hook_no_resolver(populated_cache):
 
     assert populated_cache.get('key_a') is None
     assert populated_cache.get('key_b') == 'value_b'
+
+
+def test_clear_cache_resolver_failure_still_invalidates_original_keys(populated_cache):
+    def bad_resolver(key):
+        if key == 'key_b':
+            raise ValueError("bad key")
+        return ['key_c']
+
+    clear_cache(['key_a', 'key_b'], dependent_keys_resolver=bad_resolver)
+
+    assert populated_cache.get('key_a') is None
+    assert populated_cache.get('key_b') is None
+    assert populated_cache.get('key_c') is None
+    assert populated_cache.get('key_d') == 'value_d'
+
+
+def test_clear_cache_hook_failure_does_not_undo_deletion(populated_cache):
+    def exploding_hook(keys):
+        raise RuntimeError("hook failed")
+
+    clear_cache(['key_a', 'key_b'], post_invalidation_hook=exploding_hook)
+
+    assert populated_cache.get('key_a') is None
+    assert populated_cache.get('key_b') is None
