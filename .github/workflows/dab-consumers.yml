@@ -48,6 +48,8 @@ jobs:
         run: |
           cd awx
           DEVEL_IMAGE_NAME=awx-with-dab:latest AWX_DOCKER_CMD=/start_tests.sh make docker-runner
+        env:
+          PYTEST_ADDOPTS: --disable-warnings
 
   eda-server:
     name: eda-server
@@ -108,6 +110,8 @@ jobs:
           poetry run pip install -e "$DAB_PATH"
           poetry run pip show django-ansible-base
           poetry run pytest
+        env:
+          PYTEST_ADDOPTS: --disable-warnings
 
   hub:
     name: hub
