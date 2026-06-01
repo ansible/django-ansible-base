@@ -94,7 +94,6 @@ def test_get_does_not_return_sentinel():
         ("set", ("key", "value")),
         ("touch", ("key",)),
         ("delete", ("key",)),
-        ("get_many", (["key1", "key2"],)),
         ("has_key", ("key",)),
         ("incr", ("key",)),
         ("set_many", ({"key": "value"},)),
@@ -107,6 +106,14 @@ def test_method_handles_connection_error(method_name, args):
     with mock.patch.object(RedisCache, method_name, side_effect=ConnectionError("redis down")):
         result = getattr(cache, method_name)(*args)
     assert result is None
+
+
+@override_settings(DJANGO_REDIS_IGNORE_EXCEPTIONS=True)
+def test_get_many_returns_empty_dict_on_connection_error():
+    cache = _make_cache()
+    with mock.patch.object(RedisCache, 'get_many', side_effect=ConnectionError("redis down")):
+        result = cache.get_many(["key1", "key2"])
+    assert result == {}
 
 
 @override_settings(DJANGO_REDIS_IGNORE_EXCEPTIONS=False)

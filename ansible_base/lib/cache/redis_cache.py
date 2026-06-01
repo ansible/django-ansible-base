@@ -59,7 +59,7 @@ class DABRedisCache(RedisCache):
     def delete(self, key, version=None):
         return super().delete(key, version)
 
-    @optionally_ignore_exceptions
+    @optionally_ignore_exceptions(return_value={})
     def get_many(self, keys, version=None):
         return super().get_many(keys, version)
 
