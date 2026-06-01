@@ -1,11 +1,18 @@
+from __future__ import annotations
+
 import logging
+from collections.abc import Callable, Iterable
 
 from django.core.cache import cache
 
 logger = logging.getLogger('ansible_base.lib.cache.tasks')
 
 
-def clear_cache(cache_keys, dependent_keys_resolver=None, post_invalidation_hook=None):
+def clear_cache(
+    cache_keys: list[str],
+    dependent_keys_resolver: Callable[[str], Iterable[str]] | None = None,
+    post_invalidation_hook: Callable[[set[str]], None] | None = None,
+) -> None:
     """Clear the specified keys from the Django cache backend.
 
     This is a plain utility function, not a dispatcherd task. Each consuming
@@ -19,7 +26,8 @@ def clear_cache(cache_keys, dependent_keys_resolver=None, post_invalidation_hook
         post_invalidation_hook: Optional callable (set[key] -> None) invoked
             after cache deletion with the full set of invalidated keys.
     """
-    logger.info("clear_cache called for keys %s", cache_keys)
+    logger.info("clear_cache called for %d key(s)", len(cache_keys))
+    logger.debug("clear_cache key payload: %s", cache_keys)
 
     all_keys = list(cache_keys)
     if dependent_keys_resolver:
@@ -32,7 +40,7 @@ def clear_cache(cache_keys, dependent_keys_resolver=None, post_invalidation_hook
                 logger.exception("dependent_keys_resolver failed for key %r", all_keys[i])
 
     unique_keys = set(all_keys)
-    logger.debug('cache delete_many(%r)', unique_keys)
+    logger.debug("Invalidating %d cache key(s) via delete_many: %r", len(unique_keys), unique_keys)
     cache.delete_many(unique_keys)
 
     if post_invalidation_hook:
