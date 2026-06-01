@@ -19,6 +19,8 @@ def test_migration_shadows_real_contenttype():
 
 @pytest.mark.django_db
 def test_auto_create_content_type():
+    DABContentType.objects.get_for_model(Inventory)
+    DABContentType.objects.get_for_model(Organization)
     DABContentType.objects.all().delete()
     inv_ct = DABContentType.objects.get_for_model(Inventory)
     assert inv_ct.model == 'inventory'
@@ -30,6 +32,8 @@ def test_auto_create_content_type():
 
 @pytest.mark.django_db
 def test_auto_create_content_type_multiples():
+    DABContentType.objects.get_for_model(Inventory)
+    DABContentType.objects.get_for_model(Organization)
     DABContentType.objects.all().delete()
     data = DABContentType.objects.get_for_models(Inventory, Organization)
     inv_ct = data[Inventory]
