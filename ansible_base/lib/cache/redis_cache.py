@@ -6,6 +6,7 @@ from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.core.cache.backends.redis import RedisCache
 from redis.exceptions import ConnectionError, ResponseError, TimeoutError
 
+# socket.timeout is redundant (alias for TimeoutError since Python 3.3) but kept for parity with the AWX original.
 IGNORED_EXCEPTIONS = (TimeoutError, ResponseError, ConnectionError, socket.timeout)
 
 CONNECTION_INTERRUPTED_SENTINEL = object()

@@ -3,7 +3,7 @@ from unittest import mock
 import pytest
 from django.core.cache.backends.redis import RedisCache
 from django.test import override_settings
-from redis.exceptions import ConnectionError
+from redis.exceptions import ConnectionError, ResponseError, TimeoutError
 
 from ansible_base.lib.cache.redis_cache import CONNECTION_INTERRUPTED_SENTINEL, DABRedisCache, optionally_ignore_exceptions
 
@@ -13,21 +13,23 @@ def test_dab_redis_cache_inherits_redis_cache():
 
 
 @override_settings(DJANGO_REDIS_IGNORE_EXCEPTIONS=True)
-def test_ignores_exceptions_when_enabled():
+@pytest.mark.parametrize("exc_class", [ConnectionError, TimeoutError, ResponseError])
+def test_ignores_exceptions_when_enabled(exc_class):
     @optionally_ignore_exceptions
     def failing():
-        raise ConnectionError("redis down")
+        raise exc_class("redis down")
 
     assert failing() is None
 
 
 @override_settings(DJANGO_REDIS_IGNORE_EXCEPTIONS=False)
-def test_raises_exceptions_when_disabled():
+@pytest.mark.parametrize("exc_class", [ConnectionError, TimeoutError, ResponseError])
+def test_raises_exceptions_when_disabled(exc_class):
     @optionally_ignore_exceptions
     def failing():
-        raise ConnectionError("redis down")
+        raise exc_class("redis down")
 
-    with pytest.raises(ConnectionError):
+    with pytest.raises(exc_class):
         failing()
 
 
@@ -54,6 +56,7 @@ def test_custom_return_value():
 
 
 def _make_cache():
+    # Skip __init__ to avoid requiring a live Redis connection for unit tests.
     return DABRedisCache.__new__(DABRedisCache)
 
 
