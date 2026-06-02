@@ -91,6 +91,15 @@ jobs:
           name: coverage-${{ matrix.tests.env }}
           path: coverage.xml
 
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@cddd853df119a48c5be31a973f8cd97e12e35e16  # v6.0.1
+        if: matrix.tests.env != 'check' && hashFiles('coverage.xml') != ''
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          flags: ${{ matrix.tests.env }}
+          fail_ci_if_error: false
+
       - name: Upload jUnit XML test results
         if: matrix.tests.junit-xml-upload && github.event_name == 'push' && github.repository == 'ansible/django-ansible-base' && github.ref_name == 'devel'
         continue-on-error: true

@@ -1,0 +1,51 @@
+# Codecov configuration for django-ansible-base
+# Exclusions aligned with sonar-project.properties to prevent coverage divergence
+
+coverage:
+  # Files and directories to exclude from coverage calculations
+  ignore:
+    # Test files and directories
+    - "**/tests/**"
+    - "test_app/**"
+
+    # Django-specific files
+    - "**/migrations/**"
+    - "**/settings*.py"
+    - "**/defaults.py"
+    - "**/grpc_defaults.py"
+    - "**/manage.py"
+    - "**/wsgi.py"
+    - "**/asgi.py"
+    - "**/__main__.py"
+
+    # Build and environment directories
+    - "**/.tox/**"
+    - "**/venv/**"
+    - "**/.venv/**"
+    - "**/env/**"
+    - "**/__pycache__/**"
+    - "**/build/**"
+    - "**/dist/**"
+    - "**/*.egg-info/**"
+
+    # Project-specific exclusions
+    - "aap-dev/**"
+    - "tools/**"
+
+  # Flag management for different test environments
+  status:
+    project:
+      default:
+        # Allow coverage to drop slightly on PRs
+        threshold: 0.5%
+    patch:
+      default:
+        # New code should maintain coverage
+        target: auto
+        threshold: 0.5%
+
+# Comment configuration for PR feedback
+comment:
+  layout: "diff,flags,files,footer"
+  behavior: default
+  require_changes: false
