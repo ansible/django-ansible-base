@@ -1,15 +1,28 @@
 import functools
+import logging
 import socket
+import threading
 
 from django.conf import settings
 from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.core.cache.backends.redis import RedisCache
 from redis.exceptions import ConnectionError, ResponseError, TimeoutError
 
+logger = logging.getLogger('ansible_base.lib.cache.redis_cache')
+
 # socket.timeout is redundant (alias for TimeoutError since Python 3.3) but kept for parity with the AWX original.
 IGNORED_EXCEPTIONS = (TimeoutError, ResponseError, ConnectionError, socket.timeout)
 
 CONNECTION_INTERRUPTED_SENTINEL = object()
+
+# Thread-local guard to prevent infinite broadcast loops.
+# When the receiving side calls clear_cache() -> cache.delete_many() -> DABRedisCache.delete_many(),
+# this guard ensures the delete_many does not trigger another broadcast.
+_broadcast_guard = threading.local()
+
+# Log the missing-dispatcherd warning only once to avoid flooding logs under load.
+_dispatcherd_warning_logged = False
+_cluster_host_id_warning_logged = False
 
 
 def optionally_ignore_exceptions(func=None, return_value=None):
@@ -31,11 +44,76 @@ def optionally_ignore_exceptions(func=None, return_value=None):
 class DABRedisCache(RedisCache):
     """
     Wraps Django's RedisCache to optionally ignore exceptions when the cache is unavailable.
+
+    When ANSIBLE_BASE_REDIS_AUTO_INVALIDATE is True, cache write operations (add, set, delete)
+    automatically broadcast invalidation to other cluster nodes via dispatcherd. This enables
+    sidecar Redis instances to stay in sync without application code needing to call dispatcherd
+    explicitly. Requires dispatcherd to be installed and running in the consuming service.
+
+    Settings:
+        ANSIBLE_BASE_REDIS_AUTO_INVALIDATE (bool, default False):
+            Master switch for automatic cache invalidation broadcasting.
+        ANSIBLE_BASE_CACHE_BROADCAST_QUEUE (str, default 'broadcast'):
+            The dispatcherd queue name used for fan-out to all nodes.
+            Gateway uses 'gateway_broadcast'; AWX uses 'tower_broadcast_all'.
+        CLUSTER_HOST_ID (str):
+            Unique identifier for this node. Used by the self-invalidation guard
+            to skip broadcasts received by the originating node.
     """
+
+    def _should_broadcast(self):
+        """Check whether this cache operation should trigger a broadcast.
+
+        Returns False when auto-invalidation is disabled or when we are already
+        inside a broadcast handler (re-entrancy guard).
+        """
+        return getattr(settings, 'ANSIBLE_BASE_REDIS_AUTO_INVALIDATE', False) and not getattr(_broadcast_guard, 'active', False)
+
+    def _broadcast_invalidation(self, keys):
+        """Publish a cache invalidation message to all cluster nodes via dispatcherd.
+
+        Includes this node's CLUSTER_HOST_ID as origin_node so the receiving side
+        can skip self-invalidation — without this guard, a cache.set() would be
+        immediately followed by a delete on the originating node, making the cache
+        useless for high-cost operations like JWT creation (60ms-4000ms per P3).
+        """
+        global _dispatcherd_warning_logged, _cluster_host_id_warning_logged
+
+        if not self._should_broadcast():
+            return
+
+        from ansible_base.lib.cache.tasks import HAS_DISPATCHERD, broadcast_cache_invalidation
+
+        if not HAS_DISPATCHERD or broadcast_cache_invalidation is None:
+            if not _dispatcherd_warning_logged:
+                logger.warning("ANSIBLE_BASE_REDIS_AUTO_INVALIDATE is True but dispatcherd is not installed")
+                _dispatcherd_warning_logged = True
+            return
+
+        origin = getattr(settings, 'CLUSTER_HOST_ID', '')
+        if not origin and not _cluster_host_id_warning_logged:
+            logger.warning("ANSIBLE_BASE_REDIS_AUTO_INVALIDATE is True but CLUSTER_HOST_ID is not set; self-invalidation guard will be ineffective")
+            _cluster_host_id_warning_logged = True
+
+        _broadcast_guard.active = True
+        try:
+            broadcast_cache_invalidation.apply_async(
+                args=[list(keys)],
+                kwargs={'origin_node': origin},
+            )
+        except Exception:
+            logger.exception("Failed to broadcast cache invalidation for keys %r", keys)
+        finally:
+            _broadcast_guard.active = False
 
     @optionally_ignore_exceptions
     def add(self, key, value, timeout=DEFAULT_TIMEOUT, version=None):
-        return super().add(key, value, timeout, version)
+        result = super().add(key, value, timeout, version)
+        # Only broadcast when the key was actually added (result is True).
+        # When the key already exists, add() returns False and no write occurred.
+        if result:
+            self._broadcast_invalidation([key])
+        return result
 
     @optionally_ignore_exceptions(return_value=CONNECTION_INTERRUPTED_SENTINEL)
     def _get(self, key, default=None, version=None):
@@ -49,7 +127,9 @@ class DABRedisCache(RedisCache):
 
     @optionally_ignore_exceptions
     def set(self, key, value, timeout=DEFAULT_TIMEOUT, version=None):
-        return super().set(key, value, timeout, version)
+        result = super().set(key, value, timeout, version)
+        self._broadcast_invalidation([key])
+        return result
 
     @optionally_ignore_exceptions
     def touch(self, key, timeout=DEFAULT_TIMEOUT, version=None):
@@ -57,7 +137,9 @@ class DABRedisCache(RedisCache):
 
     @optionally_ignore_exceptions
     def delete(self, key, version=None):
-        return super().delete(key, version)
+        result = super().delete(key, version)
+        self._broadcast_invalidation([key])
+        return result
 
     @optionally_ignore_exceptions(return_value={})
     def get_many(self, keys, version=None):
@@ -70,6 +152,12 @@ class DABRedisCache(RedisCache):
     @optionally_ignore_exceptions
     def incr(self, key, delta=1, version=None):
         return super().incr(key, delta, version)
+
+    # Bulk write operations (set_many, delete_many, clear) intentionally do NOT broadcast.
+    # The AC for AAP-65921 scopes auto-sync to individual key operations (add, set, delete).
+    # All Gateway cache data types (JWT tokens, settings) use individual keys, not bulk ops.
+    # Cache clearing (clear) is handled by a separate story (AAP-65889) via startup and
+    # feature-flag-toggle events, not through the auto-sync driver.
 
     @optionally_ignore_exceptions
     def set_many(self, data, timeout=DEFAULT_TIMEOUT, version=None):

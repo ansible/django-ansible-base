@@ -5,7 +5,7 @@ from django.core.cache.backends.redis import RedisCache
 from django.test import override_settings
 from redis.exceptions import ConnectionError, ResponseError, TimeoutError
 
-from ansible_base.lib.cache.redis_cache import CONNECTION_INTERRUPTED_SENTINEL, DABRedisCache, optionally_ignore_exceptions
+from ansible_base.lib.cache.redis_cache import CONNECTION_INTERRUPTED_SENTINEL, DABRedisCache, _broadcast_guard, optionally_ignore_exceptions
 
 
 def test_dab_redis_cache_inherits_redis_cache():
@@ -138,3 +138,278 @@ def test_method_raises_when_disabled(method_name, args):
     with mock.patch.object(RedisCache, method_name, side_effect=ConnectionError("redis down")):
         with pytest.raises(ConnectionError):
             getattr(cache, method_name)(*args)
+
+
+# ---------------------------------------------------------------------------
+# Auto-sync broadcast tests (ANSIBLE_BASE_REDIS_AUTO_INVALIDATE)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=False)
+def _reset_broadcast_guard():
+    """Ensure the re-entrancy guard is reset between tests."""
+    _broadcast_guard.active = False
+    yield
+    _broadcast_guard.active = False
+
+
+def test_auto_invalidate_disabled_by_default(_reset_broadcast_guard):
+    """No broadcast should occur when ANSIBLE_BASE_REDIS_AUTO_INVALIDATE is not set (defaults to False)."""
+    cache = _make_cache()
+    mock_task = mock.MagicMock()
+    with (
+        mock.patch.object(RedisCache, 'set', return_value=None),
+        mock.patch('ansible_base.lib.cache.tasks.HAS_DISPATCHERD', True),
+        mock.patch('ansible_base.lib.cache.tasks.broadcast_cache_invalidation', mock_task),
+    ):
+        cache.set("key", "value")
+    mock_task.apply_async.assert_not_called()
+
+
+@override_settings(DJANGO_REDIS_IGNORE_EXCEPTIONS=True, ANSIBLE_BASE_REDIS_AUTO_INVALIDATE=True, CLUSTER_HOST_ID='node-a')
+@pytest.mark.parametrize(
+    "method_name, args, expected_keys",
+    [
+        ("set", ("mykey", "value"), ["mykey"]),
+        ("add", ("mykey", "value"), ["mykey"]),
+        ("delete", ("mykey",), ["mykey"]),
+    ],
+)
+def test_write_operations_broadcast_when_enabled(method_name, args, expected_keys, _reset_broadcast_guard):
+    """add, set, and delete should call broadcast_cache_invalidation.apply_async when auto-invalidation is enabled."""
+    cache = _make_cache()
+    mock_task = mock.MagicMock()
+    # add() returns True to indicate key was actually added (new key)
+    return_value = True if method_name == 'add' else None
+    with (
+        mock.patch.object(RedisCache, method_name, return_value=return_value),
+        mock.patch('ansible_base.lib.cache.tasks.HAS_DISPATCHERD', True),
+        mock.patch('ansible_base.lib.cache.tasks.broadcast_cache_invalidation', mock_task),
+    ):
+        getattr(cache, method_name)(*args)
+
+    mock_task.apply_async.assert_called_once_with(
+        args=[expected_keys],
+        kwargs={'origin_node': 'node-a'},
+    )
+
+
+@override_settings(ANSIBLE_BASE_REDIS_AUTO_INVALIDATE=True, CLUSTER_HOST_ID='node-a')
+def test_broadcast_skips_self_invalidation():
+    """broadcast_cache_invalidation should skip cache clearing when origin_node matches CLUSTER_HOST_ID."""
+    from ansible_base.lib.cache.tasks import broadcast_cache_invalidation
+
+    if broadcast_cache_invalidation is None:
+        pytest.skip("dispatcherd not installed")
+
+    with mock.patch('ansible_base.lib.cache.tasks.clear_cache') as mock_clear:
+        broadcast_cache_invalidation(['key1'], origin_node='node-a')
+
+    mock_clear.assert_not_called()
+
+
+@override_settings(ANSIBLE_BASE_REDIS_AUTO_INVALIDATE=True, CLUSTER_HOST_ID='node-b')
+def test_broadcast_processes_on_different_node():
+    """broadcast_cache_invalidation should call clear_cache when origin_node differs from CLUSTER_HOST_ID."""
+    from ansible_base.lib.cache.tasks import broadcast_cache_invalidation
+
+    if broadcast_cache_invalidation is None:
+        pytest.skip("dispatcherd not installed")
+
+    with mock.patch('ansible_base.lib.cache.tasks.clear_cache') as mock_clear:
+        broadcast_cache_invalidation(['key1', 'key2'], origin_node='node-a')
+
+    mock_clear.assert_called_once_with(['key1', 'key2'])
+
+
+@override_settings(DJANGO_REDIS_IGNORE_EXCEPTIONS=True, ANSIBLE_BASE_REDIS_AUTO_INVALIDATE=True)
+def test_no_broadcast_without_dispatcherd(_reset_broadcast_guard):
+    """When dispatcherd is not installed, the cache operation should succeed and log a warning once."""
+    import ansible_base.lib.cache.redis_cache as rc
+
+    original = rc._dispatcherd_warning_logged
+    rc._dispatcherd_warning_logged = False
+    try:
+        cache = _make_cache()
+        with (
+            mock.patch.object(RedisCache, 'set', return_value=None),
+            mock.patch('ansible_base.lib.cache.tasks.HAS_DISPATCHERD', False),
+            mock.patch('ansible_base.lib.cache.tasks.broadcast_cache_invalidation', None),
+            mock.patch('ansible_base.lib.cache.redis_cache.logger') as mock_logger,
+        ):
+            cache.set("key1", "value1")
+            cache.set("key2", "value2")
+
+        # Warning should be logged only once, not per-operation
+        warning_calls = [call for call in mock_logger.warning.call_args_list if "dispatcherd is not installed" in call[0][0]]
+        assert len(warning_calls) == 1
+    finally:
+        rc._dispatcherd_warning_logged = original
+
+
+@override_settings(DJANGO_REDIS_IGNORE_EXCEPTIONS=True, ANSIBLE_BASE_REDIS_AUTO_INVALIDATE=True, CLUSTER_HOST_ID='node-a')
+def test_reentrancy_guard_prevents_infinite_loop(_reset_broadcast_guard):
+    """When _broadcast_guard.active is True, no broadcast should occur (prevents infinite loops)."""
+    cache = _make_cache()
+    _broadcast_guard.active = True
+    mock_task = mock.MagicMock()
+    with (
+        mock.patch.object(RedisCache, 'delete', return_value=None),
+        mock.patch('ansible_base.lib.cache.tasks.HAS_DISPATCHERD', True),
+        mock.patch('ansible_base.lib.cache.tasks.broadcast_cache_invalidation', mock_task),
+    ):
+        cache.delete("key")
+
+    mock_task.apply_async.assert_not_called()
+
+
+@override_settings(DJANGO_REDIS_IGNORE_EXCEPTIONS=True, ANSIBLE_BASE_REDIS_AUTO_INVALIDATE=True, CLUSTER_HOST_ID='node-a')
+def test_broadcast_failure_does_not_break_cache_operation(_reset_broadcast_guard):
+    """If apply_async raises, the cache operation itself should still succeed."""
+    cache = _make_cache()
+    mock_task = mock.MagicMock()
+    mock_task.apply_async.side_effect = RuntimeError("pg_notify unavailable")
+    with (
+        mock.patch.object(RedisCache, 'set', return_value=None) as mock_set,
+        mock.patch('ansible_base.lib.cache.tasks.HAS_DISPATCHERD', True),
+        mock.patch('ansible_base.lib.cache.tasks.broadcast_cache_invalidation', mock_task),
+    ):
+        cache.set("key", "value")
+
+    # The underlying set was still called despite broadcast failure
+    mock_set.assert_called_once()
+
+
+@override_settings(DJANGO_REDIS_IGNORE_EXCEPTIONS=True, ANSIBLE_BASE_REDIS_AUTO_INVALIDATE=True, CLUSTER_HOST_ID='node-a')
+@pytest.mark.parametrize(
+    "method_name, args",
+    [
+        ("get", ("key",)),
+        ("get_many", (["key1", "key2"],)),
+        ("has_key", ("key",)),
+    ],
+)
+def test_read_operations_do_not_broadcast(method_name, args, _reset_broadcast_guard):
+    """Read-only operations should never trigger broadcast."""
+    cache = _make_cache()
+    mock_task = mock.MagicMock()
+    with (
+        mock.patch.object(RedisCache, method_name, return_value=None),
+        mock.patch('ansible_base.lib.cache.tasks.HAS_DISPATCHERD', True),
+        mock.patch('ansible_base.lib.cache.tasks.broadcast_cache_invalidation', mock_task),
+    ):
+        getattr(cache, method_name)(*args)
+
+    mock_task.apply_async.assert_not_called()
+
+
+@override_settings(DJANGO_REDIS_IGNORE_EXCEPTIONS=True, ANSIBLE_BASE_REDIS_AUTO_INVALIDATE=True, CLUSTER_HOST_ID='node-a')
+@pytest.mark.parametrize(
+    "method_name, args",
+    [
+        ("touch", ("key",)),
+        ("incr", ("key",)),
+        ("set_many", ({"key": "value"},)),
+        ("delete_many", (["key1", "key2"],)),
+        ("clear", ()),
+    ],
+)
+def test_bulk_and_mutate_operations_do_not_broadcast(method_name, args, _reset_broadcast_guard):
+    """Bulk writes (set_many, delete_many, clear) and TTL/counter mutations (touch, incr)
+    intentionally do not broadcast. See redis_cache.py for rationale."""
+    cache = _make_cache()
+    mock_task = mock.MagicMock()
+    with (
+        mock.patch.object(RedisCache, method_name, return_value=None),
+        mock.patch('ansible_base.lib.cache.tasks.HAS_DISPATCHERD', True),
+        mock.patch('ansible_base.lib.cache.tasks.broadcast_cache_invalidation', mock_task),
+    ):
+        getattr(cache, method_name)(*args)
+
+    mock_task.apply_async.assert_not_called()
+
+
+@override_settings(DJANGO_REDIS_IGNORE_EXCEPTIONS=True, ANSIBLE_BASE_REDIS_AUTO_INVALIDATE=True, CLUSTER_HOST_ID='node-a')
+def test_add_does_not_broadcast_when_key_exists(_reset_broadcast_guard):
+    """add() should NOT broadcast when the key already exists (super().add() returns False)."""
+    cache = _make_cache()
+    mock_task = mock.MagicMock()
+    with (
+        mock.patch.object(RedisCache, 'add', return_value=False),
+        mock.patch('ansible_base.lib.cache.tasks.HAS_DISPATCHERD', True),
+        mock.patch('ansible_base.lib.cache.tasks.broadcast_cache_invalidation', mock_task),
+    ):
+        result = cache.add("existing-key", "value")
+
+    assert result is False
+    mock_task.apply_async.assert_not_called()
+
+
+@override_settings(DJANGO_REDIS_IGNORE_EXCEPTIONS=True, ANSIBLE_BASE_REDIS_AUTO_INVALIDATE=True)
+def test_empty_cluster_host_id_warns(_reset_broadcast_guard):
+    """When CLUSTER_HOST_ID is not set, a warning should be logged about ineffective self-invalidation guard."""
+    import ansible_base.lib.cache.redis_cache as rc
+
+    original = rc._cluster_host_id_warning_logged
+    rc._cluster_host_id_warning_logged = False
+    try:
+        cache = _make_cache()
+        mock_task = mock.MagicMock()
+        with (
+            mock.patch.object(RedisCache, 'set', return_value=None),
+            mock.patch('ansible_base.lib.cache.tasks.HAS_DISPATCHERD', True),
+            mock.patch('ansible_base.lib.cache.tasks.broadcast_cache_invalidation', mock_task),
+            mock.patch('ansible_base.lib.cache.redis_cache.logger') as mock_logger,
+        ):
+            cache.set("key", "value")
+
+        warning_calls = [call for call in mock_logger.warning.call_args_list if "CLUSTER_HOST_ID" in call[0][0]]
+        assert len(warning_calls) == 1
+    finally:
+        rc._cluster_host_id_warning_logged = original
+
+
+@override_settings(
+    DJANGO_REDIS_IGNORE_EXCEPTIONS=True,
+    ANSIBLE_BASE_REDIS_AUTO_INVALIDATE=True,
+    ANSIBLE_BASE_CACHE_BROADCAST_QUEUE='my_custom_queue',
+    CLUSTER_HOST_ID='node-a',
+)
+def test_broadcast_queue_setting():
+    """The broadcast queue name should be read from ANSIBLE_BASE_CACHE_BROADCAST_QUEUE."""
+    from ansible_base.lib.cache.tasks import HAS_DISPATCHERD
+
+    if not HAS_DISPATCHERD:
+        pytest.skip("dispatcherd not installed")
+
+    from ansible_base.lib.cache.tasks import _get_broadcast_queue
+
+    assert _get_broadcast_queue() == 'my_custom_queue'
+
+
+def test_broadcast_queue_defaults_to_broadcast():
+    """When ANSIBLE_BASE_CACHE_BROADCAST_QUEUE is not set, the queue should default to 'broadcast'."""
+    from ansible_base.lib.cache.tasks import HAS_DISPATCHERD
+
+    if not HAS_DISPATCHERD:
+        pytest.skip("dispatcherd not installed")
+
+    from ansible_base.lib.cache.tasks import _get_broadcast_queue
+
+    assert _get_broadcast_queue() == 'broadcast'
+
+
+@override_settings(DJANGO_REDIS_IGNORE_EXCEPTIONS=True, ANSIBLE_BASE_REDIS_AUTO_INVALIDATE=True, CLUSTER_HOST_ID='node-a')
+def test_reentrancy_guard_resets_after_broadcast(_reset_broadcast_guard):
+    """The re-entrancy guard should be reset after a broadcast, allowing subsequent operations to broadcast."""
+    cache = _make_cache()
+    mock_task = mock.MagicMock()
+    with (
+        mock.patch.object(RedisCache, 'set', return_value=None),
+        mock.patch('ansible_base.lib.cache.tasks.HAS_DISPATCHERD', True),
+        mock.patch('ansible_base.lib.cache.tasks.broadcast_cache_invalidation', mock_task),
+    ):
+        cache.set("key1", "value1")
+        cache.set("key2", "value2")
+
+    assert mock_task.apply_async.call_count == 2

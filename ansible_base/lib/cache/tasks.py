@@ -48,3 +48,51 @@ def clear_cache(
             post_invalidation_hook(unique_keys)
         except Exception:
             logger.exception("post_invalidation_hook failed after invalidating keys %r", unique_keys)
+
+
+# --- Auto-sync broadcast task (dispatcherd) ---
+#
+# This @task-decorated function is the RECEIVING side of the auto-sync pattern.
+# When DABRedisCache broadcasts a cache invalidation via dispatcherd, this task
+# runs on each cluster node and deletes the specified keys from local cache.
+#
+# dispatcherd is optional — it is not a DAB dependency. If the package is not
+# installed, the task is unavailable and DABRedisCache logs a warning.
+
+try:
+    from dispatcherd.publish import task
+
+    def _get_broadcast_queue():
+        """Return the dispatcherd broadcast queue name from Django settings.
+
+        Read at call time (not import time) so each consuming service can
+        configure its own queue: Gateway uses 'gateway_broadcast',
+        AWX uses 'tower_broadcast_all'.
+        """
+        from django.conf import settings
+
+        return getattr(settings, 'ANSIBLE_BASE_CACHE_BROADCAST_QUEUE', 'broadcast')
+
+    @task(queue=_get_broadcast_queue)
+    def broadcast_cache_invalidation(cache_keys, origin_node=None):
+        """Delete cache keys on this node, skipping if we are the originator.
+
+        The origin_node parameter implements the self-invalidation guard:
+        when a node writes to its local sidecar Redis and broadcasts, the
+        broadcast reaches ALL nodes (including the originator). Without this
+        guard, the originator would immediately delete the value it just set,
+        making the cache useless for expensive operations like JWT creation.
+        """
+        from django.conf import settings
+
+        local_node = getattr(settings, 'CLUSTER_HOST_ID', '')
+        if origin_node and origin_node == local_node:
+            logger.debug("Skipping self-invalidation for node %s", origin_node)
+            return
+        clear_cache(cache_keys)
+
+    HAS_DISPATCHERD = True
+
+except ImportError:
+    HAS_DISPATCHERD = False
+    broadcast_cache_invalidation = None
