@@ -82,6 +82,11 @@ try:
         broadcast reaches ALL nodes (including the originator). Without this
         guard, the originator would immediately delete the value it just set,
         making the cache useless for expensive operations like JWT creation.
+
+        Note: this calls bare clear_cache() without dependent_keys_resolver or
+        post_invalidation_hook. Services that need those (e.g., Gateway's
+        clear_gateway_cache) should be able to register their own wrapper.
+        See AAP-77769 for follow-up on service wrapper delegation.
         """
         from django.conf import settings
 

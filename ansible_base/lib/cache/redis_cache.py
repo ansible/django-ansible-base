@@ -15,14 +15,17 @@ IGNORED_EXCEPTIONS = (TimeoutError, ResponseError, ConnectionError, socket.timeo
 
 CONNECTION_INTERRUPTED_SENTINEL = object()
 
-# Thread-local guard to prevent infinite broadcast loops.
-# When the receiving side calls clear_cache() -> cache.delete_many() -> DABRedisCache.delete_many(),
-# this guard ensures the delete_many does not trigger another broadcast.
+# Defense-in-depth re-entrancy guard for future broadcast expansion.
+# Today, storm prevention relies on bulk ops (delete_many, set_many, clear) not broadcasting.
+# If a future change (AAP-77769) extends broadcasting to those methods, this guard prevents
+# infinite loops within the same thread. It does NOT protect against cross-process storms
+# (dispatcherd tasks run in separate processes) — that requires a different mechanism.
 _broadcast_guard = threading.local()
 
 # Log the missing-dispatcherd warning only once to avoid flooding logs under load.
 _dispatcherd_warning_logged = False
 _cluster_host_id_warning_logged = False
+_cluster_host_id_logged = False
 
 
 def optionally_ignore_exceptions(func=None, return_value=None):
@@ -76,8 +79,12 @@ class DABRedisCache(RedisCache):
         can skip self-invalidation — without this guard, a cache.set() would be
         immediately followed by a delete on the originating node, making the cache
         useless for high-cost operations like JWT creation (60ms-4000ms per P3).
+
+        The _broadcast_guard around apply_async is defense-in-depth for future changes
+        (AAP-77769). Today, cross-process storm prevention relies on bulk ops not
+        broadcasting — see the comment on _broadcast_guard above.
         """
-        global _dispatcherd_warning_logged, _cluster_host_id_warning_logged
+        global _dispatcherd_warning_logged, _cluster_host_id_warning_logged, _cluster_host_id_logged
 
         if not self._should_broadcast():
             return
@@ -94,6 +101,9 @@ class DABRedisCache(RedisCache):
         if not origin and not _cluster_host_id_warning_logged:
             logger.warning("ANSIBLE_BASE_REDIS_AUTO_INVALIDATE is True but CLUSTER_HOST_ID is not set; self-invalidation guard will be ineffective")
             _cluster_host_id_warning_logged = True
+        elif origin and not _cluster_host_id_logged:
+            logger.info("DABRedisCache auto-sync broadcasting as node %r", origin)
+            _cluster_host_id_logged = True
 
         _broadcast_guard.active = True
         try:
@@ -153,11 +163,11 @@ class DABRedisCache(RedisCache):
     def incr(self, key, delta=1, version=None):
         return super().incr(key, delta, version)
 
-    # Bulk write operations (set_many, delete_many, clear) intentionally do NOT broadcast.
-    # The AC for AAP-65921 scopes auto-sync to individual key operations (add, set, delete).
-    # All Gateway cache data types (JWT tokens, settings) use individual keys, not bulk ops.
-    # Cache clearing (clear) is handled by a separate story (AAP-65889) via startup and
-    # feature-flag-toggle events, not through the auto-sync driver.
+    # Bulk write operations (set_many, delete_many, clear) and other mutations (touch, incr)
+    # intentionally do NOT broadcast. AAP-65921 scopes auto-sync to add, set, delete.
+    # Extending to all mutations requires decoupling storm prevention first — the receiving
+    # side calls clear_cache() -> cache.delete_many(), and if delete_many also broadcasts
+    # it creates a cross-process infinite loop. See AAP-77769 for follow-up.
 
     @optionally_ignore_exceptions
     def set_many(self, data, timeout=DEFAULT_TIMEOUT, version=None):
