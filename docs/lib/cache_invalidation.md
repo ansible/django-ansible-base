@@ -107,13 +107,19 @@ after the local cache write succeeds. On each receiving node, the task calls
 `clear_cache()` to delete the specified keys from that node's local sidecar
 Redis.
 
+**Note:** Bulk operations (`set_many`, `delete_many`, `clear`) do not trigger
+broadcasts. Use individual `set`/`delete` calls when cross-node invalidation
+is required. The raw cache key name is broadcast without a `version` parameter;
+all nodes must share the same `KEY_PREFIX` and `VERSION` in their CACHES
+configuration for invalidation to target the correct key.
+
 ### Settings
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `ANSIBLE_BASE_REDIS_AUTO_INVALIDATE` | bool | `False` | Enable automatic cache invalidation broadcasting on write operations |
 | `ANSIBLE_BASE_CACHE_BROADCAST_QUEUE` | str | `'broadcast'` | Dispatcherd queue name for fan-out to all nodes |
-| `CLUSTER_HOST_ID` | str | — | Unique node identifier; used by the self-invalidation guard |
+| `CLUSTER_HOST_ID` | str | — | Unique node identifier; required for the self-invalidation guard. If unset, a warning is logged and the originating node will also clear its own cache after broadcasting. |
 
 ### Consumer Setup
 

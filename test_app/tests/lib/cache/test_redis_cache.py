@@ -1,3 +1,5 @@
+import importlib
+import sys
 from unittest import mock
 
 import pytest
@@ -153,6 +155,47 @@ def _reset_broadcast_guard():
     _broadcast_guard.active = False
 
 
+@pytest.fixture()
+def mock_dispatcherd():
+    """Mock the dispatcherd package and reload tasks.py so the try block succeeds.
+
+    This allows testing broadcast_cache_invalidation and _get_broadcast_queue
+    even when dispatcherd is not installed. The @task decorator is replaced with
+    a minimal stub that adds .apply_async and .delay as MagicMocks.
+    """
+    import ansible_base.lib.cache.tasks as tasks_module
+
+    def fake_task(**kwargs):
+        def decorator(fn):
+            fn.apply_async = mock.MagicMock()
+            fn.delay = mock.MagicMock()
+            return fn
+
+        return decorator
+
+    mock_publish = mock.MagicMock()
+    mock_publish.task = fake_task
+
+    saved = {}
+    for mod_name in ('dispatcherd', 'dispatcherd.publish'):
+        saved[mod_name] = sys.modules.get(mod_name)
+
+    sys.modules['dispatcherd'] = mock.MagicMock()
+    sys.modules['dispatcherd.publish'] = mock_publish
+
+    importlib.reload(tasks_module)
+
+    yield tasks_module
+
+    for mod_name, original in saved.items():
+        if original is None:
+            sys.modules.pop(mod_name, None)
+        else:
+            sys.modules[mod_name] = original
+
+    importlib.reload(tasks_module)
+
+
 def test_auto_invalidate_disabled_by_default(_reset_broadcast_guard):
     """No broadcast should occur when ANSIBLE_BASE_REDIS_AUTO_INVALIDATE is not set (defaults to False)."""
     cache = _make_cache()
@@ -195,29 +238,19 @@ def test_write_operations_broadcast_when_enabled(method_name, args, expected_key
 
 
 @override_settings(ANSIBLE_BASE_REDIS_AUTO_INVALIDATE=True, CLUSTER_HOST_ID='node-a')
-def test_broadcast_skips_self_invalidation():
+def test_broadcast_skips_self_invalidation(mock_dispatcherd):
     """broadcast_cache_invalidation should skip cache clearing when origin_node matches CLUSTER_HOST_ID."""
-    from ansible_base.lib.cache.tasks import broadcast_cache_invalidation
-
-    if broadcast_cache_invalidation is None:
-        pytest.skip("dispatcherd not installed")
-
-    with mock.patch('ansible_base.lib.cache.tasks.clear_cache') as mock_clear:
-        broadcast_cache_invalidation(['key1'], origin_node='node-a')
+    with mock.patch.object(mock_dispatcherd, 'clear_cache') as mock_clear:
+        mock_dispatcherd.broadcast_cache_invalidation(['key1'], origin_node='node-a')
 
     mock_clear.assert_not_called()
 
 
 @override_settings(ANSIBLE_BASE_REDIS_AUTO_INVALIDATE=True, CLUSTER_HOST_ID='node-b')
-def test_broadcast_processes_on_different_node():
+def test_broadcast_processes_on_different_node(mock_dispatcherd):
     """broadcast_cache_invalidation should call clear_cache when origin_node differs from CLUSTER_HOST_ID."""
-    from ansible_base.lib.cache.tasks import broadcast_cache_invalidation
-
-    if broadcast_cache_invalidation is None:
-        pytest.skip("dispatcherd not installed")
-
-    with mock.patch('ansible_base.lib.cache.tasks.clear_cache') as mock_clear:
-        broadcast_cache_invalidation(['key1', 'key2'], origin_node='node-a')
+    with mock.patch.object(mock_dispatcherd, 'clear_cache') as mock_clear:
+        mock_dispatcherd.broadcast_cache_invalidation(['key1', 'key2'], origin_node='node-a')
 
     mock_clear.assert_called_once_with(['key1', 'key2'])
 
@@ -375,28 +408,14 @@ def test_empty_cluster_host_id_warns(_reset_broadcast_guard):
     ANSIBLE_BASE_CACHE_BROADCAST_QUEUE='my_custom_queue',
     CLUSTER_HOST_ID='node-a',
 )
-def test_broadcast_queue_setting():
+def test_broadcast_queue_setting(mock_dispatcherd):
     """The broadcast queue name should be read from ANSIBLE_BASE_CACHE_BROADCAST_QUEUE."""
-    from ansible_base.lib.cache.tasks import HAS_DISPATCHERD
-
-    if not HAS_DISPATCHERD:
-        pytest.skip("dispatcherd not installed")
-
-    from ansible_base.lib.cache.tasks import _get_broadcast_queue
-
-    assert _get_broadcast_queue() == 'my_custom_queue'
+    assert mock_dispatcherd._get_broadcast_queue() == 'my_custom_queue'
 
 
-def test_broadcast_queue_defaults_to_broadcast():
+def test_broadcast_queue_defaults_to_broadcast(mock_dispatcherd):
     """When ANSIBLE_BASE_CACHE_BROADCAST_QUEUE is not set, the queue should default to 'broadcast'."""
-    from ansible_base.lib.cache.tasks import HAS_DISPATCHERD
-
-    if not HAS_DISPATCHERD:
-        pytest.skip("dispatcherd not installed")
-
-    from ansible_base.lib.cache.tasks import _get_broadcast_queue
-
-    assert _get_broadcast_queue() == 'broadcast'
+    assert mock_dispatcherd._get_broadcast_queue() == 'broadcast'
 
 
 @override_settings(DJANGO_REDIS_IGNORE_EXCEPTIONS=True, ANSIBLE_BASE_REDIS_AUTO_INVALIDATE=True, CLUSTER_HOST_ID='node-a')
