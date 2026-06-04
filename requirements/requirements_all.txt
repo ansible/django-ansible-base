@@ -196,7 +196,7 @@ python3-saml==1.16.0
     # via -r requirements/requirements_authentication.in
 pyyaml==6.0.3
     # via drf-spectacular
-redis==7.1.0
+redis==7.4.0
     # via
     #   -r requirements/requirements_redis_client.in
     #   django-redis
