@@ -10,6 +10,11 @@ def prometheus_registry():
     return CollectorRegistry()
 
 
+@pytest.fixture
+def admin_user(django_user_model):
+    return django_user_model.objects.create_superuser(username='prometheus_admin', password='pass', email='prometheus_admin@example.com')
+
+
 @pytest.fixture(autouse=True)
 def clean_prometheus_multiproc_env():
     """Ensure PROMETHEUS_MULTIPROC_DIR is never leaked between tests.

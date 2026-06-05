@@ -218,3 +218,6 @@ JUST_A_TEST = 41
 
 ANSIBLE_OBSERVABILITY_BATCH_DELAY_MS = 1000
 ANSIBLE_OBSERVABILITY_CAPTURE_HEADERS = ['user-agent', 'accept-language', 'x-correlation-.*', 'x-capture-test']
+
+# Allow unauthenticated scraping in the test environment.
+ANSIBLE_PROMETHEUS_ALLOW_ANONYMOUS = True
