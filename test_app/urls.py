@@ -30,4 +30,5 @@ urlpatterns = [
     path('api/v1/timeout_view/', views.timeout_view, name='test-timeout-view'),
     path('login/', include('rest_framework.urls')),
     path("__debug__/", include("debug_toolbar.urls")),
+    path('', include('ansible_base.prometheus.urls')),
 ] + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

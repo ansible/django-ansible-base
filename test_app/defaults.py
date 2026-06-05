@@ -74,6 +74,7 @@ INSTALLED_APPS = [
     'ansible_base.help_text_check',
     'ansible_base.feature_flags',
     'ansible_base.observability',
+    'ansible_base.prometheus',
 ]
 
 MIDDLEWARE = [
@@ -88,6 +89,7 @@ MIDDLEWARE = [
     'crum.CurrentRequestUserMiddleware',
     'ansible_base.lib.middleware.logging.LogRequestMiddleware',
     'ansible_base.lib.middleware.logging.LogTracebackMiddleware',
+    'ansible_base.prometheus.middleware.PrometheusMiddleware',
 ]
 
 # set some vanilla social auth plugins so that we can test the social_auth based
