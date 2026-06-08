@@ -623,14 +623,20 @@ class ObjectRole(ObjectRoleFields):
 
         return (eval_ct, child_model, filter_path)
 
-    def expected_direct_permissions(self, types_prefetch=None) -> set[tuple[str, int, Union[int, UUID]]]:
+    def expected_direct_permissions(self, types_prefetch=None, object_pk=None, object_ct_id=None) -> set[tuple[str, int, Union[int, UUID]]]:
         """The expected permissions that holding this ObjectRole confers to the holder
 
         This is given in the form of tuples, which represent RoleEvaluation entries.
         Values are (permission codename, content type id, object primary key)
 
         In the case of remote objects, this list may not be comprehensive
+
+        When object_pk and object_ct_id identify a look-ahead object, child
+        content types that don't match are skipped entirely and matching id
+        lists are narrowed to the single pk, avoiding large querysets.
         """
+        if (object_pk is None) != (object_ct_id is None):
+            raise ValueError('object_pk and object_ct_id must both be provided or both be None')
         expected_evaluations = set()
         cached_id_lists = {}
         if not types_prefetch:
@@ -643,20 +649,29 @@ class ObjectRole(ObjectRoleFields):
         else:
             # ObjectRole.object_id is stored as text, we convert it to the model pk native type
             object_id = role_model._meta.pk.to_python(self.object_id)
+        # When filtering to a look-ahead object, skip evaluations for the role's
+        # own content type (e.g. organization) if it doesn't match the target.
+        skip_role_ct = object_ct_id is not None and self.content_type_id != object_ct_id
+
         for permission in types_prefetch.permissions_for_object_role(self):
 
             # direct object permission
             if permission.content_type_id == self.content_type_id:
-                expected_evaluations.add((permission.codename, self.content_type_id, object_id))
+                if not skip_role_ct:
+                    expected_evaluations.add((permission.codename, self.content_type_id, object_id))
                 continue
 
             # Add evaluation for the parent object, usually only for add permission
-            if is_add_perm(permission.codename) or settings.ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS:
+            if not skip_role_ct and (is_add_perm(permission.codename) or settings.ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS):
                 expected_evaluations.add((permission.codename, self.content_type_id, object_id))
 
             # Add evaluations for child objects, where this role gives permission to child objects
             eval_ct, child_model, filter_path = self.get_child_filters(permission, role_content_type, types_prefetch)
             if not eval_ct:
+                continue
+
+            # Skip child types that don't match the look-ahead object
+            if object_ct_id is not None and eval_ct != object_ct_id:
                 continue
 
             # fetching child objects of an organization is very performance sensitive
@@ -679,21 +694,63 @@ class ObjectRole(ObjectRoleFields):
                 cached_id_lists[eval_ct] = list(id_list)
 
             for id in id_list:
+                if object_pk is not None and id != object_pk:
+                    continue
                 expected_evaluations.add((permission.codename, eval_ct, id))
         return expected_evaluations
 
-    def needed_cache_updates(self, types_prefetch=None):
-        existing_partials = {}
-        for eval_id, codename, content_type_id, object_id in self.permission_partials.values_list('id', 'codename', 'content_type_id', 'object_id'):
-            existing_partials[(codename, content_type_id, object_id)] = eval_id
-        for eval_id, codename, content_type_id, object_id in self.permission_partials_uuid.values_list('id', 'codename', 'content_type_id', 'object_id'):
-            existing_partials[(codename, content_type_id, object_id)] = eval_id
+    @staticmethod
+    def _log_partials_count(count, label, role_pk):
+        msg = '%s: %d cached evaluation entries for object-role pk=%s'
+        if count >= 500_000:
+            logger.warning(msg + ', expected during global recalculations', label, count, role_pk)
+        elif count >= 50_000:
+            logger.info(msg, label, count, role_pk)
+        else:
+            logger.debug(msg, label, count, role_pk)
 
-        expected_evaluations = self.expected_direct_permissions(types_prefetch)
+    def needed_cache_updates(self, types_prefetch=None, object_pk=None, object_ct_id=None):
+        """Return (to_delete, to_add) changes needed in the RoleEvaluation table
+        to make cached object-role permissions accurate for this role.
+
+        When object_pk and object_ct_id are provided, the scope is narrowed to
+        a single look-ahead object. In the RBAC inheritance system, signals
+        can start from a resource and crawl up the inheritance tree to
+        find ancestor roles (e.g. organization roles that grant permissions to
+        child inventories). The look-ahead object is that originating resource,
+        and filtering to it avoids loading the full set of cached evaluations
+        for roles that may span thousands of child objects.
+
+        Without object_pk/object_ct_id, a full recompute is performed for all
+        objects this role grants permissions to.
+        """
+        if (object_pk is None) != (object_ct_id is None):
+            raise ValueError('object_pk and object_ct_id must both be provided or both be None')
+        existing_partials = {}
+
+        if object_pk is not None and object_ct_id is not None:
+            # Look-ahead: query only the table matching the pk type, filtered
+            # to the single target object.
+            partial_filter = {'object_id': object_pk, 'content_type_id': object_ct_id}
+            source = self.permission_partials_uuid if isinstance(object_pk, UUID) else self.permission_partials
+            for eval_id, codename, content_type_id, object_id in source.filter(**partial_filter).values_list('id', 'codename', 'content_type_id', 'object_id'):
+                existing_partials[(codename, content_type_id, object_id)] = eval_id
+            self._log_partials_count(len(existing_partials), f'existing evaluation (object_pk={object_pk})', self.pk)
+        else:
+            # Full recompute: load all cached entries from both tables.
+            for eval_id, codename, content_type_id, object_id in self.permission_partials.values_list('id', 'codename', 'content_type_id', 'object_id'):
+                existing_partials[(codename, content_type_id, object_id)] = eval_id
+            for eval_id, codename, content_type_id, object_id in self.permission_partials_uuid.values_list('id', 'codename', 'content_type_id', 'object_id'):
+                existing_partials[(codename, content_type_id, object_id)] = eval_id
+            self._log_partials_count(len(existing_partials), 'existing evaluation (full)', self.pk)
+
+        expected_evaluations = self.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id)
 
         for team in self.provides_teams.all():
             for team_role in team.has_roles.all():
-                expected_evaluations.update(team_role.expected_direct_permissions(types_prefetch))
+                expected_evaluations.update(team_role.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id))
+
+        self._log_partials_count(len(expected_evaluations), 'expected evaluation', self.pk)
 
         existing_set = set(existing_partials.keys())
 
