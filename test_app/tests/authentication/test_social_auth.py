@@ -609,6 +609,7 @@ def test_create_user_claims_pipeline(mock_update_user_claims, groups_claim, user
     assert call_args[0][0] == user
     assert call_args[0][1] is None
     assert call_args[0][2].sort() == expected_groups.sort()
+    assert call_args[1]['attrs'] == rData
 
 
 @pytest.mark.django_db

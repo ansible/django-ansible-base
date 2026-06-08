@@ -264,6 +264,6 @@ def create_user_claims_pipeline(*args, backend, response, **kwargs):
 
     logger.debug(f'updating user claims with groups claim "{groups_claim}": {extra_groups}')
 
-    user = update_user_claims(kwargs["user"], backend.database_instance, backend.get_user_groups(extra_groups))
+    user = update_user_claims(kwargs["user"], backend.database_instance, backend.get_user_groups(extra_groups), attrs=response)
     if user is None:
         return SOCIAL_AUTH_PIPELINE_FAILED_STATUS

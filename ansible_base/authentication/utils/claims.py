@@ -572,23 +572,9 @@ def _result_suffix(result: bool) -> str:
     return "allowing" if result else "skipping"
 
 
-def update_user_claims(user: Optional[AbstractUser], database_authenticator: Authenticator, groups: list[str]) -> Optional[AbstractUser]:
-    """
-    This method takes a user, an authenticator and a list of the users associated groups.
-    It will look up the AuthenticatorUser (it must exist already) and update that User and their permissions in the system.
-    """
-    if not user:
-        return None
-
-    authenticator_user = user.authenticator_users.filter(provider=database_authenticator).first()
-    # update the auth_time field to align with the general format used for other authenticators
-    authenticator_user.extra_data = {**authenticator_user.extra_data, "auth_time": DateTimeField().to_representation(now())}
-    authenticator_user.save(update_fields=["extra_data"])
-
-    results = create_claims(database_authenticator, user.username, authenticator_user.extra_data, groups)
-
+def _apply_claim_attributes(results: dict, user, authenticator_user) -> bool:
+    """Apply claim results as attributes on user or authenticator_user. Returns True if any attribute was changed."""
     needs_save = False
-
     for attribute, attr_value in results.items():
         if attr_value is None:
             continue
@@ -605,6 +591,33 @@ def update_user_claims(user: Optional[AbstractUser], database_authenticator: Aut
             logger.debug(f"Setting new attribute {attribute} for {user.username}")
             setattr(object, attribute, attr_value)
             needs_save = True
+    return needs_save
+
+
+def update_user_claims(
+    user: Optional[AbstractUser], database_authenticator: Authenticator, groups: list[str], attrs: Optional[dict] = None
+) -> Optional[AbstractUser]:
+    """
+    This method takes a user, an authenticator and a list of the users associated groups.
+    It will look up the AuthenticatorUser (it must exist already) and update that User and their permissions in the system.
+
+    If attrs is provided, it will be used as the attributes for authenticator map
+    trigger evaluation instead of authenticator_user.extra_data. This is needed for
+    social auth (OIDC/SAML) where the identity provider's response contains the
+    claims that attribute-based maps should match against.
+    """
+    if not user:
+        return None
+
+    authenticator_user = user.authenticator_users.filter(provider=database_authenticator).first()
+    # update the auth_time field to align with the general format used for other authenticators
+    authenticator_user.extra_data = {**authenticator_user.extra_data, "auth_time": DateTimeField().to_representation(now())}
+    authenticator_user.save(update_fields=["extra_data"])
+
+    claims_attrs = attrs if attrs is not None else authenticator_user.extra_data
+    results = create_claims(database_authenticator, user.username, claims_attrs, groups)
+
+    needs_save = _apply_claim_attributes(results, user, authenticator_user)
 
     if needs_save:
         authenticator_user.save()

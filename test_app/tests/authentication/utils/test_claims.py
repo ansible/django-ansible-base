@@ -897,6 +897,44 @@ def test_update_user_claims_groups(user, local_authenticator_map):
     assert result is user
 
 
+def test_update_user_claims_attrs_override(user, local_authenticator_map):
+    """
+    Verify that when attrs is explicitly passed to update_user_claims, it is
+    used for attribute-based trigger evaluation instead of extra_data.
+
+    This simulates the OIDC pipeline flow where the identity provider's response
+    contains claims (like preferred_username) that are NOT stored in extra_data
+    but should still be available for authenticator map attribute matching.
+    """
+    local_authenticator_map.triggers = {"attributes": {"preferred_username": {"contains": "oidc_user"}}}
+    local_authenticator_map.save()
+    authenticator = local_authenticator_map.authenticator
+    authenticator_user = AuthenticatorUser(
+        provider=authenticator,
+        user=user,
+        extra_data={"id": "some-sub-value", "token_type": "Bearer"},
+    )
+    authenticator_user.save()
+
+    # Without attrs override, the trigger won't match (preferred_username not in extra_data)
+    result = claims.update_user_claims(user, authenticator, [])
+    assert result is user  # still allowed (no "allow" map to block)
+
+    # Verify the map didn't fire by checking that last_login_map_results shows "skipped"
+    authenticator_user.refresh_from_db()
+    map_results = authenticator_user.last_login_map_results
+    assert map_results[0][str(local_authenticator_map.pk)] == "skipped"
+
+    # With attrs override containing the claim, the trigger SHOULD match
+    oidc_response = {"preferred_username": "oidc_user_1", "email": "user@example.com", "sub": "abc123"}
+    result = claims.update_user_claims(user, authenticator, [], attrs=oidc_response)
+    assert result is user
+
+    authenticator_user.refresh_from_db()
+    map_results = authenticator_user.last_login_map_results
+    assert map_results[0][str(local_authenticator_map.pk)] is True
+
+
 @pytest.mark.parametrize("enabled", [True, False])
 def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator):
     # Create an AuthenticatorMap object with the parameterized "enabled" value
