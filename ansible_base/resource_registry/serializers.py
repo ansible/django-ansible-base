@@ -27,7 +27,7 @@ class ResourceDataField(serializers.JSONField):
 
 
 class ResourceListSerializer(serializers.ModelSerializer):
-    ALLOWED_EXTRA_FIELDS = {"resource_data"}
+    ALLOWED_EXTRA_FIELDS = frozenset({"resource_data"})
 
     has_serializer = serializers.SerializerMethodField()
     url = serializers.SerializerMethodField()
@@ -37,10 +37,12 @@ class ResourceListSerializer(serializers.ModelSerializer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         request = self.context.get("request")
-        if request:
-            requested = set(request.query_params.get("extra_fields", "").split(",")) - {""}
-            for field_name in requested & self.ALLOWED_EXTRA_FIELDS:
-                self.fields[field_name].write_only = False
+        extra_fields = request.query_params.get("extra_fields", "") if request else ""
+        if extra_fields:
+            requested = set(extra_fields.split(","))
+            for field_name in requested.intersection(self.ALLOWED_EXTRA_FIELDS):
+                if field_name in self.fields:
+                    self.fields[field_name].write_only = False
 
     class Meta:
         model = Resource

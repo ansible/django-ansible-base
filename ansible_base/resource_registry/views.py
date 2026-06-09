@@ -14,6 +14,7 @@ from rest_framework.viewsets import GenericViewSet, mixins
 
 from ansible_base.lib.utils.response import CSVStreamResponse, get_relative_url
 from ansible_base.lib.utils.schema import extend_schema_if_available
+from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.lib.utils.views.permissions import try_add_oauth2_scope_permission
 from ansible_base.resource_registry.constants import SHARED_USER_RESOURCE_TYPE
@@ -54,7 +55,10 @@ class ResourcesPagination(PageNumberPagination):
     # isn't set, the default is no pagination.
     page_size = 50
     page_size_query_param = "page_size"
-    max_page_size = DEFAULT_MAX_PAGE_SIZE
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.max_page_size = get_setting('RESOURCE_LIST_MAX_PAGE_SIZE', DEFAULT_MAX_PAGE_SIZE)
 
 
 class ResourceAPIMixin:
