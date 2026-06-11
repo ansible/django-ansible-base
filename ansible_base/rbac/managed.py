@@ -203,6 +203,7 @@ managed_role_templates = {
     'team_member': TeamMember,
     # These are not fully functional on their own, but can be easily subclassed
     'admin_base': ManagedAdminBase,
+    'read_only_base': ManagedReadOnlyBase,
     'action_base': ManagedActionBase,
 }
 
