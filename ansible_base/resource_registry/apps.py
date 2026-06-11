@@ -76,8 +76,12 @@ def initialize_resources(sender, **kwargs):
 
         # Create resources
         for r_type in ResourceType.objects.all():
-            resource_model = apps.get_model(r_type.content_type.app_label, r_type.content_type.model)
-            resource_config = registry.get_config_for_model(resource_model)
+            try:
+                resource_model = apps.get_model(r_type.content_type.app_label, r_type.content_type.model)
+                resource_config = registry.get_config_for_model(resource_model)
+            except (KeyError, LookupError):
+                logger.warning(f"skipping resource type '{r_type.name}': model is not in the resource registry")
+                continue
 
             logger.info(f"adding unmigrated resources for {r_type.name}")
 
