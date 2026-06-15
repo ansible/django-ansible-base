@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any
 
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
@@ -16,7 +16,6 @@ logger = logging.getLogger('ansible_base.rbac.assignment_utils')
 DEFAULT_SYNC_PAGE_SIZE = 50
 
 __all__ = [
-    'AssignmentClient',
     'AssignmentTuple',
     'RemoteAssignmentFetcher',
     'RemoteAssignmentResult',
@@ -65,29 +64,21 @@ class RemoteAssignmentResult:
     is_complete: bool = False
 
 
-class AssignmentClient(Protocol):
-    """Protocol for clients that can list role assignments.
-
-    ``ResourceAPIClient`` already satisfies this protocol.  Gateway or
-    other consumers can provide their own adapter implementing these
-    two methods.  Each must accept a ``filters`` keyword argument (a
-    dict passed as query parameters) and return a response object with
-    ``.status_code`` and ``.json()`` attributes.
-    """
-
-    def list_user_assignments(self, filters: dict | None = None) -> Any: ...
-    def list_team_assignments(self, filters: dict | None = None) -> Any: ...
-
-
 class RemoteAssignmentFetcher:
     """Fetches role assignments from a remote resource server with pagination.
 
     Collects user and team assignments into a single set.  If any page
     request fails the fetcher stops early and marks the result as
     incomplete so the caller can skip deletions safely.
+
+    ``api_client`` must provide ``list_user_assignments(filters=...)``
+    and ``list_team_assignments(filters=...)`` methods that return a
+    response with ``.status_code`` and ``.json()``.
+    ``ResourceAPIClient`` satisfies this; gateway consumers can provide
+    their own adapter.
     """
 
-    def __init__(self, api_client: AssignmentClient, page_size: int | None = None):
+    def __init__(self, api_client: Any, page_size: int | None = None):
         self.api_client = api_client
         self.assignments: set[AssignmentTuple] = set()
         self.page_size = page_size if page_size is not None else getattr(settings, 'RESOURCE_SYNC_PAGE_SIZE', DEFAULT_SYNC_PAGE_SIZE)
@@ -148,7 +139,7 @@ class RemoteAssignmentFetcher:
             return False
 
 
-def get_remote_assignments(api_client: AssignmentClient, page_size: int | None = None) -> RemoteAssignmentResult:
+def get_remote_assignments(api_client: Any, page_size: int | None = None) -> RemoteAssignmentResult:
     """Fetch remote assignments from the resource server and convert to tuples.
 
     Returns a ``RemoteAssignmentResult`` so the caller can distinguish a
