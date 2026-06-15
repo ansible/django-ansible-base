@@ -265,7 +265,6 @@ This purely a list and retrieve view. It displays all the resource types that ar
 
 ```json
 {
-    "count": 1,
     "next": null,
     "previous": null,
     "results": [

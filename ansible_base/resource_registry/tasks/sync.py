@@ -8,6 +8,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
 from io import StringIO, TextIOBase
+from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 from asgiref.sync import sync_to_async
 from django.conf import settings
@@ -16,7 +18,6 @@ from django.db import transaction
 from django.db.models import QuerySet
 from django.db.utils import Error, IntegrityError
 from requests import HTTPError
-from urllib.parse import urlparse, parse_qs
 
 from ansible_base.lib.utils.apps import is_rbac_installed
 from ansible_base.rbac.role_sync_utils import (  # noqa: F401 — re-exported for backward compatibility
@@ -136,43 +137,48 @@ class RemoteAssignmentFetcher:
 
         Returns True if all pages were fetched successfully, False on any error.
         """
-        next = None
+        next_url = None
         try:
             while True:
-                if next is None:
-                    resp = list_fn()
-                else:
-                    next_query = parse_qs(urlparse(next).query)
-                    cursor = next_query.get('cursor', [None])[0]
-                    resp = list_fn(filters={'cursor': cursor})
-                if resp.status_code != 200:
-                    logger.warning(f"Failed to fetch {assignment_type} assignments batch {next}: HTTP {resp.status_code}")
+                resp = self._fetch_page(list_fn, next_url)
+                if resp is None or resp.status_code != 200:
+                    logger.warning(f"Failed to fetch {assignment_type} assignments batch {next_url}: HTTP {resp.status_code if resp else 'No Response'}")
                     return False
-
                 data = resp.json()
-                for assignment in data.get('results') or []:
-                    role_name = assignment['role_definition']
-                    if role_name not in self.local_role_names:
-                        logger.debug(f"Skipping remote {assignment_type} assignment with unknown local role: {role_name}")
-                        continue
-                    ansible_id_or_pk = assignment.get('object_ansible_id') or assignment.get('object_id')
-                    self.assignments.add(
-                        AssignmentTuple(
-                            actor_ansible_id=assignment[actor_id_key],
-                            ansible_id_or_pk=ansible_id_or_pk,
-                            role_definition_name=role_name,
-                            assignment_type=assignment_type,
-                        )
-                    )
+                self._process_assignments(data.get('results') or [], actor_id_key, assignment_type)
 
-                if not data.get('next'):
+                next_url = data.get('next')
+                if not next_url:
                     return True
-
-                next = data['next']
-                logger.debug(f"Fetching next batch {next} of {assignment_type} assignments")
+                logger.debug(f"Fetching next batch {next_url} of {assignment_type} assignments")
         except Exception:
             logger.exception(f"Failed to fetch remote {assignment_type} assignments")
             return False
+
+    def _fetch_page(self, list_fn, next_url):
+        if next_url is None:
+            return list_fn()
+        cursor = parse_qs(urlparse(next_url).query).get('cursor', [None])[0]
+        if cursor is None:
+            logger.warning(f"Pagination URL missing cursor parameter: {next_url}")
+            return None
+        return list_fn(filters={'cursor': cursor})
+
+    def _process_assignments(self, assignments_data, actor_id_key, assignment_type):
+        for assignment in assignments_data:
+            role_name = assignment['role_definition']
+            if role_name not in self.local_role_names:
+                logger.debug(f"Skipping remote {assignment_type} assignment with unknown local role: {role_name}")
+                continue
+            ansible_id_or_pk = assignment.get('object_ansible_id') or assignment.get('object_id')
+            self.assignments.add(
+                AssignmentTuple(
+                    actor_ansible_id=assignment[actor_id_key],
+                    ansible_id_or_pk=ansible_id_or_pk,
+                    role_definition_name=role_name,
+                    assignment_type=assignment_type,
+                )
+            )
 
 
 def get_remote_assignments(api_client: ResourceAPIClient, page_size: int | None = None) -> RemoteAssignmentResult:

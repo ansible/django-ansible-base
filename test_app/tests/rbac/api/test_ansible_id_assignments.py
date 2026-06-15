@@ -105,6 +105,24 @@ def test_invalid_ansible_id(admin_api_client, org_inv_rd, rando):
 
 
 @pytest.mark.django_db
+def test_invalid_ansible_id_is_Invalid_UUID(admin_api_client, org_inv_rd, rando):
+    url = get_relative_url('roleuserassignment-list')
+    bad_ansible_id = "not-a-uuid"
+    data = dict(role_definition=org_inv_rd.id, user=rando.id, object_ansible_id=bad_ansible_id)
+    response = admin_api_client.post(url, data=data, format="json")
+    assert response.status_code == 400, response.data
+    assert 'Must be a valid UUID' in str(response.data['object_ansible_id'])
+
+
+def test_object_ansible_id_field_falsy_returns_none():
+    from ansible_base.rbac.api.serializers import _ReadOnlyObjectAnsibleIdField
+
+    field = _ReadOnlyObjectAnsibleIdField()
+    assert field.to_internal_value("") is None
+    assert field.to_internal_value(None) is None
+
+
+@pytest.mark.django_db
 def test_object_ansible_id_bad_type(admin_api_client, inv_rd, rando, organization):
     """If giving object_id, type is implied from role definition.
 
