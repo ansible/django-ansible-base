@@ -552,7 +552,7 @@ def test_get_remote_assignments_filters_unknown_roles(static_api_client):
 
 @pytest.mark.django_db
 def test_remote_assignment_fetcher_passes_page_size():
-    """page_size should be included in the pagination filters."""
+    """First page should be fetched with no filters (cursor pagination)."""
     api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
     ok = _mock_response()
     api_client.list_user_assignments.return_value = ok
@@ -560,8 +560,8 @@ def test_remote_assignment_fetcher_passes_page_size():
 
     RemoteAssignmentFetcher(api_client, page_size=100).fetch()
 
-    api_client.list_user_assignments.assert_called_with(filters={'page': 1, 'page_size': 100})
-    api_client.list_team_assignments.assert_called_with(filters={'page': 1, 'page_size': 100})
+    api_client.list_user_assignments.assert_called_with()
+    api_client.list_team_assignments.assert_called_with()
 
 
 @pytest.mark.django_db
@@ -577,7 +577,7 @@ def test_remote_assignment_fetcher_reads_page_size_from_settings():
         assert fetcher.page_size == 200
         fetcher.fetch()
 
-    api_client.list_user_assignments.assert_called_with(filters={'page': 1, 'page_size': 200})
+    api_client.list_user_assignments.assert_called_with()
 
 
 @mock.patch('ansible_base.resource_registry.tasks.sync.get_remote_assignments')
@@ -625,11 +625,11 @@ def test_create_api_client_default_jwt_expiration(mock_get_client):
 
 
 @pytest.mark.django_db
-def test_remote_assignment_fetcher_sends_page_size_on_all_pages():
-    """page_size should be included in filters on every page, not just the first."""
+def test_remote_assignment_fetcher_sends_cursor_on_subsequent_pages():
+    """Subsequent pages should extract the cursor from the next URL."""
     api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
 
-    page1 = _mock_response(body={"results": [], "next": "http://example.com/page2"})
+    page1 = _mock_response(body={"results": [], "next": "http://example.com/api/assignments/?cursor=abc123"})
     page2 = _mock_response(body={"results": [], "next": None})
     api_client.list_user_assignments.side_effect = [page1, page2]
     api_client.list_team_assignments.return_value = _mock_response()
@@ -638,8 +638,8 @@ def test_remote_assignment_fetcher_sends_page_size_on_all_pages():
 
     user_calls = api_client.list_user_assignments.call_args_list
     assert len(user_calls) == 2
-    assert user_calls[0] == mock.call(filters={'page': 1, 'page_size': 100})
-    assert user_calls[1] == mock.call(filters={'page': 2, 'page_size': 100})
+    assert user_calls[0] == mock.call()
+    assert user_calls[1] == mock.call(filters={'cursor': 'abc123'})
 
 
 @pytest.mark.django_db

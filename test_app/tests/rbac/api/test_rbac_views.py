@@ -130,7 +130,7 @@ def test_filtering_related_assignments(user_api_client, user, rando, inventory, 
     url = get_relative_url('roledefinition-user_assignments-list', kwargs={'pk': inv_rd.id})
     response = user_api_client.get(url)
     assert response.status_code == 200, response.data
-    assert response.data['count'] == 0
+    assert len(response.data['results']) == 0
 
     user_assignment = inv_rd.give_permission(user, inventory)
     response = user_api_client.get(url)

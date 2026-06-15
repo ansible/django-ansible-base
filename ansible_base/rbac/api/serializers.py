@@ -73,9 +73,28 @@ class RoleDefinitionDetailSerializer(RoleDefinitionSerializer):
     content_type = serializers.SlugRelatedField(slug_field='api_slug', read_only=True)
 
 
+class _ReadOnlyObjectAnsibleIdField(ObjectAnsibleIdField):
+    """ObjectAnsibleIdField with annotation-optimized reads but UUID pass-through on writes.
+
+    The base ObjectAnsibleIdField.to_internal_value resolves UUID -> object_id,
+    but the RBAC API serializer has its own resolution in get_object_from_data
+    that expects the raw UUID string.
+    """
+
+    def to_internal_value(self, value):
+        if not value:
+            return None
+        try:
+            import uuid
+
+            return str(uuid.UUID(str(value)))
+        except ValueError:
+            raise serializers.ValidationError("Must be a valid UUID.")
+
+
 class BaseAssignmentSerializer(CommonModelSerializer):
     content_type = serializers.SlugRelatedField(slug_field='api_slug', read_only=True)
-    object_ansible_id = ObjectAnsibleIdField(
+    object_ansible_id = _ReadOnlyObjectAnsibleIdField(
         required=False,
         help_text=_('The resource id of the object this role applies to. An alternative to the object_id field.'),
         allow_null=True,  # for ease of use of the browseable API
