@@ -16,6 +16,7 @@ from django.db import transaction
 from django.db.models import QuerySet
 from django.db.utils import Error, IntegrityError
 from requests import HTTPError
+from urllib.parse import urlparse, parse_qs
 
 from ansible_base.lib.utils.apps import is_rbac_installed
 from ansible_base.rbac.role_sync_utils import (  # noqa: F401 — re-exported for backward compatibility
@@ -135,12 +136,17 @@ class RemoteAssignmentFetcher:
 
         Returns True if all pages were fetched successfully, False on any error.
         """
-        page = 1
+        next = None
         try:
             while True:
-                resp = list_fn(filters={'page': page, 'page_size': self.page_size})
+                if next is None:
+                    resp = list_fn()
+                else:
+                    next_query = parse_qs(urlparse(next).query)
+                    cursor = next_query.get('cursor', [None])[0]
+                    resp = list_fn(filters={'cursor': cursor})
                 if resp.status_code != 200:
-                    logger.warning(f"Failed to fetch {assignment_type} assignments page {page}: HTTP {resp.status_code}")
+                    logger.warning(f"Failed to fetch {assignment_type} assignments batch {next}: HTTP {resp.status_code}")
                     return False
 
                 data = resp.json()
@@ -162,8 +168,8 @@ class RemoteAssignmentFetcher:
                 if not data.get('next'):
                     return True
 
-                page += 1
-                logger.debug(f"Fetching next page {page} of {assignment_type} assignments")
+                next = data['next']
+                logger.debug(f"Fetching next batch {next} of {assignment_type} assignments")
         except Exception:
             logger.exception(f"Failed to fetch remote {assignment_type} assignments")
             return False

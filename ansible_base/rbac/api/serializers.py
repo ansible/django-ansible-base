@@ -17,6 +17,7 @@ from ansible_base.rbac.models import RoleDefinition, RoleTeamAssignment, RoleUse
 from ansible_base.rbac.permission_registry import permission_registry  # careful for circular imports
 from ansible_base.rbac.policies import check_content_obj_permission, visible_users
 from ansible_base.rbac.validators import check_locally_managed, validate_permissions_for_model
+from ansible_base.rbac.service_api.serializers import ObjectAnsibleIdField
 
 from ..models import DABContentType, DABPermission
 from ..remote import RemoteObject
@@ -74,7 +75,7 @@ class RoleDefinitionDetailSerializer(RoleDefinitionSerializer):
 
 class BaseAssignmentSerializer(CommonModelSerializer):
     content_type = serializers.SlugRelatedField(slug_field='api_slug', read_only=True)
-    object_ansible_id = serializers.UUIDField(
+    object_ansible_id = ObjectAnsibleIdField(
         required=False,
         help_text=_('The resource id of the object this role applies to. An alternative to the object_id field.'),
         allow_null=True,  # for ease of use of the browseable API
