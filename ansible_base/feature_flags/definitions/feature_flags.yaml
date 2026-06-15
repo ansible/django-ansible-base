@@ -19,17 +19,6 @@
   toggle_type: install-time
   labels:
     - eda
-- name: FEATURE_GATEWAY_CREATE_CRC_SERVICE_TYPE_ENABLED
-  ui_name: Dynamic Service Type Feature
-  visibility: False
-  condition: boolean
-  value: 'False'
-  support_level: DEVELOPER_PREVIEW
-  description: The Dynamic Service Type feature allows for the introduction of new platform services without requiring registration to the existing database. The new service can be enabled through the use of configuration.
-  support_url: https://access.redhat.com/articles/7122668
-  toggle_type: install-time
-  labels:
-    - gateway
 - name: FEATURE_OIDC_WORKLOAD_IDENTITY_ENABLED
   ui_name: OIDC Workload Identity
   visibility: False
