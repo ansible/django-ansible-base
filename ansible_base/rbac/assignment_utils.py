@@ -230,6 +230,67 @@ def _bulk_resolve_object_ansible_ids(assignments: list) -> dict[tuple[str, str],
     }
 
 
+_SKIP = object()
+
+
+def _resolve_object_ansible_id(assignment, object_map: dict[tuple[str, str], str]):
+    """Resolve the ansible_id or pk for an assignment's target object.
+
+    Returns ``None`` for global assignments, the resolved ansible_id for
+    org/team objects, the raw ``object_id`` for other types, or the
+    sentinel ``_SKIP`` if an org/team resource is missing.
+    """
+    if not assignment.object_id or not assignment.content_type:
+        return None
+
+    model_name = assignment.content_type.model
+    if model_name not in ('organization', 'team'):
+        return str(assignment.object_id)
+
+    key = (str(assignment.object_id), model_name)
+    resolved = object_map.get(key)
+    if resolved is None:
+        logger.warning(f"{model_name} {assignment.object_id} found without an associated Resource, skipping assignment.")
+        return _SKIP
+    return resolved
+
+
+def _collect_assignment_tuples(
+    assignment_list: list,
+    actor_attr: str,
+    assignment_type: str,
+) -> set[AssignmentTuple]:
+    """Convert a list of Django assignment model instances into AssignmentTuples.
+
+    Resolves actor and object ansible_ids in bulk, then builds tuples.
+    Skips assignments whose actor lacks a Resource entry.
+    """
+    actor_map = _bulk_resolve_actor_ansible_ids(assignment_list, actor_attr)
+    object_map = _bulk_resolve_object_ansible_ids(assignment_list)
+    result: set[AssignmentTuple] = set()
+
+    for a in assignment_list:
+        actor_pk = str(getattr(a, f'{actor_attr}_id'))
+        actor_ansible_id = actor_map.get(actor_pk)
+        if actor_ansible_id is None:
+            continue
+
+        ansible_id_or_pk = _resolve_object_ansible_id(a, object_map)
+        if ansible_id_or_pk is _SKIP:
+            continue
+
+        result.add(
+            AssignmentTuple(
+                actor_ansible_id=actor_ansible_id,
+                ansible_id_or_pk=ansible_id_or_pk,
+                role_definition_name=a.role_definition.name,
+                assignment_type=assignment_type,
+            )
+        )
+
+    return result
+
+
 def get_local_assignments(service: str | None = None) -> set[AssignmentTuple]:
     """Get local role assignments as a set of tuples for set-diff comparison.
 
@@ -248,80 +309,19 @@ def get_local_assignments(service: str | None = None) -> set[AssignmentTuple]:
         raise RuntimeError("get_local_assignments requires ansible_base.rbac to be installed")
     from ansible_base.rbac.models.role import RoleTeamAssignment, RoleUserAssignment
 
-    assignments: set[AssignmentTuple] = set()
     service_filter = Q()
     if service:
         service_filter = Q(content_type__service=service) | Q(content_type__isnull=True)
 
-    # --- User assignments ---
-    user_qs = RoleUserAssignment.objects.select_related('user', 'role_definition', 'content_type')
-    if service:
-        user_qs = user_qs.filter(service_filter)
-    user_assignment_list = list(user_qs)
-
-    actor_map = _bulk_resolve_actor_ansible_ids(user_assignment_list, 'user')
-    object_map = _bulk_resolve_object_ansible_ids(user_assignment_list)
-
-    for a in user_assignment_list:
-        user_pk = str(a.user_id)
-        if user_pk not in actor_map:
-            continue
-
-        ansible_id_or_pk = None
-        if a.object_id and a.content_type:
-            model_name = a.content_type.model
-            if model_name in ('organization', 'team'):
-                key = (str(a.object_id), model_name)
-                if key not in object_map:
-                    logger.warning(f"{model_name} {a.object_id} found without an associated Resource, skipping assignment.")
-                    continue
-                ansible_id_or_pk = object_map[key]
-            else:
-                ansible_id_or_pk = str(a.object_id)
-
-        assignments.add(
-            AssignmentTuple(
-                actor_ansible_id=actor_map[user_pk],
-                ansible_id_or_pk=ansible_id_or_pk if ansible_id_or_pk else None,
-                role_definition_name=a.role_definition.name,
-                assignment_type='user',
-            )
-        )
-
-    # --- Team assignments ---
-    team_qs = RoleTeamAssignment.objects.select_related('team', 'role_definition', 'content_type')
-    if service:
-        team_qs = team_qs.filter(service_filter)
-    team_assignment_list = list(team_qs)
-
-    actor_map = _bulk_resolve_actor_ansible_ids(team_assignment_list, 'team')
-    object_map = _bulk_resolve_object_ansible_ids(team_assignment_list)
-
-    for a in team_assignment_list:
-        team_pk = str(a.team_id)
-        if team_pk not in actor_map:
-            continue
-
-        ansible_id_or_pk = None
-        if a.object_id and a.content_type:
-            model_name = a.content_type.model
-            if model_name in ('organization', 'team'):
-                key = (str(a.object_id), model_name)
-                if key not in object_map:
-                    logger.warning(f"{model_name} {a.object_id} found without an associated Resource, skipping assignment.")
-                    continue
-                ansible_id_or_pk = object_map[key]
-            else:
-                ansible_id_or_pk = str(a.object_id)
-
-        assignments.add(
-            AssignmentTuple(
-                actor_ansible_id=actor_map[team_pk],
-                ansible_id_or_pk=ansible_id_or_pk if ansible_id_or_pk else None,
-                role_definition_name=a.role_definition.name,
-                assignment_type='team',
-            )
-        )
+    assignments: set[AssignmentTuple] = set()
+    for model, actor_attr, assignment_type in (
+        (RoleUserAssignment, 'user', 'user'),
+        (RoleTeamAssignment, 'team', 'team'),
+    ):
+        qs = model.objects.select_related(actor_attr, 'role_definition', 'content_type')
+        if service:
+            qs = qs.filter(service_filter)
+        assignments |= _collect_assignment_tuples(list(qs), actor_attr, assignment_type)
 
     return assignments
 

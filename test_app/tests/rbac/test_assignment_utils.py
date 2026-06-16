@@ -4,8 +4,11 @@ import pytest
 from django.test import override_settings
 
 from ansible_base.rbac.assignment_utils import (
+    _SKIP,
     AssignmentTuple,
     RemoteAssignmentFetcher,
+    _collect_assignment_tuples,
+    _resolve_object_ansible_id,
     get_local_assignments,
     get_remote_assignments,
 )
@@ -353,6 +356,92 @@ def test_get_local_assignments_bounded_query_count():
     # Total ~6-8 queries. Without bulk resolution this would be 30+
     # for 10 assignments (one Resource lookup per actor + per object).
     assert len(ctx.captured_queries) < 15, f"Expected bounded queries but got {len(ctx.captured_queries)}. " "This suggests N+1 query regression."
+
+
+# ---------------------------------------------------------------------------
+# _resolve_object_ansible_id
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_object_ansible_id_global_assignment():
+    """Global assignments (no object_id / no content_type) return None."""
+    assignment = mock.Mock(object_id=None, content_type=None)
+    assert _resolve_object_ansible_id(assignment, {}) is None
+
+
+def test_resolve_object_ansible_id_non_org_team():
+    """Non-org/team types return the raw object_id."""
+    ct = mock.Mock(model='inventory')
+    assignment = mock.Mock(object_id='42', content_type=ct)
+    assert _resolve_object_ansible_id(assignment, {}) == '42'
+
+
+def test_resolve_object_ansible_id_org_resolved():
+    """Org/team types return the resolved ansible_id from the map."""
+    ct = mock.Mock(model='organization')
+    assignment = mock.Mock(object_id='7', content_type=ct)
+    object_map = {('7', 'organization'): 'resolved-uuid'}
+    assert _resolve_object_ansible_id(assignment, object_map) == 'resolved-uuid'
+
+
+def test_resolve_object_ansible_id_org_missing():
+    """Missing org/team resource returns _SKIP sentinel."""
+    ct = mock.Mock(model='organization')
+    assignment = mock.Mock(object_id='999', content_type=ct)
+    assert _resolve_object_ansible_id(assignment, {}) is _SKIP
+
+
+# ---------------------------------------------------------------------------
+# _collect_assignment_tuples
+# ---------------------------------------------------------------------------
+
+
+def test_collect_assignment_tuples_empty_list():
+    """Empty input returns an empty set."""
+    assert _collect_assignment_tuples([], 'user', 'user') == set()
+
+
+@pytest.mark.django_db
+def test_collect_assignment_tuples_skips_missing_actors():
+    """Assignments whose actor has no Resource entry are skipped."""
+    from ansible_base.rbac.models import RoleDefinition
+    from test_app.models import User
+
+    user = User.objects.create(username='collect_user', email='collect@test.com')
+    rd = RoleDefinition.objects.create(name='Collect Role', managed=True)
+    rd.give_global_permission(user)
+
+    from ansible_base.rbac.models.role import RoleUserAssignment
+
+    assignment_list = list(RoleUserAssignment.objects.select_related('user', 'role_definition', 'content_type').filter(role_definition=rd))
+
+    Resource.get_resource_for_object(user).delete()
+
+    result = _collect_assignment_tuples(assignment_list, 'user', 'user')
+    assert not any(a.role_definition_name == 'Collect Role' for a in result)
+
+
+@pytest.mark.django_db
+def test_collect_assignment_tuples_skips_missing_object_resource():
+    """Assignments with org/team objects lacking a Resource entry are skipped."""
+    from ansible_base.rbac.models import DABContentType, RoleDefinition
+    from test_app.models import Organization, User
+
+    user = User.objects.create(username='objskip_user', email='objskip@test.com')
+    org = Organization.objects.create(name='ObjSkip Org')
+    org_ct = DABContentType.objects.get_for_model(Organization)
+
+    rd = RoleDefinition.objects.create(name='ObjSkip Role', content_type=org_ct, managed=True)
+    rd.give_permission(user, org)
+
+    from ansible_base.rbac.models.role import RoleUserAssignment
+
+    assignment_list = list(RoleUserAssignment.objects.select_related('user', 'role_definition', 'content_type').filter(role_definition=rd))
+
+    Resource.get_resource_for_object(org).delete()
+
+    result = _collect_assignment_tuples(assignment_list, 'user', 'user')
+    assert not any(a.role_definition_name == 'ObjSkip Role' for a in result)
 
 
 # ---------------------------------------------------------------------------
