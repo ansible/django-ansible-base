@@ -456,7 +456,7 @@ def test_get_remote_assignments_incomplete_on_failure(failure_mode):
     page1 = _mock_response(
         body={
             "results": [{"user_ansible_id": "u1", "object_ansible_id": "o1", "role_definition": "Team Member"}],
-            "next": "http://example.com/page2",
+            "next": "http://example.com/?cursor=abc123",
         }
     )
 
@@ -560,8 +560,8 @@ def test_remote_assignment_fetcher_passes_page_size():
 
     RemoteAssignmentFetcher(api_client, page_size=100).fetch()
 
-    api_client.list_user_assignments.assert_called_with()
-    api_client.list_team_assignments.assert_called_with()
+    api_client.list_user_assignments.assert_called_with(filters={'page_size': 100})
+    api_client.list_team_assignments.assert_called_with(filters={'page_size': 100})
 
 
 @pytest.mark.django_db
@@ -577,7 +577,8 @@ def test_remote_assignment_fetcher_reads_page_size_from_settings():
         assert fetcher.page_size == 200
         fetcher.fetch()
 
-    api_client.list_user_assignments.assert_called_with()
+    api_client.list_user_assignments.assert_called_with(filters={'page_size': 200})
+    api_client.list_team_assignments.assert_called_with(filters={'page_size': 200})
 
 
 @mock.patch('ansible_base.resource_registry.tasks.sync.get_remote_assignments')
@@ -638,8 +639,8 @@ def test_remote_assignment_fetcher_sends_cursor_on_subsequent_pages():
 
     user_calls = api_client.list_user_assignments.call_args_list
     assert len(user_calls) == 2
-    assert user_calls[0] == mock.call()
-    assert user_calls[1] == mock.call(filters={'cursor': 'abc123'})
+    assert user_calls[0] == mock.call(filters={'page_size': 100})
+    assert user_calls[1] == mock.call(filters={'cursor': 'abc123', 'page_size': 100})
 
 
 @pytest.mark.django_db

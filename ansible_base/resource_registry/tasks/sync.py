@@ -8,7 +8,6 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
 from io import StringIO, TextIOBase
-from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from asgiref.sync import sync_to_async
@@ -157,12 +156,12 @@ class RemoteAssignmentFetcher:
 
     def _fetch_page(self, list_fn, next_url):
         if next_url is None:
-            return list_fn()
+            return list_fn(filters={'page_size': self.page_size})
         cursor = parse_qs(urlparse(next_url).query).get('cursor', [None])[0]
         if cursor is None:
             logger.warning(f"Pagination URL missing cursor parameter: {next_url}")
             return None
-        return list_fn(filters={'cursor': cursor})
+        return list_fn(filters={'cursor': cursor, 'page_size': self.page_size})
 
     def _process_assignments(self, assignments_data, actor_id_key, assignment_type):
         for assignment in assignments_data:
