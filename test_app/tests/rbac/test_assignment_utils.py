@@ -1,26 +1,16 @@
 from unittest import mock
 
 import pytest
-from django.test import override_settings
 
 from ansible_base.rbac.assignment_utils import (
     _SKIP,
     AssignmentTuple,
-    RemoteAssignmentFetcher,
     _collect_assignment_tuples,
     _resolve_object_ansible_id,
+    get_content_object,
     get_local_assignments,
-    get_remote_assignments,
 )
 from ansible_base.resource_registry.models import Resource
-
-
-def _mock_response(status_code=200, body=None):
-    resp = mock.Mock()
-    resp.status_code = status_code
-    resp.json.return_value = body or {"results": [], "next": None}
-    return resp
-
 
 # ---------------------------------------------------------------------------
 # AssignmentTuple
@@ -51,131 +41,103 @@ def test_assignment_tuple_global_vs_scoped():
 
 
 # ---------------------------------------------------------------------------
-# AssignmentClient Protocol — structural compliance
-# ---------------------------------------------------------------------------
-
-
-def test_assignment_client_protocol_duck_typing():
-    """A mock with the right methods can be used as an AssignmentClient."""
-    client = mock.Mock(spec=['list_user_assignments', 'list_team_assignments'])
-    assert hasattr(client, 'list_user_assignments')
-    assert hasattr(client, 'list_team_assignments')
-    assert callable(client.list_user_assignments)
-    assert callable(client.list_team_assignments)
-
-
-# ---------------------------------------------------------------------------
-# RemoteAssignmentFetcher
+# get_content_object — ValueError guard
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-def test_fetcher_uses_custom_page_size():
-    client = mock.Mock(spec=['list_user_assignments', 'list_team_assignments'])
-    ok = _mock_response()
-    client.list_user_assignments.return_value = ok
-    client.list_team_assignments.return_value = ok
+def test_get_content_object_rejects_none_content_type():
+    """get_content_object raises ValueError when role_definition.content_type is None."""
+    rd = mock.Mock(content_type=None)
+    at = AssignmentTuple('user1', 'obj1', 'Admin', 'user')
+    with pytest.raises(ValueError, match="content_type"):
+        get_content_object(rd, at)
 
-    RemoteAssignmentFetcher(client, page_size=250).fetch()
 
-    client.list_user_assignments.assert_called_with(filters={'page': 1, 'page_size': 250})
+# ---------------------------------------------------------------------------
+# _resolve_object_ansible_id
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_object_ansible_id_global_assignment():
+    """Global assignments (no object_id / no content_type) return None."""
+    assignment = mock.Mock(object_id=None, content_type=None)
+    assert _resolve_object_ansible_id(assignment, {}) is None
+
+
+def test_resolve_object_ansible_id_non_org_team():
+    """Non-org/team types return the raw object_id."""
+    ct = mock.Mock(model='inventory')
+    assignment = mock.Mock(object_id='42', content_type=ct)
+    assert _resolve_object_ansible_id(assignment, {}) == '42'
+
+
+def test_resolve_object_ansible_id_org_resolved():
+    """Org/team types return the resolved ansible_id from the map."""
+    ct = mock.Mock(model='organization')
+    assignment = mock.Mock(object_id='7', content_type=ct)
+    object_map = {('7', 'organization'): 'resolved-uuid'}
+    assert _resolve_object_ansible_id(assignment, object_map) == 'resolved-uuid'
+
+
+def test_resolve_object_ansible_id_org_missing():
+    """Missing org/team resource returns _SKIP sentinel."""
+    ct = mock.Mock(model='organization')
+    assignment = mock.Mock(object_id='999', content_type=ct)
+    assert _resolve_object_ansible_id(assignment, {}) is _SKIP
+
+
+# ---------------------------------------------------------------------------
+# _collect_assignment_tuples
+# ---------------------------------------------------------------------------
+
+
+def test_collect_assignment_tuples_empty_list():
+    """Empty input returns an empty set."""
+    assert _collect_assignment_tuples([], 'user', 'user') == set()
 
 
 @pytest.mark.django_db
-def test_fetcher_reads_page_size_from_settings():
-    client = mock.Mock(spec=['list_user_assignments', 'list_team_assignments'])
-    with override_settings(RESOURCE_SYNC_PAGE_SIZE=300):
-        fetcher = RemoteAssignmentFetcher(client)
-        assert fetcher.page_size == 300
-
-
-@pytest.mark.django_db
-def test_fetcher_incomplete_on_user_failure():
-    client = mock.Mock(spec=['list_user_assignments', 'list_team_assignments'])
-    client.list_user_assignments.return_value = _mock_response(status_code=500)
-
-    result = RemoteAssignmentFetcher(client).fetch()
-
-    assert result.is_complete is False
-    client.list_team_assignments.assert_not_called()
-
-
-@pytest.mark.django_db
-def test_fetcher_incomplete_on_team_failure():
-    client = mock.Mock(spec=['list_user_assignments', 'list_team_assignments'])
-    client.list_user_assignments.return_value = _mock_response()
-    client.list_team_assignments.return_value = _mock_response(status_code=500)
-
-    result = RemoteAssignmentFetcher(client).fetch()
-
-    assert result.is_complete is False
-
-
-@pytest.mark.django_db
-def test_fetcher_filters_unknown_roles():
+def test_collect_assignment_tuples_skips_missing_actors():
+    """Assignments whose actor has no Resource entry are skipped."""
     from ansible_base.rbac.models import RoleDefinition
+    from test_app.models import User
 
-    local_role = RoleDefinition.objects.create(name='KnownRole', managed=True)
+    user = User.objects.create(username='collect_user', email='collect@test.com')
+    rd = RoleDefinition.objects.create(name='Collect Role', managed=True)
+    rd.give_global_permission(user)
 
-    client = mock.Mock(spec=['list_user_assignments', 'list_team_assignments'])
-    client.list_user_assignments.return_value = _mock_response(
-        body={
-            'results': [
-                {'user_ansible_id': 'u1', 'role_definition': 'KnownRole', 'object_ansible_id': None},
-                {'user_ansible_id': 'u2', 'role_definition': 'UnknownRole', 'object_ansible_id': None},
-            ],
-            'next': None,
-        }
-    )
-    client.list_team_assignments.return_value = _mock_response()
+    from ansible_base.rbac.models.role import RoleUserAssignment
 
-    result = RemoteAssignmentFetcher(client).fetch()
+    assignment_list = list(RoleUserAssignment.objects.select_related('user', 'role_definition', 'content_type').filter(role_definition=rd))
 
-    assert result.is_complete is True
-    assert len(result.assignments) == 1
-    assignment = next(iter(result.assignments))
-    assert assignment.role_definition_name == local_role.name
+    Resource.get_resource_for_object(user).delete()
+
+    result = _collect_assignment_tuples(assignment_list, 'user', 'user')
+    assert not any(a.role_definition_name == 'Collect Role' for a in result)
 
 
 @pytest.mark.django_db
-def test_fetcher_handles_null_results():
-    client = mock.Mock(spec=['list_user_assignments', 'list_team_assignments'])
-    null_resp = _mock_response(body={"results": None, "next": None})
-    client.list_user_assignments.return_value = null_resp
-    client.list_team_assignments.return_value = null_resp
+def test_collect_assignment_tuples_skips_missing_object_resource():
+    """Assignments with org/team objects lacking a Resource entry are skipped."""
+    from ansible_base.rbac.models import DABContentType, RoleDefinition
+    from test_app.models import Organization, User
 
-    result = get_remote_assignments(client)
+    user = User.objects.create(username='objskip_user', email='objskip@test.com')
+    org = Organization.objects.create(name='ObjSkip Org')
+    org_ct = DABContentType.objects.get_for_model(Organization)
 
-    assert result.is_complete is True
-    assert len(result.assignments) == 0
+    rd = RoleDefinition.objects.create(name='ObjSkip Role', content_type=org_ct, managed=True)
+    rd.give_permission(user, org)
 
+    from ansible_base.rbac.models.role import RoleUserAssignment
 
-@pytest.mark.django_db
-def test_fetcher_paginates_multiple_pages():
-    from ansible_base.rbac.models import RoleDefinition
+    assignment_list = list(RoleUserAssignment.objects.select_related('user', 'role_definition', 'content_type').filter(role_definition=rd))
 
-    RoleDefinition.objects.create(name='Admin', managed=True)
+    Resource.get_resource_for_object(org).delete()
 
-    client = mock.Mock(spec=['list_user_assignments', 'list_team_assignments'])
-    page1 = _mock_response(
-        body={
-            'results': [{'user_ansible_id': 'u1', 'role_definition': 'Admin', 'object_ansible_id': None}],
-            'next': 'http://example.com/page2',
-        }
-    )
-    page2 = _mock_response(
-        body={
-            'results': [{'user_ansible_id': 'u2', 'role_definition': 'Admin', 'object_ansible_id': None}],
-            'next': None,
-        }
-    )
-    client.list_user_assignments.side_effect = [page1, page2]
-    client.list_team_assignments.return_value = _mock_response()
-
-    result = RemoteAssignmentFetcher(client, page_size=1).fetch()
-
-    assert result.is_complete is True
-    assert len(result.assignments) == 2
+    result = _collect_assignment_tuples(assignment_list, 'user', 'user')
+    assert not any(a.role_definition_name == 'ObjSkip Role' for a in result)
 
 
 # ---------------------------------------------------------------------------
@@ -332,13 +294,9 @@ def test_get_local_assignments_bounded_query_count():
     org_ct = DABContentType.objects.get_for_model(Organization)
     rd = RoleDefinition.objects.create(name='Bulk Test Role', content_type=org_ct, managed=True)
 
-    users = []
-    orgs = []
     for i in range(10):
         u = User.objects.create(username=f'bulkuser{i}', email=f'bulk{i}@test.com')
-        users.append(u)
         o = Organization.objects.create(name=f'Bulk Org {i}')
-        orgs.append(o)
         rd.give_permission(u, o)
 
     from django.db import connection
@@ -347,101 +305,7 @@ def test_get_local_assignments_bounded_query_count():
         assignments = get_local_assignments()
 
     assert any(a.role_definition_name == 'Bulk Test Role' for a in assignments)
-    # Bulk resolution should use a fixed number of queries regardless of
-    # assignment count:
-    #   - 1 query for user assignments + 1 for team assignments
-    #   - 1 bulk actor ansible_id resolve per type (user, team)
-    #   - 1 bulk object ansible_id resolve per type (user, team)
-    #   - 1 RoleDefinition query per type (from select_related)
-    # Total ~6-8 queries. Without bulk resolution this would be 30+
-    # for 10 assignments (one Resource lookup per actor + per object).
     assert len(ctx.captured_queries) < 15, f"Expected bounded queries but got {len(ctx.captured_queries)}. " "This suggests N+1 query regression."
-
-
-# ---------------------------------------------------------------------------
-# _resolve_object_ansible_id
-# ---------------------------------------------------------------------------
-
-
-def test_resolve_object_ansible_id_global_assignment():
-    """Global assignments (no object_id / no content_type) return None."""
-    assignment = mock.Mock(object_id=None, content_type=None)
-    assert _resolve_object_ansible_id(assignment, {}) is None
-
-
-def test_resolve_object_ansible_id_non_org_team():
-    """Non-org/team types return the raw object_id."""
-    ct = mock.Mock(model='inventory')
-    assignment = mock.Mock(object_id='42', content_type=ct)
-    assert _resolve_object_ansible_id(assignment, {}) == '42'
-
-
-def test_resolve_object_ansible_id_org_resolved():
-    """Org/team types return the resolved ansible_id from the map."""
-    ct = mock.Mock(model='organization')
-    assignment = mock.Mock(object_id='7', content_type=ct)
-    object_map = {('7', 'organization'): 'resolved-uuid'}
-    assert _resolve_object_ansible_id(assignment, object_map) == 'resolved-uuid'
-
-
-def test_resolve_object_ansible_id_org_missing():
-    """Missing org/team resource returns _SKIP sentinel."""
-    ct = mock.Mock(model='organization')
-    assignment = mock.Mock(object_id='999', content_type=ct)
-    assert _resolve_object_ansible_id(assignment, {}) is _SKIP
-
-
-# ---------------------------------------------------------------------------
-# _collect_assignment_tuples
-# ---------------------------------------------------------------------------
-
-
-def test_collect_assignment_tuples_empty_list():
-    """Empty input returns an empty set."""
-    assert _collect_assignment_tuples([], 'user', 'user') == set()
-
-
-@pytest.mark.django_db
-def test_collect_assignment_tuples_skips_missing_actors():
-    """Assignments whose actor has no Resource entry are skipped."""
-    from ansible_base.rbac.models import RoleDefinition
-    from test_app.models import User
-
-    user = User.objects.create(username='collect_user', email='collect@test.com')
-    rd = RoleDefinition.objects.create(name='Collect Role', managed=True)
-    rd.give_global_permission(user)
-
-    from ansible_base.rbac.models.role import RoleUserAssignment
-
-    assignment_list = list(RoleUserAssignment.objects.select_related('user', 'role_definition', 'content_type').filter(role_definition=rd))
-
-    Resource.get_resource_for_object(user).delete()
-
-    result = _collect_assignment_tuples(assignment_list, 'user', 'user')
-    assert not any(a.role_definition_name == 'Collect Role' for a in result)
-
-
-@pytest.mark.django_db
-def test_collect_assignment_tuples_skips_missing_object_resource():
-    """Assignments with org/team objects lacking a Resource entry are skipped."""
-    from ansible_base.rbac.models import DABContentType, RoleDefinition
-    from test_app.models import Organization, User
-
-    user = User.objects.create(username='objskip_user', email='objskip@test.com')
-    org = Organization.objects.create(name='ObjSkip Org')
-    org_ct = DABContentType.objects.get_for_model(Organization)
-
-    rd = RoleDefinition.objects.create(name='ObjSkip Role', content_type=org_ct, managed=True)
-    rd.give_permission(user, org)
-
-    from ansible_base.rbac.models.role import RoleUserAssignment
-
-    assignment_list = list(RoleUserAssignment.objects.select_related('user', 'role_definition', 'content_type').filter(role_definition=rd))
-
-    Resource.get_resource_for_object(org).delete()
-
-    result = _collect_assignment_tuples(assignment_list, 'user', 'user')
-    assert not any(a.role_definition_name == 'ObjSkip Role' for a in result)
 
 
 # ---------------------------------------------------------------------------

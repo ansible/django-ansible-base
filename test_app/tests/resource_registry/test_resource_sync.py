@@ -665,6 +665,44 @@ def test_get_remote_assignments_handles_null_results():
 
 
 @pytest.mark.django_db
+def test_remote_assignment_fetcher_handles_connection_error():
+    """_paginate exception path: a network error marks the result as incomplete."""
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+    api_client.list_user_assignments.side_effect = ConnectionError("timeout")
+
+    result = RemoteAssignmentFetcher(api_client).fetch()
+
+    assert result.is_complete is False
+    assert len(result.assignments) == 0
+
+
+@pytest.mark.django_db
+def test_remote_assignment_fetcher_uses_object_id_fallback():
+    """When object_ansible_id is absent, object_id is used instead."""
+    from ansible_base.rbac.models import RoleDefinition
+
+    RoleDefinition.objects.create(name='FallbackRole', managed=True)
+
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+    api_client.list_user_assignments.return_value = _mock_response(
+        body={
+            'results': [
+                {'user_ansible_id': 'u1', 'role_definition': 'FallbackRole', 'object_id': '42'},
+            ],
+            'next': None,
+        }
+    )
+    api_client.list_team_assignments.return_value = _mock_response()
+
+    result = RemoteAssignmentFetcher(api_client).fetch()
+
+    assert result.is_complete is True
+    assert len(result.assignments) == 1
+    assignment = next(iter(result.assignments))
+    assert assignment.ansible_id_or_pk == '42'
+
+
+@pytest.mark.django_db
 def test_delete_local_assignment_exception_handling(static_api_client, stdout):
     """Test that delete_local_assignment logs exceptions with logger.exception."""
     from ansible_base.resource_registry.tasks.sync import delete_local_assignment

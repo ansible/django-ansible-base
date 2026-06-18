@@ -20,14 +20,11 @@ from requests import HTTPError
 from ansible_base.lib.utils.apps import is_rbac_installed
 from ansible_base.rbac.assignment_utils import (  # noqa: F401 — re-exported for backward compatibility
     AssignmentTuple,
-    RemoteAssignmentFetcher,
-    RemoteAssignmentResult,
     create_local_assignment,
     delete_local_assignment,
     get_ansible_id_or_pk,
     get_content_object,
     get_local_assignments,
-    get_remote_assignments,
 )
 from ansible_base.resource_registry.constants import SHARED_USER_RESOURCE_TYPE
 from ansible_base.resource_registry.models import Resource, ResourceType
@@ -88,6 +85,98 @@ class SyncResult:
     def __iter__(self):
         """Allows unpacking  status, item = SyncResult(...)"""
         return iter((self.status, self.item))
+
+
+@dataclass
+class RemoteAssignmentResult:
+    """Result of fetching remote assignments, including completeness status.
+
+    When ``is_complete`` is False the caller must not use the partial
+    ``assignments`` set for deletion decisions — doing so would remove
+    local assignments that simply weren't fetched.
+    """
+
+    assignments: set[AssignmentTuple] = field(default_factory=set)
+    is_complete: bool = False
+
+
+class RemoteAssignmentFetcher:
+    """Fetches role assignments from a remote resource server with pagination.
+
+    Collects user and team assignments into a single set.  If any page
+    request fails the fetcher stops early and marks the result as
+    incomplete so the caller can skip deletions safely.
+    """
+
+    def __init__(self, api_client: ResourceAPIClient, page_size: int | None = None):
+        self.api_client = api_client
+        self.assignments: set[AssignmentTuple] = set()
+        self.page_size = page_size if page_size is not None else getattr(settings, 'RESOURCE_SYNC_PAGE_SIZE', DEFAULT_SYNC_PAGE_SIZE)
+
+    def fetch(self) -> RemoteAssignmentResult:
+        """Paginate user then team assignments and return the result.
+
+        If user pagination fails, team pagination is skipped entirely
+        because the result will be incomplete regardless.
+        """
+        from ansible_base.rbac.models.role import RoleDefinition
+
+        self.local_role_names: set[str] = set(RoleDefinition.objects.values_list('name', flat=True))
+
+        users_ok = self._paginate(self.api_client.list_user_assignments, 'user_ansible_id', 'user')
+        if not users_ok:
+            return RemoteAssignmentResult(assignments=self.assignments, is_complete=False)
+
+        teams_ok = self._paginate(self.api_client.list_team_assignments, 'team_ansible_id', 'team')
+        return RemoteAssignmentResult(assignments=self.assignments, is_complete=teams_ok)
+
+    def _paginate(self, list_fn, actor_id_key: str, assignment_type: str) -> bool:
+        """Paginate a single assignment endpoint, adding results to ``self.assignments``.
+
+        Returns True if all pages were fetched successfully, False on any error.
+        """
+        page = 1
+        try:
+            while True:
+                resp = list_fn(filters={'page': page, 'page_size': self.page_size})
+                if resp.status_code != 200:
+                    logger.warning(f"Failed to fetch {assignment_type} assignments page {page}: HTTP {resp.status_code}")
+                    return False
+
+                data = resp.json()
+                for assignment in data.get('results') or []:
+                    role_name = assignment['role_definition']
+                    if role_name not in self.local_role_names:
+                        logger.debug(f"Skipping remote {assignment_type} assignment with unknown local role: {role_name}")
+                        continue
+                    ansible_id_or_pk = assignment.get('object_ansible_id') or assignment.get('object_id')
+                    self.assignments.add(
+                        AssignmentTuple(
+                            actor_ansible_id=assignment[actor_id_key],
+                            ansible_id_or_pk=ansible_id_or_pk,
+                            role_definition_name=role_name,
+                            assignment_type=assignment_type,
+                        )
+                    )
+
+                if not data.get('next'):
+                    return True
+
+                page += 1
+                logger.debug(f"Fetching next page {page} of {assignment_type} assignments")
+        except Exception:
+            logger.exception(f"Failed to fetch remote {assignment_type} assignments")
+            return False
+
+
+def get_remote_assignments(api_client: ResourceAPIClient, page_size: int | None = None) -> RemoteAssignmentResult:
+    """Fetch remote assignments from the resource server and convert to tuples.
+
+    Returns a ``RemoteAssignmentResult`` so the caller can distinguish a
+    complete fetch from a partial one (e.g. due to HTTP errors or
+    timeouts mid-pagination).
+    """
+    return RemoteAssignmentFetcher(api_client, page_size=page_size).fetch()
 
 
 def create_api_client() -> ResourceAPIClient:

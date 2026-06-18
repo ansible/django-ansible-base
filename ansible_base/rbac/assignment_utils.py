@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
-from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Q
 
@@ -13,18 +12,13 @@ from ansible_base.resource_registry.models import Resource
 
 logger = logging.getLogger('ansible_base.rbac.assignment_utils')
 
-DEFAULT_SYNC_PAGE_SIZE = 50
-
 __all__ = [
     'AssignmentTuple',
-    'RemoteAssignmentFetcher',
-    'RemoteAssignmentResult',
     'create_local_assignment',
     'delete_local_assignment',
     'get_ansible_id_or_pk',
     'get_content_object',
     'get_local_assignments',
-    'get_remote_assignments',
 ]
 
 
@@ -49,104 +43,6 @@ class AssignmentTuple:
             and self.role_definition_name == other.role_definition_name
             and self.assignment_type == other.assignment_type
         )
-
-
-@dataclass
-class RemoteAssignmentResult:
-    """Result of fetching remote assignments, including completeness status.
-
-    When ``is_complete`` is False the caller must not use the partial
-    ``assignments`` set for deletion decisions — doing so would remove
-    local assignments that simply weren't fetched.
-    """
-
-    assignments: set[AssignmentTuple] = field(default_factory=set)
-    is_complete: bool = False
-
-
-class RemoteAssignmentFetcher:
-    """Fetches role assignments from a remote resource server with pagination.
-
-    Collects user and team assignments into a single set.  If any page
-    request fails the fetcher stops early and marks the result as
-    incomplete so the caller can skip deletions safely.
-
-    ``api_client`` must provide ``list_user_assignments(filters=...)``
-    and ``list_team_assignments(filters=...)`` methods that return a
-    response with ``.status_code`` and ``.json()``.
-    ``ResourceAPIClient`` satisfies this; gateway consumers can provide
-    their own adapter.
-    """
-
-    def __init__(self, api_client: Any, page_size: int | None = None):
-        self.api_client = api_client
-        self.assignments: set[AssignmentTuple] = set()
-        self.page_size = page_size if page_size is not None else getattr(settings, 'RESOURCE_SYNC_PAGE_SIZE', DEFAULT_SYNC_PAGE_SIZE)
-
-    def fetch(self) -> RemoteAssignmentResult:
-        """Paginate user then team assignments and return the result.
-
-        If user pagination fails, team pagination is skipped entirely
-        because the result will be incomplete regardless.
-        """
-        from ansible_base.rbac.models.role import RoleDefinition
-
-        self.local_role_names: set[str] = set(RoleDefinition.objects.values_list('name', flat=True))
-
-        users_ok = self._paginate(self.api_client.list_user_assignments, 'user_ansible_id', 'user')
-        if not users_ok:
-            return RemoteAssignmentResult(assignments=self.assignments, is_complete=False)
-
-        teams_ok = self._paginate(self.api_client.list_team_assignments, 'team_ansible_id', 'team')
-        return RemoteAssignmentResult(assignments=self.assignments, is_complete=teams_ok)
-
-    def _paginate(self, list_fn, actor_id_key: str, assignment_type: str) -> bool:
-        """Paginate a single assignment endpoint, adding results to ``self.assignments``.
-
-        Returns True if all pages were fetched successfully, False on any error.
-        """
-        page = 1
-        try:
-            while True:
-                resp = list_fn(filters={'page': page, 'page_size': self.page_size})
-                if resp.status_code != 200:
-                    logger.warning(f"Failed to fetch {assignment_type} assignments page {page}: HTTP {resp.status_code}")
-                    return False
-
-                data = resp.json()
-                for assignment in data.get('results') or []:
-                    role_name = assignment['role_definition']
-                    if role_name not in self.local_role_names:
-                        logger.debug(f"Skipping remote {assignment_type} assignment with unknown local role: {role_name}")
-                        continue
-                    ansible_id_or_pk = assignment.get('object_ansible_id') or assignment.get('object_id')
-                    self.assignments.add(
-                        AssignmentTuple(
-                            actor_ansible_id=assignment[actor_id_key],
-                            ansible_id_or_pk=ansible_id_or_pk,
-                            role_definition_name=role_name,
-                            assignment_type=assignment_type,
-                        )
-                    )
-
-                if not data.get('next'):
-                    return True
-
-                page += 1
-                logger.debug(f"Fetching next page {page} of {assignment_type} assignments")
-        except Exception:
-            logger.exception(f"Failed to fetch remote {assignment_type} assignments")
-            return False
-
-
-def get_remote_assignments(api_client: Any, page_size: int | None = None) -> RemoteAssignmentResult:
-    """Fetch remote assignments from the resource server and convert to tuples.
-
-    Returns a ``RemoteAssignmentResult`` so the caller can distinguish a
-    complete fetch from a partial one (e.g. due to HTTP errors or
-    timeouts mid-pagination).
-    """
-    return RemoteAssignmentFetcher(api_client, page_size=page_size).fetch()
 
 
 def get_ansible_id_or_pk(assignment) -> str:
@@ -174,15 +70,13 @@ def get_content_object(role_definition, assignment_tuple: AssignmentTuple) -> An
     """Resolve the Django model instance for an assignment tuple's target object."""
     if not is_rbac_installed():
         raise RuntimeError("get_content_object requires ansible_base.rbac to be installed")
-    content_object = None
+    if role_definition.content_type is None:
+        raise ValueError("get_content_object requires a role_definition with a content_type")
     if role_definition.content_type.model in ('organization', 'team'):
         object_resource = Resource.objects.get(ansible_id=assignment_tuple.ansible_id_or_pk)
-        content_object = object_resource.content_object
-    else:
-        model = role_definition.content_type.model_class()
-        content_object = model.objects.get(pk=assignment_tuple.ansible_id_or_pk)
-
-    return content_object
+        return object_resource.content_object
+    model = role_definition.content_type.model_class()
+    return model.objects.get(pk=assignment_tuple.ansible_id_or_pk)
 
 
 def _bulk_resolve_actor_ansible_ids(assignments: list, actor_attr: str) -> dict[str, str]:
@@ -250,7 +144,7 @@ def _resolve_object_ansible_id(assignment, object_map: dict[tuple[str, str], str
     key = (str(assignment.object_id), model_name)
     resolved = object_map.get(key)
     if resolved is None:
-        logger.warning(f"{model_name} {assignment.object_id} found without an associated Resource, skipping assignment.")
+        logger.error(f"{model_name} {assignment.object_id} found without an associated Resource, skipping assignment.")
         return _SKIP
     return resolved
 
