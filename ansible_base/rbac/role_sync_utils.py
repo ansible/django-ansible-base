@@ -10,7 +10,7 @@ from django.db.models import Q
 from ansible_base.lib.utils.apps import is_rbac_installed
 from ansible_base.resource_registry.models import Resource
 
-logger = logging.getLogger('ansible_base.rbac.assignment_utils')
+logger = logging.getLogger('ansible_base.rbac.role_sync_utils')
 
 __all__ = [
     'AssignmentTuple',

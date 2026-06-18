@@ -18,7 +18,7 @@ from django.db.utils import Error, IntegrityError
 from requests import HTTPError
 
 from ansible_base.lib.utils.apps import is_rbac_installed
-from ansible_base.rbac.assignment_utils import (  # noqa: F401 — re-exported for backward compatibility
+from ansible_base.rbac.role_sync_utils import (  # noqa: F401 — re-exported for backward compatibility
     AssignmentTuple,
     create_local_assignment,
     delete_local_assignment,

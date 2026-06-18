@@ -2,7 +2,7 @@ from unittest import mock
 
 import pytest
 
-from ansible_base.rbac.assignment_utils import (
+from ansible_base.rbac.role_sync_utils import (
     _SKIP,
     AssignmentTuple,
     _collect_assignment_tuples,
