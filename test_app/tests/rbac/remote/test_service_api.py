@@ -144,6 +144,27 @@ def test_list_role_team_assignments_includes_id(admin_api_client, inv_rd, invent
 
 
 @pytest.mark.django_db
+def test_object_ansible_id_in_list_response(admin_api_client, rando, org_admin_rd, organization):
+    """Verify object_ansible_id is correctly returned for organization-level assignments."""
+    from test_app.models import Organization
+
+    org2 = Organization.objects.create(name='Covering Index Test Org')
+    org_admin_rd.give_permission(rando, organization)
+    org_admin_rd.give_permission(rando, org2)
+
+    url = get_relative_url('serviceuserassignment-list')
+    response = admin_api_client.get(url, format="json")
+    assert response.status_code == 200, response.data
+
+    org_assignments = [a for a in response.data['results'] if a['role_definition'] == org_admin_rd.name]
+    assert len(org_assignments) == 2
+
+    returned_ansible_ids = {a['object_ansible_id'] for a in org_assignments}
+    assert str(organization.resource.ansible_id) in returned_ansible_ids
+    assert str(org2.resource.ansible_id) in returned_ansible_ids
+
+
+@pytest.mark.django_db
 def test_apply_role_assignment(admin_api_client, rando, inv_rd, inventory):
     url = get_relative_url('serviceuserassignment-assign')
 
