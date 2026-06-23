@@ -935,6 +935,36 @@ def test_update_user_claims_attrs_override(user, local_authenticator_map):
     assert map_results[0][str(local_authenticator_map.pk)] is True
 
 
+def test_update_user_claims_saml_attrs_override(user, local_authenticator_map):
+    """
+    Verify that SAML-style attrs (list values) are correctly matched by
+    attribute-based triggers when passed via the attrs parameter.
+
+    SAML identity providers return attribute values as lists
+    (e.g., ["true"] instead of "true"). The trigger evaluator should handle
+    both formats via _normalize_user_value().
+    """
+    local_authenticator_map.triggers = {"attributes": {"is_superuser": {"contains": "true"}}}
+    local_authenticator_map.save()
+    authenticator = local_authenticator_map.authenticator
+    authenticator_user = AuthenticatorUser(
+        provider=authenticator,
+        user=user,
+        extra_data={"id": "saml-uid", "token_type": "Bearer"},
+    )
+    authenticator_user.save()
+
+    # SAML attrs have list values — this is what the pipeline now passes
+    # after extracting response["attributes"]
+    saml_attrs = {"is_superuser": ["true"], "email": ["user@example.com"]}
+    result = claims.update_user_claims(user, authenticator, [], attrs=saml_attrs)
+    assert result is user
+
+    authenticator_user.refresh_from_db()
+    map_results = authenticator_user.last_login_map_results
+    assert map_results[0][str(local_authenticator_map.pk)] is True
+
+
 @pytest.mark.parametrize("enabled", [True, False])
 def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator):
     # Create an AuthenticatorMap object with the parameterized "enabled" value

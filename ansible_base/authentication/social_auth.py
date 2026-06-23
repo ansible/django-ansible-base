@@ -175,6 +175,17 @@ class SocialAuthMixin:
         """
         return []
 
+    def get_claims_attrs(self, response):
+        """
+        Extract the attributes dict to use for authenticator map trigger evaluation.
+
+        The default implementation returns the response unchanged (suitable for OIDC
+        and other protocols where claims sit at the top level of the response).
+        Backends whose IdP wraps claims in a nested structure should override this
+        method to extract the appropriate sub-dict.
+        """
+        return response
+
     def ensure_strategy_in_args(self, args):
         if len(args) == 0:
             args = (AuthenticatorStrategy(storage=AuthenticatorStorage()),)
@@ -264,6 +275,7 @@ def create_user_claims_pipeline(*args, backend, response, **kwargs):
 
     logger.debug(f'updating user claims with groups claim "{groups_claim}": {extra_groups}')
 
-    user = update_user_claims(kwargs["user"], backend.database_instance, backend.get_user_groups(extra_groups), attrs=response)
+    claims_attrs = backend.get_claims_attrs(response)
+    user = update_user_claims(kwargs["user"], backend.database_instance, backend.get_user_groups(extra_groups), attrs=claims_attrs)
     if user is None:
         return SOCIAL_AUTH_PIPELINE_FAILED_STATUS

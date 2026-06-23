@@ -612,6 +612,92 @@ def test_create_user_claims_pipeline(mock_update_user_claims, groups_claim, user
     assert call_args[1]['attrs'] == rData
 
 
+def test_get_claims_attrs_default_passthrough():
+    """
+    SocialAuthMixin.get_claims_attrs() returns the response unchanged by default.
+    This is the correct behaviour for OIDC and other flat-response backends,
+    including the edge case where the response happens to contain an
+    "attributes" key — the base mixin must not silently extract it.
+    """
+
+    class MockBackend(SocialAuthMixin):
+        database_instance = None
+
+        def __init__(self):
+            pass
+
+    backend = MockBackend()
+    response = {"sub": "123", "email": "user@example.com", "attributes": {"some": "custom"}}
+    assert backend.get_claims_attrs(response) is response
+
+
+@mock.patch("ansible_base.authentication.utils.claims.update_user_claims")
+def test_create_user_claims_pipeline_calls_get_claims_attrs(mock_update_user_claims):
+    """
+    create_user_claims_pipeline delegates response normalization to
+    backend.get_claims_attrs(), so each backend controls how its own
+    response is interpreted.
+    """
+
+    class MockBackend(SocialAuthMixin):
+        database_instance = None
+        _normalized = {"is_superuser": ["true"]}
+
+        def __init__(self):
+            pass
+
+        def get_claims_attrs(self, response):
+            return self._normalized
+
+        def get_user_groups(self, extra_groups=[]):
+            return extra_groups
+
+    backend = MockBackend()
+    raw_response = {"attributes": backend._normalized, "session_index": "_abc"}
+
+    create_user_claims_pipeline(backend=backend, response=raw_response, user={"username": "saml_user"})
+
+    assert mock_update_user_claims.called
+    call_args = mock_update_user_claims.call_args
+    assert call_args[1]["attrs"] is backend._normalized
+
+
+@mock.patch("ansible_base.authentication.utils.claims.update_user_claims")
+def test_create_user_claims_pipeline_saml_groups_extracted(mock_update_user_claims):
+    """
+    Groups hoisted to the top-level response by the SAML backend's extra_data()
+    are extracted before get_claims_attrs() is called, so they still reach
+    update_user_claims as the groups argument.
+    """
+
+    class MockBackend(SocialAuthMixin):
+        database_instance = None
+
+        def __init__(self):
+            self.groups_claim = "Group"
+
+        def get_claims_attrs(self, response):
+            return response.get("attributes", response)
+
+        def get_user_groups(self, extra_groups=[]):
+            return extra_groups
+
+    backend = MockBackend()
+
+    saml_response = {
+        "attributes": {"is_superuser": ["true"]},
+        "Group": ["admins", "operators"],
+        "session_index": "_abc123",
+    }
+
+    create_user_claims_pipeline(backend=backend, response=saml_response, user={"username": "saml_user"})
+
+    assert mock_update_user_claims.called
+    call_args = mock_update_user_claims.call_args
+    groups_arg = call_args[0][2]
+    assert sorted(groups_arg) == ["admins", "operators"]
+
+
 @pytest.mark.django_db
 @mock.patch("ansible_base.authentication.social_auth.log_auth_event")
 def test_social_auth_mixin_start_no_redirect(mock_logger):
