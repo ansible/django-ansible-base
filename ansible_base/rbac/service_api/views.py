@@ -1,5 +1,5 @@
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import OuterRef, Subquery
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -111,37 +111,16 @@ class BaseSerivceRoleAssignmentViewSet(
             with transaction.atomic():
                 instance.role_definition.remove_global_permission(instance.actor)
 
-    def list(self, request, *args, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset())
-        page = self.paginate_queryset(queryset)
-        objects = page if page is not None else list(queryset)
-        self._batch_annotate_ansible_ids(objects)
-        serializer = self.get_serializer(objects, many=True)
-        if page is not None:
-            return self.get_paginated_response(serializer.data)
-        return Response(serializer.data)
 
-    @staticmethod
-    def _batch_annotate_ansible_ids(objects):
-        pairs = {
-            (obj.content_type_id, str(obj.object_id))
-            for obj in objects
-            if obj.content_type_id and obj.object_id
-        }
-        if not pairs:
-            return
-        q = Q()
-        for ct_id, oid in pairs:
-            q |= Q(content_type_id=ct_id, object_id=oid)
-        resource_map = {
-            (r.content_type_id, str(r.object_id)): r.ansible_id
-            for r in Resource.objects.filter(q).only('content_type_id', 'object_id', 'ansible_id')
-        }
-        for obj in objects:
-            if obj.content_type_id and obj.object_id:
-                obj._object_ansible_id_annotation = resource_map.get(
-                    (obj.content_type_id, str(obj.object_id))
-                )
+def resource_ansible_id_expr(ct_field='content_type_id', oid_field='object_id'):
+    return Subquery(
+        Resource.objects.filter(
+            content_type_id=OuterRef(ct_field),
+            object_id=OuterRef(oid_field),
+        ).values(
+            'ansible_id'
+        )[:1]
+    )
 
 
 class ServiceRoleUserAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
@@ -149,7 +128,9 @@ class ServiceRoleUserAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
 
     resource_purpose = "RBAC role assignments for users on resources indexed from connected AAP services"
 
-    queryset = RoleUserAssignment.objects.prefetch_related('user__resource__content_type', *prefetch_related)
+    queryset = RoleUserAssignment.objects.prefetch_related('user__resource__content_type', *prefetch_related).annotate(
+        _object_ansible_id_annotation=resource_ansible_id_expr()
+    )
     serializer_class = service_serializers.ServiceRoleUserAssignmentSerializer
     filter_backends = AnsibleBaseDjangoAppApiView.filter_backends + [
         ansible_id_backend.UserAnsibleIdAliasFilterBackend,
@@ -170,7 +151,9 @@ class ServiceRoleTeamAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
 
     resource_purpose = "RBAC role assignments for teams on resources indexed from connected AAP services"
 
-    queryset = RoleTeamAssignment.objects.prefetch_related('team__resource__content_type', *prefetch_related)
+    queryset = RoleTeamAssignment.objects.prefetch_related('team__resource__content_type', *prefetch_related).annotate(
+        _object_ansible_id_annotation=resource_ansible_id_expr()
+    )
     serializer_class = service_serializers.ServiceRoleTeamAssignmentSerializer
     filter_backends = AnsibleBaseDjangoAppApiView.filter_backends + [
         ansible_id_backend.TeamAnsibleIdAliasFilterBackend,
