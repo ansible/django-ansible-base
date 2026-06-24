@@ -4,7 +4,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from ansible_base.lib.utils.response import get_relative_url
-from ansible_base.rbac.models import DABContentType, DABPermission, RoleDefinition
+from ansible_base.rbac.models import DABContentType, DABPermission, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
 from test_app.models import Team, User
 
 
@@ -116,9 +116,31 @@ def test_list_role_user_assignments(admin_api_client, rando, inv_rd, inventory):
     assert len(candidates) == 1, response.data
     from_api = candidates[0]
 
+    # 'id' is required for cursor-based pagination in migrate_service_data
+    assert 'id' in from_api, f"'id' missing from service-index user assignment response: {from_api.keys()}"
+    assert from_api['id'] == RoleUserAssignment.objects.get(user=rando, role_definition=inv_rd, object_id=inventory.id).id
     assert int(from_api['object_id']) == inventory.id
     assert from_api['user_ansible_id'] == str(rando.resource.ansible_id)
     assert from_api['content_type'] == 'aap.inventory'
+
+
+@pytest.mark.django_db
+def test_list_role_team_assignments_includes_id(admin_api_client, inv_rd, inventory, team, member_rd, rando):
+    """Service-index team assignment responses include 'id' for cursor-based pagination."""
+    member_rd.give_permission(rando, team)
+    inv_rd.give_permission(team, inventory)
+
+    url = get_relative_url('serviceteamassignment-list')
+    response = admin_api_client.get(url + '?page_size=200', format="json")
+    assert response.status_code == 200, response.data
+
+    candidates = [a for a in response.data['results'] if a['role_definition'] == inv_rd.name]
+    assert len(candidates) == 1, response.data
+    from_api = candidates[0]
+
+    assert 'id' in from_api, f"'id' missing from service-index team assignment response: {from_api.keys()}"
+    assert from_api['id'] == RoleTeamAssignment.objects.get(team=team, role_definition=inv_rd, object_id=inventory.id).id
+    assert from_api['team_ansible_id'] == str(team.resource.ansible_id)
 
 
 @pytest.mark.django_db
