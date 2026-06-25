@@ -153,7 +153,7 @@ def test_object_ansible_id_in_list_response(admin_api_client, rando, org_admin_r
     org_admin_rd.give_permission(rando, org2)
 
     url = get_relative_url('serviceuserassignment-list')
-    response = admin_api_client.get(url, format="json")
+    response = admin_api_client.get(url + '?page_size=200', format="json")
     assert response.status_code == 200, response.data
 
     org_assignments = [a for a in response.data['results'] if a['role_definition'] == org_admin_rd.name]
