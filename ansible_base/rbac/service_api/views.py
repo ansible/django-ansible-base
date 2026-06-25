@@ -11,6 +11,7 @@ from ansible_base.lib.utils.views.permissions import try_add_oauth2_scope_permis
 from ansible_base.resource_registry.models import Resource
 from ansible_base.resource_registry.views import HasResourceRegistryPermissions
 from ansible_base.rest_filters.rest_framework import ansible_id_backend
+from ansible_base.rest_filters.rest_framework.ansible_id_backend import ServiceFilterBackend
 
 from ..models import DABContentType, DABPermission, RoleTeamAssignment, RoleUserAssignment
 from . import serializers as service_serializers
@@ -135,6 +136,7 @@ class ServiceRoleUserAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     filter_backends = AnsibleBaseDjangoAppApiView.filter_backends + [
         ansible_id_backend.UserAnsibleIdAliasFilterBackend,
         ansible_id_backend.RoleAssignmentFilterBackend,
+        ServiceFilterBackend,
     ]
 
     @action(detail=False, methods=['post'], url_path='assign')
@@ -158,6 +160,7 @@ class ServiceRoleTeamAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     filter_backends = AnsibleBaseDjangoAppApiView.filter_backends + [
         ansible_id_backend.TeamAnsibleIdAliasFilterBackend,
         ansible_id_backend.RoleAssignmentFilterBackend,
+        ServiceFilterBackend,
     ]
 
     @action(detail=False, methods=['post'], url_path='assign')

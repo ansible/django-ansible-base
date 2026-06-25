@@ -109,10 +109,11 @@ class RemoteAssignmentFetcher:
     incomplete so the caller can skip deletions safely.
     """
 
-    def __init__(self, api_client: ResourceAPIClient, page_size: int | None = None):
+    def __init__(self, api_client: ResourceAPIClient, page_size: int | None = None, service_filter: str | None = None):
         self.api_client = api_client
         self.assignments: set[AssignmentTuple] = set()
         self.page_size = page_size if page_size is not None else getattr(settings, 'RESOURCE_SYNC_PAGE_SIZE', DEFAULT_SYNC_PAGE_SIZE)
+        self.service_filter = service_filter
 
     def fetch(self) -> RemoteAssignmentResult:
         """Paginate user then team assignments and return the result.
@@ -156,7 +157,10 @@ class RemoteAssignmentFetcher:
 
     def _fetch_page(self, list_fn, next_url):
         if next_url is None:
-            return list_fn(filters={'page_size': self.page_size})
+            filters = {'page_size': self.page_size}
+            if self.service_filter:
+                filters['content_type__service'] = self.service_filter
+            return list_fn(filters=filters)
         cursor = parse_qs(urlparse(next_url).query).get('cursor', [None])[0]
         if cursor is None:
             logger.warning(f"Pagination URL missing cursor parameter: {next_url}")
@@ -180,14 +184,14 @@ class RemoteAssignmentFetcher:
             )
 
 
-def get_remote_assignments(api_client: ResourceAPIClient, page_size: int | None = None) -> RemoteAssignmentResult:
+def get_remote_assignments(api_client: ResourceAPIClient, page_size: int | None = None, service_filter: str | None = None) -> RemoteAssignmentResult:
     """Fetch remote assignments from the resource server and convert to tuples.
 
     Returns a ``RemoteAssignmentResult`` so the caller can distinguish a
     complete fetch from a partial one (e.g. due to HTTP errors or
     timeouts mid-pagination).
     """
-    return RemoteAssignmentFetcher(api_client, page_size=page_size).fetch()
+    return RemoteAssignmentFetcher(api_client, page_size=page_size, service_filter=service_filter).fetch()
 
 
 def create_api_client() -> ResourceAPIClient:
@@ -470,6 +474,7 @@ class SyncExecutor:
     results: dict = field(default_factory=lambda: defaultdict(list))
     sync_assignments: bool = True
     page_size: int | None = None
+    service_filter: str | None = None
 
     def write(self, text: str = ""):
         """Write to assigned IO or simply ignores the text."""
@@ -616,7 +621,7 @@ class SyncExecutor:
         self.write(">>> Syncing role assignments")
 
         try:
-            remote_result = get_remote_assignments(self.api_client, page_size=self.page_size)
+            remote_result = get_remote_assignments(self.api_client, page_size=self.page_size, service_filter=self.service_filter)
             local_assignments = get_local_assignments()
 
             # Deletions are only safe when the remote fetch was complete.
