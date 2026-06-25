@@ -59,6 +59,7 @@ class BaseSerivceRoleAssignmentViewSet(
             HasResourceRegistryPermissions,
         ]
     )
+    rest_filters_reserved_names = ('content_type__service',)
 
     def remote_secondary_sync_assignment(self, assignment, from_service=None):
         """To allow service-specific sync when getting assignment from /service-index/ endpoint

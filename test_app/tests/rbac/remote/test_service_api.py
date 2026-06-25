@@ -716,3 +716,121 @@ class TestValidationErrors:
         # Check if the error is about missing object_id or object_ansible_id
         error_msg = str(response.data)
         assert "You must provide either 'object_id' or 'object_ansible_id'" in error_msg
+
+
+@pytest.mark.django_db
+class TestServiceFilter:
+    """Test content_type__service filter on service-index assignment endpoints."""
+
+    def _create_foo_assignment(self, admin_api_client, rando, foo_rd):
+        """Create a foo-service assignment via the service-index assign endpoint."""
+        url = get_relative_url('serviceuserassignment-assign')
+        data = {
+            "role_definition": foo_rd.name,
+            "user_ansible_id": str(rando.resource.ansible_id),
+            "object_id": "42",
+        }
+        response = admin_api_client.post(url, data=data)
+        assert response.status_code in (200, 201), response.data
+
+    def test_user_assignments_filtered_by_service(self, admin_api_client, rando, inv_rd, inventory, foo_rd):
+        """When content_type__service is provided, only assignments matching that service are returned."""
+        inv_rd.give_permission(rando, inventory)
+        self._create_foo_assignment(admin_api_client, rando, foo_rd)
+
+        url = get_relative_url('serviceuserassignment-list')
+
+        response = admin_api_client.get(url + '?content_type__service=aap', format="json")
+        assert response.status_code == 200, response.data
+        for a in response.data['results']:
+            if a['content_type']:
+                assert a['content_type'].startswith('aap.'), f"Expected only aap content types, got {a['content_type']}"
+
+    def test_user_assignments_filtered_excludes_other_services(self, admin_api_client, rando, inv_rd, inventory, foo_rd):
+        """Filtering by one service excludes assignments for other services."""
+        inv_rd.give_permission(rando, inventory)
+        self._create_foo_assignment(admin_api_client, rando, foo_rd)
+
+        url = get_relative_url('serviceuserassignment-list')
+
+        response_aap = admin_api_client.get(url + '?content_type__service=aap', format="json")
+        assert response_aap.status_code == 200
+        for a in response_aap.data['results']:
+            if a['content_type']:
+                assert not a['content_type'].startswith('foo.'), "foo assignment should not appear in aap-filtered results"
+
+        response_foo = admin_api_client.get(url + '?content_type__service=foo', format="json")
+        assert response_foo.status_code == 200
+        for a in response_foo.data['results']:
+            if a['content_type']:
+                assert not a['content_type'].startswith('aap.'), "aap assignment should not appear in foo-filtered results"
+
+    def test_global_assignments_included_when_filtered(self, admin_api_client, rando, inv_rd, inventory):
+        """Global assignments (content_type=None) are included regardless of filter value."""
+        inv_rd.give_permission(rando, inventory)
+        sys_auditor = RoleDefinition.objects.managed.sys_auditor
+        sys_auditor.give_global_permission(rando)
+
+        url = get_relative_url('serviceuserassignment-list')
+        response = admin_api_client.get(url + '?content_type__service=aap', format="json")
+        assert response.status_code == 200
+
+        global_assignments = [a for a in response.data['results'] if a['content_type'] is None]
+        assert len(global_assignments) >= 1, "Global assignments should be included in filtered results"
+
+    def test_no_filter_returns_all_assignments(self, admin_api_client, rando, inv_rd, inventory, foo_rd):
+        """Without content_type__service filter, all assignments are returned (backward compatible)."""
+        inv_rd.give_permission(rando, inventory)
+        self._create_foo_assignment(admin_api_client, rando, foo_rd)
+        sys_auditor = RoleDefinition.objects.managed.sys_auditor
+        sys_auditor.give_global_permission(rando)
+
+        url = get_relative_url('serviceuserassignment-list')
+
+        response_all = admin_api_client.get(url + '?page_size=200', format="json")
+        assert response_all.status_code == 200
+        total_unfiltered = response_all.data['count']
+
+        response_aap = admin_api_client.get(url + '?content_type__service=aap&page_size=200', format="json")
+        response_foo = admin_api_client.get(url + '?content_type__service=foo&page_size=200', format="json")
+
+        assert total_unfiltered >= response_aap.data['count']
+        assert total_unfiltered >= response_foo.data['count']
+
+    def test_team_assignments_filtered_by_service(self, admin_api_client, inv_rd, inventory, team, member_rd, rando):
+        """Team assignment endpoint also supports content_type__service filter."""
+        member_rd.give_permission(rando, team)
+        inv_rd.give_permission(team, inventory)
+
+        url = get_relative_url('serviceteamassignment-list')
+        response = admin_api_client.get(url + '?content_type__service=aap', format="json")
+        assert response.status_code == 200
+        for a in response.data['results']:
+            if a['content_type']:
+                assert a['content_type'].startswith('aap.'), f"Expected aap content type, got {a['content_type']}"
+
+    def test_team_global_assignments_included_when_filtered(self, admin_api_client, team, member_rd, rando):
+        """Global team assignments are included when filtering by service."""
+        member_rd.give_permission(rando, team)
+        sys_auditor = RoleDefinition.objects.managed.sys_auditor
+        sys_auditor.give_global_permission(team)
+
+        url = get_relative_url('serviceteamassignment-list')
+        response = admin_api_client.get(url + '?content_type__service=aap', format="json")
+        assert response.status_code == 200
+
+        global_assignments = [a for a in response.data['results'] if a['content_type'] is None]
+        assert len(global_assignments) >= 1, "Global team assignments should be included in filtered results"
+
+    def test_nonexistent_service_returns_only_globals(self, admin_api_client, rando, inv_rd, inventory):
+        """Filtering by a service with no assignments returns only global assignments."""
+        inv_rd.give_permission(rando, inventory)
+        sys_auditor = RoleDefinition.objects.managed.sys_auditor
+        sys_auditor.give_global_permission(rando)
+
+        url = get_relative_url('serviceuserassignment-list')
+        response = admin_api_client.get(url + '?content_type__service=nonexistent', format="json")
+        assert response.status_code == 200
+
+        for a in response.data['results']:
+            assert a['content_type'] is None, f"Only global assignments should be returned for nonexistent service, got {a['content_type']}"
