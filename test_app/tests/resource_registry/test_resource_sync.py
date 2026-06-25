@@ -589,7 +589,18 @@ def test_sync_executor_passes_page_size(mock_local, mock_remote, static_api_clie
     mock_remote.return_value = RemoteAssignmentResult(assignments=set(), is_complete=True)
     executor = SyncExecutor(api_client=static_api_client, stdout=stdout, page_size=75)
     executor._sync_assignments()
-    mock_remote.assert_called_once_with(static_api_client, page_size=75)
+    mock_remote.assert_called_once_with(static_api_client, page_size=75, service_filter=None)
+
+
+@mock.patch('ansible_base.resource_registry.tasks.sync.get_remote_assignments')
+@mock.patch('ansible_base.resource_registry.tasks.sync.get_local_assignments', return_value=set())
+@pytest.mark.django_db
+def test_sync_executor_passes_service_filter(mock_local, mock_remote, static_api_client, stdout):
+    """SyncExecutor should forward service_filter to get_remote_assignments."""
+    mock_remote.return_value = RemoteAssignmentResult(assignments=set(), is_complete=True)
+    executor = SyncExecutor(api_client=static_api_client, stdout=stdout, service_filter='controller')
+    executor._sync_assignments()
+    mock_remote.assert_called_once_with(static_api_client, page_size=None, service_filter='controller')
 
 
 @mock.patch("ansible_base.resource_registry.tasks.sync.get_resource_server_client")
