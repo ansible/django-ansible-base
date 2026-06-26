@@ -59,6 +59,7 @@ class BaseSerivceRoleAssignmentViewSet(
             HasResourceRegistryPermissions,
         ]
     )
+    # Handled by ServiceFilterBackend which adds OR-with-NULL for global assignments
     rest_filters_reserved_names = ('content_type__service',)
 
     def remote_secondary_sync_assignment(self, assignment, from_service=None):

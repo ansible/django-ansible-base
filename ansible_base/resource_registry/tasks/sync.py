@@ -155,17 +155,21 @@ class RemoteAssignmentFetcher:
             logger.exception(f"Failed to fetch remote {assignment_type} assignments")
             return False
 
+    def _build_filters(self, **extra):
+        filters = {'page_size': self.page_size}
+        if self.service_filter:
+            filters['content_type__service'] = self.service_filter
+        filters.update(extra)
+        return filters
+
     def _fetch_page(self, list_fn, next_url):
         if next_url is None:
-            filters = {'page_size': self.page_size}
-            if self.service_filter:
-                filters['content_type__service'] = self.service_filter
-            return list_fn(filters=filters)
+            return list_fn(filters=self._build_filters())
         cursor = parse_qs(urlparse(next_url).query).get('cursor', [None])[0]
         if cursor is None:
             logger.warning(f"Pagination URL missing cursor parameter: {next_url}")
             return None
-        return list_fn(filters={'cursor': cursor, 'page_size': self.page_size})
+        return list_fn(filters=self._build_filters(cursor=cursor))
 
     def _process_assignments(self, assignments_data, actor_id_key, assignment_type):
         for assignment in assignments_data:
@@ -622,7 +626,7 @@ class SyncExecutor:
 
         try:
             remote_result = get_remote_assignments(self.api_client, page_size=self.page_size, service_filter=self.service_filter)
-            local_assignments = get_local_assignments()
+            local_assignments = get_local_assignments(service=self.service_filter)
 
             # Deletions are only safe when the remote fetch was complete.
             # A partial fetch would cause us to delete assignments that

@@ -742,6 +742,7 @@ class TestServiceFilter:
 
         response = admin_api_client.get(url + '?content_type__service=aap', format="json")
         assert response.status_code == 200, response.data
+        assert len(response.data['results']) >= 1, "Filtered results should not be empty"
         for a in response.data['results']:
             if a['content_type']:
                 assert a['content_type'].startswith('aap.'), f"Expected only aap content types, got {a['content_type']}"
@@ -755,12 +756,14 @@ class TestServiceFilter:
 
         response_aap = admin_api_client.get(url + '?content_type__service=aap', format="json")
         assert response_aap.status_code == 200
+        assert len(response_aap.data['results']) >= 1, "AAP-filtered results should not be empty"
         for a in response_aap.data['results']:
             if a['content_type']:
                 assert not a['content_type'].startswith('foo.'), "foo assignment should not appear in aap-filtered results"
 
         response_foo = admin_api_client.get(url + '?content_type__service=foo', format="json")
         assert response_foo.status_code == 200
+        assert len(response_foo.data['results']) >= 1, "Foo-filtered results should not be empty"
         for a in response_foo.data['results']:
             if a['content_type']:
                 assert not a['content_type'].startswith('aap.'), "aap assignment should not appear in foo-filtered results"

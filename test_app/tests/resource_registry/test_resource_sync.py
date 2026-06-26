@@ -596,11 +596,26 @@ def test_sync_executor_passes_page_size(mock_local, mock_remote, static_api_clie
 @mock.patch('ansible_base.resource_registry.tasks.sync.get_local_assignments', return_value=set())
 @pytest.mark.django_db
 def test_sync_executor_passes_service_filter(mock_local, mock_remote, static_api_client, stdout):
-    """SyncExecutor should forward service_filter to get_remote_assignments."""
+    """SyncExecutor should forward service_filter to get_remote_assignments and get_local_assignments."""
     mock_remote.return_value = RemoteAssignmentResult(assignments=set(), is_complete=True)
     executor = SyncExecutor(api_client=static_api_client, stdout=stdout, service_filter='controller')
     executor._sync_assignments()
     mock_remote.assert_called_once_with(static_api_client, page_size=None, service_filter='controller')
+    mock_local.assert_called_once_with(service='controller')
+
+
+def test_fetch_page_preserves_service_filter_on_cursor_pages():
+    """_fetch_page must include content_type__service on cursor-based pagination pages."""
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+    fetcher = RemoteAssignmentFetcher(api_client, page_size=100, service_filter='controller')
+
+    mock_list_fn = mock.Mock()
+    mock_list_fn.return_value = mock.Mock(status_code=200)
+    mock_list_fn.return_value.json.return_value = {'results': [], 'next': None}
+
+    fetcher._fetch_page(mock_list_fn, 'http://example.com/api/?cursor=abc123&page_size=100')
+    call_filters = mock_list_fn.call_args.kwargs['filters']
+    assert call_filters.get('content_type__service') == 'controller', "Service filter must be preserved on cursor pages"
 
 
 @mock.patch("ansible_base.resource_registry.tasks.sync.get_resource_server_client")
