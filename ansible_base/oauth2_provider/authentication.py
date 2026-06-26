@@ -4,7 +4,7 @@ import logging
 from django.utils.encoding import smart_str
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication
 from oauth2_provider.oauth2_backends import OAuthLibCore as _OAuthLibCore
-from rest_framework.exceptions import UnsupportedMediaType
+from rest_framework.exceptions import ParseError, UnsupportedMediaType
 
 from ansible_base.lib.logging import log_auth_event
 from ansible_base.lib.utils.hashing import hash_string
@@ -14,9 +14,11 @@ logger = logging.getLogger('ansible_base.oauth2_provider.authentication')
 
 class OAuthLibCore(_OAuthLibCore):
     def extract_body(self, request):
+        # request.POST.items() can fail for non-form content types; return
+        # empty so OAuth2 falls back to the Authorization header.
         try:
             return request.POST.items()
-        except UnsupportedMediaType:
+        except (UnsupportedMediaType, ParseError):
             return ()
 
     def _extract_params(self, request):
