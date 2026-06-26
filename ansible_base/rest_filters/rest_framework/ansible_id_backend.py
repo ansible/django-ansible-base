@@ -100,9 +100,7 @@ class ServiceFilterBackend(BaseFilterBackend):
     def filter_queryset(self, request, queryset, view):
         service = request.query_params.get('content_type__service')
         if service:
-            queryset = queryset.filter(
-                Q(content_type__service=service) | Q(content_type_id__isnull=True)
-            )
+            queryset = queryset.filter(Q(content_type__service=service) | Q(content_type_id__isnull=True))
         return queryset
 
 
