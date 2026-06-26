@@ -9,6 +9,9 @@ from ansible_base.lib.dynamic_config import (
     toggle_feature_flags,
     validate,
 )
+from ansible_base.lib.dynamic_config.dynaconf_helpers import (
+    _dynaconf_loaded_files,
+)
 
 
 def test_swagger_disabled():
@@ -244,7 +247,7 @@ def test_load_python_file_with_injected_scope(tmp_path):
     settings = factory("", "TEST", settings_files=[str(defaults)])
     load_python_file_with_injected_context(str(extra_file), settings=settings)
     assert settings.COLORS == ['red', 'green', 'blue']
-    assert settings._loaded_files == [str(defaults), str(extra_file)]
+    assert _dynaconf_loaded_files(settings) == [str(defaults), str(extra_file)]
 
 
 def test_toggle_feature_flags():

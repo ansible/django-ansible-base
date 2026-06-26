@@ -49,14 +49,6 @@ jobs:
             python-version: "3.12"
             sonar: false
             junit-xml-upload: false
-          - env: py311-in-files
-            python-version: "3.11"
-            sonar: false
-            junit-xml-upload: false
-          - env: py312-in-files
-            python-version: "3.12"
-            sonar: false
-            junit-xml-upload: false
     steps:
       - uses: actions/checkout@v4
         with:
@@ -113,3 +105,46 @@ jobs:
         env:
           PDE_UPLOAD_USER: ${{ vars.PDE_ORG_RESULTS_AGGREGATOR_UPLOAD_USER }}
           PDE_UPLOAD_PASSWORD: ${{ secrets.PDE_ORG_RESULTS_UPLOAD_PASSWORD }}
+
+  canary-deps:
+    name: "Canary (unpinned deps, may fail) - ${{ matrix.tests.env }}"
+    if: >-
+      github.repository == 'ansible/django-ansible-base'
+      && (
+        (github.event_name == 'push' && github.ref_name == 'devel')
+        || (github.event_name == 'pull_request' && github.base_ref == 'devel')
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        tests:
+          - env: py311-in-files
+            python-version: "3.11"
+          - env: py312-in-files
+            python-version: "3.12"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Install build requirements
+        run: sudo apt-get update && sudo apt-get install -y libsasl2-dev libldap2-dev libssl-dev libxmlsec1-dev
+
+      - name: Install python ${{ matrix.tests.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.tests.python-version }}
+
+      - name: Install tox
+        run: pip${{ matrix.tests.python-version }} install tox tox-docker
+
+      - name: Run tox
+        env:
+          TOX_DOCKER_GATEWAY: "127.0.0.1"
+        run: |
+          echo "::remove-matcher owner=python::"
+          tox --colored yes -e ${{ matrix.tests.env }}
