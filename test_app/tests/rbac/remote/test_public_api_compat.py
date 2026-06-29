@@ -130,7 +130,7 @@ def test_give_permission_to_remote_object_uuid(admin_api_client, rando, foo_type
     service_url = get_relative_url('serviceuserassignment-list')
     response = admin_api_client.get(service_url + f'?user={rando.id}', format="json")
     assert response.status_code == 200, response.data
-    assert response.data['count'] == 1
+    assert len(response.data['results']) == 1
     assignment_data = response.data['results'][0]
     assert assignment_data['object_id'] == str(assignment.object_id)
 
