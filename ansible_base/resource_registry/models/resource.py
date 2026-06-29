@@ -105,9 +105,12 @@ class Resource(models.Model):
         return resource_type_cache(self.content_type_id)
 
     class Meta:
-        unique_together = ('content_type', 'object_id')
-        indexes = [
-            models.Index(fields=["content_type", "object_id"]),
+        constraints = [
+            models.UniqueConstraint(
+                fields=["content_type", "object_id"],
+                include=["ansible_id"],
+                name="unique_resource_content_type_object_id",
+            ),
         ]
 
     def update_from_content_object(self):

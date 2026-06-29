@@ -5,7 +5,7 @@ from rest_framework.test import APIClient
 
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.models import DABContentType, DABPermission, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
-from test_app.models import Team, User
+from test_app.models import Organization, Team, User
 
 
 @pytest.mark.django_db
@@ -141,6 +141,25 @@ def test_list_role_team_assignments_includes_id(admin_api_client, inv_rd, invent
     assert 'id' in from_api, f"'id' missing from service-index team assignment response: {from_api.keys()}"
     assert from_api['id'] == RoleTeamAssignment.objects.get(team=team, role_definition=inv_rd, object_id=inventory.id).id
     assert from_api['team_ansible_id'] == str(team.resource.ansible_id)
+
+
+@pytest.mark.django_db
+def test_object_ansible_id_in_list_response(admin_api_client, rando, org_admin_rd, organization):
+    """Verify object_ansible_id is correctly returned for organization-level assignments."""
+    org2 = Organization.objects.create(name='Covering Index Test Org')
+    org_admin_rd.give_permission(rando, organization)
+    org_admin_rd.give_permission(rando, org2)
+
+    url = get_relative_url('serviceuserassignment-list')
+    response = admin_api_client.get(url + '?page_size=200', format="json")
+    assert response.status_code == 200, response.data
+
+    org_assignments = [a for a in response.data['results'] if a['role_definition'] == org_admin_rd.name]
+    assert len(org_assignments) == 2
+
+    returned_ansible_ids = {a['object_ansible_id'] for a in org_assignments}
+    assert str(organization.resource.ansible_id) in returned_ansible_ids
+    assert str(org2.resource.ansible_id) in returned_ansible_ids
 
 
 @pytest.mark.django_db
