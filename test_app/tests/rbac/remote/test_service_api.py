@@ -811,13 +811,13 @@ class TestServiceFilter:
 
         response_all = admin_api_client.get(url + '?page_size=200', format="json")
         assert response_all.status_code == 200
-        total_unfiltered = response_all.data['count']
+        all_results = response_all.data['results']
 
         response_aap = admin_api_client.get(url + '?content_type__service=aap&page_size=200', format="json")
         response_foo = admin_api_client.get(url + '?content_type__service=foo&page_size=200', format="json")
 
-        assert total_unfiltered >= response_aap.data['count']
-        assert total_unfiltered >= response_foo.data['count']
+        assert len(all_results) >= len(response_aap.data['results'])
+        assert len(all_results) >= len(response_foo.data['results'])
 
     def test_team_assignments_filtered_by_service(self, admin_api_client, inv_rd, inventory, team, member_rd, rando):
         """Team assignment endpoint also supports content_type__service filter."""
