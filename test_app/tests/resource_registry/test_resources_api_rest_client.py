@@ -309,7 +309,7 @@ def test_list_user_assignments(resource_client, org_admin_rd, user, organization
 
     assert resp.status_code == 200
     data = resp.json()
-    assert data["count"] >= 1
+    assert len(data["results"]) >= 1
 
     # Find our assignment in the results
     assignment_found = False
@@ -333,7 +333,7 @@ def test_list_team_assignments(resource_client, inv_rd, team, inventory):
 
     assert resp.status_code == 200
     data = resp.json()
-    assert data["count"] >= 1
+    assert len(data["results"]) >= 1
 
     # Find our assignment in the results
     assignment_found = False
