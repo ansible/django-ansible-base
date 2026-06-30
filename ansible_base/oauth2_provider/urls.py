@@ -36,7 +36,7 @@ oauth_urls = [
     # OIDC endpoints
     # URL patterns below must match installed django-oauth-toolkit version, otherwise discovery fails
     # See https://github.com/django-oauth/django-oauth-toolkit/blob/2.3.0/oauth2_provider/urls.py#L35
-    re_path(r"^\.well-known/openid-configuration/$", oauth_views.ConnectDiscoveryInfoView.as_view(), name="oidc-connect-discovery-info"),
+    re_path(r"^\.well-known/openid-configuration/$", oauth2_provider_views.DiscoveryInfoView.as_view(), name="oidc-connect-discovery-info"),
     re_path(r"^\.well-known/jwks\.json$", oauth_views.JwksInfoView.as_view(), name="jwks-info"),
     re_path(r"^userinfo/$", oauth_views.UserInfoView.as_view(), name="user-info"),
     re_path(r"^logout/$", oauth_views.RPInitiatedLogoutView.as_view(), name="rp-initiated-logout"),
@@ -44,5 +44,10 @@ oauth_urls = [
 
 
 root_urls = [
+    # Catch-all for unhandled /.well-known/ paths. Without this, Django falls
+    # through to the UI root and returns the login page HTML instead of a 404.
+    # Registered endpoints (e.g. /o/.well-known/openid-configuration/) are
+    # matched first under the /o/ prefix, so they are unaffected.
+    re_path(r"^\.well-known/", oauth2_provider_views.NotFoundView.as_view()),
     re_path(r"^o/", include((oauth_urls, 'oauth2_provider'))),
 ]
