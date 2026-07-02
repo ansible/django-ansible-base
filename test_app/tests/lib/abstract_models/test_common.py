@@ -1,4 +1,5 @@
 from functools import partial
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -7,6 +8,7 @@ from django.contrib.auth.models import AnonymousUser
 from django.db import connection
 from django.test import override_settings
 from django.test.client import RequestFactory
+from django.urls.exceptions import NoReverseMatch
 
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.models import RoleDefinition
@@ -112,10 +114,6 @@ def test_related_fields_view_resolution(shut_up_logging):
 @pytest.mark.django_db
 def test_related_fields_namespace_retry(shut_up_logging, system_user):
     """When bare reverse fails but namespaced reverse succeeds, the field should be included."""
-    from types import SimpleNamespace
-
-    from django.urls.exceptions import NoReverseMatch
-
     model = RelatedFieldsTestModel.objects.create()
 
     request = SimpleNamespace(resolver_match=SimpleNamespace(namespace='galaxy:api:ui_v2'))
@@ -155,8 +153,6 @@ def test_related_fields_namespace_retry_both_fail(shut_up_logging, system_user):
 @pytest.mark.django_db
 def test_related_fields_no_namespace_retry_without_request(shut_up_logging):
     """When request is None, bare reverse failures should be silently skipped (existing behavior)."""
-    from django.urls.exceptions import NoReverseMatch
-
     model = RelatedFieldsTestModel.objects.create()
 
     def fake_get_relative_url(view_name, **kwargs):
@@ -171,10 +167,6 @@ def test_related_fields_no_namespace_retry_without_request(shut_up_logging):
 @pytest.mark.django_db
 def test_related_fields_no_namespace_retry_without_namespace(shut_up_logging):
     """When request has no namespace, bare reverse failures should be silently skipped."""
-    from types import SimpleNamespace
-
-    from django.urls.exceptions import NoReverseMatch
-
     model = RelatedFieldsTestModel.objects.create()
 
     request = SimpleNamespace(resolver_match=SimpleNamespace(namespace=''))
@@ -191,8 +183,6 @@ def test_related_fields_no_namespace_retry_without_namespace(shut_up_logging):
 @pytest.mark.django_db
 def test_related_fields_bare_reverse_preferred_over_namespace(shut_up_logging, user):
     """When bare reverse succeeds, the namespace retry should not be attempted."""
-    from types import SimpleNamespace
-
     model = RelatedFieldsTestModel.objects.create()
 
     request = SimpleNamespace(resolver_match=SimpleNamespace(namespace='myapp'))
