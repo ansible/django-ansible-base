@@ -388,9 +388,5 @@ def test_from_db_invalid_token_logs_and_reraises(caplog):
 
     critical_records = [r for r in caplog.records if r.levelno == logging.CRITICAL]
     assert critical_records, "Expected at least one CRITICAL log record"
-    assert any("SECRET_KEY" in r.message for r in critical_records), (
-        "Expected CRITICAL log to mention SECRET_KEY"
-    )
-    assert any(str(model.pk) in r.message for r in critical_records), (
-        "Expected CRITICAL log to include the model pk"
-    )
+    assert any("SECRET_KEY" in r.message for r in critical_records), "Expected CRITICAL log to mention SECRET_KEY"
+    assert any(str(model.pk) in r.message for r in critical_records), "Expected CRITICAL log to include the model pk"

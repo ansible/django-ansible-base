@@ -67,9 +67,5 @@ def test_authenticator_from_db_invalid_token_logs_and_reraises(ldap_authenticato
 
     critical_records = [r for r in caplog.records if r.levelno == logging.CRITICAL]
     assert critical_records, "Expected at least one CRITICAL log record"
-    assert any("SECRET_KEY" in r.message for r in critical_records), (
-        "Expected CRITICAL log to mention SECRET_KEY"
-    )
-    assert any(ldap_authenticator.name in r.message for r in critical_records), (
-        "Expected CRITICAL log to include the authenticator name"
-    )
+    assert any("SECRET_KEY" in r.message for r in critical_records), "Expected CRITICAL log to mention SECRET_KEY"
+    assert any(ldap_authenticator.name in r.message for r in critical_records), "Expected CRITICAL log to include the authenticator name"
