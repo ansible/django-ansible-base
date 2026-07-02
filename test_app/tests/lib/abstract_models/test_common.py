@@ -110,7 +110,7 @@ def test_related_fields_view_resolution(shut_up_logging):
 
 
 @pytest.mark.django_db
-def test_related_fields_namespace_retry(shut_up_logging):
+def test_related_fields_namespace_retry(shut_up_logging, system_user):
     """When bare reverse fails but namespaced reverse succeeds, the field should be included."""
     from types import SimpleNamespace
 
@@ -129,6 +129,7 @@ def test_related_fields_namespace_retry(shut_up_logging):
         result = model.related_fields(request)
 
     assert len(result) > 0, "Namespaced retry should have resolved at least one URL"
+    assert 'created_by' in result, "FK namespace retry should have resolved created_by"
 
 
 @pytest.mark.django_db
@@ -179,6 +180,7 @@ def test_related_fields_bare_reverse_preferred_over_namespace(shut_up_logging, u
     result = model.related_fields(request)
 
     bare_result = model.related_fields(None)
+    assert bare_result, "Expected bare reverse to resolve at least one related field"
     for key in bare_result:
         assert bare_result[key] == result[key], "Bare URL should be used when it resolves"
 
