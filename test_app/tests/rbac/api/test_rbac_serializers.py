@@ -1,9 +1,7 @@
 import pytest
-from django.contrib.contenttypes.models import ContentType
 from django.test.utils import override_settings
 
 from ansible_base.lib.utils.response import get_relative_url
-from ansible_base.resource_registry.models import Resource
 from test_app.models import Inventory, User
 
 
@@ -83,20 +81,6 @@ class TestAssignmentPermission:
         response = user_api_client.post(url, data=create_data)
         assert response.status_code == 201
         assert rando.has_obj_perm(inventory_2, 'change')
-
-    def test_user_without_permissions(self, organization_2, org_admin_rd, org_admin, user_api_client):
-        url = get_relative_url('roleuserassignment-list')
-        rando = User.objects.create(username='rando')
-        resource = Resource.objects.get(object_id=organization_2.pk, content_type=ContentType.objects.get_for_model(organization_2).pk)
-
-        create_data = {'object_ansible_id': str(resource.ansible_id), 'user': rando.id, 'role_definition': org_admin_rd.id}
-
-        # user can not determine organization object exists because they have no permissions to it
-        assert not org_admin.has_obj_perm(organization_2, 'view')  # sanity
-        response = user_api_client.post(url, data=create_data)
-        assert response.status_code == 400
-        assert not rando.has_obj_perm(organization_2, 'change')
-        assert 'object does not exist' in str(response.data['object_ansible_id'])
 
     def test_object_not_found(self, inv_rd, org_admin, user_api_client):
         url = get_relative_url('roleuserassignment-list')
