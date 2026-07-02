@@ -110,6 +110,80 @@ def test_related_fields_view_resolution(shut_up_logging):
 
 
 @pytest.mark.django_db
+def test_related_fields_namespace_retry(shut_up_logging):
+    """When bare reverse fails but namespaced reverse succeeds, the field should be included."""
+    from types import SimpleNamespace
+
+    from django.urls.exceptions import NoReverseMatch
+
+    model = RelatedFieldsTestModel.objects.create()
+
+    request = SimpleNamespace(resolver_match=SimpleNamespace(namespace='galaxy:api:ui_v2'))
+
+    def fake_get_relative_url(view_name, **kwargs):
+        if ':' not in view_name:
+            raise NoReverseMatch(f"'{view_name}' is not a registered namespace")
+        return f'/api/_ui/v2/{view_name.split(":")[-1].replace("-detail", "s/")}' if 'detail' in view_name else f'/api/_ui/v2/{view_name}/'
+
+    with patch('ansible_base.lib.abstract_models.common.get_relative_url', side_effect=fake_get_relative_url):
+        result = model.related_fields(request)
+
+    assert len(result) > 0, "Namespaced retry should have resolved at least one URL"
+
+
+@pytest.mark.django_db
+def test_related_fields_no_namespace_retry_without_request(shut_up_logging):
+    """When request is None, bare reverse failures should be silently skipped (existing behavior)."""
+    from django.urls.exceptions import NoReverseMatch
+
+    model = RelatedFieldsTestModel.objects.create()
+
+    def fake_get_relative_url(view_name, **kwargs):
+        raise NoReverseMatch(f"'{view_name}' not found")
+
+    with patch('ansible_base.lib.abstract_models.common.get_relative_url', side_effect=fake_get_relative_url):
+        result = model.related_fields(None)
+
+    assert result == {}
+
+
+@pytest.mark.django_db
+def test_related_fields_no_namespace_retry_without_namespace(shut_up_logging):
+    """When request has no namespace, bare reverse failures should be silently skipped."""
+    from types import SimpleNamespace
+
+    from django.urls.exceptions import NoReverseMatch
+
+    model = RelatedFieldsTestModel.objects.create()
+
+    request = SimpleNamespace(resolver_match=SimpleNamespace(namespace=''))
+
+    def fake_get_relative_url(view_name, **kwargs):
+        raise NoReverseMatch(f"'{view_name}' not found")
+
+    with patch('ansible_base.lib.abstract_models.common.get_relative_url', side_effect=fake_get_relative_url):
+        result = model.related_fields(request)
+
+    assert result == {}
+
+
+@pytest.mark.django_db
+def test_related_fields_bare_reverse_preferred_over_namespace(shut_up_logging, user):
+    """When bare reverse succeeds, the namespace retry should not be attempted."""
+    from types import SimpleNamespace
+
+    model = RelatedFieldsTestModel.objects.create()
+
+    request = SimpleNamespace(resolver_match=SimpleNamespace(namespace='myapp'))
+
+    result = model.related_fields(request)
+
+    bare_result = model.related_fields(None)
+    for key in bare_result:
+        assert bare_result[key] == result[key], "Bare URL should be used when it resolves"
+
+
+@pytest.mark.django_db
 def test_resave_of_model_with_no_created(expected_log, system_user):
     # Create a random model and save it without warning and no system user
     model = Organization()
