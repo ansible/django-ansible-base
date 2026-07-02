@@ -13,7 +13,6 @@ from ansible_base.resource_registry.views import HasResourceRegistryPermissions
 from ansible_base.rest_filters.rest_framework import ansible_id_backend
 from ansible_base.rest_filters.rest_framework.ansible_id_backend import ServiceFilterBackend
 
-from ..api.service_cursor_paginator import ServiceCursorPagination
 from ..models import DABContentType, DABPermission, RoleTeamAssignment, RoleUserAssignment
 from . import serializers as service_serializers
 
@@ -54,8 +53,6 @@ class BaseSerivceRoleAssignmentViewSet(
     GenericViewSet,
 ):
     """List of assignments for cross-service communication"""
-
-    pagination_class = ServiceCursorPagination
 
     permission_classes = try_add_oauth2_scope_permission(
         [
