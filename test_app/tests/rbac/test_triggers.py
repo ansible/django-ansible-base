@@ -242,6 +242,16 @@ def test_defer_rbac_cache_without_context_manager(organization, inventory, rando
     assert rando.has_obj_perm(inventory, 'change')
 
 
+@pytest.mark.django_db
+def test_defer_rbac_cache_with_team_assignment(organization, team, rando, org_team_member_rd):
+    """defer_rbac_cache should also defer and flush team membership
+    recomputation (the team_ids path)."""
+    with defer_rbac_cache():
+        org_team_member_rd.give_permission(rando, organization)
+
+    assert rando.has_obj_perm(team, 'member_team')
+
+
 class TestEmailPolicySignal:
     """Tests for the pre_save signal that prevents unauthorized email
     changes across all services."""
