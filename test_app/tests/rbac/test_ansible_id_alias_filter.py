@@ -34,31 +34,31 @@ class TestAnsibleIdAliasFilterBackend:
 
         # make sure > 1 assignments total to ensure filtering is not returning undesired results
         response = admin_api_client.get(url)
-        assert len(response.data["results"]) > 1, response.data
+        assert response.data["count"] > 1, response.data
 
         # filter by user_ansible_id
         query_params = {'user_ansible_id': user_resource.ansible_id}
         response = admin_api_client.get(url + '?' + urlencode(query_params))
         assert response.status_code == 200, response.data
-        assert len(response.data["results"]) == 2, response.data
+        assert response.data["count"] == 2, response.data
 
         # filter by object_ansible_id
         query_params = {'object_ansible_id': organization_resource.ansible_id}
         response = admin_api_client.get(url + '?' + urlencode(query_params))
         assert response.status_code == 200, response.data
-        assert len(response.data["results"]) == 2, response.data
+        assert response.data["count"] == 2, response.data
 
         # filter by both user_ansible_id and object_ansible_id
         query_params = {'user_ansible_id': user_resource.ansible_id, 'object_ansible_id': organization_resource.ansible_id}
         response = admin_api_client.get(url + '?' + urlencode(query_params))
         assert response.status_code == 200, response.data
-        assert len(response.data["results"]) == 1, response.data
+        assert response.data["count"] == 1, response.data
 
         # filter by random user id
         query_params = {'user': random_user.id}
         response = admin_api_client.get(url + '?' + urlencode(query_params))
         assert response.status_code == 200, response.data
-        assert len(response.data["results"]) == 1, response.data
+        assert response.data["count"] == 1, response.data
 
     def test_filter_by_user_id(self, admin_api_client, inv_rd, inventory, random_user):
         '''
@@ -76,13 +76,13 @@ class TestAnsibleIdAliasFilterBackend:
         query_params = {'user': random_user.id}
         response = admin_api_client.get(url + '?' + urlencode(query_params))
         assert response.status_code == 200, response.data
-        assert len(response.data["results"]) == 1, response.data
+        assert response.data["count"] == 1, response.data
 
         # filter by user_ansible_id
         query_params = {'user_ansible_id': user_resource.ansible_id}
         response = admin_api_client.get(url + '?' + urlencode(query_params))
         assert response.status_code == 200, response.data
-        assert len(response.data["results"]) == 1, response.data
+        assert response.data["count"] == 1, response.data
 
     def test_filter_team_ansible_id(self, admin_api_client, team, inv_rd, inventory):
         '''
@@ -98,7 +98,7 @@ class TestAnsibleIdAliasFilterBackend:
         query_params = {'team_ansible_id': team_resource.ansible_id}
         response = admin_api_client.get(url + '?' + urlencode(query_params))
         assert response.status_code == 200, response.data
-        assert len(response.data["results"]) == 1, response.data
+        assert response.data["count"] == 1, response.data
 
     @pytest.mark.parametrize("ansible_id_type", ["user", "team", "object"])
     def test_invalid_ansible_id_format(self, admin_api_client, ansible_id_type):

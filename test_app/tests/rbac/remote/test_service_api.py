@@ -305,12 +305,12 @@ def test_filter_assignment_list(admin_api_client, rando, inv_rd, view_inv_rd, or
     url = get_relative_url('serviceuserassignment-list')
     response = admin_api_client.get(url + f'?user={rando.id}', format="json")
     assert response.status_code == 200, response.data
-    assert len(response.data['results']) == 3  # user rando has 3 rol assignments
+    assert response.data['count'] == 3  # user rando has 3 rol assignments
 
     # Get just one single assignment
     response = admin_api_client.get(url + f'?assignment={str(rando.resource.ansible_id)},{inv_rd.name},{inventory.id}', format="json")
     assert response.status_code == 200, response.data
-    assert len(response.data['results']) == 1
+    assert response.data['count'] == 1
     assert response.data['results'][0]['role_definition'] == inv_rd.name
 
     # Assure we can get two assignments at the same time
@@ -323,7 +323,7 @@ def test_filter_assignment_list(admin_api_client, rando, inv_rd, view_inv_rd, or
         format="json",
     )
     assert response.status_code == 200, response.data
-    assert len(response.data['results']) == 2
+    assert response.data['count'] == 2
 
 
 @pytest.mark.django_db
