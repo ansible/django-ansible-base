@@ -386,6 +386,10 @@ class UserAccessViewSet(
         return (self.permission, self.content_type, self.related_object)
 
     def get_queryset(self):
+        from django.conf import settings
+
+        from ansible_base.rbac.permission_registry import permission_registry
+
         actor_cls = self.get_actor_model()
 
         # To satisfy AWX schema generator
@@ -405,13 +409,57 @@ class UserAccessViewSet(
             obj_eval_qs = evaluation_cls.objects.filter(object_id=obj.pk, content_type_id=ct.id)
         obj_assignment_qs = assignment_cls.objects.filter(**{f'object_role__{reverse_name}__in': obj_eval_qs})
 
-        if permission:
-            global_assignment_qs = assignment_cls.objects.filter(content_type=None, role_definition__permissions=permission)
-        else:
-            global_assignment_qs = assignment_cls.objects.filter(content_type=None, role_definition__permissions__content_type=ct)
+        # Build the global assignment queryset based on enabled settings
+        global_assignment_qs = assignment_cls.objects.none()
+
+        # For users: include direct user global role assignments if enabled
+        if actor_cls._meta.model_name == 'user' and settings.ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES:
+            if permission:
+                global_assignment_qs = assignment_cls.objects.filter(content_type=None, role_definition__permissions=permission)
+            else:
+                global_assignment_qs = assignment_cls.objects.filter(content_type=None, role_definition__permissions__content_type=ct)
+
+        # For teams: include direct team global role assignments if enabled
+        elif actor_cls._meta.model_name == 'team' and settings.ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES:
+            if permission:
+                global_assignment_qs = assignment_cls.objects.filter(content_type=None, role_definition__permissions=permission)
+            else:
+                global_assignment_qs = assignment_cls.objects.filter(content_type=None, role_definition__permissions__content_type=ct)
 
         assignment_qs = obj_assignment_qs | global_assignment_qs
         actor_qs = actor_cls.objects.filter(role_assignments__in=assignment_qs)
+
+        # For users, also include users who are members of teams with global roles
+        if actor_cls._meta.model_name == 'user' and settings.ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES:
+            team_model = get_team_model()
+            team_assignment_cls = team_model._meta.get_field('role_assignments').related_model
+
+            # Find teams with global roles for this permission/content_type
+            if permission:
+                global_team_assignment_qs = team_assignment_cls.objects.filter(content_type=None, role_definition__permissions=permission)
+            else:
+                global_team_assignment_qs = team_assignment_cls.objects.filter(content_type=None, role_definition__permissions__content_type=ct)
+
+            # Get the teams that have these global assignments
+            global_teams = team_model.objects.filter(role_assignments__in=global_team_assignment_qs)
+
+            # Find users who are members of these teams
+            # Users gain team membership through the member_team permission
+            from ansible_base.rbac.models import ObjectRole
+
+            team_member_codename = permission_registry.team_permission
+
+            # Get object roles that grant team membership to the global teams
+            # Cast team PKs to strings because object_id is a CharField
+            team_pks = [str(pk) for pk in global_teams.values_list('pk', flat=True)]
+            team_member_object_roles = ObjectRole.objects.filter(content_type_id=permission_registry.team_ct_id, object_id__in=team_pks).filter(
+                **{f'{reverse_name}__codename': team_member_codename}
+            )
+
+            # Find users with those object roles
+            users_via_global_teams = actor_cls.objects.filter(role_assignments__object_role__in=team_member_object_roles)
+            actor_qs |= users_via_global_teams
+
         if actor_cls._meta.model_name == 'user':
             actor_qs |= actor_cls.objects.filter(is_superuser=True)
         return actor_qs.distinct()
