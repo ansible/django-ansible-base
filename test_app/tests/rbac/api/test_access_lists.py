@@ -141,14 +141,14 @@ def test_no_duplicates_team(team, inv_rd, inventory, org_inv_rd, admin_api_clien
 
 
 @pytest.mark.django_db
-def test_user_access_list_permission_filtered(admin_api_client, inv_rd, inventory):
+def test_user_access_list_permission_filtered(admin_api_client, global_inv_rd, inventory):
     """Test user access list when URL uses a permission slug instead of a content type slug.
 
-    This exercises the if-permission branch in get_queryset() for global_exists."""
+    Uses a global role assignment so the user is found via global_exists, not obj_exists."""
     url = get_relative_url('role-user-access', kwargs={'pk': inventory.pk, 'model_name': 'aap.view_inventory'})
 
-    u1 = User.objects.create(username='perm-filtered-user')
-    inv_rd.give_permission(u1, inventory)
+    u1 = User.objects.create(username='global-perm-user')
+    global_inv_rd.give_global_permission(u1)
 
     response = admin_api_client.get(url)
     assert response.status_code == 200
