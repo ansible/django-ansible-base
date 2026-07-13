@@ -10,7 +10,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.serializers import ValidationError
 
 from ansible_base.lib.abstract_models.common import get_url_for_object
-from ansible_base.lib.serializers.common import AbstractCommonModelSerializer, CommonModelSerializer, ImmutableCommonModelSerializer
+from ansible_base.lib.serializers.common import CommonModelSerializer, ImmutableCommonModelSerializer
 from ansible_base.lib.utils.auth import get_team_model
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.models import RoleDefinition, RoleTeamAssignment, RoleUserAssignment
@@ -331,7 +331,7 @@ class UserAccessListMixin(AccessListMixin, serializers.ModelSerializer):
     _expected_fields = ['id', 'url', 'related', 'username', 'is_superuser', 'first_name', 'last_name', 'object_role_assignments']
 
 
-class TeamAccessListMixin(AccessListMixin, AbstractCommonModelSerializer):
+class TeamAccessListMixin(AccessListMixin, serializers.ModelSerializer):
     object_role_assignments = serializers.SerializerMethodField()
     url = serializers.SerializerMethodField()
     related = serializers.SerializerMethodField('_get_related')
