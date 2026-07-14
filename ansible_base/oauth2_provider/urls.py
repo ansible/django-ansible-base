@@ -30,7 +30,7 @@ api_version_urls = [
 
 oauth_urls = [
     re_path(r'^$', oauth2_provider_views.ApiOAuthAuthorizationRootView.as_view(), name='oauth_authorization_root_view'),
-    re_path(r"^authorize/$", oauth_views.AuthorizationView.as_view(), name="authorize"),
+    re_path(r"^authorize/$", oauth2_provider_views.AuthorizationView.as_view(), name="authorize"),
     re_path(r"^token/$", oauth2_provider_views.TokenView.as_view(), name="token"),
     re_path(r"^revoke_token/$", oauth_views.RevokeTokenView.as_view(), name="revoke-token"),
     # OIDC endpoints

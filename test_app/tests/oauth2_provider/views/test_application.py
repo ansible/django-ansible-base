@@ -168,6 +168,74 @@ def test_oauth2_provider_application_create_no_app_url(request, client_fixture, 
         assert created_app.organization == organization
 
 
+def test_oauth2_provider_application_create_pkce_default(admin_api_client, randname, organization):
+    """
+    Creating an application without specifying pkce_required should default to True.
+    """
+    url = get_relative_url("application-list")
+    name = randname("Test Application")
+    response = admin_api_client.post(
+        url,
+        data={
+            'name': name,
+            'organization': organization.pk,
+            'redirect_uris': 'https://example.com/callback',
+            'authorization_grant_type': 'authorization-code',
+            'client_type': 'confidential',
+        },
+        format='json',
+    )
+    assert response.status_code == 201, response.data
+    assert response.data['pkce_required'] is True
+    created_app = OAuth2Application.objects.get(client_id=response.data['client_id'])
+    assert created_app.pkce_required is True
+
+
+def test_oauth2_provider_application_create_pkce_not_required(admin_api_client, randname, organization):
+    """
+    Creating an application with pkce_required=False should be honored.
+    """
+    url = get_relative_url("application-list")
+    name = randname("Test Application")
+    response = admin_api_client.post(
+        url,
+        data={
+            'name': name,
+            'organization': organization.pk,
+            'redirect_uris': 'https://example.com/callback',
+            'authorization_grant_type': 'authorization-code',
+            'client_type': 'confidential',
+            'pkce_required': False,
+        },
+        format='json',
+    )
+    assert response.status_code == 201, response.data
+    assert response.data['pkce_required'] is False
+    created_app = OAuth2Application.objects.get(client_id=response.data['client_id'])
+    assert created_app.pkce_required is False
+
+
+def test_oauth2_provider_application_update_pkce_required(admin_api_client, oauth2_application):
+    """
+    Updating pkce_required via PATCH should be honored.
+    """
+    app = oauth2_application[0]
+    assert app.pkce_required is True
+    url = get_relative_url("application-detail", args=[app.pk])
+
+    response = admin_api_client.patch(url, data={'pkce_required': False})
+    assert response.status_code == 200
+    assert response.data['pkce_required'] is False
+    app.refresh_from_db()
+    assert app.pkce_required is False
+
+    response = admin_api_client.patch(url, data={'pkce_required': True})
+    assert response.status_code == 200
+    assert response.data['pkce_required'] is True
+    app.refresh_from_db()
+    assert app.pkce_required is True
+
+
 def test_oauth2_provider_application_create_malformed_app_url(admin_api_client):
     """
     Validate malformed URL for app_url throws a 400

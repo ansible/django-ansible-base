@@ -1,6 +1,40 @@
+from unittest import mock
+
+import pytest
+from django.conf import settings
+from django.test import override_settings
 from django.utils.http import urlencode
 
 from ansible_base.lib.utils.response import get_relative_url
+from ansible_base.oauth2_provider.models import OAuth2Application
+
+
+@pytest.fixture
+def oauth2_app_pkce_required(randname):
+    app = OAuth2Application(
+        name=randname("PKCE Required App"),
+        redirect_uris="https://example.com/callback",
+        authorization_grant_type="authorization-code",
+        client_type="confidential",
+        pkce_required=True,
+    )
+    secret = app.client_secret
+    app.save()
+    return (app, secret)
+
+
+@pytest.fixture
+def oauth2_app_pkce_not_required(randname):
+    app = OAuth2Application(
+        name=randname("PKCE Not Required App"),
+        redirect_uris="https://example.com/callback",
+        authorization_grant_type="authorization-code",
+        client_type="confidential",
+        pkce_required=False,
+    )
+    secret = app.client_secret
+    app.save()
+    return (app, secret)
 
 
 def test_oauth2_provider_authorize_view_as_admin(admin_api_client):
@@ -55,3 +89,137 @@ def test_oauth2_provider_authorize_view_flow(user_api_client, oauth2_application
     # On success, it takes us to the redirect_uri with the code
     assert 'code=' in response.url, response.url
     assert 'error=' not in response.url, response.url
+
+
+def test_authorize_pkce_required_without_challenge(user_api_client, oauth2_app_pkce_required):
+    """
+    When pkce_required=True and the client omits code_challenge, the request should be rejected.
+    """
+    app = oauth2_app_pkce_required[0]
+    url = get_relative_url("oauth2_provider:authorize")
+    query_params = {
+        'client_id': app.client_id,
+        'response_type': 'code',
+        'scope': 'read',
+        'redirect_uri': app.redirect_uris,
+    }
+    response = user_api_client.get(url + '?' + urlencode(query_params))
+    assert response.status_code == 400
+
+
+def test_authorize_pkce_required_with_challenge(user_api_client, oauth2_app_pkce_required):
+    """
+    When pkce_required=True and the client sends code_challenge, the request should succeed.
+    """
+    app = oauth2_app_pkce_required[0]
+    url = get_relative_url("oauth2_provider:authorize")
+    query_params = {
+        'client_id': app.client_id,
+        'response_type': 'code',
+        'scope': 'read',
+        'redirect_uri': app.redirect_uris,
+        'code_challenge': 'some-challenge-value',
+        'code_challenge_method': 'S256',
+    }
+    response = user_api_client.get(url + '?' + urlencode(query_params))
+    assert response.status_code == 200
+
+
+def test_authorize_pkce_not_required_without_challenge(user_api_client, oauth2_app_pkce_not_required):
+    """
+    When pkce_required=False and the client omits code_challenge, the request should succeed.
+    """
+    app = oauth2_app_pkce_not_required[0]
+    url = get_relative_url("oauth2_provider:authorize")
+    query_params = {
+        'client_id': app.client_id,
+        'response_type': 'code',
+        'scope': 'read',
+        'redirect_uri': app.redirect_uris,
+    }
+    response = user_api_client.get(url + '?' + urlencode(query_params))
+    assert response.status_code == 200
+
+
+def test_authorize_pkce_not_required_with_challenge(user_api_client, oauth2_app_pkce_not_required):
+    """
+    When pkce_required=False and the client sends code_challenge, the request should succeed.
+    """
+    app = oauth2_app_pkce_not_required[0]
+    url = get_relative_url("oauth2_provider:authorize")
+    query_params = {
+        'client_id': app.client_id,
+        'response_type': 'code',
+        'scope': 'read',
+        'redirect_uri': app.redirect_uris,
+        'code_challenge': 'some-challenge-value',
+        'code_challenge_method': 'S256',
+    }
+    response = user_api_client.get(url + '?' + urlencode(query_params))
+    assert response.status_code == 200
+
+
+def test_authorize_application_not_found(user_api_client, oauth2_app_pkce_required):
+    """
+    If the application lookup fails after validate_authorization_request passes,
+    the request should be rejected.
+    """
+    app = oauth2_app_pkce_required[0]
+    url = get_relative_url("oauth2_provider:authorize")
+    query_params = {
+        'client_id': app.client_id,
+        'response_type': 'code',
+        'scope': 'read',
+        'redirect_uri': app.redirect_uris,
+        'code_challenge': 'some-challenge-value',
+        'code_challenge_method': 'S256',
+    }
+    target = 'ansible_base.oauth2_provider.views.authorization.get_application_model'
+    mock_model = mock.MagicMock()
+    mock_model.DoesNotExist = OAuth2Application.DoesNotExist
+    mock_model.objects.get.side_effect = OAuth2Application.DoesNotExist
+    with mock.patch(target, return_value=mock_model):
+        response = user_api_client.get(url + '?' + urlencode(query_params))
+    assert response.status_code == 400
+
+
+def test_authorize_global_pkce_overrides_app_setting(user_api_client, oauth2_app_pkce_not_required):
+    """
+    When global PKCE_REQUIRED=True, PKCE should be enforced even if the app has pkce_required=False.
+    DOT enforces the global setting during validate_authorization_request() and returns a 302
+    redirect with an error, so the request never reaches the per-app check.
+    """
+    app = oauth2_app_pkce_not_required[0]
+    url = get_relative_url("oauth2_provider:authorize")
+    query_params = {
+        'client_id': app.client_id,
+        'response_type': 'code',
+        'scope': 'read',
+        'redirect_uri': app.redirect_uris,
+    }
+    global_pkce_settings = {**settings.OAUTH2_PROVIDER, 'PKCE_REQUIRED': True}
+    with override_settings(OAUTH2_PROVIDER=global_pkce_settings):
+        response = user_api_client.get(url + '?' + urlencode(query_params))
+    assert response.status_code != 200
+    if response.status_code == 302:
+        assert 'error' in response.url
+
+
+def test_authorize_global_pkce_with_challenge(user_api_client, oauth2_app_pkce_not_required):
+    """
+    When global PKCE_REQUIRED=True and the client sends code_challenge, the request should succeed.
+    """
+    app = oauth2_app_pkce_not_required[0]
+    url = get_relative_url("oauth2_provider:authorize")
+    query_params = {
+        'client_id': app.client_id,
+        'response_type': 'code',
+        'scope': 'read',
+        'redirect_uri': app.redirect_uris,
+        'code_challenge': 'some-challenge-value',
+        'code_challenge_method': 'S256',
+    }
+    global_pkce_settings = {**settings.OAUTH2_PROVIDER, 'PKCE_REQUIRED': True}
+    with override_settings(OAUTH2_PROVIDER=global_pkce_settings):
+        response = user_api_client.get(url + '?' + urlencode(query_params))
+    assert response.status_code == 200
