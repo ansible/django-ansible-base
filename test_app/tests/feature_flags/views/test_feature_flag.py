@@ -14,7 +14,7 @@ from ansible_base.lib.utils.response import get_relative_url
             {'name': 'FEATURE_EDA_ANALYTICS_ENABLED', 'value': True},
         ],
         [
-            {'name': 'FEATURE_GATEWAY_CREATE_CRC_SERVICE_TYPE_ENABLED', 'value': True},
+            {'name': 'FEATURE_OIDC_WORKLOAD_IDENTITY_ENABLED', 'value': True},
         ],
     ],
 )

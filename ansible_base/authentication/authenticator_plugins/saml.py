@@ -339,6 +339,12 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAML
     def get_user_groups(self, extra_groups=[]):
         return extra_groups
 
+    def get_claims_attrs(self, response):
+        # SAML responses nest identity attributes under response["attributes"].
+        # Return the inner dict so that attribute-based authenticator map triggers
+        # evaluate against the flat claims dict rather than the full SAML envelope.
+        return response.get("attributes", response)
+
     def get_alternative_uid(self, **kwargs):
         if uid := kwargs.get("uid", None):
             if ":" in uid:

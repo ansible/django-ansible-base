@@ -1,8 +1,9 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import TypedDict
 
 import jwt
 from django.conf import settings
+from django.utils.timezone import now
 
 from ansible_base.resource_registry.models import service_id
 
@@ -31,6 +32,6 @@ def get_service_token(user_id=None, expiration=60, **kwargs):
         payload["sub"] = user_id
 
     if expiration is not None:
-        payload["exp"] = datetime.now() + timedelta(seconds=expiration)
+        payload["exp"] = now() + timedelta(seconds=expiration)
 
     return jwt.encode(payload, config["SECRET_KEY"], config["JWT_ALGORITHM"])

@@ -7,7 +7,7 @@ from rest_framework.exceptions import ValidationError
 
 from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry
-from ansible_base.rbac.triggers import dab_post_migrate, post_migration_rbac_setup
+from ansible_base.rbac.triggers import dab_post_migrate, defer_rbac_cache, post_migration_rbac_setup
 from test_app.models import Inventory, Organization, User
 
 
@@ -173,6 +173,83 @@ def test_delete_signals_team_organization(organization, inventory, team, org_inv
         assert not RoleEvaluation.objects.filter(**org_gfk).exists()
 
     assert not RoleEvaluation.objects.filter(**inv_gfk).exists()
+
+
+@pytest.mark.django_db
+def test_defer_rbac_cache_produces_correct_evaluations(organization, inventory, rando, org_inv_rd):
+    """Calling give_permission inside defer_rbac_cache should produce
+    the same RoleEvaluation entries as calling it without deferral."""
+    inv_gfk = gfk_filter(inventory)
+    org_gfk = gfk_filter(organization)
+
+    with defer_rbac_cache():
+        org_inv_rd.give_permission(rando, organization)
+        # During deferral, evaluations should not yet exist
+        assert not RoleEvaluation.objects.filter(**inv_gfk).exists()
+
+    # After the context manager exits, evaluations should be flushed
+    assert RoleEvaluation.objects.filter(**org_gfk).exists()
+    assert RoleEvaluation.objects.filter(**inv_gfk).exists()
+    assert rando.has_obj_perm(inventory, 'change')
+
+
+@pytest.mark.django_db
+def test_defer_rbac_cache_multiple_assignments(organization, rando, inv_rd):
+    """Multiple give_permission calls inside defer_rbac_cache should
+    all produce correct evaluations after the context exits."""
+    second_org = Organization.objects.create(name='second-org')
+    inv1 = Inventory.objects.create(name='inv1', organization=organization)
+    inv2 = Inventory.objects.create(name='inv2', organization=second_org)
+
+    with defer_rbac_cache():
+        inv_rd.give_permission(rando, inv1)
+        inv_rd.give_permission(rando, inv2)
+
+    assert rando.has_obj_perm(inv1, 'change')
+    assert rando.has_obj_perm(inv2, 'change')
+
+
+def test_defer_rbac_cache_cannot_be_nested():
+    """Nesting defer_rbac_cache should raise a RuntimeError."""
+    with defer_rbac_cache():
+        with pytest.raises(RuntimeError, match="cannot be nested"):
+            with defer_rbac_cache():
+                pass
+
+
+@pytest.mark.django_db
+def test_defer_rbac_cache_empty_block(inventory):
+    """An empty defer_rbac_cache block should not trigger any
+    recomputation — it should be a no-op."""
+    from unittest.mock import patch
+
+    with patch('ansible_base.rbac.triggers.compute_object_role_permissions') as mock_compute:
+        with defer_rbac_cache():
+            pass
+
+    mock_compute.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_defer_rbac_cache_without_context_manager(organization, inventory, rando, org_inv_rd):
+    """Without defer_rbac_cache, behavior is unchanged — evaluations
+    are created immediately."""
+    inv_gfk = gfk_filter(inventory)
+
+    org_inv_rd.give_permission(rando, organization)
+
+    assert RoleEvaluation.objects.filter(**inv_gfk).exists()
+    assert rando.has_obj_perm(inventory, 'change')
+
+
+@pytest.mark.django_db
+def test_defer_rbac_cache_with_team_assignment(organization, team, rando, org_team_member_rd):
+    """defer_rbac_cache should also defer and flush team membership
+    recomputation (the team_ids path)."""
+    with defer_rbac_cache():
+        org_team_member_rd.give_permission(rando, organization)
+
+    assert rando.has_obj_perm(team, 'member_team')
 
 
 class TestEmailPolicySignal:

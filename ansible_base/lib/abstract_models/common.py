@@ -222,6 +222,11 @@ class AbstractCommonModel(models.Model):
 
     def related_fields(self, request):
         response = {}
+
+        namespace = None
+        if request and hasattr(request, 'resolver_match') and request.resolver_match:
+            namespace = request.resolver_match.namespace
+
         # See docs/lib/default_models.md
         # Automatically add all of the ForeignKeys for the model as related fields
         for field in self._meta.concrete_fields:
@@ -237,10 +242,15 @@ class AbstractCommonModel(models.Model):
             if fk_id is not None:
                 related_model = field.related_model
                 basename = get_cls_view_basename(related_model)
+                view_name = f'{basename}-detail'
                 try:
-                    response[field.name] = get_relative_url(f'{basename}-detail', kwargs={'pk': fk_id})
+                    response[field.name] = get_relative_url(view_name, kwargs={'pk': fk_id})
                 except NoReverseMatch:
-                    pass
+                    if namespace:
+                        try:
+                            response[field.name] = get_relative_url(f'{namespace}:{view_name}', kwargs={'pk': fk_id})
+                        except NoReverseMatch:
+                            pass
 
         basename = get_cls_view_basename(self.__class__)
 
@@ -255,7 +265,13 @@ class AbstractCommonModel(models.Model):
             try:
                 response[field_name] = get_relative_url(reverse_view, kwargs={'pk': self.pk})
             except NoReverseMatch:
-                missing_relations.append(reverse_view)
+                if namespace:
+                    try:
+                        response[field_name] = get_relative_url(f'{namespace}:{reverse_view}', kwargs={'pk': self.pk})
+                    except NoReverseMatch:
+                        missing_relations.append(reverse_view)
+                else:
+                    missing_relations.append(reverse_view)
 
         if missing_relations and settings.DEBUG:
             logger.error(f"Wanted to add {', '.join(missing_relations)} for {self.__class__} but view was missing")

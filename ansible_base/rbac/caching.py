@@ -279,7 +279,7 @@ def _safe_bulk_create_evaluations(model, evaluations, ignore_conflicts):
                 logger.warning('Persistent IntegrityError in bulk_create for %s, will be corrected on next recompute', model.__name__)
 
 
-def compute_object_role_permissions(object_roles=None, types_prefetch=None):
+def compute_object_role_permissions(object_roles=None, types_prefetch=None, object_pk=None, object_ct_id=None):
     """
     Assumes the ObjectRole.provides_teams relationship is correct.
     Makes the RoleEvaluation table correct for all specified object_roles
@@ -293,7 +293,7 @@ def compute_object_role_permissions(object_roles=None, types_prefetch=None):
         object_roles = ObjectRole.objects.iterator()
 
     for object_role in object_roles:
-        role_to_delete, role_to_add = object_role.needed_cache_updates(types_prefetch=types_prefetch)
+        role_to_delete, role_to_add = object_role.needed_cache_updates(types_prefetch=types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id)
 
         if role_to_delete:
             logger.debug(f'Removing {len(role_to_delete)} object-permissions from {object_role}')

@@ -1,4 +1,6 @@
 import logging
+import threading
+from contextlib import contextmanager
 from typing import Union
 from uuid import UUID
 
@@ -108,8 +110,49 @@ def needed_updates_on_assignment(role_definition, actor, object_role, created=Fa
     return (recompute_team_ids, to_update)
 
 
+# stores state for the defer_rbac_cache annotation so that it can be accessed by function in the call chain
+# of the annotation
+class _DeferRBACCache(threading.local):
+    def __init__(self):
+        self.active = False
+        self.team_ids = set()
+        self.object_roles = set()
+
+
+_defer_rbac_cache = _DeferRBACCache()
+
+
+# allows deferring the rbac computation in cases where many object roles are updated in short order
+@contextmanager
+def defer_rbac_cache():
+    if _defer_rbac_cache.active:
+        raise RuntimeError("defer_rbac_cache cannot be nested")
+    _defer_rbac_cache.active = True
+    try:
+        yield
+    finally:
+        team_ids = _defer_rbac_cache.team_ids
+        object_roles = _defer_rbac_cache.object_roles
+        _defer_rbac_cache.active = False
+        _defer_rbac_cache.team_ids = set()
+        _defer_rbac_cache.object_roles = set()
+
+        if team_ids:
+            compute_team_member_roles(team_ids=team_ids)
+
+        if object_roles:
+            compute_object_role_permissions(object_roles=object_roles)
+
+
 def update_after_assignment(recompute_team_ids, to_update):
     "Call this with the output of needed_updates_on_assignment"
+    if _defer_rbac_cache.active:
+        if recompute_team_ids is not None:
+            _defer_rbac_cache.team_ids.update(recompute_team_ids)
+        if to_update is not None:
+            _defer_rbac_cache.object_roles.update(to_update)
+        return
+
     if recompute_team_ids is not None:
         compute_team_member_roles(team_ids=recompute_team_ids)
 
@@ -195,7 +238,7 @@ def get_parent_ids(instance) -> list[tuple[Model, Union[int, UUID]]]:
     return []
 
 
-def post_save_update_obj_permissions(instance):
+def post_save_update_obj_permissions(instance, object_pk=None, object_ct_id=None):
     "Utility method shared by multiple signals"
     # Account for organization roles (and other parent objects), new and old
     parent_gfks = get_parent_ids(instance)
@@ -227,7 +270,7 @@ def post_save_update_obj_permissions(instance):
         compute_team_member_roles(team_ids=[instance.id])
 
     if to_update:
-        compute_object_role_permissions(object_roles=to_update)
+        compute_object_role_permissions(object_roles=to_update, object_pk=object_pk, object_ct_id=object_ct_id)
 
 
 def rbac_pre_save_identify_changes(instance, *args, **kwargs):
@@ -259,7 +302,8 @@ def rbac_post_save_update_evaluations(instance, created, *args, **kwargs):
     # If child object is created and parent object has existing ObjectRoles
     # evaluations for the parent object roles need to be added
     if created:
-        post_save_update_obj_permissions(instance)
+        obj_ct_id = permission_registry.content_type_model.objects.get_for_model(instance).id
+        post_save_update_obj_permissions(instance, object_pk=instance.pk, object_ct_id=obj_ct_id)
         return
 
     # The parent object can not have changed if update_fields was given and did not list that field

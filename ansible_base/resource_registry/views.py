@@ -13,6 +13,8 @@ from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet, mixins
 
 from ansible_base.lib.utils.response import CSVStreamResponse, get_relative_url
+from ansible_base.lib.utils.schema import extend_schema_if_available
+from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.lib.utils.views.permissions import try_add_oauth2_scope_permission
 from ansible_base.resource_registry.constants import SHARED_USER_RESOURCE_TYPE
@@ -22,6 +24,7 @@ from ansible_base.resource_registry.serializers import ResourceListSerializer, R
 from ansible_base.rest_filters.rest_framework.field_lookup_backend import FieldLookupBackend
 from ansible_base.rest_filters.rest_framework.order_backend import OrderByBackend
 from ansible_base.rest_filters.rest_framework.type_filter_backend import TypeFilterBackend
+from ansible_base.rest_pagination.default_paginator import DEFAULT_MAX_PAGE_SIZE
 
 logger = logging.getLogger('ansible_base.resource_registry.views')
 
@@ -51,6 +54,11 @@ class ResourcesPagination(PageNumberPagination):
     # PageNumberPagination by itself doesn't work in some apps because when api_settings.PAGE_SIZE
     # isn't set, the default is no pagination.
     page_size = 50
+    page_size_query_param = "page_size"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.max_page_size = get_setting('RESOURCE_LIST_MAX_PAGE_SIZE', DEFAULT_MAX_PAGE_SIZE)
 
 
 class ResourceAPIMixin:
@@ -67,6 +75,7 @@ class ResourceAPIMixin:
     - Use Page/Number pagination
     """
 
+    rest_filters_reserved_names = ("extra_fields",)
     filter_backends = (FieldLookupBackend, TypeFilterBackend, OrderByBackend)
     permission_classes = try_add_oauth2_scope_permission(
         [
@@ -101,6 +110,14 @@ class ResourceViewSet(
             return ResourceListSerializer
 
         return super().get_serializer_class()
+
+    @extend_schema_if_available(
+        description="List all resources. Accepts an optional 'extra_fields' query parameter "
+        "(comma-separated) to include additional fields in the response. "
+        f"Supported values: {', '.join(sorted(ResourceListSerializer.ALLOWED_EXTRA_FIELDS))}.",
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
 
     def perform_destroy(self, instance):
         instance.delete_resource()

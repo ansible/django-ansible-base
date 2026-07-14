@@ -538,6 +538,27 @@ def test_saml_callback_url_is_acs_url(rsa_keypair_with_cert):
     assert authenticator_object.generate_saml_config()['sp']['assertionConsumerService']['url'] == callback_url
 
 
+def test_saml_get_claims_attrs_extracts_attributes_dict():
+    """SAMLAuthenticatorPlugin.get_claims_attrs() returns the inner 'attributes' dict."""
+    from ansible_base.authentication.authenticator_plugins.saml import AuthenticatorPlugin
+
+    plugin = AuthenticatorPlugin.__new__(AuthenticatorPlugin)
+    saml_response = {
+        "attributes": {"is_superuser": ["true"], "email": ["user@example.com"]},
+        "other_key": "ignored",
+    }
+    assert plugin.get_claims_attrs(saml_response) == saml_response["attributes"]
+
+
+def test_saml_get_claims_attrs_falls_back_to_response_when_no_attributes():
+    """SAMLAuthenticatorPlugin.get_claims_attrs() falls back to full response when no 'attributes' key."""
+    from ansible_base.authentication.authenticator_plugins.saml import AuthenticatorPlugin
+
+    plugin = AuthenticatorPlugin.__new__(AuthenticatorPlugin)
+    response_no_attrs = {"username": "alice", "email": "alice@example.com"}
+    assert plugin.get_claims_attrs(response_no_attrs) is response_no_attrs
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize(
     "redirect_is_https",

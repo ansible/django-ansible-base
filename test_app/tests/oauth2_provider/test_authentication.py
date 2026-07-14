@@ -279,6 +279,54 @@ def test_oauth2_unsupported_media_type(user, user_api_client, only_oauth_scope_p
     assert response.status_code == 200, response.status_code
 
 
+def test_oauth2_extract_body_handles_parse_error():
+    """
+    Regression test: large multipart uploads with Content-Transfer-Encoding: base64
+    can trigger a ParseError in Django's multipart parser when extract_body() calls
+    request.POST.items(). The ParseError must be caught so OAuth2 auth falls back to
+    the Authorization header.
+    """
+    from unittest import mock
+
+    from rest_framework.exceptions import ParseError
+
+    from ansible_base.oauth2_provider.authentication import OAuthLibCore
+
+    backend = OAuthLibCore.__new__(OAuthLibCore)
+    request = mock.MagicMock()
+    request.POST.items.side_effect = ParseError('Multipart form parse error - Could not decode base64 data.')
+
+    result = backend.extract_body(request)
+    assert result == (), f"Expected empty tuple when ParseError is raised, got {result!r}"
+
+
+def test_oauth2_multipart_parse_error_full_request(unauthenticated_api_client, oauth2_admin_access_token):
+    """
+    End-to-end regression test: ensure a multipart upload with a bearer token
+    succeeds even when the multipart body triggers a ParseError during OAuth2
+    body extraction.
+    """
+    from unittest import mock
+
+    from rest_framework.exceptions import ParseError
+
+    url = get_relative_url("animal-upload")
+    token = oauth2_admin_access_token[1]
+
+    def items_raises_parse_error(*args, **kwargs):
+        raise ParseError('Multipart form parse error - Could not decode base64 data.')
+
+    with mock.patch('django.http.request.QueryDict.items', side_effect=items_raises_parse_error):
+        response = unauthenticated_api_client.post(
+            url,
+            data=b'\x00\x01\x02\x03',
+            content_type='application/octet-stream',
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 200, f"Expected 200 but got {response.status_code}"
+
+
 def test_oauth2_authentication_creates_activitystream_entry(
     unauthenticated_api_client,
     oauth2_admin_access_token,

@@ -84,6 +84,26 @@ class TeamAnsibleIdAliasFilterBackend(AnsibleIdAliasFilterBackend):
         return super().filter_queryset(request, queryset, view)
 
 
+class ServiceFilterBackend(BaseFilterBackend):
+    """
+    Filter backend for content_type__service on role assignment endpoints.
+
+    When the ``content_type__service`` query parameter is provided, returns
+    only assignments whose content type belongs to the requested service,
+    plus global assignments (``content_type IS NULL``).  Without the
+    parameter all assignments are returned (backward compatible).
+
+    Example:
+    /api/v1/role_user_assignments/?content_type__service=controller
+    """
+
+    def filter_queryset(self, request, queryset, view):
+        service = request.query_params.get('content_type__service')
+        if service:
+            queryset = queryset.filter(Q(content_type__service=service) | Q(content_type_id__isnull=True))
+        return queryset
+
+
 class RoleAssignmentFilterBackend(BaseFilterBackend):
     """
     Filter backend for listing a specific set of role (user or team) assignments.
