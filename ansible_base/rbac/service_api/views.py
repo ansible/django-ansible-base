@@ -1,5 +1,7 @@
+import logging
+
 from django.db import transaction
-from django.db.models import OuterRef, Subquery
+from django.db.models import OuterRef, Q, Subquery
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -15,6 +17,8 @@ from ansible_base.rest_filters.rest_framework.ansible_id_backend import ServiceF
 
 from ..models import DABContentType, DABPermission, RoleTeamAssignment, RoleUserAssignment
 from . import serializers as service_serializers
+
+logger = logging.getLogger('ansible_base.rbac.service_api.views')
 
 
 class RoleContentTypeViewSet(
@@ -183,6 +187,39 @@ class ServiceObjectDeleteViewSet(viewsets.ViewSet):
 
     permission_classes = try_add_oauth2_scope_permission([HasResourceRegistryPermissions])
 
+    @staticmethod
+    def _parse_batch_entries(deletions):
+        """Validate and parse batch deletion entries.
+
+        Returns a tuple of (valid_entries, ct_keys) where:
+        - valid_entries: list of (app_label, model_name, resource_pk) tuples
+        - ct_keys: set of (app_label, model_name) tuples for bulk content type lookup
+        """
+        ct_keys = set()
+        valid_entries = []
+        for entry in deletions:
+            if not isinstance(entry, dict):
+                logger.warning("Skipping non-dict entry in batch deletions: %s", type(entry).__name__)
+                continue
+
+            resource_type = entry.get('resource_type')
+            resource_pk = entry.get('resource_pk')
+
+            if not resource_type or not resource_pk:
+                logger.warning("Skipping entry with missing resource_type or resource_pk: %s", entry)
+                continue
+
+            try:
+                app_label, model_name = resource_type.split('.', 1)
+            except ValueError:
+                logger.warning("Skipping entry with invalid resource_type format: %s", resource_type)
+                continue
+
+            ct_keys.add((app_label, model_name))
+            valid_entries.append((app_label, model_name, str(resource_pk)))
+
+        return valid_entries, ct_keys
+
     @extend_schema_if_available(extensions={'x-ai-description': 'Remove all role assignments for a resource indexed from connected AAP services'})
     def create(self, request):
         """
@@ -232,6 +269,71 @@ class ServiceObjectDeleteViewSet(viewsets.ViewSet):
                 'message': f'Deleted {total_deleted} role assignments for {serializer_data["resource_type"]} {serializer_data["resource_pk"]}',
                 'deleted_count': total_deleted,
                 'breakdown': {'user_assignments_deleted': user_deleted_count, 'team_assignments_deleted': team_deleted_count},
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=['post'], url_path='batch')
+    def batch_delete(self, request):
+        """
+        Delete all role assignments for multiple resources in a single transaction.
+
+        Expected request data:
+        {
+            "deletions": [
+                {"resource_type": "main.inventory", "resource_pk": "4"},
+                {"resource_type": "main.inventory", "resource_pk": "5"},
+                ...
+            ]
+        }
+        """
+        deletions = request.data.get('deletions')
+        if not deletions or not isinstance(deletions, list):
+            return Response({'error': 'A non-empty "deletions" list is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Parse and validate all entries, collecting (content_type_key, resource_pk) pairs
+        valid_entries, ct_keys = self._parse_batch_entries(deletions)
+
+        if not valid_entries:
+            return Response(
+                {'message': 'No valid entries to process', 'deleted_count': 0},
+                status=status.HTTP_200_OK,
+            )
+
+        # Bulk-fetch all needed content types in one query
+        ct_filter = Q()
+        for app_label, model_name in ct_keys:
+            ct_filter |= Q(app_label=app_label, model=model_name)
+        ct_map = {(ct.app_label, ct.model): ct for ct in DABContentType.objects.filter(ct_filter)}
+
+        # Build bulk delete filter across all valid entries
+        delete_filter = Q()
+        skipped = 0
+        for app_label, model_name, resource_pk in valid_entries:
+            ct = ct_map.get((app_label, model_name))
+            if ct is None:
+                logger.warning("Skipping entry with unknown content type: %s.%s", app_label, model_name)
+                skipped += 1
+                continue
+            delete_filter |= Q(content_type=ct, object_id=resource_pk)
+
+        if not delete_filter:
+            return Response(
+                {'message': 'No valid content types found', 'deleted_count': 0},
+                status=status.HTTP_200_OK,
+            )
+
+        # Single bulk delete per assignment type
+        with transaction.atomic():
+            user_deleted_count = RoleUserAssignment.objects.filter(delete_filter).delete()[0]
+            team_deleted_count = RoleTeamAssignment.objects.filter(delete_filter).delete()[0]
+
+        total_deleted = user_deleted_count + team_deleted_count
+
+        return Response(
+            {
+                'message': f'Batch deleted {total_deleted} role assignments across {len(valid_entries) - skipped} resources',
+                'deleted_count': total_deleted,
             },
             status=status.HTTP_200_OK,
         )

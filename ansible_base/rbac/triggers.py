@@ -1,3 +1,4 @@
+import functools
 import logging
 import threading
 from contextlib import contextmanager
@@ -117,6 +118,8 @@ class _DeferRBACCache(threading.local):
         self.active = False
         self.team_ids = set()
         self.object_roles = set()
+        self.deleted_objects = []
+        self.skip_post_delete_rbac = False
 
 
 _defer_rbac_cache = _DeferRBACCache()
@@ -126,22 +129,64 @@ _defer_rbac_cache = _DeferRBACCache()
 @contextmanager
 def defer_rbac_cache():
     if _defer_rbac_cache.active:
-        raise RuntimeError("defer_rbac_cache cannot be nested")
+        # Re-entrant: the outermost caller owns the flush in its finally block.
+        # yield is required by @contextmanager; return skips the finally block
+        # intentionally so only the outermost exit triggers the flush.
+        yield
+        return
     _defer_rbac_cache.active = True
     try:
         yield
     finally:
         team_ids = _defer_rbac_cache.team_ids
         object_roles = _defer_rbac_cache.object_roles
+        deleted_objects = _defer_rbac_cache.deleted_objects
         _defer_rbac_cache.active = False
         _defer_rbac_cache.team_ids = set()
         _defer_rbac_cache.object_roles = set()
+        _defer_rbac_cache.deleted_objects = []
+        _defer_rbac_cache.skip_post_delete_rbac = False
 
         if team_ids:
             compute_team_member_roles(team_ids=team_ids)
 
         if object_roles:
-            compute_object_role_permissions(object_roles=object_roles)
+            # Filter out ObjectRoles deleted during cascade.  Example:
+            # Org A owns Team X which holds Role Q on Inventory Z (in a
+            # different org).  Deleting Org A cascades to Team X; the
+            # bulk pre-cascade cleanup collected Role Q as an
+            # indirectly-affected role.  But Team X's cascade also
+            # removed Role Q's team assignment, and the orphan cleanup
+            # (below) will delete Role Q itself.  If we pass the
+            # now-deleted Role Q to compute_object_role_permissions it
+            # would create RoleEvaluation rows referencing a gone
+            # ObjectRole, causing FK violations.
+            surviving_ids = set(ObjectRole.objects.filter(id__in={r.id for r in object_roles}).values_list('id', flat=True))
+            surviving_roles = {r for r in object_roles if r.id in surviving_ids}
+            if surviving_roles:
+                compute_object_role_permissions(object_roles=surviving_roles)
+
+        # Orphan cleanup runs AFTER compute, matching the original
+        # per-signal ordering.
+        deleted_count, _ = ObjectRole.objects.filter(users__isnull=True, teams__isnull=True).delete()
+        if deleted_count:
+            logger.info('Removed %d orphaned object role(s) during deferred cleanup', deleted_count)
+
+        if deleted_objects:
+            from django.db import connection
+
+            def _sync_after_commit(objs=deleted_objects):
+                try:
+                    from ansible_base.rbac.sync import maybe_reverse_sync_object_deletions_batch
+
+                    maybe_reverse_sync_object_deletions_batch(objs)
+                except Exception:
+                    logger.exception('Failed to batch sync %d object deletions', len(objs))
+
+            if connection.in_atomic_block:
+                connection.on_commit(_sync_after_commit)
+            else:
+                _sync_after_commit()
 
 
 def update_after_assignment(recompute_team_ids, to_update):
@@ -330,24 +375,197 @@ def team_pre_delete(instance, *args, **kwargs):
     instance.__rbac_stashed_recompute_team_ids = stashed_team_ids
 
 
+def _collect_team_rbac_data(team_ids):
+    """Collect indirectly affected roles and recompute IDs for teams being deleted.
+
+    Performs bulk lookups for ancestor roles, descendent roles, and provided
+    teams for all ``team_ids`` at once, then stashes the results in the
+    deferred RBAC cache.
+    """
+    team_ct_id = permission_registry.team_ct_id
+    team_model = permission_registry.team_model
+
+    # Bulk team_ancestor_roles for ALL teams at once
+    ancestor_evals = RoleEvaluation.objects.filter(
+        codename=permission_registry.team_permission,
+        object_id__in=team_ids,
+        content_type_id=team_ct_id,
+    )
+    indirectly_affected_roles = set(ObjectRole.objects.filter(permission_partials__in=ancestor_evals))
+
+    # Bulk descendent_roles: get all member_roles for these teams,
+    # then all provides_teams, then all has_roles
+    team_object_roles = ObjectRole.objects.filter(
+        teams__id__in=team_ids,
+        role_definition__permissions__codename=permission_registry.team_permission,
+    )
+    # Get all teams provided by these roles
+    provided_team_ids = set(team_model.objects.filter(member_roles__in=team_object_roles).values_list('id', flat=True))
+    # Get descendent roles through provided teams
+    if provided_team_ids:
+        descendent_roles = set(ObjectRole.objects.filter(provides_teams__id__in=provided_team_ids))
+        indirectly_affected_roles.update(descendent_roles)
+
+    # Stash recompute team IDs (teams that had this team as parent)
+    stashed_recompute_ids = provided_team_ids - team_ids  # exclude deleted teams
+    if stashed_recompute_ids:
+        _defer_rbac_cache.team_ids.update(stashed_recompute_ids)
+    if indirectly_affected_roles:
+        _defer_rbac_cache.object_roles.update(indirectly_affected_roles)
+
+
+def _bulk_delete_and_accumulate_sync(all_cts_and_pks, instance):
+    """Bulk-delete ObjectRoles and RoleEvaluations, then enqueue reverse sync.
+
+    Deletes ObjectRoles and RoleEvaluations for all content-type/PK pairs in
+    ``all_cts_and_pks``.  Objects that actually had role assignments are
+    enqueued in the deferred RBAC cache for reverse sync.
+    """
+    # Build one Q filter for all children + the instance itself
+    delete_filter = Q()
+    for ct, pks in all_cts_and_pks:
+        delete_filter |= Q(content_type=ct, object_id__in=[str(pk) for pk in pks])
+
+    # Capture which objects actually had assignments before deleting,
+    # so only those get enqueued for reverse sync. This avoids inflating
+    # the HTTP payload with objects that had no role assignments.
+    object_roles_qs = ObjectRole.objects.filter(delete_filter)
+    affected_keys = set(object_roles_qs.values_list('content_type_id', 'object_id'))
+    object_roles_qs.delete()
+
+    # Bulk delete RoleEvaluations for children with parent fields
+    eval_filter = Q()
+    for ct, pks in all_cts_and_pks:
+        eval_filter |= Q(content_type_id=ct.id, object_id__in=pks)
+
+    # Use the correct evaluation model (int vs UUID)
+    get_evaluation_model(instance).objects.filter(eval_filter).delete()
+
+    # Only enqueue objects that actually had role assignments for reverse sync
+    if affected_keys:
+        for ct, pks in all_cts_and_pks:
+            for pk in pks:
+                if (ct.id, str(pk)) in affected_keys:
+                    _defer_rbac_cache.deleted_objects.append((ct.app_label, ct.model, str(pk)))
+
+
+def _bulk_pre_cascade_rbac_cleanup(instance):
+    """Pre-cascade bulk RBAC cleanup.
+
+    Collects all RBAC-registered children of ``instance`` and handles their
+    ObjectRole / RoleEvaluation cleanup in bulk queries instead of firing the
+    per-object ``post_delete`` signal handler for every cascaded child.
+    After this runs, the signal handler becomes a no-op via the
+    ``skip_post_delete_rbac`` flag.
+
+    Only meaningful for models that have RBAC-registered children (e.g.
+    Organization -> Team, Inventory).  Leaf models (no children) return
+    early and let the signal handler run as normal.
+
+    Only runs when defer_rbac_cache is active.  When defer is not active
+    (e.g. patched with nullcontext in tests), the signal handler runs
+    normally and no bulk state is accumulated.
+    """
+    if not _defer_rbac_cache.active:
+        return
+
+    child_models = permission_registry.get_child_models(type(instance))
+    if not child_models:
+        return  # leaf model, let the signal handle it
+
+    ct_model = permission_registry.content_type_model
+
+    # Collect all child object PKs by content type
+    child_pks_by_ct = {}
+    for parent_filter, child_model in child_models:
+        child_ct = ct_model.objects.get_for_model(child_model)
+        child_pks = set(child_model.objects.filter(**{parent_filter: instance}).values_list('pk', flat=True))
+        if child_pks:
+            child_pks_by_ct[child_ct] = child_pks
+
+    if not child_pks_by_ct:
+        return  # no children to clean up
+
+    # Also include the instance itself
+    instance_ct = ct_model.objects.get_for_model(instance)
+
+    # --- Team-specific bulk work ---
+    team_ct_id = permission_registry.team_ct_id
+    team_ids = set()
+    for ct, pks in child_pks_by_ct.items():
+        if ct.id == team_ct_id:
+            team_ids = pks
+            break
+
+    if team_ids:
+        _collect_team_rbac_data(team_ids)
+
+    # --- Bulk ObjectRole and RoleEvaluation cleanup for ALL children ---
+    all_cts_and_pks = list(child_pks_by_ct.items())
+    all_cts_and_pks.append((instance_ct, {instance.pk}))
+
+    _bulk_delete_and_accumulate_sync(all_cts_and_pks, instance)
+
+    # Set flag so post_delete signal handler skips RBAC work
+    _defer_rbac_cache.skip_post_delete_rbac = True
+
+
+def _handle_team_delete_signal(instance):
+    """Process RBAC side-effects specific to team deletion.
+
+    Collects indirectly affected roles from ancestor and descendent
+    relationships, then either stashes them in the deferred cache or
+    recomputes immediately.
+    """
+    indirectly_affected_roles = set()
+    indirectly_affected_roles.update(team_ancestor_roles(instance))
+    for team_role in instance.__rbac_stashed_member_roles:
+        indirectly_affected_roles.update(team_role.descendent_roles())
+
+    if _defer_rbac_cache.active:
+        _defer_rbac_cache.team_ids.update(instance.__rbac_stashed_recompute_team_ids)
+        _defer_rbac_cache.object_roles.update(indirectly_affected_roles)
+        return
+
+    compute_team_member_roles(team_ids=instance.__rbac_stashed_recompute_team_ids)
+    compute_object_role_permissions(object_roles=indirectly_affected_roles)
+
+    # Similar to user deletion, clean up any orphaned object roles
+    deleted_count, _ = ObjectRole.objects.filter(users__isnull=True, teams__isnull=True).delete()
+    if deleted_count:
+        logger.info('Removed %d orphaned object role(s) after team deletion', deleted_count)
+
+
+def _sync_deleted_object(instance, ct):
+    """Enqueue or immediately sync a deleted object's role assignments.
+
+    When the deferred cache is active the deletion metadata is stashed for
+    batch processing; otherwise the sync runs inline.
+    """
+    if _defer_rbac_cache.active:
+        _defer_rbac_cache.deleted_objects.append((ct.app_label, ct.model, str(instance.pk)))
+        return
+
+    try:
+        from ansible_base.rbac.sync import maybe_reverse_sync_object_deletion
+
+        maybe_reverse_sync_object_deletion(instance)
+    except Exception:
+        # Continue with local deletion even if cross-service sync fails
+        # This ensures we don't break local operations due to network/auth issues
+        logger.exception(f"Failed to sync object deletion for {instance}")
+
+
 def rbac_post_delete_remove_object_roles(instance, *args, **kwargs):
     """
     Call this when deleting an object to cascade delete its object roles
     Deleting a team can have consequences for the rest of the graph
     """
-    if instance._meta.model_name == permission_registry.team_model._meta.model_name:
-        indirectly_affected_roles = set()
-        indirectly_affected_roles.update(team_ancestor_roles(instance))
-        for team_role in instance.__rbac_stashed_member_roles:
-            indirectly_affected_roles.update(team_role.descendent_roles())
-        compute_team_member_roles(team_ids=instance.__rbac_stashed_recompute_team_ids)
-        compute_object_role_permissions(object_roles=indirectly_affected_roles)
+    if _defer_rbac_cache.active and _defer_rbac_cache.skip_post_delete_rbac:
+        return
 
-        # Similar to user deletion, clean up any orphaned object roles
-        ObjectRole.objects.filter(users__isnull=True, teams__isnull=True).delete()
-        deleted_count, _ = ObjectRole.objects.filter(users__isnull=True, teams__isnull=True).delete()
-        if deleted_count:
-            had_object_assignments = True
+    if instance._meta.model_name == permission_registry.team_model._meta.model_name:
+        _handle_team_delete_signal(instance)
 
     ct = permission_registry.content_type_model.objects.get_for_model(instance)
 
@@ -363,14 +581,7 @@ def rbac_post_delete_remove_object_roles(instance, *args, **kwargs):
 
     # Only sync when object-level assignments existed - this is the key performance optimization
     if had_object_assignments:
-        try:
-            from ansible_base.rbac.sync import maybe_reverse_sync_object_deletion
-
-            maybe_reverse_sync_object_deletion(instance)
-        except Exception:
-            # Continue with local deletion even if cross-service sync fails
-            # This ensures we don't break local operations due to network/auth issues
-            logger.exception(f"Failed to sync object deletion for {instance}")
+        _sync_deleted_object(instance, ct)
 
 
 def rbac_post_init_stash_email(instance, **kwargs):
@@ -460,3 +671,14 @@ def connect_rbac_signals(cls):
     pre_save.connect(rbac_pre_save_identify_changes, sender=cls, dispatch_uid='permission-registry-pre-save')
     post_save.connect(rbac_post_save_update_evaluations, sender=cls, dispatch_uid='permission-registry-post-save')
     post_delete.connect(rbac_post_delete_remove_object_roles, sender=cls, dispatch_uid='permission-registry-post-delete')
+
+    # Wrap delete() to defer RBAC cache rebuilds during cascade deletes
+    original_delete = cls.delete
+
+    @functools.wraps(original_delete)
+    def deferred_delete(self, *args, **kwargs):
+        with defer_rbac_cache():
+            _bulk_pre_cascade_rbac_cleanup(self)
+            return original_delete(self, *args, **kwargs)
+
+    cls.delete = deferred_delete

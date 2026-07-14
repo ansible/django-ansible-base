@@ -146,6 +146,9 @@ class BaseServiceClient:
         resp = requests.request(**kwargs)
         logger.debug(f"Response status code from {url}: {resp.status_code}")
 
+        if resp.status_code == 413:
+            logger.warning("Request to %s rejected: payload exceeded the server's request size limit.", url)
+
         if self.raise_if_bad_request:
             try:
                 resp.raise_for_status()

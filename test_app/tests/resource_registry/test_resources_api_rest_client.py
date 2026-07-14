@@ -1,4 +1,5 @@
 import uuid
+from unittest.mock import MagicMock, patch
 
 import pytest
 from requests.exceptions import HTTPError
@@ -8,6 +9,7 @@ from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
 from ansible_base.resource_registry.models import Resource, service_id
 from ansible_base.resource_registry.rest_client import ResourceAPIClient, ResourceRequestBody
+from ansible_base.resource_registry.service_client import BaseServiceClient
 from test_app.models import Inventory
 
 
@@ -344,3 +346,83 @@ def test_list_team_assignments(resource_client, inv_rd, team, inventory):
             break
 
     assert assignment_found, "Team assignment not found in list results"
+
+
+@pytest.mark.parametrize(
+    'status_code,expect_413_warning',
+    [
+        (200, False),
+        (400, False),
+        (413, True),
+        (500, False),
+    ],
+    ids=['ok', 'bad-request', 'payload-too-large', 'server-error'],
+)
+def test_make_request_logs_warning_on_413(status_code, expect_413_warning):
+    """BaseServiceClient._make_request should log a warning specifically
+    for HTTP 413 (Payload Too Large) so operators know to increase the
+    server's request size limit."""
+    mock_response = MagicMock()
+    mock_response.status_code = status_code
+    mock_response.text = 'error'
+
+    client = BaseServiceClient.__new__(BaseServiceClient)
+    client.base_url = 'https://gateway.example.com/api/v1/'
+    client.verify_https = False
+    client.raise_if_bad_request = False
+    # Set JWT attributes directly so requests_auth_kwargs returns valid
+    # data without needing to call refresh_jwt / get_service_token.
+    client._jwt = 'fake-token'
+    client._jwt_timeout = float('inf')
+
+    with (
+        patch('ansible_base.resource_registry.service_client.requests.request', return_value=mock_response),
+        patch('ansible_base.resource_registry.service_client.logger') as mock_logger,
+    ):
+        client._make_request('POST', 'object-delete/batch/', data={'test': True})
+
+    warning_calls = [c for c in mock_logger.warning.call_args_list if 'request size limit' in str(c)]
+    if expect_413_warning:
+        assert len(warning_calls) == 1
+    else:
+        assert len(warning_calls) == 0
+
+
+@pytest.mark.parametrize(
+    'status_code,response_json,expect_error',
+    [
+        (200, {'deleted_count': 3}, False),
+        (413, {}, True),
+        (500, {}, True),
+    ],
+    ids=['success', 'payload-too-large', 'server-error'],
+)
+def test_sync_object_deletions_batch(status_code, response_json, expect_error):
+    """sync_object_deletions_batch returns parsed JSON on 200 or an error dict
+    on any other status code."""
+    mock_response = MagicMock()
+    mock_response.status_code = status_code
+    mock_response.json.return_value = response_json
+
+    client = ResourceAPIClient.__new__(ResourceAPIClient)
+    client._make_request = MagicMock(return_value=mock_response)
+
+    deleted_objects = [('test_app', 'inventory', '1'), ('test_app', 'inventory', '2')]
+    result = client.sync_object_deletions_batch(deleted_objects)
+
+    client._make_request.assert_called_once_with(
+        "post",
+        "object-delete/batch/",
+        data={
+            'deletions': [
+                {'resource_type': 'test_app.inventory', 'resource_pk': '1'},
+                {'resource_type': 'test_app.inventory', 'resource_pk': '2'},
+            ]
+        },
+    )
+
+    if expect_error:
+        assert 'error' in result
+        assert result['status_code'] == status_code
+    else:
+        assert result == response_json

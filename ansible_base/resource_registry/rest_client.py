@@ -196,6 +196,22 @@ class ResourceAPIClient(BaseServiceClient):
         else:
             return {'error': f'Failed with status {response.status_code}', 'status_code': response.status_code}
 
+    def sync_object_deletions_batch(self, deleted_objects):
+        """Sync multiple object deletions to Gateway in a single API call.
+
+        Args:
+            deleted_objects: list of (app_label, model, pk_string) tuples
+        """
+        _check_rbac_installed()
+
+        data = {'deletions': [{'resource_type': f'{app_label}.{model}', 'resource_pk': pk} for app_label, model, pk in deleted_objects]}
+
+        response = self._make_request("post", "object-delete/batch/", data=data)
+
+        if response.status_code == 200:
+            return response.json()
+        return {'error': f'Failed with status {response.status_code}', 'status_code': response.status_code}
+
     def _sync_assignment(self, data, giving=True):
         if giving:
             sub_url = 'assign'
