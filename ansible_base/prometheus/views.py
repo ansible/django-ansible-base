@@ -74,8 +74,8 @@ class MetricsView(APIView):
 
       ANSIBLE_PROMETHEUS_PERMISSION_CLASSES (list[str])
           Dotted-path DRF permission classes used when anonymous access is
-          disabled. Defaults to ['rest_framework.permissions.IsAuthenticated'].
-          Override to enforce superuser / auditor checks (e.g. in AWX).
+          disabled. Defaults to IsSuperuserOrAuditor, which grants access to
+          superusers and platform auditors only. Override to relax or tighten.
 
       ANSIBLE_PROMETHEUS_EXTRA_SOURCES (list[str])
           Dotted-path callables invoked as ``fn(request) -> bytes``. Each must
@@ -105,7 +105,7 @@ class MetricsView(APIView):
         classes = getattr(
             settings,
             'ANSIBLE_PROMETHEUS_PERMISSION_CLASSES',
-            ['rest_framework.permissions.IsAuthenticated'],
+            ['ansible_base.lib.utils.views.permissions.IsSuperuserOrAuditor'],
         )
         return [import_string(cls)() for cls in classes]
 

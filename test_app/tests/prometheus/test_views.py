@@ -91,12 +91,39 @@ def test_anonymous_access_allowed_when_setting_is_true(client, settings):
     assert response.status_code == 200
 
 
-def test_anonymous_access_denied_when_setting_is_false(client, settings):
+def test_anonymous_access_denied_by_default(client, settings):
     settings.ANSIBLE_PROMETHEUS_ALLOW_ANONYMOUS = False
-    settings.ANSIBLE_PROMETHEUS_PERMISSION_CLASSES = ['rest_framework.permissions.IsAuthenticated']
     response = client.get('/metrics/')
     assert response.status_code in (401, 403)
 
+
+def test_superuser_can_access(client, settings, admin_user):
+    settings.ANSIBLE_PROMETHEUS_ALLOW_ANONYMOUS = False
+    client.force_login(admin_user)
+    response = client.get('/metrics/')
+    assert response.status_code == 200
+
+
+def test_platform_auditor_can_access(settings, django_user_model):
+    from rest_framework.test import APIClient
+
+    settings.ANSIBLE_PROMETHEUS_ALLOW_ANONYMOUS = False
+    auditor = django_user_model.objects.create_user(username='prom_auditor', password='pass')
+    # is_platform_auditor is not a DB field; force_authenticate injects the
+    # in-memory object directly so the attribute survives to the permission check.
+    auditor.is_platform_auditor = True
+    api_client = APIClient()
+    api_client.force_authenticate(user=auditor)
+    response = api_client.get('/metrics/')
+    assert response.status_code == 200
+
+
+def test_regular_user_denied(client, settings, django_user_model):
+    settings.ANSIBLE_PROMETHEUS_ALLOW_ANONYMOUS = False
+    user = django_user_model.objects.create_user(username='prom_regular', password='pass')
+    client.force_login(user)
+    response = client.get('/metrics/')
+    assert response.status_code == 403
 
 
 def test_custom_permission_class_honoured(client, settings):
