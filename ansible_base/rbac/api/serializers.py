@@ -1,4 +1,5 @@
 import logging
+from typing import TypedDict
 
 from django.apps import apps
 from django.core.exceptions import ObjectDoesNotExist
@@ -260,6 +261,16 @@ class RoleMetadataSerializer(serializers.Serializer):
     allowed_permissions = serializers.DictField(help_text=_('A List of permissions allowed for a role definition, given its content type.'))
 
 
+class RoleDefinitionSummary(TypedDict):
+    name: str
+    url: str
+
+
+class AssignmentSummary(TypedDict):
+    type: str
+    role_definition: RoleDefinitionSummary
+
+
 class AccessListMixin:
 
     def _get_related(self, obj) -> dict[str, str]:
@@ -286,11 +297,11 @@ class AccessListMixin:
         return related_fields
 
     @staticmethod
-    def summarize_role_definition(role_definition):
+    def summarize_role_definition(role_definition) -> RoleDefinitionSummary:
         return {"name": role_definition.name, "url": get_url_for_object(role_definition)}
 
     @staticmethod
-    def summarize_assignment_list(assignment_qs, obj_ct):
+    def summarize_assignment_list(assignment_qs, obj_ct) -> list[AssignmentSummary]:
         assignment_list = []
         team_ct = DABContentType.objects.get_for_model(get_team_model())
         for assignment in assignment_qs.distinct():
@@ -306,7 +317,7 @@ class AccessListMixin:
 
         return assignment_list
 
-    def get_object_role_assignments(self, actor):
+    def get_object_role_assignments(self, actor) -> list[AssignmentSummary]:
         obj = self.context.get("related_object")
         permission = self.context.get("permission")
         ct = self.context.get("content_type")
@@ -325,26 +336,26 @@ class AccessListMixin:
 class UserAccessListMixin(AccessListMixin, serializers.ModelSerializer):
     "controller uses auth.User model so this needs to be as compatible as possible, thus ModelSerializer"
 
-    object_role_assignments = serializers.SerializerMethodField()
+    object_role_assignments: list[AssignmentSummary] = serializers.SerializerMethodField()
     url = serializers.SerializerMethodField()
     related = serializers.SerializerMethodField('_get_related')
     _expected_fields = ['id', 'url', 'related', 'username', 'is_superuser', 'first_name', 'last_name', 'object_role_assignments']
 
 
 class TeamAccessListMixin(AccessListMixin, AbstractCommonModelSerializer):
-    object_role_assignments = serializers.SerializerMethodField()
+    object_role_assignments: list[AssignmentSummary] = serializers.SerializerMethodField()
     url = serializers.SerializerMethodField()
     related = serializers.SerializerMethodField('_get_related')
     _expected_fields = ['id', 'url', 'related', 'name', 'organization', 'object_role_assignments']
 
 
 class UserAccessAssignmentSerializer(RoleUserAssignmentSerializer):
-    intermediary_roles = serializers.SerializerMethodField()
+    intermediary_roles: list[AssignmentSummary] = serializers.SerializerMethodField()
 
     class Meta(RoleUserAssignmentSerializer.Meta):
         fields = RoleUserAssignmentSerializer.Meta.fields + ['intermediary_roles']
 
-    def get_intermediary_roles(self, assignment):
+    def get_intermediary_roles(self, assignment: RoleUserAssignment) -> list[AssignmentSummary]:
         team_ct = DABContentType.objects.get_for_model(get_team_model())
 
         permission = self.context.get("permission")
