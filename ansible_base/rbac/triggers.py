@@ -408,51 +408,159 @@ def _collect_team_rbac_data(team_ids):
         _defer_rbac_cache.object_roles.update(indirectly_affected_roles)
 
 
-def _bulk_delete_and_accumulate_sync(all_cts_and_pks, instance):
-    """Bulk-delete ObjectRoles and RoleEvaluations, then enqueue reverse sync.
+def _check_cascade_size(instance, total_children, or_ids):
+    """Raise ValidationError if the total cascade footprint exceeds the configured limit.
 
-    Deletes ObjectRoles and RoleEvaluations for all content-type/PK pairs in
-    ``all_cts_and_pks``.  Objects that actually had role assignments are
-    enqueued in the deferred RBAC cache for reverse sync.
+    Counts the total number of objects that would be loaded into memory
+    for audit logging during a cascade delete.  If the count exceeds
+    ANSIBLE_BASE_RBAC_CASCADE_DELETE_CHILD_OBJECT_LIMIT, the delete is rejected with a clear
+    error message telling the admin to reduce the org size first.
+    """
+    from django.conf import settings
+    from django.db import connection
+
+    from ansible_base.rbac.models import RoleTeamAssignment, RoleUserAssignment
+
+    limit = getattr(settings, 'ANSIBLE_BASE_RBAC_CASCADE_DELETE_CHILD_OBJECT_LIMIT', 50_000)
+    if limit <= 0:
+        return  # unlimited
+
+    # Single query to count both assignment types
+    placeholders = ','.join(['%s'] * len(or_ids))
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT "
+            f"(SELECT COUNT(*) FROM {RoleUserAssignment._meta.db_table} WHERE object_role_id IN ({placeholders})) + "
+            f"(SELECT COUNT(*) FROM {RoleTeamAssignment._meta.db_table} WHERE object_role_id IN ({placeholders}))",
+            list(or_ids) + list(or_ids),
+        )
+        total_assignments = cursor.fetchone()[0]
+
+    total_cascade = total_children + len(or_ids) + total_assignments
+
+    if total_cascade > limit:
+        from rest_framework.exceptions import ValidationError
+
+        model_name = type(instance).__name__
+        logger.error(
+            'Deleting %s pk=%s would cascade-delete %d objects (limit: %d). ' 'Remove some child objects before deleting.',
+            model_name,
+            instance.pk,
+            total_cascade,
+            limit,
+        )
+        raise ValidationError(
+            f'Deleting this {model_name} would cascade-delete {total_cascade} objects ' f'which exceeds the limit of {limit}. Remove some child objects first.'
+        )
+
+
+def _bulk_delete_and_accumulate_sync(all_cts_and_pks, instance):
+    """Bulk-delete ObjectRoles and RoleEvaluations via raw SQL, then enqueue reverse sync.
+
+    Uses raw SQL DELETE instead of Django's ORM .delete() to bypass the
+    collector overhead.  The database's ON DELETE CASCADE constraints handle
+    child table cleanup (RoleUserAssignment, RoleTeamAssignment, RoleEvaluation,
+    provides_teams M2M).
+
+    Assignment data is captured before deletion and fed through the existing
+    activity stream audit path via reconstructed model instances, preserving
+    per-row audit log entries without per-row signal overhead.
     """
     import time
+
+    from django.db import connection
+
+    from ansible_base.rbac.models import RoleEvaluationUUID, RoleTeamAssignment, RoleUserAssignment
 
     # Build one Q filter for all children + the instance itself
     delete_filter = Q()
     for ct, pks in all_cts_and_pks:
         delete_filter |= Q(content_type=ct, object_id__in=[str(pk) for pk in pks])
 
-    from ansible_base.rbac.models import RoleTeamAssignment, RoleUserAssignment
-
-    # Capture which objects actually had assignments before deleting
+    # Identify which objects had assignments (for reverse sync enqueuing)
     t0 = time.time()
     object_roles_qs = ObjectRole.objects.filter(delete_filter)
+    or_ids = list(object_roles_qs.values_list('id', flat=True))
     affected_keys = set(object_roles_qs.values_list('content_type_id', 'object_id'))
-    logger.info('[TIMING] affected_keys query: %.3fs (%d keys)', time.time() - t0, len(affected_keys))
+    logger.info('[TIMING] affected_keys + or_ids query: %.3fs (%d keys, %d or_ids)', time.time() - t0, len(affected_keys), len(or_ids))
 
-    # Delete cascade children FIRST so the ObjectRole collector has nothing
-    # to load. Without this, Django's collector loads all 4000+ assignments
-    # into memory before deleting -- the dominant cost at scale.
+    if not or_ids:
+        return
+
+    # Check cascade size before committing to memory-intensive operations
+    total_children = sum(len(pks) for _, pks in all_cts_and_pks)
+    _check_cascade_size(instance, total_children, or_ids)
+
+    # Capture assignment data BEFORE delete for audit logging.
+    # Reconstructed instances are passed to _store_activitystream_entry
+    # so audit log formatting uses the exact same code path as signal-driven deletes.
     t0 = time.time()
-    or_ids = set(object_roles_qs.values_list('id', flat=True))
-    RoleUserAssignment.objects.filter(object_role_id__in=or_ids).delete()
-    RoleTeamAssignment.objects.filter(object_role_id__in=or_ids).delete()
-    logger.info('[TIMING] pre-delete assignments: %.3fs (%d object_roles)', time.time() - t0, len(or_ids))
+    rua_rows = list(RoleUserAssignment.objects.filter(object_role_id__in=or_ids).values())
+    rta_rows = list(RoleTeamAssignment.objects.filter(object_role_id__in=or_ids).values())
+    logger.info('[TIMING] capture assignment data: %.3fs (%d RUA, %d RTA)', time.time() - t0, len(rua_rows), len(rta_rows))
 
+    # Bottom-up raw SQL delete: children first, then ObjectRoles.
+    # Django's on_delete=CASCADE is Python-only; the DB FK constraints
+    # do NOT have ON DELETE CASCADE, so we must delete in dependency order.
     t0 = time.time()
-    object_roles_qs.delete()
-    logger.info('[TIMING] ObjectRole bulk delete: %.3fs', time.time() - t0)
+    placeholders = ','.join(['%s'] * len(or_ids))
+    provides_teams_table = ObjectRole.provides_teams.through._meta.db_table
+    with connection.cursor() as cursor:
+        # 1. RoleEvaluation + RoleEvaluationUUID (FK: role_id -> ObjectRole)
+        for eval_table in {RoleEvaluation._meta.db_table, RoleEvaluationUUID._meta.db_table}:
+            cursor.execute(f"DELETE FROM {eval_table} WHERE role_id IN ({placeholders})", or_ids)
+        # 2. RoleUserAssignment (FK: object_role_id -> ObjectRole)
+        cursor.execute(f"DELETE FROM {RoleUserAssignment._meta.db_table} WHERE object_role_id IN ({placeholders})", or_ids)
+        # 3. RoleTeamAssignment (FK: object_role_id -> ObjectRole)
+        cursor.execute(f"DELETE FROM {RoleTeamAssignment._meta.db_table} WHERE object_role_id IN ({placeholders})", or_ids)
+        # 4. provides_teams M2M through table (FK: objectrole_id -> ObjectRole)
+        cursor.execute(f"DELETE FROM {provides_teams_table} WHERE objectrole_id IN ({placeholders})", or_ids)
+        # 5. ObjectRole itself
+        cursor.execute(f"DELETE FROM {ObjectRole._meta.db_table} WHERE id IN ({placeholders})", or_ids)
+    logger.info('[TIMING] raw SQL bottom-up delete: %.3fs (%d ObjectRoles)', time.time() - t0, len(or_ids))
 
-    # Bulk delete RoleEvaluations for children with parent fields
-    eval_filter = Q()
-    for ct, pks in all_cts_and_pks:
-        eval_filter |= Q(content_type_id=ct.id, object_id__in=pks)
-
+    # Bulk delete RoleEvaluations for the parent objects (org, teams, etc.)
+    # Use the correct evaluation table based on each model's PK type.
     t0 = time.time()
-    get_evaluation_model(instance).objects.filter(eval_filter).delete()
-    logger.info('[TIMING] RoleEvaluation bulk delete: %.3fs', time.time() - t0)
+    with connection.cursor() as cursor:
+        for ct, pks in all_cts_and_pks:
+            pk_list = [str(pk) for pk in pks]
+            if pk_list:
+                # Determine the right eval table by checking the model's PK type
+                model_cls = ct.model_class()
+                eval_table = get_evaluation_model(model_cls)._meta.db_table if model_cls else RoleEvaluation._meta.db_table
+                ph = ','.join(['%s'] * len(pk_list))
+                cursor.execute(f"DELETE FROM {eval_table} WHERE content_type_id = %s AND object_id IN ({ph})", [ct.id] + pk_list)
+    logger.info('[TIMING] raw SQL parent RoleEvaluation delete: %.3fs', time.time() - t0)
 
-    # Only enqueue objects that actually had role assignments for reverse sync
+    # Emit audit log entries for the deleted assignments.
+    # We call _log_audit_entry directly (not _store_activitystream_entry)
+    # because the assignments have activity_stream_enabled=False (no Entry
+    # DB records), and _store_activitystream_entry would call diff() which
+    # follows FK relations to ObjectRole -- which we just deleted.
+    t0 = time.time()
+    try:
+        from ansible_base.activitystream.signals import _log_audit_entry
+
+        for row in rua_rows:
+            changes = {'removed_fields': {k: str(v) for k, v in row.items()}}
+            instance = RoleUserAssignment.__new__(RoleUserAssignment)
+            instance.pk = row['id']
+            instance.id = row['id']
+            instance.audit_log_enabled = True
+            _log_audit_entry(content_object=instance, operation='delete', changes=changes)
+        for row in rta_rows:
+            changes = {'removed_fields': {k: str(v) for k, v in row.items()}}
+            instance = RoleTeamAssignment.__new__(RoleTeamAssignment)
+            instance.pk = row['id']
+            instance.id = row['id']
+            instance.audit_log_enabled = True
+            _log_audit_entry(content_object=instance, operation='delete', changes=changes)
+    except ImportError:
+        pass  # activity stream not installed
+    logger.info('[TIMING] reconstructed audit logging: %.3fs (%d entries)', time.time() - t0, len(rua_rows) + len(rta_rows))
+
+    # Enqueue objects that had assignments for reverse sync
     if affected_keys:
         for ct, pks in all_cts_and_pks:
             for pk in pks:
