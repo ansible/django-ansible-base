@@ -147,30 +147,24 @@ def defer_rbac_cache():
         _defer_rbac_cache.deleted_objects = []
         _defer_rbac_cache.skip_post_delete_rbac = False
 
+        import time
+
         if team_ids:
+            t0 = time.time()
             compute_team_member_roles(team_ids=team_ids)
+            logger.info('[TIMING] flush compute_team_member_roles: %.3fs (%d team_ids)', time.time() - t0, len(team_ids))
 
         if object_roles:
-            # Filter out ObjectRoles deleted during cascade.  Example:
-            # Org A owns Team X which holds Role Q on Inventory Z (in a
-            # different org).  Deleting Org A cascades to Team X; the
-            # bulk pre-cascade cleanup collected Role Q as an
-            # indirectly-affected role.  But Team X's cascade also
-            # removed Role Q's team assignment, and the orphan cleanup
-            # (below) will delete Role Q itself.  If we pass the
-            # now-deleted Role Q to compute_object_role_permissions it
-            # would create RoleEvaluation rows referencing a gone
-            # ObjectRole, causing FK violations.
+            t0 = time.time()
             surviving_ids = set(ObjectRole.objects.filter(id__in={r.id for r in object_roles}).values_list('id', flat=True))
             surviving_roles = {r for r in object_roles if r.id in surviving_ids}
             if surviving_roles:
                 compute_object_role_permissions(object_roles=surviving_roles)
+            logger.info('[TIMING] flush compute_object_role_permissions: %.3fs (%d/%d surviving)', time.time() - t0, len(surviving_roles), len(object_roles))
 
-        # Orphan cleanup runs AFTER compute, matching the original
-        # per-signal ordering.
+        t0 = time.time()
         deleted_count, _ = ObjectRole.objects.filter(users__isnull=True, teams__isnull=True).delete()
-        if deleted_count:
-            logger.info('Removed %d orphaned object role(s) during deferred cleanup', deleted_count)
+        logger.info('[TIMING] flush orphan cleanup: %.3fs (removed %d)', time.time() - t0, deleted_count)
 
         if deleted_objects:
             from django.db import connection
@@ -421,25 +415,42 @@ def _bulk_delete_and_accumulate_sync(all_cts_and_pks, instance):
     ``all_cts_and_pks``.  Objects that actually had role assignments are
     enqueued in the deferred RBAC cache for reverse sync.
     """
+    import time
+
     # Build one Q filter for all children + the instance itself
     delete_filter = Q()
     for ct, pks in all_cts_and_pks:
         delete_filter |= Q(content_type=ct, object_id__in=[str(pk) for pk in pks])
 
-    # Capture which objects actually had assignments before deleting,
-    # so only those get enqueued for reverse sync. This avoids inflating
-    # the HTTP payload with objects that had no role assignments.
+    from ansible_base.rbac.models import RoleTeamAssignment, RoleUserAssignment
+
+    # Capture which objects actually had assignments before deleting
+    t0 = time.time()
     object_roles_qs = ObjectRole.objects.filter(delete_filter)
     affected_keys = set(object_roles_qs.values_list('content_type_id', 'object_id'))
+    logger.info('[TIMING] affected_keys query: %.3fs (%d keys)', time.time() - t0, len(affected_keys))
+
+    # Delete cascade children FIRST so the ObjectRole collector has nothing
+    # to load. Without this, Django's collector loads all 4000+ assignments
+    # into memory before deleting -- the dominant cost at scale.
+    t0 = time.time()
+    or_ids = set(object_roles_qs.values_list('id', flat=True))
+    RoleUserAssignment.objects.filter(object_role_id__in=or_ids).delete()
+    RoleTeamAssignment.objects.filter(object_role_id__in=or_ids).delete()
+    logger.info('[TIMING] pre-delete assignments: %.3fs (%d object_roles)', time.time() - t0, len(or_ids))
+
+    t0 = time.time()
     object_roles_qs.delete()
+    logger.info('[TIMING] ObjectRole bulk delete: %.3fs', time.time() - t0)
 
     # Bulk delete RoleEvaluations for children with parent fields
     eval_filter = Q()
     for ct, pks in all_cts_and_pks:
         eval_filter |= Q(content_type_id=ct.id, object_id__in=pks)
 
-    # Use the correct evaluation model (int vs UUID)
+    t0 = time.time()
     get_evaluation_model(instance).objects.filter(eval_filter).delete()
+    logger.info('[TIMING] RoleEvaluation bulk delete: %.3fs', time.time() - t0)
 
     # Only enqueue objects that actually had role assignments for reverse sync
     if affected_keys:
@@ -466,6 +477,8 @@ def _bulk_pre_cascade_rbac_cleanup(instance):
     (e.g. patched with nullcontext in tests), the signal handler runs
     normally and no bulk state is accumulated.
     """
+    import time
+
     if not _defer_rbac_cache.active:
         return
 
@@ -476,12 +489,19 @@ def _bulk_pre_cascade_rbac_cleanup(instance):
     ct_model = permission_registry.content_type_model
 
     # Collect all child object PKs by content type
+    t0 = time.time()
     child_pks_by_ct = {}
     for parent_filter, child_model in child_models:
         child_ct = ct_model.objects.get_for_model(child_model)
         child_pks = set(child_model.objects.filter(**{parent_filter: instance}).values_list('pk', flat=True))
         if child_pks:
             child_pks_by_ct[child_ct] = child_pks
+    logger.info(
+        '[TIMING] collect child PKs: %.3fs (%d child types, %d total children)',
+        time.time() - t0,
+        len(child_pks_by_ct),
+        sum(len(v) for v in child_pks_by_ct.values()),
+    )
 
     if not child_pks_by_ct:
         return  # no children to clean up
@@ -498,13 +518,17 @@ def _bulk_pre_cascade_rbac_cleanup(instance):
             break
 
     if team_ids:
+        t0 = time.time()
         _collect_team_rbac_data(team_ids)
+        logger.info('[TIMING] _collect_team_rbac_data: %.3fs (%d teams)', time.time() - t0, len(team_ids))
 
     # --- Bulk ObjectRole and RoleEvaluation cleanup for ALL children ---
     all_cts_and_pks = list(child_pks_by_ct.items())
     all_cts_and_pks.append((instance_ct, {instance.pk}))
 
+    t0 = time.time()
     _bulk_delete_and_accumulate_sync(all_cts_and_pks, instance)
+    logger.info('[TIMING] _bulk_delete_and_accumulate_sync: %.3fs', time.time() - t0)
 
     # Set flag so post_delete signal handler skips RBAC work
     _defer_rbac_cache.skip_post_delete_rbac = True
@@ -677,8 +701,26 @@ def connect_rbac_signals(cls):
 
     @functools.wraps(original_delete)
     def deferred_delete(self, *args, **kwargs):
+        from contextlib import nullcontext
+
+        try:
+            from ansible_base.activitystream.signals import deferred_activity_stream
+
+            cascade_ctx = deferred_activity_stream
+        except ImportError:
+            cascade_ctx = nullcontext
+
+        import time
+
         with defer_rbac_cache():
-            _bulk_pre_cascade_rbac_cleanup(self)
-            return original_delete(self, *args, **kwargs)
+            with cascade_ctx():
+                t0 = time.time()
+                _bulk_pre_cascade_rbac_cleanup(self)
+                t1 = time.time()
+                logger.info('[TIMING] bulk_pre_cascade_rbac_cleanup: %.3fs for %s pk=%s', t1 - t0, type(self).__name__, self.pk)
+                result = original_delete(self, *args, **kwargs)
+                t2 = time.time()
+                logger.info('[TIMING] Django CASCADE (original_delete): %.3fs for %s', t2 - t1, type(self).__name__)
+            return result
 
     cls.delete = deferred_delete

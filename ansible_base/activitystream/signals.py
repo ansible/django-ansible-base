@@ -25,6 +25,16 @@ class ActivityStreamEnabled(threading.local):
 activitystream_enabled = ActivityStreamEnabled()
 
 
+class _DeferredActivityStream(threading.local):
+    def __init__(self):
+        self.active = False
+        self.entries = []
+        self.audit_lines = []
+
+
+_deferred_activity_stream = _DeferredActivityStream()
+
+
 @contextmanager
 def no_activity_stream() -> Generator[None, None, None]:
     previous_value = activitystream_enabled.enabled
@@ -33,6 +43,38 @@ def no_activity_stream() -> Generator[None, None, None]:
         yield
     finally:
         activitystream_enabled.enabled = previous_value
+
+
+@contextmanager
+def deferred_activity_stream() -> Generator[None, None, None]:
+    """Defer activity stream entries and audit log lines during bulk operations.
+
+    While active, _store_activitystream_entry accumulates Entry objects and
+    audit log lines in thread-local lists instead of writing them immediately.
+    On exit, Entry objects are bulk-created and audit lines are batch-logged.
+    Re-entrant: inner calls are no-ops (outermost caller owns the flush).
+    """
+    if _deferred_activity_stream.active:
+        yield
+        return
+    _deferred_activity_stream.active = True
+    try:
+        yield
+    finally:
+        entries = _deferred_activity_stream.entries
+        audit_lines = _deferred_activity_stream.audit_lines
+        _deferred_activity_stream.active = False
+        _deferred_activity_stream.entries = []
+        _deferred_activity_stream.audit_lines = []
+
+        if entries:
+            from ansible_base.activitystream.models import Entry
+
+            Entry.objects.bulk_create(entries)
+            logger.debug('Bulk-created %d deferred activity stream entries', len(entries))
+
+        for line in audit_lines:
+            log_auth_event(line)
 
 
 def _get_actor_user_and_username() -> Tuple[Optional[AbstractUser], str]:
@@ -58,26 +100,31 @@ def _log_audit_entry(
     obj_str = f"{content_object} ({content_object.pk})"
     _, actor_username = _get_actor_user_and_username()
     prefix = f"User: {actor_username} "
+
+    lines = []
     if isinstance(changes, str):
-        log_auth_event(f"{prefix}{operation} {model_name} {obj_str} {changes}")
-        return
-    if operation in ('create', 'delete'):
-        # For create/delete, dump the whole object state as a dict
+        lines.append(f"{prefix}{operation} {model_name} {obj_str} {changes}")
+    elif operation in ('create', 'delete'):
         all_fields = {}
         if operation == 'create':
             all_fields.update(changes.get('added_fields', {}))
         else:
             all_fields.update(changes.get('removed_fields', {}))
         all_fields.update({k: v[1] if operation == 'create' else v[0] for k, v in changes.get('changed_fields', {}).items()})
-        log_auth_event(f"{prefix}{operation} {model_name} {obj_str} {all_fields}")
+        lines.append(f"{prefix}{operation} {model_name} {obj_str} {all_fields}")
     else:
-        # For update, emit one line per change
         for field_name, value in changes.get('added_fields', {}).items():
-            log_auth_event(f"{prefix}{operation} {model_name} {obj_str} added {field_name}='{value}'")
+            lines.append(f"{prefix}{operation} {model_name} {obj_str} added {field_name}='{value}'")
         for field_name, value in changes.get('removed_fields', {}).items():
-            log_auth_event(f"{prefix}{operation} {model_name} {obj_str} removed {field_name} (was '{value}')")
+            lines.append(f"{prefix}{operation} {model_name} {obj_str} removed {field_name} (was '{value}')")
         for field_name, (old_val, new_val) in changes.get('changed_fields', {}).items():
-            log_auth_event(f"{prefix}{operation} {model_name} {obj_str} changed {field_name} from '{old_val}' to '{new_val}'")
+            lines.append(f"{prefix}{operation} {model_name} {obj_str} changed {field_name} from '{old_val}' to '{new_val}'")
+
+    if _deferred_activity_stream.active:
+        _deferred_activity_stream.audit_lines.extend(lines)
+    else:
+        for line in lines:
+            log_auth_event(line)
 
 
 def _get_limit(
@@ -147,6 +194,18 @@ def _store_activitystream_entry(
     )
 
     if getattr(content_object, 'activity_stream_enabled', True):
+        from django.contrib.contenttypes.models import ContentType
+
+        if _deferred_activity_stream.active:
+            _deferred_activity_stream.entries.append(
+                Entry(
+                    content_type=ContentType.objects.get_for_model(content_object),
+                    object_id=str(content_object.pk),
+                    operation=operation,
+                    changes=delta.dict(),
+                )
+            )
+            return None
         return Entry.objects.create(
             content_object=content_object,
             operation=operation,
