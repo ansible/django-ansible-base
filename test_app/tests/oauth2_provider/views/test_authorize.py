@@ -93,7 +93,8 @@ def test_oauth2_provider_authorize_view_flow(user_api_client, oauth2_application
 
 def test_authorize_pkce_required_without_challenge(user_api_client, oauth2_app_pkce_required):
     """
-    When pkce_required=True and the client omits code_challenge, the request should be rejected.
+    When pkce_required=True and the client omits code_challenge, the request should be rejected
+    with a 302 redirect containing error=invalid_request per RFC 6749 §4.1.2.1.
     """
     app = oauth2_app_pkce_required[0]
     url = get_relative_url("oauth2_provider:authorize")
@@ -104,7 +105,8 @@ def test_authorize_pkce_required_without_challenge(user_api_client, oauth2_app_p
         'redirect_uri': app.redirect_uris,
     }
     response = user_api_client.get(url + '?' + urlencode(query_params))
-    assert response.status_code == 400
+    assert response.status_code == 302
+    assert 'error=invalid_request' in response.url
 
 
 def test_authorize_pkce_required_with_challenge(user_api_client, oauth2_app_pkce_required):
@@ -180,7 +182,8 @@ def test_authorize_application_not_found(user_api_client, oauth2_app_pkce_requir
     mock_model.objects.get.side_effect = OAuth2Application.DoesNotExist
     with mock.patch(target, return_value=mock_model):
         response = user_api_client.get(url + '?' + urlencode(query_params))
-    assert response.status_code == 400
+    assert response.status_code == 302
+    assert 'error=invalid_request' in response.url
 
 
 def test_authorize_global_pkce_overrides_app_setting(user_api_client, oauth2_app_pkce_not_required):
