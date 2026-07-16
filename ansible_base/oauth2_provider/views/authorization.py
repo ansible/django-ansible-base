@@ -29,10 +29,4 @@ class AuthorizationView(oauth_views.AuthorizationView):
             error.redirect_uri = redirect_uri
             return self.error_response(OAuthToolkitError(error=error), application=application)
 
-        kwargs["scopes"] = scopes
-        kwargs["credentials"] = credentials
-        kwargs.update(credentials)
-        self.oauth2_data = kwargs
-        kwargs["application"] = application
-
-        return self.render_to_response(self.get_context_data(**kwargs))
+        return super().get(request, *args, **kwargs)
