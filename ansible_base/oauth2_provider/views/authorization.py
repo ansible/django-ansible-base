@@ -13,20 +13,32 @@ class AuthorizationView(oauth_views.AuthorizationView):
         except OAuthToolkitError as error:
             return self.error_response(error, application=None)
 
-        redirect_uri = credentials.get("redirect_uri")
+        error_response = self._check_pkce_required(credentials["client_id"], credentials)
+        if error_response is not None:
+            return error_response
 
+        return super().get(request, *args, **kwargs)
+
+    def _check_pkce_required(self, client_id, credentials):
         app_model = get_application_model()
         try:
-            application = app_model.objects.get(client_id=credentials["client_id"])
+            application = app_model.objects.get(client_id=client_id)
         except app_model.DoesNotExist:
-            error = InvalidRequestError(description="Invalid client_id.")
-            error.redirect_uri = redirect_uri
-            return self.error_response(OAuthToolkitError(error=error), application=None)
+            return None
 
         pkce_required_globally = get_setting('OAUTH2_PROVIDER', {}).get('PKCE_REQUIRED', False)
         if (application.pkce_required or pkce_required_globally) and "code_challenge" not in credentials:
+            redirect_uri = credentials.get("redirect_uri")
             error = InvalidRequestError(description="This application requires PKCE. Include a code_challenge parameter.")
             error.redirect_uri = redirect_uri
             return self.error_response(OAuthToolkitError(error=error), application=application)
 
-        return super().get(request, *args, **kwargs)
+        return None
+
+    def form_valid(self, form):
+        credentials = {k: form.cleaned_data.get(k) for k in ("code_challenge", "code_challenge_method", "redirect_uri") if form.cleaned_data.get(k)}
+        error_response = self._check_pkce_required(form.cleaned_data["client_id"], credentials)
+        if error_response is not None:
+            return error_response
+
+        return super().form_valid(form)

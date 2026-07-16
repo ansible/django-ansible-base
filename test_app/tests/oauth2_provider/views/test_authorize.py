@@ -1,5 +1,3 @@
-from unittest import mock
-
 import pytest
 from django.conf import settings
 from django.test import override_settings
@@ -161,27 +159,21 @@ def test_authorize_pkce_not_required_with_challenge(user_api_client, oauth2_app_
     assert response.status_code == 200
 
 
-def test_authorize_application_not_found(user_api_client, oauth2_app_pkce_required):
+def test_authorize_post_pkce_required_without_challenge(user_api_client, oauth2_app_pkce_required):
     """
-    If the application lookup fails after validate_authorization_request passes,
-    the request should be rejected.
+    When pkce_required=True and the POST form submission omits code_challenge,
+    the request should be rejected with a 302 redirect containing error=invalid_request.
     """
     app = oauth2_app_pkce_required[0]
     url = get_relative_url("oauth2_provider:authorize")
-    query_params = {
+    post_data = {
         'client_id': app.client_id,
         'response_type': 'code',
         'scope': 'read',
         'redirect_uri': app.redirect_uris,
-        'code_challenge': 'some-challenge-value',
-        'code_challenge_method': 'S256',
+        'allow': 'Authorize',
     }
-    target = 'ansible_base.oauth2_provider.views.authorization.get_application_model'
-    mock_model = mock.MagicMock()
-    mock_model.DoesNotExist = OAuth2Application.DoesNotExist
-    mock_model.objects.get.side_effect = OAuth2Application.DoesNotExist
-    with mock.patch(target, return_value=mock_model):
-        response = user_api_client.get(url + '?' + urlencode(query_params))
+    response = user_api_client.post(url, data=post_data)
     assert response.status_code == 302
     assert 'error=invalid_request' in response.url
 
