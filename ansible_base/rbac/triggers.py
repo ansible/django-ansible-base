@@ -1,4 +1,6 @@
 import logging
+import threading
+from contextlib import contextmanager
 from typing import Union
 from uuid import UUID
 
@@ -108,8 +110,49 @@ def needed_updates_on_assignment(role_definition, actor, object_role, created=Fa
     return (recompute_team_ids, to_update)
 
 
+# stores state for the defer_rbac_cache annotation so that it can be accessed by function in the call chain
+# of the annotation
+class _DeferRBACCache(threading.local):
+    def __init__(self):
+        self.active = False
+        self.team_ids = set()
+        self.object_roles = set()
+
+
+_defer_rbac_cache = _DeferRBACCache()
+
+
+# allows deferring the rbac computation in cases where many object roles are updated in short order
+@contextmanager
+def defer_rbac_cache():
+    if _defer_rbac_cache.active:
+        raise RuntimeError("defer_rbac_cache cannot be nested")
+    _defer_rbac_cache.active = True
+    try:
+        yield
+    finally:
+        team_ids = _defer_rbac_cache.team_ids
+        object_roles = _defer_rbac_cache.object_roles
+        _defer_rbac_cache.active = False
+        _defer_rbac_cache.team_ids = set()
+        _defer_rbac_cache.object_roles = set()
+
+        if team_ids:
+            compute_team_member_roles(team_ids=team_ids)
+
+        if object_roles:
+            compute_object_role_permissions(object_roles=object_roles)
+
+
 def update_after_assignment(recompute_team_ids, to_update):
     "Call this with the output of needed_updates_on_assignment"
+    if _defer_rbac_cache.active:
+        if recompute_team_ids is not None:
+            _defer_rbac_cache.team_ids.update(recompute_team_ids)
+        if to_update is not None:
+            _defer_rbac_cache.object_roles.update(to_update)
+        return
+
     if recompute_team_ids is not None:
         compute_team_member_roles(team_ids=recompute_team_ids)
 
