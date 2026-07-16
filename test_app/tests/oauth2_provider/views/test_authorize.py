@@ -107,6 +107,26 @@ def test_authorize_pkce_required_without_challenge(user_api_client, oauth2_app_p
     assert 'error=invalid_request' in response.url
 
 
+def test_authorize_pkce_required_with_empty_challenge(user_api_client, oauth2_app_pkce_required):
+    """
+    When pkce_required=True and the client sends an empty code_challenge, the request should
+    be rejected. An empty string is not a valid code_challenge per RFC 9126 / OAuth 2.1 §7.6.1.
+    """
+    app = oauth2_app_pkce_required[0]
+    url = get_relative_url("oauth2_provider:authorize")
+    query_params = {
+        'client_id': app.client_id,
+        'response_type': 'code',
+        'scope': 'read',
+        'redirect_uri': app.redirect_uris,
+        'code_challenge': '',
+        'code_challenge_method': 'S256',
+    }
+    response = user_api_client.get(url + '?' + urlencode(query_params))
+    assert response.status_code == 302
+    assert 'error=invalid_request' in response.url
+
+
 def test_authorize_pkce_required_with_challenge(user_api_client, oauth2_app_pkce_required):
     """
     When pkce_required=True and the client sends code_challenge, the request should succeed.

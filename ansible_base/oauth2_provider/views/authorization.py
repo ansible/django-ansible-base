@@ -27,7 +27,7 @@ class AuthorizationView(oauth_views.AuthorizationView):
             return None
 
         pkce_required_globally = get_setting('OAUTH2_PROVIDER', {}).get('PKCE_REQUIRED', False)
-        if (application.pkce_required or pkce_required_globally) and "code_challenge" not in credentials:
+        if (application.pkce_required or pkce_required_globally) and not credentials.get("code_challenge"):
             redirect_uri = credentials.get("redirect_uri")
             error = InvalidRequestError(description="This application requires PKCE. Include a code_challenge parameter.")
             error.redirect_uri = redirect_uri
