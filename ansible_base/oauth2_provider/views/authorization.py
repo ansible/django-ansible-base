@@ -25,14 +25,17 @@ class AuthorizationView(oauth_views.AuthorizationView):
         pkce_required_globally = get_setting('OAUTH2_PROVIDER', {}).get('PKCE_REQUIRED', False)
         if (application.pkce_required or pkce_required_globally) and not credentials.get("code_challenge"):
             redirect_uri = credentials.get("redirect_uri")
-            error = InvalidRequestError(description="This application requires PKCE. Include a code_challenge parameter.")
+            error = InvalidRequestError(
+                description="This application requires PKCE. Include a code_challenge parameter.",
+                state=credentials.get("state"),
+            )
             error.redirect_uri = redirect_uri
             return self.error_response(OAuthToolkitError(error=error), application=application)
 
         return None
 
     def form_valid(self, form):
-        credentials = {k: form.cleaned_data.get(k) for k in ("code_challenge", "code_challenge_method", "redirect_uri") if form.cleaned_data.get(k)}
+        credentials = {k: form.cleaned_data.get(k) for k in ("code_challenge", "code_challenge_method", "redirect_uri", "state") if form.cleaned_data.get(k)}
         error_response = self._check_pkce_required(form.cleaned_data["client_id"], credentials)
         if error_response is not None:
             return error_response
