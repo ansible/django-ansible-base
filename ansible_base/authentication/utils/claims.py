@@ -520,6 +520,63 @@ def _get_operator_messages(operator: str, result: bool) -> str:
     return true_msg if result else false_msg
 
 
+def _process_in_operator(
+    has_access: Optional[bool], trigger_value, user_value: List[str], join_condition: str, attribute: str, map_id: int, tracking_id: str
+) -> Optional[bool]:
+    """Fast path for 'in' operator: set intersection instead of per-value loop.
+
+    Trigger values are casefolded defensively here even though the caller
+    (_prepare_case_insensitive_data) already lowercases them, so that direct
+    callers of _process_user_value also get correct case-insensitive behavior.
+    """
+    trigger_set = {f"{v}".casefold() for v in trigger_value}
+    user_set = {f"{v}".casefold() for v in user_value}
+    matched = user_set & trigger_set
+
+    result = bool(matched) if join_condition == 'or' else user_set.issubset(trigger_set)
+    has_access = has_access_with_join(has_access, result, join_condition)
+
+    if logger.isEnabledFor(logging.DEBUG):
+        if matched:
+            _prefixed_debug(map_id, tracking_id, f"Attr [{attribute}] matched value(s) {sorted(matched)} in {trigger_value}, {_result_suffix(result)}")
+        else:
+            _prefixed_debug(map_id, tracking_id, f"Attr [{attribute}] has no matching values in {trigger_value}, {_result_suffix(result)}")
+
+    return has_access
+
+
+_OPERATOR_DISPATCH = {
+    "equals": _evaluate_equals,
+    "matches": _evaluate_matches,
+    "contains": _evaluate_contains,
+    "ends_with": _evaluate_ends_with,
+}
+
+
+def _process_scalar_operator(
+    has_access: Optional[bool], operator: str, trigger_value, user_value: List[str], join_condition: str, attribute: str, map_id: int, tracking_id: str
+) -> Optional[bool]:
+    """Per-value loop with early exit for equals/matches/contains/ends_with."""
+    evaluate_fn = _OPERATOR_DISPATCH[operator]
+
+    for a_user_value in user_value:
+        user_str = f"{a_user_value}".casefold()
+        result = evaluate_fn(user_str, trigger_value)
+        has_access = has_access_with_join(has_access, result, join_condition)
+
+        if logger.isEnabledFor(logging.DEBUG):
+            header = f"Attr [{attribute}] value [{user_str}]"
+            message = _get_operator_messages(operator, result)
+            _prefixed_debug(map_id, tracking_id, f"{header} {message} [{trigger_value}], {_result_suffix(result)}")
+
+        if result and join_condition == 'or':
+            break
+        if not result and join_condition == 'and':
+            break
+
+    return has_access
+
+
 def _process_user_value(
     has_access: Optional[bool], trigger_condition: dict, user_value: List[str], join_condition: str, attribute: str, map_id: int, tracking_id: str
 ) -> Optional[bool]:
@@ -537,55 +594,10 @@ def _process_user_value(
     if not operator or not user_value:
         return has_access
 
-    # Fast path for "in" operator: set intersection instead of per-value loop.
-    # Trigger values are casefolded defensively here even though the caller
-    # (_prepare_case_insensitive_data) already lowercases them, so that direct
-    # callers of _process_user_value also get correct case-insensitive behavior.
     if operator == "in":
-        trigger_set = set(f"{v}".casefold() for v in trigger_value)
-        user_set = set(f"{v}".casefold() for v in user_value)
-        matched = user_set & trigger_set
+        return _process_in_operator(has_access, trigger_value, user_value, join_condition, attribute, map_id, tracking_id)
 
-        if join_condition == 'or':
-            result = bool(matched)
-        else:
-            result = user_set.issubset(trigger_set)
-
-        has_access = has_access_with_join(has_access, result, join_condition)
-
-        if logger.isEnabledFor(logging.DEBUG):
-            if matched:
-                _prefixed_debug(map_id, tracking_id, f"Attr [{attribute}] matched value(s) {sorted(matched)} in {trigger_value}, {_result_suffix(result)}")
-            else:
-                _prefixed_debug(map_id, tracking_id, f"Attr [{attribute}] has no matching values in {trigger_value}, {_result_suffix(result)}")
-
-        return has_access
-
-    # Other operators: per-value loop with early exit
-    evaluate_fn = {
-        "equals": _evaluate_equals,
-        "matches": _evaluate_matches,
-        "contains": _evaluate_contains,
-        "ends_with": _evaluate_ends_with,
-    }[operator]
-
-    for a_user_value in user_value:
-        user_str = f"{a_user_value}".casefold()
-        result = evaluate_fn(user_str, trigger_value)
-        has_access = has_access_with_join(has_access, result, join_condition)
-
-        if logger.isEnabledFor(logging.DEBUG):
-            header = f"Attr [{attribute}] value [{user_str}]"
-            message = _get_operator_messages(operator, result)
-            _prefixed_debug(map_id, tracking_id, f"{header} {message} [{trigger_value}], {_result_suffix(result)}")
-
-        # Early exit: result cannot change with further values
-        if result and join_condition == 'or':
-            break
-        if not result and join_condition == 'and':
-            break
-
-    return has_access
+    return _process_scalar_operator(has_access, operator, trigger_value, user_value, join_condition, attribute, map_id, tracking_id)
 
 
 def _result_suffix(result: bool) -> str:
