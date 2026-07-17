@@ -2939,10 +2939,22 @@ class TestProcessUserValueInOperatorCorrectness:
         result = claims._process_user_value(None, tc, ['ADMIN'], 'or', 'groups', 1, 't')
         assert result is True
 
-    def test_in_preserves_existing_has_access_or(self):
+    def test_in_preserves_existing_has_access_true_or(self):
         tc = {'groups': {'in': ['admin']}}
         result = claims._process_user_value(True, tc, ['nobody'], 'or', 'groups', 1, 't')
         assert result is True
+
+    def test_in_flips_false_to_true_on_match_or(self):
+        """has_access=False must flip to True when a match is found with 'or' join."""
+        tc = {'groups': {'in': ['admin']}}
+        result = claims._process_user_value(False, tc, ['admin'], 'or', 'groups', 1, 't')
+        assert result is True
+
+    def test_in_preserves_false_on_no_match_or(self):
+        """has_access=False stays False when no match is found with 'or' join."""
+        tc = {'groups': {'in': ['admin']}}
+        result = claims._process_user_value(False, tc, ['nobody'], 'or', 'groups', 1, 't')
+        assert result is False
 
     def test_in_preserves_existing_has_access_and(self):
         tc = {'groups': {'in': ['admin']}}
@@ -3002,17 +3014,53 @@ class TestEarlyExitForOtherOperators:
         value_logs = [r for r in caplog.records if 'value [' in r.getMessage() and 'Map [1]' in r.getMessage()]
         assert len(value_logs) == 2, f"Expected early exit after 2 values, got {len(value_logs)} log lines"
 
-    def test_contains_early_exit_or_join(self):
+    def test_contains_early_exit_or_join(self, caplog):
+        """With 'or' join, first match should stop iteration."""
         values = ['foo', 'bar', 'hello_world', 'baz']
         tc = {'attr': {'contains': 'world'}}
-        result = claims._process_user_value(None, tc, values, 'or', 'attr', 1, 't')
-        assert result is True
 
-    def test_ends_with_early_exit_or_join(self):
+        with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.utils.claims'):
+            result = claims._process_user_value(None, tc, values, 'or', 'attr', 1, 'exit-test')
+
+        assert result is True
+        value_logs = [r for r in caplog.records if 'value [' in r.getMessage() and 'Map [1]' in r.getMessage()]
+        assert len(value_logs) == 3, f"Expected early exit after 3 values, got {len(value_logs)} log lines"
+
+    def test_ends_with_early_exit_or_join(self, caplog):
+        """With 'or' join, first match should stop iteration."""
         values = ['user@other.com', 'user@example.com', 'user@third.com']
         tc = {'attr': {'ends_with': '@example.com'}}
-        result = claims._process_user_value(None, tc, values, 'or', 'attr', 1, 't')
+
+        with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.utils.claims'):
+            result = claims._process_user_value(None, tc, values, 'or', 'attr', 1, 'exit-test')
+
         assert result is True
+        value_logs = [r for r in caplog.records if 'value [' in r.getMessage() and 'Map [1]' in r.getMessage()]
+        assert len(value_logs) == 2, f"Expected early exit after 2 values, got {len(value_logs)} log lines"
+
+    def test_matches_early_exit_or_join(self, caplog):
+        """With 'or' join, first regex match should stop iteration."""
+        values = ['nope', 'admin-group-1', 'other']
+        tc = {'attr': {'matches': r'^admin-.*'}}
+
+        with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.utils.claims'):
+            result = claims._process_user_value(None, tc, values, 'or', 'attr', 1, 'exit-test')
+
+        assert result is True
+        value_logs = [r for r in caplog.records if 'value [' in r.getMessage() and 'Map [1]' in r.getMessage()]
+        assert len(value_logs) == 2, f"Expected early exit after 2 values, got {len(value_logs)} log lines"
+
+    def test_matches_early_exit_and_join(self, caplog):
+        """With 'and' join, first regex mismatch should stop iteration."""
+        values = ['admin-1', 'not-admin', 'admin-2']
+        tc = {'attr': {'matches': r'^admin-.*'}}
+
+        with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.utils.claims'):
+            result = claims._process_user_value(None, tc, values, 'and', 'attr', 1, 'exit-test')
+
+        assert result is False
+        value_logs = [r for r in caplog.records if 'value [' in r.getMessage() and 'Map [1]' in r.getMessage()]
+        assert len(value_logs) == 2, f"Expected early exit after 2 values, got {len(value_logs)} log lines"
 
 
 class TestProcessUserAttributesLogVolume:
