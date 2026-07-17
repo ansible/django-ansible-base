@@ -3063,6 +3063,34 @@ class TestEarlyExitForOtherOperators:
         assert len(value_logs) == 2, f"Expected early exit after 2 values, got {len(value_logs)} log lines"
 
 
+class TestProcessUserValueEdgeCases:
+    """Cover branch conditions in _process_user_value for unknown operators and disabled logging."""
+
+    def test_unknown_operator_returns_has_access_unchanged(self):
+        """An unrecognized operator key should return has_access unchanged."""
+        tc = {'attr': {'unknown_op': 'value'}}
+        result = claims._process_user_value(None, tc, ['x'], 'or', 'attr', 1, 't')
+        assert result is None
+
+    def test_in_operator_with_logging_disabled(self, caplog):
+        """The 'in' path must work correctly even when DEBUG logging is disabled."""
+        tc = {'groups': {'in': ['admin']}}
+        with caplog.at_level(logging.WARNING, logger='ansible_base.authentication.utils.claims'):
+            result = claims._process_user_value(None, tc, ['admin'], 'or', 'groups', 1, 't')
+        assert result is True
+        attr_logs = [r for r in caplog.records if 'groups' in r.getMessage()]
+        assert len(attr_logs) == 0
+
+    def test_scalar_operator_with_logging_disabled(self, caplog):
+        """Scalar operators must work correctly even when DEBUG logging is disabled."""
+        tc = {'attr': {'equals': 'target'}}
+        with caplog.at_level(logging.WARNING, logger='ansible_base.authentication.utils.claims'):
+            result = claims._process_user_value(None, tc, ['target'], 'or', 'attr', 1, 't')
+        assert result is True
+        attr_logs = [r for r in caplog.records if 'attr' in r.getMessage().lower()]
+        assert len(attr_logs) == 0
+
+
 class TestProcessUserAttributesLogVolume:
     """End-to-end log volume test via the public process_user_attributes API."""
 
