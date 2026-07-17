@@ -9,7 +9,7 @@ from ansible_base.lib.utils.settings import get_setting
 class AuthorizationView(oauth_views.AuthorizationView):
     def get(self, request, *args, **kwargs):
         try:
-            scopes, credentials = self.validate_authorization_request(request)
+            _, credentials = self.validate_authorization_request(request)
         except OAuthToolkitError as error:
             return self.error_response(error, application=None)
 
