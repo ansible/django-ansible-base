@@ -200,6 +200,28 @@ def test_authorize_post_pkce_required_without_challenge(user_api_client, oauth2_
     assert 'error=invalid_request' in response.url
 
 
+def test_authorize_post_pkce_required_with_challenge(user_api_client, oauth2_app_pkce_required):
+    """
+    When pkce_required=True and the POST form submission includes code_challenge,
+    the request should succeed.
+    """
+    app = oauth2_app_pkce_required[0]
+    url = get_relative_url("oauth2_provider:authorize")
+    post_data = {
+        'client_id': app.client_id,
+        'response_type': 'code',
+        'scope': 'read',
+        'redirect_uri': app.redirect_uris,
+        'allow': 'Authorize',
+        'code_challenge': 'some-challenge-value',
+        'code_challenge_method': 'S256',
+    }
+    response = user_api_client.post(url, data=post_data)
+    assert response.status_code == 302
+    assert 'code=' in response.url
+    assert 'error=' not in response.url
+
+
 def test_authorize_global_pkce_overrides_app_setting(user_api_client, oauth2_app_pkce_not_required):
     """
     When global PKCE_REQUIRED=True, PKCE should be enforced even if the app has pkce_required=False.
@@ -217,9 +239,8 @@ def test_authorize_global_pkce_overrides_app_setting(user_api_client, oauth2_app
     global_pkce_settings = {**settings.OAUTH2_PROVIDER, 'PKCE_REQUIRED': True}
     with override_settings(OAUTH2_PROVIDER=global_pkce_settings):
         response = user_api_client.get(url + '?' + urlencode(query_params))
-    assert response.status_code != 200
-    if response.status_code == 302:
-        assert 'error' in response.url
+    assert response.status_code == 302
+    assert 'error=invalid_request' in response.url
 
 
 def test_authorize_global_pkce_with_challenge(user_api_client, oauth2_app_pkce_not_required):
