@@ -20,11 +20,7 @@ class AuthorizationView(oauth_views.AuthorizationView):
         return super().get(request, *args, **kwargs)
 
     def _check_pkce_required(self, client_id, credentials):
-        app_model = get_application_model()
-        try:
-            application = app_model.objects.get(client_id=client_id)
-        except app_model.DoesNotExist:
-            return None
+        application = get_application_model().objects.get(client_id=client_id)
 
         pkce_required_globally = get_setting('OAUTH2_PROVIDER', {}).get('PKCE_REQUIRED', False)
         if (application.pkce_required or pkce_required_globally) and not credentials.get("code_challenge"):
