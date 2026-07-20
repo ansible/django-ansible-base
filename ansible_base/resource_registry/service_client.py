@@ -136,7 +136,7 @@ class BaseServiceClient:
         if hasattr(self, 'timeout'):
             kwargs["timeout"] = self.timeout
 
-        if data:
+        if data is not None:
             kwargs["json"] = data
         if params:
             kwargs["params"] = params
