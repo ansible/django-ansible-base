@@ -204,9 +204,8 @@ def _store_activitystream_m2m(
 # post_save
 def activitystream_create(sender, instance, created, **kwargs):
     """
-    This signal is registered via the activity stream AuditableModel abstract
-    model/class. It is called after save() of any model that inherits from
-    AuditableModel. (It is registered as a post_save signal.)
+    This signal is connected for any model registered in the
+    ACTIVITY_STREAM_MODELS setting. It is registered as a post_save signal.
 
     This signal only handles creation of new objects (created=True). For
     updates, use the activitystream_update signal, where we can compare the
@@ -223,9 +222,8 @@ def activitystream_create(sender, instance, created, **kwargs):
 # pre_save
 def activitystream_update(sender, instance, raw, using, update_fields, **kwargs):
     """
-    This signal is registered via the activity stream AuditableModel abstract
-    model/class. It is called before save() of any model that inherits from
-    AuditableModel. (It is registered as a pre_save signal.)
+    This signal is connected for any model registered in the
+    ACTIVITY_STREAM_MODELS setting. It is registered as a pre_save signal.
 
     This signal only handles updates of existing objects. For creation of
     objects, see the above activitystream_create().
@@ -246,9 +244,8 @@ def activitystream_update(sender, instance, raw, using, update_fields, **kwargs)
 # pre_delete
 def activitystream_delete(sender, instance, using, origin, **kwargs):
     """
-    This signal is registered via the activity stream AuditableModel abstract
-    model/class. It is called before delete() of any model that inherits from
-    AuditableModel. (It is registered as a pre_delete signal.)
+    This signal is connected for any model registered in the
+    ACTIVITY_STREAM_MODELS setting. It is registered as a pre_delete signal.
     """
     if instance.pk is None:
         return
@@ -259,10 +256,10 @@ def activitystream_delete(sender, instance, using, origin, **kwargs):
 # m2m_changed
 def activitystream_m2m_changed(sender, instance, action, reverse, model, pk_set, **kwargs):
     """
-    This signal is registered via the activity stream AuditableModel abstract
-    model/class. It is called when a many-to-many relationship is changed
-    (added or removed) for any model that inherits from AuditableModel. (It is
-    registered as a m2m_changed signal.)
+    This signal is connected for any model registered in the
+    ACTIVITY_STREAM_MODELS setting. It is called when a many-to-many
+    relationship is changed (added or removed). It is registered as an
+    m2m_changed signal.
     """
     if action not in ('post_add', 'post_remove', 'pre_clear'):
         return

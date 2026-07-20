@@ -5,6 +5,7 @@ from crum import impersonate
 from django.contrib.contenttypes.models import ContentType
 from django.utils.http import urlencode
 
+from ansible_base.activitystream.apps import get_activity_stream_entries
 from ansible_base.activitystream.models import Entry
 from ansible_base.lib.utils.response import get_relative_url
 
@@ -190,7 +191,7 @@ def test_activitystream_api_related_fks_in_detail_view(admin_api_client, animal,
     """
     animal.owner = random_user
     animal.save()
-    url = get_relative_url("activitystream-detail", args=[animal.activity_stream_entries.last().id])
+    url = get_relative_url("activitystream-detail", args=[get_activity_stream_entries(animal).last().id])
     response = admin_api_client.get(url)
     assert response.status_code == 200
     entry = response.data
@@ -206,7 +207,7 @@ def test_activitystream_api_related_fks_refused_for_bad_time_delta(admin_api_cli
     animal.owner = random_user
     animal.save()
 
-    last_entry = animal.activity_stream_entries.last()
+    last_entry = get_activity_stream_entries(animal).last()
     random_user.created = last_entry.created + timedelta(days=1)
     random_user.save()
 
@@ -223,7 +224,7 @@ def test_activitystream_api_related_content_object(admin_api_client, animal):
     """
     Ensure that we can link to the thing we're an entry for.
     """
-    url = get_relative_url("activitystream-detail", args=[animal.activity_stream_entries.last().id])
+    url = get_relative_url("activitystream-detail", args=[get_activity_stream_entries(animal).last().id])
     response = admin_api_client.get(url)
     assert response.status_code == 200
     entry = response.data
@@ -239,7 +240,7 @@ def test_activitystream_api_related_related_content_object(admin_api_client, ani
     Should show in both list and detail views.
     """
     animal.people_friends.add(random_user)
-    db_entry = animal.activity_stream_entries.last()
+    db_entry = get_activity_stream_entries(animal).last()
 
     # sanity assertions that entry links models we expect
     assert db_entry.related_content_type == ContentType.objects.get_for_model(random_user)
@@ -277,7 +278,7 @@ def test_activitystream_api_summary_fields(admin_api_client, animal, admin_user,
     with impersonate(user):
         animal.save()
 
-    url = get_relative_url("activitystream-detail", args=[animal.activity_stream_entries.last().id])
+    url = get_relative_url("activitystream-detail", args=[get_activity_stream_entries(animal).last().id])
     query_params = {
         'page_size': 100,
     }
@@ -302,7 +303,7 @@ def test_activitystream_api_summary_fields_after_patch(admin_api_client, animal,
     response = admin_api_client.patch(url, data={"owner": random_user.id})
     assert response.status_code == 200
 
-    stream_id = animal.activity_stream_entries.last().id
+    stream_id = get_activity_stream_entries(animal).last().id
     url = get_relative_url("activitystream-detail", args=[stream_id])
     response = admin_api_client.get(url)
     assert response.status_code == 200
@@ -325,7 +326,7 @@ def test_activitystream_api_no_fatal_with_invalid_fks(admin_api_client, animal):
     We should never fatal, even if we point to bad FKs.
     Just don't show the related objects.
     """
-    entry = animal.activity_stream_entries.last()
+    entry = get_activity_stream_entries(animal).last()
     entry.object_id = '31337'
     entry.changes['changed_fields']['owner'] = ['31337', '99999']
     Entry.objects.bulk_update([entry], ['object_id', 'changes'])
@@ -343,7 +344,7 @@ def test_activitystream_api_deleted_object(admin_api_client, animal, user):
     """
     animal.owner = user
     animal.save()
-    entries = animal.activity_stream_entries
+    entries = get_activity_stream_entries(animal)
     animal.delete()
     entry = entries.last()
     assert entry.operation == "delete"

@@ -279,6 +279,11 @@ class AbstractCommonModel(models.Model):
         if hasattr(self, 'extra_related_fields'):
             response.update(self.extra_related_fields(request))
 
+        if 'ansible_base.activitystream' in settings.INSTALLED_APPS:
+            from ansible_base.activitystream.apps import get_activity_stream_related_url
+
+            response.update(get_activity_stream_related_url(self))
+
         sorted_response = OrderedDict()
         sorted_keys = list(response.keys())
         sorted_keys.sort()

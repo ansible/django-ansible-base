@@ -8,18 +8,47 @@ that happen to models within the system.
 To make use of `activitystream` in your application, first add
 `ansible_base.activitystream` to your `INSTALLED_APPS`.
 
-Now in your models you can:
+Then, add an `ACTIVITY_STREAM_MODELS` setting listing the models you want to
+track. Each entry is a tuple of `(app_label, model_name)`:
 
 ```python
-from ansible_base.activitystream.models import AuditableModel
+ACTIVITY_STREAM_MODELS = [
+    ('myapp', 'MyModel'),
+    ('myapp', 'AnotherModel'),
+]
 ```
 
-... and make your model inherit from `AuditableModel`. In theory, this is all
-that is required. When your application starts up, `activitystream` will ask
-Django to list all the models it knows about. It will then filter this list for
-ones that inherit from `AuditableModel` and call the
-`AuditableModel::connect_signals` class method which registers the appropriate
-signals.
+When your application starts up, `activitystream` will look up each model in
+this list and connect the appropriate signals to track create, update, delete,
+and many-to-many changes. Registered models will automatically get an
+`activity_stream` link in their API `related` fields.
+
+To query entries for a specific object, use the utility function:
+
+```python
+from ansible_base.activitystream.apps import get_activity_stream_entries
+
+entries = get_activity_stream_entries(my_instance)
+```
+
+#### Adding an `activity_stream` relation to your model
+
+If you want a reverse relation on your model so you can query activity stream
+entries directly from an instance, import the pre-configured `GenericRelation`
+factory and add it as a field:
+
+```python
+from ansible_base.activitystream import activity_stream_entries
+
+class MyModel(CommonModel):
+    activity_stream = activity_stream_entries()
+```
+
+This gives you a standard Django reverse generic relation, so you can do
+things like `my_obj.activity_stream.filter(operation='update')`.
+
+Note: since this is a `GenericRelation`, Django's contenttypes framework
+handles the content type and object ID lookups automatically.
 
 #### Excluding Fields
 

@@ -212,6 +212,17 @@ RESOURCE_SERVER_SYNC_ENABLED = False
 
 RENAMED_USERNAME_PREFIX = "dab:"
 
+ACTIVITY_STREAM_MODELS = [
+    ('test_app', 'User'),
+    ('test_app', 'Animal'),
+    ('test_app', 'City'),
+    ('test_app', 'SecretColor'),
+    ('dab_oauth2_provider', 'OAuth2AccessToken'),
+    ('dab_oauth2_provider', 'OAuth2RefreshToken'),
+    ('dab_oauth2_provider', 'OAuth2Application'),
+    ('dab_oauth2_provider', 'OAuth2IDToken'),
+]
+
 JUST_A_TEST = 41
 
 ANSIBLE_OBSERVABILITY_BATCH_DELAY_MS = 1000

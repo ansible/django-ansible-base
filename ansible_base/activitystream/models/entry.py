@@ -1,13 +1,12 @@
 import functools
+import warnings
 
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
-from django.utils.http import urlencode
 from django.utils.translation import gettext_lazy as _
 
 from ansible_base.lib.abstract_models import ImmutableCommonModel
-from ansible_base.lib.utils.response import get_relative_url
 
 
 class Entry(ImmutableCommonModel):
@@ -98,45 +97,42 @@ class Entry(ImmutableCommonModel):
 
 class AuditableModel(models.Model):
     """
-    A mixin class that provides integration to the activity stream from any
-    model. A model should simply inherit from this class to have its
-    create/update/delete events sent to the activity stream.
+    DEPRECATED: Do not inherit from this class for new models.
 
-    NOTE: AuditableModel must remain a pure mixin with no database fields.
-    Models conditionally inherit from AuditableModel based on whether
-    activitystream is installed (e.g., AAPFlag). Adding a DB field would
-    create environment-dependent migrations.
+    Instead, add your model to the ACTIVITY_STREAM_MODELS setting as a
+    (app_label, model_name) tuple. Signals will be connected automatically
+    in the activitystream app's ready() method.
+
+    This class is retained only for backward compatibility and will be
+    removed in a future release.
     """
 
     class Meta:
         abstract = True
 
-    # Adding field names to this list will exclude them from the activity stream changes dictionaries
     activity_stream_excluded_field_names = []
-
-    # Adding field names to this list will limit the activity stream changes dictionaries to only include these fields
     activity_stream_limit_field_names = []
-
-    # Controls whether changes to this model are stored in the activity stream
     activity_stream_enabled = True
-
-    # Controls whether changes to this model are logged to the audit log
     audit_log_enabled = False
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        warnings.warn(
+            f"DEPRECATED: '{cls.__qualname__}' inherits from AuditableModel. "
+            f"Remove AuditableModel from its base classes and add the model to "
+            f"the ACTIVITY_STREAM_MODELS setting instead. "
+            f"AuditableModel will be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     @property
     def activity_stream_entries(self):
-        """
-        A helper property that returns the activity stream entries for this object.
-        """
-        return Entry.objects.filter(content_type=ContentType.objects.get_for_model(self), object_id=self.pk).order_by('created')
+        from ansible_base.activitystream.apps import get_activity_stream_entries
+
+        return get_activity_stream_entries(self)
 
     def extra_related_fields(self, request):
-        content_type = ContentType.objects.get_for_model(self)
-        query_kwargs = {
-            'content_type': content_type.pk,
-            'object_id': self.pk,
-        }
-        activity_stream_url = get_relative_url('activitystream-list') + '?' + urlencode(query_kwargs)
-        return {
-            'activity_stream': activity_stream_url,
-        }
+        from ansible_base.activitystream.apps import get_activity_stream_related_url
+
+        return get_activity_stream_related_url(self)

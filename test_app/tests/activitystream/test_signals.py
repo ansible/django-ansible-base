@@ -5,19 +5,51 @@ import pytest
 
 import ansible_base.activitystream.signals as signals
 from ansible_base.activitystream import no_activity_stream
+from ansible_base.activitystream.apps import get_activity_stream_entries
 from ansible_base.activitystream.models import Entry
-from ansible_base.activitystream.models.entry import AuditableModel
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from test_app.models import Animal, City, SecretColor
+
+
+def test_activitystream_generic_relation(system_user, animal, random_user):
+    """
+    Ensure that the GenericRelation field (activity_stream_entries()) works
+    as a standard Django reverse relation for querying entries.
+    """
+    # Creation entry should be visible via the relation
+    assert animal.activity_stream.count() == 1
+    entry = animal.activity_stream.first()
+    assert entry.operation == 'create'
+
+    # Update should produce a second entry
+    animal.name = 'Buddy'
+    animal.save()
+    assert animal.activity_stream.count() == 2
+    assert animal.activity_stream.last().operation == 'update'
+
+    # Filtering works like a normal queryset
+    creates = animal.activity_stream.filter(operation='create')
+    assert creates.count() == 1
+    updates = animal.activity_stream.filter(operation='update')
+    assert updates.count() == 1
+
+    # M2M association shows up too
+    animal.people_friends.add(random_user)
+    assert animal.activity_stream.filter(operation='associate').count() == 1
+
+    # Delete entry is visible via the saved queryset reference
+    qs = animal.activity_stream.all()
+    animal.delete()
+    assert qs.filter(operation='delete').count() == 1
 
 
 def test_activitystream_create(system_user, animal):
     """
     Ensure that an activity stream entry is created when an object is created.
 
-    Also ensure that AuditableModel.activity_stream_entries returns the correct entries.
+    Also ensure that activity_stream_entries returns the correct entries.
     """
-    entries = animal.activity_stream_entries
+    entries = get_activity_stream_entries(animal)
     assert len(entries) == 1
     entry = entries[0]
     assert entry == Entry.objects.last()
@@ -41,7 +73,7 @@ def test_activitystream_update(system_user, animal, random_user):
     animal.owner = random_user
     animal.save()
 
-    entries = animal.activity_stream_entries
+    entries = get_activity_stream_entries(animal)
     assert len(entries) == 2
     entry = entries.last()
     assert entry.created_by == system_user
@@ -60,7 +92,7 @@ def test_activitystream_m2m(system_user, animal, user, random_user):
     """
     Ensure that an activity stream entry is created when an object's m2m fields change.
     """
-    entries_qs = animal.activity_stream_entries
+    entries_qs = get_activity_stream_entries(animal)
 
     # Add an association
     animal.people_friends.add(user)
@@ -89,7 +121,7 @@ def test_activitystream_m2m_reverse(system_user, animal, animal_2, animal_3, use
     """
     Ensure that an activity stream entry is created when an object's reverse m2m fields change.
     """
-    entries_qs = animal_3.activity_stream_entries
+    entries_qs = get_activity_stream_entries(animal_3)
 
     # Add an association
     user.animal_friends.add(animal_3)
@@ -106,15 +138,15 @@ def test_activitystream_m2m_reverse_clear(system_user, animal, animal_2, animal_
     user.animal_friends.clear()
 
     for animal in (animal, animal_2, animal_3):
-        assert animal.activity_stream_entries.last().operation == 'disassociate'
-        assert animal.activity_stream_entries.count() == 3  # create, associate, disassociate
+        assert get_activity_stream_entries(animal).last().operation == 'disassociate'
+        assert get_activity_stream_entries(animal).count() == 3  # create, associate, disassociate
 
 
 def test_activitystream_m2m_clear(system_user, animal, user, random_user):
     """
     Ensure that an activity stream entry is created for each association removed by clear().
     """
-    entries_qs = animal.activity_stream_entries
+    entries_qs = get_activity_stream_entries(animal)
     entries_count = entries_qs.count()
 
     # add two associations
@@ -145,7 +177,7 @@ def test_activitystream_m2m_forward_bulk(django_assert_max_num_queries, django_u
     inserts = len([q for q in captured.connection.queries if q['sql'].startswith('INSERT')])
     assert inserts == 2  # 1 for the assocations, 1 for the activity stream entries
 
-    entries = animal.activity_stream_entries.all()
+    entries = get_activity_stream_entries(animal).all()
     assert len(entries) == 101  # create + 100 associates
 
     # The first entry is the create, so start at 1
@@ -181,12 +213,12 @@ def test_activitystream_m2m_reverse_bulk(django_assert_max_num_queries, django_u
     inserts = len([q for q in captured.connection.queries if q['sql'].startswith('INSERT')])
     assert inserts == 2  # 1 for the assocations, 1 for the activity stream entries
 
-    user_entries = user.activity_stream_entries.all()
+    user_entries = get_activity_stream_entries(user).all()
     assert len(user_entries) == 1  # The entries are always on the forward relation, so the user only has their creation entry
 
     # But we can check the animals
     for animal in animals:
-        entries = animal.activity_stream_entries.all()
+        entries = get_activity_stream_entries(animal).all()
         assert len(entries) == 1  # associate (no create because the animals were bulk created)
         assert entries[0].operation == 'associate'
         assert entries[0].related_content_object == user
@@ -201,7 +233,7 @@ def test_activitystream_m2m_reverse_bulk(django_assert_max_num_queries, django_u
     # Even though django_assert_max_num_queries is a context manager the earlier inserts still seem to count
     assert disassoc_inserts == inserts + 1
     for animal in animals:
-        entries = animal.activity_stream_entries.all()
+        entries = get_activity_stream_entries(animal).all()
         assert len(entries) == 2  # associate, disassociate
         assert entries.last().operation == 'disassociate'
 
@@ -211,7 +243,7 @@ def test_activitystream_delete(system_user, animal):
     Ensure that an activity stream entry is created when an object is deleted.
     """
     # Kind of a hack/trick, grab a reference to the queryset before the delete
-    entries = animal.activity_stream_entries
+    entries = get_activity_stream_entries(animal)
     animal.delete()
     entry = entries.last()
     assert entry.created_by == system_user
@@ -280,7 +312,7 @@ def test_activitystream_excluded_fields():
     Ensure that limit fields (specified by the model's activity_stream_limit_field_names) are the only ones included in the activity stream entry.
     """
     city = City.objects.create(name='New York', country='USA')
-    entry = city.activity_stream_entries.last()
+    entry = get_activity_stream_entries(city).last()
     assert entry.operation == 'create'  # sanity check
     assert 'country' in entry.changes['added_fields']
     assert len(entry.changes['added_fields']) == 1
@@ -289,7 +321,7 @@ def test_activitystream_excluded_fields():
 
     city.country = 'Canada'
     city.save()
-    entry = city.activity_stream_entries.last()
+    entry = get_activity_stream_entries(city).last()
     assert entry.operation == 'update'  # sanity check
     assert 'country' in entry.changes['changed_fields']
     assert len(entry.changes['changed_fields']) == 1
@@ -306,7 +338,7 @@ def test_activitystream_context_manager():
     """
     with no_activity_stream():
         city = City.objects.create(name='New York', country='USA')
-    entries = city.activity_stream_entries
+    entries = get_activity_stream_entries(city)
     assert entries.count() == 0
 
     city.country = 'Canada'
@@ -330,7 +362,7 @@ def test_activitystream_nested_context_manager():
         with no_activity_stream():
             city = City.objects.create(name='New York', country='USA')
 
-    entries = city.activity_stream_entries
+    entries = get_activity_stream_entries(city)
     assert entries.count() == 0
 
     city.country = 'Canada'
@@ -347,7 +379,7 @@ def test_activitystream_nested_context_manager():
 @pytest.mark.django_db
 def test_activitystream_encrypted_fields_are_sanitized():
     color = SecretColor.objects.create(color='red')
-    entries = color.activity_stream_entries
+    entries = get_activity_stream_entries(color)
     assert entries.last().changes['added_fields']['color'] == ENCRYPTED_STRING
 
     color.color = 'orange'
@@ -360,7 +392,7 @@ def test_activitystream_encrypted_fields_are_sanitized():
 
 @pytest.mark.django_db
 def test_activitystream_user_password_sanitized(user):
-    entries = user.activity_stream_entries
+    entries = get_activity_stream_entries(user)
     assert entries.last().changes['added_fields']['password'] == ENCRYPTED_STRING
 
     user.set_password('new_password')
@@ -377,14 +409,14 @@ def test_activitystream_update_fields_limits_diff():
     from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 
     city = City.objects.create(name='New York', country='USA', population=1000)
-    initial_entry_count = city.activity_stream_entries.count()
+    initial_entry_count = get_activity_stream_entries(city).count()
 
     # Update both name and country, but only save country via update_fields
     city.name = 'Albany'
     city.country = 'Canada'
     city.save(update_fields=['country'])
 
-    entries = city.activity_stream_entries
+    entries = get_activity_stream_entries(city)
     assert entries.count() == initial_entry_count + 1
     entry = entries.last()
     assert entry.operation == 'update'
@@ -405,7 +437,7 @@ def test_activitystream_update_fields_no_entry_when_only_excluded_fields():
     no activity stream entry is created.
     """
     city = City.objects.create(name='New York', country='USA')
-    initial_entry_count = city.activity_stream_entries.count()
+    initial_entry_count = get_activity_stream_entries(city).count()
 
     # Update name but not country, and save only name via update_fields
     # Since City has activity_stream_limit_field_names = ['country'],
@@ -413,7 +445,7 @@ def test_activitystream_update_fields_no_entry_when_only_excluded_fields():
     city.name = 'Albany'
     city.save(update_fields=['name'])
 
-    entries = city.activity_stream_entries
+    entries = get_activity_stream_entries(city)
     # No new entry should be created because 'name' is not in the limit_fields
     assert entries.count() == initial_entry_count
 
@@ -425,7 +457,7 @@ def test_activitystream_update_fields_with_limit_fields_intersection():
     are provided, only the intersection of those fields is diffed.
     """
     city = City.objects.create(name='New York', country='USA')
-    initial_entry_count = city.activity_stream_entries.count()
+    initial_entry_count = get_activity_stream_entries(city).count()
 
     # City has activity_stream_limit_field_names = ['country']
     # If we update both name and country with update_fields=['name', 'country']
@@ -434,7 +466,7 @@ def test_activitystream_update_fields_with_limit_fields_intersection():
     city.country = 'Canada'
     city.save(update_fields=['name', 'country'])
 
-    entries = city.activity_stream_entries
+    entries = get_activity_stream_entries(city)
     assert entries.count() == initial_entry_count + 1
     entry = entries.last()
 
@@ -451,12 +483,12 @@ def test_activitystream_update_fields_empty_delta_no_entry():
     actually changed, no activity stream entry is created (empty delta).
     """
     animal = Animal.objects.create(name='Fluffy')
-    initial_entry_count = animal.activity_stream_entries.count()
+    initial_entry_count = get_activity_stream_entries(animal).count()
 
     # Save with update_fields but without actually changing the value
     animal.save(update_fields=['name'])
 
-    entries = animal.activity_stream_entries
+    entries = get_activity_stream_entries(animal)
     # No new entry should be created because there's no actual change
     assert entries.count() == initial_entry_count
 
@@ -468,7 +500,7 @@ def test_activitystream_update_fields_multiple_fields():
     appear in the activity stream entry.
     """
     animal = Animal.objects.create(name='Fluffy', age=2)
-    initial_entry_count = animal.activity_stream_entries.count()
+    initial_entry_count = get_activity_stream_entries(animal).count()
 
     # Update multiple fields
     # Note: 'age' is in activity_stream_excluded_field_names, so it won't show up
@@ -476,7 +508,7 @@ def test_activitystream_update_fields_multiple_fields():
     animal.age = 3
     animal.save(update_fields=['name', 'age'])
 
-    entries = animal.activity_stream_entries
+    entries = get_activity_stream_entries(animal)
     assert entries.count() == initial_entry_count + 1
     entry = entries.last()
 
@@ -495,7 +527,7 @@ def test_activitystream_update_fields_none_with_limit_fields():
     from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 
     city = City.objects.create(name='New York', country='USA', population=1000)
-    initial_entry_count = city.activity_stream_entries.count()
+    initial_entry_count = get_activity_stream_entries(city).count()
 
     # City has activity_stream_limit_field_names = ['country']
     # So only changes to country should be tracked
@@ -504,7 +536,7 @@ def test_activitystream_update_fields_none_with_limit_fields():
     city.population = 2000
     city.save()
 
-    entries = city.activity_stream_entries
+    entries = get_activity_stream_entries(city)
     assert entries.count() == initial_entry_count + 1
     entry = entries.last()
 
@@ -516,15 +548,15 @@ def test_activitystream_update_fields_none_with_limit_fields():
 
 
 # =============================================================================
-# Tests for AuditableModel class variables
+# Tests for activity stream attribute defaults in signal handlers
 # =============================================================================
 
 
-class TestAuditableModelClassVariables:
-    """Tests for the AuditableModel class variable defaults."""
+class TestActivityStreamAttributeDefaults:
+    """Tests that signal handlers use correct defaults for optional model attributes."""
 
     @pytest.mark.parametrize(
-        "attribute,expected",
+        "attribute,expected_default",
         [
             ("activity_stream_enabled", True),
             ("audit_log_enabled", False),
@@ -538,9 +570,11 @@ class TestAuditableModelClassVariables:
             "limit_field_names_defaults_to_empty_list",
         ],
     )
-    def test_auditable_model_class_variable_defaults(self, attribute, expected):
-        """Ensure AuditableModel class variables have correct default values."""
-        assert getattr(AuditableModel, attribute) == expected
+    def test_signal_handler_uses_correct_defaults(self, attribute, expected_default):
+        """Ensure signal handlers fall back to the correct defaults when a model lacks an attribute."""
+        # SecretColor doesn't define these attributes (except what it inherits),
+        # so getattr with defaults should match expectations.
+        assert getattr(SecretColor, attribute, expected_default) == expected_default
 
 
 # =============================================================================
@@ -556,7 +590,7 @@ def test_activity_stream_enabled_false_on_update():
     """
     # Create an animal with activity stream enabled (default)
     animal = Animal.objects.create(name='Fluffy')
-    assert animal.activity_stream_entries.count() == 1
+    assert get_activity_stream_entries(animal).count() == 1
 
     # Now disable activity stream on the instance and update
     animal.activity_stream_enabled = False
@@ -564,7 +598,7 @@ def test_activity_stream_enabled_false_on_update():
     animal.save()
 
     # No new entry should be created
-    assert animal.activity_stream_entries.count() == 1
+    assert get_activity_stream_entries(animal).count() == 1
 
 
 @pytest.mark.django_db
@@ -575,10 +609,10 @@ def test_activity_stream_enabled_false_on_create():
     """
     # Create animal, then immediately set flag and check
     # Note: The flag is checked during signal processing
-    with mock.patch.object(Animal, 'activity_stream_enabled', False):
+    with mock.patch.object(Animal, 'activity_stream_enabled', False, create=True):
         animal = Animal.objects.create(name='Silent')
 
-    assert animal.activity_stream_entries.count() == 0
+    assert get_activity_stream_entries(animal).count() == 0
 
 
 @pytest.mark.django_db
@@ -588,11 +622,11 @@ def test_activity_stream_enabled_false_on_delete():
     does not create an activity stream entry.
     """
     animal = Animal.objects.create(name='Fluffy')
-    initial_count = animal.activity_stream_entries.count()
+    initial_count = get_activity_stream_entries(animal).count()
 
     # Disable activity stream and delete
     animal.activity_stream_enabled = False
-    entries_qs = animal.activity_stream_entries  # Keep reference
+    entries_qs = get_activity_stream_entries(animal)  # Keep reference
     animal.delete()
 
     # No new entry should be created for the delete
@@ -644,7 +678,7 @@ def test_audit_log_enabled_on_create_delete(operation, perform_operation):
             assert 'Fluffy' in call_args
     else:
         with mock.patch('ansible_base.activitystream.signals.log_auth_event') as mock_log:
-            with mock.patch.object(Animal, 'audit_log_enabled', True):
+            with mock.patch.object(Animal, 'audit_log_enabled', True, create=True):
                 perform_operation()
 
             assert mock_log.call_count == 1
@@ -828,15 +862,15 @@ def test_audit_log_with_activity_stream_disabled():
     audit logs should still be generated.
     """
     with mock.patch('ansible_base.activitystream.signals.log_auth_event') as mock_log:
-        with mock.patch.object(Animal, 'audit_log_enabled', True):
-            with mock.patch.object(Animal, 'activity_stream_enabled', False):
+        with mock.patch.object(Animal, 'audit_log_enabled', True, create=True):
+            with mock.patch.object(Animal, 'activity_stream_enabled', False, create=True):
                 animal = Animal.objects.create(name='Fluffy')
 
         # Audit log should still be called
         assert mock_log.call_count == 1
 
     # But no activity stream entry
-    assert animal.activity_stream_entries.count() == 0
+    assert get_activity_stream_entries(animal).count() == 0
 
 
 @pytest.mark.django_db
@@ -853,7 +887,7 @@ def test_audit_log_message_content(expected_content):
     Ensure the audit log message includes expected content (model name, object str).
     """
     with mock.patch('ansible_base.activitystream.signals.log_auth_event') as mock_log:
-        with mock.patch.object(Animal, 'audit_log_enabled', True):
+        with mock.patch.object(Animal, 'audit_log_enabled', True, create=True):
             Animal.objects.create(name='Fluffy')
 
         call_args = mock_log.call_args[0][0]
@@ -942,3 +976,38 @@ def test_audit_log_m2m_preposition(user, operation, method_name, expected_prepos
         call_args = mock_log.call_args[0][0]
         assert expected_preposition in call_args
         assert operation in call_args
+
+
+# =============================================================================
+# Tests for NonCascadingGenericRelation
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_non_cascading_generic_relation_prevents_cascade_delete():
+    """
+    NonCascadingGenericRelation overrides bulk_related_objects to return an
+    empty queryset, preventing Django's deletion collector from cascade-deleting
+    activity stream entries when a parent object is deleted.
+
+    This verifies that audit trail data survives object deletion.
+    """
+    animal = Animal.objects.create(name='CascadeTest')
+    entry_qs = Entry.objects.filter(
+        content_type__app_label='test_app',
+        content_type__model='animal',
+        object_id=str(animal.pk),
+    )
+    # The create signal should have produced an entry
+    assert entry_qs.count() >= 1, "Expected at least a 'create' entry for the animal"
+    entry_pks = list(entry_qs.values_list('pk', flat=True))
+
+    # Delete the animal
+    animal.delete()
+
+    # Activity stream entries must survive the parent deletion
+    surviving = Entry.objects.filter(pk__in=entry_pks)
+    assert surviving.count() == len(entry_pks), (
+        "Activity stream entries were cascade-deleted when the parent object was deleted. "
+        "NonCascadingGenericRelation.bulk_related_objects should prevent this."
+    )

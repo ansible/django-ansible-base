@@ -1,6 +1,7 @@
 import pytest
 from django.contrib.auth.hashers import check_password
 
+from ansible_base.activitystream.apps import get_activity_stream_entries
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.oauth2_provider.models import OAuth2AccessToken, OAuth2Application, OAuth2RefreshToken
@@ -380,5 +381,5 @@ def test_oauth2_application_prevent_search_client_secret(oauth2_application, adm
     assert 'Filtering on client_secret is not allowed' in response.data['detail']
 
     # Also ensure we don't leak the client_secret in activity stream
-    creation_entry = oauth2_application[0].activity_stream_entries.first()
+    creation_entry = get_activity_stream_entries(oauth2_application[0]).first()
     assert creation_entry.changes['added_fields']['client_secret'] == ENCRYPTED_STRING

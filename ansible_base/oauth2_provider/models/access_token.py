@@ -30,14 +30,7 @@ def validate_scope(value):
             raise ValidationError(_('Invalid scope: %(scope)s. Must be one of: %(scopes)s') % {'scope': scope, 'scopes': ', '.join(SCOPES)})
 
 
-activitystream = object
-if 'ansible_base.activitystream' in settings.INSTALLED_APPS:
-    from ansible_base.activitystream.models import AuditableModel
-
-    activitystream = AuditableModel
-
-
-class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activitystream):
+class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken):
     router_basename = 'token'
     ignore_relations = ['refresh_token']
     activity_stream_excluded_field_names = ['last_used', "modified", "modified_by"]

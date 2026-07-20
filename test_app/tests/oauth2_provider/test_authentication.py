@@ -4,6 +4,7 @@ from unittest import mock
 import pytest
 from oauthlib.common import generate_token
 
+from ansible_base.activitystream.apps import get_activity_stream_entries
 from ansible_base.activitystream.models import Entry
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.oauth2_provider.models import OAuth2AccessToken
@@ -188,7 +189,7 @@ def test_oauth2_bearer_no_activitystream(unauthenticated_api_client, oauth2_admi
     """
     url = get_relative_url("animal-detail", kwargs={"pk": animal.pk})
     token = oauth2_admin_access_token[1]
-    existing_as_count = len(oauth2_admin_access_token[0].activity_stream_entries)
+    existing_as_count = len(get_activity_stream_entries(oauth2_admin_access_token[0]))
 
     response = unauthenticated_api_client.get(
         url,
@@ -198,7 +199,7 @@ def test_oauth2_bearer_no_activitystream(unauthenticated_api_client, oauth2_admi
     assert response.data["name"] == animal.name
 
     updated_token = OAuth2AccessToken.objects.get(token=oauth2_admin_access_token[0].token)
-    assert len(updated_token.activity_stream_entries) == existing_as_count
+    assert len(get_activity_stream_entries(updated_token)) == existing_as_count
 
 
 @pytest.mark.parametrize(

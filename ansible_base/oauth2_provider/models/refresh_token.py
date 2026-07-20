@@ -2,7 +2,6 @@ import hashlib
 import logging
 
 import oauth2_provider.models as oauth2_models
-from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -13,14 +12,8 @@ from ansible_base.lib.utils.models import prevent_search
 
 logger = logging.getLogger('ansible_base.oauth2_provider.models.refresh_token')
 
-activitystream = object
-if 'ansible_base.activitystream' in settings.INSTALLED_APPS:
-    from ansible_base.activitystream.models import AuditableModel
 
-    activitystream = AuditableModel
-
-
-class OAuth2RefreshToken(CommonModel, oauth2_models.AbstractRefreshToken, activitystream):
+class OAuth2RefreshToken(CommonModel, oauth2_models.AbstractRefreshToken):
     class Meta(oauth2_models.AbstractRefreshToken.Meta):
         verbose_name = _('refresh token')
         ordering = ('id',)

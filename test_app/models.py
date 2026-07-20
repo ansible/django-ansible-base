@@ -5,7 +5,7 @@ from django.db.models import JSONField
 from rest_framework.exceptions import PermissionDenied as DRFPermissionDenied
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
-from ansible_base.activitystream.models import AuditableModel
+from ansible_base.activitystream import activity_stream_entries
 from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.abstract_models import (
     AbstractDABUser,
@@ -32,7 +32,7 @@ class Organization(AbstractOrganization):
     extra_field = models.CharField(max_length=100, null=True)
 
 
-class User(AbstractDABUser, CommonModel, AuditableModel):
+class User(AbstractDABUser, CommonModel):
     class Meta(AbstractDABUser.Meta):
         ordering = ['id']
 
@@ -364,7 +364,7 @@ class MultipleFieldsModel(NamedCommonModel):
     bool_field = models.BooleanField(default=True)
 
 
-class Animal(NamedCommonModel, AuditableModel):
+class Animal(NamedCommonModel):
     class Meta:
         app_label = "test_app"
         ordering = ['id']
@@ -381,9 +381,10 @@ class Animal(NamedCommonModel, AuditableModel):
     kind = models.CharField(max_length=4, choices=ANIMAL_KINDS, default='dog')
     age = models.PositiveIntegerField(null=True, default=1)
     people_friends = models.ManyToManyField(User, related_name='animal_friends', blank=True)
+    activity_stream = activity_stream_entries()
 
 
-class City(NamedCommonModel, AuditableModel):
+class City(NamedCommonModel):
     class Meta:
         app_label = "test_app"
         ordering = ['id']
@@ -396,9 +397,9 @@ class City(NamedCommonModel, AuditableModel):
     state = models.CharField(max_length=100, null=True, editable=False)
 
 
-class SecretColor(AuditableModel):
+class SecretColor(models.Model):
     """
-    An AuditableModel that also has encrypted fields.
+    A model that has encrypted fields and is tracked in the activity stream.
     """
 
     class Meta:
