@@ -16,6 +16,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='oauth2application',
             name='pkce_required',
-            field=models.BooleanField(default=True, help_text='When True, clients must use PKCE (send code_challenge) when requesting authorization codes for this application.'),
+            field=models.BooleanField(default=True, verbose_name='PKCE Required', help_text='When True, clients must use PKCE (send code_challenge) when requesting authorization codes for this application.'),
         ),
     ]
