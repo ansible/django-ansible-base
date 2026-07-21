@@ -14,6 +14,8 @@ This module handles RBAC-specific reverse-sync scenarios:
 3. Object deletion cleanup - cross-service sync for orphaned assignments
 """
 
+from __future__ import annotations
+
 import logging
 
 logger = logging.getLogger('ansible_base.rbac.sync')
@@ -60,31 +62,6 @@ def maybe_reverse_sync_unassignment(role_definition, actor, content_object):
 
     client = get_current_user_resource_client()
     client.sync_unassignment(role_definition, actor, content_object)
-
-
-def maybe_reverse_sync_object_deletion(content_object):
-    """Trigger reverse-sync for object deletion to clean up orphaned role assignments.
-    This is called when a resource with object-level role assignments is deleted.
-
-    Args:
-        content_object: The deleted resource instance to clean up assignments for
-    """
-    if not reverse_sync_enabled_all_conditions(content_object):
-        logger.debug(f"Skipping reverse-sync object deletion for {content_object}")
-        return
-
-    logger.debug(f"Performing reverse-sync object deletion for {content_object}")
-
-    try:
-        from ansible_base.resource_registry.utils.sync_to_resource_server import get_current_user_resource_client
-
-        client = get_current_user_resource_client()
-        client.sync_object_deletion(content_object)
-        logger.debug(f"Successfully synced object deletion for {content_object}")
-    except Exception as e:
-        # Log the error but don't let sync failures break local deletion
-        logger.warning(f"Failed to sync object deletion for {content_object}: {e}")
-        return
 
 
 def maybe_reverse_sync_role_definition(instance, action="update"):

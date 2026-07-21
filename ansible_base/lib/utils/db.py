@@ -1,4 +1,5 @@
 import logging
+import re
 from contextlib import contextmanager
 from copy import deepcopy
 from typing import Union
@@ -11,6 +12,132 @@ from django.db.backends.postgresql.base import DatabaseWrapper as PsycopgDatabas
 from django.db.migrations.executor import MigrationExecutor
 
 logger = logging.getLogger(__name__)
+
+_SAFE_IDENTIFIER_RE = re.compile(r'^[A-Za-z_]\w*$')
+
+
+def _render_identifier(vendor: str, name: str):
+    """Render a SQL identifier for the given database vendor."""
+    if vendor == 'postgresql':
+        return psycopg.sql.Identifier(name)
+    elif vendor == 'sqlite':
+        if not _SAFE_IDENTIFIER_RE.match(name):
+            raise ValueError(f"Unsafe SQL identifier: {name!r}")
+        return f'"{name}"'
+    else:
+        raise RuntimeError(f"Database vendor {vendor!r} is not supported by build_safe_sql")
+
+
+def _render_placeholder(vendor: str):
+    """Render a single value placeholder for the given database vendor."""
+    if vendor == 'postgresql':
+        return psycopg.sql.Placeholder()
+    elif vendor == 'sqlite':
+        return '%s'
+    else:
+        raise RuntimeError(f"Database vendor {vendor!r} is not supported by build_safe_sql")
+
+
+def _render_params(vendor: str, count: int):
+    """Render multiple value placeholders for the given database vendor."""
+    if vendor == 'postgresql':
+        return psycopg.sql.SQL(',').join([psycopg.sql.Placeholder()] * count)
+    elif vendor == 'sqlite':
+        return ','.join(['%s'] * count)
+    else:
+        raise RuntimeError(f"Database vendor {vendor!r} is not supported by build_safe_sql")
+
+
+_MARKER_RE = re.compile(r'\{([IPip]?)\}')
+
+
+def _resolve_markers(vendor: str, template: str, slots: list) -> list:
+    """Parse template markers and resolve each to a vendor-specific SQL part.
+
+    ``{I}`` and ``{P}`` markers consume the next item from ``slots``;
+    ``{}`` markers emit a single value placeholder without consuming a slot.
+    """
+    markers = _MARKER_RE.findall(template)
+    expected_slots = sum(1 for m in markers if m.upper() in ('I', 'P'))
+    if expected_slots != len(slots):
+        raise ValueError(f"Template has {expected_slots} {{I}}/{{P}} marker(s) but got {len(slots)} slot(s)")
+
+    parts = []
+    slot_iter = iter(slots)
+    for marker in markers:
+        marker_upper = marker.upper()
+        if marker_upper == 'I':
+            name = next(slot_iter)
+            if not isinstance(name, str):
+                raise TypeError(f"{{I}} marker expects str, got {type(name).__name__}")
+            parts.append(_render_identifier(vendor, name))
+        elif marker_upper == 'P':
+            count = next(slot_iter)
+            if not isinstance(count, int):
+                raise TypeError(f"{{P}} marker expects int, got {type(count).__name__}")
+            if count <= 0:
+                raise ValueError(f"Placeholder count must be positive, got {count}")
+            parts.append(_render_params(vendor, count))
+        else:
+            parts.append(_render_placeholder(vendor))
+    return parts
+
+
+def build_safe_sql(vendor: str, template: str, slots: list) -> str:
+    """Build a safe SQL string with quoted identifiers and parameterized placeholders.
+
+    The template uses typed markers for slot substitution:
+
+    - ``{I}`` — SQL identifier (table/column name). Consumes the next
+      ``str`` from ``slots``, validates it, and quotes it.
+    - ``{P}`` — placeholder list. Consumes the next ``int`` from ``slots``
+      and expands to that many comma-separated ``%s`` placeholders.
+    - ``{}``  — single value placeholder. Emits one ``%s`` without
+      consuming a slot.
+
+    Args:
+        vendor: Database vendor string (e.g. ``connection.vendor``).
+        template: A SQL template using ``{I}``, ``{P}``, and ``{}`` markers.
+        slots: An ordered list consumed left-to-right by ``{I}`` and ``{P}``
+            markers. ``str`` items are identifiers, ``int`` items are
+            placeholder counts.
+
+    Returns:
+        A SQL string safe for ``cursor.execute(sql, params)``.
+
+    Example::
+
+        build_safe_sql(
+            connection.vendor,
+            "DELETE FROM {I} WHERE {I} = {} AND {I} IN ({P})",
+            [table, 'content_type_id', 'object_id', len(pks)],
+        )
+
+    Raises:
+        ValueError: If slots don't match markers, an identifier is unsafe,
+            or a placeholder count is not positive.
+        TypeError: If a slot has the wrong type for its marker.
+        RuntimeError: If the database vendor is not supported.
+    """
+    parts = _resolve_markers(vendor, template, slots)
+
+    if vendor == 'postgresql':
+        pg_template = _MARKER_RE.sub('{}', template)
+        return psycopg.sql.SQL(pg_template).format(*parts).as_string(None)
+    elif vendor == 'sqlite':
+        segments = _MARKER_RE.split(template)
+        result = []
+        part_idx = 0
+        for segment in segments:
+            if segment.upper() in ('', 'I', 'P'):
+                if part_idx < len(parts):
+                    result.append(parts[part_idx])
+                    part_idx += 1
+            else:
+                result.append(segment)
+        return ''.join(result)
+    else:
+        raise RuntimeError(f"Database vendor {vendor!r} is not supported by build_safe_sql")
 
 
 @contextmanager
