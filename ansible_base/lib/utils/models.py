@@ -101,11 +101,36 @@ class NotARealException(Exception):
     pass
 
 
+# Single-tuple cache: (username, user_instance) or None.
+# Storing both values in one tuple makes the cache update atomic under the GIL,
+# preventing concurrent lookups from pairing the wrong username with the wrong user.
+_system_user_cache = None
+
+
+def clear_system_user_cache():
+    """Clear the cached system user.
+
+    Call this between tests or whenever the system user may have been
+    deleted/recreated (e.g. after a database flush).
+    """
+    global _system_user_cache
+    _system_user_cache = None
+
+
 def get_system_user() -> Optional[AbstractUser]:
+    global _system_user_cache
 
     from ansible_base.lib.abstract_models.user import AbstractDABUser
 
     system_username, setting_name = get_system_username()
+
+    # Return cached result if the username hasn't changed
+    cache = _system_user_cache
+    if cache is not None:
+        cached_username, cached_user = cache
+        if cached_username == system_username:
+            return cached_user
+
     user_model = get_user_model()
 
     # If we use subclass of AbstractDABUser ensure we use manager for unfiltered queryset
@@ -134,6 +159,9 @@ def get_system_user() -> Optional[AbstractUser]:
             system_user = create_system_user(user_model=get_user_model())
         except caught_exception:
             system_user = None
+
+    if system_user is not None:
+        _system_user_cache = (system_username, system_user)
 
     return system_user
 

@@ -99,6 +99,17 @@ def clear_content_type_cache():
     ContentType.objects.clear_cache()
 
 
+@pytest.fixture(autouse=True)
+def clear_system_user_cache():
+    """Clear the cached system user between tests to prevent stale references
+    from surviving transaction rollbacks in parallel test execution."""
+    from ansible_base.lib.utils.models import clear_system_user_cache
+
+    clear_system_user_cache()
+    yield
+    clear_system_user_cache()
+
+
 @pytest.fixture
 def azuread_configuration():
     return {
