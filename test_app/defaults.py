@@ -143,6 +143,20 @@ INTERNAL_IPS = [
     "127.0.0.1",
 ]
 
+DEBUG_TOOLBAR_CONFIG = {
+    'HIDE_IN_STACKTRACES': (
+        'socketserver',
+        'threading',
+        'wsgiref',
+        'debug_toolbar',
+        'django.core.handlers',
+        'django.core.servers',
+        'django.utils.decorators',
+        'django.utils.deprecation',
+        'django.utils.functional',
+    ),
+}
+
 LANGUAGE_CODE = 'en-us'
 
 TIME_ZONE = 'UTC'

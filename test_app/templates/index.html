@@ -40,6 +40,21 @@
 		</div>
 
 		<div>
+			<h2>Org Delete Profiling</h2>
+			<p class="text-muted">Use with Django Debug Toolbar to inspect query counts. Hit populate first, then one delete variant. Re-populate between deletes.</p>
+			<ol>
+				<li><a href="/api/v1/profile-stories/org-delete/populate/?teams=20&users=2">Populate (20 teams, 2 users/team)</a></li>
+				<li>Delete variants (pick one, then re-populate):
+					<ul>
+						<li><a href="/api/v1/profile-stories/org-delete/bare/">Bare (no context managers)</a></li>
+						<li><a href="/api/v1/profile-stories/org-delete/deferred/">defer_rbac_cache only</a></li>
+						<li><a href="/api/v1/profile-stories/org-delete/optimized/">All 3 context managers</a></li>
+					</ul>
+				</li>
+			</ol>
+		</div>
+
+		<div>
 			<h2>SSO Logins</h2>
 			<div id='authenticators'>None</div>
 		</div>
