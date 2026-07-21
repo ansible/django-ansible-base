@@ -100,9 +100,13 @@ def clear_content_type_cache():
 
 
 @pytest.fixture(autouse=True)
-def clear_system_user_cache():
-    """Clear the cached system user between tests to prevent stale references
-    from surviving transaction rollbacks in parallel test execution."""
+def _clear_system_user_cache():
+    """Clear the cached system user between tests.
+
+    Tests run inside a transaction that is rolled back after each test. Without
+    this fixture a cached User object from a previous test would survive the
+    rollback, pointing at a pk that no longer exists in the DB.
+    """
     from ansible_base.lib.utils.models import clear_system_user_cache
 
     clear_system_user_cache()

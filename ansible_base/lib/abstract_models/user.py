@@ -24,7 +24,13 @@ class AbstractDABUser(AbstractUser):
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
-        from ansible_base.lib.utils.models import clear_system_user_cache, is_system_user
+        from ansible_base.lib.utils.models import clear_system_user_cache
 
-        if is_system_user(self):
-            clear_system_user_cache()
+        clear_system_user_cache()
+
+    def delete(self, *args, **kwargs):
+        result = super().delete(*args, **kwargs)
+        from ansible_base.lib.utils.models import clear_system_user_cache
+
+        clear_system_user_cache()
+        return result

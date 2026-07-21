@@ -133,15 +133,15 @@ def get_system_user() -> Optional[AbstractUser]:
 
     from ansible_base.lib.abstract_models.user import AbstractDABUser
 
+    system_username, setting_name = get_system_username()
+
     use_cache = _has_shared_cache()
     if use_cache:
         from django.core.cache import cache
 
         cached = cache.get(SYSTEM_USER_CACHE_KEY)
-        if cached is not None:
+        if cached is not None and cached.username == system_username:
             return cached
-
-    system_username, setting_name = get_system_username()
     user_model = get_user_model()
 
     # If we use subclass of AbstractDABUser ensure we use manager for unfiltered queryset
@@ -172,6 +172,7 @@ def get_system_user() -> Optional[AbstractUser]:
             system_user = None
 
     if use_cache and system_user is not None:
+        # Cache the full User instance (~1 kB serialized) to avoid a DB round-trip on hit.
         cache.set(SYSTEM_USER_CACHE_KEY, system_user, timeout=SYSTEM_USER_CACHE_TTL)
 
     return system_user
