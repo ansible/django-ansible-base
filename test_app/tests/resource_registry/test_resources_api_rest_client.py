@@ -147,6 +147,19 @@ def test_list_resources(resource_client, organization):
 
 
 @pytest.mark.django_db
+def test_bulk_update_resources(resource_client, organization):
+    """Test bulk_update_resources client method."""
+    ansible_id = str(Resource.get_resource_for_object(organization).ansible_id)
+    new_service_id = str(uuid.uuid4())
+    items = [{"ansible_id": ansible_id, "new_service_id": new_service_id}]
+
+    resp = resource_client.bulk_update_resources(items)
+    assert resp.status_code == 200
+    assert resp.json()["updated"] == 1
+    assert resp.json()["errors"] == []
+
+
+@pytest.mark.django_db
 def test_get_resource_type(resource_client):
     resp = resource_client.get_resource_type("shared.organization")
 

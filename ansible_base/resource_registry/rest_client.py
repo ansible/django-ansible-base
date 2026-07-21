@@ -107,7 +107,7 @@ class ResourceAPIClient(BaseServiceClient):
         Bulk-update multiple resources in a single HTTP request.
 
         Each item must contain 'ansible_id' and one or more fields to update:
-        service_id, new_ansible_id, is_partially_migrated, resource_data.
+        new_service_id, new_ansible_id, is_partially_migrated, resource_data.
 
         Returns the response from POST /resources/bulk-update/.
         """

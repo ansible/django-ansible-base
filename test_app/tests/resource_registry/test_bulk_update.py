@@ -1,4 +1,5 @@
 import uuid
+from unittest.mock import patch
 
 import pytest
 from django.contrib.contenttypes.models import ContentType
@@ -30,7 +31,7 @@ class TestBulkUpdate:
     def test_bulk_update_service_id(self, admin_api_client, bulk_update_url, user_resources):
         """Bulk-update service_id for multiple resources in a single request."""
         new_service_id = str(uuid.uuid4())
-        items = [{"ansible_id": str(r.ansible_id), "service_id": new_service_id} for r in user_resources]
+        items = [{"ansible_id": str(r.ansible_id), "new_service_id": new_service_id} for r in user_resources]
 
         resp = admin_api_client.post(bulk_update_url, {"items": items}, format="json")
         assert resp.status_code == 200
@@ -70,9 +71,9 @@ class TestBulkUpdate:
         """Different items update different fields in the same batch."""
         new_service_id = str(uuid.uuid4())
         items = [
-            {"ansible_id": str(user_resources[0].ansible_id), "service_id": new_service_id},
+            {"ansible_id": str(user_resources[0].ansible_id), "new_service_id": new_service_id},
             {"ansible_id": str(user_resources[1].ansible_id), "is_partially_migrated": True},
-            {"ansible_id": str(user_resources[2].ansible_id), "service_id": new_service_id, "is_partially_migrated": True},
+            {"ansible_id": str(user_resources[2].ansible_id), "new_service_id": new_service_id, "is_partially_migrated": True},
         ]
 
         resp = admin_api_client.post(bulk_update_url, {"items": items}, format="json")
@@ -94,8 +95,8 @@ class TestBulkUpdate:
         fake_id = str(uuid.uuid4())
         new_service_id = str(uuid.uuid4())
         items = [
-            {"ansible_id": str(user_resources[0].ansible_id), "service_id": new_service_id},
-            {"ansible_id": fake_id, "service_id": new_service_id},
+            {"ansible_id": str(user_resources[0].ansible_id), "new_service_id": new_service_id},
+            {"ansible_id": fake_id, "new_service_id": new_service_id},
         ]
 
         resp = admin_api_client.post(bulk_update_url, {"items": items}, format="json")
@@ -128,14 +129,14 @@ class TestBulkUpdate:
 
     def test_bulk_update_exceeds_limit(self, admin_api_client, bulk_update_url):
         """Payload exceeding MAX_BULK_SIZE returns 400."""
-        items = [{"ansible_id": str(uuid.uuid4()), "service_id": str(uuid.uuid4())} for _ in range(1001)]
+        items = [{"ansible_id": str(uuid.uuid4()), "new_service_id": str(uuid.uuid4())} for _ in range(1001)]
         resp = admin_api_client.post(bulk_update_url, {"items": items}, format="json")
         assert resp.status_code == 400
         assert "1000" in resp.data["detail"]
 
     def test_bulk_update_invalid_item(self, admin_api_client, bulk_update_url):
         """Invalid items (missing ansible_id) return serializer validation error."""
-        items = [{"service_id": str(uuid.uuid4())}]
+        items = [{"new_service_id": str(uuid.uuid4())}]
         resp = admin_api_client.post(bulk_update_url, {"items": items}, format="json")
         assert resp.status_code == 400
 
@@ -147,7 +148,7 @@ class TestBulkUpdate:
 
     def test_bulk_update_permission_denied(self, user_api_client, bulk_update_url, user_resources):
         """Non-admin users cannot call bulk-update."""
-        items = [{"ansible_id": str(user_resources[0].ansible_id), "service_id": str(uuid.uuid4())}]
+        items = [{"ansible_id": str(user_resources[0].ansible_id), "new_service_id": str(uuid.uuid4())}]
         resp = user_api_client.post(bulk_update_url, {"items": items}, format="json")
         assert resp.status_code == 403
 
@@ -172,7 +173,7 @@ class TestBulkUpdate:
         existing_id = str(user_resources[1].ansible_id)
         new_service_id = str(uuid.uuid4())
         items = [
-            {"ansible_id": str(user_resources[0].ansible_id), "service_id": new_service_id},
+            {"ansible_id": str(user_resources[0].ansible_id), "new_service_id": new_service_id},
             {"ansible_id": str(user_resources[2].ansible_id), "new_ansible_id": existing_id},
         ]
 
@@ -200,7 +201,7 @@ class TestBulkUpdate:
 
         new_service_id = str(uuid.uuid4())
         items = [
-            {"ansible_id": str(user_resources[1].ansible_id), "service_id": new_service_id},
+            {"ansible_id": str(user_resources[1].ansible_id), "new_service_id": new_service_id},
             {
                 "ansible_id": str(user_resources[0].ansible_id),
                 "resource_data": {"username": "should_not_apply"},
@@ -223,7 +224,7 @@ class TestBulkUpdate:
         """Duplicate ansible_id in the same batch is rejected."""
         aid = str(user_resources[0].ansible_id)
         items = [
-            {"ansible_id": aid, "service_id": str(uuid.uuid4())},
+            {"ansible_id": aid, "new_service_id": str(uuid.uuid4())},
             {"ansible_id": aid, "is_partially_migrated": True},
         ]
 
@@ -234,7 +235,7 @@ class TestBulkUpdate:
 
     def test_bulk_update_unauthenticated(self, unauthenticated_api_client, bulk_update_url, user_resources):
         """Unauthenticated requests return 401."""
-        items = [{"ansible_id": str(user_resources[0].ansible_id), "service_id": str(uuid.uuid4())}]
+        items = [{"ansible_id": str(user_resources[0].ansible_id), "new_service_id": str(uuid.uuid4())}]
         resp = unauthenticated_api_client.post(bulk_update_url, {"items": items}, format="json")
         assert resp.status_code == 401
 
@@ -244,7 +245,7 @@ class TestBulkUpdate:
         items = [
             {
                 "ansible_id": str(user_resources[0].ansible_id),
-                "service_id": new_service_id,
+                "new_service_id": new_service_id,
                 "is_partially_migrated": True,
                 "resource_data": {"username": "combo_user"},
             }
@@ -260,3 +261,23 @@ class TestBulkUpdate:
 
         three_users[0].refresh_from_db()
         assert three_users[0].username == "combo_user"
+
+    def test_bulk_update_unexpected_exception(self, admin_api_client, bulk_update_url, user_resources):
+        """Unexpected exceptions are caught and reported as per-item errors without crashing the batch."""
+        new_service_id = str(uuid.uuid4())
+        items = [
+            {"ansible_id": str(user_resources[0].ansible_id), "new_service_id": new_service_id},
+            {"ansible_id": str(user_resources[1].ansible_id), "new_service_id": str(uuid.uuid4())},
+        ]
+
+        with patch(
+            "ansible_base.resource_registry.views.ResourceViewSet._apply_resource_update",
+            side_effect=[RuntimeError("unexpected"), None],
+        ):
+            resp = admin_api_client.post(bulk_update_url, {"items": items}, format="json")
+
+        assert resp.status_code == 200
+        assert resp.data["updated"] == 1
+        assert len(resp.data["errors"]) == 1
+        assert resp.data["errors"][0]["ansible_id"] == str(user_resources[0].ansible_id)
+        assert "Internal error" in resp.data["errors"][0]["error"]

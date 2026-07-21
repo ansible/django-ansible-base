@@ -128,7 +128,7 @@ class ResourceViewSet(
     @action(detail=False, methods=["post"], url_path="bulk-update")
     def bulk_update(self, request, *args, **kwargs):
         """
-        Bulk-update resource metadata (service_id, ansible_id, is_partially_migrated, resource_data).
+        Bulk-update resource metadata (new_service_id, new_ansible_id, is_partially_migrated, resource_data).
 
         Accepts a JSON object with an ``items`` key containing a list of update objects.
         Each object must contain at minimum an ``ansible_id`` identifying the resource
@@ -137,6 +137,17 @@ class ResourceViewSet(
         does not roll back others.
 
         Returns a summary with the count of updated resources and any per-item errors.
+
+        Performance note:
+            This endpoint uses a loop-of-singles pattern (one savepoint + update_resource()
+            per item) rather than Django's QuerySet.bulk_update(). This is an intentional
+            trade-off: ResourceTypeProcessor.save() is a per-service plugin point with
+            custom logic (e.g. M2M permission handling in RoleDefinitionProcessor) that
+            cannot be expressed as a single bulk SQL statement. The primary performance
+            gain of this endpoint comes from eliminating N HTTP round-trips — the DB query
+            overhead of per-item saves is negligible on a local connection for typical
+            batch sizes (100-1000 items). True DB-level batching can be explored as a
+            future optimization for metadata-only fields.
         """
         from rest_framework.exceptions import ValidationError as DRFValidationError
 
@@ -190,6 +201,19 @@ class ResourceViewSet(
                 errors.append({"ansible_id": ansible_id_str, "error": "Resource not found."})
                 continue
 
+            resource_data = item.get("resource_data", {})
+            if resource_data and not resource.content_type.resource_type.can_be_managed:
+                errors.append(
+                    {
+                        "ansible_id": ansible_id_str,
+                        "error": f"Resource type '{resource.content_type.resource_type.name}' cannot be managed.",
+                    }
+                )
+                continue
+
+            # All-or-nothing per item: metadata + content updates share a savepoint.
+            # This ensures the resource is never left in a half-updated state
+            # (e.g. service_id claimed but content stale), simplifying retry logic.
             try:
                 with transaction.atomic():
                     self._apply_resource_update(resource, item)
@@ -201,6 +225,10 @@ class ResourceViewSet(
                 error_detail = e.detail if hasattr(e, 'detail') else str(e)
                 logger.warning("Bulk update item %s failed: %s", ansible_id_str, error_detail)
                 errors.append({"ansible_id": ansible_id_str, "error": error_detail})
+                continue
+            except Exception as e:
+                logger.exception("Bulk update item %s failed unexpectedly: %s", ansible_id_str, e)
+                errors.append({"ansible_id": ansible_id_str, "error": "Internal error processing this item."})
                 continue
 
             updated += 1
@@ -214,16 +242,13 @@ class ResourceViewSet(
 
         Delegates to Resource.update_resource() which handles no_reverse_sync()
         and maintains consistency with the single-resource update path.
+        The can_be_managed check is performed by the caller before entering
+        the transaction, so this method assumes it has already passed.
         """
-        resource_data = item.get("resource_data", {})
-
-        if resource_data and not resource.content_type.resource_type.can_be_managed:
-            raise ValueError(f"Resource type '{resource.content_type.resource_type.name}' cannot be managed.")
-
         resource.update_resource(
-            resource_data=resource_data,
+            resource_data=item.get("resource_data", {}),
             ansible_id=item.get("new_ansible_id"),
-            service_id=item.get("service_id"),
+            service_id=item.get("new_service_id"),
             is_partially_migrated=item.get("is_partially_migrated"),
             partial=True,
         )

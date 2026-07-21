@@ -147,17 +147,19 @@ class ResourceTypeSerializer(serializers.ModelSerializer):
 class BulkResourceUpdateItemSerializer(serializers.Serializer):
     """Serializer for a single item in a bulk resource update request."""
 
-    UPDATE_FIELDS = ("service_id", "new_ansible_id", "is_partially_migrated", "resource_data")
+    UPDATE_FIELDS = ("new_service_id", "new_ansible_id", "is_partially_migrated", "resource_data")
 
     ansible_id = serializers.UUIDField(help_text="The ansible_id of the resource to update.")
-    service_id = serializers.UUIDField(required=False, help_text="New service_id value.")
+    new_service_id = serializers.UUIDField(required=False, help_text="New service_id to assign.")
     new_ansible_id = serializers.UUIDField(required=False, help_text="New ansible_id to assign (renames the resource identifier).")
     is_partially_migrated = serializers.BooleanField(required=False, help_text="Partially migrated flag.")
     resource_data = serializers.JSONField(required=False, help_text="Resource data to update on the content object.")
 
     def validate(self, attrs):
         if not any(field in attrs for field in self.UPDATE_FIELDS):
-            raise serializers.ValidationError("At least one update field is required (service_id, new_ansible_id, is_partially_migrated, or resource_data).")
+            raise serializers.ValidationError(
+                "At least one update field is required (new_service_id, new_ansible_id, is_partially_migrated, or resource_data)."
+            )
         return attrs
 
 
