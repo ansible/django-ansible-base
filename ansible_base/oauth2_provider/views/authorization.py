@@ -7,7 +7,28 @@ from ansible_base.lib.utils.settings import get_setting
 
 
 class AuthorizationView(oauth_views.AuthorizationView):
+    """
+    Extends DOT's AuthorizationView to add per-application PKCE enforcement.
+
+    DOT only supports a global PKCE_REQUIRED setting. This subclass adds an
+    application-level ``pkce_required`` field check so individual apps can
+    require PKCE even when the global setting is off. When global PKCE_REQUIRED
+    is True, DOT already enforces PKCE for all apps and this class defers to it.
+
+    Overrides:
+      - get(): pre-validates the request to extract credentials, then runs the
+        per-app PKCE check before delegating to super().get(). This causes
+        validate_authorization_request() to run twice (ours + DOT's), but the
+        call is idempotent and avoids copying DOT's get() internals.
+      - form_valid(): runs the same per-app PKCE check on POST submissions
+        before delegating to super().form_valid().
+    """
+
     def get(self, request, *args, **kwargs):
+        # Intentional double call: validate_authorization_request() runs here
+        # to extract credentials for the per-app PKCE check, then again inside
+        # super().get(). The call is idempotent (read-only, no side effects),
+        # and this avoids copying DOT's get() internals.
         try:
             _, credentials = self.validate_authorization_request(request)
         except OAuthToolkitError as error:
@@ -20,10 +41,11 @@ class AuthorizationView(oauth_views.AuthorizationView):
         return super().get(request, *args, **kwargs)
 
     def _check_pkce_required(self, client_id, credentials):
+        """Return an error response if the app requires PKCE and no code_challenge was provided, else None."""
         application = get_application_model().objects.get(client_id=client_id)
 
         pkce_required_globally = get_setting('OAUTH2_PROVIDER', {}).get('PKCE_REQUIRED', False)
-        if (application.pkce_required or pkce_required_globally) and not credentials.get("code_challenge"):
+        if not pkce_required_globally and application.pkce_required and not credentials.get("code_challenge"):
             redirect_uri = credentials.get("redirect_uri")
             error = InvalidRequestError(
                 description="This application requires PKCE. Include a code_challenge parameter.",
