@@ -101,10 +101,20 @@ class NotARealException(Exception):
     pass
 
 
-# Single-tuple cache: (username, user_instance) or None.
-# Storing both values in one tuple makes the cache update atomic under the GIL,
-# preventing concurrent lookups from pairing the wrong username with the wrong user.
-_system_user_cache = None
+SYSTEM_USER_CACHE_KEY = "dab:system_user"
+SYSTEM_USER_CACHE_TTL = 300
+
+
+def _has_shared_cache() -> bool:
+    """Return True if the default cache backend is a shared store (Redis, memcached).
+
+    DummyCache and LocMemCache are not suitable for cross-process caching,
+    so we only cache the system user when a real shared backend is configured.
+    """
+    from django.core.cache import cache
+
+    backend_module = type(cache).__module__
+    return 'dummy' not in backend_module and 'locmem' not in backend_module
 
 
 def clear_system_user_cache():
@@ -113,24 +123,25 @@ def clear_system_user_cache():
     Call this between tests or whenever the system user may have been
     deleted/recreated (e.g. after a database flush).
     """
-    global _system_user_cache
-    _system_user_cache = None
+    if _has_shared_cache():
+        from django.core.cache import cache
+
+        cache.delete(SYSTEM_USER_CACHE_KEY)
 
 
 def get_system_user() -> Optional[AbstractUser]:
-    global _system_user_cache
 
     from ansible_base.lib.abstract_models.user import AbstractDABUser
 
+    use_cache = _has_shared_cache()
+    if use_cache:
+        from django.core.cache import cache
+
+        cached = cache.get(SYSTEM_USER_CACHE_KEY)
+        if cached is not None:
+            return cached
+
     system_username, setting_name = get_system_username()
-
-    # Return cached result if the username hasn't changed
-    cache = _system_user_cache
-    if cache is not None:
-        cached_username, cached_user = cache
-        if cached_username == system_username:
-            return cached_user
-
     user_model = get_user_model()
 
     # If we use subclass of AbstractDABUser ensure we use manager for unfiltered queryset
@@ -160,8 +171,8 @@ def get_system_user() -> Optional[AbstractUser]:
         except caught_exception:
             system_user = None
 
-    if system_user is not None:
-        _system_user_cache = (system_username, system_user)
+    if use_cache and system_user is not None:
+        cache.set(SYSTEM_USER_CACHE_KEY, system_user, timeout=SYSTEM_USER_CACHE_TTL)
 
     return system_user
 

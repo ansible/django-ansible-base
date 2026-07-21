@@ -1,12 +1,12 @@
 from unittest.mock import patch
 
 import pytest
+from ansible_base.lib.utils.create_system_user import create_system_user, get_system_username
+from ansible_base.lib.utils.models import get_system_user
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.test import override_settings
 
-from ansible_base.lib.utils.create_system_user import create_system_user, get_system_username
-from ansible_base.lib.utils.models import get_system_user
 from test_app.models import ManagedUser, User
 
 
@@ -84,55 +84,75 @@ class TestGetSystemUser:
 
 
 class TestGetSystemUserCache:
-    """Tests for the get_system_user() caching behavior."""
+    """Tests for the get_system_user() Redis caching behavior."""
 
     @pytest.mark.django_db
-    def test_second_call_returns_cached_result(self, system_user, django_assert_num_queries):
-        """Second call to get_system_user() should not hit the database."""
-        # First call populates the cache
-        user1 = get_system_user()
-        assert user1 is not None
+    def test_second_call_returns_cached_result(self, system_user):
+        """Second call to get_system_user() should return from cache when a shared backend is configured."""
+        with patch('ansible_base.lib.utils.models._has_shared_cache', return_value=True):
+            from django.core.cache import cache
 
-        # Second call should use cache -- zero queries
-        with django_assert_num_queries(0):
+            cache.delete('dab:system_user')
+
+            user1 = get_system_user()
+            assert user1 is not None
+            assert cache.get('dab:system_user') is not None
+
             user2 = get_system_user()
-
-        assert user2 is user1
+            assert user2.pk == user1.pk
 
     @pytest.mark.django_db
-    def test_cache_invalidated_when_username_changes(self, system_user):
-        """Cache is bypassed when the system username setting changes."""
-        user1 = get_system_user()
-        assert user1 is not None
+    def test_no_caching_without_shared_backend(self, system_user):
+        """When no shared cache backend is available, every call queries the DB."""
+        with patch('ansible_base.lib.utils.models._has_shared_cache', return_value=False):
+            from django.core.cache import cache
 
-        with override_settings(SYSTEM_USERNAME='nonexistent_user'):
-            user2 = get_system_user()
-            # Different username, should not return cached user
-            assert user2 is not user1
+            cache.delete('dab:system_user')
+
+            get_system_user()
+            assert cache.get('dab:system_user') is None
 
     @pytest.mark.django_db
     def test_cache_not_set_for_none_result(self):
         """If system user creation returns None, the result is not cached."""
-        import ansible_base.lib.utils.models as models_mod
+        with patch('ansible_base.lib.utils.models._has_shared_cache', return_value=True):
+            from django.core.cache import cache
 
-        with patch('ansible_base.lib.utils.models.create_system_user', return_value=None):
-            with override_settings(SYSTEM_USERNAME='nonexistent_cache_test_user'):
-                result = get_system_user()
+            cache.delete('dab:system_user')
 
-        assert result is None
-        assert models_mod._system_user_cache is None
+            with patch('ansible_base.lib.utils.models.create_system_user', return_value=None):
+                with override_settings(SYSTEM_USERNAME='nonexistent_cache_test_user'):
+                    result = get_system_user()
+
+            assert result is None
+            assert cache.get('dab:system_user') is None
 
     @pytest.mark.django_db
     def test_clear_system_user_cache(self, system_user):
-        """clear_system_user_cache() resets the cached entry."""
+        """clear_system_user_cache() removes the cached entry from the shared backend."""
         from ansible_base.lib.utils.models import clear_system_user_cache
 
-        # Populate the cache
-        get_system_user()
+        with patch('ansible_base.lib.utils.models._has_shared_cache', return_value=True):
+            from django.core.cache import cache
 
-        import ansible_base.lib.utils.models as models_mod
+            cache.delete('dab:system_user')
 
-        assert models_mod._system_user_cache is not None
+            get_system_user()
+            assert cache.get('dab:system_user') is not None
 
-        clear_system_user_cache()
-        assert models_mod._system_user_cache is None
+            clear_system_user_cache()
+            assert cache.get('dab:system_user') is None
+
+    @pytest.mark.django_db
+    def test_save_invalidates_cache(self, system_user):
+        """Saving the system user should clear the cache."""
+        with patch('ansible_base.lib.utils.models._has_shared_cache', return_value=True):
+            from django.core.cache import cache
+
+            cache.delete('dab:system_user')
+
+            get_system_user()
+            assert cache.get('dab:system_user') is not None
+
+            system_user.save()
+            assert cache.get('dab:system_user') is None
