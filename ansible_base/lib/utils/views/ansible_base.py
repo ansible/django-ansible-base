@@ -84,6 +84,9 @@ class AnsibleBaseView(APIView):
         if request.method != 'DELETE':
             return super().dispatch(request, *args, **kwargs)
         with ExitStack() as stack:
+            from ansible_base.lib.utils.models import cached_system_user
+
+            stack.enter_context(cached_system_user())
             if 'ansible_base.activitystream' in settings.INSTALLED_APPS:
                 from ansible_base.activitystream import deferred_activity_stream
 
