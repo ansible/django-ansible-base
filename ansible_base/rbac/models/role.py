@@ -395,13 +395,21 @@ class ObjectRoleFields(models.Model):
 
     @classmethod
     def _visible_items(cls, eval_cls, user, qs=None):
+        """Return a queryset of assignment records that ``user`` is allowed to see."""
+        # NOTE: type casting is necessary in postgres but not sqlite3
+        object_id_field = cls._meta.get_field('object_id')
         permission_qs = eval_cls.objects.filter(
             **eval_cls._actor_role_filter(user),
             content_type_id=models.OuterRef('content_type_id'),
         )
-        # NOTE: type casting is necessary in postgres but not sqlite3
-        object_id_field = cls._meta.get_field('object_id')
-        obj_filter = models.Q(object_id__in=permission_qs.values_list(Cast('object_id', output_field=object_id_field)))
+        # alias() keeps the Cast in WHERE only (not SELECT), enabling a semi-join point lookup
+        obj_filter = models.Exists(
+            permission_qs.alias(
+                _obj_id_text=Cast('object_id', output_field=object_id_field),
+            ).filter(
+                _obj_id_text=models.OuterRef('object_id'),
+            )
+        )
 
         if not hasattr(user, '_singleton_permission_objs'):
             user._singleton_permission_objs = RoleDefinition.user_global_permissions(user)

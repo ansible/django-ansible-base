@@ -299,7 +299,11 @@ def diff(
                 continue
 
             if all_values_as_strings:
-                if getattr(obj, field) is None:
+                # Use attname (e.g. owner_id) for FK fields to avoid
+                # triggering a lazy-load SELECT for the related object.
+                # value_to_string() only needs the raw PK anyway.
+                check_attr = field_obj.attname if hasattr(field_obj, 'attname') else field
+                if getattr(obj, check_attr) is None:
                     value = None
                 else:
                     value = field_obj.value_to_string(obj)

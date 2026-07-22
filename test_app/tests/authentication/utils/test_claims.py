@@ -1,3 +1,5 @@
+import hashlib
+import logging
 from unittest import mock
 
 import pytest
@@ -2865,3 +2867,263 @@ def test_create_claims_three_maps_last_writer_wins(
     res = claims.create_claims(authenticator, 'username', {}, [])
 
     assert res['access_allowed'] is True, 'The last allow map (order=3, always) must win over the deny at order=2'
+
+
+# ---------------------------------------------------------------------------
+# Performance and correctness tests for optimized claims processing
+# ---------------------------------------------------------------------------
+
+# Deterministically-generated group names for performance tests.
+# 33 groups matches the scale observed in production SAML responses.
+_MANY_GROUPS = [f"group-{hashlib.sha256(f'seed-{i}'.encode()).hexdigest()[:16]}" for i in range(33)]
+# Pick one to use as a known-present value in match tests
+_KNOWN_GROUP = _MANY_GROUPS[7]
+
+
+class TestProcessUserValueInOperatorLogVolume:
+    """Verify the 'in' operator emits O(1) log lines per evaluation, not O(n) per user value."""
+
+    def test_in_operator_emits_one_log_line_per_map(self, caplog):
+        """The 'in' operator must emit at most 1 log line per map, not per value."""
+        tc = {'groups': {'in': ['nonexistent_group']}}
+
+        with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.utils.claims'):
+            claims._process_user_value(None, tc, _MANY_GROUPS, 'or', 'groups', 1, 'log-test')
+
+        attr_log_lines = [r for r in caplog.records if 'groups' in r.getMessage() and 'Map [1]' in r.getMessage()]
+        assert len(attr_log_lines) == 1, (
+            f"Expected 1 summary log line for 'in' operator, got {len(attr_log_lines)}: " f"{[r.getMessage() for r in attr_log_lines]}"
+        )
+
+
+class TestProcessUserValueInOperatorCorrectness:
+    """Verify set-based 'in' operator produces identical results to per-value iteration."""
+
+    def test_in_single_value_positive(self):
+        tc = {'email': {'in': ['foo@example.com', 'bar@example.org']}}
+        result = claims._process_user_value(None, tc, ['foo@example.com'], 'or', 'email', 1, 't')
+        assert result is True
+
+    def test_in_single_value_negative(self):
+        tc = {'email': {'in': ['foo@example.com', 'bar@example.org']}}
+        result = claims._process_user_value(None, tc, ['baz@example.net'], 'or', 'email', 1, 't')
+        assert result is False
+
+    def test_in_multi_value_any_match_or_join(self):
+        tc = {'groups': {'in': ['admin']}}
+        result = claims._process_user_value(None, tc, ['user', 'admin', 'staff'], 'or', 'groups', 1, 't')
+        assert result is True
+
+    def test_in_multi_value_no_match_or_join(self):
+        tc = {'groups': {'in': ['superadmin']}}
+        result = claims._process_user_value(None, tc, ['user', 'admin', 'staff'], 'or', 'groups', 1, 't')
+        assert result is False
+
+    def test_in_multi_value_all_match_and_join(self):
+        tc = {'groups': {'in': ['admin', 'user', 'staff']}}
+        result = claims._process_user_value(None, tc, ['user', 'admin'], 'and', 'groups', 1, 't')
+        assert result is True
+
+    def test_in_multi_value_partial_match_and_join(self):
+        tc = {'groups': {'in': ['admin']}}
+        result = claims._process_user_value(None, tc, ['user', 'admin'], 'and', 'groups', 1, 't')
+        assert result is False
+
+    def test_in_empty_user_value_returns_none(self):
+        tc = {'groups': {'in': ['admin']}}
+        result = claims._process_user_value(None, tc, [], 'or', 'groups', 1, 't')
+        assert result is None
+
+    def test_in_case_insensitive(self):
+        tc = {'groups': {'in': ['admin']}}
+        result = claims._process_user_value(None, tc, ['ADMIN'], 'or', 'groups', 1, 't')
+        assert result is True
+
+    def test_in_preserves_existing_has_access_true_or(self):
+        tc = {'groups': {'in': ['admin']}}
+        result = claims._process_user_value(True, tc, ['nobody'], 'or', 'groups', 1, 't')
+        assert result is True
+
+    def test_in_flips_false_to_true_on_match_or(self):
+        """has_access=False must flip to True when a match is found with 'or' join."""
+        tc = {'groups': {'in': ['admin']}}
+        result = claims._process_user_value(False, tc, ['admin'], 'or', 'groups', 1, 't')
+        assert result is True
+
+    def test_in_preserves_false_on_no_match_or(self):
+        """has_access=False stays False when no match is found with 'or' join."""
+        tc = {'groups': {'in': ['admin']}}
+        result = claims._process_user_value(False, tc, ['nobody'], 'or', 'groups', 1, 't')
+        assert result is False
+
+    def test_in_preserves_existing_has_access_and(self):
+        tc = {'groups': {'in': ['admin']}}
+        result = claims._process_user_value(True, tc, ['nobody'], 'and', 'groups', 1, 't')
+        assert result is False
+
+    def test_in_case_insensitive_trigger_and_user(self):
+        """Trigger values and user values with mixed case must match."""
+        tc = {'groups': {'in': ['HybRid_Cloud_Admin']}}
+        result = claims._process_user_value(None, tc, ['HYBRID_CLOUD_ADMIN'], 'or', 'groups', 1, 't')
+        assert result is True
+
+    def test_in_partial_match_and_join(self):
+        """With 'and' join, partial match (some values in trigger) must return False."""
+        tc = {'groups': {'in': ['admin', 'editor']}}
+        result = claims._process_user_value(None, tc, ['admin', 'viewer'], 'and', 'groups', 1, 't')
+        assert result is False
+
+    def test_in_many_groups_single_trigger_no_match(self):
+        """33 user groups, trigger has 1 non-matching value."""
+        tc = {'groups': {'in': ['nonexistent_group']}}
+        result = claims._process_user_value(None, tc, _MANY_GROUPS, 'or', 'groups', 1, 't')
+        assert result is False
+
+    def test_in_many_groups_single_trigger_with_match(self):
+        """33 user groups, trigger has 1 matching value."""
+        tc = {'groups': {'in': [_KNOWN_GROUP]}}
+        result = claims._process_user_value(None, tc, _MANY_GROUPS, 'or', 'groups', 1, 't')
+        assert result is True
+
+
+class TestEarlyExitForOtherOperators:
+    """Verify early exit for equals/contains/ends_with/matches operators."""
+
+    def test_equals_early_exit_or_join(self, caplog):
+        """With 'or' join, first match should stop iteration."""
+        values = ['a', 'b', 'target', 'd', 'e']
+        tc = {'attr': {'equals': 'target'}}
+
+        with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.utils.claims'):
+            result = claims._process_user_value(None, tc, values, 'or', 'attr', 1, 'exit-test')
+
+        assert result is True
+        value_logs = [r for r in caplog.records if 'value [' in r.getMessage() and 'Map [1]' in r.getMessage()]
+        # Should have logged a, b, target — then stopped (3 not 5)
+        assert len(value_logs) == 3, f"Expected early exit after 3 values, got {len(value_logs)} log lines"
+
+    def test_equals_early_exit_and_join(self, caplog):
+        """With 'and' join, first mismatch should stop iteration."""
+        values = ['target', 'wrong', 'target', 'target']
+        tc = {'attr': {'equals': 'target'}}
+
+        with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.utils.claims'):
+            result = claims._process_user_value(None, tc, values, 'and', 'attr', 1, 'exit-test')
+
+        assert result is False
+        value_logs = [r for r in caplog.records if 'value [' in r.getMessage() and 'Map [1]' in r.getMessage()]
+        assert len(value_logs) == 2, f"Expected early exit after 2 values, got {len(value_logs)} log lines"
+
+    def test_contains_early_exit_or_join(self, caplog):
+        """With 'or' join, first match should stop iteration."""
+        values = ['foo', 'bar', 'hello_world', 'baz']
+        tc = {'attr': {'contains': 'world'}}
+
+        with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.utils.claims'):
+            result = claims._process_user_value(None, tc, values, 'or', 'attr', 1, 'exit-test')
+
+        assert result is True
+        value_logs = [r for r in caplog.records if 'value [' in r.getMessage() and 'Map [1]' in r.getMessage()]
+        assert len(value_logs) == 3, f"Expected early exit after 3 values, got {len(value_logs)} log lines"
+
+    def test_ends_with_early_exit_or_join(self, caplog):
+        """With 'or' join, first match should stop iteration."""
+        values = ['user@other.com', 'user@example.com', 'user@third.com']
+        tc = {'attr': {'ends_with': '@example.com'}}
+
+        with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.utils.claims'):
+            result = claims._process_user_value(None, tc, values, 'or', 'attr', 1, 'exit-test')
+
+        assert result is True
+        value_logs = [r for r in caplog.records if 'value [' in r.getMessage() and 'Map [1]' in r.getMessage()]
+        assert len(value_logs) == 2, f"Expected early exit after 2 values, got {len(value_logs)} log lines"
+
+    def test_matches_early_exit_or_join(self, caplog):
+        """With 'or' join, first regex match should stop iteration."""
+        values = ['nope', 'admin-group-1', 'other']
+        tc = {'attr': {'matches': r'^admin-.*'}}
+
+        with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.utils.claims'):
+            result = claims._process_user_value(None, tc, values, 'or', 'attr', 1, 'exit-test')
+
+        assert result is True
+        value_logs = [r for r in caplog.records if 'value [' in r.getMessage() and 'Map [1]' in r.getMessage()]
+        assert len(value_logs) == 2, f"Expected early exit after 2 values, got {len(value_logs)} log lines"
+
+    def test_matches_early_exit_and_join(self, caplog):
+        """With 'and' join, first regex mismatch should stop iteration."""
+        values = ['admin-1', 'not-admin', 'admin-2']
+        tc = {'attr': {'matches': r'^admin-.*'}}
+
+        with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.utils.claims'):
+            result = claims._process_user_value(None, tc, values, 'and', 'attr', 1, 'exit-test')
+
+        assert result is False
+        value_logs = [r for r in caplog.records if 'value [' in r.getMessage() and 'Map [1]' in r.getMessage()]
+        assert len(value_logs) == 2, f"Expected early exit after 2 values, got {len(value_logs)} log lines"
+
+
+class TestProcessUserValueEdgeCases:
+    """Cover branch conditions in _process_user_value for unknown operators and disabled logging."""
+
+    def test_unknown_operator_returns_has_access_unchanged(self):
+        """An unrecognized operator key should return has_access unchanged."""
+        tc = {'attr': {'unknown_op': 'value'}}
+        result = claims._process_user_value(None, tc, ['x'], 'or', 'attr', 1, 't')
+        assert result is None
+
+    def test_in_operator_with_logging_disabled(self, caplog):
+        """The 'in' path must work correctly even when DEBUG logging is disabled."""
+        tc = {'groups': {'in': ['admin']}}
+        with caplog.at_level(logging.WARNING, logger='ansible_base.authentication.utils.claims'):
+            result = claims._process_user_value(None, tc, ['admin'], 'or', 'groups', 1, 't')
+        assert result is True
+        attr_logs = [r for r in caplog.records if 'groups' in r.getMessage()]
+        assert len(attr_logs) == 0
+
+    def test_scalar_operator_with_logging_disabled(self, caplog):
+        """Scalar operators must work correctly even when DEBUG logging is disabled."""
+        tc = {'attr': {'equals': 'target'}}
+        with caplog.at_level(logging.WARNING, logger='ansible_base.authentication.utils.claims'):
+            result = claims._process_user_value(None, tc, ['target'], 'or', 'attr', 1, 't')
+        assert result is True
+        attr_logs = [r for r in caplog.records if 'attr' in r.getMessage().lower()]
+        assert len(attr_logs) == 0
+
+
+class TestProcessUserAttributesLogVolume:
+    """End-to-end log volume test via the public process_user_attributes API."""
+
+    def test_many_groups_attribute_in_operator_debug_log_volume(self, caplog):
+        """342 evaluations must produce O(342) log lines, not O(342 * 33)."""
+        trigger = {'groups': {'in': ['nonexistent']}}
+        attrs = {'groups': _MANY_GROUPS}
+
+        with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.utils.claims'):
+            for _ in range(342):
+                claims.process_user_attributes(dict(trigger), dict(attrs), map_id=1, tracking_id='vol')
+
+        attr_lines = [r for r in caplog.records if 'groups' in r.getMessage().lower()]
+        # 342 maps x 1 summary line = 342, not 342 x 33 = 11286
+        assert len(attr_lines) <= 342, (
+            f"Expected <= 342 attr log lines, got {len(attr_lines)}. " f"The 'in' operator should emit 1 summary line per evaluation, not per user value."
+        )
+
+
+@pytest.mark.django_db
+class TestCreateClaimsQueryCount:
+    """Integration test: create_claims must not issue N+1 queries."""
+
+    def test_many_maps_query_count(self, local_authenticator, django_assert_num_queries):
+        """create_claims must not issue N+1 queries for N maps."""
+        for i in range(10):
+            AuthenticatorMap.objects.create(
+                name=f'map-{i}',
+                authenticator=local_authenticator,
+                map_type='allow',
+                triggers={'attributes': {'email': {'in': ['test@example.com']}}},
+                order=i,
+            )
+
+        with django_assert_num_queries(1):
+            claims.create_claims(local_authenticator, 'testuser', {'email': 'test@example.com'}, [])
