@@ -1,5 +1,7 @@
 from django.contrib.auth.models import AbstractUser, UserManager
 
+from ansible_base.lib.utils.create_system_user import get_system_username
+
 
 class AbstractDABUser(AbstractUser):
     class Meta(AbstractUser.Meta):
@@ -21,3 +23,12 @@ class AbstractDABUser(AbstractUser):
 
     all_objects = UserManager()
     objects = UserManager()
+
+    def delete(self, *args, **kwargs):
+        was_system_user = self.username == get_system_username()[0]
+        result = super().delete(*args, **kwargs)
+        if was_system_user:
+            from ansible_base.lib.utils.models import clear_system_user_cache
+
+            clear_system_user_cache()
+        return result
