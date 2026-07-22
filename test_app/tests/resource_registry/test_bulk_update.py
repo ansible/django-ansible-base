@@ -171,17 +171,18 @@ class TestBulkUpdate:
     def test_bulk_update_ansible_id_collision(self, admin_api_client, bulk_update_url, user_resources):
         """new_ansible_id collision reports per-item error without blocking other items."""
         existing_id = str(user_resources[1].ansible_id)
+        original_failed_aid = str(user_resources[2].ansible_id)
         new_service_id = str(uuid.uuid4())
         items = [
             {"ansible_id": str(user_resources[0].ansible_id), "new_service_id": new_service_id},
-            {"ansible_id": str(user_resources[2].ansible_id), "new_ansible_id": existing_id},
+            {"ansible_id": original_failed_aid, "new_ansible_id": existing_id},
         ]
 
         resp = admin_api_client.post(bulk_update_url, {"items": items}, format="json")
         assert resp.status_code == 200
         assert resp.data["updated"] == 1
         assert len(resp.data["errors"]) == 1
-        assert resp.data["errors"][0]["ansible_id"] == str(user_resources[2].ansible_id)
+        assert resp.data["errors"][0]["ansible_id"] == original_failed_aid
         # IntegrityError messages are sanitized — no schema details leaked
         assert "uniqueness or integrity constraint" in resp.data["errors"][0]["error"]
 
@@ -189,16 +190,17 @@ class TestBulkUpdate:
         user_resources[0].refresh_from_db()
         assert str(user_resources[0].service_id) == new_service_id
 
-        # Verify failed item was NOT changed
+        # Verify failed item was NOT changed (ansible_id remains its original value)
         user_resources[2].refresh_from_db()
-        assert str(user_resources[2].ansible_id) != existing_id
+        assert str(user_resources[2].ansible_id) == original_failed_aid
 
-    def test_bulk_update_resource_data_not_manageable(self, admin_api_client, bulk_update_url, user_resources):
+    def test_bulk_update_resource_data_not_manageable(self, admin_api_client, bulk_update_url, three_users, user_resources):
         """resource_data on a non-manageable resource type reports a per-item error."""
         from unittest.mock import PropertyMock, patch
 
         from ansible_base.resource_registry.models import ResourceType
 
+        original_username = three_users[0].username
         new_service_id = str(uuid.uuid4())
         items = [
             {"ansible_id": str(user_resources[1].ansible_id), "new_service_id": new_service_id},
@@ -219,6 +221,10 @@ class TestBulkUpdate:
         # Verify successful item persisted in DB
         user_resources[1].refresh_from_db()
         assert str(user_resources[1].service_id) == new_service_id
+
+        # Verify failed item's content object was NOT changed
+        three_users[0].refresh_from_db()
+        assert three_users[0].username == original_username
 
     def test_bulk_update_duplicate_ansible_id(self, admin_api_client, bulk_update_url, user_resources):
         """Duplicate ansible_id in the same batch is rejected."""
@@ -264,15 +270,26 @@ class TestBulkUpdate:
 
     def test_bulk_update_unexpected_exception(self, admin_api_client, bulk_update_url, user_resources):
         """Unexpected exceptions are caught and reported as per-item errors without crashing the batch."""
-        new_service_id = str(uuid.uuid4())
+        from ansible_base.resource_registry.views import ResourceViewSet
+
+        original_apply = ResourceViewSet._apply_resource_update
+        second_item_service_id = str(uuid.uuid4())
         items = [
-            {"ansible_id": str(user_resources[0].ansible_id), "new_service_id": new_service_id},
-            {"ansible_id": str(user_resources[1].ansible_id), "new_service_id": str(uuid.uuid4())},
+            {"ansible_id": str(user_resources[0].ansible_id), "new_service_id": str(uuid.uuid4())},
+            {"ansible_id": str(user_resources[1].ansible_id), "new_service_id": second_item_service_id},
         ]
+
+        call_count = {"n": 0}
+
+        def raise_then_delegate(resource, item):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise RuntimeError("unexpected")
+            return original_apply(resource, item)
 
         with patch(
             "ansible_base.resource_registry.views.ResourceViewSet._apply_resource_update",
-            side_effect=[RuntimeError("unexpected"), None],
+            side_effect=raise_then_delegate,
         ):
             resp = admin_api_client.post(bulk_update_url, {"items": items}, format="json")
 
@@ -281,3 +298,7 @@ class TestBulkUpdate:
         assert len(resp.data["errors"]) == 1
         assert resp.data["errors"][0]["ansible_id"] == str(user_resources[0].ansible_id)
         assert "Internal error" in resp.data["errors"][0]["error"]
+
+        # Verify second item was actually persisted
+        user_resources[1].refresh_from_db()
+        assert str(user_resources[1].service_id) == second_item_service_id
