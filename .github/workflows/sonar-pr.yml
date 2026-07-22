@@ -43,18 +43,21 @@ jobs:
       github.event.workflow_run.event == 'pull_request' &&
       startsWith(github.repository, 'ansible') && endsWith(github.repository, 'django-ansible-base')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           show-progress: false
+          allow-unsafe-pr-checkout: true
+          persist-credentials: false
 
       # Download all individual coverage artifacts from CI workflow
       - name: Download coverage artifacts
-        uses: dawidd6/action-download-artifact@246dbf436b23d7c49e21a7ab8204ca9ecd1fe615
+        uses: dawidd6/action-download-artifact@b6e2e70617bc3265edd6dab6c906732b2f1ae151 # v21
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           workflow: CI
           run_id: ${{ github.event.workflow_run.id }}
-          pattern: coverage-*
+          name: coverage-.*
+          name_is_regexp: true
 
       # Extract PR metadata from workflow_run event
       - name: Set PR metadata and prepare for analysis
@@ -125,7 +128,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@e44258b109568baa0df60ed515909fc6c72cba92
+        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets[format('{0}', vars.SONAR_TOKEN_SECRET_NAME)] }}
@@ -146,19 +149,22 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       startsWith(github.repository, 'ansible') && endsWith(github.repository, 'django-ansible-base')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           show-progress: false
+          allow-unsafe-pr-checkout: true
+          persist-credentials: false
 
       # Download all individual coverage artifacts from CI workflow (optional for branch pushes)
       - name: Download coverage artifacts
         continue-on-error: true
-        uses: dawidd6/action-download-artifact@246dbf436b23d7c49e21a7ab8204ca9ecd1fe615
+        uses: dawidd6/action-download-artifact@b6e2e70617bc3265edd6dab6c906732b2f1ae151 # v21
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           workflow: CI
           run_id: ${{ github.event.workflow_run.id }}
-          pattern: coverage-*
+          name: coverage-.*
+          name_is_regexp: true
 
       - name: Print SonarCloud Analysis Summary
         env:
@@ -186,7 +192,7 @@ jobs:
           echo "└── Result: ✅ Running SonarCloud branch analysis"
 
       - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@e44258b109568baa0df60ed515909fc6c72cba92
+        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets[format('{0}', vars.SONAR_TOKEN_SECRET_NAME)] }}
