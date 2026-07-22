@@ -149,15 +149,43 @@ class ResourceViewSet(
             batch sizes (100-1000 items). True DB-level batching can be explored as a
             future optimization for metadata-only fields.
         """
-        from rest_framework.exceptions import ValidationError as DRFValidationError
+        error_response = self._validate_bulk_request(request.data)
+        if error_response is not None:
+            return error_response
 
-        if not isinstance(request.data, dict) or "items" not in request.data:
+        serializer = BulkResourceUpdateItemSerializer(data=request.data["items"], many=True)
+        serializer.is_valid(raise_exception=True)
+        items = serializer.validated_data
+
+        duplicate = self._find_duplicate_ansible_id(items)
+        if duplicate:
+            return Response(
+                {"detail": f"Duplicate ansible_id in request: {duplicate}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        ansible_ids = [item["ansible_id"] for item in items]
+        resources_by_id = {str(r.ansible_id): r for r in Resource.objects.filter(ansible_id__in=ansible_ids).select_related("content_type__resource_type")}
+
+        logger.info("Bulk update requested: %d items by user %s", len(items), request.user)
+
+        updated, errors = self._process_bulk_items(items, resources_by_id)
+
+        logger.info("Bulk update completed: %d updated, %d errors", updated, len(errors))
+        return Response({"updated": updated, "errors": errors}, status=status.HTTP_200_OK)
+
+    def _validate_bulk_request(self, data):
+        """Validate the shape of the bulk-update request payload.
+
+        Returns a Response if validation fails, or None if the payload is valid.
+        """
+        if not isinstance(data, dict) or "items" not in data:
             return Response(
                 {"detail": "Expected a JSON object with an 'items' key containing a list of resource update items."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        items_data = request.data["items"]
+        items_data = data["items"]
         if not isinstance(items_data, list):
             return Response(
                 {"detail": "The 'items' field must be a list."},
@@ -169,27 +197,22 @@ class ResourceViewSet(
                 {"detail": f"Bulk update limited to {self.MAX_BULK_SIZE} items per request."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        return None
 
-        serializer = BulkResourceUpdateItemSerializer(data=items_data, many=True)
-        serializer.is_valid(raise_exception=True)
-        items = serializer.validated_data
-
-        # Reject duplicate ansible_id values — operating on the same resource
-        # twice in one batch causes silent last-write-wins corruption.
+    @staticmethod
+    def _find_duplicate_ansible_id(items):
+        """Return the first duplicate ansible_id found in the items list, or None."""
         seen_ids = set()
         for item in items:
             aid = str(item["ansible_id"])
             if aid in seen_ids:
-                return Response(
-                    {"detail": f"Duplicate ansible_id in request: {aid}"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+                return aid
             seen_ids.add(aid)
+        return None
 
-        ansible_ids = [item["ansible_id"] for item in items]
-        resources_by_id = {str(r.ansible_id): r for r in Resource.objects.filter(ansible_id__in=ansible_ids).select_related("content_type__resource_type")}
-
-        logger.info("Bulk update requested: %d items by user %s", len(items), request.user)
+    def _process_bulk_items(self, items, resources_by_id):
+        """Process each item in the bulk-update batch, returning (updated_count, errors_list)."""
+        from rest_framework.exceptions import ValidationError as DRFValidationError
 
         updated = 0
         errors = []
@@ -211,9 +234,6 @@ class ResourceViewSet(
                 )
                 continue
 
-            # All-or-nothing per item: metadata + content updates share a savepoint.
-            # This ensures the resource is never left in a half-updated state
-            # (e.g. service_id claimed but content stale), simplifying retry logic.
             try:
                 with transaction.atomic():
                     self._apply_resource_update(resource, item)
@@ -222,7 +242,7 @@ class ResourceViewSet(
                 errors.append({"ansible_id": ansible_id_str, "error": "Update violates a uniqueness or integrity constraint."})
                 continue
             except (ValueError, DRFValidationError) as e:
-                error_detail = e.detail if hasattr(e, 'detail') else str(e)
+                error_detail = getattr(e, 'detail', None) or str(e)
                 logger.warning("Bulk update item %s failed: %s", ansible_id_str, error_detail)
                 errors.append({"ansible_id": ansible_id_str, "error": error_detail})
                 continue
@@ -233,8 +253,7 @@ class ResourceViewSet(
 
             updated += 1
 
-        logger.info("Bulk update completed: %d updated, %d errors", updated, len(errors))
-        return Response({"updated": updated, "errors": errors}, status=status.HTTP_200_OK)
+        return updated, errors
 
     @staticmethod
     def _apply_resource_update(resource, item):
