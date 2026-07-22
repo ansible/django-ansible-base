@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import asdict, dataclass
 from itertools import chain
 from typing import TYPE_CHECKING, Optional
@@ -8,6 +9,7 @@ from typing import TYPE_CHECKING, Optional
 from crum import get_current_user
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.signals import request_started
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from inflection import underscore
@@ -101,18 +103,34 @@ class NotARealException(Exception):
     pass
 
 
-def get_system_user() -> Optional[AbstractUser]:
+_system_user_local = threading.local()
 
+
+def _clear_system_user_cache_on_request(**kwargs):
+    _system_user_local.cached = None
+
+
+def clear_system_user_cache():
+    _system_user_local.cached = None
+
+
+def get_system_user() -> Optional[AbstractUser]:
     from ansible_base.lib.abstract_models.user import AbstractDABUser
 
     system_username, setting_name = get_system_username()
+
+    cached = getattr(_system_user_local, 'cached', None)
+    if cached is not None:
+        cached_username, cached_user = cached
+        if cached_username == system_username:
+            return cached_user
+
     user_model = get_user_model()
 
     # If we use subclass of AbstractDABUser ensure we use manager for unfiltered queryset
     user_manager = user_model.all_objects if issubclass(user_model, AbstractDABUser) else user_model.objects
 
     system_user = user_manager.filter(username=system_username).first()
-    # We are using a global variable to try and track if this thread has already spit out the message, if so ignore
     if system_username is not None and system_user is None:
         logger.error(
             _(
@@ -126,16 +144,18 @@ def get_system_user() -> Optional[AbstractUser]:
             from ansible_base.resource_registry.models import ResourceType
 
             caught_exception = ResourceType.DoesNotExist
-            # If resource registry is installed we hit issues here during test tear downs
-            # For an unidentified reason, during teardown, the tests are calling the post_migration signals from resource_registry
-            # These eventually call get_or_create on models which then try and call current_or_system_user which eventually leads here
-            # But the system is in a weird state here because its being torn down, so the creation of system_user fails
         try:
             system_user = create_system_user(user_model=get_user_model())
         except caught_exception:
             system_user = None
 
+    if system_user is not None:
+        _system_user_local.cached = (system_username, system_user)
+
     return system_user
+
+
+request_started.connect(_clear_system_user_cache_on_request)
 
 
 def current_user_or_system_user() -> Optional[AbstractUser]:
