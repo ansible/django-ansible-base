@@ -448,6 +448,11 @@ def post_migration_rbac_setup(sender, *args, **kwargs):
 
     dab_post_migrate.send(sender=sender)
 
+    plan = kwargs.get('plan', None)
+    if plan is not None and len(plan) == 0:
+        logger.info('Skipping RBAC recompute — no migrations were applied')
+        return
+
     compute_team_member_roles()
     compute_object_role_permissions()
 
