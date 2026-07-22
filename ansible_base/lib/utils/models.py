@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Optional
 from crum import get_current_user
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.signals import request_started
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from inflection import underscore
@@ -153,8 +154,6 @@ def get_system_user() -> Optional[AbstractUser]:
 
     return system_user
 
-
-from django.core.signals import request_started
 
 request_started.connect(_clear_system_user_cache_on_request)
 
