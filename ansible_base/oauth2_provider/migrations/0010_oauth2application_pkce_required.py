@@ -7,6 +7,8 @@ class Migration(migrations.Migration):
         ('dab_oauth2_provider', '0009_add_openid_roles_scopes'),
     ]
 
+    # Two-step operation: AddField(default=False) backfills existing rows with False,
+    # then AlterField(default=True) sets the default for new records only.
     operations = [
         migrations.AddField(
             model_name='oauth2application',
