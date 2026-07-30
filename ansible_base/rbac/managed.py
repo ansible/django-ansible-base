@@ -180,6 +180,12 @@ class OrganizationMember(OrganizationMixin, ManagedActionBase):
     description = gettext_noop("Has member permission to a single organization")
     action = 'member_organization'
 
+    def get_permissions(self, apps) -> set[str]:
+        perms = super().get_permissions(apps)
+        team_model = apps.get_model(settings.ANSIBLE_BASE_TEAM_MODEL)
+        perms.add(f'view_{team_model._meta.model_name}')
+        return perms
+
 
 class TeamAdmin(TeamMixin, ManagedAdminBase):
     name = gettext_noop("Team Admin")
