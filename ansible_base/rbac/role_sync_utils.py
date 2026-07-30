@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ValidationError
 from django.db.models import Q
 
 from ansible_base.lib.utils.apps import is_rbac_installed
@@ -75,6 +76,17 @@ def get_content_object(role_definition, assignment_tuple: AssignmentTuple) -> An
     if role_definition.content_type.model in ('organization', 'team'):
         object_resource = Resource.objects.get(ansible_id=assignment_tuple.ansible_id_or_pk)
         return object_resource.content_object
+    try:
+        ct = ContentType.objects.get_for_model(
+            role_definition.content_type.model_class()
+        )
+        object_resource = Resource.objects.get(
+            ansible_id=assignment_tuple.ansible_id_or_pk,
+            content_type=ct,
+        )
+        return object_resource.content_object
+    except (Resource.DoesNotExist, ValidationError):
+        pass
     model = role_definition.content_type.model_class()
     return model.objects.get(pk=assignment_tuple.ansible_id_or_pk)
 

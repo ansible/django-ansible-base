@@ -54,6 +54,60 @@ def test_get_content_object_rejects_none_content_type():
         get_content_object(rd, at)
 
 
+@pytest.mark.django_db
+def test_get_content_object_resolves_uuid_via_resource_table():
+    """get_content_object resolves a UUID ansible_id through the Resource
+    table for non-org/team content types instead of crashing with
+    'Field id expected a number'."""
+    from ansible_base.authentication.models import Authenticator
+    from ansible_base.rbac.models import DABContentType, RoleDefinition
+
+    authenticator = Authenticator.objects.create(
+        name='UUID Test Auth',
+        type='ansible_base.authentication.authenticator_plugins.local',
+    )
+
+    auth_ct = DABContentType.objects.get_for_model(Authenticator)
+    rd = RoleDefinition.objects.create(
+        name='Auth Read', content_type=auth_ct, managed=True
+    )
+
+    auth_resource = Resource.get_resource_for_object(authenticator)
+    at = AssignmentTuple(
+        actor_ansible_id='unused',
+        ansible_id_or_pk=str(auth_resource.ansible_id),
+        role_definition_name='Auth Read',
+        assignment_type='user',
+    )
+
+    result = get_content_object(rd, at)
+    assert result == authenticator
+
+
+@pytest.mark.django_db
+def test_get_content_object_falls_back_to_pk_lookup():
+    """get_content_object falls back to direct PK lookup when the value
+    is not a UUID in the Resource table."""
+    from ansible_base.rbac.models import DABContentType, RoleDefinition
+    from test_app.models import Inventory
+
+    inventory = Inventory.objects.create(name='PK Fallback Inventory')
+    inv_ct = DABContentType.objects.get_for_model(Inventory)
+    rd = RoleDefinition.objects.create(
+        name='Inventory PK Read', content_type=inv_ct, managed=True
+    )
+
+    at = AssignmentTuple(
+        actor_ansible_id='unused',
+        ansible_id_or_pk=str(inventory.pk),
+        role_definition_name='Inventory PK Read',
+        assignment_type='user',
+    )
+
+    result = get_content_object(rd, at)
+    assert result == inventory
+
+
 # ---------------------------------------------------------------------------
 # _resolve_object_ansible_id
 # ---------------------------------------------------------------------------
