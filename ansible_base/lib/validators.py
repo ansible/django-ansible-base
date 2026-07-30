@@ -45,6 +45,7 @@ class CleanTextMixin:
             and f.get_internal_type() in ('CharField', 'TextField')
         ]
 
+        errors = {}
         for field_name in text_fields:
             if field_name not in attrs:
                 continue
@@ -60,20 +61,17 @@ class CleanTextMixin:
 
             # Apply appropriate validator based on field type
             if field_name in self.name_fields:
-                # Tier 1: strict name allowlist
                 try:
                     resource_name_validator(value)
                 except Exception:
-                    raise serializers.ValidationError(
-                        {field_name: resource_name_validator.message}
-                    )
+                    errors[field_name] = resource_name_validator.message
             else:
-                # Tier 2: dangerous pattern blocklist
                 if DANGEROUS_PATTERNS.search(value):
-                    raise serializers.ValidationError(
-                        {field_name: _(
-                            'Contains potentially unsafe content.'
-                        )}
+                    errors[field_name] = _(
+                        'Contains potentially unsafe content.'
                     )
+
+        if errors:
+            raise serializers.ValidationError(errors)
 
         return super().validate(attrs)
