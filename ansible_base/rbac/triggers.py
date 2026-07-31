@@ -40,23 +40,6 @@ Sounds simple, but is actually more complicated that the caching logic itself.
 dab_post_migrate = Signal()
 
 
-def _recompute_team_ids_for_assignment(
-    object_role: 'ObjectRole',
-    created: bool,
-    deleted: bool,
-    has_team_perm: bool,
-    changes_team_owners: bool,
-) -> Optional[set[int]]:
-    """Determine which team IDs need provides_teams recomputation after an assignment change."""
-    if not (has_team_perm and (created or deleted or changes_team_owners)):
-        return None
-    if created:
-        # provides_teams not yet computed for new ObjectRoles
-        return team_ids_from_role_target(object_role)
-    # For existing roles, provides_teams already captures which
-    # teams this role grants membership to
-    return set(object_role.provides_teams.values_list('id', flat=True))
-
 
 def needed_updates_on_assignment(
     role_definition: 'RoleDefinition',
@@ -71,44 +54,54 @@ def needed_updates_on_assignment(
     returns tuple
         (set or None: team IDs needing provides_teams recomputation, set: object roles to update)
     """
-    # we maintain a list of object roles that we need to update evaluations for
     to_update = set()
     if created:
         to_update.add(object_role)
 
     has_team_perm = role_definition.permissions.filter(codename=permission_registry.team_permission).exists()
+    is_team_actor = actor._meta.model_name != 'user'
 
     if actor._meta.model_name == permission_registry.team_model._meta.model_name:
         has_org_member = role_definition.permissions.filter(codename='member_organization').exists()
+        validate_team_assignment_enabled(
+            object_role.content_type,
+            has_team_perm=has_team_perm,
+            has_org_member=has_org_member,
+        )
 
-        # Raise exception if settings prohibits this assignment
-        validate_team_assignment_enabled(object_role.content_type, has_team_perm=has_team_perm, has_org_member=has_org_member)
-
-    # If permissions for team are changed. That tends to affect a lot.
-    changes_team_owners = False
-    if actor._meta.model_name != 'user':
+    if is_team_actor:
         to_update.update(bulk_ancestor_roles({actor.id}))
         if not giving:
-            # this will delete some permission assignments that will be removed from this relationship
             to_update.update(object_role.descendent_roles())
-        changes_team_owners = True
 
-    deleted = False
-    role_has_no_actors = not giving and not (object_role.users.exists() or object_role.teams.exists())
-    if role_has_no_actors:
-        # time to delete the object role because it is unused
-        to_update.discard(object_role)
-        deleted = True
+    deleted = _cleanup_unused_role(giving, object_role, to_update)
 
-    # giving or revoking team permissions may not change the parentage
-    # but this will still change what downstream roles grant what permissions
-    if (has_team_perm and created) or (giving and changes_team_owners):
+    if (has_team_perm and created) or (giving and is_team_actor):
         to_update.update(object_role.descendent_roles())
 
-    # actions which can change the team parentage structure
-    recompute_team_ids = _recompute_team_ids_for_assignment(object_role, created, deleted, has_team_perm, changes_team_owners)
+    recompute_team_ids = _resolve_recompute_teams(has_team_perm, created, deleted, is_team_actor, object_role)
 
     return (recompute_team_ids, to_update)
+
+
+def _cleanup_unused_role(giving, object_role, to_update):
+    if giving:
+        return False
+    if object_role.users.exists() or object_role.teams.exists():
+        return False
+    to_update.discard(object_role)
+    return True
+
+
+def _resolve_recompute_teams(has_team_perm, created, deleted, is_team_actor, object_role):
+    if not has_team_perm:
+        return None
+    if not (created or deleted or is_team_actor):
+        return None
+    if created:
+        return team_ids_from_role_target(object_role)
+    return set(object_role.provides_teams.values_list('id', flat=True))
+
 
 
 def _reset_and_flush_deferred_rbac(suppress_flush_errors: bool = False) -> None:
@@ -267,9 +260,11 @@ def permissions_changed(instance: 'RoleDefinition', action: str, model: type, pk
     """Recompute object role permissions when a RoleDefinition's permissions m2m changes."""
     if action.startswith('pre_'):
         return
+
     to_recompute = set(ObjectRole.objects.filter(role_definition=instance).prefetch_related('teams__member_roles'))
     if not to_recompute:
         return
+
     if reverse:
         raise RuntimeError('Removal of permssions through reverse relationship not supported')
 
@@ -416,13 +411,7 @@ def rbac_post_delete_remove_object_roles(instance: Model, *args, **kwargs) -> No
         if defer_rbac_state.active:
             defer_rbac_state.deleted_team_pks.add(instance.pk)
             return
-        indirectly_affected_roles = set()
-        indirectly_affected_roles.update(bulk_ancestor_roles({instance.id}))
-        for team_role in instance.__rbac_stashed_member_roles:
-            indirectly_affected_roles.update(team_role.descendent_roles())
-        compute_team_member_roles(team_ids=instance.__rbac_stashed_recompute_team_ids)
-        recompute_role_evaluations(indirectly_affected_roles)
-        cleanup_orphaned_object_roles()
+        _handle_team_deletion(instance)
 
     if defer_rbac_state.active:
         ct_id = permission_registry.content_type_model.objects.get_for_model(instance).pk
@@ -437,12 +426,28 @@ def rbac_post_delete_remove_object_roles(instance: Model, *args, **kwargs) -> No
         get_evaluation_model(instance).objects.filter(content_type_id=ct.id, object_id=instance.pk).delete()
 
     if deleted_count:
-        try:
-            from ansible_base.rbac.sync import maybe_reverse_sync_object_deletion
+        _sync_object_deletion(instance)
 
-            maybe_reverse_sync_object_deletion(instance)
-        except Exception:
-            logger.exception(f"Failed to sync object deletion for {instance}")
+
+def _handle_team_deletion(instance):
+    indirectly_affected_roles = set()
+    indirectly_affected_roles.update(bulk_ancestor_roles({instance.id}))
+    for team_role in instance.__rbac_stashed_member_roles:
+        indirectly_affected_roles.update(team_role.descendent_roles())
+
+    compute_team_member_roles(team_ids=instance.__rbac_stashed_recompute_team_ids)
+    recompute_role_evaluations(indirectly_affected_roles)
+
+    cleanup_orphaned_object_roles()
+
+
+def _sync_object_deletion(instance):
+    try:
+        from ansible_base.rbac.sync import maybe_reverse_sync_object_deletion
+
+        maybe_reverse_sync_object_deletion(instance)
+    except Exception:
+        logger.exception(f"Failed to sync object deletion for {instance}")
 
 
 def rbac_post_init_stash_email(instance, **kwargs):

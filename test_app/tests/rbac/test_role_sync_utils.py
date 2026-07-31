@@ -68,9 +68,7 @@ def test_get_content_object_resolves_uuid_via_resource_table():
     )
 
     auth_ct = DABContentType.objects.get_for_model(Authenticator)
-    rd = RoleDefinition.objects.create(
-        name='Auth Read', content_type=auth_ct, managed=True
-    )
+    rd = RoleDefinition.objects.create(name='Auth Read', content_type=auth_ct, managed=True)
 
     auth_resource = Resource.get_resource_for_object(authenticator)
     at = AssignmentTuple(
@@ -93,9 +91,7 @@ def test_get_content_object_falls_back_to_pk_lookup():
 
     inventory = Inventory.objects.create(name='PK Fallback Inventory')
     inv_ct = DABContentType.objects.get_for_model(Inventory)
-    rd = RoleDefinition.objects.create(
-        name='Inventory PK Read', content_type=inv_ct, managed=True
-    )
+    rd = RoleDefinition.objects.create(name='Inventory PK Read', content_type=inv_ct, managed=True)
 
     at = AssignmentTuple(
         actor_ansible_id='unused',

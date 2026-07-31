@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.contrib.contenttypes.models import ContentType
-from django.core.exceptions import ValidationError
 from django.db.models import Q
 
 from ansible_base.lib.utils.apps import is_rbac_installed
@@ -67,27 +66,24 @@ def get_ansible_id_or_pk(assignment) -> str:
     return str(ansible_id_or_pk)
 
 
+def _is_resource_registered(model) -> bool:
+    """Check if a model is registered in the resource registry."""
+    from ansible_base.resource_registry.models import ResourceType
+
+    ct = ContentType.objects.get_for_model(model)
+    return ResourceType.objects.filter(content_type=ct).exists()
+
+
 def get_content_object(role_definition, assignment_tuple: AssignmentTuple) -> Any:
     """Resolve the Django model instance for an assignment tuple's target object."""
     if not is_rbac_installed():
         raise RuntimeError("get_content_object requires ansible_base.rbac to be installed")
     if role_definition.content_type is None:
         raise ValueError("get_content_object requires a role_definition with a content_type")
-    if role_definition.content_type.model in ('organization', 'team'):
+    model = role_definition.content_type.model_class()
+    if _is_resource_registered(model):
         object_resource = Resource.objects.get(ansible_id=assignment_tuple.ansible_id_or_pk)
         return object_resource.content_object
-    try:
-        ct = ContentType.objects.get_for_model(
-            role_definition.content_type.model_class()
-        )
-        object_resource = Resource.objects.get(
-            ansible_id=assignment_tuple.ansible_id_or_pk,
-            content_type=ct,
-        )
-        return object_resource.content_object
-    except (Resource.DoesNotExist, ValidationError):
-        pass
-    model = role_definition.content_type.model_class()
     return model.objects.get(pk=assignment_tuple.ansible_id_or_pk)
 
 
