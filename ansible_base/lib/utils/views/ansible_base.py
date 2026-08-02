@@ -84,6 +84,9 @@ class AnsibleBaseView(APIView):
         if request.method != 'DELETE':
             return super().dispatch(request, *args, **kwargs)
         with ExitStack() as stack:
+            from ansible_base.lib.utils.db import ensure_transaction
+
+            stack.enter_context(ensure_transaction())
             if 'ansible_base.activitystream' in settings.INSTALLED_APPS:
                 from ansible_base.activitystream import deferred_activity_stream
 
