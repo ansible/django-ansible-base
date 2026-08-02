@@ -21,6 +21,35 @@ def test_post_migrate_signals():
 
 
 @pytest.mark.django_db
+def test_post_migrate_skips_recompute_when_no_migrations_applied():
+    """post_migration_rbac_setup should skip compute_team_member_roles and
+    compute_object_role_permissions when the plan kwarg is an empty list,
+    meaning no migrations were actually applied."""
+    with (
+        patch('ansible_base.rbac.triggers.compute_team_member_roles') as mock_team,
+        patch('ansible_base.rbac.triggers.compute_object_role_permissions') as mock_obj,
+    ):
+        post_migration_rbac_setup(apps.get_app_config('dab_rbac'), plan=[])
+
+    mock_team.assert_not_called()
+    mock_obj.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_post_migrate_runs_recompute_when_plan_has_entries():
+    """post_migration_rbac_setup should call recompute functions when the
+    plan kwarg contains migration entries."""
+    with (
+        patch('ansible_base.rbac.triggers.compute_team_member_roles') as mock_team,
+        patch('ansible_base.rbac.triggers.compute_object_role_permissions') as mock_obj,
+    ):
+        post_migration_rbac_setup(apps.get_app_config('dab_rbac'), plan=[('fake_migration',)])
+
+    mock_team.assert_called_once()
+    mock_obj.assert_called_once()
+
+
+@pytest.mark.django_db
 def test_change_parent_field(team, rando, inventory, org_inv_rd, member_rd):
     member_rd.give_permission(rando, team)
     org_inv_rd.give_permission(team, inventory.organization)
