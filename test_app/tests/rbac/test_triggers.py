@@ -5,9 +5,10 @@ from django.apps import apps
 from django.test.utils import override_settings
 from rest_framework.exceptions import ValidationError
 
+from ansible_base.rbac.caching import compute_team_member_roles
 from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry
-from ansible_base.rbac.triggers import dab_post_migrate, defer_rbac_cache, post_migration_rbac_setup
+from ansible_base.rbac.triggers import dab_post_migrate, defer_rbac_computations, post_migration_rbac_setup
 from test_app.models import Inventory, Organization, User
 
 
@@ -204,65 +205,158 @@ def test_delete_signals_team_organization(organization, inventory, team, org_inv
     assert not RoleEvaluation.objects.filter(**inv_gfk).exists()
 
 
-@pytest.mark.django_db
-def test_defer_rbac_cache_produces_correct_evaluations(organization, inventory, rando, org_inv_rd):
-    """Calling give_permission inside defer_rbac_cache should produce
-    the same RoleEvaluation entries as calling it without deferral."""
-    inv_gfk = gfk_filter(inventory)
-    org_gfk = gfk_filter(organization)
+def _defer_rbac_with_exception(organization):
+    """Helper to ensure only one throwing invocation inside pytest.raises."""
+    with defer_rbac_computations():
+        Inventory.objects.create(name='error-inv', organization=organization)
+        raise RuntimeError("deliberate")
 
-    with defer_rbac_cache():
-        org_inv_rd.give_permission(rando, organization)
-        # During deferral, evaluations should not yet exist
+
+@pytest.mark.django_db
+def test_defer_rbac_computations_flushes_on_exception(organization, rando, org_inv_rd):
+    """On exception, deferred data should still be flushed so RBAC stays consistent."""
+    org_inv_rd.give_permission(rando, organization)
+
+    with pytest.raises(RuntimeError, match="deliberate"):
+        _defer_rbac_with_exception(organization)
+
+    inv = Inventory.objects.get(name='error-inv')
+    assert rando.has_obj_perm(inv, 'change')
+
+
+@pytest.mark.django_db
+def test_api_delete_uses_deferral_context_managers(admin_api_client, organization, rando, org_inv_rd):
+    """DELETE via the API should use defer_rbac_computations, verified by
+    checking that the context manager is active when the post_delete
+    signal fires during the cascade."""
+    from django.db.models.signals import post_delete
+
+    from ansible_base.rbac.triggers import _defer_rbac
+
+    org_inv_rd.give_permission(rando, organization)
+    for i in range(3):
+        Inventory.objects.create(name=f'defer-api-inv-{i}', organization=organization)
+
+    was_active = []
+
+    def check_defer(sender, instance, **kwargs):
+        was_active.append(_defer_rbac.active)
+
+    post_delete.connect(check_defer, sender=Inventory)
+    try:
+        response = admin_api_client.delete(f'/api/v1/organizations/{organization.pk}/')
+    finally:
+        post_delete.disconnect(check_defer, sender=Inventory)
+
+    assert response.status_code == 204
+    assert len(was_active) == 3
+    assert all(was_active), "defer_rbac_computations should have been active during delete"
+    assert not Organization.objects.filter(pk=organization.pk).exists()
+
+
+@pytest.mark.django_db
+def test_defer_rbac_computations_defers_resource_creation(organization, rando, org_inv_rd):
+    """Creating a child resource inside defer_rbac_computations should defer
+    RoleEvaluation updates until the context manager exits."""
+    org_inv_rd.give_permission(rando, organization)
+
+    with defer_rbac_computations():
+        inv = Inventory.objects.create(name='deferred-inv', organization=organization)
+        inv_gfk = gfk_filter(inv)
+        # During deferral, evaluations for the new inventory should not exist
         assert not RoleEvaluation.objects.filter(**inv_gfk).exists()
 
-    # After the context manager exits, evaluations should be flushed
-    assert RoleEvaluation.objects.filter(**org_gfk).exists()
+    # After exit, evaluations should be flushed
     assert RoleEvaluation.objects.filter(**inv_gfk).exists()
-    assert rando.has_obj_perm(inventory, 'change')
+    assert rando.has_obj_perm(inv, 'change')
 
 
 @pytest.mark.django_db
-def test_defer_rbac_cache_multiple_assignments(organization, rando, inv_rd):
-    """Multiple give_permission calls inside defer_rbac_cache should
+def test_defer_rbac_computations_multiple_resources(organization, rando, org_inv_rd):
+    """Multiple resource creations inside defer_rbac_computations should
     all produce correct evaluations after the context exits."""
     second_org = Organization.objects.create(name='second-org')
-    inv1 = Inventory.objects.create(name='inv1', organization=organization)
-    inv2 = Inventory.objects.create(name='inv2', organization=second_org)
+    org_inv_rd.give_permission(rando, organization)
+    org_inv_rd.give_permission(rando, second_org)
 
-    with defer_rbac_cache():
-        inv_rd.give_permission(rando, inv1)
-        inv_rd.give_permission(rando, inv2)
+    with defer_rbac_computations():
+        inv1 = Inventory.objects.create(name='inv1', organization=organization)
+        inv2 = Inventory.objects.create(name='inv2', organization=second_org)
 
     assert rando.has_obj_perm(inv1, 'change')
     assert rando.has_obj_perm(inv2, 'change')
 
 
-def test_defer_rbac_cache_cannot_be_nested():
-    """Nesting defer_rbac_cache should raise a RuntimeError."""
-    with defer_rbac_cache():
+@pytest.mark.django_db
+def test_defer_rbac_computations_cannot_be_nested():
+    """Nesting defer_rbac_computations should raise a RuntimeError."""
+    with defer_rbac_computations():
         with pytest.raises(RuntimeError, match="cannot be nested"):
-            with defer_rbac_cache():
+            with defer_rbac_computations():
                 pass
 
 
 @pytest.mark.django_db
-def test_defer_rbac_cache_empty_block(inventory):
-    """An empty defer_rbac_cache block should not trigger any
-    recomputation — it should be a no-op."""
+def test_defer_rbac_computations_empty_block(inventory):
+    """An empty defer_rbac_computations block should not trigger any
+    recomputation."""
     from unittest.mock import patch
 
     with patch('ansible_base.rbac.triggers.compute_object_role_permissions') as mock_compute:
-        with defer_rbac_cache():
+        with defer_rbac_computations():
             pass
 
     mock_compute.assert_not_called()
 
 
 @pytest.mark.django_db
-def test_defer_rbac_cache_without_context_manager(organization, inventory, rando, org_inv_rd):
-    """Without defer_rbac_cache, behavior is unchanged — evaluations
-    are created immediately."""
+def test_defer_rbac_computations_give_permission_raises_after_stash(organization, rando, org_inv_rd):
+    """give_permission raises after resources have been created/deleted inside the CM."""
+    with defer_rbac_computations():
+        Inventory.objects.create(name='stash-trigger', organization=organization)
+        with pytest.raises(RuntimeError, match="give_permission cannot be called"):
+            org_inv_rd.give_permission(rando, organization)
+
+
+@pytest.mark.django_db
+def test_defer_rbac_computations_give_permission_ok_before_stash(organization, rando, org_inv_rd):
+    """give_permission is allowed inside the CM before any data is stashed."""
+    with defer_rbac_computations():
+        org_inv_rd.give_permission(rando, organization)
+    assert rando.has_obj_perm(organization, 'view')
+
+
+@pytest.mark.django_db
+def test_defer_rbac_computations_remove_permission_raises_after_stash(organization, rando, org_inv_rd):
+    """remove_permission raises after resources have been created/deleted inside the CM."""
+    org_inv_rd.give_permission(rando, organization)
+    with defer_rbac_computations():
+        Inventory.objects.create(name='stash-trigger', organization=organization)
+        with pytest.raises(RuntimeError, match="remove_permission cannot be called"):
+            org_inv_rd.remove_permission(rando, organization)
+
+
+@pytest.mark.django_db
+def test_defer_rbac_computations_has_obj_perm_raises_after_stash(organization, rando, org_inv_rd):
+    """has_obj_perm raises after data is stashed because evaluations are stale."""
+    org_inv_rd.give_permission(rando, organization)
+    with defer_rbac_computations():
+        Inventory.objects.create(name='stash-trigger', organization=organization)
+        with pytest.raises(RuntimeError, match="has_obj_perm cannot be called"):
+            rando.has_obj_perm(organization, 'view')
+
+
+@pytest.mark.django_db
+def test_defer_rbac_computations_has_obj_perm_ok_before_stash(organization, rando, org_inv_rd):
+    """has_obj_perm is allowed inside the CM before any data is stashed."""
+    org_inv_rd.give_permission(rando, organization)
+    with defer_rbac_computations():
+        assert rando.has_obj_perm(organization, 'view')
+
+
+@pytest.mark.django_db
+def test_without_defer_evaluations_are_immediate(organization, inventory, rando, org_inv_rd):
+    """Without defer_rbac_computations, evaluations are created immediately."""
     inv_gfk = gfk_filter(inventory)
 
     org_inv_rd.give_permission(rando, organization)
@@ -272,13 +366,133 @@ def test_defer_rbac_cache_without_context_manager(organization, inventory, rando
 
 
 @pytest.mark.django_db
-def test_defer_rbac_cache_with_team_assignment(organization, team, rando, org_team_member_rd):
-    """defer_rbac_cache should also defer and flush team membership
-    recomputation (the team_ids path)."""
-    with defer_rbac_cache():
-        org_team_member_rd.give_permission(rando, organization)
+@override_settings(ANSIBLE_BASE_ALLOW_CUSTOM_TEAM_ROLES=True)
+def test_defer_rbac_computations_delete_team_direct_role(rando):
+    """Delete a team that has a direct team-scoped role assigned to a user.
+    The ObjectRole and RoleEvaluation should be cleaned up."""
+    from test_app.models import Organization, Team
 
-    assert rando.has_obj_perm(team, 'member_team')
+    org = Organization.objects.create(name='defer-team-org')
+    team = Team.objects.create(name='defer-team', organization=org)
+    team_ct = permission_registry.content_type_model.objects.get_for_model(Team)
+
+    view_team_rd = RoleDefinition.objects.create_from_permissions(
+        permissions=['view_team'],
+        name='view-team-rd',
+        content_type=team_ct,
+    )
+    view_team_rd.give_permission(rando, team)
+    assert rando.has_obj_perm(team, 'view')
+    assert ObjectRole.objects.filter(role_definition=view_team_rd, object_id=team.pk, content_type=team_ct).exists()
+    assert RoleEvaluation.objects.filter(codename='view_team', object_id=team.pk, content_type_id=team_ct.pk).exists()
+
+    with defer_rbac_computations():
+        team.delete()
+
+    assert not ObjectRole.objects.filter(role_definition=view_team_rd, object_id=team.pk, content_type=team_ct).exists()
+    assert not RoleEvaluation.objects.filter(codename='view_team', object_id=team.pk, content_type_id=team_ct.pk).exists()
+
+
+@pytest.mark.django_db
+@override_settings(ANSIBLE_BASE_ALLOW_CUSTOM_TEAM_ROLES=True)
+def test_defer_rbac_computations_delete_team_via_org_role(rando):
+    """An org-scoped role gives view_team on teams in the org.
+    Deleting the team should remove the RoleEvaluation for that team."""
+    from test_app.models import Organization, Team
+
+    org = Organization.objects.create(name='defer-org-team-org')
+    team = Team.objects.create(name='defer-org-team', organization=org)
+    org_ct = permission_registry.content_type_model.objects.get_for_model(Organization)
+    team_ct = permission_registry.content_type_model.objects.get_for_model(Team)
+
+    org_view_team_rd = RoleDefinition.objects.create_from_permissions(
+        permissions=['view_organization', 'view_team'],
+        name='org-view-team-rd',
+        content_type=org_ct,
+    )
+    assignment = org_view_team_rd.give_permission(rando, org)
+    assert rando.has_obj_perm(team, 'view')
+    assert RoleEvaluation.objects.filter(codename='view_team', object_id=team.pk, content_type_id=team_ct.pk).exists()
+
+    with defer_rbac_computations():
+        team.delete()
+
+    assert not RoleEvaluation.objects.filter(codename='view_team', object_id=team.pk, content_type_id=team_ct.pk).exists()
+    # The org-level ObjectRole should still exist (org not deleted)
+    assert ObjectRole.objects.filter(id=assignment.object_role_id).exists()
+
+
+@pytest.mark.django_db
+@override_settings(ANSIBLE_BASE_ALLOW_CUSTOM_TEAM_ROLES=True)
+def test_defer_rbac_computations_delete_org_cleans_team_role(rando):
+    """An org-scoped role gives view_team on teams in the org.
+    Deleting the org should clean up both the ObjectRole and RoleEvaluations."""
+    from test_app.models import Organization, Team
+
+    org = Organization.objects.create(name='defer-org-del-org')
+    team = Team.objects.create(name='defer-org-del-team', organization=org)
+    org_ct = permission_registry.content_type_model.objects.get_for_model(Organization)
+    team_ct = permission_registry.content_type_model.objects.get_for_model(Team)
+
+    org_view_team_rd = RoleDefinition.objects.create_from_permissions(
+        permissions=['view_organization', 'view_team'],
+        name='org-view-team-rd-2',
+        content_type=org_ct,
+    )
+    assignment = org_view_team_rd.give_permission(rando, org)
+    assert rando.has_obj_perm(team, 'view')
+    assert RoleEvaluation.objects.filter(codename='view_team', object_id=team.pk, content_type_id=team_ct.pk).exists()
+
+    with defer_rbac_computations():
+        org.delete()
+
+    assert not ObjectRole.objects.filter(id=assignment.object_role_id).exists()
+    assert not RoleEvaluation.objects.filter(codename='view_team', object_id=team.pk, content_type_id=team_ct.pk).exists()
+    assert not RoleEvaluation.objects.filter(codename='view_organization', object_id=org.pk, content_type_id=org_ct.pk).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        pytest.param("rollback", id="skips_flush_on_rollback"),
+        pytest.param("flush_error", id="suppresses_flush_exception"),
+    ],
+)
+def test_defer_rbac_error_handling_paths(organization, rando, org_inv_rd, scenario):
+    """Rollback and flush-error paths in defer_rbac_computations exception handler."""
+    org_inv_rd.give_permission(rando, organization)
+
+    def _create_and_raise():
+        with defer_rbac_computations():
+            Inventory.objects.create(name=f'{scenario}-inv', organization=organization)
+            raise RuntimeError("deliberate")
+
+    if scenario == "rollback":
+        with patch('ansible_base.rbac.triggers.connection') as mock_conn:
+            mock_conn.in_atomic_block = True
+            mock_conn.needs_rollback = True
+            with pytest.raises(RuntimeError, match="deliberate"):
+                _create_and_raise()
+    else:
+        with patch('ansible_base.rbac.triggers._flush_rbac', side_effect=RuntimeError("flush error")):
+            with pytest.raises(RuntimeError, match="deliberate"):
+                _create_and_raise()
+
+
+@pytest.mark.django_db
+def test_defer_rbac_computations_team_creation():
+    """Creating a Team inside defer_rbac_computations processes team IDs in the flush."""
+    from test_app.models import Team
+
+    org = Organization.objects.create(name='defer-team-create-org')
+
+    with patch('ansible_base.rbac.triggers.compute_team_member_roles', wraps=compute_team_member_roles) as mock_ctmr:
+        with defer_rbac_computations():
+            team = Team.objects.create(name='deferred-team', organization=org)
+
+        mock_ctmr.assert_called_once()
+        assert team.id in mock_ctmr.call_args.kwargs['team_ids']
 
 
 class TestEmailPolicySignal:

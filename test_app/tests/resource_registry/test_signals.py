@@ -2,7 +2,9 @@ from unittest import mock
 
 import pytest
 
+from ansible_base.resource_registry.models import Resource
 from ansible_base.resource_registry.signals import handlers
+from ansible_base.resource_registry.signals.handlers import defer_resource_cleanup
 from test_app.models import EncryptionModel, Organization, Original1, Original2, Proxy1, Proxy2
 
 
@@ -66,3 +68,65 @@ def test_decide_to_sync_update_save(organization, enable_reverse_sync, fields, u
         organization.save(update_fields=update_fields)
 
     assert hasattr(organization, '_skip_reverse_resource_sync') == should_skip
+
+
+def _cleanup_with_exception(org):
+    """Helper to ensure only one throwing invocation inside pytest.raises."""
+    with defer_resource_cleanup():
+        org.delete()
+        raise RuntimeError("deliberate")
+
+
+@pytest.mark.django_db
+def test_defer_resource_cleanup_flushes_on_exception(system_user):
+    """On exception, deferred resource cleanup should still flush."""
+    org = Organization.objects.create(name='cleanup-exc-org')
+    assert Resource.objects.filter(object_id=org.pk).exists()
+
+    with pytest.raises(RuntimeError, match="deliberate"):
+        _cleanup_with_exception(org)
+
+    assert not Resource.objects.filter(object_id=org.pk).exists()
+
+
+def _nested_resource_cleanup():
+    """Helper to ensure only one throwing invocation inside pytest.raises."""
+    with defer_resource_cleanup():
+        with defer_resource_cleanup():
+            pass
+
+
+@pytest.mark.django_db
+def test_defer_resource_cleanup_cannot_nest():
+    """Nesting defer_resource_cleanup should raise RuntimeError."""
+    with pytest.raises(RuntimeError, match="cannot be nested"):
+        _nested_resource_cleanup()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        pytest.param("rollback", id="skips_flush_on_rollback"),
+        pytest.param("flush_error", id="suppresses_flush_exception"),
+    ],
+)
+def test_defer_resource_cleanup_error_handling(system_user, scenario):
+    """Rollback and flush-error paths in defer_resource_cleanup's exception handler."""
+    org = Organization.objects.create(name=f'cleanup-{scenario}-org')
+
+    def _delete_and_raise():
+        with defer_resource_cleanup():
+            org.delete()
+            raise RuntimeError("deliberate")
+
+    if scenario == "rollback":
+        with mock.patch('ansible_base.resource_registry.signals.handlers.connection') as mock_conn:
+            mock_conn.in_atomic_block = True
+            mock_conn.needs_rollback = True
+            with pytest.raises(RuntimeError, match="deliberate"):
+                _delete_and_raise()
+    else:
+        with mock.patch('ansible_base.resource_registry.signals.handlers._flush_pending_resources', side_effect=RuntimeError("flush error")):
+            with pytest.raises(RuntimeError, match="deliberate"):
+                _delete_and_raise()

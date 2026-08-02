@@ -1,13 +1,15 @@
 import logging
 from collections import defaultdict
+from collections.abc import Iterable
 from typing import Optional
 from uuid import UUID
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 from django.db.utils import IntegrityError
 
-from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation, RoleEvaluationUUID
+from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation, RoleEvaluationUUID, get_evaluation_model
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.prefetch import TypesPrefetch
 
@@ -24,6 +26,59 @@ NOTE:
 This is highly dependent on the model methods ObjectRole.needed_cache_updates and expected_direct_permissions
 Those methods are what truly dictate the object-role to object-permission translation
 """
+
+
+def bulk_ancestor_roles(team_pks: Iterable[int]) -> set['ObjectRole']:
+    """Return ObjectRoles that grant any permission to the given teams (via RoleEvaluation)."""
+    ancestor_evals = RoleEvaluation.objects.filter(
+        codename=permission_registry.team_permission,
+        object_id__in=team_pks,
+        content_type_id=permission_registry.team_ct_id,
+    )
+    return set(ObjectRole.objects.filter(permission_partials__in=ancestor_evals))
+
+
+def cleanup_deleted_team_roles(team_pks: set[int]) -> tuple[set['ObjectRole'], set[int]]:
+    """Remove ObjectRoles and evaluations for deleted teams. Called by defer_rbac_computations flush."""
+    ancestor_roles = bulk_ancestor_roles(team_pks)
+    team_ct_id = permission_registry.team_ct_id
+    RoleEvaluation.objects.filter(content_type_id=team_ct_id, object_id__in=team_pks).delete()
+    deleted_or_ids = set(ObjectRole.objects.filter(content_type_id=team_ct_id, object_id__in=team_pks).values_list('id', flat=True))
+    ObjectRole.objects.filter(id__in=deleted_or_ids).delete()
+    eval_model = get_evaluation_model(permission_registry.team_model)
+    eval_model.objects.filter(content_type_id=team_ct_id, object_id__in=team_pks).delete()
+    return ancestor_roles, deleted_or_ids
+
+
+def cleanup_deleted_object_roles(object_pks: list[tuple[int, int | UUID]]) -> set[int]:
+    """Remove ObjectRoles and evaluations for deleted objects. Called by defer_rbac_computations flush."""
+    by_ct: dict[int, set[int | UUID]] = defaultdict(set)
+    for ct_id, obj_id in object_pks:
+        by_ct[ct_id].add(obj_id)
+    deleted_or_ids: set[int] = set()
+    for ct_id, obj_ids in by_ct.items():
+        batch_ids = set(ObjectRole.objects.filter(content_type_id=ct_id, object_id__in=obj_ids).values_list('id', flat=True))
+        ObjectRole.objects.filter(id__in=batch_ids).delete()
+        deleted_or_ids.update(batch_ids)
+        uuid_ids = {oid for oid in obj_ids if isinstance(oid, UUID)}
+        int_ids = obj_ids - uuid_ids
+        if int_ids:
+            RoleEvaluation.objects.filter(content_type_id=ct_id, object_id__in=int_ids).delete()
+        if uuid_ids:
+            RoleEvaluationUUID.objects.filter(content_type_id=ct_id, object_id__in=uuid_ids).delete()
+    return deleted_or_ids
+
+
+def object_roles_for_parents(parent_gfks: set[tuple]) -> set['ObjectRole']:
+    """Return ObjectRoles affected by created objects via their parent chain. Called by defer_rbac_computations flush."""
+    q_exprs = [Q(content_type=parent_ct, object_id=parent_id) for parent_ct, parent_id in parent_gfks]
+    q_filter = q_exprs[0]
+    for next_q in q_exprs[1:]:
+        q_filter |= next_q
+    to_update = set(ObjectRole.objects.filter(q_filter))
+    ancestors = set(ObjectRole.objects.filter(provides_teams__has_roles__in=to_update))
+    to_update.update(ancestors)
+    return to_update
 
 
 def all_team_parents(team_id: int, team_team_parents: dict, seen: Optional[set] = None) -> set[int]:

@@ -543,9 +543,10 @@ class SyncExecutor:
             resource_type,
             manifest_list,
         )
-        self.deleted_count = resources_to_cleanup.count()
-        if self.deleted_count:
-            self.write(f"Deleting {self.deleted_count} orphaned resources")
+        orphan_count = resources_to_cleanup.count()
+        deleted_before = len(self.results["deleted"])
+        if orphan_count:
+            self.write(f"Deleting {orphan_count} orphaned resources")
             for orphan in resources_to_cleanup:
                 try:
                     _sc = orphan.content_type.resource_type.serializer_class
@@ -553,10 +554,11 @@ class SyncExecutor:
                     data.update(orphan.summary_fields())
                     with transaction.atomic():
                         delete_resource(orphan)
-                except ResourceDeletionError as exc:
-                    self.write(f"Error deleting orphaned resources {str(exc)}")
+                except Exception as exc:
+                    self.write(f"Error deleting orphaned resource {orphan.ansible_id}: {type(exc).__name__}: {exc}")
                 else:  # persist in the report
                     self.results["deleted"].append(data)
+        self.deleted_count = len(self.results["deleted"]) - deleted_before  # actual successes for this resource type
 
     def _handle_retries(self):  # pragma: no cover
         """Check if there are unavailable resources to re-try."""

@@ -1,6 +1,8 @@
 import logging
 import time
+from contextlib import ExitStack
 
+from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from rest_framework.views import APIView
 
@@ -62,6 +64,39 @@ class AnsibleBaseView(APIView):
             response['Warning'] = _('This resource has been deprecated and will be removed in a future release.')
 
         return response
+
+    def dispatch(self, request, *args, **kwargs):
+        # We wrap DELETE requests with deferral context managers so that
+        # cascade deletes of large resources (e.g. organizations with many
+        # teams/users) batch all signal-driven RBAC recomputation, activity
+        # stream logging, and resource cleanup into a single pass instead
+        # of firing per-object.
+        #
+        # We use dispatch() because DestroyModelMixin appears earlier in the
+        # MRO than AnsibleBaseView (typical inheritance is
+        # SomeViewSet(ModelViewSet, AnsibleBaseView)), so overriding
+        # destroy() or perform_destroy() here would never be reached.
+        # dispatch() is not defined by ViewSetMixin or DestroyModelMixin,
+        # only by APIView, which AnsibleBaseView precedes in the MRO.
+        #
+        # The installed-app guards ensure this is safe when optional DAB
+        # apps (rbac, activitystream, resource_registry) are not enabled.
+        if request.method != 'DELETE':
+            return super().dispatch(request, *args, **kwargs)
+        with ExitStack() as stack:
+            if 'ansible_base.activitystream' in settings.INSTALLED_APPS:
+                from ansible_base.activitystream import deferred_activity_stream
+
+                stack.enter_context(deferred_activity_stream())
+            if 'ansible_base.rbac' in settings.INSTALLED_APPS:
+                from ansible_base.rbac.triggers import defer_rbac_computations
+
+                stack.enter_context(defer_rbac_computations())
+            if 'ansible_base.resource_registry' in settings.INSTALLED_APPS:
+                from ansible_base.resource_registry.signals.handlers import defer_resource_cleanup
+
+                stack.enter_context(defer_resource_cleanup())
+            return super().dispatch(request, *args, **kwargs)
 
     def extra_related_fields(self, obj):
         """
