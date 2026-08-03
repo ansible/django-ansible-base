@@ -68,10 +68,12 @@ def get_ansible_id_or_pk(assignment) -> str:
 
 def _is_resource_registered(model) -> bool:
     """Check if a model is registered in the resource registry."""
-    from ansible_base.resource_registry.models import ResourceType
+    from ansible_base.resource_registry.registry import get_registry
 
-    ct = ContentType.objects.get_for_model(model)
-    return ResourceType.objects.filter(content_type=ct).exists()
+    registry = get_registry()
+    if not registry:
+        return False
+    return model._meta.label in registry.get_resources()
 
 
 def get_content_object(role_definition, assignment_tuple: AssignmentTuple) -> Any:

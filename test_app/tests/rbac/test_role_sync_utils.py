@@ -5,7 +5,10 @@ import pytest
 from ansible_base.rbac.role_sync_utils import (
     _SKIP,
     AssignmentTuple,
+    _bulk_resolve_actor_ansible_ids,
+    _bulk_resolve_object_ansible_ids,
     _collect_assignment_tuples,
+    _is_resource_registered,
     _resolve_object_ansible_id,
     get_content_object,
     get_local_assignments,
@@ -102,6 +105,110 @@ def test_get_content_object_falls_back_to_pk_lookup():
 
     result = get_content_object(rd, at)
     assert result == inventory
+
+
+# ---------------------------------------------------------------------------
+# _is_resource_registered
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_is_resource_registered_returns_false_when_no_registry():
+    """_is_resource_registered returns False when get_registry() returns None."""
+    with mock.patch('ansible_base.resource_registry.registry.get_registry', return_value=None):
+        result = _is_resource_registered(mock.Mock(_meta=mock.Mock(label='test_app.Inventory')))
+    assert result is False
+
+
+@pytest.mark.django_db
+def test_is_resource_registered_returns_true_for_registered_model():
+    """_is_resource_registered returns True for models in the resource registry."""
+    from test_app.models import Organization
+
+    assert _is_resource_registered(Organization) is True
+
+
+@pytest.mark.django_db
+def test_is_resource_registered_returns_false_for_unregistered_model():
+    """_is_resource_registered returns False for models not in the registry."""
+    unregistered = mock.Mock(_meta=mock.Mock(label='fake_app.FakeModel'))
+    assert _is_resource_registered(unregistered) is False
+
+
+# ---------------------------------------------------------------------------
+# _bulk_resolve_actor_ansible_ids
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_bulk_resolve_actor_ansible_ids_empty_list():
+    """Empty assignments list returns empty dict."""
+    assert _bulk_resolve_actor_ansible_ids([], 'user') == {}
+
+
+@pytest.mark.django_db
+def test_bulk_resolve_actor_ansible_ids_resolves_users():
+    """Resolves user PKs to ansible_ids in a single query."""
+    from ansible_base.rbac.models import RoleDefinition
+    from test_app.models import User
+
+    user = User.objects.create(username='bulk_actor_user', email='bulk_actor@test.com')
+    user_resource = Resource.get_resource_for_object(user)
+    rd = RoleDefinition.objects.create(name='Bulk Actor Role', managed=True)
+    rd.give_global_permission(user)
+
+    from ansible_base.rbac.models.role import RoleUserAssignment
+
+    assignments = list(RoleUserAssignment.objects.select_related('user').filter(role_definition=rd))
+    result = _bulk_resolve_actor_ansible_ids(assignments, 'user')
+
+    assert str(user.pk) in result
+    assert result[str(user.pk)] == str(user_resource.ansible_id)
+
+
+# ---------------------------------------------------------------------------
+# _bulk_resolve_object_ansible_ids
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_bulk_resolve_object_ansible_ids_no_org_team():
+    """Returns empty dict when all assignments target non-org/team content types."""
+    from ansible_base.rbac.models import DABContentType, RoleDefinition
+    from test_app.models import Inventory, Organization, User
+
+    user = User.objects.create(username='obj_ids_user', email='obj_ids@test.com')
+    org = Organization.objects.create(name='Obj IDs Org')
+    inv = Inventory.objects.create(name='Obj IDs Inv', organization=org)
+    inv_ct = DABContentType.objects.get_for_model(Inventory)
+
+    rd = RoleDefinition.objects.create(name='Obj IDs Role', content_type=inv_ct, managed=True)
+    rd.give_permission(user, inv)
+
+    from ansible_base.rbac.models.role import RoleUserAssignment
+
+    assignments = list(RoleUserAssignment.objects.select_related('content_type').filter(role_definition=rd))
+    assert len(assignments) > 0
+    result = _bulk_resolve_object_ansible_ids(assignments)
+    assert result == {}
+
+
+@pytest.mark.django_db
+def test_bulk_resolve_object_ansible_ids_global_assignments():
+    """Global assignments (no object_id, no content_type) produce empty result."""
+    from ansible_base.rbac.models import RoleDefinition
+    from test_app.models import User
+
+    user = User.objects.create(username='obj_ids_global', email='obj_ids_global@test.com')
+    rd = RoleDefinition.objects.create(name='Obj IDs Global Role', managed=True)
+    rd.give_global_permission(user)
+
+    from ansible_base.rbac.models.role import RoleUserAssignment
+
+    assignments = list(RoleUserAssignment.objects.select_related('content_type').filter(role_definition=rd))
+    assert len(assignments) > 0
+    result = _bulk_resolve_object_ansible_ids(assignments)
+    assert result == {}
 
 
 # ---------------------------------------------------------------------------
@@ -231,6 +338,27 @@ def test_get_local_assignments_filters_by_service():
 
     non_matching = get_local_assignments(service='nonexistent_service')
     assert not any(a.role_definition_name == 'Svc Role' for a in non_matching)
+
+
+@pytest.mark.django_db
+def test_get_local_assignments_filters_team_assignments_by_service():
+    """Service filter applies to team assignments (RoleTeamAssignment path)."""
+    from ansible_base.rbac.models import DABContentType, RoleDefinition
+    from test_app.models import Organization, Team
+
+    org = Organization.objects.create(name='Team Svc Org')
+    team = Team.objects.create(name='Svc Team', organization=org)
+    org_ct = DABContentType.objects.get_for_model(Organization)
+
+    rd = RoleDefinition.objects.create(name='Team Svc Role', content_type=org_ct, managed=True)
+    rd.give_permission(team, org)
+
+    service_name = org_ct.service
+    matching = get_local_assignments(service=service_name)
+    assert any(a.role_definition_name == 'Team Svc Role' and a.assignment_type == 'team' for a in matching)
+
+    non_matching = get_local_assignments(service='nonexistent_service')
+    assert not any(a.role_definition_name == 'Team Svc Role' for a in non_matching)
 
 
 @pytest.mark.django_db
