@@ -14,6 +14,7 @@ from ansible_base.rest_filters.rest_framework import ansible_id_backend
 from ansible_base.rest_filters.rest_framework.ansible_id_backend import ServiceFilterBackend
 
 from ..models import DABContentType, DABPermission, RoleTeamAssignment, RoleUserAssignment
+from ..policies import check_can_remove_assignment
 from . import serializers as service_serializers
 
 
@@ -95,6 +96,11 @@ class BaseSerivceRoleAssignmentViewSet(
         if not existing:
             output_serializer = self.get_serializer(existing)
             return Response(output_serializer.data, status=status.HTTP_200_OK)
+
+        # check permissions before removing a role assignment. Previously it was possible
+        # to remove a role assignment for a remote object in Gateway with neither side (Gateway
+        # and the remote side, e.g. Controller) checking if this was allowed.
+        check_can_remove_assignment(request.user, existing)
 
         # Save properties for sync after it is done locally (at which point assignment will not exist)
         role_definition = existing.role_definition
