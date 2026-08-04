@@ -1,9 +1,12 @@
 import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.test import override_settings
+from rest_framework.exceptions import PermissionDenied
 
-from ansible_base.rbac.policies import can_change_user, visible_users
-from test_app.models import User
+from ansible_base.rbac.models import RoleDefinition
+from ansible_base.rbac.permission_registry import permission_registry
+from ansible_base.rbac.policies import can_change_user, check_content_obj_permission, visible_users
+from test_app.models import Inventory, Organization, User
 
 
 @pytest.mark.django_db
@@ -196,3 +199,49 @@ def test_visible_users_anonymous_user():
 
     qs = visible_users(AnonymousUser())
     assert not qs.exists()
+
+
+@pytest.mark.django_db
+class TestCheckContentObjPermission:
+    """Tests for check_content_obj_permission privilege escalation fix (AAP-78640)."""
+
+    def test_user_with_all_permissions_passes(self):
+        """User holding all permissions on an object can manage role assignments."""
+        org = Organization.objects.create(name='test-org')
+        inv = Inventory.objects.create(name='test-inv', organization=org)
+        user = User.objects.create(username='full-perm-user')
+
+        ct = permission_registry.content_type_model.objects.get_for_model(Inventory)
+        admin_rd = RoleDefinition.objects.create_from_permissions(
+            permissions=['change_inventory', 'delete_inventory', 'view_inventory', 'update_inventory'],
+            name='inv-full-admin',
+            content_type=ct,
+        )
+        admin_rd.give_permission(user, inv)
+
+        check_content_obj_permission(user, inv)
+
+    def test_user_with_only_change_cannot_manage_roles(self):
+        """User with only change permission cannot manage role assignments (AAP-78640)."""
+        org = Organization.objects.create(name='test-org')
+        inv = Inventory.objects.create(name='test-inv', organization=org)
+        user = User.objects.create(username='change-only-user')
+
+        ct = permission_registry.content_type_model.objects.get_for_model(Inventory)
+        change_rd = RoleDefinition.objects.create_from_permissions(
+            permissions=['change_inventory', 'view_inventory'],
+            name='inv-change-only',
+            content_type=ct,
+        )
+        change_rd.give_permission(user, inv)
+
+        with pytest.raises(PermissionDenied):
+            check_content_obj_permission(user, inv)
+
+    def test_superuser_bypasses_check(self):
+        """Superusers have all permissions and should always pass."""
+        org = Organization.objects.create(name='test-org')
+        inv = Inventory.objects.create(name='test-inv', organization=org)
+        admin = User.objects.create(username='admin-user', is_superuser=True)
+
+        check_content_obj_permission(admin, inv)

@@ -5,9 +5,9 @@ from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser
 from django.db.models import Model
 from django.db.models.query import QuerySet
-from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import PermissionDenied
 
+from ansible_base.lib.utils.models import is_add_perm
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.rbac.evaluations import has_super_permission
 from ansible_base.rbac.models import DABPermission, ObjectRole
@@ -84,31 +84,35 @@ def can_change_user(request_user: Optional[AbstractBaseUser], target_user: Optio
 def check_content_obj_permission(request_user, obj) -> None:
     """Permission policy rules for giving or removing obj permission
 
-    Right now we are not supporting a separate permission to manage permission
-    on objects, so we firstly look to a simple matter of having change permission
-    If that is not available, then we check all object-level permissions.
+    User must hold all object-level permissions for the model to manage
+    role assignments on that object. This prevents privilege escalation
+    where a user with partial permissions (e.g. change but not execute)
+    could assign themselves a role containing permissions they lack.
     """
     if isinstance(obj, RemoteObject):
+        # we retain this check: Gateway uses this to skip enforcing permissions on objects
+        # it considers remote like JobTemplates, Inventories etc.
         if not get_setting('ANSIBLE_BASE_ENFORCE_REMOTE_OBJECT_PERMISSIONS', True):
             return
-        permissions = DABPermission.objects.filter(content_type=obj.content_type)
-        for permission in permissions:
-            if permission.codename.startswith('change'):
-                if not request_user.has_obj_perm(obj, 'change'):
-                    raise PermissionDenied
-                return
-        for permission in permissions:
+        for permission in DABPermission.objects.filter(content_type=obj.content_type):
+            # we need to skip checking add permissions: they are not meant for remote objects but
+            # are evaluated at a higher level (organization). Checking here would raise a RuntimeError.
+            if is_add_perm(permission.codename):
+                continue
+
+            # to add or remove role assignments to remote objects, the user is required to hold
+            # *every* permission that exists for this model (except add). This prevents users
+            # with insufficient permission from assigning themselves a role containing permissions they lack.
             if not request_user.has_obj_perm(obj, permission.codename):
                 raise PermissionDenied
-    elif 'change' in obj._meta.default_permissions:
-        # Model has no change permission, so user must have all permissions for the applicable model
-        if not request_user.has_obj_perm(obj, 'change'):
+        return
+
+    # Non-remote objects: again, the user must hold *every* (non-add) permission in order to change
+    # role assignments
+    cls = type(obj)
+    for codename in permissions_allowed_for_role(cls)[cls]:
+        if not request_user.has_obj_perm(obj, codename):
             raise PermissionDenied
-    else:
-        cls = type(obj)
-        for codename in permissions_allowed_for_role(cls)[cls]:
-            if not request_user.has_obj_perm(obj, codename):
-                raise PermissionDenied({'detail': _('You do not have {codename} permission the object').format(codename=codename)})
 
 
 def check_can_remove_assignment(request_user: Model, assignment: Model):

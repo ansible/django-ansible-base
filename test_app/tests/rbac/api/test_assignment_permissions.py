@@ -38,8 +38,6 @@ def test_create_user_assignment_immutable(user_api_client, user, rando, task_adm
     task_view_rd.give_permission(user, task)
     response = user_api_client.post(url, data=request_data)
     assert response.status_code == 403, response.data
-    # Test custom error message
-    assert 'You do not have cancel_immutabletask permission' in str(response.data)
 
     task_admin_rd.give_permission(user, task)
     response = user_api_client.post(url, data=request_data)
@@ -58,8 +56,6 @@ def test_remove_user_assignment_immutable(user_api_client, user, rando, task_adm
     task_view_rd.give_permission(user, task)
     response = user_api_client.delete(url)
     assert response.status_code == 403, response.data
-    # Test custom error message
-    assert 'You do not have cancel_immutabletask permission' in str(response.data)
 
     task_admin_rd.give_permission(user, task)
     response = user_api_client.delete(url)
@@ -69,13 +65,18 @@ def test_remove_user_assignment_immutable(user_api_client, user, rando, task_adm
 
 
 @pytest.mark.django_db
-def test_remove_user_assignment_with_global_role(user_api_client, user, inv_rd, global_inv_rd, rando, inventory):
+def test_remove_user_assignment_with_global_role(user_api_client, user, inv_rd, rando, inventory):
     assignment = inv_rd.give_permission(rando, inventory)
     url = get_relative_url('roleuserassignment-detail', kwargs={'pk': assignment.pk})
     response = user_api_client.delete(url)
     assert response.status_code == 404, response.data
 
-    global_inv_rd.give_global_permission(user)
+    global_admin_rd = RoleDefinition.objects.create_from_permissions(
+        permissions=['change_inventory', 'delete_inventory', 'view_inventory', 'update_inventory'],
+        name='global-inv-admin',
+        content_type=None,
+    )
+    global_admin_rd.give_global_permission(user)
     response = user_api_client.delete(url)
     assert response.status_code == 204, response.data
 

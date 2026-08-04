@@ -2,7 +2,9 @@ import pytest
 from django.test.utils import override_settings
 
 from ansible_base.lib.utils.response import get_relative_url
+from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import RoleDefinition
+from test_app.models import Inventory
 
 
 @pytest.mark.django_db
@@ -117,7 +119,12 @@ def test_remove_user_assignment(user_api_client, user, inv_rd, rando, inventory)
     response = user_api_client.delete(url)
     assert response.status_code == 404, response.data
 
-    inv_rd.give_permission(user, inventory)
+    inv_admin_rd = RoleDefinition.objects.create_from_permissions(
+        permissions=['change_inventory', 'delete_inventory', 'view_inventory', 'update_inventory'],
+        name='inv-admin',
+        content_type=permission_registry.content_type_model.objects.get_for_model(Inventory),
+    )
+    inv_admin_rd.give_permission(user, inventory)
     response = user_api_client.delete(url)
     assert response.status_code == 204, response.data
 
@@ -149,7 +156,12 @@ def test_remove_team_assignment(user_api_client, user, inv_rd, team, inventory):
     response = user_api_client.delete(url)
     assert response.status_code == 404, response.data
 
-    inv_rd.give_permission(user, inventory)
+    inv_admin_rd = RoleDefinition.objects.create_from_permissions(
+        permissions=['change_inventory', 'delete_inventory', 'view_inventory', 'update_inventory'],
+        name='inv-admin',
+        content_type=permission_registry.content_type_model.objects.get_for_model(Inventory),
+    )
+    inv_admin_rd.give_permission(user, inventory)
     response = user_api_client.delete(url)
     assert response.status_code == 204, response.data
 

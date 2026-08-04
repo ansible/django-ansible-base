@@ -2,6 +2,8 @@ import pytest
 from django.test.utils import override_settings
 
 from ansible_base.lib.utils.response import get_relative_url
+from ansible_base.rbac import permission_registry
+from ansible_base.rbac.models import RoleDefinition
 from test_app.models import Inventory, User
 
 
@@ -76,8 +78,13 @@ class TestAssignmentPermission:
         assert response.status_code == 403
         assert not rando.has_obj_perm(inventory_2, 'change')
 
-        # After giving user admin to inventory, user can delegate that permission to others
-        inv_rd.give_permission(org_admin, inventory_2)
+        # After giving user all permissions on inventory, user can delegate that permission to others
+        inv_admin_rd = RoleDefinition.objects.create_from_permissions(
+            permissions=['change_inventory', 'delete_inventory', 'view_inventory', 'update_inventory'],
+            name='inv-admin',
+            content_type=permission_registry.content_type_model.objects.get_for_model(Inventory),
+        )
+        inv_admin_rd.give_permission(org_admin, inventory_2)
         response = user_api_client.post(url, data=create_data)
         assert response.status_code == 201
         assert rando.has_obj_perm(inventory_2, 'change')
