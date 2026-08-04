@@ -31,9 +31,7 @@ def free_text_sanitizer(value):
     if not isinstance(value, str):
         return
     if _DANGEROUS_PATTERNS.search(value):
-        raise ValidationError(
-            _("This field can't include HTML tags, script markup, unsafe URI schemes, shell syntax, or control characters.")
-        )
+        raise ValidationError(_("This field can't include HTML tags, script markup, unsafe URI schemes, shell syntax, or control characters."))
 
 
 def validate_url_list(urls: list, schemes: list = ['https'], allow_plain_hostname: bool = False) -> None:
