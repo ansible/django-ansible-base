@@ -17,6 +17,24 @@ from rest_framework.serializers import ValidationError
 
 VALID_STRING = _('Must be a valid string')
 
+_DANGEROUS_PATTERNS = re.compile(
+    r'[\x00-\x08\x0b\x0c\x0d-\x1f\x7f-\x9f]'
+    r'|<\s*/?(?:script|iframe|object|embed|form|base|meta|link|svg|math|template)\b'
+    r'|\bon[a-z]{3,}\s*='
+    r'|\b(?:javascript|vbscript|data)\s*:'
+    r'|[$]\([^)]+\)|[$]\{[^}]+\}',
+    re.IGNORECASE,
+)
+
+
+def free_text_sanitizer(value):
+    if not isinstance(value, str):
+        return
+    if _DANGEROUS_PATTERNS.search(value):
+        raise ValidationError(
+            _("This field can't include HTML tags, script markup, unsafe URI schemes, shell syntax, or control characters.")
+        )
+
 
 def validate_url_list(urls: list, schemes: list = ['https'], allow_plain_hostname: bool = False) -> None:
     if type(urls) is not list:

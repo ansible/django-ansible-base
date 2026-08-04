@@ -7,6 +7,7 @@ from ansible_base.lib.utils.validation import (
     _is_valid_label,
     _is_valid_tld,
     _normalize_domain,
+    free_text_sanitizer,
     to_python_boolean,
     validate_cert_with_key,
     validate_domain_name,
@@ -708,3 +709,120 @@ class TestValidatePort:
         """Test validate_port with string edge cases that could cause int() conversion issues."""
         result = validate_port(port_string)
         assert result is expected, f"Failed for {description}: validate_port({port_string!r}) returned {result}, expected {expected}"
+
+
+class TestFreeTextSanitizer:
+    @pytest.mark.parametrize(
+        "value,description",
+        [
+            ("Production organization for the EMEA region", "plain English text"),
+            ("Hello world éèê üöä 你好 العربية", "Unicode and international characters"),
+            ("$500 budget", "currency with dollar sign"),
+            ("https://example.com/path?q=1&r=2", "HTTPS URL"),
+            ("mailto:user@example.com", "mailto link"),
+            ("ftp://server.local/file", "FTP URL"),
+            ("Tab\there, newline\nhere", "tab and newline whitespace"),
+            ("Use <b>bold</b> and <br> tags", "safe HTML tags"),
+            ("<img src=photo.jpg>", "img tag (safe)"),
+            ("<details>expandable section</details>", "details tag (safe)"),
+            ("`backtick code`", "backtick markdown"),
+            ("on= something, one=thing", "short 'on' prefixes (not event handlers)"),
+            ("$var without braces", "bare dollar variable"),
+            ("", "empty string"),
+            ("a" * 10000, "very long plain text"),
+            ("Config: key=value, on=true", "on= with only two chars after 'on'"),
+        ],
+    )
+    def test_accepts_valid_text(self, value, description):
+        free_text_sanitizer(value)
+
+    @pytest.mark.parametrize(
+        "value,description",
+        [
+            ("<script>alert(1)</script>", "script tag"),
+            ("<SCRIPT>alert(1)</SCRIPT>", "script tag uppercase"),
+            ("< script >alert(1)", "script tag with spaces"),
+            ("</script>", "closing script tag"),
+            ("<iframe src=x>", "iframe tag"),
+            ("</iframe>", "closing iframe tag"),
+            ("<object data=x>", "object tag"),
+            ("<embed src=x>", "embed tag"),
+            ("<form action=x>", "form tag"),
+            ("<base href=x>", "base tag"),
+            ("<meta http-equiv=refresh>", "meta tag"),
+            ("<link rel=stylesheet>", "link tag"),
+            ("<svg onload=alert(1)>", "svg tag"),
+            ("<math><mtext>xss</mtext></math>", "math tag"),
+            ("<template>injection</template>", "template tag"),
+        ],
+    )
+    def test_rejects_html_tags(self, value, description):
+        with pytest.raises(ValidationError):
+            free_text_sanitizer(value)
+
+    @pytest.mark.parametrize(
+        "value,description",
+        [
+            ("onerror=alert(1)", "onerror handler"),
+            ("onclick=doStuff()", "onclick handler"),
+            ("onload=init()", "onload handler"),
+            ("onmouseover=alert(1)", "onmouseover handler"),
+            ("ONERROR=alert(1)", "onerror uppercase"),
+        ],
+    )
+    def test_rejects_event_handlers(self, value, description):
+        with pytest.raises(ValidationError):
+            free_text_sanitizer(value)
+
+    @pytest.mark.parametrize(
+        "value,description",
+        [
+            ("javascript:alert(1)", "javascript protocol"),
+            ("JAVASCRIPT:void(0)", "javascript protocol uppercase"),
+            ("vbscript:MsgBox", "vbscript protocol"),
+            ("data:text/html,<h1>hi</h1>", "data URI"),
+        ],
+    )
+    def test_rejects_dangerous_uri_schemes(self, value, description):
+        with pytest.raises(ValidationError):
+            free_text_sanitizer(value)
+
+    @pytest.mark.parametrize(
+        "value,description",
+        [
+            ("$(whoami)", "command substitution"),
+            ("$(cat /etc/passwd)", "command substitution with path"),
+            ("${PATH}", "variable expansion"),
+            ("${USER}", "variable expansion USER"),
+        ],
+    )
+    def test_rejects_shell_substitution(self, value, description):
+        with pytest.raises(ValidationError):
+            free_text_sanitizer(value)
+
+    @pytest.mark.parametrize(
+        "value,description",
+        [
+            ("\x00 null byte", "null byte"),
+            ("\x08 backspace", "backspace"),
+            ("\x0d bare CR", "bare carriage return"),
+            ("\x1b[31m red", "ANSI escape sequence"),
+            ("\x7f DEL", "DEL character"),
+            ("\x80 C1 control", "C1 control character"),
+            ("\x9f end of C1", "C1 block end"),
+        ],
+    )
+    def test_rejects_control_characters(self, value, description):
+        with pytest.raises(ValidationError):
+            free_text_sanitizer(value)
+
+    @pytest.mark.parametrize(
+        "value",
+        [None, 42, 3.14, [], {}],
+    )
+    def test_skips_non_string_values(self, value):
+        free_text_sanitizer(value)
+
+    def test_error_message(self):
+        with pytest.raises(ValidationError, match="can't include"):
+            free_text_sanitizer("<script>alert(1)</script>")
