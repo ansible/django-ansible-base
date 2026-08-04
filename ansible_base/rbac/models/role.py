@@ -5,7 +5,7 @@ from uuid import UUID
 
 # Django
 from django.conf import settings
-from django.db import connection, models, transaction
+from django.db import models
 from django.db.models import Count
 from django.db.models.functions import Cast
 from django.db.models.query import QuerySet
@@ -22,7 +22,7 @@ from ansible_base.lib.abstract_models.common import CommonModel, ImmutableCommon
 from ansible_base.lib.utils.models import is_add_perm
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.sync import maybe_reverse_sync_assignment
-from ansible_base.rbac.validators import validate_assignment, validate_permissions_for_model
+from ansible_base.rbac.validators import validate_permissions_for_model
 from ansible_base.resource_registry.fields import AnsibleResourceField
 
 from ..remote import RemoteObject, StandInPK
@@ -260,96 +260,32 @@ class RoleDefinition(CommonModel):
         return assignment
 
     def give_permission(self, actor, content_object):
-        from ansible_base.rbac.triggers import _defer_rbac
+        from ansible_base.rbac.pipeline import bulk_give_permissions
 
-        if _defer_rbac.active and _defer_rbac.has_deferred_data:
-            raise RuntimeError(
-                "give_permission cannot be called inside defer_rbac_computations after "
-                "resources have been created or deleted. Use bulk_give_permissions instead."
-            )
-        return self.give_or_remove_permission(actor, content_object, giving=True)
+        is_user = actor._meta.model_name == 'user'
+        perm = [(self, actor, content_object)]
+        assignments = bulk_give_permissions(
+            user_permissions=perm if is_user else [],
+            team_permissions=[] if is_user else perm,
+        )
+        return assignments[0]
 
     def remove_permission(self, actor, content_object):
-        from ansible_base.rbac.triggers import _defer_rbac
+        from ansible_base.rbac.pipeline import bulk_remove_permissions
 
-        if _defer_rbac.active and _defer_rbac.has_deferred_data:
-            raise RuntimeError(
-                "remove_permission cannot be called inside defer_rbac_computations after "
-                "resources have been created or deleted. Use bulk_remove_permissions instead."
-            )
-        return self.give_or_remove_permission(actor, content_object, giving=False)
+        is_user = actor._meta.model_name == 'user'
+        perm = [(self, actor, content_object)]
+        bulk_remove_permissions(
+            user_permissions=perm if is_user else [],
+            team_permissions=[] if is_user else perm,
+        )
 
-    def get_or_create_object_role(self, kwargs, defaults):
-        """Transaction-safe method to create ObjectRole
-
-        The UI will assign many permissions concurrently.
-        These will be in transactions, but also mutually create the same ObjectRole
-        postgres constraints will still be violated by other active transactions
-        which gives us a way to gracefully handle this.
-        """
-        if transaction.get_connection().in_atomic_block:
-            try:
-                with transaction.atomic():
-                    object_role = ObjectRole.objects.create(**kwargs, **defaults)
-                    return (object_role, True)
-            except IntegrityError:
-                object_role = ObjectRole.objects.get(**kwargs)
-                return (object_role, False)
+    def give_or_remove_permission(self, actor, content_object, giving=True):
+        """Compat shim — AWX calls this via awx.main.models.rbac.give_or_remove_permission."""
+        if giving:
+            return self.give_permission(actor, content_object)
         else:
-            object_role = ObjectRole.objects.create(**kwargs, **defaults)
-            return (object_role, True)
-
-    def give_or_remove_permission(self, actor, content_object, giving=True, sync_action=False):
-        "Shortcut method to do whatever needed to give user or team these permissions"
-        validate_assignment(self, actor, content_object)
-
-        if isinstance(content_object, RemoteObject):
-            obj_ct = content_object.content_type
-            object_id = content_object.object_id
-        else:
-            obj_ct = DABContentType.objects.get_for_model(content_object)
-            # sanitize the object_id to its database version, practically, remove "-" chars from uuids
-            object_id = content_object._meta.pk.get_db_prep_value(content_object.pk, connection)
-
-        kwargs = {'role_definition': self, 'content_type': obj_ct, 'object_id': object_id}
-        defaults = {}
-
-        # For remote objects, add parent reference so we can do evaluations if needed
-        if isinstance(content_object, RemoteObject):
-            if content_object.parent_reference:
-                defaults['parent_reference'] = content_object.parent_reference
-
-        created = False
-        object_role = ObjectRole.objects.filter(**kwargs).first()
-        if object_role is None:
-            if not giving:
-                return  # nothing to do
-            object_role, created = self.get_or_create_object_role(kwargs, defaults)
-
-        from ansible_base.rbac.triggers import needed_updates_on_assignment, update_after_assignment
-
-        recompute_team_ids, to_update = needed_updates_on_assignment(self, actor, object_role, created=created, giving=True)
-
-        assignment = None
-        if actor._meta.model_name == 'user':
-            if giving:
-                assignment, created = RoleUserAssignment.objects.get_or_create(user=actor, object_role=object_role)
-            else:
-                object_role.users.remove(actor)
-        elif isinstance(actor, permission_registry.team_model):
-            if giving:
-                assignment, created = RoleTeamAssignment.objects.get_or_create(team=actor, object_role=object_role)
-            else:
-                object_role.teams.remove(actor)
-
-        if (not giving) and (not (object_role.users.exists() or object_role.teams.exists())):
-            if object_role in to_update:
-                to_update.remove(object_role)
-            object_role.delete()
-
-        update_after_assignment(recompute_team_ids, to_update)
-
-        return assignment
+            return self.remove_permission(actor, content_object)
 
     @classmethod
     def user_global_permissions(cls, user, permission_qs=None):

@@ -211,7 +211,7 @@ def _assert_assignment_matches_data(assignment, data, obj, actor):
     assert 'created' in data, data
     # assert DateTimeField().to_representation(assignment.created) == data['created']  # TODO
     assert str(assignment.created_by.resource.ansible_id) == data['created_by_ansible_id']
-    assert assignment.object_id == obj.id
+    assert assignment.object_id == str(obj.id)
     assert str(assignment.object_id) == str(data['object_id'])
     if hasattr(obj, 'resource'):
         assert str(obj.resource.ansible_id) == data['object_ansible_id']
