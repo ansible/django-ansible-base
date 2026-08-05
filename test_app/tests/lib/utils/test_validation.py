@@ -811,10 +811,10 @@ class TestValidateFreeText:
             ("\x7f DEL", "DEL character"),
             ("\x80 C1 control", "C1 control character"),
             ("\x9f end of C1", "C1 block end"),
-            ("​ zero-width space", "zero-width space"),
-            ("‏ right-to-left mark", "right-to-left mark"),
-            ("‮ right-to-left override", "bidi override"),
-            ("﻿ BOM", "byte order mark"),
+            ("\u200b zero-width space", "zero-width space"),
+            ("\u200f right-to-left mark", "right-to-left mark"),
+            ("\u202e right-to-left override", "bidi override"),
+            ("\ufeff BOM", "byte order mark"),
         ],
     )
     def test_rejects_control_characters(self, value, description):
