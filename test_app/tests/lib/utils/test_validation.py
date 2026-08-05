@@ -755,6 +755,7 @@ class TestValidateFreeText:
             ('<svg onload="alert(1)">', "svg tag with quoted attribute"),
             ("<math><mtext>xss</mtext></math>", "math tag"),
             ("<template>injection</template>", "template tag"),
+            ("＜script＞alert(1)", "fullwidth angle bracket bypass"),
         ],
     )
     def test_rejects_html_tags(self, value, description):
