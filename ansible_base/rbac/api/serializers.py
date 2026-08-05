@@ -234,6 +234,7 @@ class RoleUserAssignmentSerializer(BaseAssignmentSerializer):
     class Meta:
         model = RoleUserAssignment
         fields = ASSIGNMENT_FIELDS + ['user', 'user_ansible_id']
+        validators = []  # DRF can't auto-generate validators for partial UniqueConstraints with aliased fields
 
     def get_actor_queryset(self, requesting_user):
         return visible_users(requesting_user)
@@ -251,6 +252,7 @@ class RoleTeamAssignmentSerializer(BaseAssignmentSerializer):
     class Meta:
         model = RoleTeamAssignment
         fields = ASSIGNMENT_FIELDS + ['team', 'team_ansible_id']
+        validators = []  # DRF can't auto-generate validators for partial UniqueConstraints with aliased fields
 
     def get_actor_queryset(self, requesting_user):
         return permission_registry.team_model.access_qs(requesting_user)

@@ -164,6 +164,7 @@ class ServiceRoleUserAssignmentSerializer(BaseAssignmentSerializer):
     class Meta:
         model = RoleUserAssignment
         fields = assignment_common_fields + ('user_ansible_id',)
+        validators = []  # DRF can't auto-generate validators for partial UniqueConstraints with aliased fields
 
 
 class ServiceRoleTeamAssignmentSerializer(BaseAssignmentSerializer):
@@ -173,3 +174,4 @@ class ServiceRoleTeamAssignmentSerializer(BaseAssignmentSerializer):
     class Meta:
         model = RoleTeamAssignment
         fields = assignment_common_fields + ('team_ansible_id',)
+        validators = []  # DRF can't auto-generate validators for partial UniqueConstraints with aliased fields

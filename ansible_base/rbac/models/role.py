@@ -442,6 +442,13 @@ class RoleUserAssignment(AssignmentBase):
         app_label = 'dab_rbac'
         ordering = ['id']
         unique_together = ('user', 'object_role')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'role_definition'],
+                condition=models.Q(object_role__isnull=True),
+                name='unique_global_user_assignment',
+            ),
+        ]
 
     def __repr__(self):
         return f'RoleUserAssignment(pk={self.id})'
@@ -468,6 +475,13 @@ class RoleTeamAssignment(AssignmentBase):
         app_label = 'dab_rbac'
         ordering = ['id']
         unique_together = ('team', 'object_role')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['team', 'role_definition'],
+                condition=models.Q(object_role__isnull=True),
+                name='unique_global_team_assignment',
+            ),
+        ]
 
     def __repr__(self):
         return f'RoleTeamAssignment(pk={self.id})'
