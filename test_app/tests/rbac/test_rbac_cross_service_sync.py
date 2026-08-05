@@ -275,7 +275,7 @@ def test_sync_url_construction(inventory, enable_reverse_sync):  # noqa: F811
 
 @pytest.mark.django_db
 @pytest.mark.parametrize('exception_cls', [Exception, ConnectionError])
-def test_sync_assignment_handles_errors_gracefully(rando, inventory, inv_rd, enable_reverse_sync, exception_cls):  # noqa: F811
+def test_sync_assignment_handles_sync_error(rando, inventory, inv_rd, enable_reverse_sync, exception_cls):  # noqa: F811
     with enable_reverse_sync():
         with override_settings(RESOURCE_SERVER={'URL': 'http://gateway.example.com', 'SECRET_KEY': 'test-secret'}):
             assignment = inv_rd.give_permission(rando, inventory)
@@ -286,10 +286,28 @@ def test_sync_assignment_handles_errors_gracefully(rando, inventory, inv_rd, ena
 
                 maybe_reverse_sync_assignment(assignment)
 
+                mock_get_client.assert_called_once()
+                mock_get_client.return_value.sync_assignment.assert_called_once_with(assignment)
+
+
+@pytest.mark.django_db
+def test_sync_assignment_handles_client_acquisition_error(rando, inventory, inv_rd, enable_reverse_sync):  # noqa: F811
+    with enable_reverse_sync():
+        with override_settings(RESOURCE_SERVER={'URL': 'http://gateway.example.com', 'SECRET_KEY': 'test-secret'}):
+            assignment = inv_rd.give_permission(rando, inventory)
+            with patch('ansible_base.resource_registry.utils.sync_to_resource_server.get_current_user_resource_client') as mock_get_client:
+                mock_get_client.side_effect = Exception("client acquisition failed")
+
+                from ansible_base.rbac.sync import maybe_reverse_sync_assignment
+
+                maybe_reverse_sync_assignment(assignment)
+
+                mock_get_client.assert_called_once()
+
 
 @pytest.mark.django_db
 @pytest.mark.parametrize('exception_cls', [Exception, ConnectionError])
-def test_sync_unassignment_handles_errors_gracefully(rando, inventory, inv_rd, enable_reverse_sync, exception_cls):  # noqa: F811
+def test_sync_unassignment_handles_sync_error(rando, inventory, inv_rd, enable_reverse_sync, exception_cls):  # noqa: F811
     with enable_reverse_sync():
         with override_settings(RESOURCE_SERVER={'URL': 'http://gateway.example.com', 'SECRET_KEY': 'test-secret'}):
             with patch('ansible_base.resource_registry.utils.sync_to_resource_server.get_current_user_resource_client') as mock_get_client:
@@ -298,3 +316,20 @@ def test_sync_unassignment_handles_errors_gracefully(rando, inventory, inv_rd, e
                 from ansible_base.rbac.sync import maybe_reverse_sync_unassignment
 
                 maybe_reverse_sync_unassignment(inv_rd, rando, inventory)
+
+                mock_get_client.assert_called_once()
+                mock_get_client.return_value.sync_unassignment.assert_called_once_with(inv_rd, rando, inventory)
+
+
+@pytest.mark.django_db
+def test_sync_unassignment_handles_client_acquisition_error(rando, inventory, inv_rd, enable_reverse_sync):  # noqa: F811
+    with enable_reverse_sync():
+        with override_settings(RESOURCE_SERVER={'URL': 'http://gateway.example.com', 'SECRET_KEY': 'test-secret'}):
+            with patch('ansible_base.resource_registry.utils.sync_to_resource_server.get_current_user_resource_client') as mock_get_client:
+                mock_get_client.side_effect = Exception("client acquisition failed")
+
+                from ansible_base.rbac.sync import maybe_reverse_sync_unassignment
+
+                maybe_reverse_sync_unassignment(inv_rd, rando, inventory)
+
+                mock_get_client.assert_called_once()
