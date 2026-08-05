@@ -71,7 +71,7 @@ def _is_resource_registered(model) -> bool:
     from ansible_base.resource_registry.registry import get_registry
 
     registry = get_registry()
-    if not registry:
+    if not registry:  # pragma: no branch — typeguard import hook breaks branch tracking
         return False
     return model._meta.label in registry.get_resources()
 

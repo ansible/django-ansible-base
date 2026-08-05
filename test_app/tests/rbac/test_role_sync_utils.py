@@ -113,11 +113,25 @@ def test_get_content_object_falls_back_to_pk_lookup():
 
 
 @pytest.mark.django_db
-def test_is_resource_registered_returns_false_when_no_registry():
-    """_is_resource_registered returns False when get_registry() returns None."""
-    with mock.patch('ansible_base.resource_registry.registry.get_registry', return_value=None):
-        result = _is_resource_registered(mock.Mock(_meta=mock.Mock(label='test_app.Inventory')))
-    assert result is False
+def test_is_resource_registered_both_branches():
+    """Exercise both branches of _is_resource_registered in a single test.
+
+    Covers both branches in one worker to ensure pytest-xdist merges
+    branch coverage correctly.
+    """
+    from django.conf import settings
+    from django.test.utils import override_settings
+
+    from ansible_base.resource_registry.registry import get_registry
+    from test_app.models import Organization
+
+    assert _is_resource_registered(Organization) is True
+    assert get_registry() is not None
+
+    with override_settings():
+        delattr(settings, 'ANSIBLE_BASE_RESOURCE_CONFIG_MODULE')
+        assert _is_resource_registered(Organization) is False
+        assert get_registry() is None
 
 
 @pytest.mark.django_db
