@@ -46,20 +46,28 @@ def maybe_reverse_sync_assignment(assignment):
     if not reverse_sync_enabled_all_conditions(assignment):
         return
 
-    from ansible_base.resource_registry.utils.sync_to_resource_server import get_current_user_resource_client
+    try:
+        from ansible_base.resource_registry.utils.sync_to_resource_server import get_current_user_resource_client
 
-    client = get_current_user_resource_client()
-    client.sync_assignment(assignment)
+        client = get_current_user_resource_client()
+        client.sync_assignment(assignment)
+    except Exception as e:
+        logger.warning(f"Failed to reverse-sync assignment {assignment}: {e}")
+        return
 
 
 def maybe_reverse_sync_unassignment(role_definition, actor, content_object):
     if not reverse_sync_enabled_all_conditions(role_definition):
         return
 
-    from ansible_base.resource_registry.utils.sync_to_resource_server import get_current_user_resource_client
+    try:
+        from ansible_base.resource_registry.utils.sync_to_resource_server import get_current_user_resource_client
 
-    client = get_current_user_resource_client()
-    client.sync_unassignment(role_definition, actor, content_object)
+        client = get_current_user_resource_client()
+        client.sync_unassignment(role_definition, actor, content_object)
+    except Exception as e:
+        logger.warning(f"Failed to reverse-sync unassignment for {role_definition}: {e}")
+        return
 
 
 def maybe_reverse_sync_object_deletion(content_object):
