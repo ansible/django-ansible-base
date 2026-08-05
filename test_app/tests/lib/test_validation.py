@@ -1,12 +1,13 @@
 import pytest
 from django.core.exceptions import ValidationError
 
-from ansible_base.lib.validators import resource_name_validator
+from ansible_base.lib.validation import resource_name_validator
 
 
-class TestResourceNameValidatorAcceptsValidNames:
-    """Valid names should pass validation without raising."""
+class TestValidateResourceName:
+    """Test the resource_name_validator function."""
 
+    # Valid names should pass validation
     @pytest.mark.parametrize(
         "name",
         [
@@ -27,14 +28,15 @@ class TestResourceNameValidatorAcceptsValidNames:
     def test_valid_names(self, name):
         resource_name_validator(name)
 
+    def test_accepts_max_length_name(self):
+        # Exactly 512 characters (at the limit)
+        max_name = "a" * 512
+        resource_name_validator(max_name)
 
-class TestResourceNameValidatorRejectsInvalidInput:
-    """Invalid input patterns must be rejected."""
-
+    # Security injection attacks should be rejected
     @pytest.mark.parametrize(
         "name",
         [
-            # Security injection attacks
             "<script>alert(1)</script>",        # XSS
             '<img src=x onerror="alert(1)">',   # HTML injection
             "$(whoami)",                        # shell substitution
@@ -53,6 +55,7 @@ class TestResourceNameValidatorRejectsInvalidInput:
         with pytest.raises(ValidationError):
             resource_name_validator(name)
 
+    # Invalid patterns should be rejected
     @pytest.mark.parametrize(
         "name",
         [
@@ -75,10 +78,13 @@ class TestResourceNameValidatorRejectsInvalidInput:
         with pytest.raises(ValidationError):
             resource_name_validator("")
 
+    def test_rejects_too_long_name(self):
+        # 513 characters (1 over the 512 limit)
+        long_name = "a" * 513
+        with pytest.raises(ValidationError):
+            resource_name_validator(long_name)
 
-class TestResourceNameValidatorErrorHandling:
-    """Test error messages and codes."""
-
+    # Error handling tests
     def test_error_message_is_descriptive(self):
         with pytest.raises(ValidationError) as exc_info:
             resource_name_validator("<script>")
@@ -91,12 +97,9 @@ class TestResourceNameValidatorErrorHandling:
             resource_name_validator("<script>")
         assert exc_info.value.code == "invalid_resource_name"
 
-
-class TestResourceNameValidatorImportPath:
-    """Verify the public import path works."""
-
-    def test_importable_from_lib_validators(self):
-        from ansible_base.lib.validators import resource_name_validator as validator
+    # Import path verification
+    def test_importable_from_lib_validation(self):
+        from ansible_base.lib.validation import resource_name_validator as validator
 
         assert validator is not None
         assert callable(validator)
