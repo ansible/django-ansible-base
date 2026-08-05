@@ -17,12 +17,14 @@ from rest_framework.serializers import ValidationError
 
 VALID_STRING = _('Must be a valid string')
 
-_RESOURCE_NAME_RE = re.compile(r'^[\w][\w .@-]{0,511}\Z')
+DEFAULT_NAME_FIELDS = frozenset({'name', 'username', 'hostname'})
 
-_CONTROL_CHARS = '[\x00-\x08\x0b\x0c\x0d-\x1f\x7f-\x9f\u200b-\u200c\u200e-\u200f\u2028-\u202e\ufeff\ufff9-\ufffb]'
+RESOURCE_NAME_RE = re.compile(r'^[\w][\w .@-]{0,511}\Z')
 
-_DANGEROUS_PATTERNS = re.compile(
-    _CONTROL_CHARS + r'|[<＜]\s*/?(?:script|iframe|object|embed|form|base|meta|link|svg|math|template)\b'
+CONTROL_CHARS = '[\x00-\x08\x0b\x0c\x0d-\x1f\x7f-\x9f\u200b-\u200c\u200e-\u200f\u2028-\u202e\ufeff\ufff9-\ufffb]'
+
+DANGEROUS_PATTERNS = re.compile(
+    CONTROL_CHARS + r'|[<＜]\s*/?(?:script|iframe|object|embed|form|base|meta|link|svg|math|template)\b'
     r'|\bon[a-z]{3,}\s*='
     r'|\b(?:javascript|vbscript|data)\s*:'
     r'|[$]\([^)]+\)|[$]\{[^}]+\}'
@@ -31,7 +33,7 @@ _DANGEROUS_PATTERNS = re.compile(
 )
 
 def validate_resource_name(value):
-    if not isinstance(value, str) or not _RESOURCE_NAME_RE.match(value):
+    if not isinstance(value, str) or not RESOURCE_NAME_RE.match(value):
         raise ValidationError(
             _(
                 "Enter a valid resource name. Only letters, numbers, spaces, hyphens, underscores, dots, and @ are allowed."
@@ -42,7 +44,7 @@ def validate_resource_name(value):
 def validate_free_text(value):
     if not isinstance(value, str):
         return
-    if _DANGEROUS_PATTERNS.search(value):
+    if DANGEROUS_PATTERNS.search(value):
         raise ValidationError(_("This field can't include HTML tags, script markup, unsafe URI schemes, shell syntax, or control characters."))
 
 

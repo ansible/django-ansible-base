@@ -5,7 +5,7 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
-from ansible_base.lib.validators import DANGEROUS_PATTERNS, DEFAULT_NAME_FIELDS, resource_name_validator
+from ansible_base.lib.utils.validation import DEFAULT_NAME_FIELDS, validate_free_text, validate_resource_name
 
 logger = logging.getLogger('ansible_base.lib.serializers.mixins')
 
@@ -64,14 +64,14 @@ class CleanTextMixin:
             # Apply appropriate validator based on field type
             if field_name in self.name_fields:
                 try:
-                    resource_name_validator(unicodedata.normalize('NFC', value))
-                except Exception:
-                    errors[field_name] = resource_name_validator.message
+                    validate_resource_name(unicodedata.normalize('NFC', value))
+                except serializers.ValidationError as exc:
+                    errors[field_name] = exc.detail
             else:
-                if DANGEROUS_PATTERNS.search(value):
-                    errors[field_name] = _(
-                        'Contains potentially unsafe content.'
-                    )
+                try:
+                    validate_free_text(value)
+                except serializers.ValidationError as exc:
+                    errors[field_name] = exc.detail
 
         if errors:
             raise serializers.ValidationError(errors)
