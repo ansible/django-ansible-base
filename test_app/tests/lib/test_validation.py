@@ -99,9 +99,7 @@ class TestValidateResourceName:
 
     # Import path verification
     def test_importable_from_lib_validation(self):
-        from ansible_base.lib.validation import (
-            validate_resource_name as validator,
-        )
+        from ansible_base.lib.validation import validate_resource_name as validator
 
         assert validator is not None
         assert callable(validator)
