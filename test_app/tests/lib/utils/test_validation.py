@@ -752,6 +752,7 @@ class TestFreeTextSanitizer:
             ("<meta http-equiv=refresh>", "meta tag"),
             ("<link rel=stylesheet>", "link tag"),
             ("<svg onload=alert(1)>", "svg tag"),
+            ('<svg onload="alert(1)">', "svg tag with quoted attribute"),
             ("<math><mtext>xss</mtext></math>", "math tag"),
             ("<template>injection</template>", "template tag"),
         ],
