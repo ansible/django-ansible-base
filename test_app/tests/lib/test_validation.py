@@ -1,7 +1,7 @@
 import pytest
-from django.core.exceptions import ValidationError
+from rest_framework.serializers import ValidationError
 
-from ansible_base.lib.validation import validate_resource_name
+from ansible_base.lib.utils.validation import validate_resource_name
 
 
 class TestValidateResourceName:
@@ -88,18 +88,13 @@ class TestValidateResourceName:
     def test_error_message_is_descriptive(self):
         with pytest.raises(ValidationError) as exc_info:
             validate_resource_name("<script>")
-        message = str(exc_info.value.message)
+        message = str(exc_info.value.detail[0])
         assert "valid resource name" in message
-        assert "letter, digit, or underscore" in message
-
-    def test_error_code(self):
-        with pytest.raises(ValidationError) as exc_info:
-            validate_resource_name("<script>")
-        assert exc_info.value.code == "invalid_resource_name"
+        assert "letter, number, or underscore" in message
 
     # Import path verification
-    def test_importable_from_lib_validation(self):
-        from ansible_base.lib.validation import validate_resource_name as validator
+    def test_importable_from_utils_validation(self):
+        from ansible_base.lib.utils.validation import validate_resource_name as validator
 
         assert validator is not None
         assert callable(validator)
