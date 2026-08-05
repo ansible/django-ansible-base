@@ -7,7 +7,7 @@ from ansible_base.lib.utils.validation import (
     _is_valid_label,
     _is_valid_tld,
     _normalize_domain,
-    free_text_sanitizer,
+    validate_free_text,
     to_python_boolean,
     validate_cert_with_key,
     validate_domain_name,
@@ -711,7 +711,7 @@ class TestValidatePort:
         assert result is expected, f"Failed for {description}: validate_port({port_string!r}) returned {result}, expected {expected}"
 
 
-class TestFreeTextSanitizer:
+class TestValidateFreeText:
     @pytest.mark.parametrize(
         "value,description",
         [
@@ -734,7 +734,7 @@ class TestFreeTextSanitizer:
         ],
     )
     def test_accepts_valid_text(self, value, description):
-        free_text_sanitizer(value)
+        validate_free_text(value)
 
     @pytest.mark.parametrize(
         "value,description",
@@ -759,7 +759,7 @@ class TestFreeTextSanitizer:
     )
     def test_rejects_html_tags(self, value, description):
         with pytest.raises(ValidationError):
-            free_text_sanitizer(value)
+            validate_free_text(value)
 
     @pytest.mark.parametrize(
         "value,description",
@@ -773,7 +773,7 @@ class TestFreeTextSanitizer:
     )
     def test_rejects_event_handlers(self, value, description):
         with pytest.raises(ValidationError):
-            free_text_sanitizer(value)
+            validate_free_text(value)
 
     @pytest.mark.parametrize(
         "value,description",
@@ -786,7 +786,7 @@ class TestFreeTextSanitizer:
     )
     def test_rejects_dangerous_uri_schemes(self, value, description):
         with pytest.raises(ValidationError):
-            free_text_sanitizer(value)
+            validate_free_text(value)
 
     @pytest.mark.parametrize(
         "value,description",
@@ -799,7 +799,7 @@ class TestFreeTextSanitizer:
     )
     def test_rejects_shell_substitution(self, value, description):
         with pytest.raises(ValidationError):
-            free_text_sanitizer(value)
+            validate_free_text(value)
 
     @pytest.mark.parametrize(
         "value,description",
@@ -815,15 +815,15 @@ class TestFreeTextSanitizer:
     )
     def test_rejects_control_characters(self, value, description):
         with pytest.raises(ValidationError):
-            free_text_sanitizer(value)
+            validate_free_text(value)
 
     @pytest.mark.parametrize(
         "value",
         [None, 42, 3.14, [], {}],
     )
     def test_skips_non_string_values(self, value):
-        free_text_sanitizer(value)
+        validate_free_text(value)
 
     def test_error_message(self):
         with pytest.raises(ValidationError, match="can't include"):
-            free_text_sanitizer("<script>alert(1)</script>")
+            validate_free_text("<script>alert(1)</script>")

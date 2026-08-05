@@ -27,7 +27,7 @@ _DANGEROUS_PATTERNS = re.compile(
 )
 
 
-def free_text_sanitizer(value):
+def validate_free_text(value):
     if not isinstance(value, str):
         return
     if _DANGEROUS_PATTERNS.search(value):
