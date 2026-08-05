@@ -811,9 +811,25 @@ class TestValidateFreeText:
             ("\x7f DEL", "DEL character"),
             ("\x80 C1 control", "C1 control character"),
             ("\x9f end of C1", "C1 block end"),
+            ("​ zero-width space", "zero-width space"),
+            ("‏ right-to-left mark", "right-to-left mark"),
+            ("‮ right-to-left override", "bidi override"),
+            ("﻿ BOM", "byte order mark"),
         ],
     )
     def test_rejects_control_characters(self, value, description):
+        with pytest.raises(ValidationError):
+            validate_free_text(value)
+
+    @pytest.mark.parametrize(
+        "value,description",
+        [
+            ("{{ config }}", "Jinja2 expression"),
+            ("{% import os %}", "Jinja2 tag"),
+            ("{{ settings.SECRET_KEY }}", "Jinja2 secret access"),
+        ],
+    )
+    def test_rejects_template_injection(self, value, description):
         with pytest.raises(ValidationError):
             validate_free_text(value)
 
