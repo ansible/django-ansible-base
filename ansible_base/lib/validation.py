@@ -2,7 +2,7 @@
 from django.core.validators import RegexValidator
 from django.utils.translation import gettext_lazy as _
 
-resource_name_validator = RegexValidator(
+validate_resource_name = RegexValidator(
     regex=r'^[\w][\w .@-]{0,511}\Z',
     message=_(
         "Enter a valid resource name. Must start with a letter, digit, or underscore."
