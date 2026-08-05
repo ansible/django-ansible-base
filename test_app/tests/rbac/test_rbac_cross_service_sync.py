@@ -1,8 +1,8 @@
 """
-Unit tests for sync_object_deletion method - AAP-51985 cross-service sync integration
+Unit tests for cross-service reverse-sync in ansible_base.rbac.sync
 
-Tests the new DABResourceAPIClient.sync_object_deletion method that handles
-the HTTP communication between Controller and Gateway for role cleanup.
+Covers sync_object_deletion (AAP-51985), and error handling for
+sync_assignment / sync_unassignment (AAP-85471).
 """
 
 from unittest.mock import MagicMock, patch
@@ -271,3 +271,30 @@ def test_sync_url_construction(inventory, enable_reverse_sync):  # noqa: F811
 
                 # Should include object-delete endpoint
                 assert 'object-delete' in call_positional[1]  # path
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('exception_cls', [Exception, ConnectionError])
+def test_sync_assignment_handles_errors_gracefully(rando, inventory, inv_rd, enable_reverse_sync, exception_cls):  # noqa: F811
+    with enable_reverse_sync():
+        with override_settings(RESOURCE_SERVER={'URL': 'http://gateway.example.com', 'SECRET_KEY': 'test-secret'}):
+            assignment = inv_rd.give_permission(rando, inventory)
+            with patch('ansible_base.resource_registry.utils.sync_to_resource_server.get_current_user_resource_client') as mock_get_client:
+                mock_get_client.return_value.sync_assignment.side_effect = exception_cls("sync failed")
+
+                from ansible_base.rbac.sync import maybe_reverse_sync_assignment
+
+                maybe_reverse_sync_assignment(assignment)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('exception_cls', [Exception, ConnectionError])
+def test_sync_unassignment_handles_errors_gracefully(rando, inventory, inv_rd, enable_reverse_sync, exception_cls):  # noqa: F811
+    with enable_reverse_sync():
+        with override_settings(RESOURCE_SERVER={'URL': 'http://gateway.example.com', 'SECRET_KEY': 'test-secret'}):
+            with patch('ansible_base.resource_registry.utils.sync_to_resource_server.get_current_user_resource_client') as mock_get_client:
+                mock_get_client.return_value.sync_unassignment.side_effect = exception_cls("sync failed")
+
+                from ansible_base.rbac.sync import maybe_reverse_sync_unassignment
+
+                maybe_reverse_sync_unassignment(inv_rd, rando, inventory)
