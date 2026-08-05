@@ -1,6 +1,5 @@
 import pytest
 from rest_framework import serializers
-from rest_framework.exceptions import ValidationError
 
 from ansible_base.lib.serializers.mixins import CleanTextMixin
 from test_app.models import Organization

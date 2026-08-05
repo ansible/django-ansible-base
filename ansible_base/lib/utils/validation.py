@@ -32,6 +32,7 @@ DANGEROUS_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+
 def validate_resource_name(value):
     if not isinstance(value, str) or not RESOURCE_NAME_RE.match(value):
         raise ValidationError(
@@ -40,6 +41,7 @@ def validate_resource_name(value):
                 " Must start with a letter, number, or underscore. Maximum 512 characters."
             )
         )
+
 
 def validate_free_text(value):
     if not isinstance(value, str):
