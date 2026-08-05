@@ -1,7 +1,6 @@
 import logging
 import unicodedata
 
-from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
@@ -39,11 +38,7 @@ class CleanTextMixin:
         # are naturally excluded by this check. Custom free-text subclasses (e.g.
         # EncryptedTextField) typically do NOT override get_internal_type(), so they
         # inherit "CharField"/"TextField" and are caught here automatically.
-        text_fields = [
-            f.name for f in model._meta.get_fields()
-            if hasattr(f, 'get_internal_type')
-            and f.get_internal_type() in ('CharField', 'TextField')
-        ]
+        text_fields = [f.name for f in model._meta.get_fields() if hasattr(f, 'get_internal_type') and f.get_internal_type() in ('CharField', 'TextField')]
 
         errors = {}
         for field_name in text_fields:
@@ -56,9 +51,7 @@ class CleanTextMixin:
                 continue
 
             # On update, skip if value hasn't changed (grandfather)
-            if self.instance and getattr(
-                self.instance, field_name, None
-            ) == value:
+            if self.instance and getattr(self.instance, field_name, None) == value:
                 continue
 
             # Apply appropriate validator based on field type
