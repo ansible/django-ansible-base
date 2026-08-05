@@ -20,7 +20,7 @@ VALID_STRING = _('Must be a valid string')
 _CONTROL_CHARS = '[\x00-\x08\x0b\x0c\x0d-\x1f\x7f-\x9f\u200b-\u200c\u200e-\u200f\u2028-\u202e\ufeff\ufff9-\ufffb]'
 
 _DANGEROUS_PATTERNS = re.compile(
-    _CONTROL_CHARS + r'|<\s*/?(?:script|iframe|object|embed|form|base|meta|link|svg|math|template)\b'
+    _CONTROL_CHARS + r'|[<＜]\s*/?(?:script|iframe|object|embed|form|base|meta|link|svg|math|template)\b'
     r'|\bon[a-z]{3,}\s*='
     r'|\b(?:javascript|vbscript|data)\s*:'
     r'|[$]\([^)]+\)|[$]\{[^}]+\}'
