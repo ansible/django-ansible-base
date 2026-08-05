@@ -16,6 +16,8 @@ This module handles RBAC-specific reverse-sync scenarios:
 
 import logging
 
+from ansible_base.resource_registry.utils.sync_to_resource_server import get_current_user_resource_client
+
 logger = logging.getLogger('ansible_base.rbac.sync')
 
 
@@ -47,13 +49,10 @@ def maybe_reverse_sync_assignment(assignment):
         return
 
     try:
-        from ansible_base.resource_registry.utils.sync_to_resource_server import get_current_user_resource_client
-
         client = get_current_user_resource_client()
         client.sync_assignment(assignment)
     except Exception as e:
         logger.warning(f"Failed to reverse-sync assignment {assignment}: {e}")
-        return
 
 
 def maybe_reverse_sync_unassignment(role_definition, actor, content_object):
@@ -61,13 +60,10 @@ def maybe_reverse_sync_unassignment(role_definition, actor, content_object):
         return
 
     try:
-        from ansible_base.resource_registry.utils.sync_to_resource_server import get_current_user_resource_client
-
         client = get_current_user_resource_client()
         client.sync_unassignment(role_definition, actor, content_object)
     except Exception as e:
         logger.warning(f"Failed to reverse-sync unassignment for {role_definition}: {e}")
-        return
 
 
 def maybe_reverse_sync_object_deletion(content_object):

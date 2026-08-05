@@ -279,7 +279,7 @@ def test_sync_assignment_handles_sync_error(rando, inventory, inv_rd, enable_rev
     with enable_reverse_sync():
         with override_settings(RESOURCE_SERVER={'URL': 'http://gateway.example.com', 'SECRET_KEY': 'test-secret'}):
             assignment = inv_rd.give_permission(rando, inventory)
-            with patch('ansible_base.resource_registry.utils.sync_to_resource_server.get_current_user_resource_client') as mock_get_client:
+            with patch('ansible_base.rbac.sync.get_current_user_resource_client') as mock_get_client:
                 mock_get_client.return_value.sync_assignment.side_effect = exception_cls("sync failed")
 
                 from ansible_base.rbac.sync import maybe_reverse_sync_assignment
@@ -295,7 +295,7 @@ def test_sync_assignment_handles_client_acquisition_error(rando, inventory, inv_
     with enable_reverse_sync():
         with override_settings(RESOURCE_SERVER={'URL': 'http://gateway.example.com', 'SECRET_KEY': 'test-secret'}):
             assignment = inv_rd.give_permission(rando, inventory)
-            with patch('ansible_base.resource_registry.utils.sync_to_resource_server.get_current_user_resource_client') as mock_get_client:
+            with patch('ansible_base.rbac.sync.get_current_user_resource_client') as mock_get_client:
                 mock_get_client.side_effect = Exception("client acquisition failed")
 
                 from ansible_base.rbac.sync import maybe_reverse_sync_assignment
@@ -310,7 +310,7 @@ def test_sync_assignment_handles_client_acquisition_error(rando, inventory, inv_
 def test_sync_unassignment_handles_sync_error(rando, inventory, inv_rd, enable_reverse_sync, exception_cls):  # noqa: F811
     with enable_reverse_sync():
         with override_settings(RESOURCE_SERVER={'URL': 'http://gateway.example.com', 'SECRET_KEY': 'test-secret'}):
-            with patch('ansible_base.resource_registry.utils.sync_to_resource_server.get_current_user_resource_client') as mock_get_client:
+            with patch('ansible_base.rbac.sync.get_current_user_resource_client') as mock_get_client:
                 mock_get_client.return_value.sync_unassignment.side_effect = exception_cls("sync failed")
 
                 from ansible_base.rbac.sync import maybe_reverse_sync_unassignment
@@ -325,7 +325,7 @@ def test_sync_unassignment_handles_sync_error(rando, inventory, inv_rd, enable_r
 def test_sync_unassignment_handles_client_acquisition_error(rando, inventory, inv_rd, enable_reverse_sync):  # noqa: F811
     with enable_reverse_sync():
         with override_settings(RESOURCE_SERVER={'URL': 'http://gateway.example.com', 'SECRET_KEY': 'test-secret'}):
-            with patch('ansible_base.resource_registry.utils.sync_to_resource_server.get_current_user_resource_client') as mock_get_client:
+            with patch('ansible_base.rbac.sync.get_current_user_resource_client') as mock_get_client:
                 mock_get_client.side_effect = Exception("client acquisition failed")
 
                 from ansible_base.rbac.sync import maybe_reverse_sync_unassignment
