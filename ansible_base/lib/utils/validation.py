@@ -34,6 +34,7 @@ DANGEROUS_PATTERNS = re.compile(
 
 
 def validate_resource_name(value):
+    """Tier 1 validator: enforces strict allowlist for name-type fields."""
     if not isinstance(value, str) or not RESOURCE_NAME_RE.match(value):
         raise ValidationError(
             _(
@@ -44,6 +45,7 @@ def validate_resource_name(value):
 
 
 def validate_free_text(value):
+    """Tier 2 validator: rejects dangerous patterns in general text fields."""
     if not isinstance(value, str):
         return
     if DANGEROUS_PATTERNS.search(value):

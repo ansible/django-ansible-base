@@ -11,18 +11,28 @@ logger = logging.getLogger('ansible_base.lib.serializers.mixins')
 
 class CleanTextMixin:
     """
-    Drop into any ModelSerializer to auto-reject invalid characters
-    in text fields. Grandfathers existing values on update.
+    Drop-in mixin for DRF ModelSerializer that rejects unsafe text input.
+    Must appear before ModelSerializer in MRO.
 
-    Tier 1 (name fields): strict character allowlist
-    Tier 2 (all other text fields): dangerous pattern blocklist
+    Usage::
+
+        from ansible_base.lib.serializers.mixins import CleanTextMixin
+
+        class MySerializer(CleanTextMixin, serializers.ModelSerializer):
+            class Meta:
+                model = MyModel
+                fields = '__all__'
+
+    Tier 1 (name fields): strict character allowlist via validate_resource_name.
+    Tier 2 (all other CharField/TextField): dangerous-pattern blocklist via validate_free_text.
+    On update, unchanged fields are grandfathered (skipped).
 
     Configurable attributes:
-        name_fields: field names routed to Tier 1 (allowlist).
-        excluded_fields: field names skipped entirely (no validation).
-            Use for fields that legitimately contain HTML, template syntax,
-            or other structured content (e.g. Jinja2 templates, custom
-            login HTML).
+        name_fields: field names routed to Tier 1 (default: name, username, hostname).
+        excluded_fields: field names skipped entirely — use for fields that legitimately
+            contain HTML or template syntax (e.g. Jinja2 templates, custom login HTML).
+
+    See docs/lib/validation.md for the full contract.
     """
 
     name_fields = DEFAULT_NAME_FIELDS
