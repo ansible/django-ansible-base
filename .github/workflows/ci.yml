@@ -41,14 +41,6 @@ jobs:
             python-version: "3.12"
             sonar: false
             junit-xml-upload: false
-          - env: py311-django4
-            python-version: "3.11"
-            sonar: false
-            junit-xml-upload: false
-          - env: py312-django4
-            python-version: "3.12"
-            sonar: false
-            junit-xml-upload: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

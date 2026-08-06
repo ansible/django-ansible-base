@@ -104,12 +104,10 @@ legacy_tox_ini = """
         py312
         py311-sqlite
         py312-sqlite
-        py311-django4
-        py312-django4
         py311-in-files
         py312-in-files
     labels =
-        test = py311-check, py312-check, py311, py312, py311-sqlite, py312-sqlite, py312-django4, py311-in-files, py312-in-files
+        test = py311-check, py312-check, py311, py312, py311-sqlite, py312-sqlite, py311-in-files, py312-in-files
         lint = flake8, black, isort
 
     [testenv]
@@ -133,15 +131,6 @@ legacy_tox_ini = """
     docker = db
     setenv =
         DJANGO_SETTINGS_MODULE = test_app.sqlite3settings
-
-    [testenv:py311-django4,py312-django4]
-    deps =
-        -r{toxinidir}/requirements/requirements_all.txt
-        -r{toxinidir}/requirements/requirements_dev.txt
-        pytest-django<4.13
-    commands_pre =
-        python -m pip install --upgrade "Django>=4.2.21,<4.3.0"
-    docker = db
 
     [testenv:py311-in-files,py312-in-files]
     deps =
