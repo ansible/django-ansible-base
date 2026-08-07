@@ -2,7 +2,7 @@ import logging
 
 from django.apps import AppConfig
 from django.conf import settings
-from django.db.models import TextField, signals
+from django.db.models import Exists, OuterRef, TextField, signals
 from django.db.models.functions import Cast
 from django.db.utils import IntegrityError
 
@@ -34,6 +34,11 @@ def initialize_resources(sender, **kwargs):
 
     if not migrations_are_complete():
         logger.info('Not running resource_registry post_migrate because migrations are incomplete')
+        return
+
+    plan = kwargs.get('plan', None)
+    if plan is not None and len(plan) == 0:
+        logger.info('Skipping resource initialization — no migrations were applied')
         return
 
     apps = kwargs.get("apps")
@@ -82,7 +87,7 @@ def initialize_resources(sender, **kwargs):
             logger.info(f"adding unmigrated resources for {r_type.name}")
 
             missing_resources_qs = resource_model.objects.annotate(pk_text=Cast('pk', TextField())).exclude(
-                pk_text__in=Resource.objects.filter(content_type=r_type.content_type).values("object_id")
+                Exists(Resource.objects.filter(content_type=r_type.content_type, object_id=OuterRef('pk_text')))
             )
 
             data = []
