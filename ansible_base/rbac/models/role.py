@@ -410,7 +410,7 @@ class AssignmentBase(ImmutableCommonModel, ObjectRoleFields, _AuditableBase):
 
     # object_role is internal, and not shown in serializer
     # content_type does not have a link, and ResourceType will be used in lieu sometime
-    ignore_relations = ['content_type', 'object_role']
+    ignore_relations = ['content_type', 'object_role', 'resource']
 
     class Meta:
         app_label = 'dab_rbac'
