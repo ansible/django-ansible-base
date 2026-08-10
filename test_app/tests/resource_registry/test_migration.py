@@ -21,12 +21,18 @@ def test_existing_resources_created_in_post_migration():
 
 
 @pytest.mark.django_db
-def test_initialize_resources_skips_when_no_migrations_applied():
-    """initialize_resources should skip resource scanning when the plan kwarg
-    is an empty list, meaning no migrations were actually applied."""
-    with patch('ansible_base.resource_registry.registry.get_registry') as mock_registry:
+def test_initialize_resources_skips_scan_but_creates_types_when_no_migrations_applied():
+    """When plan=[] (no migrations applied), initialize_resources should still
+    create ResourceType records (needed by post_save signal handlers) but skip
+    the expensive missing-resource scan."""
+    from ansible_base.resource_registry.models import ResourceType
+
+    rt_count_before = ResourceType.objects.count()
+    with patch('ansible_base.resource_registry.models.init_resource_from_object') as mock_init:
         initialize_resources(apps.get_app_config('dab_resource_registry'), plan=[])
-    mock_registry.assert_not_called()
+    mock_init.assert_not_called()
+    assert ResourceType.objects.count() >= rt_count_before
+    assert ResourceType.objects.count() > 0
 
 
 @pytest.mark.django_db

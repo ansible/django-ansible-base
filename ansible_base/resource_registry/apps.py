@@ -36,11 +36,6 @@ def initialize_resources(sender, **kwargs):
         logger.info('Not running resource_registry post_migrate because migrations are incomplete')
         return
 
-    plan = kwargs.get('plan', None)
-    if plan is not None and len(plan) == 0:
-        logger.info('Skipping resource initialization — no migrations were applied')
-        return
-
     apps = kwargs.get("apps")
     if apps is None:
         from django.apps import apps
@@ -78,6 +73,14 @@ def initialize_resources(sender, **kwargs):
                 for k, v in defaults.items():
                     setattr(rt, k, v)
                 rt.save()
+
+        # Skip the expensive missing-resource scan when no migrations were applied.
+        # ResourceType creation above must still run because post_save signal
+        # handlers depend on ResourceType records existing.
+        plan = kwargs.get('plan', None)
+        if plan is not None and len(plan) == 0:
+            logger.info('Skipping missing-resource scan — no migrations were applied')
+            return
 
         # Create resources
         for r_type in ResourceType.objects.all():
