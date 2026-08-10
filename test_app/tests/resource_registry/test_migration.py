@@ -27,11 +27,10 @@ def test_initialize_resources_skips_scan_but_creates_types_when_no_migrations_ap
     the expensive missing-resource scan."""
     from ansible_base.resource_registry.models import ResourceType
 
-    rt_count_before = ResourceType.objects.count()
+    ResourceType.objects.all().delete()
     with patch('ansible_base.resource_registry.models.init_resource_from_object') as mock_init:
         initialize_resources(apps.get_app_config('dab_resource_registry'), plan=[])
     mock_init.assert_not_called()
-    assert ResourceType.objects.count() >= rt_count_before
     assert ResourceType.objects.count() > 0
 
 
