@@ -1,4 +1,6 @@
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac import permission_registry
@@ -193,4 +195,103 @@ def test_org_admin_role_user_access_bug(organization, org_admin_rd):
         f"AAP-52187 BUG: Org admin should be able to view role access for organization they manage. "
         f"User has shared.view_organization permission and can access org detail endpoint, "
         f"but role_user_access fails with: {response.status_code} {response.data}"
+    )
+
+
+@pytest.mark.django_db
+def test_prefetch_team_assignment_type(admin_api_client, inv_rd, inventory, member_rd):
+    """The bulk prefetch classifies team-member-based assignments as 'team' type."""
+    user = User.objects.create(username='team-type-user')
+    team = Team.objects.create(name='team-type-team', organization=inventory.organization)
+    inv_rd.give_permission(team, inventory)
+    member_rd.give_permission(user, team)
+
+    url = get_relative_url('role-user-access', kwargs={'pk': inventory.pk, 'model_name': 'aap.inventory'}) + '?is_superuser=false'
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+
+    user_entry = next(r for r in response.data['results'] if r['username'] == 'team-type-user')
+    assert len(user_entry['object_role_assignments']) == 1
+    assert user_entry['object_role_assignments'][0]['type'] == 'team'
+
+
+@pytest.mark.django_db
+def test_prefetch_indirect_assignment_type(admin_api_client, org_inv_rd, inventory):
+    """The bulk prefetch classifies org-level role assignments as 'indirect' type."""
+    user = User.objects.create(username='indirect-type-user')
+    org_inv_rd.give_permission(user, inventory.organization)
+
+    url = get_relative_url('role-user-access', kwargs={'pk': inventory.pk, 'model_name': 'aap.inventory'}) + '?is_superuser=false'
+    response = admin_api_client.get(url)
+    assert response.status_code == 200
+
+    user_entry = next(r for r in response.data['results'] if r['username'] == 'indirect-type-user')
+    assert len(user_entry['object_role_assignments']) == 1
+    assert user_entry['object_role_assignments'][0]['type'] == 'indirect'
+
+
+@pytest.mark.django_db
+def test_prefetch_fallback_without_parent(inv_rd, inventory):
+    """get_object_role_assignments falls back to per-user queries when self.parent is None."""
+    from rest_framework import serializers as drf_serializers
+
+    from ansible_base.rbac.api.serializers import UserAccessListMixin
+    from ansible_base.rbac.models import DABContentType
+
+    user = User.objects.create(username='fallback-user')
+    inv_rd.give_permission(user, inventory)
+    ct = DABContentType.objects.get_for_model(type(inventory))
+
+    class TestSerializer(UserAccessListMixin, drf_serializers.ModelSerializer):
+        class Meta:
+            model = User
+            fields = ['id']
+
+    serializer = TestSerializer(
+        context={
+            'related_object': inventory,
+            'permission': None,
+            'content_type': ct,
+        }
+    )
+    assert serializer.parent is None
+    assignments = serializer.get_object_role_assignments(user)
+    assert len(assignments) == 1
+    assert assignments[0]['type'] == 'direct'
+
+
+@pytest.mark.django_db
+def test_user_access_list_query_count(admin_api_client, inv_rd, inventory):
+    """Query count should not scale with the number of users in the result.
+    With prefetched assignments, going from 2 to 20 users should add at most
+    a handful of queries, not 18 extra (one per additional user)."""
+    url = get_relative_url('role-user-access', kwargs={'pk': inventory.pk, 'model_name': 'aap.inventory'})
+
+    # Measure with 2 users
+    for i in range(2):
+        u = User.objects.create(username=f'query-count-user-{i}')
+        inv_rd.give_permission(u, inventory)
+
+    admin_api_client.get(url)  # warm up
+    with CaptureQueriesContext(connection) as ctx_small:
+        response = admin_api_client.get(url)
+    assert response.status_code == 200
+    queries_small = len(ctx_small.captured_queries)
+
+    # Add 18 more users (20 total)
+    for i in range(2, 20):
+        u = User.objects.create(username=f'query-count-user-{i}')
+        inv_rd.give_permission(u, inventory)
+
+    admin_api_client.get(url)  # warm up
+    with CaptureQueriesContext(connection) as ctx_large:
+        response = admin_api_client.get(url)
+    assert response.status_code == 200
+    queries_large = len(ctx_large.captured_queries)
+
+    added_queries = queries_large - queries_small
+    assert added_queries < 5, (
+        f"Adding 18 users increased query count by {added_queries} "
+        f"({queries_small} -> {queries_large}). "
+        f"object_role_assignments may be doing per-user queries."
     )

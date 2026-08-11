@@ -427,7 +427,10 @@ class UserAccessViewSet(
         if actor_cls._meta.model_name == 'user':
             filters = filters | Q(is_superuser=True)
 
-        return actor_cls.objects.filter(filters)
+        qs = actor_cls.objects.filter(filters)
+        if hasattr(actor_cls, 'resource'):
+            qs = qs.select_related('resource')
+        return qs
 
     def get_serializer(self, *args, **kwargs):
         """Awkwardly override this method, because eda-server uses a custom base viewset class.
