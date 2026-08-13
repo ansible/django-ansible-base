@@ -75,12 +75,24 @@ def bulk_ancestor_roles(team_pks: Iterable[int]) -> set['ObjectRole']:
 
 
 def cleanup_deleted_team_roles(team_pks: set[int]) -> tuple[set['ObjectRole'], set[int]]:
-    """Remove ObjectRoles and evaluations for deleted teams. Called by defer_rbac_computations flush."""
+    """Remove ObjectRoles, evaluations, and role assignments for deleted teams.
+
+    Called by defer_rbac_computations flush. Explicitly deletes
+    RoleUserAssignment/RoleTeamAssignment records rather than relying
+    solely on CASCADE from ObjectRole deletion, because the CASCADE
+    chain can miss records when deletions are deferred across a
+    transaction boundary.
+    """
+    from ansible_base.rbac.models import RoleTeamAssignment, RoleUserAssignment
+
     ancestor_roles = bulk_ancestor_roles(team_pks)
     team_ct_id = permission_registry.team_ct_id
+    str_pks = [str(pk) for pk in team_pks]
     RoleEvaluation.objects.filter(content_type_id=team_ct_id, object_id__in=team_pks).delete()
     deleted_or_ids = set(ObjectRole.objects.filter(content_type_id=team_ct_id, object_id__in=team_pks).values_list('id', flat=True))
     ObjectRole.objects.filter(id__in=deleted_or_ids).delete()
+    RoleUserAssignment.objects.filter(content_type_id=team_ct_id, object_id__in=str_pks).delete()
+    RoleTeamAssignment.objects.filter(content_type_id=team_ct_id, object_id__in=str_pks).delete()
     eval_model = get_evaluation_model(permission_registry.team_model)
     eval_model.objects.filter(content_type_id=team_ct_id, object_id__in=team_pks).delete()
     return ancestor_roles, deleted_or_ids
