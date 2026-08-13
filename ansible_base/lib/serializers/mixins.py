@@ -31,12 +31,17 @@ class CleanTextMixin:
         name_fields: field names routed to Tier 1 (default: name, username, hostname).
         excluded_fields: field names skipped entirely — use for fields that legitimately
             contain HTML or template syntax (e.g. Jinja2 templates, custom login HTML).
+            Also skips entire JSONFields when listed here.
+        excluded_json_keys: mapping of JSONField name to a frozenset of sub-keys
+            that should be skipped during validation (e.g. PEM keys, template content).
+            Example: {'inputs': frozenset({'ssh_key_data'})}
 
     See docs/lib/validation.md for the full contract.
     """
 
     name_fields = DEFAULT_NAME_FIELDS
     excluded_fields = frozenset()
+    excluded_json_keys = {}
 
     def validate(self, attrs):
         model = self.Meta.model
@@ -76,10 +81,55 @@ class CleanTextMixin:
                 except serializers.ValidationError as exc:
                     errors[field_name] = exc.detail
 
+        # Validate string values inside JSONFields (single-level traversal)
+        json_fields = [f.name for f in model._meta.get_fields() if hasattr(f, 'get_internal_type') and f.get_internal_type() == 'JSONField']
+
+        for field_name in json_fields:
+            if field_name in self.excluded_fields:
+                continue
+            if field_name not in attrs:
+                continue
+            value = attrs[field_name]
+            excluded_keys = self.excluded_json_keys.get(field_name, frozenset())
+            stored_value = getattr(self.instance, field_name, None) if self.instance else None
+
+            json_errors = {}
+            if isinstance(value, dict):
+                # For dicts, grandfather by key: only validate changed sub-keys
+                unchanged_keys = set()
+                if isinstance(stored_value, dict):
+                    unchanged_keys = {k for k, v in value.items() if isinstance(v, str) and stored_value.get(k) == v}
+                self._validate_json_dict(value, excluded_keys | unchanged_keys, json_errors)
+
+            elif isinstance(value, list):
+                for idx, item in enumerate(value):
+                    if isinstance(item, dict):
+                        skip_keys = set()
+                        if isinstance(stored_value, list) and idx < len(stored_value):
+                            stored_item = stored_value[idx]
+                            if isinstance(stored_item, dict):
+                                skip_keys = {k for k, v in item.items() if isinstance(v, str) and stored_item.get(k) == v}
+                        self._validate_json_dict(item, excluded_keys | skip_keys, json_errors, key_prefix=f"[{idx}].")
+
+            if json_errors:
+                errors[field_name] = json_errors
+
         if errors:
             raise serializers.ValidationError(errors)
 
         return super().validate(attrs)
+
+    def _validate_json_dict(self, data, skip_keys, errors, key_prefix=""):
+        """Validate string values in a single JSON dict (one level deep)."""
+        for key, val in data.items():
+            if key in skip_keys:
+                continue
+            if not isinstance(val, str):
+                continue
+            try:
+                validate_free_text(val)
+            except serializers.ValidationError as exc:
+                errors[f"{key_prefix}{key}"] = exc.detail
 
 
 # Derived from: https://github.com/encode/django-rest-framework/discussions/8606

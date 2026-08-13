@@ -140,6 +140,99 @@ class JobTemplateSerializer(CleanTextMixin, serializers.ModelSerializer):
 
 Excluded fields bypass both Tier 1 and Tier 2 validation entirely.
 
+## JSONField validation
+
+Starting with this version, `CleanTextMixin` also validates **string values
+inside JSONFields**. This catches dangerous content in credential inputs,
+notification configs, authenticator configs, and similar structured data.
+
+### How it works
+
+After the text-field loop, the mixin discovers all model fields with
+`get_internal_type() == 'JSONField'`. For each JSONField present in the
+submitted data:
+
+- **Dict values:** iterates `value.items()` and validates each string sub-value
+  using Tier 2 (dangerous-pattern blocklist). Non-string values (integers,
+  booleans, lists, nested dicts) are skipped.
+- **List-of-dicts:** iterates the list and validates string values in each dict
+  entry.
+
+This is a **single-level traversal** — it validates keys at the first level of
+a dict or each dict in a list. Deeply nested structures are not recursively
+traversed, since all known AAP forms submit flat dicts.
+
+### Grandfathering at sub-key level
+
+On **update**, each sub-key is compared individually against the stored value.
+Only changed sub-keys are validated — unchanged sub-keys are grandfathered even
+if they contain content that would fail validation.
+
+For list-of-dicts, grandfathering compares by list index (item at position N in
+the submitted list is compared against item at position N in the stored list).
+
+### Excluding entire JSONFields
+
+Add the field name to `excluded_fields` to skip the entire JSONField:
+
+```python
+class JobTemplateSerializer(CleanTextMixin, serializers.ModelSerializer):
+    excluded_fields = frozenset({'extra_vars'})
+
+    class Meta:
+        model = JobTemplate
+        fields = '__all__'
+```
+
+### Excluding specific sub-keys
+
+Some sub-keys legitimately contain content that would trigger the blocklist
+(e.g., PEM-encoded keys, template syntax). Use `excluded_json_keys` to skip
+specific sub-keys within a JSONField:
+
+```python
+class CredentialSerializer(CleanTextMixin, serializers.ModelSerializer):
+    excluded_json_keys = {
+        'inputs': frozenset({'ssh_key_data', 'ssh_key_unlock'}),
+        'notification_configuration': frozenset({'headers'}),
+    }
+
+    class Meta:
+        model = Credential
+        fields = '__all__'
+```
+
+The mapping keys are JSONField names; the values are frozensets of sub-key
+names to skip.
+
+### Error format
+
+Errors use nested dict format keyed by the JSONField name, with sub-keys
+identifying the problematic field:
+
+```json
+{
+    "inputs": {
+        "username": ["This field can't include HTML tags, ..."],
+        "host": ["This field can't include HTML tags, ..."]
+    }
+}
+```
+
+For list-of-dicts, the sub-key includes the index:
+
+```json
+{
+    "links": {
+        "[1].url": ["This field can't include HTML tags, ..."]
+    }
+}
+```
+
+This nested format is compatible with DRF's standard error handling and allows
+frontend form frameworks (e.g., react-hook-form) to map errors to the correct
+input fields.
+
 ## Error reporting
 
 When multiple fields fail validation, all errors are collected and returned in a

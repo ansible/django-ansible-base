@@ -2,7 +2,7 @@ import pytest
 from rest_framework import serializers
 
 from ansible_base.lib.serializers.mixins import CleanTextMixin
-from test_app.models import Organization
+from test_app.models import City, Organization
 
 
 class OrgSerializer(CleanTextMixin, serializers.ModelSerializer):
@@ -17,6 +17,28 @@ class OrgSerializerWithExclusions(CleanTextMixin, serializers.ModelSerializer):
     class Meta:
         model = Organization
         fields = ['name', 'description', 'extra_field']
+
+
+class CitySerializer(CleanTextMixin, serializers.ModelSerializer):
+    class Meta:
+        model = City
+        fields = ['name', 'country', 'population', 'extra_data']
+
+
+class CitySerializerWithExcludedJsonField(CleanTextMixin, serializers.ModelSerializer):
+    excluded_fields = frozenset({'extra_data'})
+
+    class Meta:
+        model = City
+        fields = ['name', 'country', 'population', 'extra_data']
+
+
+class CitySerializerWithExcludedJsonKeys(CleanTextMixin, serializers.ModelSerializer):
+    excluded_json_keys = {'extra_data': frozenset({'template_content', 'ssh_key_data'})}
+
+    class Meta:
+        model = City
+        fields = ['name', 'country', 'population', 'extra_data']
 
 
 class TestCleanTextMixinTier1:
@@ -197,3 +219,300 @@ class TestCleanTextMixinEdgeCases:
         assert 'name' in serializer.errors
         assert 'description' in serializer.errors
         assert 'extra_field' in serializer.errors
+
+
+class TestCleanTextMixinJSONFieldCreate:
+    """JSONField validation: string values in dicts are validated on create."""
+
+    @pytest.mark.django_db
+    def test_clean_json_dict_accepted(self):
+        data = {'name': 'TestCity', 'extra_data': {'host': 'example.com', 'port': 443}}
+        serializer = CitySerializer(data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    def test_dangerous_string_in_json_dict_rejected(self):
+        data = {'name': 'TestCity', 'extra_data': {'host': '<script>alert(1)</script>'}}
+        serializer = CitySerializer(data=data)
+        assert not serializer.is_valid()
+        assert 'extra_data' in serializer.errors
+        assert 'host' in serializer.errors['extra_data']
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize(
+        'bad_value',
+        [
+            '<script>alert("xss")</script>',
+            '$(rm -rf /)',
+            '${USER}',
+            'javascript:alert(1)',
+            '{{config.secret}}',
+        ],
+        ids=['script-tag', 'shell-subst-paren', 'shell-subst-brace', 'javascript-uri', 'template-injection'],
+    )
+    def test_various_dangerous_patterns_in_json_rejected(self, bad_value):
+        data = {'name': 'TestCity', 'extra_data': {'username': bad_value}}
+        serializer = CitySerializer(data=data)
+        assert not serializer.is_valid()
+        assert 'extra_data' in serializer.errors
+        assert 'username' in serializer.errors['extra_data']
+
+    @pytest.mark.django_db
+    def test_multiple_bad_keys_reported_together(self):
+        data = {
+            'name': 'TestCity',
+            'extra_data': {
+                'host': '<script>bad</script>',
+                'callback_url': 'javascript:evil()',
+            },
+        }
+        serializer = CitySerializer(data=data)
+        assert not serializer.is_valid()
+        assert 'extra_data' in serializer.errors
+        assert 'host' in serializer.errors['extra_data']
+        assert 'callback_url' in serializer.errors['extra_data']
+
+    @pytest.mark.django_db
+    def test_non_string_values_skipped(self):
+        """Non-string sub-values (int, bool, None, list) are not validated."""
+        data = {
+            'name': 'TestCity',
+            'extra_data': {
+                'port': 8080,
+                'enabled': True,
+                'tags': ['web', 'prod'],
+                'metadata': None,
+            },
+        }
+        serializer = CitySerializer(data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    def test_empty_dict_accepted(self):
+        data = {'name': 'TestCity', 'extra_data': {}}
+        serializer = CitySerializer(data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    def test_null_json_field_accepted(self):
+        data = {'name': 'TestCity', 'extra_data': None}
+        serializer = CitySerializer(data=data)
+        assert serializer.is_valid(), serializer.errors
+
+
+class TestCleanTextMixinJSONFieldUpdate:
+    """JSONField validation: sub-key grandfathering on update."""
+
+    @pytest.mark.django_db
+    def test_unchanged_dangerous_subkey_accepted_on_update(self):
+        """Grandfathering: unchanged sub-keys are skipped even if they contain dangerous content."""
+        city = City.objects.create(name='OldCity', extra_data={'host': '$(dangerous)'})
+        data = {'name': 'OldCity', 'extra_data': {'host': '$(dangerous)'}}
+        serializer = CitySerializer(city, data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    def test_changed_subkey_validated_on_update(self):
+        """Changed sub-keys are validated on update."""
+        city = City.objects.create(name='OldCity', extra_data={'host': 'safe.example.com'})
+        data = {'name': 'OldCity', 'extra_data': {'host': '<script>evil</script>'}}
+        serializer = CitySerializer(city, data=data)
+        assert not serializer.is_valid()
+        assert 'extra_data' in serializer.errors
+        assert 'host' in serializer.errors['extra_data']
+
+    @pytest.mark.django_db
+    def test_new_subkey_validated_on_update(self):
+        """New sub-keys (not present in stored value) are validated on update."""
+        city = City.objects.create(name='OldCity', extra_data={'host': 'safe.example.com'})
+        data = {'name': 'OldCity', 'extra_data': {'host': 'safe.example.com', 'callback': '$(evil)'}}
+        serializer = CitySerializer(city, data=data)
+        assert not serializer.is_valid()
+        assert 'extra_data' in serializer.errors
+        assert 'callback' in serializer.errors['extra_data']
+
+    @pytest.mark.django_db
+    def test_mixed_changed_and_unchanged_subkeys(self):
+        """Only changed sub-keys produce errors; unchanged ones are grandfathered."""
+        city = City.objects.create(name='OldCity', extra_data={'host': '$(old_dangerous)', 'port': '8080'})
+        data = {'name': 'OldCity', 'extra_data': {'host': '$(old_dangerous)', 'port': '<script>new</script>'}}
+        serializer = CitySerializer(city, data=data)
+        assert not serializer.is_valid()
+        assert 'extra_data' in serializer.errors
+        assert 'host' not in serializer.errors['extra_data']
+        assert 'port' in serializer.errors['extra_data']
+
+    @pytest.mark.django_db
+    def test_partial_update_skips_absent_json_field(self):
+        """Partial update without the JSONField does not trigger validation."""
+        city = City.objects.create(name='OldCity', extra_data={'host': '$(dangerous)'})
+        data = {'name': 'NewCity'}
+        serializer = CitySerializer(city, data=data, partial=True)
+        assert serializer.is_valid(), serializer.errors
+
+
+class TestCleanTextMixinJSONFieldExcluded:
+    """JSONField exclusion mechanisms."""
+
+    @pytest.mark.django_db
+    def test_excluded_json_field_allows_dangerous_content(self):
+        """Entire JSONField listed in excluded_fields skips validation."""
+        data = {'name': 'TestCity', 'extra_data': {'host': '<script>alert(1)</script>'}}
+        serializer = CitySerializerWithExcludedJsonField(data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    def test_excluded_json_keys_allows_specific_subkeys(self):
+        """Sub-keys listed in excluded_json_keys are skipped."""
+        data = {
+            'name': 'TestCity',
+            'extra_data': {
+                'template_content': '{{dangerous.template}}',
+                'ssh_key_data': '-----BEGIN RSA PRIVATE KEY-----\n$(not-shell)',
+            },
+        }
+        serializer = CitySerializerWithExcludedJsonKeys(data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    def test_non_excluded_json_keys_still_validated(self):
+        """Sub-keys NOT in excluded_json_keys are still validated."""
+        data = {
+            'name': 'TestCity',
+            'extra_data': {
+                'template_content': '{{safe.because.excluded}}',
+                'host': '<script>not excluded</script>',
+            },
+        }
+        serializer = CitySerializerWithExcludedJsonKeys(data=data)
+        assert not serializer.is_valid()
+        assert 'extra_data' in serializer.errors
+        assert 'host' in serializer.errors['extra_data']
+        assert 'template_content' not in serializer.errors['extra_data']
+
+
+class TestCleanTextMixinJSONFieldListOfDicts:
+    """JSONField validation: list-of-dicts traversal."""
+
+    @pytest.mark.django_db
+    def test_clean_list_of_dicts_accepted(self):
+        data = {
+            'name': 'TestCity',
+            'extra_data': [
+                {'url': 'https://example.com', 'label': 'Homepage'},
+                {'url': 'https://docs.example.com', 'label': 'Docs'},
+            ],
+        }
+        serializer = CitySerializer(data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    def test_dangerous_value_in_list_of_dicts_rejected(self):
+        data = {
+            'name': 'TestCity',
+            'extra_data': [
+                {'url': 'https://safe.com', 'label': 'OK'},
+                {'url': 'javascript:alert(1)', 'label': 'Bad'},
+            ],
+        }
+        serializer = CitySerializer(data=data)
+        assert not serializer.is_valid()
+        assert 'extra_data' in serializer.errors
+        assert '[1].url' in serializer.errors['extra_data']
+
+    @pytest.mark.django_db
+    def test_list_of_dicts_grandfathering_on_update(self):
+        """Unchanged values in a list-of-dicts are grandfathered regardless of position."""
+        stored = [{'url': '$(dangerous)', 'label': 'Legacy'}]
+        city = City.objects.create(name='OldCity', extra_data=stored)
+        data = {'name': 'OldCity', 'extra_data': [{'url': '$(dangerous)', 'label': 'Legacy'}]}
+        serializer = CitySerializer(city, data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    def test_list_of_dicts_reorder_validates_moved_items(self):
+        """Reordering items counts as a change — dangerous values at new positions are validated."""
+        stored = [
+            {'url': '$(first)', 'label': 'A'},
+            {'url': 'https://safe.com', 'label': 'B'},
+        ]
+        city = City.objects.create(name='OldCity', extra_data=stored)
+        data = {
+            'name': 'OldCity',
+            'extra_data': [
+                {'url': 'https://safe.com', 'label': 'B'},
+                {'url': '$(first)', 'label': 'A'},
+            ],
+        }
+        serializer = CitySerializer(city, data=data)
+        assert not serializer.is_valid()
+        assert 'extra_data' in serializer.errors
+        assert '[1].url' in serializer.errors['extra_data']
+
+    @pytest.mark.django_db
+    def test_list_of_dicts_unchanged_position_grandfathered(self):
+        """Items at the same position with unchanged values are grandfathered."""
+        stored = [
+            {'url': '$(dangerous)', 'label': 'Legacy'},
+            {'url': 'https://safe.com', 'label': 'OK'},
+        ]
+        city = City.objects.create(name='OldCity', extra_data=stored)
+        data = {
+            'name': 'OldCity',
+            'extra_data': [
+                {'url': '$(dangerous)', 'label': 'Legacy'},
+                {'url': 'https://safe.com', 'label': 'OK'},
+            ],
+        }
+        serializer = CitySerializer(city, data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    def test_list_of_dicts_duplicating_dangerous_value_rejected(self):
+        """Duplicating a grandfathered dangerous value into a new entry is rejected."""
+        stored = [{'url': '$(dangerous)', 'label': 'Legacy'}]
+        city = City.objects.create(name='OldCity', extra_data=stored)
+        data = {
+            'name': 'OldCity',
+            'extra_data': [
+                {'url': '$(dangerous)', 'label': 'Legacy'},
+                {'url': '$(dangerous)', 'label': 'Copy'},
+            ],
+        }
+        serializer = CitySerializer(city, data=data)
+        assert not serializer.is_valid()
+        assert 'extra_data' in serializer.errors
+        assert '[1].url' in serializer.errors['extra_data']
+
+    @pytest.mark.django_db
+    def test_list_of_dicts_changed_item_validated(self):
+        """Changed items in a list-of-dicts are validated."""
+        stored = [{'url': 'https://safe.com', 'label': 'OK'}]
+        city = City.objects.create(name='OldCity', extra_data=stored)
+        data = {'name': 'OldCity', 'extra_data': [{'url': '<script>evil</script>', 'label': 'OK'}]}
+        serializer = CitySerializer(city, data=data)
+        assert not serializer.is_valid()
+        assert 'extra_data' in serializer.errors
+        assert '[0].url' in serializer.errors['extra_data']
+
+    @pytest.mark.django_db
+    def test_non_dict_items_in_list_skipped(self):
+        """Non-dict items in a list (strings, ints) are not traversed."""
+        data = {'name': 'TestCity', 'extra_data': ['simple string', 42, True]}
+        serializer = CitySerializer(data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    def test_excluded_json_keys_applies_to_list_of_dicts(self):
+        """excluded_json_keys also applies when traversing list-of-dicts."""
+        data = {
+            'name': 'TestCity',
+            'extra_data': [
+                {'template_content': '{{dangerous}}', 'host': '<script>bad</script>'},
+            ],
+        }
+        serializer = CitySerializerWithExcludedJsonKeys(data=data)
+        assert not serializer.is_valid()
+        assert 'extra_data' in serializer.errors
+        assert '[0].host' in serializer.errors['extra_data']
+        assert '[0].template_content' not in serializer.errors['extra_data']
