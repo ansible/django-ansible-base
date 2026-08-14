@@ -9,13 +9,19 @@ from ansible_base.authentication.utils.authenticator_map import _EXPANSION_FIELD
 from ansible_base.authentication.utils.trigger_definition import TRIGGER_DEFINITION
 from ansible_base.lib.serializers.common import NamedCommonModelSerializer
 from ansible_base.lib.serializers.fields import JSONField
+from ansible_base.lib.serializers.mixins import CleanTextMixin
 from ansible_base.lib.utils.string import is_empty
 from ansible_base.lib.utils.typing import TranslatedString
 
 logger = logging.getLogger('ansible_base.authentication.serializers.authenticator_map')
 
 
-class AuthenticatorMapSerializer(NamedCommonModelSerializer):
+class AuthenticatorMapSerializer(CleanTextMixin, NamedCommonModelSerializer):
+    # These fields accept {% for_attr_value() %} template expansion syntax
+    # (defined in _EXPANSION_FIELDS) which would be rejected by validate_free_text().
+    # See docs/lib/validation.md "AuthenticatorMap field exclusions" for details.
+    excluded_fields = frozenset({'organization', 'role', 'team'})
+
     triggers = JSONField(
         required=True,
         allow_null=False,
@@ -57,7 +63,7 @@ class AuthenticatorMapSerializer(NamedCommonModelSerializer):
 
         if errors:
             raise ValidationError(errors)
-        return data
+        return super().validate(data)
 
     def validate_role_data(self, map_type: Optional[str], role: Optional[str], org: Optional[str], team: Optional[str]) -> dict[str, TranslatedString]:
         # If the role field has an expansion in it we can only check this role at runtime
