@@ -935,6 +935,56 @@ class TestValidateResourceName:
         assert "valid resource name" in message
         assert "letter, number, or underscore" in message
 
+    @pytest.mark.parametrize(
+        "name,script",
+        [
+            ("राम", "Devanagari (Ram)"),
+            ("कृष्ण", "Devanagari (Krishna)"),
+            ("तमिऴ्", "Tamil (Tamil)"),
+            ("বাংলা", "Bengali (Bangla)"),
+            ("तेलुगु", "Telugu (Telugu)"),
+            ("ಕನ್ನಡ", "Kannada (Kannada)"),
+            ("മലയാളം", "Malayalam (Malayalam)"),
+            ("ਪੰਜਾਬੀ", "Gurmukhi (Punjabi)"),
+            ("ଓଡ଼ିଆ", "Odia (Odia)"),
+        ],
+    )
+    def test_valid_indic_names(self, name, script):
+        validate_resource_name(name)
+
+    def test_rejects_zalgo_text(self):
+        zalgo_5 = "x\u0300\u0301\u0302\u0303\u0304"
+        with pytest.raises(ValidationError, match="consecutive combining marks"):
+            validate_resource_name(zalgo_5)
+        zalgo_7 = "x\u0300\u0301\u0302\u0303\u0304\u0305\u0306"
+        with pytest.raises(ValidationError, match="consecutive combining marks"):
+            validate_resource_name(zalgo_7)
+
+    def test_accepts_normal_combining_marks(self):
+        validate_resource_name("\u0915\u0943\u0937\u094d\u0923")
+        validate_resource_name("x\u0300\u0301\u0302\u0303")
+
+    @pytest.mark.parametrize(
+        "name,description",
+        [
+            ("a\u034f", "Combining Grapheme Joiner"),
+            ("a\ufe00", "Variation Selector 1"),
+            ("a\ufe0f", "Variation Selector 16"),
+            ("a\u17b4", "Khmer invisible vowel 1"),
+            ("a\u17b5", "Khmer invisible vowel 2"),
+            ("a\u180b", "Mongolian free variation selector 1"),
+        ],
+    )
+    def test_rejects_invisible_marks(self, name, description):
+        with pytest.raises(ValidationError):
+            validate_resource_name(name)
+
+    def test_nfc_normalization(self):
+        composed = "équipe"
+        decomposed = "équipe"
+        validate_resource_name(composed)
+        validate_resource_name(decomposed)
+
     # Import path verification
     def test_importable_from_utils_validation(self):
         from ansible_base.lib.utils.validation import validate_resource_name as validator

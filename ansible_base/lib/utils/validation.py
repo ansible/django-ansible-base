@@ -2,6 +2,7 @@ import base64
 import binascii
 import re
 import secrets
+import unicodedata
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse, urlunsplit
@@ -19,7 +20,46 @@ VALID_STRING = _('Must be a valid string')
 
 DEFAULT_NAME_FIELDS = frozenset({'name', 'username', 'hostname'})
 
-RESOURCE_NAME_RE = re.compile(r'^[\w][\w .@-]{0,511}\Z')
+
+def _build_safe_mark_class():
+    """Build a regex character class for visible Unicode marks (Mc + Mn),
+    excluding invisible marks that enable spoofing."""
+    EXCLUDE = {
+        0x034F,
+        0x17B4,
+        0x17B5,
+        0x180B,
+        0x180C,
+        0x180D,
+        0x180F,
+    }
+    EXCLUDE.update(range(0xFE00, 0xFE10))
+
+    ranges = []
+    start = None
+    prev = None
+    for cp in range(0x0300, 0x10000):
+        if unicodedata.category(chr(cp)) in ('Mc', 'Mn') and cp not in EXCLUDE:
+            if start is None:
+                start = cp
+            prev = cp
+        else:
+            if start is not None:
+                if start == prev:
+                    ranges.append(chr(start))
+                else:
+                    ranges.append(f'{chr(start)}-{chr(prev)}')
+                start = None
+    if start is not None:
+        ranges.append(chr(start) if start == prev else f'{chr(start)}-{chr(prev)}')
+    return ''.join(ranges)
+
+
+_MARKS = _build_safe_mark_class()
+
+RESOURCE_NAME_RE = re.compile(rf'^[\w{_MARKS}][\w{_MARKS} .@\-]{{0,511}}\Z')
+
+_ZALGO_RE = re.compile(rf'[{_MARKS}]{{5,}}')
 
 CONTROL_CHARS = '[\x00-\x08\x0b\x0c\x0d-\x1f\x7f-\x9f\u200b-\u200c\u200e-\u200f\u2028-\u202e\ufeff\ufff9-\ufffb]'
 
@@ -35,13 +75,23 @@ DANGEROUS_PATTERNS = re.compile(
 
 def validate_resource_name(value):
     """Tier 1 validator: enforces strict allowlist for name-type fields."""
-    if not isinstance(value, str) or not RESOURCE_NAME_RE.match(value):
+    if not isinstance(value, str):
         raise ValidationError(
             _(
-                "Enter a valid resource name. Only letters, numbers, spaces, hyphens, underscores, dots, and @ are allowed."
+                "Enter a valid resource name. Only letters, numbers, combining marks, spaces, hyphens, underscores, dots, and @ are allowed."
                 " Must start with a letter, number, or underscore. Maximum 512 characters."
             )
         )
+    value = unicodedata.normalize('NFC', value)
+    if not RESOURCE_NAME_RE.match(value):
+        raise ValidationError(
+            _(
+                "Enter a valid resource name. Only letters, numbers, combining marks, spaces, hyphens, underscores, dots, and @ are allowed."
+                " Must start with a letter, number, or underscore. Maximum 512 characters."
+            )
+        )
+    if _ZALGO_RE.search(value):
+        raise ValidationError(_("Too many consecutive combining marks."))
 
 
 def validate_free_text(value):
