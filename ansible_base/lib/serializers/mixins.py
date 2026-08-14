@@ -43,6 +43,33 @@ class CleanTextMixin:
     excluded_fields = frozenset()
     excluded_json_keys = {}
 
+    def _log_validation_failure(self, field_name, detail):
+        """Emit a WARNING-level audit log for a rejected field value.
+
+        Only the validator's own error message is recorded — never the raw input.
+        """
+        resource_type = f"{self.Meta.model._meta.app_label}.{self.Meta.model._meta.object_name}"
+        if isinstance(detail, list):
+            reason = '; '.join(str(d) for d in detail)
+        else:
+            reason = str(detail)
+
+        request = self.context.get('request')
+        user = getattr(request, 'user', None) if request else None
+        if user and getattr(user, 'is_authenticated', False):
+            user_fragment = f" for user {user.username}"
+        else:
+            user_fragment = ""
+
+        client_ip = ''
+        if request:
+            xff = request.META.get('HTTP_X_FORWARDED_FOR')
+            client_ip = xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR', '')
+
+        ip_fragment = f" (ip {client_ip})" if client_ip else ""
+
+        logger.warning("Validation rejected '%s' on %s%s%s: %s", field_name, resource_type, user_fragment, ip_fragment, reason)
+
     def validate(self, attrs):
         model = self.Meta.model
         # We use get_internal_type() rather than isinstance() here deliberately.
@@ -75,11 +102,13 @@ class CleanTextMixin:
                     validate_resource_name(unicodedata.normalize('NFC', value))
                 except serializers.ValidationError as exc:
                     errors[field_name] = exc.detail
+                    self._log_validation_failure(field_name, exc.detail)
             else:
                 try:
                     validate_free_text(value)
                 except serializers.ValidationError as exc:
                     errors[field_name] = exc.detail
+                    self._log_validation_failure(field_name, exc.detail)
 
         # Validate string values inside JSONFields (single-level traversal)
         json_fields = [f.name for f in model._meta.get_fields() if hasattr(f, 'get_internal_type') and f.get_internal_type() == 'JSONField']
@@ -99,7 +128,7 @@ class CleanTextMixin:
                 unchanged_keys = set()
                 if isinstance(stored_value, dict):
                     unchanged_keys = {k for k, v in value.items() if isinstance(v, str) and stored_value.get(k) == v}
-                self._validate_json_dict(value, excluded_keys | unchanged_keys, json_errors)
+                self._validate_json_dict(value, excluded_keys | unchanged_keys, json_errors, field_name=field_name)
 
             elif isinstance(value, list):
                 for idx, item in enumerate(value):
@@ -109,7 +138,7 @@ class CleanTextMixin:
                             stored_item = stored_value[idx]
                             if isinstance(stored_item, dict):
                                 skip_keys = {k for k, v in item.items() if isinstance(v, str) and stored_item.get(k) == v}
-                        self._validate_json_dict(item, excluded_keys | skip_keys, json_errors, key_prefix=f"[{idx}].")
+                        self._validate_json_dict(item, excluded_keys | skip_keys, json_errors, key_prefix=f"[{idx}].", field_name=field_name)
 
             if json_errors:
                 errors[field_name] = json_errors
@@ -119,7 +148,7 @@ class CleanTextMixin:
 
         return super().validate(attrs)
 
-    def _validate_json_dict(self, data, skip_keys, errors, key_prefix=""):
+    def _validate_json_dict(self, data, skip_keys, errors, key_prefix="", field_name=""):
         """Validate string values in a single JSON dict (one level deep)."""
         for key, val in data.items():
             if key in skip_keys:
@@ -129,7 +158,10 @@ class CleanTextMixin:
             try:
                 validate_free_text(val)
             except serializers.ValidationError as exc:
-                errors[f"{key_prefix}{key}"] = exc.detail
+                qualified_key = f"{key_prefix}{key}"
+                errors[qualified_key] = exc.detail
+                log_field = f"{field_name}.{qualified_key}" if field_name else qualified_key
+                self._log_validation_failure(log_field, exc.detail)
 
 
 # Derived from: https://github.com/encode/django-rest-framework/discussions/8606

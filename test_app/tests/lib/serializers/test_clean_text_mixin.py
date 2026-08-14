@@ -1,8 +1,11 @@
+import logging
+
 import pytest
+from django.test import RequestFactory
 from rest_framework import serializers
 
 from ansible_base.lib.serializers.mixins import CleanTextMixin
-from test_app.models import City, Organization
+from test_app.models import City, Organization, User
 
 
 class OrgSerializer(CleanTextMixin, serializers.ModelSerializer):
@@ -516,3 +519,163 @@ class TestCleanTextMixinJSONFieldListOfDicts:
         assert 'extra_data' in serializer.errors
         assert '[0].host' in serializer.errors['extra_data']
         assert '[0].template_content' not in serializer.errors['extra_data']
+
+
+MIXIN_LOGGER = 'ansible_base.lib.serializers.mixins'
+
+
+def _make_request(user, remote_addr='10.0.0.1'):
+    request = RequestFactory().post('/api/v1/organizations/')
+    request.user = user
+    request.META['REMOTE_ADDR'] = remote_addr
+    return request
+
+
+class TestCleanTextMixinAuditLogging:
+    """Validation failures emit audit log entries with the required fields."""
+
+    @pytest.mark.django_db
+    def test_no_log_for_valid_input(self, caplog):
+        user = User.objects.create(username='gooduser')
+        data = {'name': 'Safe Org', 'description': 'Perfectly fine text'}
+        ctx = {'request': _make_request(user)}
+        with caplog.at_level(logging.WARNING, logger=MIXIN_LOGGER):
+            serializer = OrgSerializer(data=data, context=ctx)
+            serializer.is_valid()
+        assert not [r for r in caplog.records if r.name == MIXIN_LOGGER]
+
+    @pytest.mark.django_db
+    def test_log_on_name_rejection(self, caplog):
+        user = User.objects.create(username='testadmin')
+        payload = '<script>alert(1)</script>'
+        data = {'name': payload, 'description': 'ok'}
+        ctx = {'request': _make_request(user, remote_addr='192.168.1.42')}
+        with caplog.at_level(logging.WARNING, logger=MIXIN_LOGGER):
+            serializer = OrgSerializer(data=data, context=ctx)
+            serializer.is_valid()
+        records = [r for r in caplog.records if r.name == MIXIN_LOGGER]
+        assert len(records) == 1
+        msg = records[0].message
+        assert "'name'" in msg
+        assert 'test_app.Organization' in msg
+        assert 'for user testadmin' in msg
+        assert 'ip 192.168.1.42' in msg
+        assert 'valid resource name' in msg
+        assert payload not in msg
+
+    @pytest.mark.django_db
+    def test_log_on_free_text_rejection(self, caplog):
+        user = User.objects.create(username='alice')
+        payload = '$(rm -rf /)'
+        data = {'name': 'Org', 'description': payload}
+        ctx = {'request': _make_request(user)}
+        with caplog.at_level(logging.WARNING, logger=MIXIN_LOGGER):
+            serializer = OrgSerializer(data=data, context=ctx)
+            serializer.is_valid()
+        records = [r for r in caplog.records if r.name == MIXIN_LOGGER]
+        assert len(records) == 1
+        msg = records[0].message
+        assert "'description'" in msg
+        assert 'test_app.Organization' in msg
+        assert "can't include" in msg
+        assert payload not in msg
+
+    @pytest.mark.django_db
+    def test_raw_payload_not_in_log(self, caplog):
+        """The raw malicious input must never appear in the log message."""
+        user = User.objects.create(username='attacker')
+        xss = '<script>document.cookie</script>'
+        data = {'name': xss, 'description': xss}
+        ctx = {'request': _make_request(user)}
+        with caplog.at_level(logging.WARNING, logger=MIXIN_LOGGER):
+            serializer = OrgSerializer(data=data, context=ctx)
+            serializer.is_valid()
+        for record in caplog.records:
+            if record.name == MIXIN_LOGGER:
+                assert xss not in record.message
+
+    @pytest.mark.django_db
+    def test_multiple_rejections_produce_multiple_logs(self, caplog):
+        user = User.objects.create(username='multi')
+        data = {'name': '<bad>', 'description': '$(evil)', 'extra_field': '${PWD}'}
+        ctx = {'request': _make_request(user)}
+        with caplog.at_level(logging.WARNING, logger=MIXIN_LOGGER):
+            serializer = OrgSerializer(data=data, context=ctx)
+            serializer.is_valid()
+        records = [r for r in caplog.records if r.name == MIXIN_LOGGER]
+        logged_msgs = [r.message for r in records]
+        assert any("'name'" in m for m in logged_msgs)
+        assert any("'description'" in m for m in logged_msgs)
+        assert any("'extra_field'" in m for m in logged_msgs)
+
+    @pytest.mark.django_db
+    def test_no_log_for_grandfathered_values(self, caplog):
+        user = User.objects.create(username='updater')
+        org = Organization.objects.create(name='Org', description='$(old_dangerous)')
+        data = {'name': 'Org', 'description': '$(old_dangerous)'}
+        ctx = {'request': _make_request(user)}
+        with caplog.at_level(logging.WARNING, logger=MIXIN_LOGGER):
+            serializer = OrgSerializer(org, data=data, context=ctx)
+            serializer.is_valid()
+        assert not [r for r in caplog.records if r.name == MIXIN_LOGGER]
+
+    @pytest.mark.django_db
+    def test_ip_from_x_forwarded_for(self, caplog):
+        user = User.objects.create(username='proxied')
+        request = _make_request(user)
+        request.META['HTTP_X_FORWARDED_FOR'] = '203.0.113.50, 10.0.0.1'
+        data = {'name': 'Org', 'description': '<script>x</script>'}
+        with caplog.at_level(logging.WARNING, logger=MIXIN_LOGGER):
+            serializer = OrgSerializer(data=data, context={'request': request})
+            serializer.is_valid()
+        records = [r for r in caplog.records if r.name == MIXIN_LOGGER]
+        assert len(records) == 1
+        assert 'ip 203.0.113.50' in records[0].message
+
+    @pytest.mark.django_db
+    def test_log_without_request_context(self, caplog):
+        """Logging still works when no request context is available."""
+        data = {'name': 'Org', 'description': '<script>x</script>'}
+        with caplog.at_level(logging.WARNING, logger=MIXIN_LOGGER):
+            serializer = OrgSerializer(data=data)
+            serializer.is_valid()
+        records = [r for r in caplog.records if r.name == MIXIN_LOGGER]
+        assert len(records) == 1
+        msg = records[0].message
+        assert 'Validation rejected' in msg
+        assert 'for user' not in msg
+        assert '(ip' not in msg
+
+    @pytest.mark.django_db
+    def test_json_field_rejection_logged(self, caplog):
+        user = User.objects.create(username='jsontester')
+        data = {'name': 'TestCity', 'extra_data': {'host': '<script>bad</script>'}}
+        ctx = {'request': _make_request(user)}
+        with caplog.at_level(logging.WARNING, logger=MIXIN_LOGGER):
+            serializer = CitySerializer(data=data, context=ctx)
+            serializer.is_valid()
+        records = [r for r in caplog.records if r.name == MIXIN_LOGGER]
+        assert len(records) == 1
+        msg = records[0].message
+        assert 'test_app.City' in msg
+        assert "'extra_data.host'" in msg
+        assert 'for user jsontester' in msg
+        assert '<script>bad</script>' not in msg
+
+    @pytest.mark.django_db
+    def test_json_list_of_dicts_rejection_logged(self, caplog):
+        user = User.objects.create(username='listtester')
+        data = {
+            'name': 'TestCity',
+            'extra_data': [
+                {'url': 'https://safe.com'},
+                {'url': 'javascript:alert(1)'},
+            ],
+        }
+        ctx = {'request': _make_request(user)}
+        with caplog.at_level(logging.WARNING, logger=MIXIN_LOGGER):
+            serializer = CitySerializer(data=data, context=ctx)
+            serializer.is_valid()
+        records = [r for r in caplog.records if r.name == MIXIN_LOGGER]
+        assert len(records) == 1
+        assert "'extra_data.[1].url'" in records[0].message
