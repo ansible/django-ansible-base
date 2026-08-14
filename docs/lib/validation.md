@@ -24,6 +24,21 @@ two validation tiers:
 | **Tier 1** | Name-type fields (`name`, `username`, `hostname` by default) | Strict character allowlist |
 | **Tier 2** | All other `CharField` / `TextField` columns | Dangerous-pattern blocklist |
 
+## Platform toggle — `ENHANCED_INPUT_VALIDATION_ENABLED`
+
+CleanTextMixin is controlled by the install-time setting
+`ENHANCED_INPUT_VALIDATION_ENABLED` (default: `False`).
+
+| Value | Behavior |
+|-------|----------|
+| `False` (default) | Validation logic runs and violations are logged at WARNING level, but no `ValidationError` is raised — requests proceed normally. |
+| `True` | Full Tier 1/Tier 2 validation is enforced. Invalid input is rejected with a `ValidationError`. |
+
+This setting is defined at install time and propagated to all platform
+components (Controller, EDA, Hub, Gateway). Changing it requires reinstalling
+AAP. When the toggle is off, audit logs still capture every violation, giving
+operators visibility into what would be rejected before enabling enforcement.
+
 ## Quick start
 
 ```python

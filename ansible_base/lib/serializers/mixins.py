@@ -4,6 +4,7 @@ import unicodedata
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
+from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.validation import DEFAULT_NAME_FIELDS, validate_free_text, validate_resource_name
 
 logger = logging.getLogger('ansible_base.lib.serializers.mixins')
@@ -71,6 +72,7 @@ class CleanTextMixin:
         logger.warning("Validation rejected '%s' on %s%s%s: %s", field_name, resource_type, user_fragment, ip_fragment, reason)
 
     def validate(self, attrs):
+        enforce = get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False)
         model = self.Meta.model
         # We use get_internal_type() rather than isinstance() here deliberately.
         # isinstance(f, (CharField, TextField)) would also catch SlugField and
@@ -143,7 +145,7 @@ class CleanTextMixin:
             if json_errors:
                 errors[field_name] = json_errors
 
-        if errors:
+        if errors and enforce:
             raise serializers.ValidationError(errors)
 
         return super().validate(attrs)

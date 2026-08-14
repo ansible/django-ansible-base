@@ -1,7 +1,7 @@
 import logging
 
 import pytest
-from django.test import RequestFactory
+from django.test import RequestFactory, override_settings
 from rest_framework import serializers
 
 from ansible_base.lib.serializers.mixins import CleanTextMixin
@@ -679,3 +679,47 @@ class TestCleanTextMixinAuditLogging:
         records = [r for r in caplog.records if r.name == MIXIN_LOGGER]
         assert len(records) == 1
         assert "'extra_data.[1].url'" in records[0].message
+
+
+class TestCleanTextMixinToggle:
+    """ENHANCED_INPUT_VALIDATION_ENABLED controls whether errors are raised."""
+
+    @pytest.mark.django_db
+    def test_toggle_off_allows_invalid_name(self):
+        data = {'name': '<script>alert(1)</script>', 'description': 'safe'}
+        serializer = OrgSerializer(data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    def test_toggle_off_allows_invalid_text(self):
+        data = {'name': 'ValidOrg', 'description': '<script>alert(1)</script>'}
+        serializer = OrgSerializer(data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    def test_toggle_on_rejects_invalid_name(self):
+        data = {'name': '<script>alert(1)</script>', 'description': 'safe'}
+        serializer = OrgSerializer(data=data)
+        assert not serializer.is_valid()
+        assert 'name' in serializer.errors
+
+    @pytest.mark.django_db
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    def test_toggle_on_rejects_invalid_text(self):
+        data = {'name': 'ValidOrg', 'description': '<script>alert(1)</script>'}
+        serializer = OrgSerializer(data=data)
+        assert not serializer.is_valid()
+        assert 'description' in serializer.errors
+
+    @pytest.mark.django_db
+    def test_toggle_off_still_logs(self, caplog):
+        user = User.objects.create(username='toggletester')
+        data = {'name': '<script>alert(1)</script>', 'description': 'safe'}
+        ctx = {'request': _make_request(user)}
+        with caplog.at_level(logging.WARNING, logger=MIXIN_LOGGER):
+            serializer = OrgSerializer(data=data, context=ctx)
+            assert serializer.is_valid(), serializer.errors
+        records = [r for r in caplog.records if r.name == MIXIN_LOGGER]
+        assert len(records) >= 1
+        assert 'name' in records[0].message
