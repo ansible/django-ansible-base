@@ -8,6 +8,11 @@ from ansible_base.lib.serializers.mixins import CleanTextMixin
 from test_app.models import City, Organization, User
 
 
+@pytest.fixture()
+def enable_validation(settings):
+    settings.ENHANCED_INPUT_VALIDATION_ENABLED = True
+
+
 class OrgSerializer(CleanTextMixin, serializers.ModelSerializer):
     class Meta:
         model = Organization
@@ -44,7 +49,7 @@ class CitySerializerWithExcludedJsonKeys(CleanTextMixin, serializers.ModelSerial
         fields = ['name', 'country', 'population', 'extra_data']
 
 
-@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+@pytest.mark.usefixtures('enable_validation')
 class TestCleanTextMixinTier1:
     """Tier 1: strict allowlist for name fields."""
 
@@ -91,7 +96,7 @@ class TestCleanTextMixinTier1:
         assert 'name' in serializer.errors
 
 
-@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+@pytest.mark.usefixtures('enable_validation')
 class TestCleanTextMixinTier2:
     """Tier 2: dangerous pattern blocklist for non-name text fields."""
 
@@ -151,7 +156,7 @@ class TestCleanTextMixinTier2:
         assert serializer.is_valid(), serializer.errors
 
 
-@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+@pytest.mark.usefixtures('enable_validation')
 class TestCleanTextMixinGrandfathering:
     """Existing values on update are grandfathered (skipped)."""
 
@@ -179,7 +184,7 @@ class TestCleanTextMixinGrandfathering:
         assert 'name' not in serializer.errors
 
 
-@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+@pytest.mark.usefixtures('enable_validation')
 class TestCleanTextMixinExcludedFields:
     """Fields listed in excluded_fields are skipped entirely."""
 
@@ -197,7 +202,7 @@ class TestCleanTextMixinExcludedFields:
         assert 'extra_field' in serializer.errors
 
 
-@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+@pytest.mark.usefixtures('enable_validation')
 class TestCleanTextMixinEdgeCases:
     """Edge cases: non-string values, missing fields, partial updates."""
 
@@ -229,7 +234,7 @@ class TestCleanTextMixinEdgeCases:
         assert 'extra_field' in serializer.errors
 
 
-@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+@pytest.mark.usefixtures('enable_validation')
 class TestCleanTextMixinJSONFieldCreate:
     """JSONField validation: string values in dicts are validated on create."""
 
@@ -309,7 +314,7 @@ class TestCleanTextMixinJSONFieldCreate:
         assert serializer.is_valid(), serializer.errors
 
 
-@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+@pytest.mark.usefixtures('enable_validation')
 class TestCleanTextMixinJSONFieldUpdate:
     """JSONField validation: sub-key grandfathering on update."""
 
@@ -361,7 +366,7 @@ class TestCleanTextMixinJSONFieldUpdate:
         assert serializer.is_valid(), serializer.errors
 
 
-@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+@pytest.mark.usefixtures('enable_validation')
 class TestCleanTextMixinJSONFieldExcluded:
     """JSONField exclusion mechanisms."""
 
@@ -402,7 +407,7 @@ class TestCleanTextMixinJSONFieldExcluded:
         assert 'template_content' not in serializer.errors['extra_data']
 
 
-@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+@pytest.mark.usefixtures('enable_validation')
 class TestCleanTextMixinJSONFieldListOfDicts:
     """JSONField validation: list-of-dicts traversal."""
 
