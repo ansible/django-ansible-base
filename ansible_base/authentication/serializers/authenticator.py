@@ -112,6 +112,16 @@ class AuthenticatorSerializer(NamedCommonModelSerializer, ImmutableFieldsMixin):
         if not request or (request.method != 'PATCH' and configuration is None):
             raise ValidationError(_("You must specify configuration for the authenticator"))
 
+        # For PATCH requests, treat empty configuration as "no change" so that
+        # toggling fields like enabled doesn't require re-sending the full config.
+        # Note: partial configuration merging is intentionally not supported here
+        # because some plugins (e.g. SAML) transform configuration keys in
+        # to_internal_value, making the stored format incompatible with the input
+        # format expected by validate_configuration.
+        if request and request.method == 'PATCH' and configuration is not None and not configuration:
+            configuration = None
+            data.pop('configuration', None)
+
         if auto_migrate := data.get('auto_migrate_users_to'):
             if auto_migrate.auto_migrate_users_to is not None:
                 raise ValidationError(
