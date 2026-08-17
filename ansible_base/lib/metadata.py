@@ -32,6 +32,7 @@ def inject_clean_text_patterns(field, field_info):
         field_info['pattern_description'] = 'May only contain letters, numbers, spaces, hyphens, underscores, dots, and @. Must start with a letter, number, or underscore. Maximum 512 characters.'
     else:
         field_info['blocked_pattern'] = DANGEROUS_PATTERNS.pattern
+        field_info['blocked_pattern_flags'] = 'i' if DANGEROUS_PATTERNS.flags & 2 else ''
         field_info['blocked_pattern_description'] = "Must not contain HTML tags, script markup, unsafe URI schemes (javascript:, vbscript:, data:), shell interpolation syntax, template expressions, or control characters."
 
     return field_info
