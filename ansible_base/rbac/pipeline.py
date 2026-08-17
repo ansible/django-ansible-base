@@ -260,10 +260,10 @@ def _recompute_after_give(
 
     unique_teams = {a.team for a in assignments if isinstance(a, RoleTeamAssignment)}
     if unique_teams:
-        object_roles_to_update.update(bulk_ancestor_roles({team.pk for team in unique_teams}))
-        expanded_roles = ObjectRole.objects.filter(pk__in=[obj_role.pk for obj_role in object_roles_to_update]).prefetch_related('provides_teams__has_roles')
-        for obj_role in expanded_roles:
+        direct_roles = ObjectRole.objects.filter(pk__in=[obj_role.pk for obj_role in object_roles_to_update]).prefetch_related('provides_teams__has_roles')
+        for obj_role in direct_roles:
             object_roles_to_update.update(obj_role.descendent_roles())
+        object_roles_to_update.update(bulk_ancestor_roles({team.pk for team in unique_teams}))
 
     if recompute_team_ids:
         compute_team_member_roles(team_ids=recompute_team_ids)
