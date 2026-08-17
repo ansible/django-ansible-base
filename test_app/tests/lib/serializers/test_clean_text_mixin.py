@@ -44,6 +44,7 @@ class CitySerializerWithExcludedJsonKeys(CleanTextMixin, serializers.ModelSerial
         fields = ['name', 'country', 'population', 'extra_data']
 
 
+@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
 class TestCleanTextMixinTier1:
     """Tier 1: strict allowlist for name fields."""
 
@@ -90,6 +91,7 @@ class TestCleanTextMixinTier1:
         assert 'name' in serializer.errors
 
 
+@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
 class TestCleanTextMixinTier2:
     """Tier 2: dangerous pattern blocklist for non-name text fields."""
 
@@ -149,6 +151,7 @@ class TestCleanTextMixinTier2:
         assert serializer.is_valid(), serializer.errors
 
 
+@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
 class TestCleanTextMixinGrandfathering:
     """Existing values on update are grandfathered (skipped)."""
 
@@ -176,6 +179,7 @@ class TestCleanTextMixinGrandfathering:
         assert 'name' not in serializer.errors
 
 
+@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
 class TestCleanTextMixinExcludedFields:
     """Fields listed in excluded_fields are skipped entirely."""
 
@@ -193,6 +197,7 @@ class TestCleanTextMixinExcludedFields:
         assert 'extra_field' in serializer.errors
 
 
+@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
 class TestCleanTextMixinEdgeCases:
     """Edge cases: non-string values, missing fields, partial updates."""
 
@@ -224,6 +229,7 @@ class TestCleanTextMixinEdgeCases:
         assert 'extra_field' in serializer.errors
 
 
+@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
 class TestCleanTextMixinJSONFieldCreate:
     """JSONField validation: string values in dicts are validated on create."""
 
@@ -303,6 +309,7 @@ class TestCleanTextMixinJSONFieldCreate:
         assert serializer.is_valid(), serializer.errors
 
 
+@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
 class TestCleanTextMixinJSONFieldUpdate:
     """JSONField validation: sub-key grandfathering on update."""
 
@@ -354,6 +361,7 @@ class TestCleanTextMixinJSONFieldUpdate:
         assert serializer.is_valid(), serializer.errors
 
 
+@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
 class TestCleanTextMixinJSONFieldExcluded:
     """JSONField exclusion mechanisms."""
 
@@ -394,6 +402,7 @@ class TestCleanTextMixinJSONFieldExcluded:
         assert 'template_content' not in serializer.errors['extra_data']
 
 
+@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
 class TestCleanTextMixinJSONFieldListOfDicts:
     """JSONField validation: list-of-dicts traversal."""
 
@@ -685,12 +694,14 @@ class TestCleanTextMixinToggle:
     """ENHANCED_INPUT_VALIDATION_ENABLED controls whether errors are raised."""
 
     @pytest.mark.django_db
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=False)
     def test_toggle_off_allows_invalid_name(self):
         data = {'name': '<script>alert(1)</script>', 'description': 'safe'}
         serializer = OrgSerializer(data=data)
         assert serializer.is_valid(), serializer.errors
 
     @pytest.mark.django_db
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=False)
     def test_toggle_off_allows_invalid_text(self):
         data = {'name': 'ValidOrg', 'description': '<script>alert(1)</script>'}
         serializer = OrgSerializer(data=data)
@@ -713,6 +724,7 @@ class TestCleanTextMixinToggle:
         assert 'description' in serializer.errors
 
     @pytest.mark.django_db
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=False)
     def test_toggle_off_still_logs(self, caplog):
         user = User.objects.create(username='toggletester')
         data = {'name': '<script>alert(1)</script>', 'description': 'safe'}
