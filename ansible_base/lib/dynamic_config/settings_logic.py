@@ -138,6 +138,8 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         'rest_framework.filters.SearchFilter',
         'ansible_base.rest_filters.rest_framework.order_backend.OrderByBackend',
     )
+    rest_framework.setdefault('DEFAULT_METADATA_CLASS', 'ansible_base.lib.metadata.CleanTextMetadata')
+
     if 'ansible_base.rest_filters' in installed_apps:
         rest_framework['DEFAULT_FILTER_BACKENDS'] = dab_data['ANSIBLE_BASE_ALL_REST_FILTERS']
     else:
