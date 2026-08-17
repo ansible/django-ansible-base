@@ -12,7 +12,6 @@ from ansible_base.rbac.models import DABContentType
 from ansible_base.rbac.models.content_type import _find_shared_model_app_label
 from ansible_base.rbac.remote import RemoteObject
 
-
 # -- _find_shared_model_app_label tests --
 
 
@@ -135,6 +134,43 @@ def test_model_class_remote_service_still_returns_standin():
     )
     result = ct.model_class()
     assert issubclass(result, RemoteObject)
+
+
+@pytest.mark.django_db
+def test_model_class_resolves_mismatched_shared_type_via_registry():
+    """A shared content type with a foreign app_label should resolve to the
+    correct local model via the resource registry without persisting."""
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    DABContentType.objects.filter(service='shared', model='user').delete()
+
+    ct = DABContentType.objects.create(
+        service='shared',
+        app_label='core',
+        model='user',
+    )
+    result = ct.model_class()
+    assert result is User
+    # The DB row should NOT be updated (no persist from model_class)
+    ct.refresh_from_db()
+    assert ct.app_label == 'core'
+
+
+@pytest.mark.django_db
+def test_model_class_resolves_mismatched_shared_type_logs_warning(caplog):
+    """Resolving via registry should log a warning."""
+    DABContentType.objects.filter(service='shared', model='user').delete()
+
+    ct = DABContentType.objects.create(
+        service='shared',
+        app_label='core',
+        model='user',
+    )
+    with caplog.at_level('WARNING', logger='ansible_base.rbac.models.content_type'):
+        ct.model_class()
+    assert 'core' in caplog.text
+    assert 'test_app' in caplog.text
 
 
 # -- load_remote_objects app_label resolution tests --

@@ -207,9 +207,8 @@ class DABContentTypeManager(django_models.Manager[django_models.Model]):
             # may not match any locally installed app. Resolve the local app_label
             # so model_class() can find the model later.
             if service == 'shared' and 'app_label' in defaults:
-                remote_app_label = defaults['app_label']
                 try:
-                    apps.get_model(remote_app_label, model)
+                    apps.get_model(defaults['app_label'], model)
                 except LookupError:
                     local_app_label = _find_shared_model_app_label(model)
                     if local_app_label:
@@ -318,14 +317,32 @@ class DABContentType(django_models.Model):
         try:
             return apps.get_model(self.app_label, self.model)
         except LookupError:
-            from ..remote import get_remote_standin_class
+            pass
 
-            logger.error(
-                'Could not find (%s, %s) in local service=%s (content type service=%s). '
-                'Falling back to remote stand-in.',
-                self.app_label, self.model, get_local_resource_prefix(), self.service,
-            )
-            return get_remote_standin_class(self)
+        # The stored app_label may come from a remote service (e.g. EDA's "core")
+        # that doesn't match the local app layout. Try the resource registry.
+        if self.service == "shared":
+            local_app_label = _find_shared_model_app_label(self.model)
+            if local_app_label:
+                logger.warning(
+                    "Content type %s.%s has app_label=%s but model found in %s.",
+                    self.service,
+                    self.model,
+                    self.app_label,
+                    local_app_label,
+                )
+                return apps.get_model(local_app_label, self.model)
+
+        from ..remote import get_remote_standin_class
+
+        logger.error(
+            "Could not find (%s, %s) in local service=%s (content type service=%s). Falling back to remote stand-in.",
+            self.app_label,
+            self.model,
+            get_local_resource_prefix(),
+            self.service,
+        )
+        return get_remote_standin_class(self)
 
     def get_object_for_this_type(self, **kwargs: Any) -> Union[django_models.Model, RemoteObject]:
         """Return the object referenced by this content type."""
