@@ -1036,7 +1036,10 @@ class TestTeamAssignmentRecomputeScope:
         with mock_patch.object(ObjectRole, 'descendent_roles', tracking_descendent):
             inv_rd.give_permission(team, inventory)
 
+        direct_role = ObjectRole.objects.get(role_definition=inv_rd, object_id=inventory.pk)
+        assert direct_role.pk in called_on_pks, "descendent_roles() must be called on the directly affected ObjectRole"
+
         for pk in called_on_pks:
             assert pk not in ancestor_pks, (
-                f"descendent_roles() was called on ancestor ObjectRole pk={pk}; " f"this causes O(ancestors × descendants) recomputation"
+                f"descendent_roles() was called on ancestor ObjectRole pk={pk}; " f"this causes O(ancestors x descendants) recomputation"
             )
