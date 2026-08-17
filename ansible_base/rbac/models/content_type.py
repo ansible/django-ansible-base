@@ -1,4 +1,5 @@
 import inspect
+import logging
 from collections import defaultdict
 from typing import Any, Dict, Optional, Sequence, Tuple, Type, Union
 
@@ -9,6 +10,21 @@ from django.db.models.options import Options
 from django.utils.translation import gettext_lazy as _
 
 from ..remote import RemoteObject, get_local_resource_prefix, get_resource_prefix
+
+logger = logging.getLogger('ansible_base.rbac.models.content_type')
+
+
+def _find_shared_model_app_label(model_name: str) -> Optional[str]:
+    """Find the local app_label for a shared model by consulting the resource registry."""
+    from ..remote import get_resource_registry
+
+    registry = get_resource_registry()
+    if registry is None:
+        return None
+    for resource_config in registry.get_resources().values():
+        if resource_config.managed_serializer and resource_config.model._meta.model_name == model_name:
+            return resource_config.model._meta.app_label
+    return None
 
 
 class DABContentTypeManager(django_models.Manager[django_models.Model]):
@@ -187,6 +203,17 @@ class DABContentTypeManager(django_models.Manager[django_models.Model]):
             pct_slug = defaults.pop('parent_content_type')
             max_id += 1
             defaults['id'] = max_id
+            # For shared content types the remote app_label (e.g. EDA's "core")
+            # may not match any locally installed app. Resolve the local app_label
+            # so model_class() can find the model later.
+            if service == 'shared' and 'app_label' in defaults:
+                remote_app_label = defaults['app_label']
+                try:
+                    apps.get_model(remote_app_label, model)
+                except LookupError:
+                    local_app_label = _find_shared_model_app_label(model)
+                    if local_app_label:
+                        defaults['app_label'] = local_app_label
             ct, _ = self.get_or_create(service=service, model=model, defaults=defaults)
             parent_mapping[ct] = pct_slug
 
@@ -290,10 +317,15 @@ class DABContentType(django_models.Model):
 
         try:
             return apps.get_model(self.app_label, self.model)
-        except LookupError as exc:
-            raise LookupError(
-                f'Could not find ({self.app_label}, {self.model}), expected in local service={get_local_resource_prefix()} object service={self.service}'
-            ) from exc
+        except LookupError:
+            from ..remote import get_remote_standin_class
+
+            logger.error(
+                'Could not find (%s, %s) in local service=%s (content type service=%s). '
+                'Falling back to remote stand-in.',
+                self.app_label, self.model, get_local_resource_prefix(), self.service,
+            )
+            return get_remote_standin_class(self)
 
     def get_object_for_this_type(self, **kwargs: Any) -> Union[django_models.Model, RemoteObject]:
         """Return the object referenced by this content type."""
