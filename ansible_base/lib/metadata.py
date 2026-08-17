@@ -15,7 +15,11 @@ def inject_clean_text_patterns(field, field_info):
     a text field subject to validation.
     """
     from ansible_base.lib.serializers.mixins import CleanTextMixin
+    from ansible_base.lib.utils.settings import get_setting
     from ansible_base.lib.utils.validation import DANGEROUS_PATTERNS, RESOURCE_NAME_RE
+
+    if not get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False):
+        return field_info
 
     serializer = field.parent
     if not isinstance(serializer, CleanTextMixin):
