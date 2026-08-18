@@ -63,13 +63,18 @@ _ZALGO_RE = re.compile(rf'[{_MARKS}]{{5,}}')
 
 CONTROL_CHARS = '[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u200b-\u200c\u200e-\u200f\u2028-\u202e\ufeff\ufff9-\ufffb]'
 
-DANGEROUS_PATTERNS = re.compile(
-    CONTROL_CHARS + r'|[<＜]\s*/?(?:script|iframe|object|embed|form|base|meta|link|svg|math|template)\b'
+_CONTROL_RE = re.compile(CONTROL_CHARS)
+
+_MARKUP_RE = re.compile(
+    r'[<＜]\s*/?(?:script|iframe|object|embed|form|base|meta|link|svg|math|template)\b'
     r'|\bon[a-z]{3,}\s*='
-    r'|\b(?:javascript|vbscript|data)\s*:'
-    r'|[$]\([^)]+\)|[$]\{[^}]+\}'
-    r'|\{\{[^}]+\}\}|\{%[^%]+%\}',
+    r'|\b(?:javascript|vbscript|data)\s*:',
     re.IGNORECASE,
+)
+
+_INJECTION_RE = re.compile(
+    r'[$]\([^)]+\)|[$]\{[^}]+\}'
+    r'|\{\{[^}]+\}\}|\{%[^%]+%\}'
 )
 
 
@@ -98,8 +103,12 @@ def validate_free_text(value):
     """Tier 2 validator: rejects dangerous patterns in general text fields."""
     if not isinstance(value, str):
         return
-    if DANGEROUS_PATTERNS.search(value):
-        raise ValidationError(_("This field can't include HTML tags, script markup, unsafe URI schemes, shell syntax, or control characters."))
+    if _CONTROL_RE.search(value):
+        raise ValidationError(_("This field can't include control characters."))
+    if _MARKUP_RE.search(value):
+        raise ValidationError(_("This field can't include HTML tags, script markup, or unsafe URI schemes."))
+    if _INJECTION_RE.search(value):
+        raise ValidationError(_("This field can't include shell or template syntax."))
 
 
 def validate_url_list(urls: list, schemes: list = ['https'], allow_plain_hostname: bool = False) -> None:

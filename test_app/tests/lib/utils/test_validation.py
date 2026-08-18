@@ -843,9 +843,17 @@ class TestValidateFreeText:
     def test_skips_non_string_values(self, value):
         validate_free_text(value)
 
-    def test_error_message(self):
-        with pytest.raises(ValidationError, match="can't include"):
+    def test_error_message_markup(self):
+        with pytest.raises(ValidationError, match="HTML tags"):
             validate_free_text("<script>alert(1)</script>")
+
+    def test_error_message_control(self):
+        with pytest.raises(ValidationError, match="control characters"):
+            validate_free_text("\x00 null")
+
+    def test_error_message_injection(self):
+        with pytest.raises(ValidationError, match="shell or template"):
+            validate_free_text("$(whoami)")
 
 
 class TestValidateResourceName:

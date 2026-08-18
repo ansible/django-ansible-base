@@ -103,9 +103,12 @@ All other text fields are checked against a compiled regex that catches:
 
 Safe HTML like `<b>`, `<em>`, and `<p>` is **not** blocked.
 
-**Error message:**
-> This field can't include HTML tags, script markup, unsafe URI schemes,
-> shell syntax, or control characters.
+**Error messages** (specific to the pattern that triggered rejection):
+> This field can't include control characters.
+
+> This field can't include HTML tags, script markup, or unsafe URI schemes.
+
+> This field can't include shell or template syntax.
 
 ## Grandfather behavior
 
