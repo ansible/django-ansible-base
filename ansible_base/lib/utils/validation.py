@@ -10,7 +10,6 @@ from urllib.parse import unquote, urlparse, urlunsplit
 
 import nh3
 import regex
-
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -36,15 +35,11 @@ CONTROL_CHARS = '[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u200b-\u200c\u200e-\u200f\
 _CONTROL_RE = re.compile(CONTROL_CHARS)
 
 _HANDLER_URI_RE = re.compile(
-    r'\bon[a-z]{3,}\s*='
-    r'|\b(?:javascript|vbscript|data)\s*:',
+    r'\bon[a-z]{3,}\s*=' r'|\b(?:javascript|vbscript|data)\s*:',
     re.IGNORECASE,
 )
 
-_INJECTION_RE = re.compile(
-    r'[$]\([^)]+\)|[$]\{[^}]+\}'
-    r'|\{\{[^}]+\}\}|\{%[^%]+%\}'
-)
+_INJECTION_RE = re.compile(r'[$]\([^)]+\)|[$]\{[^}]+\}' r'|\{\{[^}]+\}\}|\{%[^%]+%\}')
 
 
 def _decoded_variants(value, max_depth=3):
@@ -52,7 +47,7 @@ def _decoded_variants(value, max_depth=3):
     that entity- or URL-encoded payloads cannot bypass the denylist checks."""
     variants = [value]
     current = value
-    for _ in range(max_depth):
+    for _pass in range(max_depth):
         decoded = html_mod.unescape(unquote(current))
         if decoded == current:
             break
