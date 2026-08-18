@@ -150,10 +150,11 @@ class TestCleanTextMixinTier2:
         assert 'extra_field' in serializer.errors
 
     @pytest.mark.django_db
-    def test_safe_html_entities_accepted(self):
+    def test_all_html_tags_rejected(self):
         data = {'name': 'Org', 'description': 'Use <b>bold</b> and <em>emphasis</em>'}
         serializer = OrgSerializer(data=data)
-        assert serializer.is_valid(), serializer.errors
+        assert not serializer.is_valid()
+        assert 'description' in serializer.errors
 
 
 @pytest.mark.usefixtures('enable_validation')

@@ -1,11 +1,14 @@
 import base64
 import binascii
+import html as html_mod
 import re
 import secrets
 import unicodedata
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse, urlunsplit
+from urllib.parse import unquote, urlparse, urlunsplit
+
+import nh3
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
@@ -65,9 +68,8 @@ CONTROL_CHARS = '[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u200b-\u200c\u200e-\u200f\
 
 _CONTROL_RE = re.compile(CONTROL_CHARS)
 
-_MARKUP_RE = re.compile(
-    r'[<＜]\s*/?(?:script|iframe|object|embed|form|base|meta|link|svg|math|template)\b'
-    r'|\bon[a-z]{3,}\s*='
+_HANDLER_URI_RE = re.compile(
+    r'\bon[a-z]{3,}\s*='
     r'|\b(?:javascript|vbscript|data)\s*:',
     re.IGNORECASE,
 )
@@ -76,6 +78,49 @@ _INJECTION_RE = re.compile(
     r'[$]\([^)]+\)|[$]\{[^}]+\}'
     r'|\{\{[^}]+\}\}|\{%[^%]+%\}'
 )
+
+
+def _decoded_variants(value, max_depth=3):
+    """Return the value plus successively HTML- and percent-decoded forms, so
+    that entity- or URL-encoded payloads cannot bypass the denylist checks."""
+    variants = [value]
+    current = value
+    for _ in range(max_depth):
+        decoded = html_mod.unescape(unquote(current))
+        if decoded == current:
+            break
+        variants.append(decoded)
+        current = decoded
+    return variants
+
+
+def _normalize_for_markup_compare(text):
+    """Undo the transformations nh3 applies that are *not* markup removal, so
+    only genuine tag/attribute stripping causes a mismatch: entity escaping
+    (``&`` -> ``&amp;``) and CRLF/CR -> LF newline normalization."""
+    return html_mod.unescape(text).replace('\r\n', '\n').replace('\r', '\n')
+
+
+def _markup_variants(text):
+    """Yield ``text`` plus a normalized form that defeats common tag
+    obfuscation: NFKC folds fullwidth brackets (``＜`` -> ``<``) and
+    whitespace right after ``<`` is collapsed (``< script`` -> ``<script``),
+    so evasions still reach the parser."""
+    yield text
+    folded = unicodedata.normalize('NFKC', text)
+    collapsed = re.sub(r'<\s+', '<', folded)
+    if collapsed != text:
+        yield collapsed
+
+
+def _contains_markup(text):
+    """True if the text contains any HTML tag. nh3 (a real HTML parser) is run
+    with ``tags=set()`` to strip every tag; if that changes the text, markup was
+    present. The cleaned output is discarded."""
+    for candidate in _markup_variants(text):
+        if _normalize_for_markup_compare(nh3.clean(candidate, tags=set())) != _normalize_for_markup_compare(candidate):
+            return True
+    return False
 
 
 def validate_resource_name(value):
@@ -100,15 +145,23 @@ def validate_resource_name(value):
 
 
 def validate_free_text(value):
-    """Tier 2 validator: rejects dangerous patterns in general text fields."""
+    """Tier 2 validator: rejects dangerous patterns in general text fields.
+
+    Markup detection uses the nh3 sanitizer (a real parser) rather than a
+    regex, and every input is decoded first, so entity- or URL-encoded
+    payloads cannot slip through.
+    """
     if not isinstance(value, str):
         return
-    if _CONTROL_RE.search(value):
-        raise ValidationError(_("This field can't include control characters."))
-    if _MARKUP_RE.search(value):
-        raise ValidationError(_("This field can't include HTML tags, script markup, or unsafe URI schemes."))
-    if _INJECTION_RE.search(value):
-        raise ValidationError(_("This field can't include shell or template syntax."))
+    for v in _decoded_variants(value):
+        if _CONTROL_RE.search(v):
+            raise ValidationError(_("This field can't include control characters."))
+        if _contains_markup(v):
+            raise ValidationError(_("This field can't include HTML tags, script markup, or unsafe URI schemes."))
+        if _HANDLER_URI_RE.search(v):
+            raise ValidationError(_("This field can't include HTML tags, script markup, or unsafe URI schemes."))
+        if _INJECTION_RE.search(v):
+            raise ValidationError(_("This field can't include shell or template syntax."))
 
 
 def validate_url_list(urls: list, schemes: list = ['https'], allow_plain_hostname: bool = False) -> None:

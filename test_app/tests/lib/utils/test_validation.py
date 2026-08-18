@@ -723,9 +723,6 @@ class TestValidateFreeText:
             ("mailto:user@example.com", "mailto link"),
             ("ftp://server.local/file", "FTP URL"),
             ("Tab\there, newline\nhere", "tab and newline whitespace"),
-            ("Use <b>bold</b> and <br> tags", "safe HTML tags"),
-            ("<img src=photo.jpg>", "img tag (safe)"),
-            ("<details>expandable section</details>", "details tag (safe)"),
             ("`backtick code`", "backtick markdown"),
             ("on= something, one=thing", "short 'on' prefixes (not event handlers)"),
             ("$var without braces", "bare dollar variable"),
@@ -734,6 +731,10 @@ class TestValidateFreeText:
             ("Config: key=value, on=true", "on= with only two chars after 'on'"),
             ("line one\r\nline two", "Windows CRLF line endings"),
             ("line one\rline two", "bare carriage return"),
+            ("R&D department", "ampersand in prose"),
+            ("100% complete", "percent sign in prose"),
+            ("5 < 10 and 10 > 5", "bare angle brackets in math"),
+            ("AT&T is a company", "ampersand in company name"),
         ],
     )
     def test_accepts_valid_text(self, value, description):
@@ -759,9 +760,30 @@ class TestValidateFreeText:
             ("<math><mtext>xss</mtext></math>", "math tag"),
             ("<template>injection</template>", "template tag"),
             ("＜script＞alert(1)", "fullwidth angle bracket bypass"),
+            ("<b>bold</b>", "bold tag"),
+            ("<em>emphasis</em>", "emphasis tag"),
+            ("<br>", "line break tag"),
+            ("<img src=photo.jpg>", "img tag"),
+            ("<details>expandable section</details>", "details tag"),
+            ("<p>paragraph</p>", "paragraph tag"),
         ],
     )
     def test_rejects_html_tags(self, value, description):
+        with pytest.raises(ValidationError):
+            validate_free_text(value)
+
+    @pytest.mark.parametrize(
+        "value,description",
+        [
+            ("%3Cscript%3Ealert(1)%3C/script%3E", "percent-encoded script tag"),
+            ("&#60;script&#62;alert(1)&#60;/script&#62;", "HTML-entity script tag"),
+            ("&#36;(whoami)", "HTML-entity shell substitution"),
+            ("%24%7BPATH%7D", "percent-encoded variable expansion"),
+            ("%3Ciframe%20src%3Dx%3E", "percent-encoded iframe tag"),
+            ("＜ｓｃｒｉｐｔ＞alert(1)", "fullwidth chars that NFKC-fold to script tag"),
+        ],
+    )
+    def test_rejects_encoded_bypass_attempts(self, value, description):
         with pytest.raises(ValidationError):
             validate_free_text(value)
 

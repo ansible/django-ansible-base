@@ -90,18 +90,27 @@ Unicode representations are treated identically.
 
 ## Tier 2 — dangerous pattern blocklist
 
-All other text fields are checked against a compiled regex that catches:
+All other text fields are checked for the following categories of dangerous
+content. HTML detection uses `nh3` (a real HTML parser based on html5ever)
+rather than regex, so it cannot be evaded by tag obfuscation, unusual
+whitespace, or encoding tricks.
 
-| Category | Examples |
-|----------|----------|
-| Control characters | Null bytes (`\x00`), C0/C1 controls (except tab, LF, and CR), zero-width joiners, BOM, bidirectional overrides |
-| Dangerous HTML tags | `<script>`, `<iframe>`, `<object>`, `<embed>`, `<form>`, `<base>`, `<meta>`, `<link>`, `<svg>`, `<math>`, `<template>` (including fullwidth `＜` variants) |
-| Event handlers | `onerror=`, `onclick=`, and other `on*=` attributes |
-| Unsafe URI schemes | `javascript:`, `vbscript:`, `data:` |
-| Shell substitution | `$(...)`, `${...}` |
-| Template injection | `{{ }}`, `{% %}` (Jinja2 / Django template syntax) |
+Every input is also checked in HTML-entity-decoded and percent-decoded form
+(up to three decode passes), so encoded payloads like `&#60;script&#62;` or
+`%3Cscript%3E` are caught as well.
 
-Safe HTML like `<b>`, `<em>`, and `<p>` is **not** blocked.
+| Category | Detection method | Examples |
+|----------|-----------------|----------|
+| Control characters | Regex (intentionally selective range) | Null bytes (`\x00`), C0/C1 controls (except tab, LF, and CR), zero-width spaces, BOM, bidirectional overrides |
+| HTML tags | `nh3` parser (all tags rejected) | `<script>`, `<iframe>`, `<b>`, `<img>`, `<p>`, any HTML tag (including fullwidth `＜` variants via NFKC normalization) |
+| Event handlers | Regex | `onerror=`, `onclick=`, and other `on*=` attributes |
+| Unsafe URI schemes | Regex | `javascript:`, `vbscript:`, `data:` |
+| Shell substitution | Regex | `$(...)`, `${...}` |
+| Template injection | Regex | `{{ }}`, `{% %}` (Jinja2 / Django template syntax) |
+
+**All** HTML tags are rejected, not just a dangerous subset. Fields that
+legitimately contain HTML (e.g. custom login pages, Jinja2 templates) should
+be listed in `excluded_fields`.
 
 **Error messages** (specific to the pattern that triggered rejection):
 > This field can't include control characters.
