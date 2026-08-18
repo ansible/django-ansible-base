@@ -207,8 +207,7 @@ class AbstractCommonModel(models.Model):
             except InvalidToken:
                 logger.critical(
                     "Failed to decrypt field %r on %s (pk=%r): the SECRET_KEY may have changed. "
-                    "Re-encrypt secrets with 'manage rotate_secret_key' before restarting. "
-                    # TODO: add KB article URL for recovery steps
+                    "Restore the original SECRET_KEY that encrypted this database, then restart. "
                     "Re-raising to prevent the model from loading with corrupted data.",
                     field,
                     self.__name__,

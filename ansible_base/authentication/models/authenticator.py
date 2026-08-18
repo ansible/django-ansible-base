@@ -95,8 +95,7 @@ class Authenticator(UniqueNamedCommonModel):
             logger.critical(
                 "Failed to decrypt configuration field on Authenticator(name=%r, type=%r): "
                 "the SECRET_KEY may have changed. "
-                "Re-encrypt secrets with 'manage rotate_secret_key' before restarting. "
-                # TODO: add KB article URL for recovery steps
+                "Restore the original SECRET_KEY that encrypted this database, then restart. "
                 "Re-raising to prevent startup with corrupted authenticator configuration.",
                 instance.name,
                 instance.type,
