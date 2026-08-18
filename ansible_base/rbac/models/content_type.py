@@ -27,6 +27,19 @@ def _find_shared_model_app_label(model_name: str) -> Optional[str]:
     return None
 
 
+def _resolve_shared_app_label(app_label: str, model_name: str) -> str:
+    """Return a valid local app_label for a shared content type.
+
+    If the given app_label resolves locally, return it as-is. Otherwise
+    consult the resource registry for the correct local app_label.
+    """
+    try:
+        apps.get_model(app_label, model_name)
+        return app_label
+    except LookupError:
+        return _find_shared_model_app_label(model_name) or app_label
+
+
 class DABContentTypeManager(django_models.Manager[django_models.Model]):
     """Manager storing DABContentType objects in a local cache like original ContentType.
 
@@ -203,16 +216,8 @@ class DABContentTypeManager(django_models.Manager[django_models.Model]):
             pct_slug = defaults.pop('parent_content_type')
             max_id += 1
             defaults['id'] = max_id
-            # For shared content types the remote app_label (e.g. EDA's "core")
-            # may not match any locally installed app. Resolve the local app_label
-            # so model_class() can find the model later.
             if service == 'shared' and 'app_label' in defaults:
-                try:
-                    apps.get_model(defaults['app_label'], model)
-                except LookupError:
-                    local_app_label = _find_shared_model_app_label(model)
-                    if local_app_label:
-                        defaults['app_label'] = local_app_label
+                defaults['app_label'] = _resolve_shared_app_label(defaults['app_label'], model)
             ct, _ = self.get_or_create(service=service, model=model, defaults=defaults)
             parent_mapping[ct] = pct_slug
 
@@ -314,35 +319,30 @@ class DABContentType(django_models.Model):
 
             return get_remote_standin_class(self)
 
+        resolved_label = _resolve_shared_app_label(self.app_label, self.model) if self.service == "shared" else self.app_label
         try:
-            return apps.get_model(self.app_label, self.model)
+            model_cls = apps.get_model(resolved_label, self.model)
         except LookupError:
-            pass
+            from ..remote import get_remote_standin_class
 
-        # The stored app_label may come from a remote service (e.g. EDA's "core")
-        # that doesn't match the local app layout. Try the resource registry.
-        if self.service == "shared":
-            local_app_label = _find_shared_model_app_label(self.model)
-            if local_app_label:
-                logger.warning(
-                    "Content type %s.%s has app_label=%s but model found in %s.",
-                    self.service,
-                    self.model,
-                    self.app_label,
-                    local_app_label,
-                )
-                return apps.get_model(local_app_label, self.model)
+            logger.error(
+                "Could not find (%s, %s) in local service=%s (content type service=%s). Falling back to remote stand-in.",
+                self.app_label,
+                self.model,
+                get_local_resource_prefix(),
+                self.service,
+            )
+            return get_remote_standin_class(self)
 
-        from ..remote import get_remote_standin_class
-
-        logger.error(
-            "Could not find (%s, %s) in local service=%s (content type service=%s). Falling back to remote stand-in.",
-            self.app_label,
-            self.model,
-            get_local_resource_prefix(),
-            self.service,
-        )
-        return get_remote_standin_class(self)
+        if resolved_label != self.app_label:
+            logger.warning(
+                "Content type %s.%s has app_label=%s but model found in %s.",
+                self.service,
+                self.model,
+                self.app_label,
+                resolved_label,
+            )
+        return model_cls
 
     def get_object_for_this_type(self, **kwargs: Any) -> Union[django_models.Model, RemoteObject]:
         """Return the object referenced by this content type."""

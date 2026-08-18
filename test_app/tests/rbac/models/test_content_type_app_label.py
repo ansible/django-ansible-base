@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from ansible_base.rbac.models import DABContentType
-from ansible_base.rbac.models.content_type import _find_shared_model_app_label
+from ansible_base.rbac.models.content_type import _find_shared_model_app_label, _resolve_shared_app_label
 from ansible_base.rbac.remote import RemoteObject
 
 # -- _find_shared_model_app_label tests --
@@ -70,6 +70,27 @@ def test_find_shared_model_app_label_empty_registry():
 
     with patch('ansible_base.rbac.remote.get_resource_registry', return_value=mock_registry):
         assert _find_shared_model_app_label('user') is None
+
+
+# -- _resolve_shared_app_label tests --
+
+
+@pytest.mark.django_db
+def test_resolve_shared_app_label_valid_local():
+    """When the app_label resolves locally, return it as-is."""
+    assert _resolve_shared_app_label('test_app', 'organization') == 'test_app'
+
+
+@pytest.mark.django_db
+def test_resolve_shared_app_label_foreign_resolves_via_registry():
+    """When the app_label doesn't resolve locally, consult the resource registry."""
+    assert _resolve_shared_app_label('core', 'user') == 'test_app'
+
+
+@pytest.mark.django_db
+def test_resolve_shared_app_label_foreign_no_registry_match():
+    """When neither local nor registry resolves, return the original app_label."""
+    assert _resolve_shared_app_label('foreign_app', 'unknown_model') == 'foreign_app'
 
 
 # -- model_class() fallback tests --
