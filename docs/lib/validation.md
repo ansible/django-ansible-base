@@ -94,7 +94,7 @@ All other text fields are checked against a compiled regex that catches:
 
 | Category | Examples |
 |----------|----------|
-| Control characters | Null bytes (`\x00`), C0/C1 controls, zero-width joiners, BOM, bidirectional overrides |
+| Control characters | Null bytes (`\x00`), C0/C1 controls (except tab, LF, and CR), zero-width joiners, BOM, bidirectional overrides |
 | Dangerous HTML tags | `<script>`, `<iframe>`, `<object>`, `<embed>`, `<form>`, `<base>`, `<meta>`, `<link>`, `<svg>`, `<math>`, `<template>` (including fullwidth `＜` variants) |
 | Event handlers | `onerror=`, `onclick=`, and other `on*=` attributes |
 | Unsafe URI schemes | `javascript:`, `vbscript:`, `data:` |

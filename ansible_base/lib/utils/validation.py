@@ -61,7 +61,7 @@ RESOURCE_NAME_RE = re.compile(rf'^[\w{_MARKS}][\w{_MARKS} .@\-]{{0,511}}\Z')
 
 _ZALGO_RE = re.compile(rf'[{_MARKS}]{{5,}}')
 
-CONTROL_CHARS = '[\x00-\x08\x0b\x0c\x0d-\x1f\x7f-\x9f\u200b-\u200c\u200e-\u200f\u2028-\u202e\ufeff\ufff9-\ufffb]'
+CONTROL_CHARS = '[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u200b-\u200c\u200e-\u200f\u2028-\u202e\ufeff\ufff9-\ufffb]'
 
 DANGEROUS_PATTERNS = re.compile(
     CONTROL_CHARS + r'|[<＜]\s*/?(?:script|iframe|object|embed|form|base|meta|link|svg|math|template)\b'

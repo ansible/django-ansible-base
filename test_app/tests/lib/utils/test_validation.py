@@ -732,6 +732,8 @@ class TestValidateFreeText:
             ("", "empty string"),
             ("a" * 10000, "very long plain text"),
             ("Config: key=value, on=true", "on= with only two chars after 'on'"),
+            ("line one\r\nline two", "Windows CRLF line endings"),
+            ("line one\rline two", "bare carriage return"),
         ],
     )
     def test_accepts_valid_text(self, value, description):
@@ -808,7 +810,6 @@ class TestValidateFreeText:
         [
             ("\x00 null byte", "null byte"),
             ("\x08 backspace", "backspace"),
-            ("\x0d bare CR", "bare carriage return"),
             ("\x1b[31m red", "ANSI escape sequence"),
             ("\x7f DEL", "DEL character"),
             ("\x80 C1 control", "C1 control character"),
