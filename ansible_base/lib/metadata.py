@@ -16,7 +16,7 @@ def inject_clean_text_patterns(field, field_info):
     """
     from ansible_base.lib.serializers.mixins import CleanTextMixin
     from ansible_base.lib.utils.settings import get_setting
-    from ansible_base.lib.utils.validation import DANGEROUS_PATTERNS, RESOURCE_NAME_RE
+    from ansible_base.lib.utils.validation import RESOURCE_NAME_RE, _CONTROL_RE, _INJECTION_RE, _MARKUP_RE
 
     if not get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False):
         return field_info
@@ -35,8 +35,12 @@ def inject_clean_text_patterns(field, field_info):
         field_info['pattern'] = RESOURCE_NAME_RE.pattern.replace(r'\Z', '$')
         field_info['pattern_description'] = 'May only contain letters, numbers, spaces, hyphens, underscores, dots, and @. Must start with a letter, number, or underscore. Maximum 512 characters.'
     else:
-        field_info['blocked_pattern'] = DANGEROUS_PATTERNS.pattern
-        field_info['blocked_pattern_flags'] = 'i' if DANGEROUS_PATTERNS.flags & 2 else ''
+        field_info['blocked_pattern_control'] = _CONTROL_RE.pattern
+        field_info['blocked_pattern_control_flags'] = ''
+        field_info['blocked_pattern_markup'] = _MARKUP_RE.pattern
+        field_info['blocked_pattern_markup_flags'] = 'i'
+        field_info['blocked_pattern_injection'] = _INJECTION_RE.pattern
+        field_info['blocked_pattern_injection_flags'] = ''
         field_info['blocked_pattern_description'] = "Must not contain HTML tags, script markup, unsafe URI schemes (javascript:, vbscript:, data:), shell interpolation syntax, template expressions, or control characters."
 
     return field_info
