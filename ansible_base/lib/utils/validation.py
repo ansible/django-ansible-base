@@ -9,6 +9,7 @@ from typing import Any
 from urllib.parse import unquote, urlparse, urlunsplit
 
 import nh3
+import regex
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
@@ -24,45 +25,11 @@ VALID_STRING = _('Must be a valid string')
 DEFAULT_NAME_FIELDS = frozenset({'name', 'username', 'hostname'})
 
 
-def _build_safe_mark_class():
-    """Build a regex character class for visible Unicode marks (Mc + Mn),
-    excluding invisible marks that enable spoofing."""
-    EXCLUDE = {
-        0x034F,
-        0x17B4,
-        0x17B5,
-        0x180B,
-        0x180C,
-        0x180D,
-        0x180F,
-    }
-    EXCLUDE.update(range(0xFE00, 0xFE10))
+RESOURCE_NAME_PATTERN = r'^[\p{L}\p{N}_][\p{L}\p{N}\p{M}_ .@\-]{0,511}\Z'
+RESOURCE_NAME_RE = regex.compile(RESOURCE_NAME_PATTERN)
 
-    ranges = []
-    start = None
-    prev = None
-    for cp in range(0x0300, 0x10000):
-        if unicodedata.category(chr(cp)) in ('Mc', 'Mn') and cp not in EXCLUDE:
-            if start is None:
-                start = cp
-            prev = cp
-        else:
-            if start is not None:
-                if start == prev:
-                    ranges.append(chr(start))
-                else:
-                    ranges.append(f'{chr(start)}-{chr(prev)}')
-                start = None
-    if start is not None:
-        ranges.append(chr(start) if start == prev else f'{chr(start)}-{chr(prev)}')
-    return ''.join(ranges)
-
-
-_MARKS = _build_safe_mark_class()
-
-RESOURCE_NAME_RE = re.compile(rf'^[\w{_MARKS}][\w{_MARKS} .@\-]{{0,511}}\Z')
-
-_ZALGO_RE = re.compile(rf'[{_MARKS}]{{5,}}')
+_INVISIBLE_RE = regex.compile(r'\p{Default_Ignorable_Code_Point}')
+_ZALGO_RE = regex.compile(r'\p{M}{5,}')
 
 CONTROL_CHARS = '[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u200b-\u200c\u200e-\u200f\u2028-\u202e\ufeff\ufff9-\ufffb]'
 
@@ -133,6 +100,8 @@ def validate_resource_name(value):
             )
         )
     value = unicodedata.normalize('NFC', value)
+    if _INVISIBLE_RE.search(value):
+        raise ValidationError(_("This field can't include invisible characters."))
     if not RESOURCE_NAME_RE.match(value):
         raise ValidationError(
             _(

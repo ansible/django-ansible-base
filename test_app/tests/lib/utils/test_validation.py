@@ -1004,10 +1004,14 @@ class TestValidateResourceName:
             ("a\u17b4", "Khmer invisible vowel 1"),
             ("a\u17b5", "Khmer invisible vowel 2"),
             ("a\u180b", "Mongolian free variation selector 1"),
+            ("a\u00ad", "Soft hyphen"),
+            ("a\u200b", "Zero-width space"),
+            ("a\u2060", "Word joiner"),
+            ("a\ufeff", "Zero-width no-break space / BOM"),
         ],
     )
-    def test_rejects_invisible_marks(self, name, description):
-        with pytest.raises(ValidationError):
+    def test_rejects_invisible_characters(self, name, description):
+        with pytest.raises(ValidationError, match="invisible characters"):
             validate_resource_name(name)
 
     def test_nfc_normalization(self):

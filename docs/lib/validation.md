@@ -67,26 +67,43 @@ as `EncryptedTextField` that inherit the base type.
 ## Tier 1 — name allowlist
 
 Fields whose name appears in the `name_fields` set are validated against a
-strict regex allowlist:
+strict regex allowlist using Unicode general categories (via the `regex`
+library):
 
 ```
-^[\w][\w .@-]{0,511}\Z
+^[\p{L}\p{N}_][\p{L}\p{N}\p{M}_ .@\-]{0,511}\Z
 ```
 
 This permits:
-- Letters (including Unicode word characters via `\w`)
-- Digits
+- Letters (`\p{L}`) — all Unicode letters across scripts
+- Numbers (`\p{N}`) — all Unicode digits and numerals
+- Combining marks (`\p{M}`) — accents, vowel signs, and similar diacritics
+  needed for Indic scripts and other writing systems
 - Spaces, hyphens (`-`), underscores (`_`), dots (`.`), and `@`
-- Must start with a letter, digit, or underscore
+- Must start with a letter, number, or underscore
 - Maximum 512 characters
+
+The same pattern string is available as `RESOURCE_NAME_PATTERN` for frontend
+validation (it works in JavaScript with the `/u` flag).
 
 Values are NFC-normalized before matching so that composed and decomposed
 Unicode representations are treated identically.
 
-**Error message:**
-> Enter a valid resource name. Only letters, numbers, spaces, hyphens,
-> underscores, dots, and @ are allowed. Must start with a letter, number,
-> or underscore. Maximum 512 characters.
+In addition to the allowlist, names are checked for:
+- **Invisible characters** (`\p{Default_Ignorable_Code_Point}`) — variation
+  selectors, zero-width spaces, soft hyphens, and similar characters that are
+  invisible but can enable spoofing attacks.
+- **Zalgo text** — five or more consecutive combining marks, which create
+  visually disruptive stacked diacritics.
+
+**Error messages:**
+> Enter a valid resource name. Only letters, numbers, combining marks, spaces,
+> hyphens, underscores, dots, and @ are allowed. Must start with a letter,
+> number, or underscore. Maximum 512 characters.
+
+> This field can't include invisible characters.
+
+> Too many consecutive combining marks.
 
 ## Tier 2 — dangerous pattern blocklist
 
@@ -282,9 +299,9 @@ single `ValidationError` keyed by field name:
   validators (see below).
 - **SlugField / URLField excluded.** These format-constrained subclasses have
   their own validators and are intentionally skipped.
-- **Regex-based detection.** Tier 2 uses pattern matching, not a full HTML
-  parser. Novel obfuscation techniques may not be caught; defense in depth
-  (output encoding, CSP headers) is still necessary.
+- **Defense in depth still required.** While Tier 2 uses nh3 (a real HTML
+  parser) for tag detection and decoded-variant checks for bypass prevention,
+  defense in depth (output encoding, CSP headers) is still necessary.
 
 
 # Model-level validators — recommended for new models and fields
