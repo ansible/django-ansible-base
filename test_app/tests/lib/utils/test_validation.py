@@ -781,6 +781,8 @@ class TestValidateFreeText:
             ("%24%7BPATH%7D", "percent-encoded variable expansion"),
             ("%3Ciframe%20src%3Dx%3E", "percent-encoded iframe tag"),
             ("＜ｓｃｒｉｐｔ＞alert(1)", "fullwidth chars that NFKC-fold to script tag"),
+            ("ｊａｖａｓｃｒｉｐｔ:alert(1)", "fullwidth javascript URI scheme"),
+            ("&amp;lt;script&amp;gt;alert(1)&amp;lt;/script&amp;gt;", "double entity-encoded script tag"),
         ],
     )
     def test_rejects_encoded_bypass_attempts(self, value, description):
