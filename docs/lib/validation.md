@@ -16,7 +16,7 @@ Must be a valid string
 # CleanTextMixin — text input validation for serializers
 
 `CleanTextMixin` is a drop-in mixin for DRF `ModelSerializer` subclasses that
-automatically rejects unsafe characters and patterns in text fields. It applies
+validates input and rejects violations when enforcement is enabled for unsafe characters and patterns in text fields. It applies
 two validation tiers:
 
 | Tier | Applies to | Strategy |
@@ -83,8 +83,13 @@ This permits:
 - Must start with a letter, number, or underscore
 - Maximum 512 characters
 
-The same pattern string is available as `RESOURCE_NAME_PATTERN` for frontend
-validation (it works in JavaScript with the `/u` flag).
+The pattern string is available as `RESOURCE_NAME_PATTERN`.  For frontend
+validation, replace the Python-specific `\Z` anchor with `$` (which behaves
+identically in JavaScript without the `m` flag):
+
+```js
+/^[\p{L}\p{N}_][\p{L}\p{N}\p{M}_ .@\-]{0,511}$/u
+```
 
 Values are NFC-normalized before matching so that composed and decomposed
 Unicode representations are treated identically.

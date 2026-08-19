@@ -65,7 +65,7 @@ def _normalize_for_markup_compare(text):
 
 def _markup_variants(text):
     """Yield ``text`` plus a normalized form that defeats common tag
-    obfuscation: NFKC folds fullwidth brackets (``＜`` -> ``<``) and
+    obfuscation: NFKC folds fullwidth brackets (U+FF1C FULLWIDTH LESS-THAN SIGN -> ``<``) and
     whitespace right after ``<`` is collapsed (``< script`` -> ``<script``),
     so evasions still reach the parser."""
     yield text

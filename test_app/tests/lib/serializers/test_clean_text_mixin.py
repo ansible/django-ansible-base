@@ -208,8 +208,8 @@ class TestCleanTextMixinEdgeCases:
     """Edge cases: non-string values, missing fields, partial updates."""
 
     @pytest.mark.django_db
-    def test_non_string_field_skipped(self):
-        """Non-string attrs (e.g. None) should not cause errors."""
+    def test_empty_string_passes_validation(self):
+        """An empty string is a valid value for a text field."""
         data = {'name': 'Org', 'description': ''}
         serializer = OrgSerializer(data=data)
         assert serializer.is_valid(), serializer.errors
