@@ -616,6 +616,27 @@ class TestCleanTextMixinJSONRecursive:
         assert 'extra_data' in serializer.errors
         assert '[0][0]' in serializer.errors['extra_data']
 
+    @pytest.mark.django_db
+    def test_max_json_depth_stops_validation(self):
+        """Dangerous value beyond _MAX_JSON_DEPTH (10) is not caught."""
+        nested = '<script>deep</script>'
+        for _ in range(11):
+            nested = {'k': nested}
+        data = {'name': 'TestCity', 'extra_data': nested}
+        serializer = CitySerializer(data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    def test_value_at_max_json_depth_is_validated(self):
+        """Dangerous value at exactly depth 10 is still caught."""
+        nested = '<script>deep</script>'
+        for _ in range(10):
+            nested = {'k': nested}
+        data = {'name': 'TestCity', 'extra_data': nested}
+        serializer = CitySerializer(data=data)
+        assert not serializer.is_valid()
+        assert 'extra_data' in serializer.errors
+
 
 @pytest.mark.usefixtures('enable_validation')
 class TestCleanTextMixinJSONRecursiveGrandfathering:
