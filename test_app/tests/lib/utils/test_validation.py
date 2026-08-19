@@ -737,6 +737,11 @@ class TestValidateFreeText:
             ("AT&T is a company", "ampersand in company name"),
             ("Sample data: 42", "prose with data colon"),
             ("data: received at 10:00", "data colon in sentence"),
+            ("Persian: ‌word", "ZWNJ for Persian/Arabic letter joining"),
+            ("mixed ‎dir text", "LTR mark in mixed-direction text"),
+            ("mixed ‏dir text", "RTL mark in mixed-direction text"),
+            ("‪hello‬", "LTR embedding with pop"),
+            ("⁦hello⁩", "bidi isolate with pop"),
         ],
     )
     def test_accepts_valid_text(self, value, description):
@@ -840,10 +845,15 @@ class TestValidateFreeText:
             ("\x7f DEL", "DEL character"),
             ("\x80 C1 control", "C1 control character"),
             ("\x9f end of C1", "C1 block end"),
-            ("\u200b zero-width space", "zero-width space"),
-            ("\u200f right-to-left mark", "right-to-left mark"),
-            ("\u202e right-to-left override", "bidi override"),
-            ("\ufeff BOM", "byte order mark"),
+            ("​ zero-width space", "zero-width space"),
+            ("‭ left-to-right override", "LRO Trojan Source"),
+            ("‮ right-to-left override", "RLO Trojan Source"),
+            ("⁠ word joiner", "invisible operator"),
+            ("⁡ function application", "invisible operator"),
+            ("⁪ inhibit symmetric", "deprecated formatting"),
+            ("⁯ nominal digit shapes", "deprecated formatting"),
+            ("﻿ BOM", "byte order mark"),
+            ("￹ annotation anchor", "interlinear annotation"),
         ],
     )
     def test_rejects_control_characters(self, value, description):

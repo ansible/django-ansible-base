@@ -30,7 +30,17 @@ RESOURCE_NAME_RE = regex.compile(RESOURCE_NAME_PATTERN)
 _INVISIBLE_RE = regex.compile(r'\p{Default_Ignorable_Code_Point}')
 _ZALGO_RE = regex.compile(r'\p{M}{5,}')
 
-CONTROL_CHARS = '[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u200b-\u200c\u200e-\u200f\u2028-\u202e\ufeff\ufff9-\ufffb]'
+CONTROL_CHARS = (
+    '['
+    '\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f'  # C0/C1 controls (tab, LF, CR allowed)
+    '\u200b'  # ZWSP (spoofing vector)
+    '\u202d\u202e'  # LRO/RLO (Trojan Source CVE-2021-42574)
+    '\u2060-\u2064'  # Invisible math operators
+    '\u206a-\u206f'  # Deprecated formatting chars
+    '\ufeff'  # BOM in middle of text
+    '\ufff9-\ufffb'  # Interlinear annotations
+    ']'
+)
 
 _CONTROL_RE = re.compile(CONTROL_CHARS)
 

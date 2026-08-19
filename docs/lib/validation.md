@@ -125,7 +125,7 @@ characters like `＜` to their ASCII equivalents), so encoded payloads like
 
 | Category | Detection method | Examples |
 |----------|-----------------|----------|
-| Control characters | Regex (intentionally selective range) | Null bytes (`\x00`), C0/C1 controls (except tab, LF, and CR), zero-width spaces, BOM, bidirectional overrides |
+| Control characters | Regex (intentionally selective range) | C0/C1 controls (except tab, LF, and CR), zero-width space, directional overrides (LRO/RLO), invisible math operators, deprecated formatting chars, BOM, interlinear annotations. Allows ZWNJ/ZWJ, bidi marks/embeddings/isolates, and soft hyphen for multilingual support. |
 | HTML tags | `nh3` parser (all tags rejected) | `<script>`, `<iframe>`, `<b>`, `<img>`, `<p>`, any HTML tag (including fullwidth `＜` variants via NFKC normalization) |
 | Event handlers | Regex | `onerror=`, `onclick=`, and other `on*=` attributes |
 | Unsafe URI schemes | Regex | `javascript:`, `vbscript:`, `data:` |
