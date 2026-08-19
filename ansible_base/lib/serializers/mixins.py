@@ -75,51 +75,63 @@ class CleanTextMixin:
     def validate(self, attrs):
         enforce = get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False)
         model = self.Meta.model
-        # We use get_internal_type() rather than isinstance() here deliberately.
-        # isinstance(f, (CharField, TextField)) would also catch SlugField and
-        # URLField — format-constrained subclasses that have their own validators
-        # and are not free-text fields per ANSTRAT-1756. Those subclasses override
-        # get_internal_type() to return their own name (e.g. "SlugField"), so they
-        # are naturally excluded by this check. Custom free-text subclasses (e.g.
-        # EncryptedTextField) typically do NOT override get_internal_type(), so they
-        # inherit "CharField"/"TextField" and are caught here automatically.
-        text_fields = [f.name for f in model._meta.get_fields() if hasattr(f, 'get_internal_type') and f.get_internal_type() in ('CharField', 'TextField')]
 
         errors = {}
-        for field_name in text_fields:
-            if field_name in self.excluded_fields:
-                continue
-            if field_name not in attrs:
+        self._validate_text_fields(model, attrs, errors)
+        self._validate_json_fields(model, attrs, errors)
+
+        if errors and enforce:
+            raise serializers.ValidationError(errors)
+
+        return super().validate(attrs)
+
+    def _get_fields_by_type(self, model, *type_names):
+        """Return model field names whose get_internal_type() matches any of *type_names*."""
+        return [
+            f.name
+            for f in model._meta.get_fields()
+            if hasattr(f, 'get_internal_type') and f.get_internal_type() in type_names
+        ]
+
+    def _is_unchanged(self, field_name, value):
+        """True when the instance already stores an identical value (grandfather rule)."""
+        return self.instance and getattr(self.instance, field_name, None) == value
+
+    def _validate_text_fields(self, model, attrs, errors):
+        """Validate CharField / TextField values (Tier 1 name fields + Tier 2 free-text).
+
+        We use get_internal_type() rather than isinstance() here deliberately.
+        isinstance(f, (CharField, TextField)) would also catch SlugField and
+        URLField — format-constrained subclasses that have their own validators
+        and are not free-text fields per ANSTRAT-1756. Those subclasses override
+        get_internal_type() to return their own name (e.g. "SlugField"), so they
+        are naturally excluded by this check. Custom free-text subclasses (e.g.
+        EncryptedTextField) typically do NOT override get_internal_type(), so they
+        inherit "CharField"/"TextField" and are caught here automatically.
+        """
+        for field_name in self._get_fields_by_type(model, 'CharField', 'TextField'):
+            if field_name in self.excluded_fields or field_name not in attrs:
                 continue
             value = attrs[field_name]
-            if not isinstance(value, str):
+            if not isinstance(value, str) or self._is_unchanged(field_name, value):
                 continue
+            self._run_text_validator(field_name, value, errors)
 
-            # On update, skip if value hasn't changed (grandfather)
-            if self.instance and getattr(self.instance, field_name, None) == value:
-                continue
-
-            # Apply appropriate validator based on field type
+    def _run_text_validator(self, field_name, value, errors):
+        """Apply the appropriate validator (name vs free-text) and collect errors."""
+        try:
             if field_name in self.name_fields:
-                try:
-                    validate_resource_name(unicodedata.normalize('NFC', value))
-                except serializers.ValidationError as exc:
-                    errors[field_name] = exc.detail
-                    self._log_validation_failure(field_name, exc.detail)
+                validate_resource_name(unicodedata.normalize('NFC', value))
             else:
-                try:
-                    validate_free_text(value)
-                except serializers.ValidationError as exc:
-                    errors[field_name] = exc.detail
-                    self._log_validation_failure(field_name, exc.detail)
+                validate_free_text(value)
+        except serializers.ValidationError as exc:
+            errors[field_name] = exc.detail
+            self._log_validation_failure(field_name, exc.detail)
 
-        # Validate string values inside JSONFields (single-level traversal)
-        json_fields = [f.name for f in model._meta.get_fields() if hasattr(f, 'get_internal_type') and f.get_internal_type() == 'JSONField']
-
-        for field_name in json_fields:
-            if field_name in self.excluded_fields:
-                continue
-            if field_name not in attrs:
+    def _validate_json_fields(self, model, attrs, errors):
+        """Validate string values inside JSONFields (single-level traversal)."""
+        for field_name in self._get_fields_by_type(model, 'JSONField'):
+            if field_name in self.excluded_fields or field_name not in attrs:
                 continue
             value = attrs[field_name]
             excluded_keys = self.excluded_json_keys.get(field_name, frozenset())
@@ -127,36 +139,37 @@ class CleanTextMixin:
 
             json_errors = {}
             if isinstance(value, dict):
-                # For dicts, grandfather by key: only validate changed sub-keys
-                unchanged_keys = set()
-                if isinstance(stored_value, dict):
-                    unchanged_keys = {k for k, v in value.items() if isinstance(v, str) and stored_value.get(k) == v}
-                self._validate_json_dict(value, excluded_keys | unchanged_keys, json_errors, field_name=field_name)
-
+                self._validate_json_dict_value(value, stored_value, excluded_keys, json_errors, field_name=field_name)
             elif isinstance(value, list):
-                for idx, item in enumerate(value):
-                    if isinstance(item, dict):
-                        skip_keys = set()
-                        if isinstance(stored_value, list) and idx < len(stored_value):
-                            stored_item = stored_value[idx]
-                            if isinstance(stored_item, dict):
-                                skip_keys = {k for k, v in item.items() if isinstance(v, str) and stored_item.get(k) == v}
-                        self._validate_json_dict(item, excluded_keys | skip_keys, json_errors, key_prefix=f"[{idx}].", field_name=field_name)
+                self._validate_json_list_value(value, stored_value, excluded_keys, json_errors, field_name=field_name)
 
             if json_errors:
                 errors[field_name] = json_errors
 
-        if errors and enforce:
-            raise serializers.ValidationError(errors)
+    def _unchanged_str_keys(self, current, stored):
+        """Return the set of string-valued keys in *current* that are identical in *stored*."""
+        if not isinstance(stored, dict):
+            return set()
+        return {k for k, v in current.items() if isinstance(v, str) and stored.get(k) == v}
 
-        return super().validate(attrs)
+    def _validate_json_dict_value(self, value, stored_value, excluded_keys, json_errors, field_name=""):
+        """Validate a top-level dict JSON value, grandfathering unchanged keys."""
+        skip = excluded_keys | self._unchanged_str_keys(value, stored_value)
+        self._validate_json_dict(value, skip, json_errors, field_name=field_name)
+
+    def _validate_json_list_value(self, value, stored_value, excluded_keys, json_errors, field_name=""):
+        """Validate a top-level list-of-dicts JSON value."""
+        for idx, item in enumerate(value):
+            if not isinstance(item, dict):
+                continue
+            stored_item = stored_value[idx] if isinstance(stored_value, list) and idx < len(stored_value) else None
+            skip = excluded_keys | self._unchanged_str_keys(item, stored_item)
+            self._validate_json_dict(item, skip, json_errors, key_prefix=f"[{idx}].", field_name=field_name)
 
     def _validate_json_dict(self, data, skip_keys, errors, key_prefix="", field_name=""):
         """Validate string values in a single JSON dict (one level deep)."""
         for key, val in data.items():
-            if key in skip_keys:
-                continue
-            if not isinstance(val, str):
+            if key in skip_keys or not isinstance(val, str):
                 continue
             try:
                 validate_free_text(val)
