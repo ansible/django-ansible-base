@@ -153,7 +153,10 @@ class CleanTextMixin:
             stored_value = getattr(self.instance, field_name, None) if self.instance else None
 
             json_errors = {}
-            if isinstance(value, dict):
+            if isinstance(value, str):
+                if not (self.instance and stored_value == value):
+                    self._validate_json_string(value, field_name, json_errors, field_name)
+            elif isinstance(value, dict):
                 self._validate_json_dict(value, excluded_keys, json_errors, field_name=field_name, stored_data=stored_value)
             elif isinstance(value, list):
                 self._validate_json_list(value, excluded_keys, json_errors, field_name=field_name, stored_data=stored_value)

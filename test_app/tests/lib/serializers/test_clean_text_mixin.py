@@ -311,6 +311,38 @@ class TestCleanTextMixinJSONFieldCreate:
         serializer = CitySerializer(data=data)
         assert serializer.is_valid(), serializer.errors
 
+    @pytest.mark.django_db
+    def test_bare_string_json_field_rejected(self):
+        """A bare string as the entire JSONField value is validated."""
+        data = {'name': 'TestCity', 'extra_data': '<script>alert(1)</script>'}
+        serializer = CitySerializer(data=data)
+        assert not serializer.is_valid()
+        assert 'extra_data' in serializer.errors
+
+    @pytest.mark.django_db
+    def test_bare_safe_string_json_field_accepted(self):
+        """A bare string without dangerous patterns passes validation."""
+        data = {'name': 'TestCity', 'extra_data': 'just a plain string'}
+        serializer = CitySerializer(data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    def test_bare_string_json_field_grandfathered_on_update(self):
+        """A bare-string JSONField value is grandfathered if unchanged on update."""
+        city = City.objects.create(name='OldCity', extra_data='$(dangerous)')
+        data = {'name': 'OldCity', 'extra_data': '$(dangerous)'}
+        serializer = CitySerializer(city, data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    def test_bare_string_json_field_validated_when_changed_on_update(self):
+        """A changed bare-string JSONField value is validated on update."""
+        city = City.objects.create(name='OldCity', extra_data='safe value')
+        data = {'name': 'OldCity', 'extra_data': '<script>evil</script>'}
+        serializer = CitySerializer(city, data=data)
+        assert not serializer.is_valid()
+        assert 'extra_data' in serializer.errors
+
 
 @pytest.mark.usefixtures('enable_validation')
 class TestCleanTextMixinJSONFieldUpdate:
