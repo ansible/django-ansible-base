@@ -1,5 +1,6 @@
 import logging
 import unicodedata
+from types import MappingProxyType
 
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
@@ -42,7 +43,7 @@ class CleanTextMixin:
 
     name_fields = DEFAULT_NAME_FIELDS
     excluded_fields = frozenset()
-    excluded_json_keys = {}
+    excluded_json_keys = MappingProxyType({})
 
     def _log_validation_failure(self, field_name, detail):
         """Emit a WARNING-level audit log for a rejected field value.
