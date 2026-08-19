@@ -826,6 +826,21 @@ class TestValidateFreeText:
     @pytest.mark.parametrize(
         "value,description",
         [
+            ("jav\tascript:alert(1)", "tab in javascript scheme"),
+            ("jav\nascript:alert(1)", "LF in javascript scheme"),
+            ("jav\rascript:alert(1)", "CR in javascript scheme"),
+            ("vb\tscript:MsgBox", "tab in vbscript scheme"),
+            ("java\t\nscript:alert(1)", "mixed tab+LF in scheme"),
+        ],
+    )
+    def test_rejects_uri_scheme_with_whatwg_stripped_chars(self, value, description):
+        """WHATWG URL parser strips tab/LF/CR from scheme names before matching."""
+        with pytest.raises(ValidationError):
+            validate_free_text(value)
+
+    @pytest.mark.parametrize(
+        "value,description",
+        [
             ("$(whoami)", "command substitution"),
             ("$(cat /etc/passwd)", "command substitution with path"),
             ("${PATH}", "variable expansion"),

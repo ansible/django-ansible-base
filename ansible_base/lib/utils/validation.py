@@ -120,7 +120,10 @@ def validate_free_text(value):
             raise ValidationError(_("This field can't include control characters."))
         if _contains_markup(v):
             raise ValidationError(_("This field can't include HTML tags, script markup, or unsafe URI schemes."))
-        if _HANDLER_URI_RE.search(v):
+        # WHATWG URL parser strips tab/LF/CR before scheme matching, so
+        # "jav\tascript:" is browser-equivalent to "javascript:".
+        uri_check = re.sub(r'[\t\n\r]', '', v)
+        if _HANDLER_URI_RE.search(uri_check):
             raise ValidationError(_("This field can't include HTML tags, script markup, or unsafe URI schemes."))
         if _INJECTION_RE.search(v):
             raise ValidationError(_("This field can't include shell or template syntax."))
