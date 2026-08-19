@@ -87,11 +87,7 @@ class CleanTextMixin:
 
     def _get_fields_by_type(self, model, *type_names):
         """Return model field names whose get_internal_type() matches any of *type_names*."""
-        return [
-            f.name
-            for f in model._meta.get_fields()
-            if hasattr(f, 'get_internal_type') and f.get_internal_type() in type_names
-        ]
+        return [f.name for f in model._meta.get_fields() if hasattr(f, 'get_internal_type') and f.get_internal_type() in type_names]
 
     def _is_unchanged(self, field_name, value):
         """True when the instance already stores an identical value (grandfather rule)."""
