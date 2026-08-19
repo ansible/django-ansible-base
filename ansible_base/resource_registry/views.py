@@ -112,6 +112,13 @@ class ResourceViewSet(
 
         return super().get_serializer_class()
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        extra = self.request.query_params.get("extra_fields", "")
+        if "resource_data" in extra.split(","):
+            qs = qs.prefetch_related("content_object")
+        return qs
+
     @extend_schema_if_available(
         description="List all resources. Accepts an optional 'extra_fields' query parameter "
         "(comma-separated) to include additional fields in the response. "
