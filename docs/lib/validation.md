@@ -203,24 +203,25 @@ After the text-field loop, the mixin discovers all model fields with
 `get_internal_type() == 'JSONField'`. For each JSONField present in the
 submitted data:
 
-- **Dict values:** iterates `value.items()` and validates each string sub-value
-  using Tier 2 (dangerous-pattern blocklist). Non-string values (integers,
-  booleans, lists, nested dicts) are skipped.
-- **List-of-dicts:** iterates the list and validates string values in each dict
-  entry.
+- **Dict values:** recursively traverses nested dicts and lists, validating
+  every string value using Tier 2 (dangerous-pattern blocklist). Non-string,
+  non-container values (integers, booleans, `None`) are skipped.
+- **List values:** recursively traverses list items — validating bare strings,
+  recursing into nested dicts, and recursing into nested lists.
 
-This is a **single-level traversal** — it validates keys at the first level of
-a dict or each dict in a list. Deeply nested structures are not recursively
-traversed, since all known AAP forms submit flat dicts.
+Recursion is capped at a depth of 10 to prevent pathological inputs from
+causing excessive processing.
 
-### Grandfathering at sub-key level
+### Grandfathering at every nesting level
 
-On **update**, each sub-key is compared individually against the stored value.
-Only changed sub-keys are validated — unchanged sub-keys are grandfathered even
-if they contain content that would fail validation.
+On **update**, each string value is compared against the corresponding value in
+the stored data, following the same path through the nested structure. Only
+changed values are validated — unchanged values are grandfathered even if they
+contain content that would fail validation. This comparison works at every
+nesting depth, not just the top level.
 
-For list-of-dicts, grandfathering compares by list index (item at position N in
-the submitted list is compared against item at position N in the stored list).
+For lists, grandfathering compares by index (item at position N in the
+submitted list is compared against item at position N in the stored list).
 
 ### Excluding entire JSONFields
 
@@ -270,12 +271,23 @@ identifying the problematic field:
 }
 ```
 
-For list-of-dicts, the sub-key includes the index:
+For lists, the sub-key includes the index:
 
 ```json
 {
     "links": {
         "[1].url": ["This field can't include HTML tags, ..."]
+    }
+}
+```
+
+For nested structures, dot-separated paths identify the location:
+
+```json
+{
+    "config": {
+        "database.host": ["This field can't include HTML tags, ..."],
+        "endpoints[0].url": ["This field can't include HTML tags, ..."]
     }
 }
 ```

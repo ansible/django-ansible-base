@@ -141,8 +141,10 @@ class CleanTextMixin:
             if get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False):
                 errors[field_name] = [_("Validation could not be completed for this field.")]
 
+    _MAX_JSON_DEPTH = 10
+
     def _validate_json_fields(self, field_names, attrs, errors):
-        """Validate string values inside JSONFields (single-level traversal)."""
+        """Validate string values inside JSONFields (recursive traversal)."""
         for field_name in field_names:
             if field_name in self.excluded_fields or field_name not in attrs:
                 continue
@@ -152,50 +154,61 @@ class CleanTextMixin:
 
             json_errors = {}
             if isinstance(value, dict):
-                self._validate_json_dict_value(value, stored_value, excluded_keys, json_errors, field_name=field_name)
+                self._validate_json_dict(value, excluded_keys, json_errors, field_name=field_name, stored_data=stored_value)
             elif isinstance(value, list):
-                self._validate_json_list_value(value, stored_value, excluded_keys, json_errors, field_name=field_name)
+                self._validate_json_list(value, excluded_keys, json_errors, field_name=field_name, stored_data=stored_value)
 
             if json_errors:
                 errors[field_name] = json_errors
 
-    def _unchanged_str_keys(self, current, stored):
-        """Return the set of string-valued keys in *current* that are identical in *stored*."""
-        if not isinstance(stored, dict):
-            return set()
-        return {k for k, v in current.items() if isinstance(v, str) and stored.get(k) == v}
+    def _validate_json_string(self, val, qualified_key, errors, field_name):
+        """Validate a single JSON string value and collect errors."""
+        try:
+            validate_free_text(val)
+        except serializers.ValidationError as exc:
+            errors[qualified_key] = exc.detail
+            log_field = f"{field_name}.{qualified_key}" if field_name else qualified_key
+            self._log_validation_failure(log_field, exc.detail)
+        except Exception:
+            logger.exception("Unexpected error validating JSON key '%s'", qualified_key)
+            if get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False):
+                errors[qualified_key] = [_("Validation could not be completed for this field.")]
 
-    def _validate_json_dict_value(self, value, stored_value, excluded_keys, json_errors, field_name=""):
-        """Validate a top-level dict JSON value, grandfathering unchanged keys."""
-        skip = excluded_keys | self._unchanged_str_keys(value, stored_value)
-        self._validate_json_dict(value, skip, json_errors, field_name=field_name)
-
-    def _validate_json_list_value(self, value, stored_value, excluded_keys, json_errors, field_name=""):
-        """Validate a top-level list-of-dicts JSON value."""
-        for idx, item in enumerate(value):
-            if not isinstance(item, dict):
-                continue
-            stored_item = stored_value[idx] if isinstance(stored_value, list) and idx < len(stored_value) else None
-            skip = excluded_keys | self._unchanged_str_keys(item, stored_item)
-            self._validate_json_dict(item, skip, json_errors, key_prefix=f"[{idx}].", field_name=field_name)
-
-    def _validate_json_dict(self, data, skip_keys, errors, key_prefix="", field_name=""):
-        """Validate string values in a single JSON dict (one level deep)."""
+    def _validate_json_dict(self, data, skip_keys, errors, key_prefix="", field_name="", stored_data=None, depth=0):
+        """Validate values in a JSON dict, recursing into nested structures."""
+        if depth >= self._MAX_JSON_DEPTH:
+            return
         for key, val in data.items():
-            if key in skip_keys or not isinstance(val, str):
+            if key in skip_keys:
                 continue
-            try:
-                validate_free_text(val)
-            except serializers.ValidationError as exc:
-                qualified_key = f"{key_prefix}{key}"
-                errors[qualified_key] = exc.detail
-                log_field = f"{field_name}.{qualified_key}" if field_name else qualified_key
-                self._log_validation_failure(log_field, exc.detail)
-            except Exception:
-                qualified_key = f"{key_prefix}{key}"
-                logger.exception("Unexpected error validating JSON key '%s'", qualified_key)
-                if get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False):
-                    errors[qualified_key] = [_("Validation could not be completed for this field.")]
+            qualified_key = f"{key_prefix}{key}"
+            stored_val = stored_data.get(key) if isinstance(stored_data, dict) else None
+
+            if isinstance(val, str):
+                if val == stored_val:
+                    continue
+                self._validate_json_string(val, qualified_key, errors, field_name)
+            elif isinstance(val, dict):
+                self._validate_json_dict(val, skip_keys, errors, key_prefix=f"{qualified_key}.", field_name=field_name, stored_data=stored_val, depth=depth + 1)
+            elif isinstance(val, list):
+                self._validate_json_list(val, skip_keys, errors, key_prefix=qualified_key, field_name=field_name, stored_data=stored_val, depth=depth + 1)
+
+    def _validate_json_list(self, data, skip_keys, errors, key_prefix="", field_name="", stored_data=None, depth=0):
+        """Validate values in a JSON list, recursing into nested structures."""
+        if depth >= self._MAX_JSON_DEPTH:
+            return
+        for idx, item in enumerate(data):
+            stored_item = stored_data[idx] if isinstance(stored_data, list) and idx < len(stored_data) else None
+            item_key = f"{key_prefix}[{idx}]"
+
+            if isinstance(item, str):
+                if item == stored_item:
+                    continue
+                self._validate_json_string(item, item_key, errors, field_name)
+            elif isinstance(item, dict):
+                self._validate_json_dict(item, skip_keys, errors, key_prefix=f"{item_key}.", field_name=field_name, stored_data=stored_item, depth=depth + 1)
+            elif isinstance(item, list):
+                self._validate_json_list(item, skip_keys, errors, key_prefix=item_key, field_name=field_name, stored_data=stored_item, depth=depth + 1)
 
 
 # Derived from: https://github.com/encode/django-rest-framework/discussions/8606

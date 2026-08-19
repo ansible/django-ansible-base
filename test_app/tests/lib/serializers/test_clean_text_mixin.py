@@ -533,6 +533,123 @@ class TestCleanTextMixinJSONFieldListOfDicts:
         assert '[0].template_content' not in serializer.errors['extra_data']
 
 
+@pytest.mark.usefixtures('enable_validation')
+class TestCleanTextMixinJSONRecursive:
+    """JSONField validation: recursive traversal into nested structures."""
+
+    @pytest.mark.django_db
+    def test_nested_dict_dangerous_value_rejected(self):
+        data = {'name': 'TestCity', 'extra_data': {'config': {'inner': '<script>bad</script>'}}}
+        serializer = CitySerializer(data=data)
+        assert not serializer.is_valid()
+        assert 'extra_data' in serializer.errors
+        assert 'config.inner' in serializer.errors['extra_data']
+
+    @pytest.mark.django_db
+    def test_nested_dict_safe_value_accepted(self):
+        data = {'name': 'TestCity', 'extra_data': {'config': {'inner': 'safe text'}}}
+        serializer = CitySerializer(data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    def test_deeply_nested_value_rejected(self):
+        data = {'name': 'TestCity', 'extra_data': {'a': {'b': {'c': '<script>deep</script>'}}}}
+        serializer = CitySerializer(data=data)
+        assert not serializer.is_valid()
+        assert 'extra_data' in serializer.errors
+        assert 'a.b.c' in serializer.errors['extra_data']
+
+    @pytest.mark.django_db
+    def test_nested_list_in_dict_rejected(self):
+        data = {'name': 'TestCity', 'extra_data': {'items': [{'host': '<script>x</script>'}]}}
+        serializer = CitySerializer(data=data)
+        assert not serializer.is_valid()
+        assert 'extra_data' in serializer.errors
+        assert 'items[0].host' in serializer.errors['extra_data']
+
+    @pytest.mark.django_db
+    def test_bare_strings_in_list_validated(self):
+        data = {'name': 'TestCity', 'extra_data': ['<script>bad</script>', 'safe text']}
+        serializer = CitySerializer(data=data)
+        assert not serializer.is_valid()
+        assert 'extra_data' in serializer.errors
+        assert '[0]' in serializer.errors['extra_data']
+        assert '[1]' not in serializer.errors['extra_data']
+
+    @pytest.mark.django_db
+    def test_nested_list_of_lists_rejected(self):
+        data = {'name': 'TestCity', 'extra_data': [['<script>bad</script>']]}
+        serializer = CitySerializer(data=data)
+        assert not serializer.is_valid()
+        assert 'extra_data' in serializer.errors
+        assert '[0][0]' in serializer.errors['extra_data']
+
+
+@pytest.mark.usefixtures('enable_validation')
+class TestCleanTextMixinJSONRecursiveGrandfathering:
+    """JSONField validation: grandfathering works at every nesting level."""
+
+    @pytest.mark.django_db
+    def test_unchanged_nested_dict_grandfathered(self):
+        stored = {'config': {'inner': '$(old_dangerous)'}}
+        city = City.objects.create(name='OldCity', extra_data=stored)
+        data = {'name': 'OldCity', 'extra_data': {'config': {'inner': '$(old_dangerous)'}}}
+        serializer = CitySerializer(city, data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    def test_changed_nested_value_validated(self):
+        stored = {'config': {'inner': 'was_safe'}}
+        city = City.objects.create(name='OldCity', extra_data=stored)
+        data = {'name': 'OldCity', 'extra_data': {'config': {'inner': '<script>new</script>'}}}
+        serializer = CitySerializer(city, data=data)
+        assert not serializer.is_valid()
+        assert 'config.inner' in serializer.errors['extra_data']
+
+    @pytest.mark.django_db
+    def test_mixed_changed_unchanged_nested(self):
+        stored = {'config': {'kept': '$(old)', 'changed': 'was_safe'}}
+        city = City.objects.create(name='OldCity', extra_data=stored)
+        data = {'name': 'OldCity', 'extra_data': {'config': {'kept': '$(old)', 'changed': '<script>new</script>'}}}
+        serializer = CitySerializer(city, data=data)
+        assert not serializer.is_valid()
+        assert 'config.kept' not in serializer.errors['extra_data']
+        assert 'config.changed' in serializer.errors['extra_data']
+
+    @pytest.mark.django_db
+    def test_unchanged_nested_list_item_grandfathered(self):
+        stored = {'items': [{'host': '$(old)'}]}
+        city = City.objects.create(name='OldCity', extra_data=stored)
+        data = {'name': 'OldCity', 'extra_data': {'items': [{'host': '$(old)'}]}}
+        serializer = CitySerializer(city, data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    def test_deeply_nested_grandfathering(self):
+        stored = {'a': {'b': {'c': '$(deep_old)'}}}
+        city = City.objects.create(name='OldCity', extra_data=stored)
+        data = {'name': 'OldCity', 'extra_data': {'a': {'b': {'c': '$(deep_old)'}}}}
+        serializer = CitySerializer(city, data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    def test_new_nested_key_validated_on_update(self):
+        stored = {'config': {}}
+        city = City.objects.create(name='OldCity', extra_data=stored)
+        data = {'name': 'OldCity', 'extra_data': {'config': {'new_key': '<script>bad</script>'}}}
+        serializer = CitySerializer(city, data=data)
+        assert not serializer.is_valid()
+        assert 'config.new_key' in serializer.errors['extra_data']
+
+    @pytest.mark.django_db
+    def test_bare_string_in_list_grandfathered(self):
+        stored = ['$(old_value)']
+        city = City.objects.create(name='OldCity', extra_data=stored)
+        data = {'name': 'OldCity', 'extra_data': ['$(old_value)']}
+        serializer = CitySerializer(city, data=data)
+        assert serializer.is_valid(), serializer.errors
+
+
 MIXIN_LOGGER = 'ansible_base.lib.serializers.mixins'
 
 
