@@ -118,8 +118,10 @@ rather than regex, so it cannot be evaded by tag obfuscation, unusual
 whitespace, or encoding tricks.
 
 Every input is also checked in HTML-entity-decoded and percent-decoded form
-(up to three decode passes), so encoded payloads like `&#60;script&#62;` or
-`%3Cscript%3E` are caught as well.
+(up to three decode passes) and then NFKC-normalized (which folds fullwidth
+characters like `＜` to their ASCII equivalents), so encoded payloads like
+`&#60;script&#62;` or `%3Cscript%3E` and fullwidth obfuscations like
+`ｊａｖａｓｃｒｉｐｔ：` are caught across all checks.
 
 | Category | Detection method | Examples |
 |----------|-----------------|----------|

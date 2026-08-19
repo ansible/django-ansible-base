@@ -43,16 +43,19 @@ _INJECTION_RE = re.compile(r'[$]\([^)]+\)|[$]\{[^}]+\}' r'|\{\{[^}]+\}\}|\{%[^%]
 
 
 def _decoded_variants(value, max_depth=3):
-    """Return the value plus successively HTML- and percent-decoded forms, so
-    that entity- or URL-encoded payloads cannot bypass the denylist checks."""
+    """Return the value plus successively HTML-, percent-, and NFKC-decoded
+    forms, so that entity-, URL-, or fullwidth-encoded payloads cannot bypass
+    the denylist checks."""
     variants = [value]
     current = value
     for _pass in range(max_depth):
         decoded = html_mod.unescape(unquote(current))
-        if decoded == current:
+        nfkc = unicodedata.normalize('NFKC', decoded)
+        collapsed = re.sub(r'<\s+', '<', nfkc)
+        if collapsed == current:
             break
-        variants.append(decoded)
-        current = decoded
+        variants.append(collapsed)
+        current = collapsed
     return variants
 
 
@@ -63,26 +66,11 @@ def _normalize_for_markup_compare(text):
     return html_mod.unescape(text).replace('\r\n', '\n').replace('\r', '\n')
 
 
-def _markup_variants(text):
-    """Yield ``text`` plus a normalized form that defeats common tag
-    obfuscation: NFKC folds fullwidth brackets (U+FF1C FULLWIDTH LESS-THAN SIGN -> ``<``) and
-    whitespace right after ``<`` is collapsed (``< script`` -> ``<script``),
-    so evasions still reach the parser."""
-    yield text
-    folded = unicodedata.normalize('NFKC', text)
-    collapsed = re.sub(r'<\s+', '<', folded)
-    if collapsed != text:
-        yield collapsed
-
-
 def _contains_markup(text):
     """True if the text contains any HTML tag. nh3 (a real HTML parser) is run
     with ``tags=set()`` to strip every tag; if that changes the text, markup was
     present. The cleaned output is discarded."""
-    for candidate in _markup_variants(text):
-        if _normalize_for_markup_compare(nh3.clean(candidate, tags=set())) != _normalize_for_markup_compare(candidate):
-            return True
-    return False
+    return _normalize_for_markup_compare(nh3.clean(text, tags=set())) != _normalize_for_markup_compare(text)
 
 
 def validate_resource_name(value):
