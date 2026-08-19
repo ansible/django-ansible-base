@@ -735,6 +735,8 @@ class TestValidateFreeText:
             ("100% complete", "percent sign in prose"),
             ("5 < 10 and 10 > 5", "bare angle brackets in math"),
             ("AT&T is a company", "ampersand in company name"),
+            ("Sample data: 42", "prose with data colon"),
+            ("data: received at 10:00", "data colon in sentence"),
         ],
     )
     def test_accepts_valid_text(self, value, description):
@@ -792,16 +794,16 @@ class TestValidateFreeText:
     @pytest.mark.parametrize(
         "value,description",
         [
-            ("onerror=alert(1)", "onerror handler"),
-            ("onclick=doStuff()", "onclick handler"),
-            ("onload=init()", "onload handler"),
-            ("onmouseover=alert(1)", "onmouseover handler"),
-            ("ONERROR=alert(1)", "onerror uppercase"),
+            ("onerror=alert(1)", "bare onerror not inside a tag"),
+            ("onclick=doStuff()", "bare onclick not inside a tag"),
+            ("onload=init()", "bare onload not inside a tag"),
+            ("onmouseover=alert(1)", "bare onmouseover not inside a tag"),
+            ("ONERROR=alert(1)", "bare onerror uppercase not inside a tag"),
+            ("online=true", "prose containing on-prefix word"),
         ],
     )
-    def test_rejects_event_handlers(self, value, description):
-        with pytest.raises(ValidationError):
-            validate_free_text(value)
+    def test_allows_bare_event_handler_like_strings(self, value, description):
+        validate_free_text(value)
 
     @pytest.mark.parametrize(
         "value,description",
@@ -809,7 +811,7 @@ class TestValidateFreeText:
             ("javascript:alert(1)", "javascript protocol"),
             ("JAVASCRIPT:void(0)", "javascript protocol uppercase"),
             ("vbscript:MsgBox", "vbscript protocol"),
-            ("data:text/html,<h1>hi</h1>", "data URI"),
+            ("data:text/html,<h1>hi</h1>", "data URI with markup caught by _contains_markup"),
         ],
     )
     def test_rejects_dangerous_uri_schemes(self, value, description):

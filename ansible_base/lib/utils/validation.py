@@ -35,7 +35,7 @@ CONTROL_CHARS = '[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u200b-\u200c\u200e-\u200f\
 _CONTROL_RE = re.compile(CONTROL_CHARS)
 
 _HANDLER_URI_RE = re.compile(
-    r'\bon[a-z]{3,}\s*=' + r'|\b(?:javascript|vbscript|data)\s*:',
+    r'\b(?:javascript|vbscript)\s*:',
     re.IGNORECASE,
 )
 
