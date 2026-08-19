@@ -254,7 +254,9 @@ class CredentialSerializer(CleanTextMixin, serializers.ModelSerializer):
 ```
 
 The mapping keys are JSONField names; the values are frozensets of sub-key
-names to skip.
+names to skip. Excluded sub-keys are skipped at **every** nesting depth, not
+just the top level — if `ssh_key_data` is excluded, it is skipped wherever it
+appears in the JSON structure.
 
 ### Error format
 
