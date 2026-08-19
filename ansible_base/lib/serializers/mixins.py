@@ -2,6 +2,7 @@ import logging
 import unicodedata
 from types import MappingProxyType
 
+from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
@@ -76,24 +77,36 @@ class CleanTextMixin:
         enforce = get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False)
         model = self.Meta.model
 
+        text_fields, json_fields = self._classify_fields(model)
+
         errors = {}
-        self._validate_text_fields(model, attrs, errors)
-        self._validate_json_fields(model, attrs, errors)
+        self._validate_text_fields(text_fields, attrs, errors)
+        self._validate_json_fields(json_fields, attrs, errors)
 
         if errors and enforce:
             raise serializers.ValidationError(errors)
 
         return super().validate(attrs)
 
-    def _get_fields_by_type(self, model, *type_names):
-        """Return model field names whose get_internal_type() matches any of *type_names*."""
-        return [f.name for f in model._meta.get_fields() if hasattr(f, 'get_internal_type') and f.get_internal_type() in type_names]
+    def _classify_fields(self, model):
+        """Partition model fields into (text_fields, json_fields) in a single traversal."""
+        text_fields = []
+        json_fields = []
+        for f in model._meta.get_fields():
+            if not hasattr(f, 'get_internal_type'):
+                continue
+            itype = f.get_internal_type()
+            if itype in ('CharField', 'TextField'):
+                text_fields.append(f.name)
+            elif itype == 'JSONField':
+                json_fields.append(f.name)
+        return text_fields, json_fields
 
     def _is_unchanged(self, field_name, value):
         """True when the instance already stores an identical value (grandfather rule)."""
         return self.instance and getattr(self.instance, field_name, None) == value
 
-    def _validate_text_fields(self, model, attrs, errors):
+    def _validate_text_fields(self, field_names, attrs, errors):
         """Validate CharField / TextField values (Tier 1 name fields + Tier 2 free-text).
 
         We use get_internal_type() rather than isinstance() here deliberately.
@@ -105,7 +118,7 @@ class CleanTextMixin:
         EncryptedTextField) typically do NOT override get_internal_type(), so they
         inherit "CharField"/"TextField" and are caught here automatically.
         """
-        for field_name in self._get_fields_by_type(model, 'CharField', 'TextField'):
+        for field_name in field_names:
             if field_name in self.excluded_fields or field_name not in attrs:
                 continue
             value = attrs[field_name]
@@ -123,10 +136,14 @@ class CleanTextMixin:
         except serializers.ValidationError as exc:
             errors[field_name] = exc.detail
             self._log_validation_failure(field_name, exc.detail)
+        except Exception:
+            logger.exception("Unexpected error validating field '%s'", field_name)
+            if get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False):
+                errors[field_name] = [_("Validation could not be completed for this field.")]
 
-    def _validate_json_fields(self, model, attrs, errors):
+    def _validate_json_fields(self, field_names, attrs, errors):
         """Validate string values inside JSONFields (single-level traversal)."""
-        for field_name in self._get_fields_by_type(model, 'JSONField'):
+        for field_name in field_names:
             if field_name in self.excluded_fields or field_name not in attrs:
                 continue
             value = attrs[field_name]
@@ -174,6 +191,11 @@ class CleanTextMixin:
                 errors[qualified_key] = exc.detail
                 log_field = f"{field_name}.{qualified_key}" if field_name else qualified_key
                 self._log_validation_failure(log_field, exc.detail)
+            except Exception:
+                qualified_key = f"{key_prefix}{key}"
+                logger.exception("Unexpected error validating JSON key '%s'", qualified_key)
+                if get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False):
+                    errors[qualified_key] = [_("Validation could not be completed for this field.")]
 
 
 # Derived from: https://github.com/encode/django-rest-framework/discussions/8606

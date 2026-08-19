@@ -1,4 +1,5 @@
 import logging
+from unittest import mock
 
 import pytest
 from django.test import RequestFactory, override_settings
@@ -737,3 +738,62 @@ class TestCleanTextMixinToggle:
         records = [r for r in caplog.records if r.name == MIXIN_LOGGER]
         assert len(records) >= 1
         assert 'name' in records[0].message
+
+
+class TestCleanTextMixinUnexpectedErrors:
+    """Unexpected exceptions in validators are caught and handled gracefully."""
+
+    @pytest.mark.django_db
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    @mock.patch('ansible_base.lib.serializers.mixins.validate_free_text', side_effect=RuntimeError('nh3 crash'))
+    def test_unexpected_error_in_text_field_returns_generic_error(self, _mock, caplog):
+        data = {'name': 'Org', 'description': 'normal text'}
+        with caplog.at_level(logging.ERROR, logger=MIXIN_LOGGER):
+            serializer = OrgSerializer(data=data)
+            assert not serializer.is_valid()
+        assert 'description' in serializer.errors
+        assert 'Validation could not be completed' in str(serializer.errors['description'])
+        assert any('Unexpected error validating field' in r.message for r in caplog.records)
+
+    @pytest.mark.django_db
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=False)
+    @mock.patch('ansible_base.lib.serializers.mixins.validate_free_text', side_effect=RuntimeError('nh3 crash'))
+    def test_unexpected_error_in_text_field_logged_but_passes_when_off(self, _mock, caplog):
+        data = {'name': 'Org', 'description': 'normal text'}
+        with caplog.at_level(logging.ERROR, logger=MIXIN_LOGGER):
+            serializer = OrgSerializer(data=data)
+            assert serializer.is_valid(), serializer.errors
+        assert any('Unexpected error validating field' in r.message for r in caplog.records)
+
+    @pytest.mark.django_db
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    @mock.patch('ansible_base.lib.serializers.mixins.validate_resource_name', side_effect=RuntimeError('regex crash'))
+    def test_unexpected_error_in_name_field_returns_generic_error(self, _mock, caplog):
+        data = {'name': 'Org', 'description': 'safe'}
+        with caplog.at_level(logging.ERROR, logger=MIXIN_LOGGER):
+            serializer = OrgSerializer(data=data)
+            assert not serializer.is_valid()
+        assert 'name' in serializer.errors
+        assert 'Validation could not be completed' in str(serializer.errors['name'])
+
+    @pytest.mark.django_db
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    @mock.patch('ansible_base.lib.serializers.mixins.validate_free_text', side_effect=RuntimeError('nh3 crash'))
+    def test_unexpected_error_in_json_field_returns_generic_error(self, _mock, caplog):
+        data = {'name': 'TestCity', 'extra_data': {'host': 'example.com'}}
+        with caplog.at_level(logging.ERROR, logger=MIXIN_LOGGER):
+            serializer = CitySerializer(data=data)
+            assert not serializer.is_valid()
+        assert 'extra_data' in serializer.errors
+        assert 'host' in serializer.errors['extra_data']
+        assert 'Validation could not be completed' in str(serializer.errors['extra_data']['host'])
+
+    @pytest.mark.django_db
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=False)
+    @mock.patch('ansible_base.lib.serializers.mixins.validate_free_text', side_effect=RuntimeError('nh3 crash'))
+    def test_unexpected_error_in_json_field_logged_but_passes_when_off(self, _mock, caplog):
+        data = {'name': 'TestCity', 'extra_data': {'host': 'example.com'}}
+        with caplog.at_level(logging.ERROR, logger=MIXIN_LOGGER):
+            serializer = CitySerializer(data=data)
+            assert serializer.is_valid(), serializer.errors
+        assert any('Unexpected error validating JSON key' in r.message for r in caplog.records)
