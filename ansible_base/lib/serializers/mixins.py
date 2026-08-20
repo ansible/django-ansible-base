@@ -1,5 +1,4 @@
 import logging
-import unicodedata
 from types import MappingProxyType
 
 from django.utils.translation import gettext_lazy as _
