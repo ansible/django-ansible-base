@@ -93,8 +93,8 @@ def validate_resource_name(value):
     if not isinstance(value, str):
         raise ValidationError(
             _(
-                "Enter a valid resource name. Only letters, numbers, combining marks, spaces, hyphens, underscores, dots, and @ are allowed."
-                " Must start with a letter, number, or underscore. Maximum 512 characters."
+                "Enter a valid name. Use letters, numbers, spaces, hyphens (-), underscores (_), dots (.), and @. "
+                "Start with a letter, number, or underscore. Max 512 characters."
             )
         )
     value = unicodedata.normalize('NFC', value)
@@ -103,8 +103,8 @@ def validate_resource_name(value):
     if not RESOURCE_NAME_RE.match(value):
         raise ValidationError(
             _(
-                "Enter a valid resource name. Only letters, numbers, combining marks, spaces, hyphens, underscores, dots, and @ are allowed."
-                " Must start with a letter, number, or underscore. Maximum 512 characters."
+                "Enter a valid name. Use letters, numbers, spaces, hyphens (-), underscores (_), dots (.), and @. "
+                "Start with a letter, number, or underscore. Max 512 characters."
             )
         )
     if _ZALGO_RE.search(value):

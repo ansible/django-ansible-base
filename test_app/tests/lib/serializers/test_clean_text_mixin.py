@@ -747,7 +747,7 @@ class TestCleanTextMixinAuditLogging:
         assert 'test_app.Organization' in msg
         assert 'for user testadmin' in msg
         assert 'ip 192.168.1.42' in msg
-        assert 'valid resource name' in msg
+        assert 'valid name' in msg
         assert payload not in msg
 
     @pytest.mark.django_db

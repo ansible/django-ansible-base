@@ -1004,7 +1004,7 @@ class TestValidateResourceName:
         with pytest.raises(ValidationError) as exc_info:
             validate_resource_name("<script>")
         message = str(exc_info.value.detail[0])
-        assert "valid resource name" in message
+        assert "valid name" in message
         assert "letter, number, or underscore" in message
 
     @pytest.mark.parametrize(
