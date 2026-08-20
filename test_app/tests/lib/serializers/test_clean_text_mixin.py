@@ -617,14 +617,16 @@ class TestCleanTextMixinJSONRecursive:
         assert '[0][0]' in serializer.errors['extra_data']
 
     @pytest.mark.django_db
-    def test_max_json_depth_stops_validation(self):
-        """Dangerous value beyond _MAX_JSON_DEPTH (10) is not caught."""
+    def test_max_json_depth_stops_validation(self, caplog):
+        """Dangerous value beyond _MAX_JSON_DEPTH (10) is not caught, and a warning is logged."""
         nested = '<script>deep</script>'
         for _ in range(11):
             nested = {'k': nested}
         data = {'name': 'TestCity', 'extra_data': nested}
         serializer = CitySerializer(data=data)
-        assert serializer.is_valid(), serializer.errors
+        with caplog.at_level(logging.WARNING, logger='ansible_base.lib.serializers.mixins'):
+            assert serializer.is_valid(), serializer.errors
+        assert any('depth limit' in r.message for r in caplog.records)
 
     @pytest.mark.django_db
     def test_value_at_max_json_depth_is_validated(self):

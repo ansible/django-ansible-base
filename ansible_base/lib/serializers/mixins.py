@@ -180,6 +180,7 @@ class CleanTextMixin:
     def _validate_json_dict(self, data, skip_keys, errors, key_prefix="", field_name="", stored_data=None, depth=0):
         """Validate values in a JSON dict, recursing into nested structures."""
         if depth >= self._MAX_JSON_DEPTH:
+            logger.warning("JSON validation depth limit (%d) reached for field '%s' — deeper values were not validated", self._MAX_JSON_DEPTH, field_name)
             return
         for key, val in data.items():
             if key in skip_keys:
@@ -199,6 +200,7 @@ class CleanTextMixin:
     def _validate_json_list(self, data, skip_keys, errors, key_prefix="", field_name="", stored_data=None, depth=0):
         """Validate values in a JSON list, recursing into nested structures."""
         if depth >= self._MAX_JSON_DEPTH:
+            logger.warning("JSON validation depth limit (%d) reached for field '%s' — deeper values were not validated", self._MAX_JSON_DEPTH, field_name)
             return
         for idx, item in enumerate(data):
             stored_item = stored_data[idx] if isinstance(stored_data, list) and idx < len(stored_data) else None
