@@ -61,7 +61,12 @@ def _decoded_variants(value, max_depth=3):
     for _pass in range(max_depth):
         decoded = html_mod.unescape(unquote(current))
         nfkc = unicodedata.normalize('NFKC', decoded)
-        collapsed = re.sub(r'<\s+', '<', nfkc)
+        collapsed = re.sub(
+            r'<\s+(script|iframe|object|embed|svg|math|form|base|meta|link|template|style)',
+            r'<\1',
+            nfkc,
+            flags=re.IGNORECASE,
+        )
         if collapsed == current:
             break
         variants.append(collapsed)
