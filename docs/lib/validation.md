@@ -311,14 +311,14 @@ input fields.
 JSONField to skip encrypted sub-keys and structured pass-through data:
 
 ```python
-excluded_json_keys = {
+excluded_json_keys = MappingProxyType({
     'configuration': frozenset({
         'SECRET',
         'BIND_PASSWORD',
         'SP_PRIVATE_KEY',
         'ADDITIONAL_UNVERIFIED_ARGS',
     }),
-}
+})
 ```
 
 **Encrypted fields** — These sub-keys appear in each plugin's
