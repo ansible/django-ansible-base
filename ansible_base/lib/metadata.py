@@ -14,7 +14,7 @@ def _wrap_alternation(pattern):
 
 @lru_cache(maxsize=1)
 def build_tier1_frontend_pattern():
-    from ansible_base.lib.utils.validation import RESOURCE_NAME_PATTERN, _ZALGO_RE
+    from ansible_base.lib.utils.validation import _ZALGO_RE, RESOURCE_NAME_PATTERN
 
     base = RESOURCE_NAME_PATTERN.replace(r'\Z', '$')
     deny_patterns = [_ZALGO_RE.pattern]
@@ -24,7 +24,7 @@ def build_tier1_frontend_pattern():
 
 @lru_cache(maxsize=1)
 def build_tier2_frontend_pattern():
-    from ansible_base.lib.utils.validation import CONTROL_CHARS, _HANDLER_URI_RE, _INJECTION_RE
+    from ansible_base.lib.utils.validation import _HANDLER_URI_RE, _INJECTION_RE, CONTROL_CHARS
 
     deny_patterns = [
         CONTROL_CHARS,

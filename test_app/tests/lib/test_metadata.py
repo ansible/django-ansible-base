@@ -2,22 +2,23 @@ from unittest.mock import Mock, patch
 
 import pytest
 import regex
+from rest_framework.metadata import SimpleMetadata
 
 from ansible_base.lib.metadata import (
-    CleanTextMetadata,
     _HTML_TAG_APPROX,
+    CleanTextMetadata,
     _wrap_alternation,
     build_tier1_frontend_pattern,
     build_tier2_frontend_pattern,
     inject_clean_text_patterns,
 )
 from ansible_base.lib.serializers.mixins import CleanTextMixin
-from ansible_base.lib.utils.validation import CONTROL_CHARS, _HANDLER_URI_RE, _INJECTION_RE
-
+from ansible_base.lib.utils.validation import _HANDLER_URI_RE, _INJECTION_RE, CONTROL_CHARS
 
 # ---------------------------------------------------------------------------
 # _wrap_alternation
 # ---------------------------------------------------------------------------
+
 
 def test_wrap_alternation_adds_group_when_pipe_present():
     assert _wrap_alternation('a|b') == '(?:a|b)'
@@ -30,6 +31,7 @@ def test_wrap_alternation_noop_without_pipe():
 # ---------------------------------------------------------------------------
 # build_tier1_frontend_pattern
 # ---------------------------------------------------------------------------
+
 
 def test_tier1_pattern_is_string():
     build_tier1_frontend_pattern.cache_clear()
@@ -59,6 +61,7 @@ def test_tier1_pattern_compiles_with_regex_module():
 # ---------------------------------------------------------------------------
 # build_tier2_frontend_pattern
 # ---------------------------------------------------------------------------
+
 
 def test_tier2_pattern_is_string():
     build_tier2_frontend_pattern.cache_clear()
@@ -90,6 +93,7 @@ def test_tier2_pattern_compiles():
 # ---------------------------------------------------------------------------
 # inject_clean_text_patterns — guard clauses
 # ---------------------------------------------------------------------------
+
 
 def _make_field(field_name='description', is_charfield=True, serializer_cls=CleanTextMixin):
     from rest_framework import serializers as drf_serializers
@@ -146,6 +150,7 @@ def test_inject_returns_unmodified_for_excluded_field(mock_setting):
 # inject_clean_text_patterns — tier 1
 # ---------------------------------------------------------------------------
 
+
 @patch('ansible_base.lib.metadata.get_setting', return_value=True)
 def test_inject_tier1_keys(mock_setting):
     build_tier1_frontend_pattern.cache_clear()
@@ -181,6 +186,7 @@ def test_inject_tier1_uses_camelcase(mock_setting):
 # inject_clean_text_patterns — tier 2
 # ---------------------------------------------------------------------------
 
+
 @patch('ansible_base.lib.metadata.get_setting', return_value=True)
 def test_inject_tier2_keys(mock_setting):
     build_tier2_frontend_pattern.cache_clear()
@@ -214,6 +220,7 @@ def test_inject_tier2_no_blocked_pattern_keys(mock_setting):
 # CleanTextMetadata
 # ---------------------------------------------------------------------------
 
+
 def test_clean_text_metadata_inherits_simple_metadata():
     assert issubclass(CleanTextMetadata, SimpleMetadata)
 
@@ -221,6 +228,7 @@ def test_clean_text_metadata_inherits_simple_metadata():
 # ---------------------------------------------------------------------------
 # Pattern correctness — tier 1
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize('value', [
     'MyResource',
@@ -249,6 +257,7 @@ def test_tier1_pattern_rejects_zalgo():
 # ---------------------------------------------------------------------------
 # Pattern correctness — tier 2
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize('value', [
     'Hello world',
