@@ -180,3 +180,16 @@ class TestAuthenticatorMapCleanText:
         serializer.validate_trigger_data = MagicMock(return_value={})
         data = serializer.validate(dict(name='name;semicolon', map_type='is_superuser', order=100))
         assert data['name'] == 'name;semicolon'
+
+    def test_rejects_changed_invalid_name_on_update(self, admin_api_client, local_authenticator):
+        auth_map = AuthenticatorMap.objects.create(
+            name='name;semicolon',
+            authenticator=local_authenticator,
+            map_type='is_superuser',
+            triggers={"always": {}},
+            order=1,
+        )
+        url = get_relative_url('authenticatormap-detail', kwargs={'pk': auth_map.pk})
+        response = admin_api_client.patch(url, data={'name': DANGEROUS_NAME}, format='json')
+        assert response.status_code == 400
+        assert 'name' in response.data

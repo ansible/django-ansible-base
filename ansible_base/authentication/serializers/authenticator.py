@@ -1,4 +1,5 @@
 from collections import OrderedDict
+from types import MappingProxyType
 
 from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import ChoiceField, ValidationError
@@ -16,16 +17,18 @@ class AuthenticatorSerializer(CleanTextMixin, NamedCommonModelSerializer, Immuta
     # JSONField scan.  Other structured sub-keys (DictField, ListField, JSONField) are
     # already skipped by the mixin's isinstance(val, str) check.
     # See docs/lib/validation.md "Authenticator configuration exclusions" for the full rationale.
-    excluded_json_keys = {
-        'configuration': frozenset(
-            {
-                'SECRET',
-                'BIND_PASSWORD',
-                'SP_PRIVATE_KEY',
-                'ADDITIONAL_UNVERIFIED_ARGS',
-            }
-        ),
-    }
+    excluded_json_keys = MappingProxyType(
+        {
+            'configuration': frozenset(
+                {
+                    'SECRET',
+                    'BIND_PASSWORD',
+                    'SP_PRIVATE_KEY',
+                    'ADDITIONAL_UNVERIFIED_ARGS',
+                }
+            ),
+        }
+    )
 
     type = ChoiceField(get_authenticator_plugins())
 
