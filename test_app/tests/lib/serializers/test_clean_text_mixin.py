@@ -820,6 +820,20 @@ class TestCleanTextMixinAuditLogging:
         assert 'ip 203.0.113.50' in records[0].message
 
     @pytest.mark.django_db
+    def test_xff_newline_stripped_from_log(self, caplog):
+        """Control characters in X-Forwarded-For must not split log lines."""
+        user = User.objects.create(username='xfftest')
+        request = _make_request(user)
+        request.META['HTTP_X_FORWARDED_FOR'] = '10.0.0.1\nWARNING Fake audit entry'
+        data = {'name': 'Org', 'description': '<script>x</script>'}
+        with caplog.at_level(logging.WARNING, logger=MIXIN_LOGGER):
+            serializer = OrgSerializer(data=data, context={'request': request})
+            serializer.is_valid()
+        records = [r for r in caplog.records if r.name == MIXIN_LOGGER]
+        assert len(records) == 1
+        assert '\n' not in records[0].message
+
+    @pytest.mark.django_db
     def test_log_without_request_context(self, caplog):
         """Logging still works when no request context is available."""
         data = {'name': 'Org', 'description': '<script>x</script>'}

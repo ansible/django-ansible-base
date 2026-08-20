@@ -1,4 +1,5 @@
 import logging
+import re
 from types import MappingProxyType
 
 from django.utils.translation import gettext_lazy as _
@@ -11,6 +12,7 @@ from ansible_base.lib.utils.validation import DEFAULT_NAME_FIELDS, validate_free
 logger = logging.getLogger('ansible_base.lib.serializers.mixins')
 
 _INCOMPLETE_VALIDATION_MSG = _("Validation could not be completed for this field.")
+_LOG_CONTROL_RE = re.compile(r'[\x00-\x1f\x7f-\x9f]')
 
 
 class CleanTextMixin:
@@ -68,7 +70,8 @@ class CleanTextMixin:
         client_ip = ''
         if request:
             xff = request.META.get('HTTP_X_FORWARDED_FOR')
-            client_ip = xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR', '')
+            raw_ip = xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR', '')
+            client_ip = _LOG_CONTROL_RE.sub(' ', raw_ip)
 
         ip_fragment = f" (ip {client_ip})" if client_ip else ""
 
