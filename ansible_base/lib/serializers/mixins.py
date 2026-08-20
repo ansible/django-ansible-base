@@ -147,21 +147,24 @@ class CleanTextMixin:
         for field_name in field_names:
             if field_name in self.excluded_fields or field_name not in attrs:
                 continue
-            value = attrs[field_name]
-            excluded_keys = self.excluded_json_keys.get(field_name, frozenset())
-            stored_value = getattr(self.instance, field_name, None) if self.instance else None
-
-            json_errors = {}
-            if isinstance(value, str):
-                if not (self.instance and stored_value == value):
-                    self._validate_json_string(value, field_name, json_errors, field_name)
-            elif isinstance(value, dict):
-                self._validate_json_dict(value, excluded_keys, json_errors, field_name=field_name, stored_data=stored_value)
-            elif isinstance(value, list):
-                self._validate_json_list(value, excluded_keys, json_errors, field_name=field_name, stored_data=stored_value)
-
+            json_errors = self._validate_json_field(field_name, attrs[field_name])
             if json_errors:
                 errors[field_name] = json_errors
+
+    def _validate_json_field(self, field_name, value):
+        """Validate a single JSONField value and return any nested errors."""
+        excluded_keys = self.excluded_json_keys.get(field_name, frozenset())
+        stored_value = getattr(self.instance, field_name, None) if self.instance else None
+        json_errors = {}
+
+        if isinstance(value, str) and not self._is_unchanged(field_name, value):
+            self._validate_json_string(value, field_name, json_errors, field_name)
+        elif isinstance(value, dict):
+            self._validate_json_dict(value, excluded_keys, json_errors, field_name=field_name, stored_data=stored_value)
+        elif isinstance(value, list):
+            self._validate_json_list(value, excluded_keys, json_errors, field_name=field_name, stored_data=stored_value)
+
+        return json_errors
 
     def _validate_json_string(self, val, qualified_key, errors, field_name):
         """Validate a single JSON string value and collect errors."""
