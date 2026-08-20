@@ -56,9 +56,9 @@ def inject_clean_text_patterns(field, field_info):
     if field.field_name in serializer.name_fields:
         field_info['pattern'] = build_tier1_frontend_pattern()
         field_info['patternDescription'] = (
-            'May only contain letters, numbers, spaces, hyphens, underscores, '
-            'dots, and @. Must start with a letter, number, or underscore. '
-            'Maximum 512 characters.'
+            'Enter a valid name. Use letters, numbers, spaces, hyphens (-), '
+            'underscores (_), dots (.), and @. Start with a letter, number, '
+            'or underscore. Max 512 characters.'
         )
         field_info['flags'] = 'u'
         field_info['normalize'] = 'NFC'
