@@ -823,6 +823,7 @@ class TestValidateFreeText:
             ("data:application/javascript,alert(1)", "data URI with application/javascript MIME"),
             ("data:application/xhtml+xml,<x/>", "data URI with xhtml+xml MIME"),
             ("DATA:TEXT/HTML,<b>x</b>", "data URI uppercase"),
+            ("data:image/svg+xml;base64,PHN2ZyBvbmxvYWQ9YWxlcnQoMSk+", "data URI with SVG MIME type"),
         ],
     )
     def test_rejects_dangerous_uri_schemes(self, value, description):
