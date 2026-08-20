@@ -130,7 +130,7 @@ class CleanTextMixin:
         """Apply the appropriate validator (name vs free-text) and collect errors."""
         try:
             if field_name in self.name_fields:
-                validate_resource_name(unicodedata.normalize('NFC', value))
+                validate_resource_name(value)
             else:
                 validate_free_text(value)
         except serializers.ValidationError as exc:
