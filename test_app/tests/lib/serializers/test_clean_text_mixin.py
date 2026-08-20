@@ -318,6 +318,9 @@ class TestCleanTextMixinJSONFieldCreate:
         serializer = CitySerializer(data=data)
         assert not serializer.is_valid()
         assert 'extra_data' in serializer.errors
+        assert isinstance(serializer.errors['extra_data'], list), (
+            f"Expected flat error list, got {type(serializer.errors['extra_data'])}: {serializer.errors['extra_data']}"
+        )
 
     @pytest.mark.django_db
     def test_bare_safe_string_json_field_accepted(self):

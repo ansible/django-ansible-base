@@ -10,6 +10,8 @@ from ansible_base.lib.utils.validation import DEFAULT_NAME_FIELDS, validate_free
 
 logger = logging.getLogger('ansible_base.lib.serializers.mixins')
 
+_INCOMPLETE_VALIDATION_MSG = _("Validation could not be completed for this field.")
+
 
 class CleanTextMixin:
     """
@@ -138,7 +140,7 @@ class CleanTextMixin:
         except Exception:
             logger.exception("Unexpected error validating field '%s'", field_name)
             if get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False):
-                errors[field_name] = [_("Validation could not be completed for this field.")]
+                errors[field_name] = [_INCOMPLETE_VALIDATION_MSG]
 
     _MAX_JSON_DEPTH = 10
 
@@ -152,19 +154,35 @@ class CleanTextMixin:
                 errors[field_name] = json_errors
 
     def _validate_json_field(self, field_name, value):
-        """Validate a single JSONField value and return any nested errors."""
+        """Validate a single JSONField value and return any nested errors.
+
+        For bare strings, returns errors as a flat list (not wrapped in a sub-key
+        dict) so the caller can assign them directly to errors[field_name].
+        """
         excluded_keys = self.excluded_json_keys.get(field_name, frozenset())
         stored_value = getattr(self.instance, field_name, None) if self.instance else None
-        json_errors = {}
 
-        if isinstance(value, str) and not self._is_unchanged(field_name, value):
-            self._validate_json_string(value, field_name, json_errors, field_name)
-        elif isinstance(value, dict):
+        if isinstance(value, str):
+            if self._is_unchanged(field_name, value):
+                return None
+            try:
+                validate_free_text(value)
+            except serializers.ValidationError as exc:
+                self._log_validation_failure(field_name, exc.detail)
+                return exc.detail
+            except Exception:
+                logger.exception("Unexpected error validating field '%s'", field_name)
+                if get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False):
+                    return [_INCOMPLETE_VALIDATION_MSG]
+            return None
+
+        json_errors = {}
+        if isinstance(value, dict):
             self._validate_json_dict(value, excluded_keys, json_errors, field_name=field_name, stored_data=stored_value)
         elif isinstance(value, list):
             self._validate_json_list(value, excluded_keys, json_errors, field_name=field_name, stored_data=stored_value)
 
-        return json_errors
+        return json_errors or None
 
     def _validate_json_string(self, val, qualified_key, errors, field_name):
         """Validate a single JSON string value and collect errors."""
@@ -177,7 +195,7 @@ class CleanTextMixin:
         except Exception:
             logger.exception("Unexpected error validating JSON key '%s'", qualified_key)
             if get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False):
-                errors[qualified_key] = [_("Validation could not be completed for this field.")]
+                errors[qualified_key] = [_INCOMPLETE_VALIDATION_MSG]
 
     def _validate_json_dict(self, data, skip_keys, errors, key_prefix="", field_name="", stored_data=None, depth=0):
         """Validate values in a JSON dict, recursing into nested structures."""
