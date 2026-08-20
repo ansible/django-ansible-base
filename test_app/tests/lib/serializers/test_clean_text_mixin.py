@@ -546,9 +546,9 @@ class TestCleanTextMixinJSONFieldListOfDicts:
         assert '[0].url' in serializer.errors['extra_data']
 
     @pytest.mark.django_db
-    def test_non_dict_items_in_list_skipped(self):
-        """Non-dict items in a list (strings, ints) are not traversed."""
-        data = {'name': 'TestCity', 'extra_data': ['simple string', 42, True]}
+    def test_non_string_non_container_items_in_list_accepted(self):
+        """Non-string, non-container items (int, bool) in a list pass validation."""
+        data = {'name': 'TestCity', 'extra_data': [42, True]}
         serializer = CitySerializer(data=data)
         assert serializer.is_valid(), serializer.errors
 

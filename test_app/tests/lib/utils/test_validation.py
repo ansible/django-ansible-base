@@ -993,6 +993,11 @@ class TestValidateResourceName:
         with pytest.raises(ValidationError):
             validate_resource_name(long_name)
 
+    @pytest.mark.parametrize("value", [None, 42, 3.14, [], {}])
+    def test_rejects_non_string_values(self, value):
+        with pytest.raises(ValidationError, match="valid resource name"):
+            validate_resource_name(value)
+
     # Error handling tests
     def test_error_message_is_descriptive(self):
         with pytest.raises(ValidationError) as exc_info:
