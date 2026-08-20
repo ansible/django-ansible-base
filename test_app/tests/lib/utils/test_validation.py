@@ -737,6 +737,7 @@ class TestValidateFreeText:
             ("AT&T is a company", "ampersand in company name"),
             ("Sample data: 42", "prose with data colon"),
             ("data: received at 10:00", "data colon in sentence"),
+            ("data:image/png;base64,iVBORw0KGgo=", "data URI with safe image MIME type"),
             ("Persian: ‌word", "ZWNJ for Persian/Arabic letter joining"),
             ("mixed ‎dir text", "LTR mark in mixed-direction text"),
             ("mixed ‏dir text", "RTL mark in mixed-direction text"),
@@ -817,6 +818,11 @@ class TestValidateFreeText:
             ("JAVASCRIPT:void(0)", "javascript protocol uppercase"),
             ("vbscript:MsgBox", "vbscript protocol"),
             ("data:text/html,<h1>hi</h1>", "data URI with markup caught by _contains_markup"),
+            ("data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==", "data URI base64-encoded script"),
+            ("data:text/javascript,alert(1)", "data URI with javascript MIME"),
+            ("data:application/javascript,alert(1)", "data URI with application/javascript MIME"),
+            ("data:application/xhtml+xml,<x/>", "data URI with xhtml+xml MIME"),
+            ("DATA:TEXT/HTML,<b>x</b>", "data URI uppercase"),
         ],
     )
     def test_rejects_dangerous_uri_schemes(self, value, description):
