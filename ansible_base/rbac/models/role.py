@@ -949,7 +949,7 @@ class RoleEvaluationFields(models.Model):
     @staticmethod
     def _actor_role_filter(actor):
         """Deprecated — use ``actor_role_ids`` instead."""
-        return {'role_id__in': RoleEvaluationFields.actor_role_ids(actor)}
+        return {'role_id__in': RoleEvaluationFields.actor_role_ids(actor)}  # pragma: no cover
 
     @classmethod
     def accessible_ids(cls, model_cls, actor, codename: str, content_types: Optional[Iterable[int]] = None, cast_field=None) -> QuerySet:
