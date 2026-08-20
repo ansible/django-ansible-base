@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock
 
 import pytest
+from django.test import override_settings
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.models import Authenticator, AuthenticatorMap
@@ -14,6 +15,7 @@ DANGEROUS_TEXT = '$(rm -rf /)'
 GITHUB_ORG_TYPE = 'ansible_base.authentication.authenticator_plugins.github_org'
 
 
+@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
 @pytest.mark.django_db
 class TestAuthenticatorCleanText:
 
@@ -65,6 +67,7 @@ class TestAuthenticatorCleanText:
         assert 'name' in response.data
 
 
+@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
 @pytest.mark.django_db
 class TestAuthenticatorConfigJsonCleanText:
     """Verify excluded_json_keys skips encrypted sub-keys while validating others."""
@@ -119,6 +122,7 @@ class TestAuthenticatorConfigJsonCleanText:
         assert response.status_code == 201
 
 
+@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
 @pytest.mark.django_db
 class TestAuthenticatorMapCleanText:
 

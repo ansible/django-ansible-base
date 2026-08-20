@@ -1,6 +1,7 @@
 """Tests that CleanTextMixin is correctly wired to DAB RBAC serializers."""
 
 import pytest
+from django.test import override_settings
 
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.models import RoleDefinition
@@ -9,6 +10,7 @@ DANGEROUS_NAME = '<script>alert(1)</script>'
 DANGEROUS_TEXT = '$(rm -rf /)'
 
 
+@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
 @pytest.mark.django_db
 class TestRoleDefinitionCleanText:
 

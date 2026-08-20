@@ -1,6 +1,7 @@
 """Tests that CleanTextMixin is correctly wired to DAB OAuth2 serializers."""
 
 import pytest
+from django.test import override_settings
 
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.oauth2_provider.models import OAuth2Application
@@ -9,6 +10,7 @@ DANGEROUS_NAME = '<script>alert(1)</script>'
 DANGEROUS_TEXT = '$(rm -rf /)'
 
 
+@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
 @pytest.mark.django_db
 class TestOAuth2ApplicationCleanText:
 
@@ -58,6 +60,7 @@ class TestOAuth2ApplicationCleanText:
         assert response.status_code == 200
 
 
+@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
 @pytest.mark.django_db
 class TestOAuth2TokenCleanText:
     # No grandfather test: OAuth2 tokens are not updated via PATCH — most fields
