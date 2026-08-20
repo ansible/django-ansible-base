@@ -1,22 +1,44 @@
+from functools import lru_cache
+
 from rest_framework import serializers
 from rest_framework.metadata import SimpleMetadata
 
+_HTML_TAG_APPROX = r'<[a-zA-Z/!][^>]*>'
+
+
+def _wrap_alternation(pattern):
+    if '|' in pattern:
+        return f'(?:{pattern})'
+    return pattern
+
+
+@lru_cache(maxsize=1)
+def build_tier1_frontend_pattern():
+    from ansible_base.lib.utils.validation import RESOURCE_NAME_PATTERN, _ZALGO_RE
+
+    base = RESOURCE_NAME_PATTERN.replace(r'\Z', '$')
+    deny_patterns = [_ZALGO_RE.pattern]
+    lookaheads = ''.join(f'(?!.*{_wrap_alternation(p)})' for p in deny_patterns)
+    return f'^{lookaheads}{base[1:]}'
+
+
+@lru_cache(maxsize=1)
+def build_tier2_frontend_pattern():
+    from ansible_base.lib.utils.validation import CONTROL_CHARS, _HANDLER_URI_RE, _INJECTION_RE
+
+    deny_patterns = [
+        CONTROL_CHARS,
+        _HTML_TAG_APPROX,
+        _HANDLER_URI_RE.pattern,
+        _INJECTION_RE.pattern,
+    ]
+    lookaheads = ''.join(f'(?!.*{_wrap_alternation(p)})' for p in deny_patterns)
+    return f'^{lookaheads}[\\s\\S]*$'
+
 
 def inject_clean_text_patterns(field, field_info):
-    """
-    If the parent serializer uses CleanTextMixin, inject validation
-    pattern metadata into the field info dict for OPTIONS responses.
-
-    Tier 1 (name fields): exposes the allowlist pattern and description.
-    Tier 2 (other text fields): exposes the blocklist pattern and description.
-
-    Safe to call on any field — returns field_info unmodified when
-    CleanTextMixin is not in the serializer's MRO or the field is not
-    a text field subject to validation.
-    """
     from ansible_base.lib.serializers.mixins import CleanTextMixin
     from ansible_base.lib.utils.settings import get_setting
-    from ansible_base.lib.utils.validation import RESOURCE_NAME_RE, _CONTROL_RE, _INJECTION_RE, _MARKUP_RE
 
     if not get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False):
         return field_info
@@ -32,27 +54,26 @@ def inject_clean_text_patterns(field, field_info):
         return field_info
 
     if field.field_name in serializer.name_fields:
-        field_info['pattern'] = RESOURCE_NAME_RE.pattern.replace(r'\Z', '$')
-        field_info['pattern_description'] = 'May only contain letters, numbers, spaces, hyphens, underscores, dots, and @. Must start with a letter, number, or underscore. Maximum 512 characters.'
+        field_info['pattern'] = build_tier1_frontend_pattern()
+        field_info['patternDescription'] = (
+            'May only contain letters, numbers, spaces, hyphens, underscores, '
+            'dots, and @. Must start with a letter, number, or underscore. '
+            'Maximum 512 characters.'
+        )
+        field_info['flags'] = 'u'
+        field_info['normalize'] = 'NFC'
     else:
-        field_info['blocked_pattern_control'] = _CONTROL_RE.pattern
-        field_info['blocked_pattern_control_flags'] = ''
-        field_info['blocked_pattern_markup'] = _MARKUP_RE.pattern
-        field_info['blocked_pattern_markup_flags'] = 'i'
-        field_info['blocked_pattern_injection'] = _INJECTION_RE.pattern
-        field_info['blocked_pattern_injection_flags'] = ''
-        field_info['blocked_pattern_description'] = "Must not contain HTML tags, script markup, unsafe URI schemes (javascript:, vbscript:, data:), shell interpolation syntax, template expressions, or control characters."
+        field_info['pattern'] = build_tier2_frontend_pattern()
+        field_info['patternDescription'] = (
+            "This field can't include HTML tags, script markup, "
+            "unsafe URI schemes, shell syntax, or control characters."
+        )
+        field_info['flags'] = 'i'
 
     return field_info
 
 
 class CleanTextMetadata(SimpleMetadata):
-    """
-    Extends SimpleMetadata to expose CleanTextMixin validation patterns
-    in OPTIONS responses. Drop-in replacement for services that don't
-    define their own metadata class.
-    """
-
     def get_field_info(self, field):
         field_info = super().get_field_info(field)
         return inject_clean_text_patterns(field, field_info)
