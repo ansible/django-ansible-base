@@ -109,7 +109,7 @@ def _make_field(field_name='description', is_charfield=True, serializer_cls=Clea
     return field
 
 
-@patch('ansible_base.lib.metadata.get_setting', return_value=False)
+@patch('ansible_base.lib.utils.settings.get_setting', return_value=False)
 def test_inject_returns_unmodified_when_feature_disabled(mock_setting):
     field = _make_field()
     field_info = {'type': 'string'}
@@ -117,7 +117,7 @@ def test_inject_returns_unmodified_when_feature_disabled(mock_setting):
     assert 'pattern' not in result
 
 
-@patch('ansible_base.lib.metadata.get_setting', return_value=True)
+@patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
 def test_inject_returns_unmodified_for_non_cleantext_serializer(mock_setting):
     from rest_framework import serializers as drf_serializers
 
@@ -129,7 +129,7 @@ def test_inject_returns_unmodified_for_non_cleantext_serializer(mock_setting):
     assert 'pattern' not in result
 
 
-@patch('ansible_base.lib.metadata.get_setting', return_value=True)
+@patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
 def test_inject_returns_unmodified_for_non_charfield(mock_setting):
     field = _make_field(is_charfield=False)
     field_info = {'type': 'integer'}
@@ -137,7 +137,7 @@ def test_inject_returns_unmodified_for_non_charfield(mock_setting):
     assert 'pattern' not in result
 
 
-@patch('ansible_base.lib.metadata.get_setting', return_value=True)
+@patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
 def test_inject_returns_unmodified_for_excluded_field(mock_setting):
     field = _make_field(field_name='template')
     field.parent.excluded_fields = frozenset({'template'})
@@ -151,7 +151,7 @@ def test_inject_returns_unmodified_for_excluded_field(mock_setting):
 # ---------------------------------------------------------------------------
 
 
-@patch('ansible_base.lib.metadata.get_setting', return_value=True)
+@patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
 def test_inject_tier1_keys(mock_setting):
     build_tier1_frontend_pattern.cache_clear()
     field = _make_field(field_name='name')
@@ -164,7 +164,7 @@ def test_inject_tier1_keys(mock_setting):
     assert result['normalize'] == 'NFC'
 
 
-@patch('ansible_base.lib.metadata.get_setting', return_value=True)
+@patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
 def test_inject_tier1_no_blocked_pattern_keys(mock_setting):
     field = _make_field(field_name='name')
     field_info = {'type': 'string'}
@@ -173,7 +173,7 @@ def test_inject_tier1_no_blocked_pattern_keys(mock_setting):
     assert blocked_keys == []
 
 
-@patch('ansible_base.lib.metadata.get_setting', return_value=True)
+@patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
 def test_inject_tier1_uses_camelcase(mock_setting):
     field = _make_field(field_name='name')
     field_info = {'type': 'string'}
@@ -187,7 +187,7 @@ def test_inject_tier1_uses_camelcase(mock_setting):
 # ---------------------------------------------------------------------------
 
 
-@patch('ansible_base.lib.metadata.get_setting', return_value=True)
+@patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
 def test_inject_tier2_keys(mock_setting):
     build_tier2_frontend_pattern.cache_clear()
     field = _make_field(field_name='description')
@@ -199,7 +199,7 @@ def test_inject_tier2_keys(mock_setting):
     assert result['flags'] == 'i'
 
 
-@patch('ansible_base.lib.metadata.get_setting', return_value=True)
+@patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
 def test_inject_tier2_no_normalize(mock_setting):
     field = _make_field(field_name='description')
     field_info = {'type': 'string'}
@@ -207,7 +207,7 @@ def test_inject_tier2_no_normalize(mock_setting):
     assert 'normalize' not in result
 
 
-@patch('ansible_base.lib.metadata.get_setting', return_value=True)
+@patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
 def test_inject_tier2_no_blocked_pattern_keys(mock_setting):
     field = _make_field(field_name='description')
     field_info = {'type': 'string'}
@@ -230,15 +230,18 @@ def test_clean_text_metadata_inherits_simple_metadata():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize('value', [
-    'MyResource',
-    'test_name',
-    '_leading_underscore',
-    '42numeric',
-    'hello world',
-    'user@example',
-    'dashes-and.dots',
-])
+@pytest.mark.parametrize(
+    'value',
+    [
+        'MyResource',
+        'test_name',
+        '_leading_underscore',
+        '42numeric',
+        'hello world',
+        'user@example',
+        'dashes-and.dots',
+    ],
+)
 def test_tier1_pattern_accepts_valid_names(value):
     build_tier1_frontend_pattern.cache_clear()
     pattern = build_tier1_frontend_pattern()
@@ -259,13 +262,16 @@ def test_tier1_pattern_rejects_zalgo():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize('value', [
-    'Hello world',
-    'This is a normal description.',
-    'Line 1\nLine 2',
-    '100% valid text',
-    'Accented: café',
-])
+@pytest.mark.parametrize(
+    'value',
+    [
+        'Hello world',
+        'This is a normal description.',
+        'Line 1\nLine 2',
+        '100% valid text',
+        'Accented: café',
+    ],
+)
 def test_tier2_pattern_accepts_plain_text(value):
     build_tier2_frontend_pattern.cache_clear()
     pattern = build_tier2_frontend_pattern()
@@ -273,18 +279,21 @@ def test_tier2_pattern_accepts_plain_text(value):
     assert compiled.match(value), f'Expected {value!r} to match tier 2 pattern'
 
 
-@pytest.mark.parametrize('value,reason', [
-    ('<script>alert(1)</script>', 'HTML script tag'),
-    ('<img src=x onerror=alert(1)>', 'HTML img tag'),
-    ('hello\x00world', 'null byte control char'),
-    ('hello\x07world', 'bell control char'),
-    ('${command}', 'shell variable expansion'),
-    ('$(whoami)', 'shell command substitution'),
-    ('{{user.password}}', 'template expression'),
-    ('{% include "x" %}', 'template tag'),
-    ('javascript:alert(1)', 'javascript URI'),
-    ('vbscript:run', 'vbscript URI'),
-])
+@pytest.mark.parametrize(
+    'value,reason',
+    [
+        ('<script>alert(1)</script>', 'HTML script tag'),
+        ('<img src=x onerror=alert(1)>', 'HTML img tag'),
+        ('hello\x00world', 'null byte control char'),
+        ('hello\x07world', 'bell control char'),
+        ('${command}', 'shell variable expansion'),
+        ('$(whoami)', 'shell command substitution'),
+        ('{{user.password}}', 'template expression'),
+        ('{% include "x" %}', 'template tag'),
+        ('javascript:alert(1)', 'javascript URI'),
+        ('vbscript:run', 'vbscript URI'),
+    ],
+)
 def test_tier2_pattern_rejects_dangerous_input(value, reason):
     build_tier2_frontend_pattern.cache_clear()
     pattern = build_tier2_frontend_pattern()
