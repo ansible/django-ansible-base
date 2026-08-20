@@ -64,10 +64,7 @@ def inject_clean_text_patterns(field, field_info):
         field_info['normalize'] = 'NFC'
     else:
         field_info['pattern'] = build_tier2_frontend_pattern()
-        field_info['patternDescription'] = (
-            "This field can't include HTML tags, script markup, "
-            "unsafe URI schemes, shell syntax, or control characters."
-        )
+        field_info['patternDescription'] = "This field can't include HTML tags, script markup, " "unsafe URI schemes, shell syntax, or control characters."
         field_info['flags'] = 'i'
 
     return field_info

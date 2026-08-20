@@ -996,7 +996,7 @@ class TestValidateResourceName:
 
     @pytest.mark.parametrize("value", [None, 42, 3.14, [], {}])
     def test_rejects_non_string_values(self, value):
-        with pytest.raises(ValidationError, match="valid resource name"):
+        with pytest.raises(ValidationError, match="valid name"):
             validate_resource_name(value)
 
     # Error handling tests
