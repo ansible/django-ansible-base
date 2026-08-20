@@ -346,9 +346,13 @@ content (YAML/JSON) is excluded.
 Other structured sub-keys (`ORG_INFO`, `TECHNICAL_CONTACT`, `SUPPORT_CONTACT`,
 `SP_EXTRA`, `SECURITY_CONFIG`, `EXTRA_DATA`, `GROUP_TYPE_PARAMS`,
 `CONNECTION_OPTIONS`, `GROUP_SEARCH`, `USER_SEARCH`, `USER_ATTR_MAP`,
-`JWT_ALGORITHMS`, `JWT_DECODE_OPTIONS`, `SCOPE`) store dicts or lists — not
-strings. The mixin's `isinstance(val, str)` check in `_validate_json_dict()`
-skips them without needing explicit exclusion.
+`JWT_ALGORITHMS`, `JWT_DECODE_OPTIONS`, `SCOPE`) store dicts or lists, not
+top-level strings. The mixin's `_validate_json_dict()` recurses into dict and
+list values and validates any string leaf values it finds (e.g.
+`TECHNICAL_CONTACT.emailAddress`) with the same Tier 2 blocklist as top-level
+fields, so no explicit exclusion is required — legitimate values (names,
+emails, LDAP attribute names) are expected to pass Tier 2 validation without
+triggering false positives.
 
 Certificate fields (`SP_PUBLIC_CERT`, `IDP_X509_CERT`, `PUBLIC_KEY`) are
 strings but contain PEM-encoded data (base64 + headers) that does not match
@@ -389,9 +393,18 @@ _EXPANSION_FIELDS = ['organization', 'role', 'team']
 ```
 
 The serializer's own `validate()` method already validates the expansion
-syntax of these fields via `check_expansion_syntax()` — only well-formed
-`{% for_attr_value(...) %}` expressions are accepted. The `name` field on
+syntax of these fields via `check_expansion_syntax()` — but this only
+catches **malformed** expansion attempts (a value containing `{%` and `%}`
+that doesn't match the `for_attr_value(...)` shape). The `name` field on
 `AuthenticatorMap` is **not** excluded and receives Tier 1 validation.
+
+**Scope.** `check_expansion_syntax()` only rejects malformed expansion
+attempts, so literal (non-templated) values in these fields also bypass all
+Tier 1/Tier 2 validation — the exclusion is field-wide, not conditional on
+whether a given value actually uses expansion syntax. As with other
+templated/structured configuration values in this doc, validating literal
+content in these fields is accepted as out of scope rather than partially
+enforced.
 
 ## Error reporting
 

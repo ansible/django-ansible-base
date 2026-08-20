@@ -73,3 +73,25 @@ class TestRoleDefinitionCleanText:
         detail_url = get_relative_url('roledefinition-detail', kwargs={'pk': rd_id})
         response = admin_api_client.patch(detail_url, data={'name': 'name;semicolon', 'description': 'Updated'}, format='json')
         assert response.status_code == 200
+
+    def test_rejects_changed_invalid_name_on_update(self, admin_api_client):
+        url = get_relative_url('roledefinition-list')
+        response = admin_api_client.post(
+            url,
+            data={
+                'name': 'Temp Role Two',
+                'description': 'Original',
+                'permissions': ['shared.view_organization'],
+                'content_type': 'shared.organization',
+            },
+            format='json',
+        )
+        assert response.status_code == 201
+        rd_id = response.data['id']
+
+        RoleDefinition.objects.filter(pk=rd_id).update(name='name;semicolon')
+
+        detail_url = get_relative_url('roledefinition-detail', kwargs={'pk': rd_id})
+        response = admin_api_client.patch(detail_url, data={'name': DANGEROUS_NAME, 'description': 'Updated'}, format='json')
+        assert response.status_code == 400
+        assert 'name' in response.data

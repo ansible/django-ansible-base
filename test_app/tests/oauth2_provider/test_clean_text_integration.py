@@ -63,6 +63,15 @@ class TestOAuth2ApplicationCleanText:
         response = admin_api_client.patch(url, data={'name': 'name;semicolon', 'description': 'Updated desc'}, format='json')
         assert response.status_code == 200
 
+    def test_rejects_changed_invalid_name_on_update(self, admin_api_client, oauth2_application):
+        app, _ = oauth2_application
+        OAuth2Application.objects.filter(pk=app.pk).update(name='name;semicolon')
+
+        url = get_relative_url('application-detail', args=[app.pk])
+        response = admin_api_client.patch(url, data={'name': DANGEROUS_NAME, 'description': 'Updated desc'}, format='json')
+        assert response.status_code == 400
+        assert 'name' in response.data
+
 
 class TestOAuth2TokenCleanText:
     # No grandfather test: OAuth2 tokens are not updated via PATCH — most fields

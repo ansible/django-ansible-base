@@ -154,7 +154,7 @@ class TestAuthenticatorMapCleanText:
         data = map_serializer.validate(dict(name='Valid Rule', map_type='is_superuser'))
         assert data['name'] == 'Valid Rule'
 
-    def test_excluded_fields_accept_dangerous_content(self, map_serializer):
+    def test_excluded_fields_accept_invalid_content(self, map_serializer):
         """organization, role, team are excluded because they accept template syntax."""
         map_serializer.validate_role_data = MagicMock(return_value={})
         data = map_serializer.validate(
