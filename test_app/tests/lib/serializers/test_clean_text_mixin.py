@@ -881,6 +881,19 @@ class TestCleanTextMixinAuditLogging:
         assert len(records) == 1
         assert "'extra_data.[1].url'" in records[0].message
 
+    @pytest.mark.django_db
+    def test_json_key_newline_stripped_from_log(self, caplog):
+        """Control characters in JSON keys must not split log lines."""
+        user = User.objects.create(username='keytester')
+        data = {'name': 'TestCity', 'extra_data': {'host\nWARNING Fake entry': '<script>x</script>'}}
+        ctx = {'request': _make_request(user)}
+        with caplog.at_level(logging.WARNING, logger=MIXIN_LOGGER):
+            serializer = CitySerializer(data=data, context=ctx)
+            serializer.is_valid()
+        records = [r for r in caplog.records if r.name == MIXIN_LOGGER]
+        assert len(records) == 1
+        assert '\n' not in records[0].message
+
 
 class TestCleanTextMixinToggle:
     """ENHANCED_INPUT_VALIDATION_ENABLED controls whether errors are raised."""

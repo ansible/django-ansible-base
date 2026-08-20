@@ -71,7 +71,7 @@ class CleanTextMixin:
         if request:
             xff = request.META.get('HTTP_X_FORWARDED_FOR')
             raw_ip = xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR', '')
-            client_ip = _LOG_CONTROL_RE.sub(' ', raw_ip)
+            client_ip = _LOG_CONTROL_RE.sub(lambda m: repr(m.group())[1:-1], raw_ip)
 
         ip_fragment = f" (ip {client_ip})" if client_ip else ""
 
@@ -208,7 +208,8 @@ class CleanTextMixin:
         for key, val in data.items():
             if key in skip_keys:
                 continue
-            qualified_key = f"{key_prefix}{key}"
+            safe_key = _LOG_CONTROL_RE.sub(lambda m: repr(m.group())[1:-1], key) if isinstance(key, str) else key
+            qualified_key = f"{key_prefix}{safe_key}"
             stored_val = stored_data.get(key) if isinstance(stored_data, dict) else None
 
             if isinstance(val, str):
