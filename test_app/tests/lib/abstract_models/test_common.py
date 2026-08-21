@@ -1,4 +1,5 @@
 from functools import partial
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -7,6 +8,7 @@ from django.contrib.auth.models import AnonymousUser
 from django.db import connection
 from django.test import override_settings
 from django.test.client import RequestFactory
+from django.urls.exceptions import NoReverseMatch
 
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.models import RoleDefinition
@@ -107,6 +109,90 @@ def test_related_fields_view_resolution(shut_up_logging):
     # And it should have been called with related_fields_test_model-more_teams-list
     # (overridden for the 'more_teams' field)
     assert 'related_fields_test_model-more_teams-list' in [call[0][0] for call in reverse.call_args_list]
+
+
+@pytest.mark.django_db
+def test_related_fields_namespace_retry(shut_up_logging, system_user):
+    """When bare reverse fails but namespaced reverse succeeds, the field should be included."""
+    model = RelatedFieldsTestModel.objects.create()
+
+    request = SimpleNamespace(resolver_match=SimpleNamespace(namespace='galaxy:api:ui_v2'))
+
+    def fake_get_relative_url(view_name, **kwargs):
+        if ':' not in view_name:
+            raise NoReverseMatch(f"'{view_name}' is not a registered namespace")
+        return f'/api/_ui/v2/{view_name.split(":")[-1].replace("-detail", "s/")}' if 'detail' in view_name else f'/api/_ui/v2/{view_name}/'
+
+    with patch('ansible_base.lib.abstract_models.common.get_relative_url', side_effect=fake_get_relative_url):
+        result = model.related_fields(request)
+
+    assert len(result) > 0, "Namespaced retry should have resolved at least one URL"
+    assert 'created_by' in result, "FK namespace retry should have resolved created_by"
+
+
+@pytest.mark.django_db
+def test_related_fields_namespace_retry_both_fail(shut_up_logging, system_user):
+    """When both bare and namespaced reverse fail, fields should be silently skipped."""
+    from types import SimpleNamespace
+
+    from django.urls.exceptions import NoReverseMatch
+
+    model = RelatedFieldsTestModel.objects.create()
+
+    request = SimpleNamespace(resolver_match=SimpleNamespace(namespace='galaxy:api:ui_v2'))
+
+    def fake_get_relative_url(view_name, **kwargs):
+        raise NoReverseMatch(f"'{view_name}' not found")
+
+    with patch('ansible_base.lib.abstract_models.common.get_relative_url', side_effect=fake_get_relative_url):
+        result = model.related_fields(request)
+
+    assert result == {}
+
+
+@pytest.mark.django_db
+def test_related_fields_no_namespace_retry_without_request(shut_up_logging):
+    """When request is None, bare reverse failures should be silently skipped (existing behavior)."""
+    model = RelatedFieldsTestModel.objects.create()
+
+    def fake_get_relative_url(view_name, **kwargs):
+        raise NoReverseMatch(f"'{view_name}' not found")
+
+    with patch('ansible_base.lib.abstract_models.common.get_relative_url', side_effect=fake_get_relative_url):
+        result = model.related_fields(None)
+
+    assert result == {}
+
+
+@pytest.mark.django_db
+def test_related_fields_no_namespace_retry_without_namespace(shut_up_logging):
+    """When request has no namespace, bare reverse failures should be silently skipped."""
+    model = RelatedFieldsTestModel.objects.create()
+
+    request = SimpleNamespace(resolver_match=SimpleNamespace(namespace=''))
+
+    def fake_get_relative_url(view_name, **kwargs):
+        raise NoReverseMatch(f"'{view_name}' not found")
+
+    with patch('ansible_base.lib.abstract_models.common.get_relative_url', side_effect=fake_get_relative_url):
+        result = model.related_fields(request)
+
+    assert result == {}
+
+
+@pytest.mark.django_db
+def test_related_fields_bare_reverse_preferred_over_namespace(shut_up_logging, user):
+    """When bare reverse succeeds, the namespace retry should not be attempted."""
+    model = RelatedFieldsTestModel.objects.create()
+
+    request = SimpleNamespace(resolver_match=SimpleNamespace(namespace='myapp'))
+
+    result = model.related_fields(request)
+
+    bare_result = model.related_fields(None)
+    assert bare_result, "Expected bare reverse to resolve at least one related field"
+    for key in bare_result:
+        assert bare_result[key] == result[key], "Bare URL should be used when it resolves"
 
 
 @pytest.mark.django_db
