@@ -400,9 +400,11 @@ The serializer's own `validate()` method separately validates the expansion
 *syntax* of these fields via `check_expansion_syntax()` — this catches
 **malformed** expansion attempts (a value containing `{%` and `%}` that
 doesn't match the `for_attr_value(...)` shape). `_run_text_validator()`'s
-`has_expansion()` check only skips CleanTextMixin validation for values that
-already contain `{% %}`; literal (non-templated) values in these fields run
-through the normal Tier 2 free-text check like any other field. The `name`
+`has_expansion()` check skips CleanTextMixin validation for any value that
+contains `{% %}` syntax — including mixed values where literal content appears
+alongside expansion syntax (per the SDP scope exclusion for Jinja2 template
+fields). Purely literal (non-templated) values in these fields run through
+the normal Tier 2 free-text check like any other field. The `name`
 field on `AuthenticatorMap` is not gated at all and always receives Tier 1
 validation.
 
