@@ -123,6 +123,17 @@ class TestAuthenticatorConfigJsonCleanText:
         response = admin_api_client.post(url, data=data, format='json')
         assert response.status_code == 201
 
+    def test_accepts_pem_certificate_values_in_config(self, admin_api_client, saml_configuration):
+        """PEM-encoded certs (SP_PUBLIC_CERT, IDP_X509_CERT) must not trip the Tier 2 blocklist."""
+        url = get_relative_url('authenticator-list')
+        data = {
+            'name': 'SAML Auth With Real Certs',
+            'type': 'ansible_base.authentication.authenticator_plugins.saml',
+            'configuration': saml_configuration,
+        }
+        response = admin_api_client.post(url, data=data, format='json')
+        assert response.status_code == 201
+
 
 class TestAuthenticatorMapCleanText:
 
@@ -154,19 +165,38 @@ class TestAuthenticatorMapCleanText:
         data = map_serializer.validate(dict(name='Valid Rule', map_type='is_superuser'))
         assert data['name'] == 'Valid Rule'
 
-    def test_excluded_fields_accept_invalid_content(self, map_serializer):
-        """organization, role, team are excluded because they accept template syntax."""
+    def test_expansion_syntax_accepted_in_expansion_fields(self, map_serializer):
+        """Genuine {% for_attr_value(...) %} expansion syntax bypasses Tier 2 validation."""
         map_serializer.validate_role_data = MagicMock(return_value={})
         data = map_serializer.validate(
             dict(
                 name='Valid Rule',
                 map_type='team',
-                organization='$(dangerous)',
-                role='${EVIL}',
-                team='<script>alert(1)</script>',
+                organization='{% for_attr_value(user_orgs) %}',
+                role='{% for_attr_value(user_role) %}',
+                team='Team {% for_attr_value(member_of) %}',
             )
         )
-        assert data is not None
+        assert data['organization'] == '{% for_attr_value(user_orgs) %}'
+        assert data['role'] == '{% for_attr_value(user_role) %}'
+        assert data['team'] == 'Team {% for_attr_value(member_of) %}'
+
+    def test_literal_dangerous_content_rejected_in_expansion_fields(self, map_serializer):
+        """Literal (non-expansion) values in organization/role/team are validated like any other free-text field."""
+        map_serializer.validate_role_data = MagicMock(return_value={})
+        with pytest.raises(ValidationError) as exc_info:
+            map_serializer.validate(
+                dict(
+                    name='Valid Rule',
+                    map_type='team',
+                    organization='$(dangerous)',
+                    role='${EVIL}',
+                    team='<script>alert(1)</script>',
+                )
+            )
+        assert 'organization' in exc_info.value.detail
+        assert 'role' in exc_info.value.detail
+        assert 'team' in exc_info.value.detail
 
     def test_grandfather_unchanged_name_on_update(self, map_serializer, local_authenticator):
         auth_map = AuthenticatorMap.objects.create(

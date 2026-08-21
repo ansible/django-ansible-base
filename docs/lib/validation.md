@@ -369,42 +369,42 @@ When adding a new authenticator plugin with new
 
 ### AuthenticatorMap field exclusions
 
-`AuthenticatorMapSerializer` sets `excluded_fields` to skip three CharField
-fields from CleanTextMixin validation entirely:
+`AuthenticatorMapSerializer` overrides `_run_text_validator()` to
+conditionally skip Tier 1/Tier 2 validation on three CharField fields —
+`organization`, `role`, and `team` — but only for values that actually use
+template expansion syntax:
 
 ```python
-excluded_fields = frozenset({'organization', 'role', 'team'})
+def _run_text_validator(self, field_name, value, errors):
+    if field_name in _EXPANSION_FIELDS and has_expansion(value):
+        return
+    super()._run_text_validator(field_name, value, errors)
 ```
 
 These fields support template expansion syntax for dynamic mapping rules.
 Values like `{% for_attr_value(user_orgs) %}` and
 `Organization {% for_attr_value(member_of) %}` are valid inputs that allow
 authenticator maps to dynamically resolve organization, team, and role names
-from user attributes at authentication time.
+from user attributes at authentication time. The `{% %}` pattern matches the
+Tier 2 dangerous-pattern blocklist's template injection category, so these
+values would otherwise be rejected as false positives.
 
-The `{% %}` pattern matches `DANGEROUS_PATTERNS` (template injection
-category), so these fields must be excluded to avoid false positives.
-
-The excluded field names match `_EXPANSION_FIELDS` defined in
+The gated field names match `_EXPANSION_FIELDS` defined in
 `ansible_base.authentication.utils.authenticator_map`:
 
 ```python
 _EXPANSION_FIELDS = ['organization', 'role', 'team']
 ```
 
-The serializer's own `validate()` method already validates the expansion
-syntax of these fields via `check_expansion_syntax()` — but this only
-catches **malformed** expansion attempts (a value containing `{%` and `%}`
-that doesn't match the `for_attr_value(...)` shape). The `name` field on
-`AuthenticatorMap` is **not** excluded and receives Tier 1 validation.
-
-**Scope.** `check_expansion_syntax()` only rejects malformed expansion
-attempts, so literal (non-templated) values in these fields also bypass all
-Tier 1/Tier 2 validation — the exclusion is field-wide, not conditional on
-whether a given value actually uses expansion syntax. As with other
-templated/structured configuration values in this doc, validating literal
-content in these fields is accepted as out of scope rather than partially
-enforced.
+The serializer's own `validate()` method separately validates the expansion
+*syntax* of these fields via `check_expansion_syntax()` — this catches
+**malformed** expansion attempts (a value containing `{%` and `%}` that
+doesn't match the `for_attr_value(...)` shape). `_run_text_validator()`'s
+`has_expansion()` check only skips CleanTextMixin validation for values that
+already contain `{% %}`; literal (non-templated) values in these fields run
+through the normal Tier 2 free-text check like any other field. The `name`
+field on `AuthenticatorMap` is not gated at all and always receives Tier 1
+validation.
 
 ## Error reporting
 
