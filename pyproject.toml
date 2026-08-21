@@ -101,6 +101,7 @@ legacy_tox_ini = """
         py312
         py312-sqlite
         py312-in-files
+        py312-query-count-scale
     labels =
         test = py312-check, py312, py312-sqlite, py312-in-files
         lint = flake8, black, isort, mypy
@@ -144,6 +145,17 @@ legacy_tox_ini = """
         -r{toxinidir}/requirements/requirements_observability.in
         -r{toxinidir}/requirements/requirements_testing.txt
         -r{toxinidir}/requirements/requirements_dev.txt
+
+    [testenv:py312-query-count-scale]
+    # Deliberately does not use pytest-xdist (-n auto): the query-count-scale suite is
+    # built around a single, shared, seeded dataset per run (see AAP-88875) rather than
+    # per-test DB transactions, so splitting across xdist workers would multiply seeding
+    # cost instead of parallelizing it. Runs as its own CI job in parallel with the main
+    # tox matrix instead (see .github/workflows/ci.yml).
+    setenv =
+        ANSIBLE_BASE_TEST_DIRS = test_app/tests/query_count_scale
+    commands = pytest --color=yes --cov=. --cov-report=xml:coverage.xml --cov-report=html --cov-report=json --cov-branch --junit-xml=django-ansible-base-test-results.xml {env:ANSIBLE_BASE_PYTEST_ARGS} {env:ANSIBLE_BASE_TEST_DIRS} {posargs}
+    docker = db
 
     [docker:db]
     dockerfile = {toxinidir}/tools/dev_postgres/Dockerfile
