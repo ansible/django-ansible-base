@@ -155,9 +155,26 @@ def test_inject_returns_unmodified_for_slugfield(mock_setting):
 
 
 @patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
-def test_inject_returns_unmodified_for_urlfield(mock_setting):
-    # Same reasoning as test_inject_returns_unmodified_for_slugfield above, for URLField.
+def test_inject_applies_pattern_for_urlfield(mock_setting):
+    # Unlike SlugField, models.URLField does NOT override get_internal_type() -- it
+    # inherits CharField's "CharField" -- so CleanTextMixin._classify_fields() DOES
+    # run validate_free_text() on URLField-backed columns server-side. A URLField
+    # should get the same tier 2 pattern hint as any other free-text field.
+    build_tier2_frontend_pattern.cache_clear()
     field = _make_field(field_name='description', field_cls=serializers.URLField)
+    field_info = {'type': 'string'}
+    result = inject_clean_text_patterns(field, field_info)
+    assert 'pattern' in result
+
+
+@patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
+def test_inject_returns_unmodified_for_ipaddressfield(mock_setting):
+    # IPAddressField subclasses CharField in DRF, but its model column
+    # (models.GenericIPAddressField) overrides get_internal_type(), so it's
+    # excluded from Tier1/Tier2 backend validation (see
+    # CleanTextMixin._classify_fields), so no client-side pattern should be
+    # advertised for it either.
+    field = _make_field(field_name='name', field_cls=serializers.IPAddressField)
     field_info = {'type': 'string'}
     result = inject_clean_text_patterns(field, field_info)
     assert 'pattern' not in result

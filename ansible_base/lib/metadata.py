@@ -68,13 +68,19 @@ def inject_clean_text_patterns(field, field_info):
     if not isinstance(serializer, CleanTextMixin):
         return field_info
 
-    # SlugField and URLField both subclass CharField in DRF, but their underlying
-    # model columns (models.SlugField / models.URLField) are deliberately excluded
-    # from Tier 1/Tier 2 backend validation by CleanTextMixin._classify_fields(),
-    # which keys off get_internal_type() rather than isinstance() for this exact
-    # reason. Advertising a `pattern` here for them would tell the client to
-    # enforce a rule the backend never actually applies to that field.
-    if isinstance(field, (serializers.SlugField, serializers.URLField)):
+    # SlugField and IPAddressField both subclass CharField in DRF, but their
+    # underlying model columns (models.SlugField / models.GenericIPAddressField)
+    # override get_internal_type() to return their own name, so they're deliberately
+    # excluded from Tier 1/Tier 2 backend validation by CleanTextMixin._classify_fields()
+    # (which keys off get_internal_type() rather than isinstance() for this exact
+    # reason). Advertising a `pattern` here for them would tell the client to enforce
+    # a rule the backend never actually applies to that field.
+    #
+    # URLField is deliberately NOT excluded here: models.URLField doesn't override
+    # get_internal_type() (it inherits CharField's "CharField"), so
+    # _classify_fields() DOES treat URLField-backed columns as free text and runs
+    # validate_free_text() on them server-side -- the pattern hint is accurate.
+    if isinstance(field, (serializers.SlugField, serializers.IPAddressField)):
         return field_info
 
     if not isinstance(field, serializers.CharField):
