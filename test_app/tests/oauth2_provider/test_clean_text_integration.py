@@ -3,7 +3,7 @@
 import pytest
 
 from ansible_base.lib.utils.response import get_relative_url
-from ansible_base.oauth2_provider.models import OAuth2Application
+from ansible_base.oauth2_provider.models import OAuth2AccessToken, OAuth2Application
 
 DANGEROUS_NAME = '<script>alert(1)</script>'
 DANGEROUS_TEXT = '$(rm -rf /)'
@@ -74,8 +74,6 @@ class TestOAuth2ApplicationCleanText:
 
 
 class TestOAuth2TokenCleanText:
-    # No grandfather test: OAuth2 tokens are not updated via PATCH — most fields
-    # (token, expires, refresh_token, user) are read-only.
 
     def test_rejects_invalid_description_on_create(self, admin_api_client, oauth2_application):
         app, _ = oauth2_application
@@ -99,3 +97,16 @@ class TestOAuth2TokenCleanText:
         }
         response = admin_api_client.post(url, data=data, format='json')
         assert response.status_code == 201
+
+    def test_grandfather_unchanged_description_on_update(self, admin_api_client, oauth2_user_pat):
+        OAuth2AccessToken.objects.filter(pk=oauth2_user_pat.pk).update(description='desc;semicolon')
+
+        url = get_relative_url('token-detail', args=[oauth2_user_pat.pk])
+        response = admin_api_client.patch(url, data={'description': 'desc;semicolon'}, format='json')
+        assert response.status_code == 200
+
+    def test_rejects_changed_invalid_description_on_update(self, admin_api_client, oauth2_user_pat):
+        url = get_relative_url('token-detail', args=[oauth2_user_pat.pk])
+        response = admin_api_client.patch(url, data={'description': DANGEROUS_TEXT}, format='json')
+        assert response.status_code == 400
+        assert 'description' in response.data
