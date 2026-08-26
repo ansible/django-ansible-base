@@ -16,9 +16,14 @@ under AAP-88876.
 Validation performed for AAP-88874: this test FAILS against a commit without
 the AAP-88287 fix, and PASSES once PR #1109 (prefetch content_object in
 ResourceViewSet) is applied.
+
+Deliberately has no `@pytest.mark.django_db` marker -- this directory's `conftest.py`
+keeps DB access unblocked for the whole session without pytest-django's per-test
+atomic()/truncation machinery (see its module docstring for why). Adding the marker
+back would reintroduce exactly the SAVEPOINT-inflation risk this module is designed to
+avoid.
 """
 
-import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
@@ -33,7 +38,6 @@ from ansible_base.lib.utils.response import get_relative_url
 MAX_QUERIES_RESOURCE_LIST_WITH_EXTRA_FIELDS = 15
 
 
-@pytest.mark.django_db
 def test_resource_list_extra_fields_query_count_hard_cutoff(admin_api_client):
     """A request to resource-list?extra_fields=resource_data should never exceed
     a fixed query-count cutoff, regardless of how many resources are returned."""
