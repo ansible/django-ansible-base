@@ -1547,3 +1547,81 @@ def test_cleanup_orphans_continues_after_deletion_error(admin_api_client, static
     assert len(error_lines) == 2
     assert User.objects.filter(username__in=["orphan_one", "orphan_two"]).count() == 2
     assert executor.deleted_count == 0
+
+
+@pytest.mark.django_db
+def test_paginate_skips_corrupted_uuid_object_id():
+    """Assignments whose object_id is a UUID are skipped and flagged as invalid.
+
+    This guards against corrupted Gateway data (AAP-87798) where a RoleDefinition
+    UUID ends up as object_id for a namespace assignment.  The corrupted assignment
+    must be skipped and has_invalid_assignments set, while a valid assignment on the
+    same page is still applied.
+    """
+    corrupted_object_id = str(uuid4())
+    valid_actor = str(uuid4())
+    RoleDefinition.objects.create(name='galaxy.collection_publisher', managed=True)
+
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+    api_client.list_user_assignments.return_value = _mock_response(
+        body={
+            'results': [
+                # corrupted — object_id is a UUID
+                {
+                    'user_ansible_id': str(uuid4()),
+                    'object_ansible_id': None,
+                    'object_id': corrupted_object_id,
+                    'role_definition': 'galaxy.collection_publisher',
+                },
+                # valid — object_id is an integer PK
+                {
+                    'user_ansible_id': valid_actor,
+                    'object_ansible_id': None,
+                    'object_id': '42',
+                    'role_definition': 'galaxy.collection_publisher',
+                },
+            ],
+            'next': None,
+        }
+    )
+    api_client.list_team_assignments.return_value = _mock_response()
+
+    result = RemoteAssignmentFetcher(api_client).fetch()
+
+    assert result.is_complete is True
+    assert result.has_invalid_assignments is True
+    assert len(result.assignments) == 1
+    surviving = next(iter(result.assignments))
+    assert surviving.actor_ansible_id == valid_actor
+    assert surviving.ansible_id_or_pk == '42'
+
+
+@pytest.mark.django_db
+def test_sync_assignments_skips_deletions_when_has_invalid_assignments(stdout):
+    """Deletions are suppressed when the remote result contains corrupted assignments.
+
+    Even when is_complete is True, a UUID object_id in Gateway data means we cannot
+    trust the remote set for deletions — the local assignment that 'matches' the
+    corrupted remote tuple would otherwise be deleted as an orphan.
+    """
+    local_tuple = AssignmentTuple(
+        actor_ansible_id=str(uuid4()),
+        ansible_id_or_pk='42',
+        role_definition_name='galaxy.collection_publisher',
+        assignment_type='team',
+    )
+    remote_result = RemoteAssignmentResult(
+        assignments=set(),
+        is_complete=True,
+        has_invalid_assignments=True,
+    )
+
+    with (
+        mock.patch('ansible_base.resource_registry.tasks.sync.get_remote_assignments', return_value=remote_result),
+        mock.patch('ansible_base.resource_registry.tasks.sync.get_local_assignments', return_value={local_tuple}),
+        mock.patch('ansible_base.resource_registry.tasks.sync.delete_local_assignment') as mock_delete,
+    ):
+        executor = SyncExecutor(api_client=mock.Mock(), sync_assignments=True)
+        executor._sync_assignments()
+
+    mock_delete.assert_not_called()

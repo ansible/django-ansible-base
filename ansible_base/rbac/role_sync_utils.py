@@ -84,8 +84,14 @@ def get_content_object(role_definition, assignment_tuple: AssignmentTuple) -> An
         raise ValueError("get_content_object requires a role_definition with a content_type")
     model = role_definition.content_type.model_class()
     if _is_resource_registered(model):
-        object_resource = Resource.objects.get(ansible_id=assignment_tuple.ansible_id_or_pk)
-        return object_resource.content_object
+        expected_ct = role_definition.content_type
+        resource = Resource.objects.filter(
+            ansible_id=assignment_tuple.ansible_id_or_pk,
+            content_type__app_label=expected_ct.app_label,
+            content_type__model=expected_ct.model,
+        ).first()
+        if resource is not None:
+            return resource.content_object
     return model.objects.get(pk=assignment_tuple.ansible_id_or_pk)
 
 
