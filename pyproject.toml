@@ -111,7 +111,13 @@ legacy_tox_ini = """
         -r{toxinidir}/requirements/requirements_all.txt
         -r{toxinidir}/requirements/requirements_dev.txt
     allowlist_externals = sh
-    commands = pytest -n auto --color=yes --cov=. --cov-report=xml:coverage.xml --cov-report=html --cov-report=json --cov-branch --junit-xml=django-ansible-base-test-results.xml {env:ANSIBLE_BASE_PYTEST_ARGS} {env:ANSIBLE_BASE_TEST_DIRS:test_app/tests} {posargs}
+    # --ignore=test_app/tests/query_count_scale: that directory has its own dedicated
+    # CI job/tox env (py312-query-count-scale, below) and relies on a shared, session-
+    # scoped, non-transactional data-seeding fixture (AAP-88875) instead of per-test
+    # isolation. Without this, the default `test_app/tests` target would also pick it
+    # up here -- duplicating its ~1 minute seeding cost per -n auto/xdist worker, and
+    # leaking its committed (not rolled-back) demo data into other tests' assertions.
+    commands = pytest -n auto --color=yes --cov=. --cov-report=xml:coverage.xml --cov-report=html --cov-report=json --cov-branch --junit-xml=django-ansible-base-test-results.xml --ignore=test_app/tests/query_count_scale {env:ANSIBLE_BASE_PYTEST_ARGS} {env:ANSIBLE_BASE_TEST_DIRS:test_app/tests} {posargs}
     docker = db
 
     [testenv:py312-check]
