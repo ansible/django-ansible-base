@@ -19,6 +19,13 @@ from ansible_base.lib.metadata import (
 from ansible_base.lib.serializers.mixins import CleanTextMixin
 from ansible_base.lib.utils.validation import _HANDLER_URI_RE, _INJECTION_RE, CONTROL_CHARS
 
+
+@pytest.fixture(autouse=True)
+def clear_pattern_caches():
+    build_tier1_frontend_pattern.cache_clear()
+    build_tier2_frontend_pattern.cache_clear()
+
+
 # ---------------------------------------------------------------------------
 # _wrap_alternation
 # ---------------------------------------------------------------------------
@@ -38,25 +45,21 @@ def test_wrap_alternation_noop_without_pipe():
 
 
 def test_tier1_pattern_is_string():
-    build_tier1_frontend_pattern.cache_clear()
     assert isinstance(build_tier1_frontend_pattern(), str)
 
 
 def test_tier1_pattern_starts_with_caret_lookahead():
-    build_tier1_frontend_pattern.cache_clear()
     pattern = build_tier1_frontend_pattern()
     assert pattern.startswith('^(?!.*')
 
 
 def test_tier1_pattern_ends_with_dollar():
-    build_tier1_frontend_pattern.cache_clear()
     pattern = build_tier1_frontend_pattern()
     assert pattern.endswith('$')
     assert r'\Z' not in pattern
 
 
 def test_tier1_pattern_compiles_with_regex_module():
-    build_tier1_frontend_pattern.cache_clear()
     pattern = build_tier1_frontend_pattern()
     compiled = regex.compile(pattern, regex.UNICODE)
     assert compiled is not None
@@ -68,12 +71,10 @@ def test_tier1_pattern_compiles_with_regex_module():
 
 
 def test_tier2_pattern_is_string():
-    build_tier2_frontend_pattern.cache_clear()
     assert isinstance(build_tier2_frontend_pattern(), str)
 
 
 def test_tier2_pattern_contains_deny_substrings():
-    build_tier2_frontend_pattern.cache_clear()
     pattern = build_tier2_frontend_pattern()
     assert _HTML_TAG_APPROX in pattern
     assert CONTROL_CHARS in pattern
@@ -82,13 +83,11 @@ def test_tier2_pattern_contains_deny_substrings():
 
 
 def test_tier2_pattern_ends_with_catch_all():
-    build_tier2_frontend_pattern.cache_clear()
     pattern = build_tier2_frontend_pattern()
     assert pattern.endswith(r'[\s\S]*$')
 
 
 def test_tier2_pattern_compiles():
-    build_tier2_frontend_pattern.cache_clear()
     pattern = build_tier2_frontend_pattern()
     compiled = regex.compile(pattern, regex.IGNORECASE)
     assert compiled is not None
@@ -160,7 +159,6 @@ def test_inject_applies_pattern_for_urlfield(mock_setting):
     # inherits CharField's "CharField" -- so CleanTextMixin._classify_fields() DOES
     # run validate_free_text() on URLField-backed columns server-side. A URLField
     # should get the same tier 2 pattern hint as any other free-text field.
-    build_tier2_frontend_pattern.cache_clear()
     field = _make_field(field_name='description', field_cls=serializers.URLField)
     field_info = {'type': 'string'}
     result = inject_clean_text_patterns(field, field_info)
@@ -196,7 +194,6 @@ def test_inject_returns_unmodified_for_excluded_field(mock_setting):
 
 @patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
 def test_inject_tier1_keys(mock_setting):
-    build_tier1_frontend_pattern.cache_clear()
     field = _make_field(field_name='name')
     field_info = {'type': 'string'}
     result = inject_clean_text_patterns(field, field_info)
@@ -232,7 +229,6 @@ def test_inject_tier1_uses_camelcase(mock_setting):
 
 @patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
 def test_inject_tier2_keys(mock_setting):
-    build_tier2_frontend_pattern.cache_clear()
     field = _make_field(field_name='description')
     field_info = {'type': 'string'}
     result = inject_clean_text_patterns(field, field_info)
@@ -286,14 +282,12 @@ def test_clean_text_metadata_inherits_simple_metadata():
     ],
 )
 def test_tier1_pattern_accepts_valid_names(value):
-    build_tier1_frontend_pattern.cache_clear()
     pattern = build_tier1_frontend_pattern()
     compiled = regex.compile(pattern, regex.UNICODE)
     assert compiled.match(value), f'Expected {value!r} to match tier 1 pattern'
 
 
 def test_tier1_pattern_rejects_zalgo():
-    build_tier1_frontend_pattern.cache_clear()
     pattern = build_tier1_frontend_pattern()
     compiled = regex.compile(pattern, regex.UNICODE)
     zalgo = 'test' + '̀' * 5
@@ -304,7 +298,6 @@ def test_tier1_pattern_rejects_interleaved_zalgo():
     """Verifies the Major-2 fix: marks interleaved with base characters (not just
     consecutive runs) are now rejected too, approximating the server's
     _has_dense_combining_marks() sliding-window check."""
-    build_tier1_frontend_pattern.cache_clear()
     pattern = build_tier1_frontend_pattern()
     compiled = regex.compile(pattern, regex.UNICODE)
     # 3 base chars + 5 combining marks (acute/grave), each mark-cluster separated by
@@ -331,7 +324,6 @@ def test_tier1_pattern_rejects_interleaved_zalgo():
     ],
 )
 def test_tier2_pattern_accepts_plain_text(value):
-    build_tier2_frontend_pattern.cache_clear()
     pattern = build_tier2_frontend_pattern()
     compiled = regex.compile(pattern, regex.IGNORECASE)
     assert compiled.match(value), f'Expected {value!r} to match tier 2 pattern'
@@ -353,7 +345,6 @@ def test_tier2_pattern_accepts_plain_text(value):
     ],
 )
 def test_tier2_pattern_rejects_dangerous_input(value, reason):
-    build_tier2_frontend_pattern.cache_clear()
     pattern = build_tier2_frontend_pattern()
     compiled = regex.compile(pattern, regex.IGNORECASE)
     assert compiled.match(value) is None, f'Tier 2 should reject {reason}: {value!r}'
@@ -373,7 +364,6 @@ def test_tier2_pattern_does_not_catch_html_entity_encoded_payload():
     than a silent behavior change. See the docstring on build_tier2_frontend_pattern()
     for the full rationale on why this isn't fixed with a static regex.
     """
-    build_tier2_frontend_pattern.cache_clear()
     pattern = build_tier2_frontend_pattern()
     compiled = regex.compile(pattern, regex.IGNORECASE)
     encoded_payload = '&amp;lt;script&amp;gt;alert(1)&amp;lt;/script&amp;gt;'
@@ -419,8 +409,6 @@ def test_clean_text_metadata_options_response_end_to_end():
     """Jira acceptance criterion #5: at least one DAB endpoint returns `pattern` in
     its OPTIONS response for name and description fields (and omits it for
     SlugField), exercised through DRF's real OPTIONS pipeline (not mocked fields)."""
-    build_tier1_frontend_pattern.cache_clear()
-    build_tier2_frontend_pattern.cache_clear()
 
     factory = APIRequestFactory()
     request = factory.options('/')

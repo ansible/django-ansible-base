@@ -101,7 +101,8 @@ def inject_clean_text_patterns(field, field_info):
     else:
         field_info['pattern'] = build_tier2_frontend_pattern()
         field_info['patternDescription'] = (
-            "This field can't include HTML tags, script markup, unsafe URI schemes, " "shell or template syntax, or control characters."
+            "This field can't include HTML tags, script markup, unsafe URI schemes, "
+            "shell or template syntax, or control characters."
         )
         field_info['flags'] = 'i'
 
