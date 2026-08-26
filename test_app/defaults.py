@@ -165,7 +165,7 @@ USE_I18N = True
 
 USE_TZ = True
 
-DEMO_DATA_COUNTS = {'organization': 150, 'user': 379, 'team': 43, 'roledefinition': 100}
+DEMO_DATA_COUNTS = {'organization': 150, 'user': 379, 'team': 43, 'roledefinition': 100, 'inventory': 60, 'credential': 60}
 
 ANSIBLE_BASE_TEAM_MODEL = 'test_app.Team'
 ANSIBLE_BASE_ORGANIZATION_MODEL = 'test_app.Organization'
