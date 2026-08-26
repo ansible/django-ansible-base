@@ -778,9 +778,10 @@ class ObjectRole(ObjectRoleFields):
         if object_pk is not None and object_ct_id is not None:
             # Look-ahead: query only the table matching the pk type, filtered
             # to the single target object.
-            partial_filter = {'object_id': object_pk, 'content_type_id': object_ct_id}
             source = self.permission_partials_uuid if isinstance(object_pk, UUID) else self.permission_partials
-            for eval_id, codename, content_type_id, object_id in source.filter(**partial_filter).values_list('id', 'codename', 'content_type_id', 'object_id'):
+            for eval_id, codename, content_type_id, object_id in source.filter(object_id=object_pk, content_type_id=object_ct_id).values_list(
+                'id', 'codename', 'content_type_id', 'object_id'
+            ):
                 existing_partials[(codename, content_type_id, object_id)] = eval_id
             self._log_partials_count(len(existing_partials), f'existing evaluation (object_pk={object_pk})', self.pk)
         elif evaluations_prefetch is not None:
@@ -964,12 +965,11 @@ class RoleEvaluationFields(models.Model):
         """
         # We only have a content_types exception for multiple content types for polymorphic models
         # for normal models you should not need it, but AWX unified_ models need it to get by
-        filter_kwargs = {'role_id__in': cls.actor_role_ids(actor), 'codename': codename}
+        qs = cls.objects.filter(role_id__in=cls.actor_role_ids(actor), codename=codename)
         if content_types:
-            filter_kwargs['content_type_id__in'] = content_types
+            qs = qs.filter(content_type_id__in=content_types)
         else:
-            filter_kwargs['content_type_id'] = DABContentType.objects.get_for_model(model_cls).id
-        qs = cls.objects.filter(**filter_kwargs)
+            qs = qs.filter(content_type_id=DABContentType.objects.get_for_model(model_cls).id)
         if cast_field is None:
             return qs.values_list('object_id').distinct()
         else:
