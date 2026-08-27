@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ValidationError
 from django.db.models import Q
 
 from ansible_base.lib.utils.apps import is_rbac_installed
@@ -85,11 +86,16 @@ def get_content_object(role_definition, assignment_tuple: AssignmentTuple) -> An
     model = role_definition.content_type.model_class()
     if _is_resource_registered(model):
         expected_ct = role_definition.content_type
-        resource = Resource.objects.filter(
-            ansible_id=assignment_tuple.ansible_id_or_pk,
-            content_type__app_label=expected_ct.app_label,
-            content_type__model=expected_ct.model,
-        ).first()
+        try:
+            # ansible_id is a UUIDField; integer PKs ("123") raise ValueError at
+            # evaluation time, so catch that and fall through to the PK lookup.
+            resource = Resource.objects.filter(
+                ansible_id=assignment_tuple.ansible_id_or_pk,
+                content_type__app_label=expected_ct.app_label,
+                content_type__model=expected_ct.model,
+            ).first()
+        except (ValueError, AttributeError, ValidationError):
+            resource = None
         if resource is not None:
             return resource.content_object
     return model.objects.get(pk=assignment_tuple.ansible_id_or_pk)
