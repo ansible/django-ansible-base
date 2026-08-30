@@ -10,6 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     name: Check the PR for DVCS integration
     steps:
-      - uses: ansible/dvcs-action@devel
+      - uses: ansible/dvcs-action@0106255aa32ffdefe91475fe98db51116807a9a6 # v5
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
