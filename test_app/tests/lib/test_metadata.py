@@ -9,9 +9,9 @@ from rest_framework.response import Response
 from rest_framework.test import APIRequestFactory
 
 from ansible_base.lib.metadata import (
+    _HTML_TAG_APPROX,
     TIER1_PATTERN_DESCRIPTION,
     TIER2_PATTERN_DESCRIPTION,
-    _HTML_TAG_APPROX,
     CleanTextMetadata,
     _wrap_alternation,
     build_tier1_frontend_pattern,
