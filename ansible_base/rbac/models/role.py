@@ -408,10 +408,11 @@ class AssignmentBase(ImmutableCommonModel, ObjectRoleFields, _AuditableBase):
         null=True, blank=True, help_text=_('The primary key of the object this assignment applies to; null value indicates system-wide assignment.')
     )
     content_type = models.ForeignKey(DABContentType, on_delete=models.CASCADE, null=True, help_text=_("The content type this applies to."))
+    object_ansible_id = models.UUIDField(null=True, blank=True, help_text=_('Cached ansible_id of the resource this assignment applies to.'))
 
     # object_role is internal, and not shown in serializer
     # content_type does not have a link, and ResourceType will be used in lieu sometime
-    ignore_relations = ['content_type', 'object_role', 'resource']
+    ignore_relations = ['content_type', 'object_role']
 
     class Meta:
         app_label = 'dab_rbac'

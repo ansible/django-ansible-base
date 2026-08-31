@@ -1,5 +1,4 @@
 from django.db import transaction
-from django.db.models import F
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -133,9 +132,7 @@ class ServiceRoleUserAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     ]
 
     def get_queryset(self):
-        return RoleUserAssignment.objects.prefetch_related('user__resource__content_type', *prefetch_related).annotate(
-            _object_ansible_id_annotation=F('resource__ansible_id')
-        )
+        return RoleUserAssignment.objects.prefetch_related('user__resource__content_type', *prefetch_related)
 
     @action(detail=False, methods=['post'], url_path='assign')
     def assign(self, request):
@@ -159,9 +156,7 @@ class ServiceRoleTeamAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     ]
 
     def get_queryset(self):
-        return RoleTeamAssignment.objects.prefetch_related('team__resource__content_type', *prefetch_related).annotate(
-            _object_ansible_id_annotation=F('resource__ansible_id')
-        )
+        return RoleTeamAssignment.objects.prefetch_related('team__resource__content_type', *prefetch_related)
 
     @action(detail=False, methods=['post'], url_path='assign')
     def assign(self, request):
