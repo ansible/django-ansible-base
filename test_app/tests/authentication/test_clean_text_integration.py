@@ -198,7 +198,7 @@ class TestAuthenticatorMapCleanText:
         assert 'role' in exc_info.value.detail
         assert 'team' in exc_info.value.detail
 
-    def test_grandfather_unchanged_name_on_update(self, map_serializer, local_authenticator):
+    def test_grandfather_unchanged_name_on_update_at_serializer_level(self, local_authenticator):
         auth_map = AuthenticatorMap.objects.create(
             name='name;semicolon',
             authenticator=local_authenticator,
@@ -210,6 +210,18 @@ class TestAuthenticatorMapCleanText:
         serializer.validate_trigger_data = MagicMock(return_value={})
         data = serializer.validate(dict(name='name;semicolon', map_type='is_superuser', order=100))
         assert data['name'] == 'name;semicolon'
+
+    def test_grandfather_unchanged_name_on_update(self, admin_api_client, local_authenticator):
+        auth_map = AuthenticatorMap.objects.create(
+            name='name;semicolon',
+            authenticator=local_authenticator,
+            map_type='is_superuser',
+            triggers={"always": {}},
+            order=99,
+        )
+        url = get_relative_url('authenticatormap-detail', kwargs={'pk': auth_map.pk})
+        response = admin_api_client.patch(url, data={'name': 'name;semicolon', 'order': 100}, format='json')
+        assert response.status_code == 200
 
     def test_rejects_changed_invalid_name_on_update(self, admin_api_client, local_authenticator):
         auth_map = AuthenticatorMap.objects.create(

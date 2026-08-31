@@ -14,8 +14,9 @@ from ansible_base.lib.utils.response import get_relative_url
 
 class AuthenticatorSerializer(CleanTextMixin, NamedCommonModelSerializer, ImmutableFieldsMixin):
     # Exclude encrypted sub-keys and unvalidated pass-through args from CleanTextMixin's
-    # JSONField scan.  Other structured sub-keys (DictField, ListField, JSONField) are
-    # already skipped by the mixin's isinstance(val, str) check.
+    # JSONField scan. Other structured sub-keys (dict/list-valued) are not skipped —
+    # CleanTextMixin recurses into them and validates their string leaves with Tier 2.
+    # Only bare top-level string values need an explicit excluded_json_keys entry.
     # See docs/lib/validation.md "Authenticator configuration exclusions" for the full rationale.
     excluded_json_keys = MappingProxyType(
         {
