@@ -1,9 +1,30 @@
+"""DRF metadata class for exposing CleanTextMixin validation patterns to clients.
+
+Public API for downstream packages:
+    - validation_enabled() -> bool: Check if validation feature is enabled
+    - get_tier1_pattern() -> dict: Get resource name validation pattern metadata
+    - get_tier2_pattern() -> dict: Get free text validation pattern metadata
+    - TIER1_PATTERN_DESCRIPTION: Human-readable tier 1 error message
+    - TIER2_PATTERN_DESCRIPTION: Human-readable tier 2 error message
+
+These are intended for injecting patterns into non-OPTIONS contexts like
+credential type schemas, survey specifications, or plugin field metadata.
+"""
+
 from functools import lru_cache
 
 from rest_framework import serializers
 from rest_framework.metadata import SimpleMetadata
 
 _HTML_TAG_APPROX = r'<[a-zA-Z/!][^>]*>'
+
+TIER1_PATTERN_DESCRIPTION = (
+    'Enter a valid name. Use letters, numbers, spaces, hyphens (-), '
+    'underscores (_), dots (.), and @. Start with a letter, number, '
+    'or underscore. Max 512 characters.'
+)
+
+TIER2_PATTERN_DESCRIPTION = "This field can't include HTML tags, script markup, unsafe URI schemes, " "shell or template syntax, or control characters."
 
 
 def _wrap_alternation(pattern):
@@ -91,22 +112,41 @@ def inject_clean_text_patterns(field, field_info):
 
     if field.field_name in serializer.name_fields:
         field_info['pattern'] = build_tier1_frontend_pattern()
-        field_info['patternDescription'] = (
-            'Enter a valid name. Use letters, numbers, spaces, hyphens (-), '
-            'underscores (_), dots (.), and @. Start with a letter, number, '
-            'or underscore. Max 512 characters.'
-        )
+        field_info['patternDescription'] = TIER1_PATTERN_DESCRIPTION
         field_info['flags'] = 'u'
         field_info['normalize'] = 'NFC'
     else:
         field_info['pattern'] = build_tier2_frontend_pattern()
-        field_info['patternDescription'] = (
-            "This field can't include HTML tags, script markup, unsafe URI schemes, "
-            "shell or template syntax, or control characters."
-        )
+        field_info['patternDescription'] = TIER2_PATTERN_DESCRIPTION
         field_info['flags'] = 'i'
 
     return field_info
+
+
+def validation_enabled():
+    """Check if enhanced input validation is enabled."""
+    from ansible_base.lib.utils.settings import get_setting
+
+    return get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False)
+
+
+def get_tier1_pattern():
+    """Get the client-side tier 1 (resource name) validation pattern."""
+    return {
+        'pattern': build_tier1_frontend_pattern(),
+        'description': TIER1_PATTERN_DESCRIPTION,
+        'flags': 'u',
+        'normalize': 'NFC',
+    }
+
+
+def get_tier2_pattern():
+    """Get the client-side tier 2 (free text) validation pattern."""
+    return {
+        'pattern': build_tier2_frontend_pattern(),
+        'description': TIER2_PATTERN_DESCRIPTION,
+        'flags': 'i',
+    }
 
 
 class CleanTextMetadata(SimpleMetadata):

@@ -9,12 +9,17 @@ from rest_framework.response import Response
 from rest_framework.test import APIRequestFactory
 
 from ansible_base.lib.metadata import (
+    TIER1_PATTERN_DESCRIPTION,
+    TIER2_PATTERN_DESCRIPTION,
     _HTML_TAG_APPROX,
     CleanTextMetadata,
     _wrap_alternation,
     build_tier1_frontend_pattern,
     build_tier2_frontend_pattern,
+    get_tier1_pattern,
+    get_tier2_pattern,
     inject_clean_text_patterns,
+    validation_enabled,
 )
 from ansible_base.lib.serializers.mixins import CleanTextMixin
 from ansible_base.lib.utils.validation import _HANDLER_URI_RE, _INJECTION_RE, CONTROL_CHARS
@@ -428,3 +433,39 @@ def test_clean_text_metadata_options_response_end_to_end():
     assert post_fields['description']['flags'] == 'i'
 
     assert 'pattern' not in post_fields['slug']
+
+
+# ---------------------------------------------------------------------------
+# Public API — validation_enabled
+# ---------------------------------------------------------------------------
+
+
+def test_validation_enabled_returns_setting_value():
+    with override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True):
+        assert validation_enabled() is True
+
+    with override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=False):
+        assert validation_enabled() is False
+
+
+# ---------------------------------------------------------------------------
+# Public API — get_tier1_pattern / get_tier2_pattern
+# ---------------------------------------------------------------------------
+
+
+def test_get_tier1_pattern_returns_metadata():
+    result = get_tier1_pattern()
+    assert 'pattern' in result
+    assert result['description'] == TIER1_PATTERN_DESCRIPTION
+    assert result['flags'] == 'u'
+    assert result['normalize'] == 'NFC'
+    assert isinstance(result['pattern'], str)
+
+
+def test_get_tier2_pattern_returns_metadata():
+    result = get_tier2_pattern()
+    assert 'pattern' in result
+    assert result['description'] == TIER2_PATTERN_DESCRIPTION
+    assert result['flags'] == 'i'
+    assert 'normalize' not in result
+    assert isinstance(result['pattern'], str)
