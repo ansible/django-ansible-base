@@ -81,7 +81,7 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
 
     installed_apps: list = copy(settings["INSTALLED_APPS"])
     middleware: list = copy(settings["MIDDLEWARE"])
-    rest_framework: dict = copy(settings["REST_FRAMEWORK"])
+    rest_framework: dict = copy(settings["REST_FRAMEWORK"]) if isinstance(settings["REST_FRAMEWORK"], dict) else {}
 
     oauth2_provider: dict = copy(settings.get("OAUTH2_PROVIDER", {}))
     templates: list = copy(settings.get("TEMPLATES", []))
