@@ -1553,10 +1553,10 @@ def test_cleanup_orphans_continues_after_deletion_error(admin_api_client, static
 def test_paginate_skips_corrupted_uuid_object_id():
     """Assignments whose object_id is a UUID are skipped and flagged as invalid.
 
-    This guards against corrupted Gateway data (AAP-87798) where a RoleDefinition
-    UUID ends up as object_id for a namespace assignment.  The corrupted assignment
-    must be skipped and the actor+role+type recorded in protected_pairs, while a valid assignment on the
-    same page is still applied.
+    This guards against corrupted Gateway data where a RoleDefinition UUID ends up
+    as object_id for a namespace assignment. The corrupted assignment must be skipped
+    and the actor+role+type recorded in protected_pairs, while a valid assignment on
+    the same page is still applied.
     """
     corrupted_object_id = str(uuid4())
     corrupted_actor = str(uuid4())
