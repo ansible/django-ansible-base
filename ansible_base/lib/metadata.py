@@ -24,7 +24,9 @@ TIER1_PATTERN_DESCRIPTION = (
     'or underscore. Max 512 characters.'
 )
 
-TIER2_PATTERN_DESCRIPTION = "This field can't include HTML tags, script markup, unsafe URI schemes, " "shell or template syntax, or control characters."
+TIER2_PATTERN_DESCRIPTION = (
+    "This field can't include HTML tags, script markup, unsafe URI schemes, shell or template syntax, or control characters."
+)
 
 
 def _wrap_alternation(pattern):
