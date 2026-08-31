@@ -42,6 +42,75 @@ def test_registered_model_triggers_signals(model, system_user):
 
 
 @pytest.mark.django_db
+def test_decide_to_sync_update_skips_class_level_flag(organization, monkeypatch):
+    """decide_to_sync_update returns before touching serializer_class when the model sets the flag at the class level.
+
+    Models registered without a managed_serializer (serializer_class=None) set
+    _skip_reverse_resource_sync=True on the class to opt out of reverse sync.
+    The handler must bail before calling serializer_class(), which raises TypeError when None.
+
+    Without this fix, the handler would reach serializer_class().get_fields() and raise:
+        TypeError: 'NoneType' object is not callable
+    """
+    monkeypatch.setattr(Organization, '_skip_reverse_resource_sync', True, raising=False)
+    with mock.patch.object(handlers, 'Resource') as mock_resource:
+        organization.name = 'changed'
+        handlers.decide_to_sync_update(
+            sender=Organization,
+            instance=organization,
+            raw=False,
+            using='default',
+            update_fields=None,
+        )
+    mock_resource.get_resource_for_object.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_pre_delete_sync_skips_class_level_flag(organization, monkeypatch):
+    """sync_to_resource_server_pre_delete returns early when the model sets the flag at the class level.
+
+    Models that opt out of reverse sync must not trigger a Gateway sync on delete.
+    The flag check must occur before any Resource lookup or sync_to_resource_server call.
+
+    Without this fix, the handler would reach instance.resource.ansible_id and raise:
+        AttributeError: '<Model>' object has no attribute 'resource'
+    (Resource uses GenericForeignKey — no automatic reverse accessor exists on the instance.)
+    """
+    monkeypatch.setattr(Organization, '_skip_reverse_resource_sync', True, raising=False)
+    with mock.patch('ansible_base.resource_registry.signals.handlers.sync_to_resource_server') as mock_sync:
+        handlers.sync_to_resource_server_pre_delete(sender=Organization, instance=organization)
+    mock_sync.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_pre_delete_sync_resource_not_found(organization):
+    """sync_to_resource_server_pre_delete logs a warning and skips sync when the Resource row is absent."""
+    with (
+        mock.patch.object(handlers, 'Resource') as mock_resource,
+        mock.patch('ansible_base.resource_registry.signals.handlers.sync_to_resource_server') as mock_sync,
+    ):
+        mock_resource.DoesNotExist = Resource.DoesNotExist
+        mock_resource.get_resource_for_object.side_effect = Resource.DoesNotExist
+        handlers.sync_to_resource_server_pre_delete(sender=Organization, instance=organization)
+    mock_sync.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_pre_delete_sync_calls_sync_to_resource_server(organization):
+    """sync_to_resource_server_pre_delete passes the resource ansible_id to sync_to_resource_server."""
+    mock_resource_obj = mock.MagicMock()
+    mock_resource_obj.ansible_id = 'test-ansible-id-123'
+    with (
+        mock.patch.object(handlers, 'Resource') as mock_resource,
+        mock.patch('ansible_base.resource_registry.signals.handlers.sync_to_resource_server') as mock_sync,
+    ):
+        mock_resource.DoesNotExist = Resource.DoesNotExist
+        mock_resource.get_resource_for_object.return_value = mock_resource_obj
+        handlers.sync_to_resource_server_pre_delete(sender=Organization, instance=organization)
+    mock_sync.assert_called_once_with(organization, "delete", ansible_id='test-ansible-id-123')
+
+
+@pytest.mark.django_db
 def test_decide_to_sync_update_with_create(enable_reverse_sync):
     with enable_reverse_sync(mock_away_sync=True):
         org = Organization.objects.create(name='Hello')

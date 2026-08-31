@@ -295,3 +295,40 @@ def test_user_access_list_query_count(admin_api_client, inv_rd, inventory):
         f"({queries_small} -> {queries_large}). "
         f"object_role_assignments may be doing per-user queries."
     )
+
+
+@pytest.mark.django_db
+def test_team_access_list_query_count(admin_api_client, inv_rd, inventory):
+    """Query count should not scale with the number of teams in the result.
+    With prefetched assignments, going from 2 to 20 teams should add at most
+    a handful of queries, not 18 extra (one per additional team)."""
+    url = get_relative_url('role-team-access', kwargs={'pk': inventory.pk, 'model_name': 'aap.inventory'})
+
+    # Measure with 2 teams
+    for i in range(2):
+        t = Team.objects.create(name=f'query-count-team-{i}', organization=inventory.organization)
+        inv_rd.give_permission(t, inventory)
+
+    admin_api_client.get(url)  # warm up
+    with CaptureQueriesContext(connection) as ctx_small:
+        response = admin_api_client.get(url)
+    assert response.status_code == 200
+    queries_small = len(ctx_small.captured_queries)
+
+    # Add 18 more teams (20 total)
+    for i in range(2, 20):
+        t = Team.objects.create(name=f'query-count-team-{i}', organization=inventory.organization)
+        inv_rd.give_permission(t, inventory)
+
+    admin_api_client.get(url)  # warm up
+    with CaptureQueriesContext(connection) as ctx_large:
+        response = admin_api_client.get(url)
+    assert response.status_code == 200
+    queries_large = len(ctx_large.captured_queries)
+
+    added_queries = queries_large - queries_small
+    assert added_queries < 5, (
+        f"Adding 18 teams increased query count by {added_queries} "
+        f"({queries_small} -> {queries_large}). "
+        f"object_role_assignments may be doing per-team queries."
+    )
