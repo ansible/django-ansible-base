@@ -1,11 +1,16 @@
 import base64
 import binascii
+import html as html_mod
+import logging
 import re
 import secrets
+import unicodedata
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse, urlunsplit
+from urllib.parse import unquote, urlparse, urlunsplit
 
+import nh3
+import regex
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -15,7 +20,140 @@ from django.core.validators import URLValidator
 from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import ValidationError
 
+logger = logging.getLogger('ansible_base.lib.utils.validation')
+
 VALID_STRING = _('Must be a valid string')
+
+DEFAULT_NAME_FIELDS = frozenset({'name', 'username', 'hostname'})
+
+
+RESOURCE_NAME_PATTERN = r'^[\p{L}\p{N}_][\p{L}\p{N}\p{M}_ .@\-]{0,511}\Z'
+RESOURCE_NAME_RE = regex.compile(RESOURCE_NAME_PATTERN)
+
+_INVISIBLE_RE = regex.compile(r'\p{Default_Ignorable_Code_Point}')
+_ZALGO_RE = regex.compile(r'\p{M}{5,}')
+_MARK_CAT_RE = regex.compile(r'\p{M}')
+
+
+def _has_dense_combining_marks(value, window=8, threshold=5):
+    """Detect dense combining marks in any window, catching interleaved Zalgo."""
+    positions = [m.start() for m in _MARK_CAT_RE.finditer(value)]
+    left = 0
+    for right in range(len(positions)):
+        while positions[right] - positions[left] >= window:
+            left += 1
+        if right - left + 1 >= threshold:
+            return True
+    return False
+
+
+CONTROL_CHARS = (
+    '['
+    '\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f'  # C0/C1 controls (tab, LF, CR allowed)
+    '\u200b'  # ZWSP (spoofing vector)
+    '\u202d\u202e'  # LRO/RLO (Trojan Source CVE-2021-42574)
+    '\u2060-\u2064'  # Invisible math operators
+    '\u206a-\u206f'  # Deprecated formatting chars
+    '\ufeff'  # BOM in middle of text
+    '\ufff9-\ufffb'  # Interlinear annotations
+    ']'
+)
+
+_CONTROL_RE = re.compile(CONTROL_CHARS)
+
+_HANDLER_URI_RE = re.compile(
+    r'\b(?:javascript|vbscript)\s*:' + r'|\bdata\s*:\s*(?:'
+    r'text/(?:html|javascript[\d.]*|xml|ecmascript|x-javascript|x-ecmascript|jscript|livescript)'
+    r'|application/(?:xhtml\+xml|javascript|xml|ecmascript|x-javascript|x-ecmascript)'
+    r'|image/svg\+xml)',
+    re.IGNORECASE,
+)
+
+_INJECTION_RE = re.compile(r'[$]\([^)]+\)|[$]\{[^}]+\}' + r'|\{\{[^}]+\}\}|\{%[^%]+%\}')
+
+
+def _decoded_variants(value, max_depth=3):
+    """Return the value plus successively HTML-, percent-, and NFKC-decoded
+    forms, so that entity-, URL-, or fullwidth-encoded payloads cannot bypass
+    the denylist checks."""
+    variants = [value]
+    current = value
+    for _pass in range(max_depth):
+        decoded = html_mod.unescape(unquote(current))
+        nfkc = unicodedata.normalize('NFKC', decoded)
+        collapsed = re.sub(
+            r'<\s+(script|iframe|object|embed|svg|math|form|base|meta|link|template|style)',
+            r'<\1',
+            nfkc,
+            flags=re.IGNORECASE,
+        )
+        if collapsed == current:
+            break
+        variants.append(collapsed)
+        current = collapsed
+    else:
+        logger.warning("Decode-variant loop did not converge after %d passes — input may contain deeply encoded content", max_depth)
+    return variants
+
+
+def _normalize_for_markup_compare(text):
+    """Undo the transformations nh3 applies that are *not* markup removal, so
+    only genuine tag/attribute stripping causes a mismatch: entity escaping
+    (``&`` -> ``&amp;``) and CRLF/CR -> LF newline normalization."""
+    return html_mod.unescape(text).replace('\r\n', '\n').replace('\r', '\n')
+
+
+def _contains_markup(text):
+    """True if the text contains any HTML tag. nh3 (a real HTML parser) is run
+    with ``tags=set()`` to strip every tag; if that changes the text, markup was
+    present. The cleaned output is discarded."""
+    return _normalize_for_markup_compare(nh3.clean(text, tags=set())) != _normalize_for_markup_compare(text)
+
+
+def validate_resource_name(value):
+    """Tier 1 validator: enforces strict allowlist for name-type fields."""
+    if not isinstance(value, str):
+        raise ValidationError(
+            _(
+                "Enter a valid name. Use letters, numbers, spaces, hyphens (-), underscores (_), dots (.), and @. "
+                "Start with a letter, number, or underscore. Max 512 characters."
+            )
+        )
+    value = unicodedata.normalize('NFC', value)
+    if _INVISIBLE_RE.search(value):
+        raise ValidationError(_("This field can't include invisible characters."))
+    if not RESOURCE_NAME_RE.match(value):
+        raise ValidationError(
+            _(
+                "Enter a valid name. Use letters, numbers, spaces, hyphens (-), underscores (_), dots (.), and @. "
+                "Start with a letter, number, or underscore. Max 512 characters."
+            )
+        )
+    if _ZALGO_RE.search(value) or _has_dense_combining_marks(value):
+        raise ValidationError(_("Too many combining marks."))
+
+
+def validate_free_text(value):
+    """Tier 2 validator: rejects dangerous patterns in general text fields.
+
+    Markup detection uses the nh3 sanitizer (a real parser) rather than a
+    regex, and every input is decoded first, so entity- or URL-encoded
+    payloads cannot slip through.
+    """
+    if not isinstance(value, str):
+        return
+    for v in _decoded_variants(value):
+        if _CONTROL_RE.search(v):
+            raise ValidationError(_("This field can't include control characters."))
+        if _contains_markup(v):
+            raise ValidationError(_("This field can't include HTML tags, script markup, or unsafe URI schemes."))
+        # WHATWG URL parser strips tab/LF/CR before scheme matching, so
+        # "jav\tascript:" is browser-equivalent to "javascript:".
+        uri_check = re.sub(r'[\t\n\r]', '', v)
+        if _HANDLER_URI_RE.search(uri_check):
+            raise ValidationError(_("This field can't include HTML tags, script markup, or unsafe URI schemes."))
+        if _INJECTION_RE.search(v):
+            raise ValidationError(_("This field can't include shell or template syntax."))
 
 
 def validate_url_list(urls: list, schemes: list = ['https'], allow_plain_hostname: bool = False) -> None:
