@@ -112,6 +112,7 @@ class Resource(models.Model):
                 name="unique_resource_content_type_object_id",
             ),
         ]
+        ordering = ['id']
 
     def update_from_content_object(self):
         """

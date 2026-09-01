@@ -72,7 +72,7 @@ class TestWorkloadIdentityClient:
         """Configure mocks for a successful HTTP request returning a JWT."""
         mock_get_service_token.return_value = "service-token"
         payload = jwt_payload or {"sub": "job_1"}
-        test_jwt = pyjwt.encode(payload, "secret", algorithm="HS256")
+        test_jwt = pyjwt.encode(payload, "test-secret-key-for-workload-identity", algorithm="HS256")
         mock_response = mock.Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"jwt": test_jwt}

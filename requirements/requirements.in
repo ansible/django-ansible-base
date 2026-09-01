@@ -3,7 +3,7 @@
 # if you are add a new feature which requires dependencies they should be in a separate requirements_<feature>.in file
 #
 cryptography
-Django>=5,<6.0
+Django>=5.1,<6.0
 djangorestframework<3.16 # problem with OAuth2Application.organization null handling
 django-crum
 inflection

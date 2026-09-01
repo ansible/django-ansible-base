@@ -78,11 +78,11 @@ class Migration(migrations.Migration):
         ),
         migrations.AddConstraint(
             model_name='authenticatormap',
-            constraint=models.CheckConstraint(check=models.Q(models.Q(('map_type', 'team'), _negated=True), models.Q(('team__isnull', False), ('organization__isnull', False)), _connector='OR'), name='dab_authentication_authenticatormap_require_org_team_if_team_map'),
+            constraint=models.CheckConstraint(condition=models.Q(models.Q(('map_type', 'team'), _negated=True), models.Q(('team__isnull', False), ('organization__isnull', False)), _connector='OR'), name='dab_authentication_authenticatormap_require_org_team_if_team_map'),
         ),
         migrations.AddConstraint(
             model_name='authenticatormap',
-            constraint=models.CheckConstraint(check=models.Q(models.Q(('map_type', 'organization'), _negated=True), ('organization__isnull', False), _connector='OR'), name='dab_authentication_authenticatormap_require_org_if_org_map'),
+            constraint=models.CheckConstraint(condition=models.Q(models.Q(('map_type', 'organization'), _negated=True), ('organization__isnull', False), _connector='OR'), name='dab_authentication_authenticatormap_require_org_if_org_map'),
         ),
         migrations.AlterUniqueTogether(
             name='authenticatormap',

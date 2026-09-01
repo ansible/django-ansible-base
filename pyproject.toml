@@ -90,6 +90,21 @@ exclude = [ 'ansible_base/*/migrations/*', 'test_app/migrations/*', '.tox', 'bui
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "test_app.settings"
 addopts = "--strict-markers --reuse-db --migrations -vvv"
+filterwarnings = [
+  "error",
+  # FIXME: Update to use LoggingHandler from opentelemetry-instrumentation-logging
+  "ignore:.*LoggingHandler.*in.*opentelemetry-sdk.*is deprecated.*:DeprecationWarning",
+  # Python 3.11 importlib deprecation in opentelemetry
+  "ignore:SelectableGroups dict interface is deprecated.*:DeprecationWarning",
+  # FIXME: Update jwt.decode() calls to not pass 'required' kwarg for PyJWT 3.0 compatibility
+  "ignore:passing additional kwargs to decode.*:jwt.warnings.RemovedInPyjwt3Warning",
+  # Test-specific warnings - these are expected behavior of what the tests are validating
+  "ignore:DateTimeField.*received a naive datetime.*:RuntimeWarning",  # test_cleanup_expired_tokens validates naive datetime handling
+  "ignore:Exception ignored in:pytest.PytestUnraisableExceptionWarning",  # psycopg connection cleanup in tests
+  "ignore:Overriding setting DATABASES.*:UserWarning",  # test_db.py intentionally overrides DATABASES for testing
+  # Third-party library deprecations beyond our control
+  "ignore:datetime\\.datetime\\.utcnow.*:DeprecationWarning:onelogin\\.saml2",  # python3-saml 1.16.0 uses utcnow(), waiting for maintenance
+]
 
 [tool.tox]
 legacy_tox_ini = """

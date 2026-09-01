@@ -181,7 +181,7 @@ CSRF_TRUSTED_ORIGINS = ['http://localhost', 'https://localhost']
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-SECRET_KEY = "asdf1234"
+SECRET_KEY = "asdf1234asdf1234asdf1234asdf1234"
 
 ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES = ['ansible_base.authentication.authenticator_plugins']
 
@@ -215,7 +215,7 @@ LOGIN_URL = "/login/login"
 
 RESOURCE_SERVER = {
     "URL": "http://localhost",
-    "SECRET_KEY": "my secret key",
+    "SECRET_KEY": "my-secret-key-for-testing-with-jwt-sha256",
     "VALIDATE_HTTPS": False,
 }
 RESOURCE_SERVICE_PATH = "/api/v1/service-index/"

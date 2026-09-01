@@ -222,6 +222,7 @@ class CityViewSet(TestAppViewSet):
 class TestViewSetWithSkipAI(TestAppViewSet):
     """ViewSet for testing skip_ai_description attribute."""
 
+    __test__ = False
     skip_ai_description = True
     serializer_class = serializers.TeamSerializer
     queryset = models.Team.objects.all()
@@ -230,6 +231,7 @@ class TestViewSetWithSkipAI(TestAppViewSet):
 class TestViewSetWithResourcePurpose(TestAppViewSet):
     """ViewSet for testing resource_purpose attribute."""
 
+    __test__ = False
     resource_purpose = "test resources for validating purpose-based descriptions"
     serializer_class = serializers.TeamSerializer
     queryset = models.Team.objects.all()
@@ -238,6 +240,7 @@ class TestViewSetWithResourcePurpose(TestAppViewSet):
 class TestViewSetWithBothAttributes(TestAppViewSet):
     """ViewSet for testing both skip_ai_description and resource_purpose."""
 
+    __test__ = False
     skip_ai_description = True
     resource_purpose = "test resources that should be skipped"
     serializer_class = serializers.TeamSerializer
