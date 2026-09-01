@@ -249,7 +249,7 @@ def delete_local_assignment(assignment_tuple: AssignmentTuple) -> bool:
     from ansible_base.rbac.models.role import RoleDefinition
 
     try:
-        role_definition = RoleDefinition.objects.get(name=assignment_tuple.role_definition_name)
+        role_definition = RoleDefinition.objects.prefetch_related('content_type').get(name=assignment_tuple.role_definition_name)
 
         resource = Resource.objects.get(ansible_id=assignment_tuple.actor_ansible_id)
         actor = resource.content_object
@@ -276,7 +276,7 @@ def create_local_assignment(assignment_tuple: AssignmentTuple) -> bool:
     from ansible_base.rbac.models.role import RoleDefinition
 
     try:
-        role_definition = RoleDefinition.objects.get(name=assignment_tuple.role_definition_name)
+        role_definition = RoleDefinition.objects.prefetch_related('content_type').get(name=assignment_tuple.role_definition_name)
 
         resource = Resource.objects.get(ansible_id=assignment_tuple.actor_ansible_id)
         actor = resource.content_object
