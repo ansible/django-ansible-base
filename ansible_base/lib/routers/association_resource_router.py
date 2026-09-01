@@ -17,8 +17,9 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ViewSetMixin
 
 from ansible_base.lib.utils.apps import is_rbac_installed
+from ansible_base.lib.utils.schema import extend_schema_if_available
 
-logger = logging.getLogger('ansible_base.lib.routers.association_resource_router')
+logger = logging.getLogger("ansible_base.lib.routers.association_resource_router")
 
 
 # Registry contains subclasses of AssociationSerializerBase indexed by name
@@ -36,24 +37,28 @@ class AssociationSerializerBase(serializers.Serializer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        new_qs = self.get_queryset_on_init(self.fields['instances'].child_relation.queryset)
-        self.fields['instances'].child_relation.queryset = new_qs
+        new_qs = self.get_queryset_on_init(
+            self.fields["instances"].child_relation.queryset
+        )
+        self.fields["instances"].child_relation.queryset = new_qs
 
 
 class DisassociationSerializerBase(AssociationSerializerBase):
     """Serializer used for removing objects that are currently associated via a many-to-many relationship"""
 
     def get_queryset_on_init(self, original_qs: QuerySet) -> QuerySet:
-        if 'view' in self.context:
-            view = self.context['view']
-            if 'pk' in view.kwargs:
+        if "view" in self.context:
+            view = self.context["view"]
+            if "pk" in view.kwargs:
                 return view.get_queryset()
         return original_qs
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['instances'].child_relation.error_messages = self.fields['instances'].child_relation.error_messages.copy()
-        self.fields['instances'].child_relation.error_messages['does_not_exist'] = _(
+        self.fields["instances"].child_relation.error_messages = self.fields[
+            "instances"
+        ].child_relation.error_messages.copy()
+        self.fields["instances"].child_relation.error_messages["does_not_exist"] = _(
             'Invalid pk "{pk_value}" - object does not exist or is not associated with parent object.'
         )
 
@@ -62,9 +67,9 @@ class FilteredAssociationSerializer(AssociationSerializerBase):
     """Serializer used for adding objects to a many-to-many relationship"""
 
     def get_queryset_on_init(self, original_qs: QuerySet) -> QuerySet:
-        if 'view' in self.context:
+        if "view" in self.context:
             # If the view exists we require it to be an instance of AssociationViewSetMethodsMixin
-            view = self.context['view']
+            view = self.context["view"]
             return view.filter_associate_queryset(original_qs)
         return original_qs
 
@@ -96,12 +101,16 @@ class AssociationViewSetMethodsMixin:
         """
         return getattr(parent_instance, self.association_fk).all()
 
-    def perform_associate(self, parent_instance: Model, related_instances: list[Model]) -> None:
+    def perform_associate(
+        self, parent_instance: Model, related_instances: list[Model]
+    ) -> None:
         """Attach related_instances to instance via the relationship this viewset manages"""
         manager = getattr(parent_instance, self.association_fk)
         manager.add(*related_instances)
 
-    def perform_disassociate(self, parent_instance: Model, related_instances: list[Model]) -> None:
+    def perform_disassociate(
+        self, parent_instance: Model, related_instances: list[Model]
+    ) -> None:
         """Remove related_instances from the managed relationship of instance"""
         manager = getattr(parent_instance, self.association_fk)
         manager.remove(*related_instances)
@@ -133,11 +142,11 @@ class RelatedListMixin:
         with the specified pk.
         """
         parent_view = self.parent_viewset()
-        parent_view.request = clone_request(self.request, 'GET')
+        parent_view.request = clone_request(self.request, "GET")
         parent_view.request._request = copy.copy(self.request._request)
         parent_view.request._request.GET = QueryDict()
         queryset = parent_view.filter_queryset(parent_view.get_queryset())
-        filter_kwargs = {'pk': self.kwargs['pk']}
+        filter_kwargs = {"pk": self.kwargs["pk"]}
         parent_obj = get_object_or_404(queryset, **filter_kwargs)
 
         # May raise a permission denied
@@ -154,32 +163,45 @@ class AssociateMixin(RelatedListMixin):
     """Mixin used for writable related viewsets, where objects can be associated or disassociated from the relationship"""
 
     instances_help_text = {
-        'associate': _('A list of {model_name} to add to this relationship.'),
-        'disassociate': _('A list of {model_name} to remove from this relationship.'),
+        "associate": _("A list of {model_name} to add to this relationship."),
+        "disassociate": _("A list of {model_name} to remove from this relationship."),
     }
-    parent_serializer_cls = {'associate': FilteredAssociationSerializer, 'disassociate': DisassociationSerializerBase}
+    parent_serializer_cls = {
+        "associate": FilteredAssociationSerializer,
+        "disassociate": DisassociationSerializerBase,
+    }
 
-    @action(detail=False, methods=['post'])
+    @extend_schema_if_available(
+        responses={204: None},
+    )
+    @action(detail=False, methods=["post"])
     def associate(self, request, **kwargs):
         instance = self.get_parent_object()
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        related_instances = serializer.validated_data['instances']
+        related_instances = serializer.validated_data["instances"]
         if not related_instances:
-            raise serializers.ValidationError({'instances': _('Please pass in one or more instances to associate')})
+            raise serializers.ValidationError(
+                {"instances": _("Please pass in one or more instances to associate")}
+            )
 
         self.perform_associate(instance, related_instances)
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    @action(detail=False, methods=['post'])
+    @extend_schema_if_available(
+        responses={204: None},
+    )
+    @action(detail=False, methods=["post"])
     def disassociate(self, request, **kwargs):
         instance = self.get_parent_object()
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        related_instances = serializer.validated_data['instances']
+        related_instances = serializer.validated_data["instances"]
         if not related_instances:
-            raise serializers.ValidationError({'instances': _('Please pass in one or more instances to disassociate')})
+            raise serializers.ValidationError(
+                {"instances": _("Please pass in one or more instances to disassociate")}
+            )
 
         self.perform_disassociate(instance, related_instances)
 
@@ -192,17 +214,25 @@ class AssociateMixin(RelatedListMixin):
         return self.serializer_class.Meta.model
 
     def get_serializer_class(self) -> Type[serializers.BaseSerializer]:
-        if self.action in ('disassociate', 'associate'):
+        if self.action in ("disassociate", "associate"):
             cls = self.get_viewset_model()
-            pretty_model_name = cls._meta.verbose_name.title().replace(' ', '')
-            cls_name = f'{pretty_model_name}{self.action.title()}Serializer'
+            pretty_model_name = cls._meta.verbose_name.title().replace(" ", "")
+            cls_name = f"{pretty_model_name}{self.action.title()}Serializer"
 
             default_instances_field = serializers.PrimaryKeyRelatedField(
-                queryset=cls.objects.all(), many=True, help_text=self.instances_help_text[self.action].format(model_name=cls._meta.verbose_name_plural)
+                queryset=cls.objects.all(),
+                many=True,
+                help_text=self.instances_help_text[self.action].format(
+                    model_name=cls._meta.verbose_name_plural
+                ),
             )
 
             if cls_name not in serializer_registry:
-                serializer_registry[cls_name] = type(cls_name, (self.parent_serializer_cls[self.action],), {'instances': default_instances_field})
+                serializer_registry[cls_name] = type(
+                    cls_name,
+                    (self.parent_serializer_cls[self.action],),
+                    {"instances": default_instances_field},
+                )
             return serializer_registry[cls_name]
 
         return super().get_serializer_class()
@@ -240,7 +270,7 @@ class AssociationResourceRouter(routers.SimpleRouter):
 
     def get_method_map(self, viewset, method_map):
         is_associate_viewset = issubclass(viewset, AssociateMixin)
-        associate_actions = ['associate', 'disassociate', 'list']
+        associate_actions = ["associate", "disassociate", "list"]
         bound_methods = {}
         for method, action_str in method_map.items():
             if hasattr(viewset, action_str):
@@ -249,12 +279,18 @@ class AssociationResourceRouter(routers.SimpleRouter):
                 bound_methods[method] = action_str
         return bound_methods
 
-    def associated_viewset_cls_factory(self, viewset: Type[ViewSetMixin]) -> Type[ViewSetMixin]:
+    def associated_viewset_cls_factory(
+        self, viewset: Type[ViewSetMixin]
+    ) -> Type[ViewSetMixin]:
         """Given viewset (as a class) return a subclass containing all its actions except for list"""
 
-        custom_methods = chain.from_iterable(action.mapping.values() for action in viewset.get_extra_actions())
+        custom_methods = chain.from_iterable(
+            action.mapping.values() for action in viewset.get_extra_actions()
+        )
 
-        exclude_list = ('retrieve', 'update', 'partial_update', 'destroy') + tuple(custom_methods)
+        exclude_list = ("retrieve", "update", "partial_update", "destroy") + tuple(
+            custom_methods
+        )
 
         class AssociatedViewSetType(type(viewset)):
             """Metaclass that turns off viewset methods other than list"""
@@ -271,7 +307,9 @@ class AssociationResourceRouter(routers.SimpleRouter):
         for method in exclude_list:
             setattr(AssociatedViewSetType, method, attribute_raiser)
 
-        class AssociatedViewSet(viewset, AssociationViewSetMethodsMixin, metaclass=AssociatedViewSetType):
+        class AssociatedViewSet(
+            viewset, AssociationViewSetMethodsMixin, metaclass=AssociatedViewSetType
+        ):
             """Adjusted version of given viewset for related endpoint with only list views"""
 
             pass
@@ -287,7 +325,12 @@ class AssociationResourceRouter(routers.SimpleRouter):
             child_model = related_view.serializer_class.Meta.model
 
             # Determine if this is a related view or a reverse view
-            is_reverse_view = bool(any(x.related_model == child_model for x in parent_model._meta.related_objects))
+            is_reverse_view = bool(
+                any(
+                    x.related_model == child_model
+                    for x in parent_model._meta.related_objects
+                )
+            )
             mixin_class = AssociateMixin
             docstring_template = self.docstring_template
             if is_reverse_view:
@@ -299,29 +342,29 @@ class AssociationResourceRouter(routers.SimpleRouter):
             associated_viewset = self.associated_viewset_cls_factory(related_view)
 
             docstring_kwargs = {
-                'child_model': child_model._meta.verbose_name.title(),
-                'parent_model': parent_model._meta.verbose_name.title(),
-                'child_model_plural': child_model._meta.verbose_name_plural,
-                'parent_model_plural': parent_model._meta.verbose_name_plural,
-                'relationship': fk,
+                "child_model": child_model._meta.verbose_name.title(),
+                "parent_model": parent_model._meta.verbose_name.title(),
+                "child_model_plural": child_model._meta.verbose_name_plural,
+                "parent_model_plural": parent_model._meta.verbose_name_plural,
+                "relationship": fk,
             }
 
             # Generate the related viewset
             # Name includes and parent and child viewset, because this defines global uniqueness
             modified_related_viewset = type(
-                f'Related{viewset.__name__}{related_view.__name__}',
+                f"Related{viewset.__name__}{related_view.__name__}",
                 (mixin_class, associated_viewset),
                 {
-                    '__doc__': docstring_template.format(**docstring_kwargs),
-                    'association_fk': fk,
-                    'parent_viewset': viewset,
-                    'lookup_field': fk,
+                    "__doc__": docstring_template.format(**docstring_kwargs),
+                    "association_fk": fk,
+                    "parent_viewset": viewset,
+                    "lookup_field": fk,
                 },
             )
 
             # Force a reverse view to be read only
             if is_reverse_view:
-                modified_related_viewset.http_method_names = ['get', 'head', 'options']
+                modified_related_viewset.http_method_names = ["get", "head", "options"]
 
             if isinstance(child_model._meta.pk, IntegerField):
                 url_path = f"{prefix}/(?P<pk>[0-9]+)/{related_name}"
@@ -329,6 +372,8 @@ class AssociationResourceRouter(routers.SimpleRouter):
                 url_path = f"{prefix}/(?P<pk>[^/.]+)/{related_name}"
 
             # Register the viewset
-            self.registry.append((url_path, modified_related_viewset, f'{basename}-{fk}'))
+            self.registry.append(
+                (url_path, modified_related_viewset, f"{basename}-{fk}")
+            )
 
         super().register(prefix, viewset, basename)
