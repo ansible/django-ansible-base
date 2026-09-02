@@ -1,9 +1,9 @@
 from django.db import migrations
 
+from ansible_base.rbac.repair import repair_assignment_corruption
+
 
 def repair_corrupt_assignments(apps, schema_editor):
-    from ansible_base.rbac.repair import repair_assignment_corruption
-
     repair_assignment_corruption(apps=apps, schema_editor=schema_editor)
 
 

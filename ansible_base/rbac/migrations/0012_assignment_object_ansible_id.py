@@ -1,9 +1,9 @@
 from django.db import migrations, models
 
+from ansible_base.rbac.backfill import backfill_object_ansible_id as _backfill
+
 
 def backfill_object_ansible_id(apps, schema_editor):
-    from ansible_base.rbac.backfill import backfill_object_ansible_id as _backfill
-
     _backfill(apps=apps, schema_editor=schema_editor)
 
 
