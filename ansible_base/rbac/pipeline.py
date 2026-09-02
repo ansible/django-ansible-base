@@ -78,7 +78,7 @@ def _resolve_triples(
     for rd, actor, obj in triples:
         ct, object_id, parent_ref = _resolve_content_object(obj)
         resolved.append(ResolvedAssignment(rd, actor, ct, object_id, parent_ref))
-        if obj is not None:
+        if ct is not None and object_id is not None:  # not a global assignment
             content_objects[(ct.id, object_id)] = obj
 
     return resolved, content_objects
@@ -111,6 +111,7 @@ def _resolve_assignments(
             validate_global_assignment(rd, actor)
         else:
             validate_assignment_actor(actor)  # per-actor: must run for every triple, not deduped
+            assert obj_ct is not None and object_id is not None  # obj is not None guarantees this
             key = (rd.pk, obj_ct.id)
             if key not in validated_pairs:
                 validate_assignment(rd, obj)  # rd<->object check depends only on (rd, content type)
@@ -126,6 +127,7 @@ def _resolve_assignments(
             validate_global_assignment(rd, actor)
         else:
             validate_assignment_actor(actor)  # per-actor: must run for every triple, not deduped
+            assert obj_ct is not None and object_id is not None  # obj is not None guarantees this
             key = (rd.pk, obj_ct.id)
             if key not in validated_pairs:
                 validate_assignment(rd, obj)  # rd<->object check depends only on (rd, content type)
@@ -170,6 +172,7 @@ def _ensure_object_roles(requested_assignments: list[ResolvedAssignment]) -> Obj
     for ra in requested_assignments:
         if ra.content_type is None:
             continue  # global assignment: no ObjectRole
+        assert ra.object_id is not None  # content_type and object_id are always both set or both None
         rd_id = ra.role_definition.pk
         if rd_id not in object_ids_by_rd:
             object_ids_by_rd[rd_id] = (ra.content_type.id, set())
