@@ -67,9 +67,9 @@ def _resolve_content_object(obj: models.Model | RemoteObject) -> tuple[DABConten
 
 def _batch_fill_ansible_ids(user_resolved: list[ResolvedAssignment], team_resolved: list[ResolvedAssignment]) -> None:
     """Fill _ANSIBLE_ID_NOT_FETCHED sentinels in-place across both lists in one shared batch."""
-    try:
+    if django_apps.is_installed('ansible_base.resource_registry'):
         from ansible_base.resource_registry.models import Resource
-    except ImportError:
+    else:
         Resource = None
 
     distinct_keys = {
