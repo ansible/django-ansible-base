@@ -73,9 +73,7 @@ def _batch_fill_ansible_ids(user_resolved: list[ResolvedAssignment], team_resolv
         Resource = None
 
     distinct_keys = {
-        (ra.content_type.app_label, ra.content_type.model)
-        for ra in chain(user_resolved, team_resolved)
-        if ra.object_ansible_id is _ANSIBLE_ID_NOT_FETCHED
+        (ra.content_type.app_label, ra.content_type.model) for ra in chain(user_resolved, team_resolved) if ra.object_ansible_id is _ANSIBLE_ID_NOT_FETCHED
     }
     if not distinct_keys:
         return
@@ -421,7 +419,7 @@ def give_assignments(
 
     _batch_fill_ansible_ids(user_resolved, team_resolved)
 
-    lookup = _ensure_object_roles(user_resolved + team_resolved)
+    lookup = _ensure_object_roles(list(chain(user_resolved, team_resolved)))
     assignments = _create_assignments(user_resolved, team_resolved, lookup, fire_signals_on_create=fire_signals_on_create)
     _recompute_after_give(lookup, assignments)
     return assignments
