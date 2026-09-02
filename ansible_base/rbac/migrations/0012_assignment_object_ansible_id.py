@@ -2,7 +2,7 @@ from django.db import migrations, models
 
 
 def backfill_object_ansible_id(apps, schema_editor):
-    from ansible_base.rbac.repair import backfill_object_ansible_id as _backfill
+    from ansible_base.rbac.backfill import backfill_object_ansible_id as _backfill
 
     _backfill(apps=apps, schema_editor=schema_editor)
 

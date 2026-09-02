@@ -7,7 +7,8 @@ from django.contrib.contenttypes.models import ContentType
 from ansible_base.rbac.models import RoleDefinition, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.rbac.models.content_type import DABContentType
 from ansible_base.rbac.permission_registry import permission_registry
-from ansible_base.rbac.repair import backfill_object_ansible_id, repair_assignment_corruption
+from ansible_base.rbac.backfill import backfill_object_ansible_id
+from ansible_base.rbac.repair import repair_assignment_corruption
 from ansible_base.resource_registry.models import Resource
 from test_app.models import Organization, Team
 
