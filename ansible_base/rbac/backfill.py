@@ -37,6 +37,7 @@ def backfill_object_ansible_id(apps, schema_editor=None):
                 AssignmentModel.__name__,
             )
 
+        total_filled = 0
         for dab_ct_id in null_qs.filter(object_id__isnull=False).values_list('content_type_id', flat=True).distinct():
             try:
                 dab_ct = DABContentType.objects.get(pk=dab_ct_id)
@@ -61,3 +62,6 @@ def backfill_object_ansible_id(apps, schema_editor=None):
                 a.object_ansible_id = resource_map[a.object_id]
             if to_update:
                 AssignmentModel.objects.bulk_update(to_update, ['object_ansible_id'])
+                total_filled += len(to_update)
+
+        logger.info("Filled object_ansible_id on %d %s rows.", total_filled, AssignmentModel.__name__)
