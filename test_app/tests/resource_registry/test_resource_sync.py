@@ -12,6 +12,7 @@ from ansible_base.rbac.models import RoleDefinition
 from ansible_base.resource_registry.models import Resource, ResourceType
 from ansible_base.resource_registry.models.service_identifier import service_id
 from ansible_base.resource_registry.tasks.sync import (
+    DEFAULT_ORPHAN_MISS_THRESHOLD,
     DEFAULT_SYNC_JWT_EXPIRATION,
     DEFAULT_SYNC_PAGE_SIZE,
     AssignmentTuple,
@@ -53,6 +54,7 @@ def resource_to_delete(admin_api_client):
     }
     response = admin_api_client.post(url, resource, format="json")
     assert response.status_code == 201
+    return response.data["ansible_id"]
 
 
 @pytest.fixture()
@@ -114,18 +116,24 @@ def test_resource_sync(static_api_client, stdout):
 
 @pytest.mark.django_db
 def test_delete_orphans(static_api_client, stdout, resource_to_delete):
-
-    print(Resource.objects.filter(content_type__resource_type__name="shared.user").values_list("name"))
-
-    # The previously created user must now be deleted
+    """Orphaned resources are only deleted after being missed on DEFAULT_ORPHAN_MISS_THRESHOLD consecutive syncs."""
+    ansible_id = resource_to_delete
     executor = SyncExecutor(api_client=static_api_client, stdout=stdout)
+
+    # Each sync short of the threshold should skip deletion and just record a miss.
+    for expected_miss_count in range(1, DEFAULT_ORPHAN_MISS_THRESHOLD):
+        stdout.lines.clear()
+        executor.run()
+        assert any(f"Skipping deletion of orphaned resource {ansible_id} (miss count: {expected_miss_count})" in line for line in stdout.lines)
+        assert executor.deleted_count == 0
+        assert Resource.objects.filter(ansible_id=ansible_id).exists()
+
+    # The threshold-th consecutive miss finally deletes the orphan.
+    stdout.lines.clear()
     executor.run()
-
-    print(Resource.objects.filter(content_type__resource_type__name="shared.user").values_list("name"))
-
-    print(stdout.lines)
-    assert 'Deleting 1 orphaned resources' in stdout.lines
-    assert any('Deleted 1' in line for line in stdout.lines)
+    assert any(f"Deleted orphaned resource {ansible_id}" in line for line in stdout.lines)
+    assert executor.deleted_count == 1
+    assert not Resource.objects.filter(ansible_id=ansible_id).exists()
 
 
 @pytest.mark.django_db
@@ -1417,8 +1425,15 @@ def test_cleanup_orphans_continues_after_deletion_error(admin_api_client, static
         )
         assert response.status_code == 201
 
+    executor = SyncExecutor(api_client=static_api_client, stdout=stdout)
+
+    # Get both orphans past the miss threshold before deletion is even attempted.
+    for _ in range(DEFAULT_ORPHAN_MISS_THRESHOLD - 1):
+        executor.run()
+    assert executor.deleted_count == 0
+    stdout.lines.clear()
+
     with mock.patch("ansible_base.resource_registry.tasks.sync.delete_resource", side_effect=IntegrityError("FK constraint")):
-        executor = SyncExecutor(api_client=static_api_client, stdout=stdout)
         executor.run()
 
     error_lines = [line for line in stdout.lines if "IntegrityError" in line]

@@ -4,6 +4,7 @@ import asyncio
 import csv
 import logging
 import time
+import requests
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
@@ -15,6 +16,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import QuerySet
 from django.db.utils import Error, IntegrityError
+from django.core.cache import caches
 from requests import HTTPError
 
 from ansible_base.lib.utils.apps import is_rbac_installed
@@ -32,11 +34,15 @@ from ansible_base.resource_registry.models.service_identifier import service_id
 from ansible_base.resource_registry.registry import get_registry
 from ansible_base.resource_registry.rest_client import ResourceAPIClient, get_resource_server_client
 
+resource_sync_cache_name = getattr(settings, 'RESOURCE_SYNC_CACHE_NAME', 'default')
+cache = caches[resource_sync_cache_name]
+
 logger = logging.getLogger('ansible_base.resources_api.tasks.sync')
 
 # Must match defaults in lib/dynamic_config/settings_logic.py resource_registry_defaults
 DEFAULT_SYNC_PAGE_SIZE = 50
 DEFAULT_SYNC_JWT_EXPIRATION = 60
+DEFAULT_ORPHAN_MISS_THRESHOLD = 3  # number of consecutive syncs where a resource is missing before deletion
 
 
 class ManifestNotFound(HTTPError):
@@ -203,8 +209,8 @@ def create_api_client() -> ResourceAPIClient:
 def fetch_manifest(
     resource_type_name: str,
     api_client: ResourceAPIClient | None = None,
-) -> list[ManifestItem]:
-    """Fetch RESOURCE_SERVER manifest, parses the CSV and returns a list."""
+) -> tuple[list[ManifestItem], bool]:
+    """Fetch RESOURCE_SERVER manifest, parses the CSV and returns a list of items and a boolean indicating completeness."""
     api_client = api_client or create_api_client()
     api_client.raise_if_bad_request = False  # Status check is needed
 
@@ -221,8 +227,14 @@ def fetch_manifest(
     except HTTPError as exc:
         raise ResourceSyncHTTPError() from exc
 
-    csv_reader = csv.DictReader(StringIO(manifest_stream.text))
-    return [ManifestItem(**row) for row in csv_reader]
+    try:
+        csv_reader = csv.DictReader(StringIO(manifest_stream.text))
+        items = [ManifestItem(**row) for row in csv_reader] 
+        is_complete = True
+    except (requests.exceptions.ChunkedEncodingError, requests.exceptions.ConnectionError):
+        logger.warning(f"Manifest fetch for {resource_type_name} was interrupted mid-transfer")
+        items, is_complete = [], False
+    return items, is_complete
 
 
 def get_orphan_resources(
@@ -249,6 +261,10 @@ def get_orphan_resources(
         if system_user:
             queryset = queryset.exclude(object_id=system_user.id)
 
+        from django.contrib.auth import get_user_model
+        
+        superuser_ids = get_user_model().objects.filter(is_superuser=True).values_list("pk", flat=True)
+        queryset = queryset.exclude(object_id__in=[str(pk) for pk in superuser_ids])
     return queryset
 
 
@@ -293,8 +309,7 @@ def _handle_conflict(resource_data: dict, resource_type: ResourceType, api_clien
     if conflict_resource is None:
         return
 
-    resp = api_client.get_resource(conflict_resource.ansible_id)
-
+    resp = api_client.get_resource(conflict_resource.ansible_id) 
     # If the conflicting resource doesn't exist on the server, just go ahead and delete it.
     # This will most likely happen with resources that are ignored by get_orphan_resources.
     if resp.status_code == 404:
@@ -464,6 +479,7 @@ class SyncExecutor:
     sync_assignments: bool = True
     page_size: int | None = None
     service_filter: str | None = None
+    dry_run: bool = False
 
     def write(self, text: str = ""):
         """Write to assigned IO or simply ignores the text."""
@@ -537,17 +553,52 @@ class SyncExecutor:
         results = [self._process_manifest_item(item) for item in manifest_list]
         self._report_results(results)
 
-    def _cleanup_orphans(self, resource_type, manifest_list):
+    def _orphan_miss_cache_key(self, ansible_id) -> str:
+        """Return the cache key for tracking orphan misses for a resource."""
+        return f"resource_sync_orphan_miss_{ansible_id}"
+
+    def is_missing_beyond_threshold(self, orphan, threshold) -> bool:
+        """Return True if this orphan has hit the miss threshold and should be deleted now."""
+        cache_key = self._orphan_miss_cache_key(orphan.ansible_id)
+        count = cache.get(cache_key, 0) + 1
+        sync_interval = getattr(settings, "RESOURCE_SYNC_INTERVAL_SECONDS", 900)
+        if count >= threshold:
+            return True
+        if not self.dry_run:
+            cache.set(cache_key, count, timeout=sync_interval * 4)
+        self.write(f"Skipping deletion of orphaned resource {orphan.ansible_id} (miss count: {count})")
+        return False
+
+    def _cleanup_orphans(self, resource_type, manifest_list, is_complete):
         """Delete local managed resources that are not part of the manifest."""
+        if not is_complete:
+            self.write(f"Skipping orphan cleanup for {resource_type} — manifest fetch was incomplete. Will retry on next sync cycle.")
+            logger.warning(f"Skipping orphan cleanup for {resource_type}: manifest fetch was incomplete. Deletions deferred to next complete sync.")
+            return
+        if not self.dry_run:
+            valid_keys=[]
+            for item in manifest_list:
+                try:
+                    valid_keys.append(self._orphan_miss_cache_key(item.ansible_id))
+                except ValueError:
+                    logger.warning(f"Skipping manifest row with invalid ansible_id: {item.ansible_id!r}")
+            cache.delete_many([self._orphan_miss_cache_key(item.ansible_id) for item in manifest_list])
         resources_to_cleanup = get_orphan_resources(
             resource_type,
             manifest_list,
         )
+        
         orphan_count = resources_to_cleanup.count()
         deleted_before = len(self.results["deleted"])
+        threshold = getattr(settings, "RESOURCE_SYNC_ORPHAN_MISS_THRESHOLD", DEFAULT_ORPHAN_MISS_THRESHOLD)
+
         if orphan_count:
-            self.write(f"Deleting {orphan_count} orphaned resources")
             for orphan in resources_to_cleanup:
+                if not self.is_missing_beyond_threshold(orphan, threshold):
+                    continue
+                if self.dry_run:
+                    self.write(f"Would delete orphaned resource {orphan.ansible_id} (missed {threshold} consecutive syncs)")
+                    continue
                 try:
                     _sc = orphan.content_type.resource_type.serializer_class
                     data = _sc(orphan.content_object).data
@@ -558,6 +609,9 @@ class SyncExecutor:
                     self.write(f"Error deleting orphaned resource {orphan.ansible_id}: {type(exc).__name__}: {exc}")
                 else:  # persist in the report
                     self.results["deleted"].append(data)
+                    if not self.dry_run:
+                        cache.delete(self._orphan_miss_cache_key(orphan.ansible_id))
+                    self.write(f"Deleted orphaned resource {orphan.ansible_id} (missed {threshold} consecutive syncs)")
         self.deleted_count = len(self.results["deleted"]) - deleted_before  # actual successes for this resource type
 
     def _handle_retries(self):  # pragma: no cover
@@ -661,12 +715,12 @@ class SyncExecutor:
 
             self.write(f">>> {resource_type_name}")
             try:
-                manifest_list = fetch_manifest(resource_type_name, api_client=self.api_client)
+                manifest_list, is_complete = fetch_manifest(resource_type_name, api_client=self.api_client)
             except ManifestNotFound as ex:
                 self.write(str(ex))
                 continue
 
-            self._cleanup_orphans(resource_type_name, manifest_list)
+            self._cleanup_orphans(resource_type_name, manifest_list, is_complete)
             self._dispatch_sync_process(manifest_list)
             self._handle_retries()
 
