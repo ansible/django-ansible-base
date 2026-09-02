@@ -94,6 +94,32 @@ def test_repair_preserves_valid_alongside_corrupt(admin_user, organization, org_
     assert RoleUserAssignment.objects.filter(pk=valid_pk).exists()
 
 
+@pytest.mark.django_db
+def test_repair_deletes_assignment_for_deleted_object(admin_user, organization, org_view_rd):
+    """Assignments referencing an object that no longer exists are deleted."""
+    org_view_rd.give_permission(admin_user, organization)
+    assignment_pk = RoleUserAssignment.objects.get(user=admin_user, role_definition=org_view_rd).pk
+    deleted_org_pk = str(organization.pk)
+
+    # Delete the org so the assignment is now dangling
+    organization.delete()
+
+    repair_assignment_corruption(django_apps)
+
+    assert not RoleUserAssignment.objects.filter(pk=assignment_pk).exists()
+
+
+@pytest.mark.django_db
+def test_repair_preserves_assignment_for_existing_object(admin_user, organization, org_view_rd):
+    """Assignments whose object still exists are not touched."""
+    org_view_rd.give_permission(admin_user, organization)
+    assignment_pk = RoleUserAssignment.objects.get(user=admin_user, role_definition=org_view_rd).pk
+
+    repair_assignment_corruption(django_apps)
+
+    assert RoleUserAssignment.objects.filter(pk=assignment_pk).exists()
+
+
 # --- backfill_object_ansible_id tests ---
 
 
@@ -197,3 +223,18 @@ def test_backfill_skips_remote_content_type(admin_user, organization, org_view_r
 
     assignment = RoleUserAssignment.objects.get(pk=assignment_pk)
     assert assignment.object_ansible_id is None
+
+
+@pytest.mark.django_db
+def test_backfill_warns_on_null_object_id(admin_user, organization, org_view_rd, caplog):
+    """Assignments with content_type_id but NULL object_id trigger a warning."""
+    import logging
+
+    org_view_rd.give_permission(admin_user, organization)
+    assignment_pk = RoleUserAssignment.objects.get(user=admin_user, role_definition=org_view_rd).pk
+    RoleUserAssignment.objects.filter(pk=assignment_pk).update(object_ansible_id=None, object_id=None)
+
+    with caplog.at_level(logging.WARNING, logger='ansible_base.rbac.backfill'):
+        backfill_object_ansible_id(django_apps)
+
+    assert any('object_id is NULL' in r.message for r in caplog.records)

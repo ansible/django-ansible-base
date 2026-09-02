@@ -27,9 +27,17 @@ def backfill_object_ansible_id(apps, schema_editor=None):
         null_qs = AssignmentModel.objects.filter(
             object_ansible_id__isnull=True,
             content_type_id__isnull=False,
-            object_id__isnull=False,
         )
-        for dab_ct_id in null_qs.values_list('content_type_id', flat=True).distinct():
+
+        inconsistent_count = null_qs.filter(object_id__isnull=True).count()
+        if inconsistent_count:
+            logger.warning(
+                "%d %s rows have content_type_id set but object_id is NULL",
+                inconsistent_count,
+                AssignmentModel.__name__,
+            )
+
+        for dab_ct_id in null_qs.filter(object_id__isnull=False).values_list('content_type_id', flat=True).distinct():
             try:
                 dab_ct = DABContentType.objects.get(pk=dab_ct_id)
             except DABContentType.DoesNotExist:
@@ -39,7 +47,7 @@ def backfill_object_ansible_id(apps, schema_editor=None):
             if django_ct is None:
                 continue  # remote type — no local Resource
 
-            assignments = list(null_qs.filter(content_type_id=dab_ct_id))
+            assignments = list(null_qs.filter(content_type_id=dab_ct_id, object_id__isnull=False))
             resource_map = {
                 r['object_id']: r['ansible_id']
                 for r in Resource.objects.filter(

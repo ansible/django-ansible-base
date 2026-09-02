@@ -1,37 +1,72 @@
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
 UUID_REGEX = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 
 
+def _matches_pk_type(object_id, pk_field_type):
+    if pk_field_type == 'uuid':
+        return bool(re.match(UUID_REGEX, object_id, re.IGNORECASE))
+    return object_id.isdigit()
+
+
 def repair_assignment_corruption(apps, schema_editor=None):
     """
-    Delete corrupt RBAC assignments created by the PR-1093 cross-table content-type
-    ID collision bug.
+    Delete RBAC assignments that reference objects which do not exist.
 
-    The bug: AssignmentResourceField joined assignment.content_type_id (DABContentType PK)
-    against resource.content_type_id (Django ContentType PK). These sequences are
-    independent, so IDs collide by coincidence. Cross-service sync used the wrong
-    ansible_id from this join, then stored the wrong resource's object_id on the
-    receiving side — producing a UUID in object_id under a content type that expects
-    an integer PK.
+    For each object-scoped assignment, verifies that the referenced object
+    actually exists in the model's table. Assignments are corrupt when:
+    - object_id does not match the expected PK format for the content type
+      (e.g. a UUID string under an integer-PK model), or
+    - object_id is the right format but no such object exists in the table.
 
-    Detection: object_id matches UUID pattern AND content type pk_field_type is not 'uuid'.
-    Fix: delete — we cannot reliably reconstruct the intended target.
+    Remote content types (not present in INSTALLED_APPS) are skipped — we
+    cannot query a table that is not local.
 
     Pass django.apps.apps when calling outside of a migration.
     """
     RoleUserAssignment = apps.get_model('dab_rbac', 'RoleUserAssignment')
     RoleTeamAssignment = apps.get_model('dab_rbac', 'RoleTeamAssignment')
+    DABContentType = apps.get_model('dab_rbac', 'DABContentType')
 
     for AssignmentModel in (RoleUserAssignment, RoleTeamAssignment):
-        # Exclude 'uuid' rather than matching 'integer': integer-PK fields report
-        # 'serial'/'bigserial' on PostgreSQL but 'integer' on SQLite.
-        deleted, _ = AssignmentModel.objects.filter(object_id__iregex=UUID_REGEX).exclude(content_type__pk_field_type='uuid').delete()
-        if deleted:
-            logger.warning(
-                "Deleted %d corrupt %s assignments (UUID object_id with non-UUID-PK content type)",
-                deleted,
-                AssignmentModel.__name__,
+        scoped_qs = AssignmentModel.objects.filter(
+            content_type_id__isnull=False,
+            object_id__isnull=False,
+        )
+        for dab_ct_id in scoped_qs.values_list('content_type_id', flat=True).distinct():
+            try:
+                dab_ct = DABContentType.objects.get(pk=dab_ct_id)
+            except DABContentType.DoesNotExist:
+                continue
+
+            try:
+                model = apps.get_model(dab_ct.app_label, dab_ct.model)
+            except LookupError:
+                continue  # remote model — cannot verify
+
+            ct_assignments = list(scoped_qs.filter(content_type_id=dab_ct_id))
+
+            wrong_format = [a for a in ct_assignments if not _matches_pk_type(a.object_id, dab_ct.pk_field_type)]
+            right_format = [a for a in ct_assignments if _matches_pk_type(a.object_id, dab_ct.pk_field_type)]
+
+            existing_pks = set(
+                str(pk)
+                for pk in model.objects.filter(
+                    pk__in={a.object_id for a in right_format}
+                ).values_list('pk', flat=True)
             )
+            not_found = [a for a in right_format if a.object_id not in existing_pks]
+
+            corrupt_pks = [a.pk for a in wrong_format + not_found]
+            if corrupt_pks:
+                deleted, _ = AssignmentModel.objects.filter(pk__in=corrupt_pks).delete()
+                logger.warning(
+                    "Deleted %d corrupt %s assignments for content type %s.%s",
+                    deleted,
+                    AssignmentModel.__name__,
+                    dab_ct.app_label,
+                    dab_ct.model,
+                )
