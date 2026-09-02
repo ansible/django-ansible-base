@@ -3,9 +3,12 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Iterable, Sequence
+from itertools import chain
 from typing import Any, NamedTuple, Union, cast
 
+from django.apps import apps as django_apps
 from django.conf import settings
+from django.contrib.contenttypes.models import ContentType
 from django.db import connection, models
 from django.db.models import Q
 from django.db.models.signals import post_save
@@ -77,9 +80,6 @@ def _batch_fill_ansible_ids(user_resolved: list[ResolvedAssignment], team_resolv
         return
 
     try:
-        from django.apps import apps as django_apps
-        from django.contrib.contenttypes.models import ContentType
-
         from ansible_base.resource_registry.models import Resource
     except ImportError:
         for lst, i, ra in needs_fetch:
