@@ -3,8 +3,17 @@ import logging
 
 from django.contrib.auth import logout
 from django.urls import reverse
+from jwcrypto import jwt
+from jwcrypto.common import JWException
+from jwcrypto.jws import InvalidJWSObject, JWS
+from jwcrypto.jwt import JWTExpired
 from oauth2_provider.http import OAuth2ResponseRedirect
-from oauth2_provider.models import get_access_token_model, get_refresh_token_model
+from oauth2_provider.models import (
+    get_access_token_model,
+    get_application_model,
+    get_id_token_model,
+    get_refresh_token_model,
+)
 from oauth2_provider.settings import oauth2_settings
 from oauth2_provider.views import RPInitiatedLogoutView as _DOTRPInitiatedLogoutView
 from oauth2_provider.views.oidc import ConnectDiscoveryInfoView
@@ -12,19 +21,56 @@ from oauthlib.common import add_params_to_uri
 
 logger = logging.getLogger('ansible_base.oauth2_provider.views.oidc')
 
-try:
-    # DOT-private helper: decodes an id_token_hint JWT to its IDToken row (by jti).
-    # Not public API; fail loud on a DOT upgrade rather than silently reverting to
-    # the insecure delete-all behavior. Re-audit when the DOT<2.4.0 pin is bumped.
-    from oauth2_provider.views.oidc import _load_id_token
-except ImportError as exc:  # pragma: no cover - trips loudly on a DOT upgrade/refactor
-    raise ImportError(
-        "django-oauth-toolkit no longer exposes oauth2_provider.views.oidc._load_id_token(). "
-        "ansible_base.oauth2_provider.views.oidc.RPInitiatedLogoutView depends on it to scope "
-        "RP-Initiated Logout token deletion to the specific session ending, instead of DOT's "
-        "own (unscoped) delete-all-tokens-for-user behavior. Update this module for the new "
-        "django-oauth-toolkit version before removing this guard."
-    ) from exc
+Application = get_application_model()
+
+
+def _jwk_key_for_id_token_hint(id_token_hint):
+    """Resolve the signing key for an id_token_hint JWT using public DOT model APIs."""
+    try:
+        unverified_token = JWS()
+        unverified_token.deserialize(id_token_hint)
+        claims = json.loads(unverified_token.objects["payload"].decode("utf-8"))
+    except (InvalidJWSObject, KeyError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+
+    audience = claims.get("aud")
+    if not audience:
+        return None
+    if isinstance(audience, str):
+        audience = [audience]
+
+    application = Application.objects.filter(client_id__in=audience).first()
+    if not application:
+        return None
+    return application.jwk_key
+
+
+def load_id_token_from_hint(request, id_token_hint):
+    """Decode and verify an id_token_hint JWT, returning the matching IDToken row."""
+    key = _jwk_key_for_id_token_hint(id_token_hint)
+    if not key:
+        return None, None
+
+    IDToken = get_id_token_model()
+    validator = oauth2_settings.OAUTH2_VALIDATOR_CLASS()
+
+    try:
+        if oauth2_settings.OIDC_RP_INITIATED_LOGOUT_ACCEPT_EXPIRED_TOKENS:
+            check_claims = {}
+        else:
+            check_claims = None
+        jwt_token = jwt.JWT(key=key, jwt=id_token_hint, check_claims=check_claims)
+        claims = json.loads(jwt_token.claims)
+    except (JWException, JWTExpired):
+        return None, None
+
+    if "iss" not in claims or claims["iss"] != validator.get_oidc_issuer_endpoint(request):
+        return None, None
+
+    try:
+        return IDToken.objects.get(jti=claims["jti"]), claims
+    except IDToken.DoesNotExist:
+        return None, None
 
 
 class DiscoveryInfoView(ConnectDiscoveryInfoView):
@@ -91,13 +137,11 @@ class RPInitiatedLogoutView(_DOTRPInitiatedLogoutView):
             # Can't identify the session -> delete nothing (no delete-all fallback).
             return
 
-        id_token, _claims = _load_id_token(id_token_hint)
+        id_token, _claims = load_id_token_from_hint(self.request, id_token_hint)
         if id_token is None:
             # Bad signature, expired, or unknown jti.
             return
 
-        # Only revoke the caller's OWN session: never let a user end another user's session
-        # (or an anonymous request end anyone's) via a supplied hint. logout() still runs.
         request_user_id = getattr(self.request.user, 'id', None)
         if request_user_id is None or id_token.user_id != request_user_id:
             logger.warning(

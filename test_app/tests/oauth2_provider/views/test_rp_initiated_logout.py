@@ -325,7 +325,7 @@ def _jwt_claims(jwt_str):
 def _mint_session(api_client, app, secret):
     """Run the real authorize -> token flow; return (id_token_jwt, id_token, access_token, refresh_token).
 
-    Using the real endpoints guarantees the id_token is one _load_id_token() will accept.
+    Using the real endpoints guarantees the id_token is one load_id_token_from_hint() will accept.
     """
     authorize_url = get_relative_url("oauth2_provider:authorize")
     response = api_client.post(
