@@ -224,44 +224,49 @@ class RoleDefinition(CommonModel):
         return self.give_or_remove_global_permission(actor, giving=False)
 
     def give_or_remove_global_permission(self, actor, giving=True):
-        if giving and (self.content_type is not None):
-            raise ValidationError('Role definition content type must be null to assign globally')
+        # Routes through the shared bulk pipeline as an ordinary triple with a None content
+        # object, so global assignments emit the same audit + bulk signals
+        # (dab_rbac_assignments_created/_pre_delete) as object assignments, and the enablement/
+        # content-type gates (validate_global_assignment) can't be bypassed. See AAP-90170.
+        from ansible_base.rbac.pipeline import bulk_give_permissions, bulk_remove_permissions
 
         if actor._meta.model_name == 'user':
-            if giving and (not settings.ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES):
-                raise ValidationError('Global roles are not enabled for users')
-            kwargs = {'object_role': None, 'user': actor, 'role_definition': self}
             cls = RoleUserAssignment
+            actor_filter = {'user': actor}
+            is_user = True
         elif isinstance(actor, permission_registry.team_model):
-            if not settings.ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES:
-                raise ValidationError('Global roles are not enabled for teams')
-            kwargs = {'object_role': None, 'team': actor, 'role_definition': self}
             cls = RoleTeamAssignment
+            actor_filter = {'team': actor}
+            is_user = False
         else:
             raise RuntimeError(f'Cannot {giving and "give" or "remove"} permission for {actor}, must be a user or team')
 
+        # A None content object marks this as a global (singleton) assignment.
+        perm = [(self, actor, None)]
         if giving:
-            assignment, _ = cls.objects.get_or_create(**kwargs)
+            created = bulk_give_permissions(user_permissions=perm if is_user else [], team_permissions=[] if is_user else perm)
+            if created:
+                assignment = created[0]
+            else:
+                # Already existed: the pipeline returns only newly-created rows, so fetch it.
+                assignment = cls.objects.get(role_definition=self, object_role__isnull=True, **actor_filter)
+            # Reattach the caller's in-memory role definition and actor so the returned assignment
+            # preserves object identity (the old get_or_create path did) -- this matters for the
+            # fetched branch above, which returns DB-refetched instances.
+            assignment.role_definition = self
+            for field_name, obj in actor_filter.items():
+                setattr(assignment, field_name, obj)
         else:
-            assignment = cls.objects.filter(**kwargs).first()
-            if assignment:
-                assignment.delete()
+            # Capture the row for the return value before the pipeline deletes it.
+            assignment = cls.objects.filter(role_definition=self, object_role__isnull=True, **actor_filter).first()
+            bulk_remove_permissions(user_permissions=perm if is_user else [], team_permissions=[] if is_user else perm)
 
-        # Clear any cached permissions
-        if actor._meta.model_name == 'user':
-            if hasattr(actor, '_singleton_permissions'):
-                delattr(actor, '_singleton_permissions')
-        else:
-            # when team permissions change, users in memory may be affected by this
-            # but there is no way to know what users, so we use a global flag
-            from ansible_base.rbac.evaluations import bound_singleton_permissions
-
-            bound_singleton_permissions._team_clear_signal = True
-
+        # The bulk pipeline clears the in-memory singleton-permission cache for global assignments
+        # (users by instance, teams via the process-wide signal), so no cache handling is needed here.
         return assignment
 
     def give_permission(self, actor, content_object):
-        from ansible_base.rbac.pipeline import bulk_give_permissions
+        from ansible_base.rbac.pipeline import _resolve_content_object, bulk_give_permissions
 
         is_user = actor._meta.model_name == 'user'
         perm = [(self, actor, content_object)]
@@ -269,7 +274,19 @@ class RoleDefinition(CommonModel):
             user_permissions=perm if is_user else [],
             team_permissions=[] if is_user else perm,
         )
-        return assignments[0]
+        if assignments:
+            return assignments[0]
+        # The assignment already existed. The bulk path returns only newly-created rows
+        # (bulk_create can't report skipped ones), so fetch the existing one -- this path is
+        # a single row, so the lookup that doesn't scale in bulk is fine here.
+        # Resolve content_type/object_id the same way the pipeline stores them: object_id is a
+        # normalized string, so passing a raw non-integer pk (e.g. a UUID) here would not match.
+        content_type, object_id, _ = _resolve_content_object(content_object)
+        if is_user:
+            qs = RoleUserAssignment.objects.filter(user=actor)
+        else:
+            qs = RoleTeamAssignment.objects.filter(team=actor)
+        return qs.get(role_definition=self, content_type=content_type, object_id=object_id)
 
     def remove_permission(self, actor, content_object):
         from ansible_base.rbac.pipeline import bulk_remove_permissions
