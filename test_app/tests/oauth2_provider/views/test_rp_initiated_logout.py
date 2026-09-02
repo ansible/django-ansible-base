@@ -325,7 +325,8 @@ def _jwt_claims(jwt_str):
 def _mint_session(api_client, app, secret):
     """Run the real authorize -> token flow; return (id_token_jwt, id_token, access_token, refresh_token).
 
-    Using the real endpoints guarantees the id_token is one load_id_token_from_hint() will accept.
+    Using the real endpoints guarantees the minted AccessToken carries the `openid` scope
+    (requested below), which is what deletion is keyed on.
     """
     authorize_url = get_relative_url("oauth2_provider:authorize")
     response = api_client.post(
@@ -382,8 +383,10 @@ def _assert_session_revoked(id_token_row, access_token_row, refresh_token_row):
 
 
 @pytest.mark.django_db
-def test_logout_only_deletes_the_targeted_session(user_api_client, user, random_user, oidc_app_factory, oidc_enabled_settings):
-    """Logout with one session's id_token_hint revokes only that session (via GET short-circuit)."""
+def test_logout_deletes_openid_sessions_for_the_requesting_application(user_api_client, user, random_user, oidc_app_factory, oidc_enabled_settings):
+    """Logout revokes the requesting user's openid-scoped sessions for the application
+    identified by the logout request (via id_token_hint / client_id resolution) -- other
+    applications' sessions for the same user, and other users' sessions, are untouched."""
     app1, secret1 = oidc_app_factory("App One")
     app2, secret2 = oidc_app_factory("App Two")
 
@@ -398,21 +401,20 @@ def test_logout_only_deletes_the_targeted_session(user_api_client, user, random_
         other_client.login(username=random_user.username, password="password")
         _d_jwt, d_id, d_at, d_rt = _mint_session(other_client, app1, secret1)
 
-        # Log `user` out of session A only. The no-prompt GET path leaves oidc_data == {},
-        # so a fix reading the hint from oidc_data (not the request) would silently fail here.
+        # id_token_hint resolves the requesting application (app1) that deletion is narrowed to.
         logout_url = get_relative_url("oauth2_provider:rp-initiated-logout")
         response = user_api_client.get(logout_url + "?" + urlencode({"id_token_hint": a_jwt}))
         assert response.status_code == 302, response.content
 
     _assert_session_revoked(a_id, a_at, a_rt)
-    _assert_session_alive(b_id, b_at, b_rt)  # other session, same app -> survives
-    _assert_session_alive(c_id, c_at, c_rt)  # other app -> survives
+    _assert_session_revoked(b_id, b_at, b_rt)  # same user, same app -> also revoked
+    _assert_session_alive(c_id, c_at, c_rt)  # same user, other app -> survives
     _assert_session_alive(d_id, d_at, d_rt)  # other user -> survives
 
 
 @pytest.mark.django_db
-def test_logout_via_post_form_only_deletes_targeted_session(user_api_client, user, oidc_app_factory, oidc_enabled_settings):
-    """Same scoping guarantee via the POST/form_valid() path (the second do_logout() call site)."""
+def test_logout_via_post_form_deletes_openid_sessions_for_the_requesting_application(user_api_client, user, oidc_app_factory, oidc_enabled_settings):
+    """Same app-scoped guarantee via the POST/form_valid() path (the second do_logout() call site)."""
     app1, secret1 = oidc_app_factory("Form App One")
 
     with override_settings(OAUTH2_PROVIDER=oidc_enabled_settings):
@@ -424,35 +426,36 @@ def test_logout_via_post_form_only_deletes_targeted_session(user_api_client, use
         assert response.status_code == 302, response.content
 
     _assert_session_revoked(a_id, a_at, a_rt)
-    _assert_session_alive(b_id, b_at, b_rt)
+    _assert_session_revoked(b_id, b_at, b_rt)
 
 
 @pytest.mark.django_db
-def test_logout_without_id_token_hint_deletes_no_tokens(user_api_client, user, oidc_app_factory, oidc_enabled_settings):
-    """No id_token_hint -> delete nothing (logout still succeeds); no DOT delete-all fallback."""
-    app, secret = oidc_app_factory("No Hint App")
+def test_logout_without_hint_deletes_openid_tokens_across_all_apps(user_api_client, user, oidc_app_factory, oidc_enabled_settings):
+    """Without id_token_hint or client_id, no application can be identified, so deletion
+    falls back to all of the user's openid sessions (across every application)."""
+    app1, secret1 = oidc_app_factory("No Hint App One")
+    app2, secret2 = oidc_app_factory("No Hint App Two")
 
     with override_settings(OAUTH2_PROVIDER=oidc_enabled_settings):
-        _jwt, id_row, at_row, rt_row = _mint_session(user_api_client, app, secret)
-
-        before = (OAuth2IDToken.objects.count(), OAuth2AccessToken.objects.count(), OAuth2RefreshToken.objects.count())
+        _jwt1, id_row1, at_row1, rt_row1 = _mint_session(user_api_client, app1, secret1)
+        _jwt2, id_row2, at_row2, rt_row2 = _mint_session(user_api_client, app2, secret2)
 
         logout_url = get_relative_url("oauth2_provider:rp-initiated-logout")
         response = user_api_client.post(logout_url, {"allow": True})
         assert response.status_code == 302, response.content
 
-    after = (OAuth2IDToken.objects.count(), OAuth2AccessToken.objects.count(), OAuth2RefreshToken.objects.count())
-    assert after == before
-    _assert_session_alive(id_row, at_row, rt_row)
+    _assert_session_revoked(id_row1, at_row1, rt_row1)
+    _assert_session_revoked(id_row2, at_row2, rt_row2)
 
 
 @pytest.mark.django_db
 def test_logout_cross_user_hint_revokes_nothing(user_api_client, user, random_user, oidc_app_factory, oidc_enabled_settings):
-    """A user may only revoke their OWN session: submitting another user's hint deletes nothing."""
+    """A user may only revoke their OWN openid sessions: submitting another user's hint does not
+    delete that user's tokens, since deletion is scoped to request.user, not to the hint's user."""
     app1, secret1 = oidc_app_factory("Cross User App")
 
     with override_settings(OAUTH2_PROVIDER=oidc_enabled_settings):
-        # user B mints a session; user A (user_api_client) then tries to log it out.
+        # user B mints a session; user A (user_api_client) then tries to log it out using B's hint.
         other_client = APIClient()
         other_client.login(username=random_user.username, password="password")
         b_jwt, b_id, b_at, b_rt = _mint_session(other_client, app1, secret1)
