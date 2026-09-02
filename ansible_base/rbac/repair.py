@@ -7,15 +7,42 @@ UUID_REGEX = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 
 def repair_assignment_corruption(apps, schema_editor=None):
     """
-    Repair corrupt RBAC assignments created by the PR-1093 cross-table content-type
-    ID collision bug, and backfill the object_ansible_id denormalized field.
+    Delete corrupt RBAC assignments created by the PR-1093 cross-table content-type
+    ID collision bug.
 
-    Two operations:
-    1. Delete assignments whose content type expects a non-UUID PK but whose
-       object_id is a UUID string — corrupted by a wrong JOIN that returned a
-       RoleDefinition Resource's ansible_id as the object_id.
-    2. Populate object_ansible_id on all remaining assignments by joining through
-       Resource using (app_label, model) to bridge DABContentType → Django ContentType.
+    The bug: AssignmentResourceField joined assignment.content_type_id (DABContentType PK)
+    against resource.content_type_id (Django ContentType PK). These sequences are
+    independent, so IDs collide by coincidence. Cross-service sync used the wrong
+    ansible_id from this join, then stored the wrong resource's object_id on the
+    receiving side — producing a UUID in object_id under a content type that expects
+    an integer PK.
+
+    Detection: object_id matches UUID pattern AND content type pk_field_type is not 'uuid'.
+    Fix: delete — we cannot reliably reconstruct the intended target.
+
+    Pass django.apps.apps when calling outside of a migration.
+    """
+    RoleUserAssignment = apps.get_model('dab_rbac', 'RoleUserAssignment')
+    RoleTeamAssignment = apps.get_model('dab_rbac', 'RoleTeamAssignment')
+
+    for AssignmentModel in (RoleUserAssignment, RoleTeamAssignment):
+        # Exclude 'uuid' rather than matching 'integer': integer-PK fields report
+        # 'serial'/'bigserial' on PostgreSQL but 'integer' on SQLite.
+        deleted, _ = AssignmentModel.objects.filter(object_id__iregex=UUID_REGEX).exclude(content_type__pk_field_type='uuid').delete()
+        if deleted:
+            logger.warning(
+                "Deleted %d corrupt %s assignments (UUID object_id with non-UUID-PK content type)",
+                deleted,
+                AssignmentModel.__name__,
+            )
+
+
+def backfill_object_ansible_id(apps, schema_editor=None):
+    """
+    Populate object_ansible_id on assignments where it is NULL.
+
+    Bridges DABContentType → Django ContentType by (app_label, model), then
+    queries Resource for the ansible_id of each assigned object.
 
     Pass django.apps.apps when calling outside of a migration.
     """
@@ -26,35 +53,11 @@ def repair_assignment_corruption(apps, schema_editor=None):
     try:
         Resource = apps.get_model('dab_resource_registry', 'Resource')
     except LookupError:
-        Resource = None
-
-    for AssignmentModel in (RoleUserAssignment, RoleTeamAssignment):
-        # Step 1: delete corrupt assignments — UUID object_id on a non-UUID pk type.
-        # Exclude 'uuid' rather than matching 'integer' because integer-PK fields
-        # report 'serial'/'bigserial' on PostgreSQL, 'integer' on SQLite.
-        deleted, _ = (
-            AssignmentModel.objects.filter(
-                object_id__iregex=UUID_REGEX,
-            )
-            .exclude(
-                content_type__pk_field_type='uuid',
-            )
-            .delete()
-        )
-        if deleted:
-            logger.warning(
-                "Deleted %d corrupt %s assignments (UUID object_id with integer-PK content type)",
-                deleted,
-                AssignmentModel.__name__,
-            )
-
-    if Resource is None:
-        return  # resource_registry not installed — no Resources to backfill from
+        return  # resource_registry not installed — nothing to backfill from
 
     django_ct_by_key = {(ct.app_label, ct.model): ct for ct in ContentType.objects.all()}
 
     for AssignmentModel in (RoleUserAssignment, RoleTeamAssignment):
-        # Step 2: backfill object_ansible_id via model-name bridge, one content type at a time.
         null_qs = AssignmentModel.objects.filter(
             object_ansible_id__isnull=True,
             content_type_id__isnull=False,

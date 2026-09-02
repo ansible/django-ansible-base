@@ -1,18 +1,16 @@
-import django.db.models.deletion
-import uuid
 from django.db import migrations, models
 
 
-def repair_and_backfill(apps, schema_editor):
-    from ansible_base.rbac.repair import repair_assignment_corruption
+def backfill_object_ansible_id(apps, schema_editor):
+    from ansible_base.rbac.repair import backfill_object_ansible_id as _backfill
 
-    repair_assignment_corruption(apps=apps, schema_editor=schema_editor)
+    _backfill(apps=apps, schema_editor=schema_editor)
 
 
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('dab_rbac', '0010_roleteamassignment_unique_global_team_assignment_and_more'),
+        ('dab_rbac', '0011_repair_corrupt_assignments'),
     ]
 
     operations = [
@@ -26,5 +24,5 @@ class Migration(migrations.Migration):
             name='object_ansible_id',
             field=models.UUIDField(blank=True, null=True, help_text='Cached ansible_id of the resource this assignment applies to.'),
         ),
-        migrations.RunPython(repair_and_backfill, migrations.RunPython.noop),
+        migrations.RunPython(backfill_object_ansible_id, migrations.RunPython.noop),
     ]
