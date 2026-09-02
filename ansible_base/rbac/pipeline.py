@@ -61,11 +61,20 @@ def _resolve_content_object(obj: models.Model | RemoteObject) -> tuple[DABConten
     )
 
 
-def _batch_fill_ansible_ids(resolved: list[ResolvedAssignment]) -> list[ResolvedAssignment]:
-    """Replace _ANSIBLE_ID_NOT_FETCHED sentinels with Resource.ansible_id in a single batch per content type."""
-    needs_fetch = [(i, ra) for i, ra in enumerate(resolved) if ra.object_ansible_id is _ANSIBLE_ID_NOT_FETCHED]
+def _batch_fill_ansible_ids(user_resolved: list[ResolvedAssignment], team_resolved: list[ResolvedAssignment]) -> None:
+    """Fill _ANSIBLE_ID_NOT_FETCHED sentinels in-place across both lists in one shared batch."""
+    from itertools import chain
+
+    needs_fetch = [
+        (lst, i, ra)
+        for lst, i, ra in chain(
+            ((user_resolved, i, ra) for i, ra in enumerate(user_resolved)),
+            ((team_resolved, i, ra) for i, ra in enumerate(team_resolved)),
+        )
+        if ra.object_ansible_id is _ANSIBLE_ID_NOT_FETCHED
+    ]
     if not needs_fetch:
-        return resolved
+        return
 
     try:
         from django.apps import apps as django_apps
@@ -73,11 +82,13 @@ def _batch_fill_ansible_ids(resolved: list[ResolvedAssignment]) -> list[Resolved
 
         from ansible_base.resource_registry.models import Resource
     except ImportError:
-        return [ra._replace(object_ansible_id=None) if ra.object_ansible_id is _ANSIBLE_ID_NOT_FETCHED else ra for ra in resolved]
+        for lst, i, ra in needs_fetch:
+            lst[i] = ra._replace(object_ansible_id=None)
+        return
 
     # Resolve DABContentType (app_label, model) pairs to Django model classes.
     # Remote types not known to this Django install raise LookupError — skip them.
-    distinct_keys = {(ra.content_type.app_label, ra.content_type.model) for _, ra in needs_fetch}
+    distinct_keys = {(ra.content_type.app_label, ra.content_type.model) for _, _, ra in needs_fetch}
     model_by_key: dict[tuple[str, str], Any] = {}
     for key in distinct_keys:
         try:
@@ -90,24 +101,21 @@ def _batch_fill_ansible_ids(resolved: list[ResolvedAssignment]) -> list[Resolved
     ct_by_key = {key: ct_by_model[model] for key, model in model_by_key.items()}
 
     # Group by Django ContentType id, then one Resource query per group.
-    by_django_ct: dict[int, list[tuple[int, ResolvedAssignment]]] = {}
-    for i, ra in needs_fetch:
+    by_django_ct: dict[int, list[tuple[list, int, ResolvedAssignment]]] = {}
+    for lst, i, ra in needs_fetch:
         django_ct = ct_by_key.get((ra.content_type.app_label, ra.content_type.model))
         if django_ct is not None:
-            by_django_ct.setdefault(django_ct.id, []).append((i, ra))
+            by_django_ct.setdefault(django_ct.id, []).append((lst, i, ra))
 
     ansible_id_map: dict[tuple[int, str], uuid.UUID] = {}
-    for django_ct_id, pairs in by_django_ct.items():
-        object_ids = {ra.object_id for _, ra in pairs}
+    for django_ct_id, entries in by_django_ct.items():
+        object_ids = {ra.object_id for _, _, ra in entries}
         for r in Resource.objects.filter(content_type_id=django_ct_id, object_id__in=object_ids).only('object_id', 'ansible_id'):
             ansible_id_map[(django_ct_id, r.object_id)] = r.ansible_id
 
-    result = list(resolved)
-    for i, ra in needs_fetch:
+    for lst, i, ra in needs_fetch:
         django_ct = ct_by_key.get((ra.content_type.app_label, ra.content_type.model))
-        ansible_id = ansible_id_map.get((django_ct.id, ra.object_id)) if django_ct is not None else None
-        result[i] = ra._replace(object_ansible_id=ansible_id)
-    return result
+        lst[i] = ra._replace(object_ansible_id=ansible_id_map.get((django_ct.id, ra.object_id)) if django_ct else None)
 
 
 def _resolve_triples(triples: Iterable[PermissionTriple]) -> list[ResolvedAssignment]:
@@ -415,13 +423,10 @@ def give_assignments(
     if not user_resolved and not team_resolved:
         return []
 
-    n_user = len(user_resolved)
-    all_resolved = _batch_fill_ansible_ids(list(user_resolved) + list(team_resolved))
-    user_filled = all_resolved[:n_user]
-    team_filled = all_resolved[n_user:]
+    _batch_fill_ansible_ids(user_resolved, team_resolved)
 
-    lookup = _ensure_object_roles(all_resolved)
-    assignments = _create_assignments(user_filled, team_filled, lookup, fire_signals_on_create=fire_signals_on_create)
+    lookup = _ensure_object_roles(user_resolved + team_resolved)
+    assignments = _create_assignments(user_resolved, team_resolved, lookup, fire_signals_on_create=fire_signals_on_create)
     _recompute_after_give(lookup, assignments)
     return assignments
 
