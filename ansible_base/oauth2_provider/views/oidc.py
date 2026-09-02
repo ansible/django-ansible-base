@@ -65,20 +65,20 @@ class RPInitiatedLogoutView(_DOTRPInitiatedLogoutView):
         if user is None or not user.is_authenticated:
             return
 
-        AccessToken = get_access_token_model()
-        RefreshToken = get_refresh_token_model()
+        access_token_model = get_access_token_model()
+        refresh_token_model = get_refresh_token_model()
 
-        access_tokens = AccessToken.objects.filter(user=user, scope__regex=r"(^|\s)openid(\s|$)")
+        access_tokens = access_token_model.objects.filter(user=user, scope__regex=r"(^|\s)openid(\s|$)")
         if application is not None:
             access_tokens = access_tokens.filter(application=application)
 
-        for access_token in list(access_tokens):
+        for access_token in access_tokens:
             # id_token is a direct nullable FK on AccessToken -- None, not DoesNotExist, when unset.
             id_token = access_token.id_token
 
             try:
                 refresh_token = access_token.refresh_token
-            except RefreshToken.DoesNotExist:
+            except refresh_token_model.DoesNotExist:
                 refresh_token = None
 
             if id_token is not None:

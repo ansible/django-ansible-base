@@ -1,11 +1,14 @@
 import base64
 import json
+from datetime import datetime, timezone
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 from django.conf import settings
+from django.contrib.auth.models import AnonymousUser
 from django.test import override_settings
 from django.utils.http import urlencode
+from oauthlib.common import generate_token
 from rest_framework.test import APIClient
 
 from ansible_base.lib.utils.response import get_relative_url
@@ -15,6 +18,7 @@ from ansible_base.oauth2_provider.models import (
     OAuth2IDToken,
     OAuth2RefreshToken,
 )
+from ansible_base.oauth2_provider.views.oidc import RPInitiatedLogoutView
 
 
 @pytest.fixture
@@ -485,6 +489,61 @@ def test_logout_preserves_non_oidc_tokens(user_api_client, user, oauth2_user_pat
     _assert_session_revoked(a_id, a_at, a_rt)  # targeted OIDC session gone
     assert OAuth2AccessToken.objects.filter(pk=oauth2_user_application_token.pk).exists()  # app token survives
     assert OAuth2AccessToken.objects.filter(pk=oauth2_user_pat.pk).exists()  # PAT survives
+
+
+@pytest.mark.django_db
+def test_logout_skips_token_revocation_when_delete_tokens_disabled(user_api_client, oidc_app_factory, oidc_enabled_settings):
+    """When OIDC_RP_INITIATED_LOGOUT_DELETE_TOKENS is False, logout proceeds but openid tokens survive."""
+    app, secret = oidc_app_factory("No Delete App")
+    no_delete_settings = {
+        **oidc_enabled_settings,
+        'OIDC_RP_INITIATED_LOGOUT_DELETE_TOKENS': False,
+    }
+
+    with override_settings(OAUTH2_PROVIDER=no_delete_settings):
+        _jwt, id_row, at_row, rt_row = _mint_session(user_api_client, app, secret)
+
+        logout_url = get_relative_url("oauth2_provider:rp-initiated-logout")
+        response = user_api_client.post(logout_url, {"allow": True})
+        assert response.status_code == 302, response.content
+
+    _assert_session_alive(id_row, at_row, rt_row)
+
+
+@pytest.mark.django_db
+def test_logout_default_redirect_when_no_post_logout_redirect_uri(user_api_client, oidc_enabled_settings):
+    """Without post_logout_redirect_uri, logout redirects to the site root."""
+    with override_settings(OAUTH2_PROVIDER=oidc_enabled_settings):
+        logout_url = get_relative_url("oauth2_provider:rp-initiated-logout")
+        response = user_api_client.post(logout_url, {"allow": True})
+        assert response.status_code == 302, response.content
+        assert urlparse(response["Location"]).path == "/"
+
+
+@pytest.mark.django_db
+def test_revoke_openid_tokens_noop_for_unauthenticated_user():
+    """_revoke_openid_tokens returns immediately for None or anonymous users."""
+    view = RPInitiatedLogoutView()
+    view._revoke_openid_tokens(None)
+    view._revoke_openid_tokens(AnonymousUser())
+
+
+@pytest.mark.django_db
+def test_revoke_openid_tokens_handles_access_token_without_refresh_and_id_tokens(user, oidc_app_factory):
+    """Revocation succeeds when an openid access token has no linked id or refresh token."""
+    app, _secret = oidc_app_factory("Bare Access Token App")
+    access_token = OAuth2AccessToken.objects.create(
+        user=user,
+        application=app,
+        token=generate_token(),
+        scope="openid read",
+        expires=datetime(2088, 1, 1, tzinfo=timezone.utc),
+    )
+
+    view = RPInitiatedLogoutView()
+    view._revoke_openid_tokens(user, application=app)
+
+    assert not OAuth2AccessToken.objects.filter(pk=access_token.pk).exists()
 
 
 @pytest.mark.django_db
