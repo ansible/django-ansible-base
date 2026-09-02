@@ -54,16 +54,13 @@ def repair_assignment_corruption(apps, schema_editor=None):
     django_ct_by_key = {(ct.app_label, ct.model): ct for ct in ContentType.objects.all()}
 
     for AssignmentModel in (RoleUserAssignment, RoleTeamAssignment):
-        # Step 2: backfill object_ansible_id via model-name bridge
-        assignments_by_ct = {}
-        for a in AssignmentModel.objects.filter(
+        # Step 2: backfill object_ansible_id via model-name bridge, one content type at a time.
+        null_qs = AssignmentModel.objects.filter(
             object_ansible_id__isnull=True,
             content_type_id__isnull=False,
             object_id__isnull=False,
-        ).iterator():
-            assignments_by_ct.setdefault(a.content_type_id, []).append(a)
-
-        for dab_ct_id, assignments in assignments_by_ct.items():
+        )
+        for dab_ct_id in null_qs.values_list('content_type_id', flat=True).distinct():
             try:
                 dab_ct = DABContentType.objects.get(pk=dab_ct_id)
             except DABContentType.DoesNotExist:
@@ -73,20 +70,17 @@ def repair_assignment_corruption(apps, schema_editor=None):
             if django_ct is None:
                 continue  # remote type — no local Resource
 
-            object_ids = {a.object_id for a in assignments}
+            assignments = list(null_qs.filter(content_type_id=dab_ct_id))
             resource_map = {
                 r['object_id']: r['ansible_id']
                 for r in Resource.objects.filter(
                     content_type_id=django_ct.id,
-                    object_id__in=object_ids,
+                    object_id__in={a.object_id for a in assignments},
                 ).values('object_id', 'ansible_id')
             }
 
-            to_update = []
-            for a in assignments:
-                if a.object_id in resource_map:
-                    a.object_ansible_id = resource_map[a.object_id]
-                    to_update.append(a)
-
+            to_update = [a for a in assignments if a.object_id in resource_map]
+            for a in to_update:
+                a.object_ansible_id = resource_map[a.object_id]
             if to_update:
                 AssignmentModel.objects.bulk_update(to_update, ['object_ansible_id'])
