@@ -2,6 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from django.apps import apps
+from django.conf import settings
 from django.test.utils import override_settings
 from rest_framework.exceptions import ValidationError
 
@@ -598,6 +599,80 @@ class TestBulkGivePermissions:
             (user2.pk, str(inv2.pk)),
         }, f"Cross-product leak: got {returned_pairs}"
 
+    def test_skinny_shape_scale(self, organization, inv_rd):
+        """Skinny batch (one user, many objects) must not build a query that scales with N.
+
+        The old OR-of-pairs filter produced an N-deep expression tree that SQLite rejects
+        past ~1000 terms; a two-axis IN filter merely moves the wall. This exercises the
+        PK-range detection path with N well over that threshold.
+        """
+        n = 1100
+        user = User.objects.create(username='skinny-user')
+        invs = Inventory.objects.bulk_create([Inventory(name=f'skinny-inv-{i}', organization=organization) for i in range(n)])
+
+        assignments = bulk_give_permissions(user_permissions=[(inv_rd, user, inv) for inv in invs])
+
+        assert len(assignments) == n
+        assert RoleUserAssignment.objects.filter(user=user, role_definition=inv_rd).count() == n
+        # spot-check a few objects actually resolve permissions
+        assert user.has_obj_perm(invs[0], 'change')
+        assert user.has_obj_perm(invs[-1], 'change')
+
+    def test_reassign_existing_returns_only_created(self, organization, inv_rd):
+        """Re-giving an existing batch returns nothing and fires no create signals.
+
+        The bulk path returns only newly-created rows; pre-existing pairs are omitted (they
+        can't be reported by bulk_create, and fetching them back is the query that doesn't
+        scale). A second identical call must therefore create nothing, return [], and stay
+        idempotent.
+        """
+        n = 1100
+        user = User.objects.create(username='reassign-user')
+        invs = Inventory.objects.bulk_create([Inventory(name=f'reassign-inv-{i}', organization=organization) for i in range(n)])
+        perms = [(inv_rd, user, inv) for inv in invs]
+
+        first = bulk_give_permissions(user_permissions=perms)
+        assert len(first) == n  # all newly created
+
+        with patch('ansible_base.rbac.pipeline._fire_post_save') as mock_signal:
+            second = bulk_give_permissions(user_permissions=perms)
+            created_second_call = mock_signal.call_args[0][0]
+
+        assert second == []  # only-created contract: pre-existing pairs are not returned
+        assert created_second_call == []  # nothing newly created, so nothing to signal/audit
+        assert RoleUserAssignment.objects.filter(user=user, role_definition=inv_rd).count() == n
+
+    @pytest.mark.skipif('ansible_base.activitystream' not in settings.INSTALLED_APPS, reason="activitystream not installed")
+    def test_created_assignments_audited_without_entry(self, organization, team, rando, inv_rd):
+        """Newly-created user AND team assignments are audited via _audit_log_created (audit
+        logs, no activity-stream Entry rows), and re-giving the same batch audits nothing.
+
+        bulk_create bypasses the per-row post_save, so _audit_log_created is the sole audit
+        path. Exercises both actor types plus the empty-created early return.
+        """
+        from ansible_base.activitystream.models import Entry
+
+        inv1 = Inventory.objects.create(name='audit-sig-inv1', organization=organization)
+        inv2 = Inventory.objects.create(name='audit-sig-inv2', organization=organization)
+        perms = {
+            'user_permissions': [(inv_rd, rando, inv1)],
+            'team_permissions': [(inv_rd, team, inv2)],
+        }
+        entries_before = Entry.objects.count()
+
+        with patch('ansible_base.activitystream.signals.log_auth_event') as log_auth_event:
+            bulk_give_permissions(**perms)
+
+        # One audit log per newly-created assignment (user + team), no activity-stream rows
+        assert log_auth_event.call_count == 2
+        assert Entry.objects.count() == entries_before
+
+        # Re-giving the same batch creates nothing: _audit_log_created gets an empty list and returns early
+        with patch('ansible_base.activitystream.signals.log_auth_event') as log_auth_event_again:
+            second = bulk_give_permissions(**perms)
+        assert second == []
+        log_auth_event_again.assert_not_called()
+
     def test_audit_no_cross_product(self, organization, inv_rd):
         """Audit logging must not fire for pre-existing assignments outside the batch."""
         inv1 = Inventory.objects.create(name='audit-xp-inv1', organization=organization)
@@ -607,20 +682,40 @@ class TestBulkGivePermissions:
 
         inv_rd.give_permission(user1, inv2)
 
-        with patch('ansible_base.rbac.pipeline._audit_log_created') as mock_audit:
+        with patch('ansible_base.rbac.pipeline._fire_post_save') as mock_signal:
             bulk_give_permissions(
                 user_permissions=[
                     (inv_rd, user1, inv1),
                     (inv_rd, user2, inv2),
                 ],
-                fire_signals_on_create=False,
             )
-            args = mock_audit.call_args
-            db_assignments = args[0][0]
-            existing_pks = args[0][1]
-            new_assignments = [a for a in db_assignments if a.pk not in existing_pks]
-            new_pairs = {(a.user_id, a.object_id) for a in new_assignments}
+            # The create hook (_fire_post_save today, _audit_log_created end-state) receives
+            # only the newly-created assignments.
+            created_assignments = mock_signal.call_args[0][0]
+            new_pairs = {(a.user_id, a.object_id) for a in created_assignments}
             assert (user1.pk, str(inv2.pk)) not in new_pairs, "Pre-existing assignment leaked into new set"
+            assert new_pairs == {(user1.pk, str(inv1.pk)), (user2.pk, str(inv2.pk))}
+
+    @pytest.mark.skipif('ansible_base.activitystream' not in settings.INSTALLED_APPS, reason="activitystream not installed")
+    def test_audit_log_created_end_state_path(self, organization, rando, inv_rd):
+        """_audit_log_created (the end-state audit path, not wired in during the AAP-90162
+        merge window) audits each created assignment once and no-ops on an empty list.
+
+        Called directly because _create_assignments temporarily uses _fire_post_save instead;
+        this keeps the restore target covered so the final cleanup PR is a safe swap-back.
+        """
+        from ansible_base.rbac.pipeline import _audit_log_created
+
+        inv = Inventory.objects.create(name='audit-endstate-inv', organization=organization)
+        assignment = inv_rd.give_permission(rando, inv)
+
+        with patch('ansible_base.activitystream.signals.log_auth_event') as log_auth_event:
+            _audit_log_created([assignment])
+        log_auth_event.assert_called_once()
+
+        with patch('ansible_base.activitystream.signals.log_auth_event') as log_auth_event_empty:
+            _audit_log_created([])
+        log_auth_event_empty.assert_not_called()
 
 
 @pytest.mark.django_db
