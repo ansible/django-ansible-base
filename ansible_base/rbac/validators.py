@@ -264,19 +264,51 @@ def validate_team_assignment_enabled(content_type: Optional[Model], has_team_per
             raise ValidationError(f'Assigning {team_parent_model_name} permissions that manage other teams is not allowed')
 
 
-def validate_assignment(rd, actor, obj) -> None:
-    """General validation for making a role assignment
+def validate_assignment_actor(actor) -> None:
+    """Validate that a role can be assigned to this actor -- it must be a user or team.
 
-    This is called programatically in the give_permission and give_global_permission methods.
-    Some of this covered by serializers as well by basic field validation and param gathering.
+    This is a per-actor concern (deliberately kept separate from validate_assignment, whose
+    rd<->object check is shared across every actor assigned the same object and is deduped by
+    the caller). Every actor must be checked individually.
     """
     if actor._meta.model_name not in ('user', 'team'):
         raise ValidationError(f'Cannot give permission to {actor}, must be a user or team')
 
+
+def validate_assignment(rd, obj) -> None:
+    """Validate the role-definition/object pairing for an object-scoped assignment.
+
+    Only the rd<->object content-type match is checked here; the actor is validated separately
+    (validate_assignment_actor) because it is per-actor, whereas this check depends solely on
+    (role_definition, object content type) and so can be safely validated once per such pair.
+
+    This is called programatically in the give_permission method. Some of this is covered by
+    serializers as well, by basic field validation and param gathering.
+    """
     obj_ct = permission_registry.content_type_model.objects.get_for_model(obj)
     if obj_ct.id != rd.content_type_id:
         rd_model = getattr(rd.content_type, "model", "global")
         raise ValidationError(f'Role type {rd_model} does not match object {obj_ct.model}')
+
+
+def validate_global_assignment(rd, actor) -> None:
+    """Validate a single global (singleton) role assignment (the give path).
+
+    Mirrors validate_assignment for object assignments: it is called per (rd, actor) from
+    the pipeline's _resolve_assignments, so a bulk caller passing a list of global triples
+    (rd, actor, None) cannot bypass the content-type / enablement gates.
+
+    Only the give path validates. Removal is intentionally not gated -- you must always be
+    able to clean up a global assignment regardless of the current enablement settings or the
+    role definition's content type (which may have changed after the grant).
+    """
+    validate_assignment_actor(actor)
+    if rd.content_type is not None:
+        raise ValidationError('Role definition content type must be null to assign globally')
+    if actor._meta.model_name == 'user' and not settings.ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES:
+        raise ValidationError('Global roles are not enabled for users')
+    if actor._meta.model_name == 'team' and not settings.ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES:
+        raise ValidationError('Global roles are not enabled for teams')
 
 
 def check_locally_managed(rd: Model) -> None:

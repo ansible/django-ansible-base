@@ -21,6 +21,42 @@ def test_user_singleton_role(rando, inventory, global_inv_rd):
 
 
 @pytest.mark.django_db
+def test_bulk_pipeline_clears_user_singleton_cache(rando, inventory, global_inv_rd):
+    """The bulk pipeline -- not just the model methods -- owns clearing the singleton cache.
+
+    A global (singleton) grant/removal via bulk_give_permissions/bulk_remove_permissions must
+    invalidate the in-memory actor's cached singleton_permissions, so callers never have to.
+    """
+    from ansible_base.rbac.pipeline import bulk_give_permissions, bulk_remove_permissions
+
+    # Prime the cache while the user has no global permissions.
+    assert rando.singleton_permissions() == set()
+    assert hasattr(rando, '_singleton_permissions')
+
+    bulk_give_permissions(user_permissions=[(global_inv_rd, rando, None)])
+    assert rando.singleton_permissions() == {'change_inventory', 'view_inventory'}
+
+    bulk_remove_permissions(user_permissions=[(global_inv_rd, rando, None)])
+    assert rando.singleton_permissions() == set()
+
+
+@pytest.mark.django_db
+def test_bulk_pipeline_clears_team_singleton_cache(rando, organization, team, inventory, global_inv_rd, org_team_member_rd):
+    """A global grant/removal to a team must invalidate in-memory users via the process-wide signal."""
+    from ansible_base.rbac.pipeline import bulk_give_permissions, bulk_remove_permissions
+
+    org_team_member_rd.give_permission(rando, organization)  # rando is a member of team
+
+    assert rando.singleton_permissions() == set()  # prime cache
+
+    bulk_give_permissions(team_permissions=[(global_inv_rd, team, None)])
+    assert rando.singleton_permissions() == {'change_inventory', 'view_inventory'}
+
+    bulk_remove_permissions(team_permissions=[(global_inv_rd, team, None)])
+    assert rando.singleton_permissions() == set()
+
+
+@pytest.mark.django_db
 def test_singleton_role_via_team(rando, organization, team, inventory, global_inv_rd, org_team_member_rd):
     assignment = org_team_member_rd.give_permission(rando, organization)
     assert list(assignment.object_role.provides_teams.all()) == [team]
