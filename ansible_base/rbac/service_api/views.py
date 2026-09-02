@@ -264,8 +264,8 @@ class BaseSerivceRoleAssignmentViewSet(
     def _bulk_give_object_assignments(self, triples):
         """Create object-scoped assignments for the current actor type."""
         if self.assignment_actor_field == 'user':
-            return bulk_give_permissions(user_permissions=triples, ignore_conflicts=False)
-        return bulk_give_permissions(team_permissions=triples, ignore_conflicts=False)
+            return bulk_give_permissions(user_permissions=triples)
+        return bulk_give_permissions(team_permissions=triples)
 
     def _create_object_batch_assignments(self, pending_triples):
         """Create object assignments, recovering from concurrent duplicate inserts.
@@ -288,17 +288,14 @@ class BaseSerivceRoleAssignmentViewSet(
             raise IntegrityError('Role assignment batch could not recover from concurrent inserts')
         return []
 
-    def _give_global_batch_assignments(self, global_triples):
-        """Create global assignments and return only those inserted by this request."""
-        assignments = []
-        for triple in global_triples:
-            assignment, created = triple.role_definition.give_global_permission(triple.actor, return_created=True)
-            if created and assignment is not None:
-                assignments.append(assignment)
-        return assignments
-
     def _bulk_assign(self, request):
-        """Create new assignments from a batch request and synchronize them remotely."""
+        """Create new assignments from a batch request and synchronize them remotely.
+
+        TODO: After rebase complete, refactor this method further:
+        - Remove separation by object vs global (unified bulk_give_permissions handles both)
+        - Consider whether actor-type separation is still needed given the unified API
+        - Review the concurrent insert recovery logic in _create_object_batch_assignments
+        """
         source, creator, assignment_data = self._validate_batch(request)
         triples = self._get_unique_batch_triples(assignment_data, request.user)
 
@@ -309,8 +306,16 @@ class BaseSerivceRoleAssignmentViewSet(
             global_triples = [triple for triple in new_triples if triple.content_object is None]
 
             with impersonate(creator):
+                # Object triples go through retry logic for concurrent insert handling
                 assignments = self._create_object_batch_assignments(pending_object_triples)
-                assignments.extend(self._give_global_batch_assignments(global_triples))
+                # Global triples: unified API handles both object and global, but we keep
+                # them separate here because global assignments don't need the retry wrapper
+                if global_triples:
+                    if self.assignment_actor_field == 'user':
+                        global_assignments = bulk_give_permissions(user_permissions=global_triples)
+                    else:
+                        global_assignments = bulk_give_permissions(team_permissions=global_triples)
+                    assignments.extend(global_assignments)
 
         for assignment in assignments:
             self.remote_secondary_sync_assignment(assignment, from_service=source)
