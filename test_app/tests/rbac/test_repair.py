@@ -4,6 +4,7 @@ import pytest
 from django.apps import apps as django_apps
 from django.contrib.contenttypes.models import ContentType
 
+
 from ansible_base.rbac.models import RoleDefinition, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.rbac.models.content_type import DABContentType
 from ansible_base.rbac.permission_registry import permission_registry
@@ -28,7 +29,7 @@ def test_repair_backfills_object_ansible_id(admin_user, organization, org_view_r
 
     RoleUserAssignment.objects.filter(user=admin_user, role_definition=org_view_rd).update(object_ansible_id=None)
 
-    repair_assignment_corruption()
+    repair_assignment_corruption(django_apps)
 
     assignment = RoleUserAssignment.objects.get(user=admin_user, role_definition=org_view_rd)
     org_ct = ContentType.objects.get_for_model(Organization)
@@ -44,7 +45,7 @@ def test_repair_backfills_team_assignment(organization, org_view_rd):
 
     RoleTeamAssignment.objects.filter(team=team, role_definition=org_view_rd).update(object_ansible_id=None)
 
-    repair_assignment_corruption()
+    repair_assignment_corruption(django_apps)
 
     assignment = RoleTeamAssignment.objects.get(team=team, role_definition=org_view_rd)
     org_ct = ContentType.objects.get_for_model(Organization)
@@ -61,7 +62,7 @@ def test_repair_deletes_corrupt_user_assignment(admin_user, organization, org_vi
     # Simulate the PR-1093 corruption: a UUID ended up as object_id for an integer-PK type
     RoleUserAssignment.objects.filter(pk=assignment_pk).update(object_id=str(uuid.uuid4()))
 
-    repair_assignment_corruption()
+    repair_assignment_corruption(django_apps)
 
     assert not RoleUserAssignment.objects.filter(pk=assignment_pk).exists()
 
@@ -75,7 +76,7 @@ def test_repair_deletes_corrupt_team_assignment(organization, org_view_rd):
 
     RoleTeamAssignment.objects.filter(pk=assignment_pk).update(object_id=str(uuid.uuid4()))
 
-    repair_assignment_corruption()
+    repair_assignment_corruption(django_apps)
 
     assert not RoleTeamAssignment.objects.filter(pk=assignment_pk).exists()
 
@@ -88,7 +89,7 @@ def test_repair_does_not_touch_already_filled(admin_user, organization, org_view
     original = assignment.object_ansible_id
     assert original is not None
 
-    repair_assignment_corruption()
+    repair_assignment_corruption(django_apps)
 
     assignment.refresh_from_db()
     assert assignment.object_ansible_id == original
@@ -104,7 +105,7 @@ def test_repair_leaves_null_when_no_resource(admin_user, organization, org_view_
     Resource.objects.filter(object_id=str(organization.pk), content_type=org_ct).delete()
     RoleUserAssignment.objects.filter(pk=assignment_pk).update(object_ansible_id=None)
 
-    repair_assignment_corruption()
+    repair_assignment_corruption(django_apps)
 
     assignment = RoleUserAssignment.objects.get(pk=assignment_pk)
     assert assignment.object_ansible_id is None
@@ -121,7 +122,7 @@ def test_repair_skips_global_assignment(admin_user):
     global_rd.give_global_permission(admin_user)
     assignment_pk = RoleUserAssignment.objects.get(user=admin_user, role_definition=global_rd).pk
 
-    repair_assignment_corruption()
+    repair_assignment_corruption(django_apps)
 
     assert RoleUserAssignment.objects.filter(pk=assignment_pk).exists()
 
@@ -145,7 +146,7 @@ def test_repair_preserves_valid_alongside_corrupt(admin_user, organization, org_
 
     RoleUserAssignment.objects.filter(pk=corrupt_pk).update(object_id=str(uuid.uuid4()))
 
-    repair_assignment_corruption()
+    repair_assignment_corruption(django_apps)
 
     assert not RoleUserAssignment.objects.filter(pk=corrupt_pk).exists()
     assert RoleUserAssignment.objects.filter(pk=valid_pk).exists()
@@ -197,7 +198,7 @@ def test_repair_skips_backfill_for_remote_content_type(admin_user, organization,
         object_ansible_id=None,
     )
 
-    repair_assignment_corruption()
+    repair_assignment_corruption(django_apps)
 
     assignment = RoleUserAssignment.objects.get(pk=assignment_pk)
     assert assignment.object_ansible_id is None

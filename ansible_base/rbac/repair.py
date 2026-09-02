@@ -5,39 +5,28 @@ logger = logging.getLogger(__name__)
 UUID_REGEX = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 
 
-def repair_assignment_corruption(apps=None, schema_editor=None):
+def repair_assignment_corruption(apps, schema_editor=None):
     """
     Repair corrupt RBAC assignments created by the PR-1093 cross-table content-type
     ID collision bug, and backfill the object_ansible_id denormalized field.
 
     Two operations:
-    1. Delete assignments whose content type expects an integer PK but whose
-       object_id is a UUID string — these were corrupted by a wrong JOIN that
-       returned a RoleDefinition Resource's ansible_id as the object_id.
+    1. Delete assignments whose content type expects a non-UUID PK but whose
+       object_id is a UUID string — corrupted by a wrong JOIN that returned a
+       RoleDefinition Resource's ansible_id as the object_id.
     2. Populate object_ansible_id on all remaining assignments by joining through
        Resource using (app_label, model) to bridge DABContentType → Django ContentType.
 
-    Can be called from a Django migration (pass apps + schema_editor) or standalone
-    (omit both arguments — uses the live models instead of historical ones).
+    Pass django.apps.apps when calling outside of a migration.
     """
-    from django.contrib.contenttypes.models import ContentType
-
-    if apps is not None:
-        RoleUserAssignment = apps.get_model('dab_rbac', 'RoleUserAssignment')
-        RoleTeamAssignment = apps.get_model('dab_rbac', 'RoleTeamAssignment')
-        DABContentType = apps.get_model('dab_rbac', 'DABContentType')
-        try:
-            Resource = apps.get_model('dab_resource_registry', 'Resource')
-        except LookupError:
-            Resource = None
-    else:
-        from ansible_base.rbac.models import RoleTeamAssignment, RoleUserAssignment
-        from ansible_base.rbac.models.content_type import DABContentType
-
-        try:
-            from ansible_base.resource_registry.models import Resource
-        except ImportError:
-            Resource = None
+    RoleUserAssignment = apps.get_model('dab_rbac', 'RoleUserAssignment')
+    RoleTeamAssignment = apps.get_model('dab_rbac', 'RoleTeamAssignment')
+    DABContentType = apps.get_model('dab_rbac', 'DABContentType')
+    ContentType = apps.get_model('contenttypes', 'ContentType')
+    try:
+        Resource = apps.get_model('dab_resource_registry', 'Resource')
+    except LookupError:
+        Resource = None
 
     for AssignmentModel in (RoleUserAssignment, RoleTeamAssignment):
         # Step 1: delete corrupt assignments — UUID object_id on a non-UUID pk type.
@@ -86,11 +75,11 @@ def repair_assignment_corruption(apps=None, schema_editor=None):
 
             object_ids = {a.object_id for a in assignments}
             resource_map = {
-                r.object_id: r.ansible_id
+                r['object_id']: r['ansible_id']
                 for r in Resource.objects.filter(
                     content_type_id=django_ct.id,
                     object_id__in=object_ids,
-                )
+                ).values('object_id', 'ansible_id')
             }
 
             to_update = []
