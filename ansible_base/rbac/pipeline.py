@@ -67,27 +67,25 @@ def _resolve_content_object(obj: models.Model | RemoteObject) -> tuple[DABConten
 
 def _batch_fill_ansible_ids(user_resolved: list[ResolvedAssignment], team_resolved: list[ResolvedAssignment]) -> None:
     """Fill _ANSIBLE_ID_NOT_FETCHED sentinels in-place across both lists in one shared batch."""
-    needs_fetch = [
-        (lst, i, ra)
-        for lst, i, ra in chain(
-            ((user_resolved, i, ra) for i, ra in enumerate(user_resolved)),
-            ((team_resolved, i, ra) for i, ra in enumerate(team_resolved)),
-        )
+    distinct_keys = {
+        (ra.content_type.app_label, ra.content_type.model)
+        for ra in chain(user_resolved, team_resolved)
         if ra.object_ansible_id is _ANSIBLE_ID_NOT_FETCHED
-    ]
-    if not needs_fetch:
+    }
+    if not distinct_keys:
         return
 
     try:
         from ansible_base.resource_registry.models import Resource
     except ImportError:
-        for lst, i, ra in needs_fetch:
-            lst[i] = ra._replace(object_ansible_id=None)
+        for resolved in (user_resolved, team_resolved):
+            for i, ra in enumerate(resolved):
+                if ra.object_ansible_id is _ANSIBLE_ID_NOT_FETCHED:
+                    resolved[i] = ra._replace(object_ansible_id=None)
         return
 
     # Resolve DABContentType (app_label, model) pairs to Django model classes.
     # Remote types not known to this Django install raise LookupError — skip them.
-    distinct_keys = {(ra.content_type.app_label, ra.content_type.model) for _, _, ra in needs_fetch}
     model_by_key: dict[tuple[str, str], Any] = {}
     for key in distinct_keys:
         try:
@@ -99,22 +97,24 @@ def _batch_fill_ansible_ids(user_resolved: list[ResolvedAssignment], team_resolv
     ct_by_model = ContentType.objects.get_for_models(*model_by_key.values())
     ct_by_key = {key: ct_by_model[model] for key, model in model_by_key.items()}
 
-    # Group by Django ContentType id, then one Resource query per group.
-    by_django_ct: defaultdict[int, list[tuple[list, int, ResolvedAssignment]]] = defaultdict(list)
-    for lst, i, ra in needs_fetch:
-        django_ct = ct_by_key.get((ra.content_type.app_label, ra.content_type.model))
-        if django_ct is not None:
-            by_django_ct[django_ct.id].append((lst, i, ra))
+    # Collect object_ids per content type for batched Resource queries.
+    by_django_ct: defaultdict[int, set[str]] = defaultdict(set)
+    for ra in chain(user_resolved, team_resolved):
+        if ra.object_ansible_id is _ANSIBLE_ID_NOT_FETCHED:
+            django_ct = ct_by_key.get((ra.content_type.app_label, ra.content_type.model))
+            if django_ct is not None:
+                by_django_ct[django_ct.id].add(ra.object_id)
 
     ansible_id_map: dict[tuple[int, str], uuid.UUID] = {}
-    for django_ct_id, entries in by_django_ct.items():
-        object_ids = {ra.object_id for _, _, ra in entries}
+    for django_ct_id, object_ids in by_django_ct.items():
         for r in Resource.objects.filter(content_type_id=django_ct_id, object_id__in=object_ids).only('object_id', 'ansible_id'):
             ansible_id_map[(django_ct_id, r.object_id)] = r.ansible_id
 
-    for lst, i, ra in needs_fetch:
-        django_ct = ct_by_key.get((ra.content_type.app_label, ra.content_type.model))
-        lst[i] = ra._replace(object_ansible_id=ansible_id_map.get((django_ct.id, ra.object_id)) if django_ct else None)
+    for resolved in (user_resolved, team_resolved):
+        for i, ra in enumerate(resolved):
+            if ra.object_ansible_id is _ANSIBLE_ID_NOT_FETCHED:
+                django_ct = ct_by_key.get((ra.content_type.app_label, ra.content_type.model))
+                resolved[i] = ra._replace(object_ansible_id=ansible_id_map.get((django_ct.id, ra.object_id)) if django_ct else None)
 
 
 def _resolve_triples(triples: Iterable[PermissionTriple]) -> list[ResolvedAssignment]:
