@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from itertools import chain
 from typing import Any, NamedTuple, Union, cast
@@ -66,8 +67,6 @@ def _resolve_content_object(obj: models.Model | RemoteObject) -> tuple[DABConten
 
 def _batch_fill_ansible_ids(user_resolved: list[ResolvedAssignment], team_resolved: list[ResolvedAssignment]) -> None:
     """Fill _ANSIBLE_ID_NOT_FETCHED sentinels in-place across both lists in one shared batch."""
-    from itertools import chain
-
     needs_fetch = [
         (lst, i, ra)
         for lst, i, ra in chain(
@@ -101,11 +100,11 @@ def _batch_fill_ansible_ids(user_resolved: list[ResolvedAssignment], team_resolv
     ct_by_key = {key: ct_by_model[model] for key, model in model_by_key.items()}
 
     # Group by Django ContentType id, then one Resource query per group.
-    by_django_ct: dict[int, list[tuple[list, int, ResolvedAssignment]]] = {}
+    by_django_ct: defaultdict[int, list[tuple[list, int, ResolvedAssignment]]] = defaultdict(list)
     for lst, i, ra in needs_fetch:
         django_ct = ct_by_key.get((ra.content_type.app_label, ra.content_type.model))
         if django_ct is not None:
-            by_django_ct.setdefault(django_ct.id, []).append((lst, i, ra))
+            by_django_ct[django_ct.id].append((lst, i, ra))
 
     ansible_id_map: dict[tuple[int, str], uuid.UUID] = {}
     for django_ct_id, entries in by_django_ct.items():
