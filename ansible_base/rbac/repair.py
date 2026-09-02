@@ -52,12 +52,12 @@ def repair_assignment_corruption(apps, schema_editor=None):
             wrong_format = [a for a in ct_assignments if not _matches_pk_type(a.object_id, dab_ct.pk_field_type)]
             right_format = [a for a in ct_assignments if _matches_pk_type(a.object_id, dab_ct.pk_field_type)]
 
-            existing_pks = set(
+            existing_pks = {
                 str(pk)
                 for pk in model.objects.filter(
                     pk__in={a.object_id for a in right_format}
                 ).values_list('pk', flat=True)
-            )
+            }
             not_found = [a for a in right_format if a.object_id not in existing_pks]
 
             corrupt_pks = [a.pk for a in wrong_format + not_found]
