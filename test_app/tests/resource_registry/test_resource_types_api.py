@@ -45,12 +45,18 @@ def test_resource_type_manifest(admin_api_client):
     assert response.status_code == 200
     response_data = list(response.streaming_content)
     data = StringIO("".join(item.decode() for item in response_data))
-    for row in csv.DictReader(data):
+    rows = list(csv.DictReader(data))
+    for row in rows:
         assert "ansible_id" in row
         assert "resource_hash" in row
+    # The X-Resource-Count header must reflect exactly how many data rows were streamed,
+    # so clients can detect a truncated/incomplete transfer.
+    assert response.headers["X-Resource-Count"] == str(len(rows))
 
 
 def test_resource_type_manifest_404(admin_api_client):
     url = get_relative_url("resourcetype-manifest", kwargs={"name": "doesnt.exist"})
     response = admin_api_client.get(url)
     assert response.status_code == 404
+    # A 404 has no resources to count — it must not claim a (misleading) count of 0.
+    assert "X-Resource-Count" not in response.headers
