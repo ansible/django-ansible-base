@@ -68,20 +68,14 @@ class TestAuthenticatorMapSerializerRole:
 
         with pytest.raises(ValidationError) as e:
             serializer.validate(dict(name="authentication_map_2", map_type="role", role=SYSTEM_ROLE_NAME, organization='test_org'))
-        assert str(e.value) == (
-            "{'organization': ErrorDetail(string=\"Role type 'global' cannot be scoped to an organization or team.\", code='invalid')}"
-        )
+        assert str(e.value) == ("{'organization': ErrorDetail(string=\"Role type 'global' cannot be scoped to an organization or team.\", code='invalid')}")
 
         with pytest.raises(ValidationError) as e:
             serializer.validate(dict(name="authentication_map_3", map_type="role", role=SYSTEM_ROLE_NAME, team='test_team'))
-        assert str(e.value) == (
-            "{'team': ErrorDetail(string=\"Role type 'global' cannot be scoped to an organization or team.\", code='invalid')}"
-        )
+        assert str(e.value) == ("{'team': ErrorDetail(string=\"Role type 'global' cannot be scoped to an organization or team.\", code='invalid')}")
 
         with pytest.raises(ValidationError) as e:
-            serializer.validate(
-                dict(name="authentication_map_3b", map_type="role", role=SYSTEM_ROLE_NAME, organization='test_org', team='test_team')
-            )
+            serializer.validate(dict(name="authentication_map_3b", map_type="role", role=SYSTEM_ROLE_NAME, organization='test_org', team='test_team'))
         assert set(e.value.detail.keys()) == {'organization', 'team'}
 
         with pytest.raises(ValidationError) as e:
