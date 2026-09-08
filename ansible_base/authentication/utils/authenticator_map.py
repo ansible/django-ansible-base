@@ -200,8 +200,12 @@ def check_role_type(map_type: Optional[str], role: Optional[str], org: Optional[
         rbac_role = RoleDefinition.objects.get(name=role)
         is_system_role = rbac_role.content_type is None
 
-        # system role is allowed for map type == role without further conditions
         if is_system_role and map_type == 'role':
+            scoped_error = _("Role type 'global' cannot be scoped to an organization or team.")
+            if not is_empty(org):
+                errors['organization'] = scoped_error
+            if not is_empty(team):
+                errors['team'] = scoped_error
             return errors  # type: ignore[return-value]
 
         is_org_role, is_team_role = False, False
