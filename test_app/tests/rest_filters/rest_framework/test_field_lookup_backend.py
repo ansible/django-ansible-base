@@ -218,6 +218,6 @@ def test_role_level_filter_with_invalid_permission(admin_api_client, inventory):
 
 @pytest.mark.django_db
 def test_role_level_filter_on_model_without_rbac(admin_api_client):
-    url = get_relative_url('cow-list')
-    response = admin_api_client.get(url, data={'role_level': 'view_cow'})
+    url = get_relative_url('city-list')
+    response = admin_api_client.get(url, data={'role_level': 'view_city'})
     assert response.status_code == 400, response.data
