@@ -200,3 +200,24 @@ def test_view_level_ignore_field(admin_api_client):
     # Make sure that normal function is not disrupted by this customization
     response = admin_api_client.get(url, data={'foofield': 'bar'})
     assert response.status_code == 400, response.data
+
+
+@pytest.mark.django_db
+def test_role_level_filter_with_valid_permission(admin_api_client, inventory):
+    url = get_relative_url('inventory-list')
+    response = admin_api_client.get(url, data={'role_level': 'change_inventory'})
+    assert response.status_code == 200, response.data
+
+
+@pytest.mark.django_db
+def test_role_level_filter_with_invalid_permission(admin_api_client, inventory):
+    url = get_relative_url('inventory-list')
+    response = admin_api_client.get(url, data={'role_level': 'not_a_real_permission'})
+    assert response.status_code == 400, response.data
+
+
+@pytest.mark.django_db
+def test_role_level_filter_on_model_without_rbac(admin_api_client):
+    url = get_relative_url('cow-list')
+    response = admin_api_client.get(url, data={'role_level': 'view_cow'})
+    assert response.status_code == 400, response.data
