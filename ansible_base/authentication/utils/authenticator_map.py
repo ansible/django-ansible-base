@@ -234,7 +234,7 @@ def check_role_type(map_type: Optional[str], role: Optional[str], org: Optional[
         is_system_role = rbac_role.content_type is None
 
         if is_system_role and map_type == 'role':
-            return _global_role_scope_errors(org, team)  # type: ignore[return-value]
+            return _global_role_scope_errors(org, team)
 
         is_org_role, is_team_role = False, False
         if not is_system_role:
