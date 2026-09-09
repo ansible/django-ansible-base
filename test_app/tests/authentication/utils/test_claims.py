@@ -1542,25 +1542,16 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
             None,
             {"management_roles": ["pm", "lead", "director"]},
             {
-                'organization_membership': {
-                    'Business': True,
-                },
+                'organization_membership': {},
                 'rbac_roles': {
-                    'organizations': {
-                        'Business': {
-                            'roles': {
-                                SYSTEM_ROLE_NAME: True,
-                            },
-                            'teams': {},
-                        },
-                    },
+                    'organizations': {},
                     'system': {
                         'roles': {},
                     },
                 },
                 'team_membership': {},
             },
-            id="role_map_type_organization_assignment",
+            id="role_map_type_global_role_with_org_is_skipped",
         ),
         pytest.param(
             'role',
