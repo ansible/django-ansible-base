@@ -1,13 +1,3 @@
-- name: FEATURE_INDIRECT_NODE_COUNTING_ENABLED
-  ui_name: Indirect Node Counting
-  visibility: True
-  condition: boolean
-  value: 'False'
-  support_level: TECHNOLOGY_PREVIEW
-  description: "Indirect Node Counting parses the event stream of all jobs to identify resources and stores these in the platform database. Example: Job automates VMware, the parser will report back the VMs, Hypervisors that were automated. This feature helps customers and partners report on the automations they are doing beyond an API endpoint."
-  support_url: https://access.redhat.com/articles/7109910
-  labels:
-    - controller
 - name: FEATURE_EDA_ANALYTICS_ENABLED
   ui_name: Event-Driven Ansible Analytics
   visibility: False
