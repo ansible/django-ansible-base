@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from io import StringIO, TextIOBase
 
+import requests
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -203,8 +204,8 @@ def create_api_client() -> ResourceAPIClient:
 def fetch_manifest(
     resource_type_name: str,
     api_client: ResourceAPIClient | None = None,
-) -> list[ManifestItem]:
-    """Fetch RESOURCE_SERVER manifest, parses the CSV and returns a list."""
+) -> tuple[list[ManifestItem], bool]:
+    """Fetch RESOURCE_SERVER manifest, parses the CSV and returns a list and a boolean indicating if the data is complete."""
     api_client = api_client or create_api_client()
     api_client.raise_if_bad_request = False  # Status check is needed
 
@@ -220,9 +221,31 @@ def fetch_manifest(
         manifest_stream.raise_for_status()
     except HTTPError as exc:
         raise ResourceSyncHTTPError() from exc
+    try:
+        expected_count = manifest_stream.headers.get("X-Resource-Count")
+        expected_count_int = int(expected_count) if expected_count is not None else None
+    except ValueError:
+        logger.warning(f"Manifest for {resource_type_name} sent a non-numeric X-Resource-Count header: {expected_count!r}")
+        expected_count_int = None
+    try:
+        data_rows = list(csv.DictReader(StringIO(manifest_stream.text)))
+    except requests.exceptions.RequestException:
+        logger.warning(f"Manifest fetch for {resource_type_name} was interrupted mid-transfer")
+        return [], True
+    finally:
+        if manifest_stream is not None:
+            manifest_stream.close()  # Close the response to free up the connection pool
 
-    csv_reader = csv.DictReader(StringIO(manifest_stream.text))
-    return [ManifestItem(**row) for row in csv_reader]
+    actual_count = len(data_rows)
+    if expected_count_int is None:
+        has_incomplete_data = True
+        logger.warning(f"Manifest for {resource_type_name} has no verifiable X-Resource-Count;treating as incomplete out of caution.")
+    elif expected_count_int != actual_count:
+        has_incomplete_data = True
+        logger.warning(f"Manifest count mismatch for {resource_type_name}: expected {expected_count}, got {actual_count}")
+    else:
+        has_incomplete_data = False
+    return [ManifestItem(**row) for row in data_rows], has_incomplete_data
 
 
 def get_orphan_resources(
@@ -661,12 +684,22 @@ class SyncExecutor:
 
             self.write(f">>> {resource_type_name}")
             try:
-                manifest_list = fetch_manifest(resource_type_name, api_client=self.api_client)
+                manifest_list, has_incomplete_data = fetch_manifest(resource_type_name, api_client=self.api_client)
             except ManifestNotFound as ex:
                 self.write(str(ex))
                 continue
+            if has_incomplete_data:
+                self.deleted_count = 0  # Reset deleted count to avoid reporting deletions when we can't be sure
+                self.write(
+                    f"Warning: Manifest for {resource_type_name} is incomplete. Some resources may be missing. "
+                    "Skipping orphan clean up to avoid accidental deletion."
+                )
+                logger.warning(
+                    f"Manifest for {resource_type_name} is incomplete. Some resources may be missing.  Skipping orphan clean up to avoid accidental deletion."
+                )
 
-            self._cleanup_orphans(resource_type_name, manifest_list)
+            else:
+                self._cleanup_orphans(resource_type_name, manifest_list)
             self._dispatch_sync_process(manifest_list)
             self._handle_retries()
 

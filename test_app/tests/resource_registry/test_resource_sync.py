@@ -3,8 +3,10 @@ from unittest import mock
 from uuid import uuid4
 
 import pytest
+import requests
 from django.db.utils import Error, IntegrityError
 from django.test import override_settings
+from requests import Response
 
 from ansible_base.lib.testing.util import StaticResourceAPIClient
 from ansible_base.lib.utils.response import get_relative_url
@@ -23,6 +25,7 @@ from ansible_base.resource_registry.tasks.sync import (
     _attempt_create_resource,
     _attempt_update_resource,
     create_api_client,
+    fetch_manifest,
     get_remote_assignments,
 )
 from test_app.models import User
@@ -126,6 +129,123 @@ def test_delete_orphans(static_api_client, stdout, resource_to_delete):
     print(stdout.lines)
     assert 'Deleting 1 orphaned resources' in stdout.lines
     assert any('Deleted 1' in line for line in stdout.lines)
+
+
+def _mock_manifest_response(status_code=200, headers=None, csv_body="ansible_id,resource_hash\n"):
+    """A real requests.Response, matching how StaticResourceAPIClient builds its responses."""
+    response = Response()
+    response.status_code = status_code
+    response.encoding = "utf-8"
+    response._content = csv_body.encode("utf-8")
+    response.headers.update(headers or {})
+    return response
+
+
+def _mock_manifest_api_client(manifest_response):
+    ok_metadata = Response()
+    ok_metadata.status_code = 200
+    api_client = mock.Mock()
+    api_client.get_service_metadata.return_value = ok_metadata
+    api_client.get_resource_type_manifest.return_value = manifest_response
+    return api_client
+
+
+@pytest.mark.django_db
+def test_fetch_manifest_flags_incomplete_on_count_mismatch():
+    """has_incomplete_data must be True when X-Resource-Count disagrees with the actual row count."""
+    csv_body = "ansible_id,resource_hash\n11111111-1111-1111-1111-111111111111,hash1\n"
+    response = _mock_manifest_response(headers={"X-Resource-Count": "5"}, csv_body=csv_body)
+    api_client = _mock_manifest_api_client(response)
+
+    manifest_list, has_incomplete_data = fetch_manifest("shared.user", api_client=api_client)
+
+    assert has_incomplete_data is True
+    assert len(manifest_list) == 1
+
+
+@pytest.mark.django_db
+def test_fetch_manifest_complete_when_count_matches():
+    """has_incomplete_data must be False when X-Resource-Count matches the actual row count."""
+    csv_body = "ansible_id,resource_hash\n11111111-1111-1111-1111-111111111111,hash1\n"
+    response = _mock_manifest_response(headers={"X-Resource-Count": "1"}, csv_body=csv_body)
+    api_client = _mock_manifest_api_client(response)
+
+    manifest_list, has_incomplete_data = fetch_manifest("shared.user", api_client=api_client)
+
+    assert has_incomplete_data is False
+    assert len(manifest_list) == 1
+
+
+@pytest.mark.django_db
+def test_fetch_manifest_handles_malformed_count_header():
+    """A non-numeric X-Resource-Count must not crash the sync. With no verifiable count, we can't
+    prove the manifest is complete, so it must be treated as incomplete out of caution."""
+    csv_body = "ansible_id,resource_hash\n11111111-1111-1111-1111-111111111111,hash1\n"
+    response = _mock_manifest_response(headers={"X-Resource-Count": "not-a-number"}, csv_body=csv_body)
+    api_client = _mock_manifest_api_client(response)
+
+    manifest_list, has_incomplete_data = fetch_manifest("shared.user", api_client=api_client)
+
+    assert has_incomplete_data is True
+    assert len(manifest_list) == 1
+
+
+@pytest.mark.django_db
+def test_fetch_manifest_missing_count_header_is_treated_as_incomplete():
+    """No X-Resource-Count header at all (e.g. an older gateway during a rolling upgrade) means we have
+    no way to verify completeness, so it must be treated as incomplete rather than assumed safe. Orphan
+    cleanup pausing until gateway is upgraded is an acceptable trade-off against the alternative of
+    silently reverting to the exact blind spot this fix exists to close."""
+    csv_body = "ansible_id,resource_hash\n11111111-1111-1111-1111-111111111111,hash1\n"
+    response = _mock_manifest_response(headers={}, csv_body=csv_body)
+    api_client = _mock_manifest_api_client(response)
+
+    manifest_list, has_incomplete_data = fetch_manifest("shared.user", api_client=api_client)
+
+    assert has_incomplete_data is True
+    assert len(manifest_list) == 1
+
+
+@pytest.mark.django_db
+def test_fetch_manifest_handles_interrupted_transfer():
+    """A connection error while reading the manifest body must not crash the sync run."""
+
+    class InterruptedResponse(Response):
+        @property
+        def text(self):
+            raise requests.exceptions.ConnectionError("connection reset mid-transfer")
+
+    response = InterruptedResponse()
+    response.status_code = 200
+    response.raw = mock.Mock()
+    api_client = _mock_manifest_api_client(response)
+
+    manifest_list, has_incomplete_data = fetch_manifest("shared.user", api_client=api_client)
+
+    assert manifest_list == []
+    assert has_incomplete_data is True
+
+
+@pytest.mark.django_db
+def test_sync_skips_orphan_cleanup_but_continues_when_manifest_incomplete(static_api_client, stdout):
+    """When fetch_manifest reports incomplete data, orphan cleanup must be skipped
+    but resource creation/update and retries must still proceed for the rest of the run."""
+    incomplete_manifest = [ManifestItem("97447387-8596-404f-b0d0-6429b04c8d22", str(uuid4()), None)]
+
+    with (
+        mock.patch(
+            "ansible_base.resource_registry.tasks.sync.fetch_manifest",
+            return_value=(incomplete_manifest, True),
+        ),
+        mock.patch.object(SyncExecutor, "_cleanup_orphans") as mock_cleanup,
+        mock.patch.object(SyncExecutor, "_dispatch_sync_process") as mock_dispatch,
+    ):
+        executor = SyncExecutor(api_client=static_api_client, resource_type_names=["shared.user"], stdout=stdout)
+        executor.run()
+
+    mock_cleanup.assert_not_called()
+    mock_dispatch.assert_called_once_with(incomplete_manifest)
+    assert any("is incomplete" in line for line in stdout.lines)
 
 
 @pytest.mark.django_db
