@@ -1005,3 +1005,41 @@ class TestPermissionQueryCount:
         inv_rd.remove_permission(team, inventory)
         count = len(connection.queries) - before
         print(f"\nremove_permission (team+inv): {count} queries")
+
+
+@pytest.mark.django_db
+class TestTeamAssignmentRecomputeScope:
+    """Verify that give_permission for teams only expands descendants
+    of directly affected ObjectRoles, not of ancestor roles."""
+
+    def test_descendent_expansion_excludes_ancestors(self, team, inventory, inv_rd, org_team_member_rd, organization):
+        """When assigning a team to an inventory role, descendent_roles should
+        only be called on the directly affected ObjectRole, not on the ancestor
+        ObjectRoles returned by bulk_ancestor_roles."""
+        from unittest.mock import patch as mock_patch
+
+        from ansible_base.rbac.caching import bulk_ancestor_roles
+
+        org_team_member_rd.give_permission(team, organization)
+
+        ancestor_roles = bulk_ancestor_roles({team.pk})
+        assert len(ancestor_roles) > 0, "Test requires ancestor roles to exist"
+
+        ancestor_pks = {r.pk for r in ancestor_roles}
+        called_on_pks = []
+        original_descendent = ObjectRole.descendent_roles
+
+        def tracking_descendent(self):
+            called_on_pks.append(self.pk)
+            return original_descendent(self)
+
+        with mock_patch.object(ObjectRole, 'descendent_roles', tracking_descendent):
+            inv_rd.give_permission(team, inventory)
+
+        direct_role = ObjectRole.objects.get(role_definition=inv_rd, object_id=inventory.pk)
+        assert direct_role.pk in called_on_pks, "descendent_roles() must be called on the directly affected ObjectRole"
+
+        for pk in called_on_pks:
+            assert pk not in ancestor_pks, (
+                f"descendent_roles() was called on ancestor ObjectRole pk={pk}; " f"this causes O(ancestors x descendants) recomputation"
+            )

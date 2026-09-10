@@ -6,7 +6,6 @@ import ldap
 import pytest
 from django_auth_ldap import config
 from rest_framework.serializers import ValidationError
-from typeguard import suppress_type_checks
 
 from ansible_base.authentication.authenticator_plugins.ldap import (
     _MUST_BE_AN_ARRAY_MESSAGE,
@@ -372,7 +371,6 @@ def test_ldap_backend_authenticate_empty_username_password(
     assert response.status_code == 401
 
 
-@suppress_type_checks
 @pytest.mark.django_db
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
 @mock.patch("ansible_base.authentication.authenticator_plugins.ldap.LDAPBackend.authenticate")
@@ -404,7 +402,6 @@ def test_ldap_backend_authenticate_valid_user(
     assert response.data['results'][0]['name'] == ldap_authenticator.name
 
 
-@suppress_type_checks
 @pytest.mark.django_db
 @mock.patch("rest_framework.views.APIView.authentication_classes", [SessionAuthentication])
 @mock.patch("ansible_base.authentication.authenticator_plugins.ldap.LDAPBackend.authenticate")

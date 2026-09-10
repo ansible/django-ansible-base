@@ -466,7 +466,7 @@ class LDAPSettings(BaseLDAPSettings):
 
         # Group type needs to be an object instead of a String so instantiate it
         group_type_class = find_class_in_modules(defaults["GROUP_TYPE"])
-        setattr(self, 'GROUP_TYPE', group_type_class(**defaults['GROUP_TYPE_PARAMS']))
+        setattr(self, 'GROUP_TYPE', group_type_class(**defaults['GROUP_TYPE_PARAMS']))  # type: ignore[operator]
 
 
 class AuthenticatorPlugin(LDAPBackend, AbstractAuthenticatorPlugin):
@@ -482,9 +482,9 @@ class AuthenticatorPlugin(LDAPBackend, AbstractAuthenticatorPlugin):
         self.configuration_encrypted_fields = ['BIND_PASSWORD']
         self.set_logger(logger)
 
-    def authenticate(self, request, username=None, password=None, **kwargs) -> (object, dict, list):
+    def authenticate(self, request, username=None, password=None, **kwargs):
         if not username or not password:
-            return
+            return None
         users_groups = []
 
         if not self.database_instance:

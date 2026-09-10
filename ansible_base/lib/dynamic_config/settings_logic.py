@@ -117,6 +117,9 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
             'assignment',  # for RoleAssignmentFilterBackend, assignment filtering
         )
 
+    if settings.get('ENHANCED_INPUT_VALIDATION_ENABLED') is None:
+        dab_data['ENHANCED_INPUT_VALIDATION_ENABLED'] = False
+
     # SPECTACULAR SETTINGS
     if 'ansible_base.api_documentation' in installed_apps:
         rest_framework.setdefault('DEFAULT_SCHEMA_CLASS', 'drf_spectacular.openapi.AutoSchema')

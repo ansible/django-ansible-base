@@ -18,7 +18,12 @@ class ResourceServerConfig(TypedDict):
 def get_resource_server_config() -> ResourceServerConfig:
     defaults = {"JWT_ALGORITHM": "HS256", "VALIDATE_HTTPS": True}
     defaults.update(settings.RESOURCE_SERVER)
-    return defaults
+
+    for key in ("URL", "SECRET_KEY"):
+        if key not in defaults:
+            raise KeyError(f"RESOURCE_SERVER setting is missing required key: {key}")
+
+    return defaults  # type: ignore[return-value]
 
 
 def get_service_token(user_id=None, expiration=60, **kwargs):

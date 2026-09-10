@@ -27,7 +27,7 @@ logger = logging.getLogger('ansible_base.rbac.permission_registry')
 
 class PermissionRegistry:
     def __init__(self):
-        self._registry: set[Model] = set()  # model registry
+        self._registry: set[type[Model]] = set()  # model registry
         self._name_to_model = dict()
         self._parent_fields = dict()
         self._managed_roles = dict()  # code-defined role definitions, managed=True
@@ -92,6 +92,7 @@ class PermissionRegistry:
         for managed_role in self._managed_roles.values():
             if managed_role.name == name:
                 return managed_role
+        return None
 
     def register_managed_role_constructor(self, shortname: str, managed_role: ManagedRoleConstructor) -> None:
         """Add the given managed role to the managed role registry"""

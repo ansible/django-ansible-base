@@ -233,7 +233,7 @@ def process_groups(trigger_condition: dict, groups: list, map_id: int, tracking_
     groups = [f"{group}".casefold() for group in groups]
     trigger_condition = _lowercase_group_triggers(trigger_condition)
 
-    invalid_conditions = set(trigger_condition.keys()) - set(TRIGGER_DEFINITION['groups']['keys'].keys())
+    invalid_conditions = set(trigger_condition.keys()) - set(TRIGGER_DEFINITION['groups']['keys'].keys())  # type: ignore[index]
     if invalid_conditions:
         logger.warning(f"[{tracking_id}] The conditions {', '.join(invalid_conditions)} for groups in mapping {map_id} are invalid and won't be processed")
 
@@ -276,6 +276,7 @@ def has_access_with_join(current_access: Optional[bool], new_access: bool, condi
 
     if condition == 'and':
         return current_access and new_access
+    return None
 
 
 def _lowercase_value(value: Any) -> Any:
@@ -346,7 +347,7 @@ def _validate_join_condition(join_condition, map_id: int, tracking_id: str) -> s
     Returns:
         Valid join condition ('or' or 'and')
     """
-    if join_condition not in TRIGGER_DEFINITION['attributes']['keys']['join_condition']['choices']:
+    if join_condition not in TRIGGER_DEFINITION['attributes']['keys']['join_condition']['choices']:  # type: ignore[index]
         logger.warning(f"[{tracking_id}] Trigger join_condition {join_condition} on authenticator map {map_id} is invalid and will be set to 'or'")
         return 'or'
     return join_condition
@@ -366,7 +367,7 @@ def _validate_attribute_conditions(attribute: str, condition: dict, map_id: int,
         True if conditions are valid and should be processed, False if should be skipped
     """
     # Warn if there are any invalid conditions, we are just going to ignore them
-    invalid_conditions = set(condition.keys()) - set(TRIGGER_DEFINITION['attributes']['keys']['*']['keys'].keys())
+    invalid_conditions = set(condition.keys()) - set(TRIGGER_DEFINITION['attributes']['keys']['*']['keys'].keys())  # type: ignore[index]
     if invalid_conditions:
         logger.warning(
             f"[{tracking_id}] The conditions {', '.join(invalid_conditions)} for attribute {attribute} "
