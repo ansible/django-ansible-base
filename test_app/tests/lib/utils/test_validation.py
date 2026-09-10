@@ -1,6 +1,5 @@
 import pytest
 from rest_framework.exceptions import ValidationError
-from typeguard import suppress_type_checks
 
 from ansible_base.lib.utils.validation import (
     _is_valid_domain_format,
@@ -18,7 +17,6 @@ from ansible_base.lib.utils.validation import (
 )
 
 
-@suppress_type_checks
 @pytest.mark.parametrize(
     "valid,url,schemes,allow_plain_hostname",
     [

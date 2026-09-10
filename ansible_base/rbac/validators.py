@@ -20,7 +20,7 @@ def system_roles_enabled():
 
 
 def prnt_model_name(model: Optional[Union[Type[Model], Type[RemoteObject]]]) -> str:
-    return model._meta.model_name if model else 'global role'
+    return model._meta.model_name if model else 'global role'  # type: ignore[return-value]
 
 
 def prnt_codenames(codename_set: set[str]) -> str:
@@ -67,7 +67,7 @@ def get_descendent_models_from_db(main_ct: Model):
 def permissions_allowed_for_role(cls) -> dict[Union[Type[Model], Type[RemoteObject]], list[str]]:
     "Permission codenames valid for a RoleDefinition of given class, organized by permission class"
     if cls is None:
-        return permissions_allowed_for_system_role()
+        return permissions_allowed_for_system_role()  # type: ignore[return-value]
 
     if not permission_registry.is_registered(cls):
         raise ValidationError(f'Django-ansible-base RBAC does not track permissions for model {cls._meta.model_name}')

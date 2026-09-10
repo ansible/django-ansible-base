@@ -238,7 +238,7 @@ def get_user_claims(user: Model) -> dict[str, Union[list[str], dict[str, Union[s
     global_roles = _get_user_global_roles(user)
 
     # Build final claims structure
-    return {'objects': object_arrays, 'object_roles': object_roles, 'global_roles': global_roles}
+    return {'objects': object_arrays, 'object_roles': object_roles, 'global_roles': global_roles}  # type: ignore[dict-item]
 
 
 # ---- for claims saving ----
@@ -428,9 +428,9 @@ def get_user_claims_hashable_form(claims: dict) -> dict[str, Union[list[str], di
                     ansible_ids.append(ansible_id)
 
         # Sort ansible_ids for deterministic ordering
-        hashable_claims['object_roles'][role_name] = sorted(ansible_ids)
+        hashable_claims['object_roles'][role_name] = sorted(ansible_ids)  # type: ignore[index]
 
-    return hashable_claims
+    return hashable_claims  # type: ignore[return-value]
 
 
 def get_claims_hash(hashable_claims: dict) -> str:

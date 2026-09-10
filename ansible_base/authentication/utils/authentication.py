@@ -71,7 +71,7 @@ def migrate_from_existing_authenticator(
     )
 
     if len(migrate_users) == 0:
-        return
+        return None
 
     try:
         main_user = AuthenticatorUser.objects.get(uid=uid, provider=authenticator).user

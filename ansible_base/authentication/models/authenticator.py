@@ -18,7 +18,7 @@ def get_next_authenticator_order():
     return largest_order_authenticator['order'] + 1 if largest_order_authenticator else 1
 
 
-class Authenticator(UniqueNamedCommonModel):
+class Authenticator(UniqueNamedCommonModel):  # type: ignore[django-manager-missing]
     ignore_relations = ['authenticator_users']
     enabled = fields.BooleanField(default=False, help_text="Should this authenticator be enabled.")
     create_objects = fields.BooleanField(default=True, help_text="Allow authenticator to create objects (users, teams, organizations).")

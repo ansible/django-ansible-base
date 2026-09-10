@@ -103,7 +103,7 @@ legacy_tox_ini = """
         py312-in-files
     labels =
         test = py312-check, py312, py312-sqlite, py312-in-files
-        lint = flake8, black, isort
+        lint = flake8, black, isort, mypy
 
     [testenv]
     deps =
@@ -169,7 +169,37 @@ legacy_tox_ini = """
         isort==6.0.0
     docker =
     commands = isort {posargs:.}
+
+    [testenv:mypy]
+    deps =
+        -r{toxinidir}/requirements/requirements_all.txt
+        -r{toxinidir}/requirements/requirements_dev.txt
+    docker =
+    commands = mypy ansible_base {posargs}
 """
+
+[tool.mypy]
+plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
+ignore_missing_imports = true
+follow_imports = "silent"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+check_untyped_defs = false
+disallow_untyped_defs = false
+# Start permissive - tighten these as the codebase gets annotated
+disable_error_code = [
+    "attr-defined", "assignment", "union-attr", "var-annotated", "misc",
+    "arg-type",
+]
+exclude = ["test_app/", "migrations/", "\\.tox/", "build/", "\\.venv/", "venv/"]
+
+[[tool.mypy.overrides]]
+module = "ansible_base.lib.dynamic_config.dynamic_settings"
+disable_error_code = ["has-type", "used-before-def", "name-defined"]
+
+[tool.django-stubs]
+django_settings_module = "test_app.settings"
 
 [tool.coverage.run]
 omit = ["test_app/*", "manage.py"]

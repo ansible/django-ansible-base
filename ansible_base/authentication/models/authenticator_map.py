@@ -14,11 +14,11 @@ class AuthenticatorMap(NamedCommonModel):
         constraints = [
             models.CheckConstraint(
                 name="%(app_label)s_%(class)s_require_org_team_if_team_map",
-                check=(~models.Q(map_type='team') | models.Q(team__isnull=False) & models.Q(organization__isnull=False)),
+                check=(~models.Q(map_type='team') | models.Q(team__isnull=False) & models.Q(organization__isnull=False)),  # type: ignore[call-arg]
             ),
             models.CheckConstraint(
                 name="%(app_label)s_%(class)s_require_org_if_org_map",
-                check=(~models.Q(map_type='organization') | models.Q(organization__isnull=False)),
+                check=(~models.Q(map_type='organization') | models.Q(organization__isnull=False)),  # type: ignore[call-arg]
             ),
         ]
         unique_together = ['name', 'authenticator']
