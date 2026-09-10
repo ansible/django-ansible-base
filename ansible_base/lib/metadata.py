@@ -119,10 +119,10 @@ def inject_clean_text_patterns(field, field_info):
     if model_field.get_internal_type() not in ('CharField', 'TextField'):
         return field_info
 
-    if field.field_name in getattr(serializer, 'excluded_fields', frozenset()):
+    if model_field.name in getattr(serializer, 'excluded_fields', frozenset()):
         return field_info
 
-    if field.field_name in serializer.name_fields:
+    if model_field.name in serializer.name_fields:
         field_info['pattern'] = build_tier1_frontend_pattern()
         field_info['patternDescription'] = TIER1_PATTERN_DESCRIPTION
         field_info['flags'] = 'u'
