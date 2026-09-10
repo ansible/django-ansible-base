@@ -64,12 +64,19 @@ class TestAuthenticatorMapSerializerRole:
         serializer.validate_trigger_data = MagicMock(return_value={})
 
     def test_validate_role_system_role(self, serializer, system_role):
-        try:
-            serializer.validate(dict(name="authentication_map_1", map_type="role", role=SYSTEM_ROLE_NAME))
+        serializer.validate(dict(name="authentication_map_1", map_type="role", role=SYSTEM_ROLE_NAME))
+
+        with pytest.raises(ValidationError) as e:
             serializer.validate(dict(name="authentication_map_2", map_type="role", role=SYSTEM_ROLE_NAME, organization='test_org'))
+        assert str(e.value) == ("{'organization': ErrorDetail(string=\"Role type 'global' cannot be scoped to an organization or team.\", code='invalid')}")
+
+        with pytest.raises(ValidationError) as e:
             serializer.validate(dict(name="authentication_map_3", map_type="role", role=SYSTEM_ROLE_NAME, team='test_team'))
-        except ValidationError as e:
-            pytest.fail(f"Validation should pass, but: {str(e)}")
+        assert str(e.value) == ("{'team': ErrorDetail(string=\"Role type 'global' cannot be scoped to an organization or team.\", code='invalid')}")
+
+        with pytest.raises(ValidationError) as e:
+            serializer.validate(dict(name="authentication_map_3b", map_type="role", role=SYSTEM_ROLE_NAME, organization='test_org', team='test_team'))
+        assert set(e.value.detail.keys()) == {'organization', 'team'}
 
         with pytest.raises(ValidationError) as e:
             serializer.validate(dict(name="authentication_map_4", map_type="team", role=SYSTEM_ROLE_NAME, organization='test_org', team='test_team'))
