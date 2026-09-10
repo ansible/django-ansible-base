@@ -35,7 +35,7 @@ def test_feature_flags_from_db(aap_flags, feature_flag):
 @pytest.mark.parametrize(
     "feature_flag, value",
     [
-        ('FEATURE_INDIRECT_NODE_COUNTING_ENABLED', True),
+        ('FEATURE_EDA_ANALYTICS_ENABLED', True),
     ],
 )
 def test_feature_flag_database_setting_override(feature_flag, value):
@@ -50,7 +50,7 @@ def test_feature_flag_database_setting_override(feature_flag, value):
 
 @pytest.mark.django_db
 def test_enable_and_disable_flag_functions(aap_flags):
-    flag_name = "FEATURE_INDIRECT_NODE_COUNTING_ENABLED"
+    flag_name = "FEATURE_EDA_ANALYTICS_ENABLED"
     # Assert Initial State
     assert flag_state(flag_name) is False
 
