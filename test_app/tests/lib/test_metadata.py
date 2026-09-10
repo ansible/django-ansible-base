@@ -119,6 +119,7 @@ def _make_field(field_name='description', is_charfield=True, serializer_cls=Clea
 
     # Mock the model field lookup that inject_clean_text_patterns now uses
     model_field = Mock()
+    model_field.name = field_name
     model_field.get_internal_type.return_value = model_internal_type
     meta = Mock()
     meta.get_field.return_value = model_field
@@ -260,6 +261,52 @@ def test_inject_tier1_uses_camelcase(mock_setting):
     result = inject_clean_text_patterns(field, field_info)
     assert 'patternDescription' in result
     assert 'pattern_description' not in result
+
+
+# ---------------------------------------------------------------------------
+# inject_clean_text_patterns — aliased field regression
+# ---------------------------------------------------------------------------
+
+
+@patch('ansible_base.lib.metadata.get_setting', return_value=True)
+def test_inject_uses_model_field_name_not_serializer_alias_for_tier_selection(mock_setting):
+    """Regression test: when a serializer aliases a model field (field_name !=
+    source), the tier selection must use the *model* field name (model_field.name),
+    not the serializer field name (field.field_name).  Before the fix,
+    inject_clean_text_patterns() checked ``field.field_name`` against name_fields
+    and excluded_fields, so an alias like display_name -> name would get tier 2
+    instead of tier 1."""
+    field = _make_field(field_name='name')
+    # Simulate a serializer alias: field_name='display_name' but source='name'
+    # (the underlying model field).  _make_field already set model_field.name='name'.
+    field.field_name = 'display_name'
+    # field.source stays 'name', so the model field lookup returns
+    # a model_field whose .name is 'name' — which IS in name_fields.
+
+    field_info = {'type': 'string'}
+    result = inject_clean_text_patterns(field, field_info)
+
+    # Must be tier 1 (resource-name pattern), not tier 2
+    assert 'pattern' in result
+    assert result['flags'] == 'u', 'Expected tier 1 (flags=u) because model field name is in name_fields'
+    assert result['normalize'] == 'NFC'
+    assert result['patternDescription'] == TIER1_PATTERN_DESCRIPTION
+
+
+@patch('ansible_base.lib.metadata.get_setting', return_value=True)
+def test_inject_excluded_fields_uses_model_field_name_not_serializer_alias(mock_setting):
+    """Regression test: excluded_fields check must also use the model field name,
+    not the serializer alias."""
+    field = _make_field(field_name='template')
+    # Simulate alias: serializer calls it 'tmpl', model field is 'template'
+    field.field_name = 'tmpl'
+    # field.source stays 'template', model_field.name stays 'template'
+    field.parent.excluded_fields = frozenset({'template'})
+
+    field_info = {'type': 'string'}
+    result = inject_clean_text_patterns(field, field_info)
+
+    assert 'pattern' not in result, 'Field should be excluded by model field name, not serializer alias'
 
 
 # ---------------------------------------------------------------------------
