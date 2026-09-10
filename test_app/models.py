@@ -423,3 +423,18 @@ class ThingSomeoneOwns(models.Model):
 class ThingSomeoneShares(models.Model):
     owner = models.ManyToManyField(User, related_name="things_i_share")
     thing = models.CharField(max_length=256, null=False)
+
+
+class MetadataTestModel(models.Model):
+    """Minimal model used solely by test_metadata.py to exercise the
+    CleanTextMetadata OPTIONS pipeline with real model-field introspection.
+    Has a CharField (name), a TextField (description), and a SlugField (slug)
+    so the integration test can verify tier 1, tier 2, and excluded-field
+    behavior through DRF's real metadata path."""
+
+    name = models.CharField(max_length=512)
+    description = models.TextField(default='', blank=True)
+    slug = models.SlugField(max_length=128, blank=True, default='')
+
+    class Meta:
+        app_label = 'test_app'
