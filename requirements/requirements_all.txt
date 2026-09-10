@@ -15,7 +15,7 @@ channels==4.3.2
     # via -r requirements/requirements_channels.in
 charset-normalizer==3.4.4
     # via requests
-cryptography==46.0.5
+cryptography==50.0.1
     # via
     #   -r requirements/requirements.in
     #   jwcrypto
@@ -196,13 +196,13 @@ redis==7.4.0
     # via
     #   -r requirements/requirements_redis_client.in
     #   django-redis
-regex==2026.7.19
-    # via -r requirements/requirements.in
 referencing==0.36.2
     # via
     #   -r requirements/requirements_api_documentation.in
     #   jsonschema
     #   jsonschema-specifications
+regex==2026.7.19
+    # via -r requirements/requirements.in
 requests==2.32.5
     # via
     #   -r requirements/requirements_jwt_consumer.in

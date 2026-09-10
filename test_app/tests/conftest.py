@@ -6,7 +6,6 @@ from unittest import mock
 
 import jwt
 import pytest
-from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from django.conf import settings
@@ -508,7 +507,7 @@ def local_authenticator_map(db, local_authenticator, user, randname):
 
 
 # Generate public and private keys for testing
-private_key = rsa.generate_private_key(public_exponent=65537, key_size=4096, backend=default_backend())
+private_key = rsa.generate_private_key(public_exponent=65537, key_size=4096)
 
 
 @pytest.fixture
@@ -534,7 +533,7 @@ def test_encryption_public_key():
 
 @pytest.fixture
 def random_public_key():
-    private_key = rsa.generate_private_key(public_exponent=65537, key_size=4096, backend=default_backend())
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=4096)
     return (
         private_key.public_key()
         .public_bytes(
