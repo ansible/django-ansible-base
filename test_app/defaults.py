@@ -74,6 +74,7 @@ INSTALLED_APPS = [
     'ansible_base.help_text_check',
     'ansible_base.feature_flags',
     'ansible_base.observability',
+    'ansible_base.prometheus',
 ]
 
 MIDDLEWARE = [
@@ -88,6 +89,7 @@ MIDDLEWARE = [
     'crum.CurrentRequestUserMiddleware',
     'ansible_base.lib.middleware.logging.LogRequestMiddleware',
     'ansible_base.lib.middleware.logging.LogTracebackMiddleware',
+    'ansible_base.prometheus.middleware.PrometheusMiddleware',
 ]
 
 # set some vanilla social auth plugins so that we can test the social_auth based
@@ -230,3 +232,6 @@ JUST_A_TEST = 41
 
 ANSIBLE_OBSERVABILITY_BATCH_DELAY_MS = 1000
 ANSIBLE_OBSERVABILITY_CAPTURE_HEADERS = ['user-agent', 'accept-language', 'x-correlation-.*', 'x-capture-test']
+
+# Allow unauthenticated scraping in the test environment.
+ANSIBLE_PROMETHEUS_ALLOW_ANONYMOUS = True

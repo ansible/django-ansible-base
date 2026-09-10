@@ -37,4 +37,5 @@ urlpatterns = [
     path('api/v1/profile-stories/org-delete/optimized/', views.org_delete_all_optimized, name='org-delete-optimized'),
     path('login/', include('rest_framework.urls')),
     path("__debug__/", include("debug_toolbar.urls")),
+    path('', include('ansible_base.prometheus.urls')),
 ] + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
