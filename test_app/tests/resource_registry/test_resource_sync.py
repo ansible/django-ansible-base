@@ -1425,3 +1425,98 @@ def test_cleanup_orphans_continues_after_deletion_error(admin_api_client, static
     assert len(error_lines) == 2
     assert User.objects.filter(username__in=["orphan_one", "orphan_two"]).count() == 2
     assert executor.deleted_count == 0
+
+
+@pytest.mark.django_db
+def test_paginate_skips_corrupted_uuid_object_id():
+    """Assignments whose object_id is a UUID are skipped and flagged as invalid.
+
+    This guards against corrupted Gateway data where a RoleDefinition UUID ends up
+    as object_id for a namespace assignment. The corrupted assignment must be skipped
+    and the actor+role+type recorded in protected_pairs, while a valid assignment on
+    the same page is still applied.
+    """
+    corrupted_object_id = str(uuid4())
+    corrupted_actor = str(uuid4())
+    valid_actor = str(uuid4())
+    role_name = 'galaxy.collection_publisher'
+    RoleDefinition.objects.create(name=role_name, managed=True)
+
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+    api_client.list_user_assignments.return_value = _mock_response(
+        body={
+            'results': [
+                # corrupted — object_id is a UUID
+                {
+                    'user_ansible_id': corrupted_actor,
+                    'object_ansible_id': None,
+                    'object_id': corrupted_object_id,
+                    'role_definition': role_name,
+                },
+                # valid — object_id is an integer PK
+                {
+                    'user_ansible_id': valid_actor,
+                    'object_ansible_id': None,
+                    'object_id': '42',
+                    'role_definition': role_name,
+                },
+            ],
+            'next': None,
+        }
+    )
+    api_client.list_team_assignments.return_value = _mock_response()
+
+    result = RemoteAssignmentFetcher(api_client).fetch()
+
+    assert result.is_complete is True
+    # The corrupted actor+role+type is recorded so deletions for that pair are shielded.
+    assert result.protected_pairs == frozenset([(corrupted_actor, role_name, 'user')])
+    assert len(result.assignments) == 1
+    surviving = next(iter(result.assignments))
+    assert surviving.actor_ansible_id == valid_actor
+    assert surviving.ansible_id_or_pk == '42'
+
+
+@pytest.mark.django_db
+def test_sync_assignments_shields_affected_pair_but_allows_other_deletions(stdout):
+    """Only the local assignment matching a corrupted remote pair is shielded from deletion.
+
+    When object_id is a UUID for a given actor+role+type, that specific local
+    assignment is protected.  An unrelated local assignment (different actor) that
+    was genuinely revoked must still be deleted.
+    """
+    corrupted_actor = str(uuid4())
+    unrelated_actor = str(uuid4())
+    role_name = 'galaxy.collection_publisher'
+
+    # Local assignment that matches the corrupted remote pair — must NOT be deleted.
+    shielded_tuple = AssignmentTuple(
+        actor_ansible_id=corrupted_actor,
+        ansible_id_or_pk='42',
+        role_definition_name=role_name,
+        assignment_type='user',
+    )
+    # Local assignment that was genuinely revoked — must be deleted.
+    revoked_tuple = AssignmentTuple(
+        actor_ansible_id=unrelated_actor,
+        ansible_id_or_pk='99',
+        role_definition_name=role_name,
+        assignment_type='user',
+    )
+
+    remote_result = RemoteAssignmentResult(
+        assignments=set(),
+        is_complete=True,
+        protected_pairs=frozenset([(corrupted_actor, role_name, 'user')]),
+    )
+
+    with (
+        mock.patch('ansible_base.resource_registry.tasks.sync.get_remote_assignments', return_value=remote_result),
+        mock.patch('ansible_base.resource_registry.tasks.sync.get_local_assignments', return_value={shielded_tuple, revoked_tuple}),
+        mock.patch('ansible_base.resource_registry.tasks.sync.delete_local_assignment') as mock_delete,
+    ):
+        executor = SyncExecutor(api_client=mock.Mock(), sync_assignments=True)
+        executor._sync_assignments()
+
+    # Only the genuinely revoked assignment should be deleted.
+    mock_delete.assert_called_once_with(revoked_tuple)

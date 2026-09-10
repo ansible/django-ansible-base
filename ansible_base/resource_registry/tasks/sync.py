@@ -4,6 +4,7 @@ import asyncio
 import csv
 import logging
 import time
+import uuid as _uuid_mod
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
@@ -98,6 +99,7 @@ class RemoteAssignmentResult:
 
     assignments: set[AssignmentTuple] = field(default_factory=set)
     is_complete: bool = False
+    protected_pairs: frozenset[tuple[str, str, str]] = field(default_factory=frozenset)
 
 
 class RemoteAssignmentFetcher:
@@ -113,6 +115,7 @@ class RemoteAssignmentFetcher:
         self.assignments: set[AssignmentTuple] = set()
         self.page_size = page_size if page_size is not None else getattr(settings, 'RESOURCE_SYNC_PAGE_SIZE', DEFAULT_SYNC_PAGE_SIZE)
         self.service_filter = service_filter
+        self._protected_pairs: set[tuple[str, str, str]] = set()
 
     def fetch(self) -> RemoteAssignmentResult:
         """Paginate user then team assignments and return the result.
@@ -126,10 +129,52 @@ class RemoteAssignmentFetcher:
 
         users_ok = self._paginate(self.api_client.list_user_assignments, 'user_ansible_id', 'user')
         if not users_ok:
-            return RemoteAssignmentResult(assignments=self.assignments, is_complete=False)
+            return RemoteAssignmentResult(assignments=self.assignments, is_complete=False, protected_pairs=frozenset(self._protected_pairs))
 
         teams_ok = self._paginate(self.api_client.list_team_assignments, 'team_ansible_id', 'team')
-        return RemoteAssignmentResult(assignments=self.assignments, is_complete=teams_ok)
+        return RemoteAssignmentResult(assignments=self.assignments, is_complete=teams_ok, protected_pairs=frozenset(self._protected_pairs))
+
+    def _process_page(self, results: list, actor_id_key: str, assignment_type: str) -> None:
+        """Add valid assignments from a single response page to ``self.assignments``."""
+        for assignment in results:
+            role_name = assignment['role_definition']
+            if role_name not in self.local_role_names:
+                logger.debug(f"Skipping remote {assignment_type} assignment with unknown local role: {role_name}")
+                continue
+            object_ansible_id = assignment.get('object_ansible_id')
+            ansible_id_or_pk = object_ansible_id or assignment.get('object_id')
+            if not object_ansible_id and ansible_id_or_pk:
+                # ansible_id_or_pk came from object_id.  Non-registered models send their PK
+                # here.  If the value is UUID-format it is almost certainly corrupted Gateway data
+                # (e.g. a RoleDefinition UUID placed in the namespace PK field).  Proceeding
+                # would raise ValueError in get_content_object and silently delete the matching
+                # local assignment.
+                # Note: this guard assumes non-registered RBAC targets use integer PKs.  If a
+                # UUID-PK non-registered model is ever added, this check will need to be made
+                # model-aware (e.g. by inspecting model._meta.pk type for the role's content type).
+                try:
+                    _uuid_mod.UUID(str(ansible_id_or_pk))
+                    actor_id = assignment.get(actor_id_key)
+                    logger.warning(
+                        "Skipping remote %s assignment (actor=%s, role=%s): object_id %r is a UUID "
+                        "but integer PK was expected — possible Gateway data corruption.",
+                        assignment_type,
+                        actor_id,
+                        role_name,
+                        ansible_id_or_pk,
+                    )
+                    self._protected_pairs.add((str(actor_id), role_name, assignment_type))
+                    continue
+                except (ValueError, AttributeError):
+                    pass
+            self.assignments.add(
+                AssignmentTuple(
+                    actor_ansible_id=assignment[actor_id_key],
+                    ansible_id_or_pk=ansible_id_or_pk,
+                    role_definition_name=role_name,
+                    assignment_type=assignment_type,
+                )
+            )
 
     def _paginate(self, list_fn, actor_id_key: str, assignment_type: str) -> bool:
         """Paginate a single assignment endpoint, adding results to ``self.assignments``.
@@ -148,20 +193,7 @@ class RemoteAssignmentFetcher:
                     return False
 
                 data = resp.json()
-                for assignment in data.get('results') or []:
-                    role_name = assignment['role_definition']
-                    if role_name not in self.local_role_names:
-                        logger.debug(f"Skipping remote {assignment_type} assignment with unknown local role: {role_name}")
-                        continue
-                    ansible_id_or_pk = assignment.get('object_ansible_id') or assignment.get('object_id')
-                    self.assignments.add(
-                        AssignmentTuple(
-                            actor_ansible_id=assignment[actor_id_key],
-                            ansible_id_or_pk=ansible_id_or_pk,
-                            role_definition_name=role_name,
-                            assignment_type=assignment_type,
-                        )
-                    )
+                self._process_page(data.get('results') or [], actor_id_key, assignment_type)
 
                 if not data.get('next'):
                     return True
@@ -616,15 +648,29 @@ class SyncExecutor:
             local_assignments = get_local_assignments(service=self.service_filter)
 
             # Deletions are only safe when the remote fetch was complete.
-            # A partial fetch would cause us to delete assignments that
-            # simply weren't fetched.
-            if remote_result.is_complete:
-                to_delete = local_assignments - remote_result.assignments
-                deleted_count, delete_errors = self._apply_assignment_changes(to_delete, delete_local_assignment, "DELETED")
-            else:
+            # A partial fetch means we never saw some assignments, so we cannot
+            # treat their absence as a revocation.
+            if not remote_result.is_complete:
                 self.write("Skipping assignment deletions — remote fetch was incomplete. Will retry on next sync cycle.")
                 logger.warning("Skipping assignment deletions: remote fetch was incomplete. Deletions deferred to next complete sync.")
                 deleted_count, delete_errors = 0, 0
+            else:
+                to_delete = local_assignments - remote_result.assignments
+                if remote_result.protected_pairs:
+                    # Some remote assignments were corrupted and skipped.  Protect the
+                    # matching local assignments (same actor + role + type) from deletion —
+                    # their apparent absence is due to the corruption, not a real revocation.
+                    # All other deletions (different actor/role combinations) proceed normally.
+                    protected = remote_result.protected_pairs
+                    shielded = {a for a in to_delete if (a.actor_ansible_id, a.role_definition_name, a.assignment_type) in protected}
+                    if shielded:
+                        logger.warning(
+                            "Shielding %d local assignment(s) from deletion — their remote counterpart "
+                            "had a corrupted UUID object_id. Will reconcile on next sync cycle.",
+                            len(shielded),
+                        )
+                    to_delete -= shielded
+                deleted_count, delete_errors = self._apply_assignment_changes(to_delete, delete_local_assignment, "DELETED")
 
             # Creations are safe even on a partial fetch.
             to_create = remote_result.assignments - local_assignments

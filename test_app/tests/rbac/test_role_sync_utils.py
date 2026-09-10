@@ -105,6 +105,32 @@ def test_get_content_object_falls_back_to_pk_lookup():
     assert result == inventory
 
 
+@pytest.mark.django_db
+def test_get_content_object_falls_back_to_pk_for_registered_model(organization):
+    """get_content_object falls back to PK lookup when ansible_id_or_pk is an
+    integer PK for a resource-registered model.
+
+    Resource.ansible_id is a UUIDField; passing "123" raises ValueError at
+    queryset evaluation time. Without the try/except guard, that ValueError
+    would propagate instead of falling through to model.objects.get(pk=...).
+    """
+    from ansible_base.rbac.models import DABContentType, RoleDefinition
+    from test_app.models import Organization
+
+    org_ct = DABContentType.objects.get_for_model(Organization)
+    rd = RoleDefinition.objects.create(name='Org PK Fallback Read', content_type=org_ct, managed=True)
+
+    at = AssignmentTuple(
+        actor_ansible_id='unused',
+        ansible_id_or_pk=str(organization.pk),
+        role_definition_name='Org PK Fallback Read',
+        assignment_type='user',
+    )
+
+    result = get_content_object(rd, at)
+    assert result == organization
+
+
 # ---------------------------------------------------------------------------
 # _is_resource_registered
 # ---------------------------------------------------------------------------
