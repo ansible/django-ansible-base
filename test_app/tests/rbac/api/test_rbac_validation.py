@@ -121,6 +121,21 @@ def test_using_permission_for_wrong_model(admin_api_client):
     assert 'Permissions "view_inventory" are not valid for namespace roles' in str(response.data['permissions'])
 
 
+@pytest.mark.django_db
+def test_service_name_is_validated(admin_api_client):
+    url = get_relative_url('roledefinition-list')
+    response = admin_api_client.post(
+        url,
+        data={
+            'name': 'Random custom role',
+            'content_type': 'justsomerandomstuff.organization',
+            'permissions': ['aap.view_organization', 'local.change_organization'],
+        },
+    )
+    assert response.status_code == 400, response.data
+    assert 'service name not valid for model organization' in str(response.data)
+
+
 # NOTE: testing a null content_type seems to have a problem with render of admin_api_client
 # this does not seem to be a problem when testing with a live server
 

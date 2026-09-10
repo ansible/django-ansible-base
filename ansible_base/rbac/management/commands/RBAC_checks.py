@@ -14,11 +14,16 @@ class Command(BaseCommand):
         self.stdout.write(f'Inspecting {rd_ct} role definitions')
         self.stdout.write('  checking for minimum of view permission')
         indexed_rds = defaultdict(list)
-        for rd in RoleDefinition.objects.prefetch_related('permissions'):
+        for rd in RoleDefinition.objects.prefetch_related('permissions', 'content_type__dab_permissions'):
             perm_list = list(rd.permissions.values_list('codename', flat=True))
-            if not any(p.startswith('view_') for p in perm_list):
-                self.stdout.write(self.style.WARNING(f'Role definition {rd.name} does not list any view permissions and this is considered invalid'))
-                self.has_issues = True
+            # Only warn if the content type actually has a view_ permission registered.
+            # System-wide roles (content_type=None) and models with no registered view_
+            # permission are not required to include one.
+            if rd.content_type_id is not None:
+                ct_has_view = rd.content_type.dab_permissions.filter(codename__startswith='view_').exists()
+                if ct_has_view and not any(p.startswith('view_') for p in perm_list):
+                    self.stdout.write(self.style.WARNING(f'Role definition {rd.name} does not list any view permissions and this is considered invalid'))
+                    self.has_issues = True
             perm_set = frozenset(perm_list)
             indexed_rds[perm_set].append(rd)
 
