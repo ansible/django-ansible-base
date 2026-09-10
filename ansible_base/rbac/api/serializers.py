@@ -26,6 +26,26 @@ from .queries import assignment_qs_user_to_obj, assignment_qs_user_to_obj_perm
 logger = logging.getLogger(__name__)
 
 
+class ContentTypeSlugField(serializers.SlugRelatedField):
+    """SlugRelatedField for DABContentType that validates the service name prefix.
+
+    When a content_type slug like 'justsomerandomstuff.organization' is provided
+    and not found, this checks whether the model portion exists under a valid service
+    and raises a specific error if the service name is unrecognized.
+    """
+
+    def to_internal_value(self, data):
+        try:
+            return super().to_internal_value(data)
+        except serializers.ValidationError:
+            # Check if the model portion exists under any valid service prefix
+            if isinstance(data, str) and '.' in data:
+                service_prefix, model_name = data.split('.', 1)
+                if DABContentType.objects.filter(model=model_name).exists():
+                    raise serializers.ValidationError(f'service name not valid for model {model_name}')
+            raise
+
+
 class RoleDefinitionSerializer(CommonModelSerializer):
     permissions = serializers.SlugRelatedField(
         slug_field='api_slug',
@@ -36,7 +56,7 @@ class RoleDefinitionSerializer(CommonModelSerializer):
             'invalid': "Each content type must be a valid slug string",
         },
     )
-    content_type = serializers.SlugRelatedField(
+    content_type = ContentTypeSlugField(
         slug_field='api_slug',
         queryset=DABContentType.objects.all(),
         allow_null=True,  # for global roles
