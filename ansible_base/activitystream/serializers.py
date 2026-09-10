@@ -32,10 +32,12 @@ class EntrySerializer(ImmutableCommonModelSerializer):
     def get_content_type_model(self, obj) -> Optional[str]:
         if obj.content_type:
             return obj.content_type.model
+        return None
 
     def get_related_content_type_model(self, obj) -> Optional[str]:
         if obj.related_content_type:
             return obj.related_content_type.model
+        return None
 
     def _field_value_to_python(self, entry, field_name, value):
         model = entry.content_type.model_class()

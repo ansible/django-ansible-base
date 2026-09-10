@@ -296,6 +296,7 @@ class JWTCommonAuth:
 
             # Process the RBAC permissions with the gateway claims
             save_user_claims(self.user, objects, object_roles, global_roles)
+            self._saved_claims = (objects, object_roles, global_roles)
 
             # Update cache with the new hash
             self.cache.cache_claims_hash(user_ansible_id, jwt_claims_hash)

@@ -59,6 +59,16 @@ def view_inv_rd():
 
 
 @pytest.fixture
+def global_user_assignment(rando, global_inv_rd):
+    return global_inv_rd.give_global_permission(rando)
+
+
+@pytest.fixture
+def global_team_assignment(team, global_inv_rd):
+    return global_inv_rd.give_global_permission(team)
+
+
+@pytest.fixture
 def org_team_member_rd():
     """Gives membership to all teams in an organization"""
     return RoleDefinition.objects.create_from_permissions(

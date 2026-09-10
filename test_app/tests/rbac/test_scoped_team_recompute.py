@@ -263,7 +263,7 @@ class TestRoleAssignmentScoping:
             captured_team_ids.append(team_ids)
             return original_compute(team_ids=team_ids)
 
-        with patch('ansible_base.rbac.triggers.compute_team_member_roles', tracking_compute):
+        with patch('ansible_base.rbac.pipeline.compute_team_member_roles', tracking_compute):
             member_rd.give_permission(rando, team_a)
 
         assert rando.has_obj_perm(inv, 'change')
@@ -294,7 +294,7 @@ class TestRoleAssignmentScoping:
             captured_team_ids.append(team_ids)
             return original_compute(team_ids=team_ids)
 
-        with patch('ansible_base.rbac.triggers.compute_team_member_roles', tracking_compute):
+        with patch('ansible_base.rbac.pipeline.compute_team_member_roles', tracking_compute):
             org_team_member_rd.give_permission(rando, org_a)
 
         assert rando.has_obj_perm(inv, 'change')

@@ -3,7 +3,7 @@ from unittest import mock
 from uuid import uuid4
 
 import pytest
-from django.db.utils import Error
+from django.db.utils import Error, IntegrityError
 from django.test import override_settings
 
 from ansible_base.lib.testing.util import StaticResourceAPIClient
@@ -25,6 +25,7 @@ from ansible_base.resource_registry.tasks.sync import (
     create_api_client,
     get_remote_assignments,
 )
+from test_app.models import User
 
 
 @pytest.fixture(scope="function")
@@ -865,7 +866,6 @@ def test_attempt_update_resource_error_exception(static_api_client, resource_to_
 def test_delete_resource_exception_handling():
     """Test that delete_resource logs exceptions with logger.exception."""
     from ansible_base.resource_registry.tasks.sync import ResourceDeletionError, delete_resource
-    from test_app.models import User
 
     # Create a user (which will auto-create a Resource via signals)
     user = User.objects.create(username='testuser', email='test@example.com')
@@ -1025,7 +1025,6 @@ def test_get_local_assignments_skips_users_without_resources():
     """Test get_local_assignments skips user assignments when user has no Resource."""
     from ansible_base.rbac.models import RoleDefinition
     from ansible_base.resource_registry.tasks.sync import get_local_assignments
-    from test_app.models import User
 
     # Create a user with resource
     user = User.objects.create(username='testuser', email='test@example.com')
@@ -1185,7 +1184,6 @@ def test_get_ansible_id_or_pk_for_non_org_team():
 
     # Create role and assignment
     role_def = RoleDefinition.objects.create(name='Inventory Admin', content_type=inv_dab_ct, managed=True)
-    from test_app.models import User
 
     user = User.objects.create(username='testuser', email='test@example.com')
     assignment = role_def.give_permission(user, inventory)
@@ -1277,7 +1275,6 @@ def test_create_local_assignment_global():
     """Test create_local_assignment creates global assignment."""
     from ansible_base.rbac.models import RoleDefinition, RoleUserAssignment
     from ansible_base.resource_registry.tasks.sync import AssignmentTuple, create_local_assignment
-    from test_app.models import User
 
     # Create user with resource
     user = User.objects.create(username='testuser', email='test@example.com')
@@ -1377,7 +1374,6 @@ def test_delete_local_assignment_global():
     """Test delete_local_assignment removes global assignment"""
     from ansible_base.rbac.models import RoleDefinition
     from ansible_base.resource_registry.tasks.sync import AssignmentTuple, delete_local_assignment
-    from test_app.models import User
 
     # Create user with resource
     user = User.objects.create(username='testuser', email='test@example.com')
@@ -1403,3 +1399,29 @@ def test_delete_local_assignment_global():
     from ansible_base.rbac.models import RoleUserAssignment
 
     assert not RoleUserAssignment.objects.filter(user=user, role_definition=role_def, object_id__isnull=True).exists()
+
+
+@pytest.mark.django_db
+def test_cleanup_orphans_continues_after_deletion_error(admin_api_client, static_api_client, stdout):
+    """Test that _cleanup_orphans skips a failing orphan, logs it and continues deleting the rest."""
+    url = get_relative_url("resource-list")
+    for username in ("orphan_one", "orphan_two"):
+        response = admin_api_client.post(
+            url,
+            {
+                "service_id": "57592fbc-7ecb-405f-9f5f-ebad20932d38",
+                "resource_type": "shared.user",
+                "resource_data": {"username": username, "last_name": "Test", "email": f"{username}@example.com"},
+            },
+            format="json",
+        )
+        assert response.status_code == 201
+
+    with mock.patch("ansible_base.resource_registry.tasks.sync.delete_resource", side_effect=IntegrityError("FK constraint")):
+        executor = SyncExecutor(api_client=static_api_client, stdout=stdout)
+        executor.run()
+
+    error_lines = [line for line in stdout.lines if "IntegrityError" in line]
+    assert len(error_lines) == 2
+    assert User.objects.filter(username__in=["orphan_one", "orphan_two"]).count() == 2
+    assert executor.deleted_count == 0

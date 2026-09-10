@@ -223,7 +223,7 @@ def combine_settings_dict(settings_dict1: dj_db_dict, settings_dict2: dj_db_dict
     settings_dict['OPTIONS'].update(extra_options)
     # Apply overrides from nested OPTIONS for the listener connection
     for k, v in settings_dict2.get('OPTIONS', {}).items():
-        settings_dict['OPTIONS'][k] = v
+        settings_dict['OPTIONS'][k] = v  # type: ignore[index]
 
     return settings_dict
 

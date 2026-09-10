@@ -7,7 +7,7 @@ from ansible_base.authentication.models import Authenticator
 User = get_user_model()
 
 
-def is_external_account(user: User) -> Optional[Authenticator]:
+def is_external_account(user: "User") -> Optional[Authenticator]:  # type: ignore[valid-type]
     """
     Determines whether the user is associated with any external
     login source. If they are, return the source. Otherwise, None.

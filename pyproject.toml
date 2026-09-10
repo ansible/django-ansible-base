@@ -9,7 +9,7 @@ authors = [
 ]
 description = "A Django app used by ansible services"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 keywords = ["ansible", "django"]
 license = {text = "Apache-2.0"}
 classifiers = [
@@ -23,7 +23,6 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
 dynamic = ["version", "dependencies", "optional-dependencies"]
@@ -100,19 +99,13 @@ legacy_tox_ini = """
     min_version = 4.0
     no_package = true
     env_list =
-        py311-check
         py312-check
-        py311
         py312
-        py311-sqlite
         py312-sqlite
-        py311-django4
-        py312-django4
-        py311-in-files
         py312-in-files
     labels =
-        test = py311-check, py312-check, py311, py312, py311-sqlite, py312-sqlite, py312-django4, py311-in-files, py312-in-files
-        lint = flake8, black, isort
+        test = py312-check, py312, py312-sqlite, py312-in-files
+        lint = flake8, black, isort, mypy
 
     [testenv]
     deps =
@@ -122,7 +115,7 @@ legacy_tox_ini = """
     commands = pytest -n auto --color=yes --cov=. --cov-report=xml:coverage.xml --cov-report=html --cov-report=json --cov-branch --junit-xml=django-ansible-base-test-results.xml {env:ANSIBLE_BASE_PYTEST_ARGS} {env:ANSIBLE_BASE_TEST_DIRS:test_app/tests} {posargs}
     docker = db
 
-    [testenv:py311-check,py312-check]
+    [testenv:py312-check]
     deps =
         -r{toxinidir}/requirements/requirements_all.txt
         -r{toxinidir}/requirements/requirements_dev.txt
@@ -131,20 +124,12 @@ legacy_tox_ini = """
         python3 manage.py check
         python3 manage.py makemigrations --check
 
-    [testenv:py311-sqlite,py312-sqlite]
+    [testenv:py312-sqlite]
     docker = db
     setenv =
         DJANGO_SETTINGS_MODULE = test_app.sqlite3settings
 
-    [testenv:py311-django4,py312-django4]
-    deps =
-        -r{toxinidir}/requirements/requirements_all.txt
-        -r{toxinidir}/requirements/requirements_dev.txt
-    commands_pre =
-        python -m pip install --upgrade "Django>=4.2.21,<4.3.0"
-    docker = db
-
-    [testenv:py311-in-files,py312-in-files]
+    [testenv:py312-in-files]
     deps =
         -r{toxinidir}/requirements/requirements.in
         -r{toxinidir}/requirements/requirements_activitystream.in
@@ -186,7 +171,37 @@ legacy_tox_ini = """
         isort==6.0.0
     docker =
     commands = isort {posargs:.}
+
+    [testenv:mypy]
+    deps =
+        -r{toxinidir}/requirements/requirements_all.txt
+        -r{toxinidir}/requirements/requirements_dev.txt
+    docker =
+    commands = mypy ansible_base {posargs}
 """
+
+[tool.mypy]
+plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
+ignore_missing_imports = true
+follow_imports = "silent"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+check_untyped_defs = false
+disallow_untyped_defs = false
+# Start permissive - tighten these as the codebase gets annotated
+disable_error_code = [
+    "attr-defined", "assignment", "union-attr", "var-annotated", "misc",
+    "arg-type",
+]
+exclude = ["test_app/", "migrations/", "\\.tox/", "build/", "\\.venv/", "venv/"]
+
+[[tool.mypy.overrides]]
+module = "ansible_base.lib.dynamic_config.dynamic_settings"
+disable_error_code = ["has-type", "used-before-def", "name-defined"]
+
+[tool.django-stubs]
+django_settings_module = "test_app.settings"
 
 [tool.coverage.run]
 omit = ["test_app/*", "manage.py"]

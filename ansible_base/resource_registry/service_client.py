@@ -87,7 +87,7 @@ class BaseServiceClient:
         """
         if self._jwt is None or self._jwt_timeout is None or time.time() >= self._jwt_timeout:
             self.refresh_jwt()
-        return self._jwt
+        return self._jwt  # type: ignore[return-value]
 
     @property
     def requests_auth_kwargs(self) -> dict:
@@ -136,7 +136,7 @@ class BaseServiceClient:
         if hasattr(self, 'timeout'):
             kwargs["timeout"] = self.timeout
 
-        if data:
+        if data is not None:
             kwargs["json"] = data
         if params:
             kwargs["params"] = params

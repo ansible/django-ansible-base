@@ -16,11 +16,12 @@ jobs:
     strategy:
       fail-fast: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           show-progress: false
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
 
@@ -39,10 +40,11 @@ jobs:
           EOF
           docker build -t awx-with-dab:latest -f awx-dockerfile/Dockerfile .
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ansible/awx
           path: awx
+          persist-credentials: false
 
       - name: Run AWX tests in the generated image
         run: |
@@ -87,16 +89,18 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           show-progress: false
+          persist-credentials: false
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ansible/eda-server
           path: eda-server
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
 
@@ -113,21 +117,87 @@ jobs:
         env:
           PYTEST_ADDOPTS: --disable-warnings
 
+  jewel:
+    name: jewel
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+    env:
+      TOX_DOCKER_GATEWAY: "0.0.0.0"
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: dab
+          show-progress: false
+          persist-credentials: false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ansible/jewel
+          path: jewel
+          persist-credentials: false
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libsasl2-dev libldap2-dev libssl-dev libxmlsec1-dev
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install tox
+        run: pip install tox tox-docker requests
+
+      - name: Place DAB in jewel checkout
+        run: cp -a dab jewel/django-ansible-base
+
+      - name: Create tox environment
+        working-directory: jewel
+        env:
+          GATEWAY_TEST_DIRS: ""
+        run: |
+          tox -e py312 \
+            -x testenv:py312.docker= \
+            -- --collect-only aap_gateway_api/tests/__init__.py
+
+      - name: Rebuild lxml and xmlsec from source
+        working-directory: jewel
+        run: |
+          XMLSEC_VERSION=$(.tox/py312/bin/pip freeze | grep xmlsec | sed 's:^.*=::')
+          LXML_VERSION=$(.tox/py312/bin/pip freeze | grep lxml | sed 's:^.*=::')
+          echo "Rebuilding xmlsec==${XMLSEC_VERSION} and lxml==${LXML_VERSION} from source"
+          .tox/py312/bin/pip install --no-cache-dir --no-binary lxml,xmlsec --force-reinstall \
+            lxml==${LXML_VERSION} xmlsec==${XMLSEC_VERSION}
+
+      - name: Run jewel tests
+        working-directory: jewel
+        env:
+          PYTEST_NUM_PROCESSES: auto
+          PYTEST_ADDOPTS: --disable-warnings
+        run: tox -e py312 -- -m "not perf"
+
   hub:
     name: hub
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ansible/galaxy_ng
           path: hub
+          persist-credentials: false
 
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libsasl2-dev libldap2-dev libssl-dev gettext
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
 

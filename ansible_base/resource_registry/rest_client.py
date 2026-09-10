@@ -102,6 +102,17 @@ class ResourceAPIClient(BaseServiceClient):
         action = "patch" if partial else "put"
         return self._make_request(action, f"resources/{ansible_id}/", self._get_request_dict(data))
 
+    def bulk_update_resources(self, items: list[dict]):
+        """
+        Bulk-update multiple resources in a single HTTP request.
+
+        Each item must contain 'ansible_id' and one or more fields to update:
+        new_service_id, new_ansible_id, is_partially_migrated, resource_data.
+
+        Returns the response from POST /resources/bulk-update/.
+        """
+        return self._make_request("post", "resources/bulk-update/", data={"items": items})
+
     def delete_resource(self, ansible_id):
         return self._make_request("delete", f"resources/{ansible_id}/")
 

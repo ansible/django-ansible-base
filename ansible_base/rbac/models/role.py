@@ -1,11 +1,11 @@
 import logging
 from collections.abc import Iterable
-from typing import Optional, Type, Union
+from typing import TYPE_CHECKING, Optional, Type, Union
 from uuid import UUID
 
 # Django
 from django.conf import settings
-from django.db import connection, models, transaction
+from django.db import models
 from django.db.models import Count
 from django.db.models.functions import Cast
 from django.db.models.query import QuerySet
@@ -21,14 +21,16 @@ from ansible_base.lib.abstract_models.common import CommonModel, ImmutableCommon
 # ansible_base RBAC logic imports
 from ansible_base.lib.utils.models import is_add_perm
 from ansible_base.rbac.permission_registry import permission_registry
-from ansible_base.rbac.prefetch import TypesPrefetch
 from ansible_base.rbac.sync import maybe_reverse_sync_assignment
-from ansible_base.rbac.validators import validate_assignment, validate_permissions_for_model
+from ansible_base.rbac.validators import validate_permissions_for_model
 from ansible_base.resource_registry.fields import AnsibleResourceField
 
 from ..remote import RemoteObject, StandInPK
 from .content_type import DABContentType
 from .fields import FederatedForeignKey
+
+if TYPE_CHECKING:
+    from ansible_base.rbac.prefetch import EvaluationsPrefetch
 from .permission import DABPermission
 
 # Conditionally import AuditableModel if activitystream is installed
@@ -80,12 +82,12 @@ class RoleDefinitionManager(models.Manager):
 
     def give_creator_permissions(self, user, obj) -> Optional['RoleUserAssignment']:
         if not permission_registry.is_registered(obj):
-            return  # Exit before getting content type, which will not exist
+            return None  # Exit before getting content type, which will not exist
 
         # If the user is a superuser, no need to bother giving the creator permissions
         for super_flag in settings.ANSIBLE_BASE_BYPASS_SUPERUSER_FLAGS:
             if getattr(user, super_flag):
-                return
+                return None
 
         needed_actions = settings.ANSIBLE_BASE_CREATOR_DEFAULTS
 
@@ -120,6 +122,7 @@ class RoleDefinitionManager(models.Manager):
             # reverse sync the assignment
             maybe_reverse_sync_assignment(assignment)
             return assignment
+        return None
 
     def get_or_create(self, permissions=(), defaults=None, **kwargs):
         """Override get_or_create to support lookup by permissions list.
@@ -258,82 +261,32 @@ class RoleDefinition(CommonModel):
         return assignment
 
     def give_permission(self, actor, content_object):
-        return self.give_or_remove_permission(actor, content_object, giving=True)
+        from ansible_base.rbac.pipeline import bulk_give_permissions
+
+        is_user = actor._meta.model_name == 'user'
+        perm = [(self, actor, content_object)]
+        assignments = bulk_give_permissions(
+            user_permissions=perm if is_user else [],
+            team_permissions=[] if is_user else perm,
+        )
+        return assignments[0]
 
     def remove_permission(self, actor, content_object):
-        return self.give_or_remove_permission(actor, content_object, giving=False)
+        from ansible_base.rbac.pipeline import bulk_remove_permissions
 
-    def get_or_create_object_role(self, kwargs, defaults):
-        """Transaction-safe method to create ObjectRole
+        is_user = actor._meta.model_name == 'user'
+        perm = [(self, actor, content_object)]
+        bulk_remove_permissions(
+            user_permissions=perm if is_user else [],
+            team_permissions=[] if is_user else perm,
+        )
 
-        The UI will assign many permissions concurrently.
-        These will be in transactions, but also mutually create the same ObjectRole
-        postgres constraints will still be violated by other active transactions
-        which gives us a way to gracefully handle this.
-        """
-        if transaction.get_connection().in_atomic_block:
-            try:
-                with transaction.atomic():
-                    object_role = ObjectRole.objects.create(**kwargs, **defaults)
-                    return (object_role, True)
-            except IntegrityError:
-                object_role = ObjectRole.objects.get(**kwargs)
-                return (object_role, False)
+    def give_or_remove_permission(self, actor, content_object, giving=True):
+        """Compat shim — AWX calls this via awx.main.models.rbac.give_or_remove_permission."""
+        if giving:
+            return self.give_permission(actor, content_object)
         else:
-            object_role = ObjectRole.objects.create(**kwargs, **defaults)
-            return (object_role, True)
-
-    def give_or_remove_permission(self, actor, content_object, giving=True, sync_action=False):
-        "Shortcut method to do whatever needed to give user or team these permissions"
-        validate_assignment(self, actor, content_object)
-
-        if isinstance(content_object, RemoteObject):
-            obj_ct = content_object.content_type
-            object_id = content_object.object_id
-        else:
-            obj_ct = DABContentType.objects.get_for_model(content_object)
-            # sanitize the object_id to its database version, practically, remove "-" chars from uuids
-            object_id = content_object._meta.pk.get_db_prep_value(content_object.pk, connection)
-
-        kwargs = {'role_definition': self, 'content_type': obj_ct, 'object_id': object_id}
-        defaults = {}
-
-        # For remote objects, add parent reference so we can do evaluations if needed
-        if isinstance(content_object, RemoteObject):
-            if content_object.parent_reference:
-                defaults['parent_reference'] = content_object.parent_reference
-
-        created = False
-        object_role = ObjectRole.objects.filter(**kwargs).first()
-        if object_role is None:
-            if not giving:
-                return  # nothing to do
-            object_role, created = self.get_or_create_object_role(kwargs, defaults)
-
-        from ansible_base.rbac.triggers import needed_updates_on_assignment, update_after_assignment
-
-        recompute_team_ids, to_update = needed_updates_on_assignment(self, actor, object_role, created=created, giving=True)
-
-        assignment = None
-        if actor._meta.model_name == 'user':
-            if giving:
-                assignment, created = RoleUserAssignment.objects.get_or_create(user=actor, object_role=object_role)
-            else:
-                object_role.users.remove(actor)
-        elif isinstance(actor, permission_registry.team_model):
-            if giving:
-                assignment, created = RoleTeamAssignment.objects.get_or_create(team=actor, object_role=object_role)
-            else:
-                object_role.teams.remove(actor)
-
-        if (not giving) and (not (object_role.users.exists() or object_role.teams.exists())):
-            if object_role in to_update:
-                to_update.remove(object_role)
-            object_role.delete()
-
-        update_after_assignment(recompute_team_ids, to_update)
-
-        return assignment
+            return self.remove_permission(actor, content_object)
 
     @classmethod
     def user_global_permissions(cls, user, permission_qs=None):
@@ -458,7 +411,7 @@ class AssignmentBase(ImmutableCommonModel, ObjectRoleFields, _AuditableBase):
 
     # object_role is internal, and not shown in serializer
     # content_type does not have a link, and ResourceType will be used in lieu sometime
-    ignore_relations = ['content_type', 'object_role']
+    ignore_relations = ['content_type', 'object_role', 'resource']
 
     class Meta:
         app_label = 'dab_rbac'
@@ -490,6 +443,13 @@ class RoleUserAssignment(AssignmentBase):
         app_label = 'dab_rbac'
         ordering = ['id']
         unique_together = ('user', 'object_role')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'role_definition'],
+                condition=models.Q(object_role__isnull=True),
+                name='unique_global_user_assignment',
+            ),
+        ]
 
     def __repr__(self):
         return f'RoleUserAssignment(pk={self.id})'
@@ -516,6 +476,13 @@ class RoleTeamAssignment(AssignmentBase):
         app_label = 'dab_rbac'
         ordering = ['id']
         unique_together = ('team', 'object_role')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['team', 'role_definition'],
+                condition=models.Q(object_role__isnull=True),
+                name='unique_global_team_assignment',
+            ),
+        ]
 
     def __repr__(self):
         return f'RoleTeamAssignment(pk={self.id})'
@@ -631,7 +598,7 @@ class ObjectRole(ObjectRoleFields):
 
         return (eval_ct, child_model, filter_path)
 
-    def expected_direct_permissions(self, types_prefetch=None, object_pk=None, object_ct_id=None) -> set[tuple[str, int, Union[int, UUID]]]:
+    def expected_direct_permissions(self, types_prefetch, object_pk=None, object_ct_id=None) -> set[tuple[str, int, Union[int, UUID]]]:
         """The expected permissions that holding this ObjectRole confers to the holder
 
         This is given in the form of tuples, which represent RoleEvaluation entries.
@@ -647,8 +614,6 @@ class ObjectRole(ObjectRoleFields):
             raise ValueError('object_pk and object_ct_id must both be provided or both be None')
         expected_evaluations = set()
         cached_id_lists = {}
-        if not types_prefetch:
-            types_prefetch = TypesPrefetch()
         role_content_type = types_prefetch.get_content_type(self.content_type_id)
         role_model = role_content_type.model_class()
         if role_content_type.is_remote:
@@ -717,7 +682,35 @@ class ObjectRole(ObjectRoleFields):
         else:
             logger.debug(msg, label, count, role_pk)
 
-    def needed_cache_updates(self, types_prefetch=None, object_pk=None, object_ct_id=None):
+    def _load_existing_partials(
+        self,
+        object_pk: Optional[Union[int, UUID]],
+        object_ct_id: Optional[int],
+        evaluations_prefetch: Optional['EvaluationsPrefetch'],
+    ) -> dict[tuple[str, int, Union[int, UUID]], int]:
+        existing_partials = {}
+
+        if object_pk is not None and object_ct_id is not None:
+            # Look-ahead: query only the table matching the pk type, filtered
+            # to the single target object.
+            partial_filter = {'object_id': object_pk, 'content_type_id': object_ct_id}
+            source = self.permission_partials_uuid if isinstance(object_pk, UUID) else self.permission_partials
+            for eval_id, codename, content_type_id, object_id in source.filter(**partial_filter).values_list('id', 'codename', 'content_type_id', 'object_id'):
+                existing_partials[(codename, content_type_id, object_id)] = eval_id
+            self._log_partials_count(len(existing_partials), f'existing evaluation (object_pk={object_pk})', self.pk)
+        elif evaluations_prefetch is not None:
+            existing_partials.update(evaluations_prefetch.get_partials(self.pk))
+            existing_partials.update(evaluations_prefetch.get_partials_uuid(self.pk))
+            self._log_partials_count(len(existing_partials), 'existing evaluation (full)', self.pk)
+        else:
+            for source in (self.permission_partials, self.permission_partials_uuid):
+                for eval_id, codename, content_type_id, object_id in source.values_list('id', 'codename', 'content_type_id', 'object_id'):
+                    existing_partials[(codename, content_type_id, object_id)] = eval_id
+            self._log_partials_count(len(existing_partials), 'existing evaluation (full)', self.pk)
+
+        return existing_partials
+
+    def needed_cache_updates(self, types_prefetch=None, evaluations_prefetch=None, object_pk=None, object_ct_id=None):
         """Return (to_delete, to_add) changes needed in the RoleEvaluation table
         to make cached object-role permissions accurate for this role.
 
@@ -731,32 +724,28 @@ class ObjectRole(ObjectRoleFields):
 
         Without object_pk/object_ct_id, a full recompute is performed for all
         objects this role grants permissions to.
+
+        evaluations_prefetch: an EvaluationsPrefetch instance with batch-loaded
+        evaluation data for this role's chunk, avoiding per-role queries.
         """
         if (object_pk is None) != (object_ct_id is None):
             raise ValueError('object_pk and object_ct_id must both be provided or both be None')
-        existing_partials = {}
 
-        if object_pk is not None and object_ct_id is not None:
-            # Look-ahead: query only the table matching the pk type, filtered
-            # to the single target object.
-            partial_filter = {'object_id': object_pk, 'content_type_id': object_ct_id}
-            source = self.permission_partials_uuid if isinstance(object_pk, UUID) else self.permission_partials
-            for eval_id, codename, content_type_id, object_id in source.filter(**partial_filter).values_list('id', 'codename', 'content_type_id', 'object_id'):
-                existing_partials[(codename, content_type_id, object_id)] = eval_id
-            self._log_partials_count(len(existing_partials), f'existing evaluation (object_pk={object_pk})', self.pk)
-        else:
-            # Full recompute: load all cached entries from both tables.
-            for eval_id, codename, content_type_id, object_id in self.permission_partials.values_list('id', 'codename', 'content_type_id', 'object_id'):
-                existing_partials[(codename, content_type_id, object_id)] = eval_id
-            for eval_id, codename, content_type_id, object_id in self.permission_partials_uuid.values_list('id', 'codename', 'content_type_id', 'object_id'):
-                existing_partials[(codename, content_type_id, object_id)] = eval_id
-            self._log_partials_count(len(existing_partials), 'existing evaluation (full)', self.pk)
+        if types_prefetch is None:
+            from ansible_base.rbac.prefetch import TypesPrefetch
 
+            types_prefetch = TypesPrefetch.from_db()
+
+        existing_partials = self._load_existing_partials(object_pk, object_ct_id, evaluations_prefetch)
         expected_evaluations = self.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id)
 
-        for team in self.provides_teams.all():
-            for team_role in team.has_roles.all():
+        if evaluations_prefetch is not None:
+            for team_role in evaluations_prefetch.get_team_roles(self.pk):
                 expected_evaluations.update(team_role.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id))
+        else:
+            for team in self.provides_teams.all():
+                for team_role in team.has_roles.all():
+                    expected_evaluations.update(team_role.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id))
 
         self._log_partials_count(len(expected_evaluations), 'expected evaluation', self.pk)
 
@@ -794,8 +783,8 @@ class RoleEvaluationFields(models.Model):
     This is used to make permission evaluations via querysets returning object ids
     the data in this table is created from the ObjectRole and RoleDefinition data
       you should not interact with this table yourself
-      the only method that should ever write to this table is
-        compute_object_role_permissions()
+      the only methods that should ever write to this table are
+        recompute_role_evaluations() and recompute_all_role_evaluations()
 
     In the above example, "ObjectRole 423" may be a role that grants membership
     to a team, and that team was given permission to another ObjectRole.

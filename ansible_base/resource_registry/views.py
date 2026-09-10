@@ -2,11 +2,12 @@ import logging
 from collections import OrderedDict
 
 from django.conf import settings
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.http import HttpResponseNotFound
 from django.shortcuts import get_object_or_404
 from django.urls.exceptions import NoReverseMatch
-from rest_framework import permissions
+from rest_framework import permissions, status
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
@@ -20,7 +21,7 @@ from ansible_base.lib.utils.views.permissions import try_add_oauth2_scope_permis
 from ansible_base.resource_registry.constants import SHARED_USER_RESOURCE_TYPE
 from ansible_base.resource_registry.models import Resource, ResourceType, service_id
 from ansible_base.resource_registry.registry import get_registry
-from ansible_base.resource_registry.serializers import ResourceListSerializer, ResourceSerializer, ResourceTypeSerializer
+from ansible_base.resource_registry.serializers import BulkResourceUpdateItemSerializer, ResourceListSerializer, ResourceSerializer, ResourceTypeSerializer
 from ansible_base.rest_filters.rest_framework.field_lookup_backend import FieldLookupBackend
 from ansible_base.rest_filters.rest_framework.order_backend import OrderByBackend
 from ansible_base.rest_filters.rest_framework.type_filter_backend import TypeFilterBackend
@@ -121,6 +122,155 @@ class ResourceViewSet(
 
     def perform_destroy(self, instance):
         instance.delete_resource()
+
+    MAX_BULK_SIZE = 1000
+
+    @action(detail=False, methods=["post"], url_path="bulk-update")
+    def bulk_update(self, request, *args, **kwargs):
+        """
+        Bulk-update resource metadata (new_service_id, new_ansible_id, is_partially_migrated, resource_data).
+
+        Accepts a JSON object with an ``items`` key containing a list of update objects.
+        Each object must contain at minimum an ``ansible_id`` identifying the resource
+        to update plus one or more fields to change.
+        Each item is applied in its own savepoint so that a failure in one item
+        does not roll back others.
+
+        Returns a summary with the count of updated resources and any per-item errors.
+
+        Performance note:
+            This endpoint uses a loop-of-singles pattern (one savepoint + update_resource()
+            per item) rather than Django's QuerySet.bulk_update(). This is an intentional
+            trade-off: ResourceTypeProcessor.save() is a per-service plugin point with
+            custom logic (e.g. M2M permission handling in RoleDefinitionProcessor) that
+            cannot be expressed as a single bulk SQL statement. The primary performance
+            gain of this endpoint comes from eliminating N HTTP round-trips — the DB query
+            overhead of per-item saves is negligible on a local connection for typical
+            batch sizes (100-1000 items). True DB-level batching can be explored as a
+            future optimization for metadata-only fields.
+        """
+        error_response = self._validate_bulk_request(request.data)
+        if error_response is not None:
+            return error_response
+
+        serializer = BulkResourceUpdateItemSerializer(data=request.data["items"], many=True)
+        serializer.is_valid(raise_exception=True)
+        items = serializer.validated_data
+
+        duplicate = self._find_duplicate_ansible_id(items)
+        if duplicate:
+            return Response(
+                {"detail": f"Duplicate ansible_id in request: {duplicate}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        ansible_ids = [item["ansible_id"] for item in items]
+        resources_by_id = {str(r.ansible_id): r for r in Resource.objects.filter(ansible_id__in=ansible_ids).select_related("content_type__resource_type")}
+
+        logger.info("Bulk update requested: %d items by user %s", len(items), request.user)
+
+        updated, errors = self._process_bulk_items(items, resources_by_id)
+
+        logger.info("Bulk update completed: %d updated, %d errors", updated, len(errors))
+        return Response({"updated": updated, "errors": errors}, status=status.HTTP_200_OK)
+
+    def _validate_bulk_request(self, data):
+        """Validate the shape of the bulk-update request payload.
+
+        Returns a Response if validation fails, or None if the payload is valid.
+        """
+        if not isinstance(data, dict) or "items" not in data:
+            return Response(
+                {"detail": "Expected a JSON object with an 'items' key containing a list of resource update items."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        items_data = data["items"]
+        if not isinstance(items_data, list):
+            return Response(
+                {"detail": "The 'items' field must be a list."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if len(items_data) > self.MAX_BULK_SIZE:
+            return Response(
+                {"detail": f"Bulk update limited to {self.MAX_BULK_SIZE} items per request."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return None
+
+    @staticmethod
+    def _find_duplicate_ansible_id(items):
+        """Return the first duplicate ansible_id found in the items list, or None."""
+        seen_ids = set()
+        for item in items:
+            aid = str(item["ansible_id"])
+            if aid in seen_ids:
+                return aid
+            seen_ids.add(aid)
+        return None
+
+    def _process_bulk_items(self, items, resources_by_id):
+        """Process each item in the bulk-update batch, returning (updated_count, errors_list)."""
+        from rest_framework.exceptions import ValidationError as DRFValidationError
+
+        updated = 0
+        errors = []
+
+        for item in items:
+            ansible_id_str = str(item["ansible_id"])
+            resource = resources_by_id.get(ansible_id_str)
+            if resource is None:
+                errors.append({"ansible_id": ansible_id_str, "error": "Resource not found."})
+                continue
+
+            resource_data = item.get("resource_data", {})
+            if resource_data and not resource.content_type.resource_type.can_be_managed:
+                errors.append(
+                    {
+                        "ansible_id": ansible_id_str,
+                        "error": f"Resource type '{resource.content_type.resource_type.name}' cannot be managed.",
+                    }
+                )
+                continue
+
+            try:
+                with transaction.atomic():
+                    self._apply_resource_update(resource, item)
+            except IntegrityError:
+                logger.warning("Bulk update item %s failed: integrity constraint violation", ansible_id_str)
+                errors.append({"ansible_id": ansible_id_str, "error": "Update violates a uniqueness or integrity constraint."})
+                continue
+            except (ValueError, DRFValidationError) as e:
+                error_detail = getattr(e, 'detail', None) or str(e)
+                logger.warning("Bulk update item %s failed: %s", ansible_id_str, error_detail)
+                errors.append({"ansible_id": ansible_id_str, "error": error_detail})
+                continue
+            except Exception as e:
+                logger.exception("Bulk update item %s failed unexpectedly: %s", ansible_id_str, e)
+                errors.append({"ansible_id": ansible_id_str, "error": "Internal error processing this item."})
+                continue
+
+            updated += 1
+
+        return updated, errors
+
+    @staticmethod
+    def _apply_resource_update(resource, item):
+        """Apply field updates and optional resource_data to a single resource.
+
+        Delegates to Resource.update_resource() which handles no_reverse_sync()
+        and maintains consistency with the single-resource update path.
+        The can_be_managed check is performed by the caller before entering
+        the transaction, so this method assumes it has already passed.
+        """
+        resource.update_resource(
+            resource_data=item.get("resource_data", {}),
+            ansible_id=item.get("new_ansible_id"),
+            service_id=item.get("new_service_id"),
+            is_partially_migrated=item.get("is_partially_migrated"),
+            partial=True,
+        )
 
 
 class ResourceTypeViewSet(
