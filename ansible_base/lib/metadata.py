@@ -13,8 +13,18 @@ credential type schemas, survey specifications, or plugin field metadata.
 
 from functools import lru_cache
 
-from rest_framework import serializers
 from rest_framework.metadata import SimpleMetadata
+
+from ansible_base.lib.serializers.mixins import CleanTextMixin
+from ansible_base.lib.utils.settings import get_setting
+from ansible_base.lib.utils.validation import (
+    _HANDLER_URI_RE,
+    _INJECTION_RE,
+    _ZALGO_INTERLEAVED_APPROX,
+    _ZALGO_RE,
+    CONTROL_CHARS,
+    RESOURCE_NAME_PATTERN,
+)
 
 _HTML_TAG_APPROX = r'<[a-zA-Z/!][^>]*>'
 
@@ -35,8 +45,6 @@ def _wrap_alternation(pattern):
 
 @lru_cache(maxsize=1)
 def build_tier1_frontend_pattern():
-    from ansible_base.lib.utils.validation import _ZALGO_INTERLEAVED_APPROX, _ZALGO_RE, RESOURCE_NAME_PATTERN
-
     base = RESOURCE_NAME_PATTERN.replace(r'\Z', '$')
     # _ZALGO_RE catches 5+ *consecutive* combining marks. _ZALGO_INTERLEAVED_APPROX
     # additionally catches marks interleaved with base characters, approximating (but
@@ -66,8 +74,6 @@ def build_tier2_frontend_pattern():
     See test_tier2_pattern_does_not_catch_html_entity_encoded_payload for a pinned
     regression test documenting this known, intentional gap.
     """
-    from ansible_base.lib.utils.validation import _HANDLER_URI_RE, _INJECTION_RE, CONTROL_CHARS
-
     deny_patterns = [
         CONTROL_CHARS,
         _HTML_TAG_APPROX,
@@ -79,9 +85,6 @@ def build_tier2_frontend_pattern():
 
 
 def inject_clean_text_patterns(field, field_info):
-    from ansible_base.lib.serializers.mixins import CleanTextMixin
-    from ansible_base.lib.utils.settings import get_setting
-
     if not get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False):
         return field_info
 
@@ -89,22 +92,31 @@ def inject_clean_text_patterns(field, field_info):
     if not isinstance(serializer, CleanTextMixin):
         return field_info
 
-    # SlugField and IPAddressField both subclass CharField in DRF, but their
-    # underlying model columns (models.SlugField / models.GenericIPAddressField)
-    # override get_internal_type() to return their own name, so they're deliberately
-    # excluded from Tier 1/Tier 2 backend validation by CleanTextMixin._classify_fields()
-    # (which keys off get_internal_type() rather than isinstance() for this exact
-    # reason). Advertising a `pattern` here for them would tell the client to enforce
-    # a rule the backend never actually applies to that field.
+    # Mirror CleanTextMixin._classify_fields(): use get_internal_type() on the
+    # underlying Django model field to decide whether this serializer field
+    # should carry a validation pattern. This keeps the metadata layer in sync
+    # with the actual server-side validation -- only fields whose model column
+    # reports 'CharField' or 'TextField' are validated by CleanTextMixin, so
+    # only those get a pattern hint.
     #
-    # URLField is deliberately NOT excluded here: models.URLField doesn't override
-    # get_internal_type() (it inherits CharField's "CharField"), so
-    # _classify_fields() DOES treat URLField-backed columns as free text and runs
-    # validate_free_text() on them server-side -- the pattern hint is accurate.
-    if isinstance(field, (serializers.SlugField, serializers.IPAddressField)):
+    # Subclasses like SlugField and GenericIPAddressField override
+    # get_internal_type() to return their own name, so they are naturally
+    # excluded. URLField inherits CharField's 'CharField', so it IS included.
+    model = getattr(getattr(serializer, 'Meta', None), 'model', None)
+    if model is None:
         return field_info
 
-    if not isinstance(field, serializers.CharField):
+    try:
+        source = field.source or field.field_name
+        model_field = model._meta.get_field(source)
+    except Exception:
+        # Computed / method fields have no backing model column -- skip them.
+        return field_info
+
+    if not hasattr(model_field, 'get_internal_type'):
+        return field_info
+
+    if model_field.get_internal_type() not in ('CharField', 'TextField'):
         return field_info
 
     if field.field_name in getattr(serializer, 'excluded_fields', frozenset()):
@@ -125,8 +137,6 @@ def inject_clean_text_patterns(field, field_info):
 
 def validation_enabled():
     """Check if enhanced input validation is enabled."""
-    from ansible_base.lib.utils.settings import get_setting
-
     return get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False)
 
 

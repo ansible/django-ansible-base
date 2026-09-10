@@ -23,6 +23,7 @@ from ansible_base.lib.metadata import (
 )
 from ansible_base.lib.serializers.mixins import CleanTextMixin
 from ansible_base.lib.utils.validation import _HANDLER_URI_RE, _INJECTION_RE, CONTROL_CHARS
+from test_app.models import MetadataTestModel
 
 
 @pytest.fixture(autouse=True)
@@ -103,23 +104,35 @@ def test_tier2_pattern_compiles():
 # ---------------------------------------------------------------------------
 
 
-def _make_field(field_name='description', is_charfield=True, serializer_cls=CleanTextMixin, field_cls=None):
+def _make_field(field_name='description', is_charfield=True, serializer_cls=CleanTextMixin, field_cls=None, model_internal_type='CharField'):
     from rest_framework import serializers as drf_serializers
 
     if field_cls is None:
         field_cls = drf_serializers.CharField if is_charfield else drf_serializers.IntegerField
     field = Mock(spec=field_cls)
     field.field_name = field_name
+    field.source = field_name
 
     serializer = Mock(spec=serializer_cls)
     serializer.name_fields = frozenset({'name', 'username', 'hostname'})
     serializer.excluded_fields = frozenset()
+
+    # Mock the model field lookup that inject_clean_text_patterns now uses
+    model_field = Mock()
+    model_field.get_internal_type.return_value = model_internal_type
+    meta = Mock()
+    meta.get_field.return_value = model_field
+    model = Mock()
+    model._meta = meta
+    serializer.Meta = Mock()
+    serializer.Meta.model = model
+
     field.parent = serializer
 
     return field
 
 
-@patch('ansible_base.lib.utils.settings.get_setting', return_value=False)
+@patch('ansible_base.lib.metadata.get_setting', return_value=False)
 def test_inject_returns_unmodified_when_feature_disabled(mock_setting):
     field = _make_field()
     field_info = {'type': 'string'}
@@ -127,66 +140,88 @@ def test_inject_returns_unmodified_when_feature_disabled(mock_setting):
     assert 'pattern' not in result
 
 
-@patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
+@patch('ansible_base.lib.metadata.get_setting', return_value=True)
 def test_inject_returns_unmodified_for_non_cleantext_serializer(mock_setting):
     from rest_framework import serializers as drf_serializers
 
     field = Mock(spec=drf_serializers.CharField)
     field.field_name = 'description'
+    field.source = 'description'
     field.parent = Mock(spec=drf_serializers.Serializer)
     field_info = {'type': 'string'}
     result = inject_clean_text_patterns(field, field_info)
     assert 'pattern' not in result
 
 
-@patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
+@patch('ansible_base.lib.metadata.get_setting', return_value=True)
 def test_inject_returns_unmodified_for_non_charfield(mock_setting):
-    field = _make_field(is_charfield=False)
+    field = _make_field(is_charfield=False, model_internal_type='IntegerField')
     field_info = {'type': 'integer'}
     result = inject_clean_text_patterns(field, field_info)
     assert 'pattern' not in result
 
 
-@patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
+@patch('ansible_base.lib.metadata.get_setting', return_value=True)
 def test_inject_returns_unmodified_for_slugfield(mock_setting):
-    # SlugField subclasses CharField in DRF, but its model column is excluded from
-    # Tier1/Tier2 backend validation (see CleanTextMixin._classify_fields), so no
-    # client-side pattern should be advertised for it either.
-    field = _make_field(field_name='name', field_cls=serializers.SlugField)
+    # SlugField's model column overrides get_internal_type() to return 'SlugField',
+    # so _classify_fields() excludes it from backend validation. The metadata layer
+    # mirrors this via the same get_internal_type() check.
+    field = _make_field(field_name='slug', field_cls=serializers.SlugField, model_internal_type='SlugField')
     field_info = {'type': 'string'}
     result = inject_clean_text_patterns(field, field_info)
     assert 'pattern' not in result
 
 
-@patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
+@patch('ansible_base.lib.metadata.get_setting', return_value=True)
 def test_inject_applies_pattern_for_urlfield(mock_setting):
-    # Unlike SlugField, models.URLField does NOT override get_internal_type() -- it
-    # inherits CharField's "CharField" -- so CleanTextMixin._classify_fields() DOES
-    # run validate_free_text() on URLField-backed columns server-side. A URLField
-    # should get the same tier 2 pattern hint as any other free-text field.
-    field = _make_field(field_name='description', field_cls=serializers.URLField)
+    # models.URLField does NOT override get_internal_type() -- it inherits
+    # CharField's "CharField" -- so _classify_fields() treats it as free text
+    # and validates it server-side. The metadata layer mirrors this.
+    field = _make_field(field_name='homepage', field_cls=serializers.URLField, model_internal_type='CharField')
     field_info = {'type': 'string'}
     result = inject_clean_text_patterns(field, field_info)
     assert 'pattern' in result
 
 
-@patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
+@patch('ansible_base.lib.metadata.get_setting', return_value=True)
 def test_inject_returns_unmodified_for_ipaddressfield(mock_setting):
-    # IPAddressField subclasses CharField in DRF, but its model column
-    # (models.GenericIPAddressField) overrides get_internal_type(), so it's
-    # excluded from Tier1/Tier2 backend validation (see
-    # CleanTextMixin._classify_fields), so no client-side pattern should be
-    # advertised for it either.
-    field = _make_field(field_name='name', field_cls=serializers.IPAddressField)
+    # GenericIPAddressField overrides get_internal_type() to return its own name,
+    # so _classify_fields() excludes it from backend validation. The metadata
+    # layer mirrors this via the same get_internal_type() check.
+    field = _make_field(field_name='ip_address', field_cls=serializers.IPAddressField, model_internal_type='GenericIPAddressField')
     field_info = {'type': 'string'}
     result = inject_clean_text_patterns(field, field_info)
     assert 'pattern' not in result
 
 
-@patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
+@patch('ansible_base.lib.metadata.get_setting', return_value=True)
 def test_inject_returns_unmodified_for_excluded_field(mock_setting):
     field = _make_field(field_name='template')
     field.parent.excluded_fields = frozenset({'template'})
+    field_info = {'type': 'string'}
+    result = inject_clean_text_patterns(field, field_info)
+    assert 'pattern' not in result
+
+
+@patch('ansible_base.lib.metadata.get_setting', return_value=True)
+def test_inject_returns_unmodified_when_no_meta_model(mock_setting):
+    """Serializers without Meta.model (e.g. plain Serializer subclasses) should
+    silently skip pattern injection rather than raising an error."""
+    field = _make_field(field_name='description')
+    # Remove Meta.model so inject_clean_text_patterns takes the early-return path
+    field.parent.Meta.model = None
+    field_info = {'type': 'string'}
+    result = inject_clean_text_patterns(field, field_info)
+    assert 'pattern' not in result
+
+
+@patch('ansible_base.lib.metadata.get_setting', return_value=True)
+def test_inject_returns_unmodified_when_field_not_on_model(mock_setting):
+    """Computed / method fields with no backing model column should be skipped."""
+    from django.core.exceptions import FieldDoesNotExist
+
+    field = _make_field(field_name='computed')
+    field.parent.Meta.model._meta.get_field.side_effect = FieldDoesNotExist
     field_info = {'type': 'string'}
     result = inject_clean_text_patterns(field, field_info)
     assert 'pattern' not in result
@@ -197,7 +232,7 @@ def test_inject_returns_unmodified_for_excluded_field(mock_setting):
 # ---------------------------------------------------------------------------
 
 
-@patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
+@patch('ansible_base.lib.metadata.get_setting', return_value=True)
 def test_inject_tier1_keys(mock_setting):
     field = _make_field(field_name='name')
     field_info = {'type': 'string'}
@@ -209,7 +244,7 @@ def test_inject_tier1_keys(mock_setting):
     assert result['normalize'] == 'NFC'
 
 
-@patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
+@patch('ansible_base.lib.metadata.get_setting', return_value=True)
 def test_inject_tier1_no_blocked_pattern_keys(mock_setting):
     field = _make_field(field_name='name')
     field_info = {'type': 'string'}
@@ -218,7 +253,7 @@ def test_inject_tier1_no_blocked_pattern_keys(mock_setting):
     assert blocked_keys == []
 
 
-@patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
+@patch('ansible_base.lib.metadata.get_setting', return_value=True)
 def test_inject_tier1_uses_camelcase(mock_setting):
     field = _make_field(field_name='name')
     field_info = {'type': 'string'}
@@ -232,7 +267,7 @@ def test_inject_tier1_uses_camelcase(mock_setting):
 # ---------------------------------------------------------------------------
 
 
-@patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
+@patch('ansible_base.lib.metadata.get_setting', return_value=True)
 def test_inject_tier2_keys(mock_setting):
     field = _make_field(field_name='description')
     field_info = {'type': 'string'}
@@ -243,7 +278,7 @@ def test_inject_tier2_keys(mock_setting):
     assert result['flags'] == 'i'
 
 
-@patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
+@patch('ansible_base.lib.metadata.get_setting', return_value=True)
 def test_inject_tier2_no_normalize(mock_setting):
     field = _make_field(field_name='description')
     field_info = {'type': 'string'}
@@ -251,7 +286,7 @@ def test_inject_tier2_no_normalize(mock_setting):
     assert 'normalize' not in result
 
 
-@patch('ansible_base.lib.utils.settings.get_setting', return_value=True)
+@patch('ansible_base.lib.metadata.get_setting', return_value=True)
 def test_inject_tier2_no_blocked_pattern_keys(mock_setting):
     field = _make_field(field_name='description')
     field_info = {'type': 'string'}
@@ -380,16 +415,16 @@ def test_tier2_pattern_does_not_catch_html_entity_encoded_payload():
 # ---------------------------------------------------------------------------
 
 
-class _CleanNameDescSlugSerializer(CleanTextMixin, serializers.Serializer):
-    """Plain (non-ModelSerializer) serializer used only to exercise the
-    metadata/OPTIONS code path end-to-end. SimpleMetadata.get_field_info() never
-    calls CleanTextMixin.validate() or touches Meta.model, so a bare Serializer is
-    sufficient here -- this deliberately avoids adding CleanTextMixin to any shared
-    test_app model/serializer/viewset (no migration, no risk to unrelated tests)."""
+class _CleanNameDescSlugSerializer(CleanTextMixin, serializers.ModelSerializer):
+    """ModelSerializer exercising the metadata/OPTIONS code path end-to-end.
+    Backed by MetadataTestModel (CharField ``name``, TextField ``description``,
+    SlugField ``slug``) so inject_clean_text_patterns can look up model fields
+    via get_internal_type() -- the same mechanism CleanTextMixin._classify_fields
+    uses server-side."""
 
-    name = serializers.CharField()
-    description = serializers.CharField()
-    slug = serializers.SlugField()
+    class Meta:
+        model = MetadataTestModel
+        fields = ['name', 'description', 'slug']
 
 
 class _CleanTextMetadataView(generics.GenericAPIView):
