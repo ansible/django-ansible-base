@@ -10,7 +10,6 @@ from ansible_base.lib.utils.response import get_relative_url
     'flags_list',
     [
         [
-            {'name': 'FEATURE_INDIRECT_NODE_COUNTING_ENABLED', 'value': True},
             {'name': 'FEATURE_EDA_ANALYTICS_ENABLED', 'value': True},
         ],
         [
