@@ -11,6 +11,7 @@ from rest_framework.serializers import ValidationError
 
 from ansible_base.lib.abstract_models.common import get_url_for_object
 from ansible_base.lib.serializers.common import CommonModelSerializer, ImmutableCommonModelSerializer
+from ansible_base.lib.serializers.mixins import CleanTextMixin
 from ansible_base.lib.utils.auth import get_team_model
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.models import RoleDefinition, RoleTeamAssignment, RoleUserAssignment
@@ -26,7 +27,7 @@ from .queries import assignment_qs_user_to_obj, assignment_qs_user_to_obj_perm
 logger = logging.getLogger(__name__)
 
 
-class RoleDefinitionSerializer(CommonModelSerializer):
+class RoleDefinitionSerializer(CleanTextMixin, CommonModelSerializer):
     permissions = serializers.SlugRelatedField(
         slug_field='api_slug',
         queryset=DABPermission.objects.all(),

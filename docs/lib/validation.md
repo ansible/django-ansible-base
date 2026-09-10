@@ -305,6 +305,109 @@ This nested format is compatible with DRF's standard error handling and allows
 frontend form frameworks (e.g., react-hook-form) to map errors to the correct
 input fields.
 
+### Authenticator configuration exclusions
+
+`AuthenticatorSerializer` sets `excluded_json_keys` on the `configuration`
+JSONField to skip encrypted sub-keys and structured pass-through data:
+
+```python
+excluded_json_keys = MappingProxyType({
+    'configuration': frozenset({
+        'SECRET',
+        'BIND_PASSWORD',
+        'SP_PRIVATE_KEY',
+        'ADDITIONAL_UNVERIFIED_ARGS',
+    }),
+})
+```
+
+**Encrypted fields** — These sub-keys appear in each plugin's
+`configuration_encrypted_fields`. Their cleartext values (passwords, private
+keys) may legitimately contain patterns matching the Tier 2 blocklist (e.g.,
+an LDAP bind password containing `${LDAP_PASS}`). On update, the serializer's
+`to_internal_value()` replaces the `ENCRYPTED_STRING` sentinel with the stored
+value, so unchanged secrets would be grandfathered. The exclusion is needed
+for create, where cleartext values are submitted.
+
+| Key | Plugins | Content |
+|-----|---------|---------|
+| `SECRET` | GitHub (all variants), Google OAuth2, OIDC, Keycloak, AzureAD, TACACS, Radius | OAuth2 client secret or shared secret |
+| `BIND_PASSWORD` | LDAP | LDAP bind password |
+| `SP_PRIVATE_KEY` | SAML | PEM-encoded service provider private key |
+
+**Structured data (out of scope)** — `ADDITIONAL_UNVERIFIED_ARGS` is a
+JSONField on every plugin (inherited from `BaseAuthenticatorConfiguration`)
+that accepts arbitrary JSON passed directly to the authenticator without
+validation. Per the input validation scope, validation of structured data
+content (YAML/JSON) is excluded.
+
+**Keys that do NOT need exclusion:**
+
+Other structured sub-keys (`ORG_INFO`, `TECHNICAL_CONTACT`, `SUPPORT_CONTACT`,
+`SP_EXTRA`, `SECURITY_CONFIG`, `EXTRA_DATA`, `GROUP_TYPE_PARAMS`,
+`CONNECTION_OPTIONS`, `GROUP_SEARCH`, `USER_SEARCH`, `USER_ATTR_MAP`,
+`JWT_ALGORITHMS`, `JWT_DECODE_OPTIONS`, `SCOPE`) store dicts or lists, not
+top-level strings. The mixin's `_validate_json_dict()` recurses into dict and
+list values and validates any string leaf values it finds (e.g.
+`TECHNICAL_CONTACT.emailAddress`) with the same Tier 2 blocklist as top-level
+fields, so no explicit exclusion is required — legitimate values (names,
+emails, LDAP attribute names) are expected to pass Tier 2 validation without
+triggering false positives.
+
+Certificate fields (`SP_PUBLIC_CERT`, `IDP_X509_CERT`, `PUBLIC_KEY`) are
+strings but contain PEM-encoded data (base64 + headers) that does not match
+any pattern in `DANGEROUS_PATTERNS`. No exclusion needed.
+
+All remaining string sub-keys (`NAME`, `KEY`, `HOST`, `SERVER`, SAML attribute
+names, OIDC claim names, etc.) are validated by the mixin as defense-in-depth.
+Most are format-constrained by their identity provider, but they accept
+user-provided input and should be scanned for injection patterns.
+
+When adding a new authenticator plugin with new
+`configuration_encrypted_fields` entries, add the field names to
+`excluded_json_keys` on `AuthenticatorSerializer`.
+
+### AuthenticatorMap field exclusions
+
+`AuthenticatorMapSerializer` overrides `_run_text_validator()` to
+conditionally skip Tier 1/Tier 2 validation on three CharField fields —
+`organization`, `role`, and `team` — but only for values that actually use
+template expansion syntax:
+
+```python
+def _run_text_validator(self, field_name, value, errors):
+    if field_name in _EXPANSION_FIELDS and has_expansion(value):
+        return
+    super()._run_text_validator(field_name, value, errors)
+```
+
+These fields support template expansion syntax for dynamic mapping rules.
+Values like `{% for_attr_value(user_orgs) %}` and
+`Organization {% for_attr_value(member_of) %}` are valid inputs that allow
+authenticator maps to dynamically resolve organization, team, and role names
+from user attributes at authentication time. The `{% %}` pattern matches the
+Tier 2 dangerous-pattern blocklist's template injection category, so these
+values would otherwise be rejected as false positives.
+
+The gated field names match `_EXPANSION_FIELDS` defined in
+`ansible_base.authentication.utils.authenticator_map`:
+
+```python
+_EXPANSION_FIELDS = ['organization', 'role', 'team']
+```
+
+The serializer's own `validate()` method separately validates the expansion
+*syntax* of these fields via `check_expansion_syntax()` — this catches
+**malformed** expansion attempts (a value containing `{%` and `%}` that
+doesn't match the `for_attr_value(...)` shape). `_run_text_validator()`'s
+`has_expansion()` check skips CleanTextMixin validation for any value that
+contains `{% %}` syntax — including mixed values where literal content appears
+alongside expansion syntax (per the SDP scope exclusion for Jinja2 template
+fields). Purely literal (non-templated) values in these fields run through
+the normal Tier 2 free-text check like any other field. The `name`
+field on `AuthenticatorMap` is not gated at all and always receives Tier 1
+validation.
+
 ## Error reporting
 
 When multiple fields fail validation, all errors are collected and returned in a

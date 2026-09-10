@@ -187,6 +187,39 @@ def _is_rbac_installed():
     return 'ansible_base.rbac' in settings.INSTALLED_APPS
 
 
+def _global_role_scope_errors(org: Optional[str], team: Optional[str]) -> dict[str, TranslatedString]:
+    errors: dict[str, TranslatedString] = {}
+    scoped_error = _("Role type 'global' cannot be scoped to an organization or team.")
+    if not is_empty(org):
+        errors['organization'] = scoped_error
+    if not is_empty(team):
+        errors['team'] = scoped_error
+    return errors
+
+
+def _role_map_type_errors(
+    map_type: Optional[str],
+    is_org_role: bool,
+    is_team_role: bool,
+    org: Optional[str],
+    team: Optional[str],
+) -> dict[str, TranslatedString]:
+    errors: dict[str, TranslatedString] = {}
+    if map_type == 'organization' and not is_org_role:
+        errors['role'] = _("For an organization map type you must specify an organization based role")
+
+    if map_type == 'team' and not is_team_role:
+        errors['role'] = _("For a team map type you must specify a team based role")
+
+    if (is_org_role or is_team_role) and is_empty(org):
+        errors["organization"] = _("You must specify an organization with the selected role")
+
+    if is_team_role and is_empty(team):
+        errors["team"] = _("You must specify a team with the selected role")
+
+    return errors
+
+
 def check_role_type(map_type: Optional[str], role: Optional[str], org: Optional[str], team: Optional[str]) -> dict[str, TranslatedString]:
     errors = {}
 
@@ -200,9 +233,8 @@ def check_role_type(map_type: Optional[str], role: Optional[str], org: Optional[
         rbac_role = RoleDefinition.objects.get(name=role)
         is_system_role = rbac_role.content_type is None
 
-        # system role is allowed for map type == role without further conditions
         if is_system_role and map_type == 'role':
-            return errors  # type: ignore[return-value]
+            return _global_role_scope_errors(org, team)
 
         is_org_role, is_team_role = False, False
         if not is_system_role:
@@ -210,20 +242,7 @@ def check_role_type(map_type: Optional[str], role: Optional[str], org: Optional[
             is_org_role = issubclass(model_class, get_organization_model())
             is_team_role = issubclass(model_class, get_team_model())
 
-        # role type and map type must correspond
-        if map_type == 'organization' and not is_org_role:
-            errors['role'] = _("For an organization map type you must specify an organization based role")
-
-        if map_type == 'team' and not is_team_role:
-            errors['role'] = _("For a team map type you must specify a team based role")
-
-        # org/team role needs organization field
-        if (is_org_role or is_team_role) and is_empty(org):
-            errors["organization"] = _("You must specify an organization with the selected role")
-
-        # team role needs team field
-        if is_team_role and is_empty(team):
-            errors["team"] = _("You must specify a team with the selected role")
+        errors.update(_role_map_type_errors(map_type, is_org_role, is_team_role, org, team))
 
     except ObjectDoesNotExist:
         errors['role'] = _("RoleDefinition {role} doesn't exist").format(role=role)
