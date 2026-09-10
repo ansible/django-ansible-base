@@ -1,10 +1,24 @@
+import base64
+import json
+from datetime import datetime, timezone
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 from django.conf import settings
+from django.contrib.auth.models import AnonymousUser
 from django.test import override_settings
+from django.utils.http import urlencode
+from oauthlib.common import generate_token
+from rest_framework.test import APIClient
 
 from ansible_base.lib.utils.response import get_relative_url
+from ansible_base.oauth2_provider.models import (
+    OAuth2AccessToken,
+    OAuth2Application,
+    OAuth2IDToken,
+    OAuth2RefreshToken,
+)
+from ansible_base.oauth2_provider.views.oidc import RPInitiatedLogoutView
 
 
 @pytest.fixture
@@ -13,6 +27,7 @@ def oidc_enabled_settings():
     return {
         **settings.OAUTH2_PROVIDER,
         'OIDC_ENABLED': True,
+        'SCOPES': {'read': 'Read', 'write': 'Write', 'openid': 'OpenID', 'roles': 'Roles'},
         'OIDC_RP_INITIATED_LOGOUT_ENABLED': True,
         'OIDC_RP_INITIATED_LOGOUT_DELETE_TOKENS': True,
         'OIDC_RP_INITIATED_LOGOUT_STRICT_REDIRECT_URIS': True,
@@ -281,6 +296,254 @@ def test_logout_without_parameters(client, oidc_enabled_settings):
         response = client.post(url)
 
         assert response.status_code == 400
+
+
+@pytest.fixture
+def oidc_app_factory(randname):
+    """Factory for apps that issue HS256 ID tokens (key derived from client_secret, no RSA setup)."""
+
+    def _factory(name_prefix="OIDC App"):
+        app = OAuth2Application(
+            name=randname(name_prefix),
+            redirect_uris="https://example.com/callback",
+            post_logout_redirect_uris="https://example.com/callback",
+            authorization_grant_type="authorization-code",
+            client_type="confidential",
+            algorithm=OAuth2Application.HS256_ALGORITHM,
+            pkce_required=False,
+        )
+        secret = app.client_secret  # capture plaintext before it's hashed on save
+        app.save()
+        return app, secret
+
+    return _factory
+
+
+def _jwt_claims(jwt_str):
+    """Decode (unverified) a JWT payload -- used only to find the IDToken row by jti."""
+    payload_b64 = jwt_str.split(".")[1]
+    payload_b64 += "=" * (-len(payload_b64) % 4)  # restore base64 padding
+    return json.loads(base64.urlsafe_b64decode(payload_b64.encode()))
+
+
+def _mint_session(api_client, app, secret):
+    """Run the real authorize -> token flow; return (id_token_jwt, id_token, access_token, refresh_token).
+
+    Using the real endpoints guarantees the minted AccessToken carries the `openid` scope
+    (requested below), which is what deletion is keyed on.
+    """
+    authorize_url = get_relative_url("oauth2_provider:authorize")
+    response = api_client.post(
+        authorize_url,
+        data={
+            "client_id": app.client_id,
+            "response_type": "code",
+            "scope": "openid read",
+            "redirect_uri": app.redirect_uris,
+            "allow": "Authorize",
+        },
+    )
+    assert response.status_code == 302, response.status_code
+    code = parse_qs(urlparse(response.url).query)["code"][0]
+
+    token_url = get_relative_url("oauth2_provider:token")
+    token_response = api_client.post(
+        token_url,
+        data=urlencode(
+            {
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": app.redirect_uris,
+                "client_id": app.client_id,
+                "client_secret": secret,
+            }
+        ),
+        content_type="application/x-www-form-urlencoded",
+    )
+    # DAB's TokenView returns 201 on token creation (DOT's default is 200); accept either.
+    assert token_response.status_code in (200, 201), token_response.status_code
+    id_token_jwt = token_response.json()["id_token"]
+
+    id_token_row = OAuth2IDToken.objects.get(jti=_jwt_claims(id_token_jwt)["jti"])
+    access_token_row = id_token_row.access_token
+    refresh_token_row = OAuth2RefreshToken.objects.get(access_token=access_token_row)
+    return id_token_jwt, id_token_row, access_token_row, refresh_token_row
+
+
+def _assert_session_alive(id_token_row, access_token_row, refresh_token_row):
+    assert OAuth2IDToken.objects.filter(pk=id_token_row.pk).exists()
+    assert OAuth2AccessToken.objects.filter(pk=access_token_row.pk).exists()
+    refresh_token_row.refresh_from_db()
+    assert refresh_token_row.revoked is None
+
+
+def _assert_session_revoked(id_token_row, access_token_row, refresh_token_row):
+    # id_token/access_token rows are deleted; refresh_token is marked revoked (access_token nulled).
+    assert not OAuth2IDToken.objects.filter(pk=id_token_row.pk).exists()
+    assert not OAuth2AccessToken.objects.filter(pk=access_token_row.pk).exists()
+    refresh_token_row.refresh_from_db()
+    assert refresh_token_row.revoked is not None
+    assert refresh_token_row.access_token_id is None
+
+
+@pytest.mark.django_db
+def test_logout_deletes_openid_sessions_for_the_requesting_application(user_api_client, user, random_user, oidc_app_factory, oidc_enabled_settings):
+    """Logout revokes the requesting user's openid-scoped sessions for the application
+    identified by the logout request (via id_token_hint / client_id resolution) -- other
+    applications' sessions for the same user, and other users' sessions, are untouched."""
+    app1, secret1 = oidc_app_factory("App One")
+    app2, secret2 = oidc_app_factory("App Two")
+
+    with override_settings(OAUTH2_PROVIDER=oidc_enabled_settings):
+        # user: sessions A + B on app1 (same app), session C on app2
+        a_jwt, a_id, a_at, a_rt = _mint_session(user_api_client, app1, secret1)
+        _b_jwt, b_id, b_at, b_rt = _mint_session(user_api_client, app1, secret1)
+        _c_jwt, c_id, c_at, c_rt = _mint_session(user_api_client, app2, secret2)
+
+        # second user: session D on app1
+        other_client = APIClient()
+        other_client.login(username=random_user.username, password="password")
+        _d_jwt, d_id, d_at, d_rt = _mint_session(other_client, app1, secret1)
+
+        # id_token_hint resolves the requesting application (app1) that deletion is narrowed to.
+        logout_url = get_relative_url("oauth2_provider:rp-initiated-logout")
+        response = user_api_client.get(logout_url + "?" + urlencode({"id_token_hint": a_jwt}))
+        assert response.status_code == 302, response.content
+
+    _assert_session_revoked(a_id, a_at, a_rt)
+    _assert_session_revoked(b_id, b_at, b_rt)  # same user, same app -> also revoked
+    _assert_session_alive(c_id, c_at, c_rt)  # same user, other app -> survives
+    _assert_session_alive(d_id, d_at, d_rt)  # other user -> survives
+
+
+@pytest.mark.django_db
+def test_logout_via_post_form_deletes_openid_sessions_for_the_requesting_application(user_api_client, user, oidc_app_factory, oidc_enabled_settings):
+    """Same app-scoped guarantee via the POST/form_valid() path (the second do_logout() call site)."""
+    app1, secret1 = oidc_app_factory("Form App One")
+
+    with override_settings(OAUTH2_PROVIDER=oidc_enabled_settings):
+        a_jwt, a_id, a_at, a_rt = _mint_session(user_api_client, app1, secret1)
+        _b_jwt, b_id, b_at, b_rt = _mint_session(user_api_client, app1, secret1)
+
+        logout_url = get_relative_url("oauth2_provider:rp-initiated-logout")
+        response = user_api_client.post(logout_url, {"id_token_hint": a_jwt, "allow": True})
+        assert response.status_code == 302, response.content
+
+    _assert_session_revoked(a_id, a_at, a_rt)
+    _assert_session_revoked(b_id, b_at, b_rt)
+
+
+@pytest.mark.django_db
+def test_logout_without_hint_deletes_openid_tokens_across_all_apps(user_api_client, user, oidc_app_factory, oidc_enabled_settings):
+    """Without id_token_hint or client_id, no application can be identified, so deletion
+    falls back to all of the user's openid sessions (across every application)."""
+    app1, secret1 = oidc_app_factory("No Hint App One")
+    app2, secret2 = oidc_app_factory("No Hint App Two")
+
+    with override_settings(OAUTH2_PROVIDER=oidc_enabled_settings):
+        _jwt1, id_row1, at_row1, rt_row1 = _mint_session(user_api_client, app1, secret1)
+        _jwt2, id_row2, at_row2, rt_row2 = _mint_session(user_api_client, app2, secret2)
+
+        logout_url = get_relative_url("oauth2_provider:rp-initiated-logout")
+        response = user_api_client.post(logout_url, {"allow": True})
+        assert response.status_code == 302, response.content
+
+    _assert_session_revoked(id_row1, at_row1, rt_row1)
+    _assert_session_revoked(id_row2, at_row2, rt_row2)
+
+
+@pytest.mark.django_db
+def test_logout_cross_user_hint_revokes_nothing(user_api_client, user, random_user, oidc_app_factory, oidc_enabled_settings):
+    """A user may only revoke their OWN openid sessions: submitting another user's hint does not
+    delete that user's tokens, since deletion is scoped to request.user, not to the hint's user."""
+    app1, secret1 = oidc_app_factory("Cross User App")
+
+    with override_settings(OAUTH2_PROVIDER=oidc_enabled_settings):
+        # user B mints a session; user A (user_api_client) then tries to log it out using B's hint.
+        other_client = APIClient()
+        other_client.login(username=random_user.username, password="password")
+        b_jwt, b_id, b_at, b_rt = _mint_session(other_client, app1, secret1)
+
+        logout_url = get_relative_url("oauth2_provider:rp-initiated-logout")
+        response = user_api_client.post(logout_url, {"id_token_hint": b_jwt, "allow": True})
+        assert response.status_code == 302, response.status_code
+
+    _assert_session_alive(b_id, b_at, b_rt)  # B's session untouched by A
+
+
+@pytest.mark.django_db
+def test_logout_preserves_non_oidc_tokens(user_api_client, user, oauth2_user_pat, oauth2_user_application_token, oidc_app_factory, oidc_enabled_settings):
+    """The scoped path must not touch unrelated non-OIDC tokens -- the core production incident.
+
+    Uses an application-scoped token (which stock DOT's delete-all WOULD wipe) plus a PAT.
+    """
+    app, secret = oidc_app_factory("Mixed Token App")
+
+    with override_settings(OAUTH2_PROVIDER=oidc_enabled_settings):
+        a_jwt, a_id, a_at, a_rt = _mint_session(user_api_client, app, secret)
+
+        logout_url = get_relative_url("oauth2_provider:rp-initiated-logout")
+        response = user_api_client.get(logout_url + "?" + urlencode({"id_token_hint": a_jwt}))
+        assert response.status_code == 302, response.status_code
+
+    _assert_session_revoked(a_id, a_at, a_rt)  # targeted OIDC session gone
+    assert OAuth2AccessToken.objects.filter(pk=oauth2_user_application_token.pk).exists()  # app token survives
+    assert OAuth2AccessToken.objects.filter(pk=oauth2_user_pat.pk).exists()  # PAT survives
+
+
+@pytest.mark.django_db
+def test_logout_skips_token_revocation_when_delete_tokens_disabled(user_api_client, oidc_app_factory, oidc_enabled_settings):
+    """When OIDC_RP_INITIATED_LOGOUT_DELETE_TOKENS is False, logout proceeds but openid tokens survive."""
+    app, secret = oidc_app_factory("No Delete App")
+    no_delete_settings = {
+        **oidc_enabled_settings,
+        'OIDC_RP_INITIATED_LOGOUT_DELETE_TOKENS': False,
+    }
+
+    with override_settings(OAUTH2_PROVIDER=no_delete_settings):
+        _jwt, id_row, at_row, rt_row = _mint_session(user_api_client, app, secret)
+
+        logout_url = get_relative_url("oauth2_provider:rp-initiated-logout")
+        response = user_api_client.post(logout_url, {"allow": True})
+        assert response.status_code == 302, response.content
+
+    _assert_session_alive(id_row, at_row, rt_row)
+
+
+@pytest.mark.django_db
+def test_logout_default_redirect_when_no_post_logout_redirect_uri(user_api_client, oidc_enabled_settings):
+    """Without post_logout_redirect_uri, logout redirects to the site root."""
+    with override_settings(OAUTH2_PROVIDER=oidc_enabled_settings):
+        logout_url = get_relative_url("oauth2_provider:rp-initiated-logout")
+        response = user_api_client.post(logout_url, {"allow": True})
+        assert response.status_code == 302, response.content
+        assert urlparse(response["Location"]).path == "/"
+
+
+@pytest.mark.django_db
+def test_revoke_openid_tokens_noop_for_unauthenticated_user():
+    """_revoke_openid_tokens returns immediately for None or anonymous users."""
+    view = RPInitiatedLogoutView()
+    view._revoke_openid_tokens(None)
+    view._revoke_openid_tokens(AnonymousUser())
+
+
+@pytest.mark.django_db
+def test_revoke_openid_tokens_handles_access_token_without_refresh_and_id_tokens(user, oidc_app_factory):
+    """Revocation succeeds when an openid access token has no linked id or refresh token."""
+    app, _secret = oidc_app_factory("Bare Access Token App")
+    access_token = OAuth2AccessToken.objects.create(
+        user=user,
+        application=app,
+        token=generate_token(),
+        scope="openid read",
+        expires=datetime(2088, 1, 1, tzinfo=timezone.utc),
+    )
+
+    view = RPInitiatedLogoutView()
+    view._revoke_openid_tokens(user, application=app)
+
+    assert not OAuth2AccessToken.objects.filter(pk=access_token.pk).exists()
 
 
 @pytest.mark.django_db
