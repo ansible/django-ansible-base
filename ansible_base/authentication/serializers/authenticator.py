@@ -1,4 +1,5 @@
 from collections import OrderedDict
+from types import MappingProxyType
 
 from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import ChoiceField, ValidationError
@@ -6,12 +7,30 @@ from rest_framework.serializers import ChoiceField, ValidationError
 from ansible_base.authentication.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_plugin, get_authenticator_plugins
 from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.serializers.common import NamedCommonModelSerializer
-from ansible_base.lib.serializers.mixins import ImmutableFieldsMixin
+from ansible_base.lib.serializers.mixins import CleanTextMixin, ImmutableFieldsMixin
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.lib.utils.response import get_relative_url
 
 
-class AuthenticatorSerializer(NamedCommonModelSerializer, ImmutableFieldsMixin):
+class AuthenticatorSerializer(CleanTextMixin, NamedCommonModelSerializer, ImmutableFieldsMixin):
+    # Exclude encrypted sub-keys and unvalidated pass-through args from CleanTextMixin's
+    # JSONField scan. Other structured sub-keys (dict/list-valued) are not skipped —
+    # CleanTextMixin recurses into them and validates their string leaves with Tier 2.
+    # Only bare top-level string values need an explicit excluded_json_keys entry.
+    # See docs/lib/validation.md "Authenticator configuration exclusions" for the full rationale.
+    excluded_json_keys = MappingProxyType(
+        {
+            'configuration': frozenset(
+                {
+                    'SECRET',
+                    'BIND_PASSWORD',
+                    'SP_PRIVATE_KEY',
+                    'ADDITIONAL_UNVERIFIED_ARGS',
+                }
+            ),
+        }
+    )
+
     type = ChoiceField(get_authenticator_plugins())
 
     def validate_type(self, value):
@@ -144,7 +163,7 @@ class AuthenticatorSerializer(NamedCommonModelSerializer, ImmutableFieldsMixin):
                 if invalid_encrypted_keys:
                     raise ValidationError(invalid_encrypted_keys)
                 data['configuration'] = authenticator.validate_configuration(configuration, self.instance)
-            return data
+            return super().validate(data)
         except ImportError as e:
             raise ValidationError({'type': _('Failed to import %(e)s') % {'e': e}})
 
