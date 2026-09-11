@@ -143,6 +143,9 @@ class TestAuthenticatorMapSerializerRole:
             serializer.validate(dict(name="authentication_map_2", map_type="role", role=OBJECT_SCOPED_ROLE_NAME, organization='test_org'))
         assert str(e.value) == object_scoped_error
 
+        # Cases 3-4: Verify existing _role_map_type_errors() still catches
+        # object-scoped roles with map_type='organization'/'team'
+        # (these fail before reaching _object_scoped_role_errors)
         with pytest.raises(ValidationError) as e:
             serializer.validate(dict(name="authentication_map_3", map_type="organization", role=OBJECT_SCOPED_ROLE_NAME, organization='test_org'))
         assert str(e.value) == ("{'role': ErrorDetail(string='For an organization map type you must specify an organization based role', code='invalid')}")
