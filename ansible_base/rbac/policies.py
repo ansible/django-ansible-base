@@ -16,6 +16,30 @@ from ansible_base.rbac.remote import RemoteObject
 from ansible_base.rbac.validators import permissions_allowed_for_role
 
 
+def visible_teams(request_user, queryset=None) -> QuerySet:
+    """Gives a queryset of teams that another user should be able to view.
+
+    Team visibility is governed by the same setting as user visibility
+    (ORG_ADMINS_CAN_SEE_ALL_USERS) because the UI exposes a single control
+    named "All Teams and Users Visible to Organization Admins".
+    """
+    team_cls = permission_registry.team_model
+
+    if not getattr(request_user, "is_authenticated", False):
+        return team_cls.objects.none()
+
+    if can_view_all_users(request_user):
+        if queryset is not None:
+            return queryset
+        else:
+            return team_cls.objects.all()
+
+    if queryset is None:
+        queryset = team_cls.objects.all()
+
+    return team_cls.access_qs(request_user, queryset=queryset)
+
+
 def visible_users(request_user, queryset=None, always_show_superusers=True, always_show_self=True) -> QuerySet:
     """Gives a queryset of users that another user should be able to view"""
     user_cls = permission_registry.user_model
