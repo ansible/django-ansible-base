@@ -13,6 +13,7 @@ credential type schemas, survey specifications, or plugin field metadata.
 
 from functools import lru_cache
 
+from django.core.exceptions import FieldDoesNotExist
 from rest_framework.metadata import SimpleMetadata
 
 from ansible_base.lib.serializers.mixins import CleanTextMixin
@@ -109,7 +110,7 @@ def inject_clean_text_patterns(field, field_info):
     try:
         source = field.source or field.field_name
         model_field = model._meta.get_field(source)
-    except Exception:
+    except FieldDoesNotExist:
         # Computed / method fields have no backing model column -- skip them.
         return field_info
 
