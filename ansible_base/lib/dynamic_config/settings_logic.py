@@ -257,6 +257,7 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         # Alternative to permission_registry.register
         'ANSIBLE_BASE_RBAC_MODEL_REGISTRY': {},
         'ORG_ADMINS_CAN_SEE_ALL_USERS': True,
+        'ORG_ADMINS_CAN_SEE_ALL_TEAMS': True,
         'ALLOW_USER_EMAIL_SELF_EDIT': False,
     }
     if DEFAULT_ANSIBLE_BASE_RBAC_APP_NAME in installed_apps:
