@@ -36,6 +36,7 @@ import pytest
 from django.conf import settings
 from rest_framework.test import APIClient
 
+from ansible_base.oauth2_provider.models import OAuth2Application
 from test_app.management.commands.create_demo_data import Command
 from test_app.models import Organization
 
@@ -111,6 +112,29 @@ def _seed_large_dataset(_unblocked_db):
     """
     if not Organization.objects.filter(name__startswith='large_').exists():
         Command().create_large(settings.DEMO_DATA_COUNTS)
+
+
+@pytest.fixture(scope='session')
+def _seed_oauth_applications(_seed_large_dataset):
+    """Seed a batch of OAuth2 applications once for the whole session (AAP-88874).
+
+    `create_large()` (used by `_seed_large_dataset`) doesn't create any OAuth2
+    applications, so endpoints that need some (e.g. `application-list`) must
+    seed their own via this fixture instead. Idempotent, same pattern as
+    `_seed_large_dataset`: no-ops if `large_app_`-prefixed applications already
+    exist.
+    """
+    if not OAuth2Application.objects.filter(name__startswith='large_app_').exists():
+        org = Organization.objects.filter(name__startswith='large_').first()
+        for i in range(30):
+            OAuth2Application.objects.create(
+                name=f'large_app_{i}',
+                description='Seeded for query-count-scale coverage (AAP-88874)',
+                redirect_uris='https://example.com/callback',
+                authorization_grant_type='authorization-code',
+                client_type='confidential',
+                organization=org,
+            )
 
 
 @pytest.fixture(scope='session')
