@@ -273,8 +273,71 @@ list in `settings.ANSIBLE_BASE_CREATOR_DEFAULTS`. Not all entries in this will a
 all models.
 
 ```
-ANSIBLE_BASE_CREATOR_DEFAULTS = ['change', 'execute', 'delete', 'view']
+ANSIBLE_BASE_CREATOR_DEFAULTS = ['add', 'change', 'delete', 'view']
 ```
+
+**Interaction with role assignment delegation:** These two settings together
+define what a creator can do with objects they create:
+
+- `ANSIBLE_BASE_CREATOR_DEFAULTS` determines which permissions the creator
+  automatically receives on the new object.
+- `ANSIBLE_BASE_MANAGE_PERMISSION_ACTION` (see below) determines the gate
+  permission for managing role assignments, and the escalation check ensures
+  users can only assign permissions they themselves hold.
+
+If a model has custom action permissions (like `execute` or `adhoc`) that are
+**not** in `ANSIBLE_BASE_CREATOR_DEFAULTS`, then the object creator will not
+receive those permissions, and therefore cannot delegate them to others. This
+is the intended design for separating "provisioner" users (who create and
+manage data) from "operator" users (who take actions on it). An administrator
+with the action permissions must explicitly grant them.
+
+### Managing Role Assignments
+
+When a user assigns a role to another user or team on an object, DAB RBAC
+enforces two checks to prevent privilege escalation:
+
+1. **Gate permission** — the user must have a specific permission on the object
+   that authorizes them to manage role assignments.
+2. **Escalation prevention** — the user must have every permission that the role
+   being assigned contains. This prevents a user from granting permissions they
+   do not themselves hold.
+
+The gate permission is controlled by `ANSIBLE_BASE_MANAGE_PERMISSION_ACTION`
+(default `'change'`).
+
+```
+ANSIBLE_BASE_MANAGE_PERMISSION_ACTION = 'change'   # default
+ANSIBLE_BASE_MANAGE_PERMISSION_ACTION = 'administrate'  # dedicated permission
+ANSIBLE_BASE_MANAGE_PERMISSION_ACTION = None  # require ALL permissions
+```
+
+- When set to an action name (like `'change'` or `'administrate'`), the user
+  needs that permission on the object **and** must have all permissions listed in
+  the role being assigned.
+- When set to `None` or `''`, the user must have **all** permissions known for
+  the object type (the escalation check is effectively redundant in this case).
+- If a model does not have the configured action permission, the system falls
+  back to requiring all permissions.
+
+**Example:** A user with `change_inventory` and `view_inventory` can assign a
+"viewer" role (containing only `view_inventory`) to another user. But they
+cannot assign a role containing `adhoc_inventory` because they don't have that
+permission themselves.
+
+Together with `ANSIBLE_BASE_CREATOR_DEFAULTS` (see above), these settings
+control the full delegation chain: the creator defaults define which permissions
+a creator starts with, and the manage permission action plus escalation check
+constrain which permissions they can delegate onward. To allow creators to
+delegate all permissions on their objects, ensure `ANSIBLE_BASE_CREATOR_DEFAULTS`
+includes every action the model supports. To restrict delegation of
+action-specific permissions like `execute` or `adhoc`, keep them out of the
+creator defaults — the creator will have CRUD access but cannot grant action
+permissions they were never given.
+
+**Removing assignments:** A user can remove a role assignment if they can manage
+the actor (user or team) receiving the role, OR if they have the gate permission
+on the content object. The escalation check does not apply to removal.
 
 ### Django Settings for Swappable Models
 

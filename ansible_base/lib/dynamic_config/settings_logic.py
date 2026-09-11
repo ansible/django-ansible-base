@@ -206,7 +206,7 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         # The settings-based specification of managed roles from DAB RBAC vendored ones
         'ANSIBLE_BASE_MANAGED_ROLE_REGISTRY': {},
         # Permissions a user will get when creating a new item
-        'ANSIBLE_BASE_CREATOR_DEFAULTS': ['add', 'change', 'delete', 'view'],
+        'ANSIBLE_BASE_CREATOR_DEFAULTS': ['add', 'change', 'delete', 'use', 'view'],
         # Permissions API will check for related items, think PATCH/PUT
         # This is a precedence order, so first action related model has will be used
         'ANSIBLE_BASE_CHECK_RELATED_PERMISSIONS': ['use', 'change', 'view'],
@@ -252,6 +252,11 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         # API clients can create custom roles that change shared resources
         'ALLOW_SHARED_RESOURCE_CUSTOM_ROLES': False,
         'MANAGE_ORGANIZATION_AUTH': True,
+        # Permission action that controls who can manage role assignments on objects
+        # 'change' means users need "change" permission to assign roles
+        # None means users must have ALL permissions to assign roles
+        # Can be set to any action name (e.g. 'administrate') for a dedicated delegation permission
+        'ANSIBLE_BASE_MANAGE_PERMISSION_ACTION': 'change',
         # Enforce local permission checks for RemoteObject role assignments
         'ANSIBLE_BASE_ENFORCE_REMOTE_OBJECT_PERMISSIONS': True,
         # Alternative to permission_registry.register
