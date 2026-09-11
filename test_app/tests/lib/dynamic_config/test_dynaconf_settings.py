@@ -77,6 +77,11 @@ def test_filtering():
     assert 'something' in settings['REST_FRAMEWORK']
 
 
+def test_default_metadata_class():
+    settings = factory("", "TEST", INSTALLED_APPS=[])
+    assert settings['REST_FRAMEWORK']['DEFAULT_METADATA_CLASS'] == 'ansible_base.lib.metadata.CleanTextMetadata'
+
+
 def test_rbac_required_settings():
     settings = factory("", "TEST", INSTALLED_APPS=['ansible_base.rbac'])
     rbac_expected_settings = [

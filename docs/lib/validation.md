@@ -60,9 +60,12 @@ in the method resolution order.
 The mixin inspects the model's `_meta.get_fields()` at validation time and
 selects fields whose `get_internal_type()` returns `"CharField"` or
 `"TextField"`. This deliberately excludes format-constrained subclasses like
-`SlugField` and `URLField` (which override `get_internal_type()` and have their
-own validators), while automatically catching custom free-text subclasses such
-as `EncryptedTextField` that inherit the base type.
+`SlugField` and `GenericIPAddressField` (which override `get_internal_type()`
+and have their own validators), while automatically catching custom free-text
+subclasses that inherit the base type. `URLField` does NOT override
+`get_internal_type()` (it inherits `"CharField"`), so URLField-backed columns
+ARE treated as free text and validated -- same as custom free-text subclasses
+such as `EncryptedTextField`.
 
 ## Tier 1 — name allowlist
 
@@ -428,8 +431,10 @@ single `ValidationError` keyed by field name:
   `Model.save()`, or raw SQL bypasses these checks entirely. The mixin is not a
   substitute for database-level constraints. For new models, prefer model-level
   validators (see below).
-- **SlugField / URLField excluded.** These format-constrained subclasses have
-  their own validators and are intentionally skipped.
+- **SlugField / GenericIPAddressField excluded.** These format-constrained
+  subclasses have their own validators and are intentionally skipped.
+  `URLField` is NOT excluded -- it's validated as free text (see "How field
+  discovery works" above).
 - **Defense in depth still required.** While Tier 2 uses nh3 (a real HTML
   parser) for tag detection and decoded-variant checks for bypass prevention,
   defense in depth (output encoding, CSP headers) is still necessary.
