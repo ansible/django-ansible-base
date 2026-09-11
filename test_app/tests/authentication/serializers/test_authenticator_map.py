@@ -4,7 +4,7 @@ import pytest
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.serializers.authenticator_map import AuthenticatorMapSerializer
-from test_app.tests.authentication.conftest import ORG_MEMBER_ROLE_NAME, SYSTEM_ROLE_NAME, TEAM_MEMBER_ROLE_NAME
+from test_app.tests.authentication.conftest import OBJECT_SCOPED_ROLE_NAME, ORG_MEMBER_ROLE_NAME, SYSTEM_ROLE_NAME, TEAM_MEMBER_ROLE_NAME
 
 
 @pytest.fixture
@@ -131,6 +131,36 @@ class TestAuthenticatorMapSerializerRole:
             )
         except ValidationError as e:
             pytest.fail(f"Validation should pass, but: {str(e)}")
+
+    def test_validate_role_object_scoped_role(self, serializer, object_scoped_role):
+        object_scoped_error = "{'role': ErrorDetail(string='Object-scoped roles cannot be assigned through an authenticator map.', code='invalid')}"
+
+        with pytest.raises(ValidationError) as e:
+            serializer.validate(dict(name="authentication_map_1", map_type="role", role=OBJECT_SCOPED_ROLE_NAME))
+        assert str(e.value) == object_scoped_error
+
+        with pytest.raises(ValidationError) as e:
+            serializer.validate(dict(name="authentication_map_2", map_type="role", role=OBJECT_SCOPED_ROLE_NAME, organization='test_org'))
+        assert str(e.value) == object_scoped_error
+
+        # Cases 3-4: Verify existing _role_map_type_errors() still catches
+        # object-scoped roles with map_type='organization'/'team'
+        # (these fail before reaching _object_scoped_role_errors)
+        with pytest.raises(ValidationError) as e:
+            serializer.validate(dict(name="authentication_map_3", map_type="organization", role=OBJECT_SCOPED_ROLE_NAME, organization='test_org'))
+        assert str(e.value) == ("{'role': ErrorDetail(string='For an organization map type you must specify an organization based role', code='invalid')}")
+
+        with pytest.raises(ValidationError) as e:
+            serializer.validate(
+                dict(
+                    name="authentication_map_4",
+                    map_type="team",
+                    role=OBJECT_SCOPED_ROLE_NAME,
+                    organization='test_org',
+                    team='test_team',
+                )
+            )
+        assert str(e.value) == "{'role': ErrorDetail(string='For a team map type you must specify a team based role', code='invalid')}"
 
 
 @pytest.mark.django_db
