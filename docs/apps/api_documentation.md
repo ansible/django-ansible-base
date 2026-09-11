@@ -54,6 +54,12 @@ see the instructions in the [x_ai_description_guide](./ai_documentation/x_ai_des
 
 This feature includes URLs which you will get if you are using [dynamic urls](../..//Installation.md)
 
+The following endpoints are provided:
+- `docs/` - Index page listing available documentation endpoints
+- `docs/swagger/` - Swagger UI
+- `docs/redoc/` - ReDoc UI
+- `docs/schema/` - OpenAPI schema export
+
 If you want to manually add the urls without dynamic urls add the following to your urls.py:
 ```
 from ansible_base.api_documentation import urls
