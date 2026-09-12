@@ -1,7 +1,6 @@
 import pytest
 from django import VERSION
 from django.contrib.contenttypes.models import ContentType
-from django.db.models import F
 
 from ansible_base.rbac.models import RoleDefinition, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry
@@ -195,87 +194,62 @@ def test_resource_field_prefetch_resource_type_from_organization(organization, o
 
 
 @pytest.mark.django_db
-def test_assignment_resource_field_f_annotation(admin_user, organization):
-    """Test that F('resource__ansible_id') produces a JOIN-based annotation on assignment models."""
+def test_assignment_object_ansible_id_populated(admin_user, organization):
+    """give_permission populates object_ansible_id from the Resource at write time."""
     org_ct = ContentType.objects.get_for_model(Organization)
     org_resource = Resource.objects.get(object_id=str(organization.pk), content_type=org_ct)
     rd = RoleDefinition.objects.create_from_permissions(
-        name='test-org-view',
+        name='test-obj-aid-populated',
         permissions=['view_organization'],
         content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
     )
     rd.give_permission(admin_user, organization)
 
-    qs = RoleUserAssignment.objects.filter(user=admin_user, role_definition=rd).annotate(_ansible_id=F('resource__ansible_id'))
-    assignment = qs.first()
-    assert assignment is not None
-    assert str(assignment._ansible_id) == str(org_resource.ansible_id)
+    assignment = RoleUserAssignment.objects.get(user=admin_user, role_definition=rd)
+    assert assignment.object_ansible_id is not None
+    assert str(assignment.object_ansible_id) == str(org_resource.ansible_id)
 
 
 @pytest.mark.django_db
-def test_assignment_resource_field_select_related(admin_user, organization):
-    """Test select_related('resource') on assignment models."""
-    org_ct = ContentType.objects.get_for_model(Organization)
-    org_resource = Resource.objects.get(object_id=str(organization.pk), content_type=org_ct)
+def test_assignment_object_ansible_id_global_is_null(admin_user):
+    """System-wide (global) assignments have no object — object_ansible_id is NULL."""
     rd = RoleDefinition.objects.create_from_permissions(
-        name='test-org-view-sr',
-        permissions=['view_organization'],
-        content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
-    )
-    rd.give_permission(admin_user, organization)
-
-    qs = RoleUserAssignment.objects.filter(user=admin_user, role_definition=rd).select_related('resource')
-    assignment = qs.first()
-    assert assignment is not None
-    assert assignment.resource is not None
-    assert assignment.resource.ansible_id == org_resource.ansible_id
-
-
-@pytest.mark.django_db
-def test_assignment_resource_field_lazy_access(admin_user, organization):
-    """Test lazy instance access on assignment.resource (exercises get_extra_descriptor_filter)."""
-    org_ct = ContentType.objects.get_for_model(Organization)
-    org_resource = Resource.objects.get(object_id=str(organization.pk), content_type=org_ct)
-    rd = RoleDefinition.objects.create_from_permissions(
-        name='test-org-view-lazy',
-        permissions=['view_organization'],
-        content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
-    )
-    rd.give_permission(admin_user, organization)
-
-    assignment = RoleUserAssignment.objects.filter(user=admin_user, role_definition=rd).first()
-    assert assignment.resource.ansible_id == org_resource.ansible_id
-
-
-@pytest.mark.django_db
-def test_assignment_resource_field_null_object(admin_user):
-    """Test that system-wide assignments (no content_type/object_id) return None for resource."""
-    rd = RoleDefinition.objects.create_from_permissions(
-        name='test-global-view',
+        name='test-global-aid-null',
         permissions=['view_organization'],
         content_type=None,
     )
     rd.give_global_permission(admin_user)
 
-    assignment = RoleUserAssignment.objects.filter(user=admin_user, role_definition=rd).select_related('resource').first()
-    assert assignment is not None
-    assert assignment.resource is None
+    assignment = RoleUserAssignment.objects.get(user=admin_user, role_definition=rd)
+    assert assignment.object_ansible_id is None
 
 
 @pytest.mark.django_db
-def test_assignment_resource_excluded_from_summary_fields(admin_user, organization):
-    """Test that resource is excluded from summary_fields via ignore_relations."""
+def test_assignment_object_ansible_id_updated_on_resource_merge(admin_user, organization):
+    """When a Resource's ansible_id is reassigned (gateway merge), cached object_ansible_id on
+    assignments must follow. Mirrors what migrate_service_data does via bulk_update new_ansible_id."""
+    import uuid
+
+    org_ct = ContentType.objects.get_for_model(Organization)
+    org_resource = Resource.objects.get(object_id=str(organization.pk), content_type=org_ct)
+    old_ansible_id = org_resource.ansible_id
+
     rd = RoleDefinition.objects.create_from_permissions(
-        name='test-org-view-sf',
+        name='test-obj-aid-merge',
         permissions=['view_organization'],
         content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
     )
     rd.give_permission(admin_user, organization)
 
-    assignment = RoleUserAssignment.objects.filter(user=admin_user, role_definition=rd).first()
-    assert 'resource' in type(assignment).ignore_relations
-    summary = assignment.get_summary_fields()
-    assert 'resource' not in summary
+    assignment = RoleUserAssignment.objects.get(user=admin_user, role_definition=rd)
+    assert str(assignment.object_ansible_id) == str(old_ansible_id)
+
+    # Simulate gateway merge: upstream resource gets a new ansible_id
+    new_ansible_id = uuid.uuid4()
+    org_resource.update_resource({}, ansible_id=new_ansible_id, partial=True)
+
+    assignment.refresh_from_db()
+    assert str(assignment.object_ansible_id) == str(new_ansible_id), "object_ansible_id on assignment should be updated when Resource.ansible_id changes"
 
 
 @pytest.mark.skipif(VERSION[0] < 5, reason='get_prefetch_querysets() is only valid for Django 5+')

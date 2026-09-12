@@ -191,6 +191,7 @@ class Resource(models.Model):
 
         changed_metadata = False
         with transaction.atomic():
+            old_ansible_id = self.ansible_id
             if ansible_id:
                 self.ansible_id = ansible_id
                 changed_metadata = True
@@ -201,6 +202,15 @@ class Resource(models.Model):
                 self.is_partially_migrated = is_partially_migrated
                 changed_metadata = True
             self.save()
+
+            if ansible_id and old_ansible_id != self.ansible_id:
+                try:
+                    from ansible_base.rbac.models import RoleTeamAssignment, RoleUserAssignment
+
+                    for AssignmentModel in (RoleUserAssignment, RoleTeamAssignment):
+                        AssignmentModel.objects.filter(object_ansible_id=old_ansible_id).update(object_ansible_id=self.ansible_id)
+                except ImportError:
+                    pass
 
             content_object: "ResourceTypeProcessor" = processor(self.content_object)
             with no_reverse_sync():
