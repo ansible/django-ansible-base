@@ -352,7 +352,7 @@ class ObjectRoleFields(models.Model):
         # NOTE: type casting is necessary in postgres but not sqlite3
         object_id_field = cls._meta.get_field('object_id')
         permission_qs = eval_cls.objects.filter(
-            **eval_cls._actor_role_filter(user),
+            role_id__in=eval_cls.actor_role_ids(user),
             content_type_id=models.OuterRef('content_type_id'),
         )
         # alias() keeps the Cast in WHERE only (not SELECT), enabling a semi-join point lookup
@@ -693,9 +693,10 @@ class ObjectRole(ObjectRoleFields):
         if object_pk is not None and object_ct_id is not None:
             # Look-ahead: query only the table matching the pk type, filtered
             # to the single target object.
-            partial_filter = {'object_id': object_pk, 'content_type_id': object_ct_id}
             source = self.permission_partials_uuid if isinstance(object_pk, UUID) else self.permission_partials
-            for eval_id, codename, content_type_id, object_id in source.filter(**partial_filter).values_list('id', 'codename', 'content_type_id', 'object_id'):
+            for eval_id, codename, content_type_id, object_id in source.filter(object_id=object_pk, content_type_id=object_ct_id).values_list(
+                'id', 'codename', 'content_type_id', 'object_id'
+            ):
                 existing_partials[(codename, content_type_id, object_id)] = eval_id
             self._log_partials_count(len(existing_partials), f'existing evaluation (object_pk={object_pk})', self.pk)
         elif evaluations_prefetch is not None:
@@ -810,17 +811,21 @@ class RoleEvaluationFields(models.Model):
     content_type_id = models.PositiveIntegerField(null=False, help_text=_("The related content type id."))
 
     @staticmethod
-    def _actor_role_filter(actor):
-        """Return filter kwargs that skip the objectrole table entirely.
+    def actor_role_ids(actor: models.Model) -> QuerySet:
+        """Return a queryset of ObjectRole PKs the actor is assigned to.
 
-        Uses ``role_id__in`` with a subquery on the assignment table, which
-        avoids JOINing through ``dab_rbac_objectrole``.  Both
-        ``roleevaluation.role_id`` and ``assignment.object_role_id`` reference
-        the same objectrole PK, so the intermediate table is unnecessary.
+        Queries assignment tables directly rather than going through the
+        ``has_roles`` M2M, which would add an unnecessary JOIN through
+        ``dab_rbac_objectrole``.
         """
         if actor._meta.model_name == permission_registry.user_model._meta.model_name:
-            return {'role_id__in': RoleUserAssignment.objects.filter(user_id=actor.id).values('object_role_id')}
-        return {'role_id__in': RoleTeamAssignment.objects.filter(team_id=actor.id).values('object_role_id')}
+            return RoleUserAssignment.objects.filter(user_id=actor.id).values('object_role_id')
+        return RoleTeamAssignment.objects.filter(team_id=actor.id).values('object_role_id')
+
+    @staticmethod
+    def _actor_role_filter(actor):
+        """Deprecated — use ``actor_role_ids`` instead."""
+        return {'role_id__in': RoleEvaluationFields.actor_role_ids(actor)}  # pragma: no cover
 
     @classmethod
     def accessible_ids(cls, model_cls, actor, codename: str, content_types: Optional[Iterable[int]] = None, cast_field=None) -> QuerySet:
@@ -835,12 +840,11 @@ class RoleEvaluationFields(models.Model):
         """
         # We only have a content_types exception for multiple content types for polymorphic models
         # for normal models you should not need it, but AWX unified_ models need it to get by
-        filter_kwargs = {**cls._actor_role_filter(actor), 'codename': codename}
+        qs = cls.objects.filter(role_id__in=cls.actor_role_ids(actor), codename=codename)
         if content_types:
-            filter_kwargs['content_type_id__in'] = content_types
+            qs = qs.filter(content_type_id__in=content_types)
         else:
-            filter_kwargs['content_type_id'] = DABContentType.objects.get_for_model(model_cls).id
-        qs = cls.objects.filter(**filter_kwargs)
+            qs = qs.filter(content_type_id=DABContentType.objects.get_for_model(model_cls).id)
         if cast_field is None:
             return qs.values_list('object_id').distinct()
         else:
@@ -858,9 +862,9 @@ class RoleEvaluationFields(models.Model):
         Returns permissions that a user has to obj from object-roles,
         does not consider permissions from user flags or system-wide roles
         """
-        return cls.objects.filter(**cls._actor_role_filter(user), content_type_id=DABContentType.objects.get_for_model(obj).id, object_id=obj.id).values_list(
-            'codename', flat=True
-        )
+        return cls.objects.filter(
+            role_id__in=cls.actor_role_ids(user), content_type_id=DABContentType.objects.get_for_model(obj).id, object_id=obj.id
+        ).values_list('codename', flat=True)
 
     @classmethod
     def has_obj_perm(cls, user, obj, codename) -> bool:
@@ -869,7 +873,7 @@ class RoleEvaluationFields(models.Model):
         method on permission classes, but it is named differently to avoid unintentionally conflicting
         """
         return cls.objects.filter(
-            **cls._actor_role_filter(user), content_type_id=DABContentType.objects.get_for_model(obj).id, object_id=obj.pk, codename=codename
+            role_id__in=cls.actor_role_ids(user), content_type_id=DABContentType.objects.get_for_model(obj).id, object_id=obj.pk, codename=codename
         ).exists()
 
 
