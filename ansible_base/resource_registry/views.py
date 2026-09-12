@@ -315,7 +315,7 @@ class ResourceTypeViewSet(
         else:
             service_filter = Q(service_id=service_id())
 
-        resources = Resource.objects.filter(content_type__resource_type=resource_type).filter(service_filter).prefetch_related("content_object")
+        resources = Resource.objects.filter(content_type__resource_type=resource_type).filter(service_filter).order_by('id').prefetch_related("content_object")
 
         if name == SHARED_USER_RESOURCE_TYPE and (system_user := getattr(settings, "SYSTEM_USERNAME", None)):
             resources = resources.exclude(name=system_user)
