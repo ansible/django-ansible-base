@@ -319,11 +319,15 @@ class ResourceTypeViewSet(
 
         if name == SHARED_USER_RESOURCE_TYPE and (system_user := getattr(settings, "SYSTEM_USERNAME", None)):
             resources = resources.exclude(name=system_user)
+        resources = list(resources)
+        count = len(resources)  # force evaluation to avoid lazy queryset issues in streaming response
 
         if not resources:
             return HttpResponseNotFound()
 
-        return CSVStreamResponse(self.serialize_resources_hashes(resources, resource_type.serializer_class)).stream()
+        resp = CSVStreamResponse(self.serialize_resources_hashes(resources, resource_type.serializer_class)).stream()
+        resp.headers["X-Resource-Count"] = str(count)
+        return resp
 
 
 class ServiceMetadataView(
