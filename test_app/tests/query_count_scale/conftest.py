@@ -94,8 +94,9 @@ def _seed_large_dataset(_unblocked_db):
     2,000 assignments, comfortably under CI's ~1 minute budget.
     """
     from django.contrib.auth import get_user_model
-    from test_app.models import Inventory, Team
+
     from ansible_base.rbac.models import RoleDefinition
+    from test_app.models import Inventory, Team
 
     # Check if seeding already completed successfully by validating all expected counts
     expected = settings.DEMO_DATA_COUNTS
@@ -103,18 +104,20 @@ def _seed_large_dataset(_unblocked_db):
     actual_users = get_user_model().objects.filter(username__startswith='large_user_').count()
     actual_teams = Team.objects.filter(name__startswith='large_team_').count()
     actual_rds = RoleDefinition.objects.filter(name__startswith='Large Role Definition').count()
-    
+
     # Also check inventory/credential if they're in DEMO_DATA_COUNTS
     actual_inventories = Inventory.objects.filter(name__startswith='large_inventory_').count() if 'inventory' in expected else 0
-    
+
     # Skip seeding if all expected counts match (complete dataset already exists)
-    if (actual_orgs == expected.get('organization', 0) and
-        actual_users == expected.get('user', 0) and
-        actual_teams == expected.get('team', 0) and
-        actual_rds == expected.get('roledefinition', 0) and
-        (actual_inventories == expected.get('inventory', 0) if 'inventory' in expected else True)):
+    if (
+        actual_orgs == expected.get('organization', 0)
+        and actual_users == expected.get('user', 0)
+        and actual_teams == expected.get('team', 0)
+        and actual_rds == expected.get('roledefinition', 0)
+        and (actual_inventories == expected.get('inventory', 0) if 'inventory' in expected else True)
+    ):
         return
-    
+
     # Seed atomically (all-or-nothing) so crashes leave no partial junk behind
     with transaction.atomic():
         Command().create_large(expected)
@@ -207,7 +210,7 @@ def admin_user(_unblocked_db):
     user_model = get_user_model()
     username_field = user_model.USERNAME_FIELD
     username = 'admin@example.com' if username_field == 'email' else 'admin'
-    
+
     try:
         user = user_model._default_manager.get_by_natural_key(username)
         # Normalize any stale user from --reuse-db: ensure active, superuser, correct password
@@ -220,7 +223,7 @@ def admin_user(_unblocked_db):
         if 'email' in user_model.REQUIRED_FIELDS:
             user_data['email'] = 'admin@example.com'
         user = user_model._default_manager.create_superuser(**user_data)
-    
+
     return user
 
 
@@ -238,9 +241,9 @@ def admin_api_client(_unblocked_db, admin_user, local_authenticator):
     admin_user.is_staff = False
     admin_user.save()
     client = APIClient()
-    
+
     # Verify login actually succeeded (admin_user fixture already normalized password)
     login_ok = client.login(username='admin', password='password')
     assert login_ok, "admin_api_client login failed — tests would run as anonymous user"
-    
+
     return client
