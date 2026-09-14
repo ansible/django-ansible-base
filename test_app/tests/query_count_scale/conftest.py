@@ -30,6 +30,7 @@ from datetime import datetime, timezone
 
 import pytest
 from django.conf import settings
+from django.db import transaction
 from oauthlib.common import generate_token
 from rest_framework.test import APIClient
 
@@ -87,12 +88,36 @@ def _seed_large_dataset(_unblocked_db):
     credentials/role-definitions with direct/org-level/team-mediated
     assignments.
 
-    Idempotent (no-ops if `large_`-prefixed orgs exist) -- safe to rerun with
-    `--reuse-db`. ~13s locally for ~150 orgs/380 users/2,000 assignments,
-    comfortably under CI's ~1 minute budget.
+    Idempotent (validates all expected counts match DEMO_DATA_COUNTS before
+    skipping) -- safe to rerun with `--reuse-db`. Wrapped in transaction.atomic()
+    so partial writes roll back on failure. ~13s locally for ~150 orgs/380 users/
+    2,000 assignments, comfortably under CI's ~1 minute budget.
     """
-    if not Organization.objects.filter(name__startswith='large_').exists():
-        Command().create_large(settings.DEMO_DATA_COUNTS)
+    from django.contrib.auth import get_user_model
+    from test_app.models import Inventory, Team
+    from ansible_base.rbac.models import RoleDefinition
+
+    # Check if seeding already completed successfully by validating all expected counts
+    expected = settings.DEMO_DATA_COUNTS
+    actual_orgs = Organization.objects.filter(name__startswith='large_').count()
+    actual_users = get_user_model().objects.filter(username__startswith='large_user_').count()
+    actual_teams = Team.objects.filter(name__startswith='large_team_').count()
+    actual_rds = RoleDefinition.objects.filter(name__startswith='Large Role Definition').count()
+    
+    # Also check inventory/credential if they're in DEMO_DATA_COUNTS
+    actual_inventories = Inventory.objects.filter(name__startswith='large_inventory_').count() if 'inventory' in expected else 0
+    
+    # Skip seeding if all expected counts match (complete dataset already exists)
+    if (actual_orgs == expected.get('organization', 0) and
+        actual_users == expected.get('user', 0) and
+        actual_teams == expected.get('team', 0) and
+        actual_rds == expected.get('roledefinition', 0) and
+        (actual_inventories == expected.get('inventory', 0) if 'inventory' in expected else True)):
+        return
+    
+    # Seed atomically (all-or-nothing) so crashes leave no partial junk behind
+    with transaction.atomic():
+        Command().create_large(expected)
 
 
 @pytest.fixture(scope='session')
@@ -174,20 +199,29 @@ def admin_user(_unblocked_db):
     """Session-scoped, idempotent counterpart to pytest-django's `admin_user`:
     same get-or-create-a-superuser-named-"admin" logic, but calls
     `get_user_model()` directly since `django_user_model` is function-scoped
-    (via `db`) and can't be used here.
+    (via `db`) and can't be used here. Normalizes any persisted user from
+    --reuse-db to ensure it's active + superuser with correct password.
     """
     from django.contrib.auth import get_user_model
 
     user_model = get_user_model()
     username_field = user_model.USERNAME_FIELD
     username = 'admin@example.com' if username_field == 'email' else 'admin'
+    
     try:
-        return user_model._default_manager.get_by_natural_key(username)
+        user = user_model._default_manager.get_by_natural_key(username)
+        # Normalize any stale user from --reuse-db: ensure active, superuser, correct password
+        user.is_active = True
+        user.is_superuser = True
+        user.set_password('password')
+        user.save()
     except user_model.DoesNotExist:
         user_data = {'password': 'password', username_field: username}
         if 'email' in user_model.REQUIRED_FIELDS:
             user_data['email'] = 'admin@example.com'
-        return user_model._default_manager.create_superuser(**user_data)
+        user = user_model._default_manager.create_superuser(**user_data)
+    
+    return user
 
 
 @pytest.fixture(scope='session')
@@ -195,6 +229,8 @@ def admin_api_client(_unblocked_db, admin_user, local_authenticator):
     """Session-scoped counterpart to
     `ansible_base.lib.testing.fixtures.admin_api_client`: logs in once and
     reuses the same client for every test, instead of per-test login/logout.
+    Asserts login succeeds (critical — tests would silently run as anonymous
+    user if login failed with stale --reuse-db data).
     """
     # We don't use the is_staff flag anywhere. Instead we use is_superuser. This can
     # cause some permission checks to unexpectedly break in production where this flag
@@ -202,5 +238,9 @@ def admin_api_client(_unblocked_db, admin_user, local_authenticator):
     admin_user.is_staff = False
     admin_user.save()
     client = APIClient()
-    client.login(username='admin', password='password')
+    
+    # Verify login actually succeeded (admin_user fixture already normalized password)
+    login_ok = client.login(username='admin', password='password')
+    assert login_ok, "admin_api_client login failed — tests would run as anonymous user"
+    
     return client
