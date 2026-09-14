@@ -276,8 +276,12 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         # Not consumed by DAB directly; read by downstream schedulers
         'RESOURCE_SYNC_INTERVAL_SECONDS': 900,
         # Page size for assignment pagination during resource sync (capped server-side by MAX_PAGE_SIZE).
-        # Defaults must match DEFAULT_SYNC_PAGE_SIZE / DEFAULT_SYNC_JWT_EXPIRATION in tasks/sync.py.
+        # Defaults must match DEFAULT_SYNC_PAGE_SIZE / DEFAULT_SYNC_JWT_EXPIRATION / DEFAULT_ORPHAN_MISS_THRESHOLD in tasks/sync.py.
         'RESOURCE_SYNC_PAGE_SIZE': 50,
+        # number of consecutive syncs where a resource is missing before deletion
+        'RESOURCE_SYNC_ORPHAN_MISS_THRESHOLD': 3,
+        # Cache to use for orphan miss tracking
+        'RESOURCE_SYNC_CACHE_NAME': "default",
         # JWT service token lifetime in seconds for resource sync API calls
         'RESOURCE_SYNC_JWT_EXPIRATION': 60,
     }

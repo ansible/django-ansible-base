@@ -70,12 +70,19 @@ class Command(BaseCommand):  # pragma: no cover
             help="Page size for pagination when fetching assignments (default: from settings, capped server-side by MAX_PAGE_SIZE)",
             required=False,
         )
+        parser.add_argument(
+            "--resource-sync-dry-run",
+            action="store_true",
+            default=False,
+            dest="dry_run",
+            help="Preview orphan deletions without actually deleting them; does not affect resource creation, updates, or assignment sync.",
+        )
 
     def handle(self, *args, **options):
         """Handle RESOURCE_PROVIDER sync"""
         if options.get("page_size") is not None and options["page_size"] < 1:
             raise CommandError("--page-size must be at least 1")
-        arguments = ["resource_type_names", "retries", "retrysleep", "asyncio", "page_size"]
+        arguments = ["resource_type_names", "retries", "retrysleep", "asyncio", "page_size", "dry_run"]
         options = {k: v for k, v in options.items() if k in arguments}
         try:
             executor = SyncExecutor(**options, stdout=self.stdout)
