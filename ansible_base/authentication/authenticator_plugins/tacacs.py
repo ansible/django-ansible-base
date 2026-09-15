@@ -78,13 +78,13 @@ class TacacsConfiguration(BaseAuthenticatorConfiguration):
 
 class AuthenticatorPlugin(SocialAuthMixin, AbstractAuthenticatorPlugin, ModelBackend):
     configuration_class = TacacsConfiguration
+    configuration_encrypted_fields = ['SECRET']
     logger = logger
     type = "tacacs"
     category = "password"
 
     def __init__(self, database_instance=None, *args, **kwargs):
         super().__init__(database_instance, *args, **kwargs)
-        self.configuration_encrypted_fields = ['SECRET']
 
     def authenticate(self, request, username=None, password=None, **kwargs):
         if not username or not password:
