@@ -2,7 +2,7 @@ import pytest
 from crum import impersonate
 from rest_framework.exceptions import ValidationError
 
-from ansible_base.rbac.models import RoleDefinition, RoleEvaluation, RoleUserAssignment
+from ansible_base.rbac.models import RoleDefinition, RoleEvaluation, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry
 from test_app.models import Inventory, Organization, Team, User
 
@@ -12,6 +12,34 @@ def test_invalid_actor(inventory, org_inv_rd):
     with pytest.raises(ValidationError) as exc:
         org_inv_rd.give_permission(inventory, inventory)  # makes no sense
     assert 'must be a user or team' in str(exc)
+
+
+@pytest.mark.django_db
+def test_give_permission_idempotent_returns_existing(rando, organization, org_inv_change_rd):
+    """give_permission returns the saved assignment even when it already existed.
+
+    The bulk path returns only newly-created rows, so on a repeat call give_permission must
+    fetch the pre-existing assignment itself rather than returning None/raising.
+    """
+    first = org_inv_change_rd.give_permission(rando, organization)
+    second = org_inv_change_rd.give_permission(rando, organization)
+    assert second is not None
+    assert second.pk == first.pk
+    assert RoleUserAssignment.objects.filter(user=rando, role_definition=org_inv_change_rd).count() == 1
+
+
+@pytest.mark.django_db
+def test_give_permission_idempotent_returns_existing_team(team, inventory, inv_rd):
+    """Same as above but for a team actor, exercising the team branch of the fallback lookup.
+
+    Integer PKs would mask a normalization bug in the existing-row query, so this also guards
+    the object_id resolution used when the bulk path returns only newly-created rows.
+    """
+    first = inv_rd.give_permission(team, inventory)
+    second = inv_rd.give_permission(team, inventory)
+    assert second is not None
+    assert second.pk == first.pk
+    assert RoleTeamAssignment.objects.filter(team=team, role_definition=inv_rd).count() == 1
 
 
 @pytest.mark.django_db
