@@ -47,6 +47,23 @@ def _has_dense_combining_marks(value, window=8, threshold=5):
     return False
 
 
+# Client-side (JS-consumable) approximation of the sliding-window check above, used by
+# ansible_base.lib.metadata.build_tier1_frontend_pattern() to advertise a `pattern` in
+# DRF OPTIONS responses. It requires 5 total combining marks where each adjacent pair
+# is separated by at most one non-mark character, which also catches "interleaved"
+# Zalgo (marks broken up by base characters) that the plain _ZALGO_RE run-length check
+# above misses on its own -- e.g. "á̀b́̀ć" (3 base chars +
+# 5 marks, spanning positions 1-7, diff=6 < the window=8 used by
+# _has_dense_combining_marks() below).
+#
+# This is a bounded, ReDoS-safe *approximation*, NOT an exact port of the sliding
+# window algorithm: marks separated by 2+ non-mark characters within an 8-code-point
+# window can still slip past this pattern while still being rejected by
+# _has_dense_combining_marks() server-side. validate_resource_name() remains the
+# actual security boundary; this pattern only improves client-side UX.
+_ZALGO_INTERLEAVED_APPROX = r'\p{M}(?:[^\p{M}]?\p{M}){4}'
+
+
 CONTROL_CHARS = (
     '['
     '\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f'  # C0/C1 controls (tab, LF, CR allowed)
