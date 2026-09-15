@@ -9,7 +9,8 @@ from ansible_base.authentication.models import Authenticator, AuthenticatorUser
 from ansible_base.oauth2_provider.models import OAuth2Application
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import DABContentType, DABPermission, RoleDefinition
-from test_app.models import EncryptionModel, InstanceGroup, Inventory, Organization, Team, User
+from ansible_base.rbac.pipeline import bulk_give_permissions
+from test_app.models import Credential, EncryptionModel, InstanceGroup, Inventory, Organization, Team, User
 
 
 class Command(BaseCommand):
@@ -42,6 +43,21 @@ class Command(BaseCommand):
                     created_org_ids.append(obj.id)
             self.stdout.write(f'Created {count} {cls._meta.model_name}')
 
+        # Broader resource types (AAP-88875): child objects to exercise more than just
+        # orgs/teams/users on downstream query-count-scale endpoint coverage.
+        created_resource_ids: dict[str, list[int]] = {}
+        for cls in (Inventory, Credential):
+            model_name = cls._meta.model_name
+            count = data_counts.get(model_name, 0)
+            ids = []
+            for i in range(count):
+                org_id = created_org_ids[i % len(created_org_ids)] if created_org_ids else None
+                obj = cls.objects.create(name=f'large_{model_name}_{i}', organization_id=org_id)
+                ids.append(obj.id)
+            created_resource_ids[model_name] = ids
+            if count:
+                self.stdout.write(f'Created {count} {model_name}')
+
         # Create RoleDefinitions with permissions
         if 'roledefinition' in data_counts:
             rd_count = data_counts['roledefinition']
@@ -60,44 +76,77 @@ class Command(BaseCommand):
 
             self.stdout.write(f'Created {rd_count} role definitions with permissions')
 
-        # Create permission assignments for users and teams
+        # Permission assignments (AAP-88875): built with a single bulk_give_permissions()
+        # call instead of the old nested-loop of individual give_permission() calls. Each
+        # give_permission() call does its own validation/resolution/recomputation pass, so
+        # at thousands of assignments the per-call path is far too slow to hit the ~1 minute
+        # seeding budget; bulk_give_permissions() does that work once for the whole batch.
+        #
+        # Assignment diversity mirrors real customer RBAC layouts (per Alan Rominger's
+        # guidance on AAP-88875):
+        #   - direct object-level: user -> a specific Inventory/Credential
+        #   - org-level: user -> Organization (org_admin), inherited by everything in it
+        #   - team-mediated: team -> object/org, user -> team (team_member), inherited via
+        #     the team
+        #   - mixed: the same user index is cycled through all of the above, so a
+        #     meaningful subset of users end up with direct + org-level + team-mediated
+        #     permissions simultaneously
         if created_org_ids and 'user' in data_counts and 'team' in data_counts:
-            # Get created users and teams
             large_users = list(User.objects.filter(username__startswith='large_user_'))
             large_teams = list(Team.objects.filter(name__startswith='large_team_'))
-            large_orgs = list(Organization.objects.filter(name__startswith='large_organization_'))
+            large_orgs = list(Organization.objects.filter(id__in=created_org_ids))
             large_rds = list(RoleDefinition.objects.filter(name__startswith='Large Role Definition'))
+            large_inventories = list(Inventory.objects.filter(id__in=created_resource_ids.get('inventory', [])))
+            large_credentials = list(Credential.objects.filter(id__in=created_resource_ids.get('credential', [])))
 
-            # Give over 25 permissions to users
-            user_permissions_given = 0
-            for user in large_users:
-                for rd in large_rds:
-                    for org in large_orgs:
-                        rd.give_permission(user, org)
-                        user_permissions_given += 1
-                        if user_permissions_given >= 25:
-                            break
-                    if user_permissions_given >= 25:
-                        break
-                if user_permissions_given >= 25:
-                    break
+            large_inv_rd, _ = RoleDefinition.objects.get_or_create(
+                name='Large Inventory Admin',
+                permissions=['change_inventory', 'view_inventory'],
+                defaults={'content_type': permission_registry.content_type_model.objects.get_for_model(Inventory)},
+            )
+            large_cred_rd, _ = RoleDefinition.objects.get_or_create(
+                name='Large Credential Admin',
+                permissions=['use_credential', 'view_credential'],
+                defaults={'content_type': permission_registry.content_type_model.objects.get_for_model(Credential)},
+            )
+            org_admin_rd = RoleDefinition.objects.managed.org_admin
+            team_member_rd = RoleDefinition.objects.managed.team_member
 
-            # Give over 25 permissions to teams
-            team_permissions_given = 0
-            for team in large_teams:
-                for rd in large_rds:
-                    for org in large_orgs:
-                        rd.give_permission(team, org)
-                        team_permissions_given += 1
-                        if team_permissions_given >= 25:
-                            break
-                    if team_permissions_given >= 25:
-                        break
-                if team_permissions_given >= 25:
-                    break
+            user_permissions = []
+            team_permissions = []
 
-            self.stdout.write(f'Assigned {user_permissions_given} permissions to users')
-            self.stdout.write(f'Assigned {team_permissions_given} permissions to teams')
+            if large_rds and large_orgs:
+                for i, user in enumerate(large_users):
+                    # direct object-level
+                    if large_inventories:
+                        user_permissions.append((large_inv_rd, user, large_inventories[i % len(large_inventories)]))
+                    if large_credentials:
+                        user_permissions.append((large_cred_rd, user, large_credentials[i % len(large_credentials)]))
+                    # org-level
+                    user_permissions.append((org_admin_rd, user, large_orgs[i % len(large_orgs)]))
+                    # a second, custom org-scoped role, on a different org, for extra diversity
+                    user_permissions.append((large_rds[i % len(large_rds)], user, large_orgs[(i + 1) % len(large_orgs)]))
+
+            if large_teams:
+                for i, team in enumerate(large_teams):
+                    # team-mediated: give the team its own direct/org-scoped roles
+                    if large_inventories:
+                        team_permissions.append((large_inv_rd, team, large_inventories[(i + 1) % len(large_inventories)]))
+                    if large_credentials:
+                        team_permissions.append((large_cred_rd, team, large_credentials[(i + 1) % len(large_credentials)]))
+                    if large_rds and large_orgs:
+                        team_permissions.append((large_rds[i % len(large_rds)], team, large_orgs[i % len(large_orgs)]))
+
+                for i, user in enumerate(large_users):
+                    # ...then put every user on a team, so they inherit the team's roles
+                    # too, on top of their direct/org-level assignments above ("mixed").
+                    user_permissions.append((team_member_rd, user, large_teams[i % len(large_teams)]))
+
+            assignments = bulk_give_permissions(user_permissions=user_permissions, team_permissions=team_permissions, fire_signals_on_create=False)
+            self.stdout.write(
+                f'Assigned {len(user_permissions)} user-facing and {len(team_permissions)} team-facing permission '
+                f'triples ({len(assignments)} assignments created) via bulk_give_permissions'
+            )
 
         self.stdout.write(f'Finished creating large demo data in {time.time() - start:.2f} seconds')
 
