@@ -110,12 +110,37 @@ def test_inject_validation_patterns_skips_non_charfields():
     klass = get_authenticator_class('ansible_base.authentication.authenticator_plugins.ldap')
     config = klass.configuration_class()
     schema = config.get_configuration_schema()
-    _inject_validation_patterns(schema, config, ['BIND_PASSWORD'])
+    _inject_validation_patterns(schema, config, klass.configuration_encrypted_fields)
     schema_by_name = {entry['name']: entry for entry in schema}
 
     assert 'pattern' not in schema_by_name['START_TLS']
     assert 'pattern' in schema_by_name['BIND_DN']
     assert 'pattern' not in schema_by_name['BIND_PASSWORD']
+
+
+@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+def test_inject_validation_patterns_excludes_encrypted_field_declared_on_class():
+    """configuration_encrypted_fields must be readable from the class itself (not just
+    an instance), since the view looks it up via `klass.configuration_encrypted_fields`
+    without instantiating the plugin. LDAP and TACACS previously only set this on
+    self in __init__, so the class-level lookup silently returned []."""
+    klass = get_authenticator_class('ansible_base.authentication.authenticator_plugins.ldap')
+    assert klass.configuration_encrypted_fields == ['BIND_PASSWORD']
+
+    klass = get_authenticator_class('ansible_base.authentication.authenticator_plugins.tacacs')
+    assert klass.configuration_encrypted_fields == ['SECRET']
+
+
+@override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+def test_inject_validation_patterns_excludes_tacacs_secret():
+    klass = get_authenticator_class('ansible_base.authentication.authenticator_plugins.tacacs')
+    config = klass.configuration_class()
+    schema = config.get_configuration_schema()
+    _inject_validation_patterns(schema, config, klass.configuration_encrypted_fields)
+    schema_by_name = {entry['name']: entry for entry in schema}
+
+    assert 'pattern' not in schema_by_name['SECRET']
+    assert 'patternDescription' not in schema_by_name['SECRET']
 
 
 @pytest.mark.django_db
