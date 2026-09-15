@@ -44,6 +44,11 @@ def create_DAB_contenttypes(
 
     content_types = get_local_dab_contenttypes(using, dab_ct_cls)
 
+    # Calculate the next available ID once before the loop to avoid race condition
+    # where multiple entries in the same batch calculate the same max_id + 1
+    current_max_id = dab_ct_cls.objects.order_by('-id').values_list('id', flat=True).first() or 0
+    next_available_id = current_max_id + 1
+
     ct_data = []
     for model in permission_registry.all_registered_models:
         service = get_resource_prefix(model)
@@ -63,8 +68,8 @@ def create_DAB_contenttypes(
             if not dab_ct_cls.objects.filter(id=real_ct.id).exists():
                 ct_item_data['id'] = real_ct.id
             else:
-                current_max_id = dab_ct_cls.objects.order_by('-id').values_list('id', flat=True).first() or 0
-                ct_item_data['id'] = current_max_id + 1
+                ct_item_data['id'] = next_available_id
+                next_available_id += 1
             ct_data.append(ct_item_data)
 
     # Create the items here
