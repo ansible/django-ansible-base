@@ -1,12 +1,15 @@
 import pytest
+from django.apps import apps
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
 from django.test import TestCase
 from django.test.utils import isolate_apps
 
-from ansible_base.rbac.models import DABContentType
+from ansible_base.rbac.management.create_types import create_DAB_contenttypes, find_next_unreserved_id
+from ansible_base.rbac.migrations._utils import create_types_if_needed
+from ansible_base.rbac.models import DABContentType, DABPermission
 from ansible_base.rbac.remote import RemoteObject
-from test_app.models import Inventory, Organization
+from test_app.models import Inventory, Organization, Team
 
 
 @pytest.mark.django_db
@@ -128,6 +131,66 @@ def test_get_all_objects_for_this_type_remote():
 # Related to: https://github.com/ansible/django-ansible-base/pull/1138
 
 
+def test_find_next_unreserved_id_no_conflicts():
+    """Test find_next_unreserved_id when starting ID is not reserved."""
+
+    # Empty set - should return starting ID
+    assert find_next_unreserved_id(5, set()) == 5
+
+    # Reserved IDs don't include starting ID
+    assert find_next_unreserved_id(5, {1, 2, 3}) == 5
+    assert find_next_unreserved_id(10, {1, 2, 3, 8, 9}) == 10
+
+
+def test_find_next_unreserved_id_single_conflict():
+    """Test find_next_unreserved_id when starting ID is reserved."""
+
+    # Starting ID is reserved - should skip to next
+    assert find_next_unreserved_id(5, {5}) == 6
+    assert find_next_unreserved_id(10, {10}) == 11
+
+
+def test_find_next_unreserved_id_multiple_conflicts():
+    """Test find_next_unreserved_id when multiple consecutive IDs are reserved."""
+
+    # Multiple consecutive IDs reserved
+    assert find_next_unreserved_id(5, {5, 6, 7}) == 8
+    assert find_next_unreserved_id(5, {5, 6, 7, 8, 9}) == 10
+
+    # Non-consecutive reservations
+    assert find_next_unreserved_id(5, {5, 7, 9}) == 6
+    assert find_next_unreserved_id(5, {5, 6, 8, 10}) == 7
+
+
+def test_find_next_unreserved_id_large_gap():
+    """Test find_next_unreserved_id with large gaps in reserved IDs."""
+
+    # Large consecutive block
+    reserved = set(range(5, 100))  # Reserve 5-99
+    assert find_next_unreserved_id(5, reserved) == 100
+
+    # Starting from middle of reserved block
+    assert find_next_unreserved_id(50, reserved) == 100
+
+
+def test_find_next_unreserved_id_realistic_scenario():
+    """Test find_next_unreserved_id with realistic collision scenario."""
+
+    # Simulate the production scenario:
+    # - Database has entries with IDs: 17, 18
+    # - Direct assignment reserves: 19
+    # - Fallback starts at: 19
+    reserved_ids = {17, 18, 19}
+
+    result = find_next_unreserved_id(19, reserved_ids)
+    assert result == 20, "Should skip over reserved ID 19 to find 20"
+
+    # Simulate multiple fallbacks in same batch
+    reserved_ids = {17, 18, 19, 20}
+    result = find_next_unreserved_id(19, reserved_ids)
+    assert result == 21, "Should skip over 19 and 20 to find 21"
+
+
 @pytest.mark.django_db
 def test_create_DAB_contenttypes_multiple_fallback_no_collision():
     """
@@ -142,10 +205,6 @@ def test_create_DAB_contenttypes_multiple_fallback_no_collision():
     - Call create_DAB_contenttypes with multiple models hitting fallback path
     - Verify all entries created successfully with unique IDs
     """
-    from django.apps import apps
-
-    from ansible_base.rbac.management.create_types import create_DAB_contenttypes
-    from test_app.models import Organization, Team
 
     # Clear all existing DABContentType entries
     DABContentType.objects.all().delete()
@@ -205,11 +264,6 @@ def test_migration_0005_create_types_if_needed_no_collision():
     This tests the actual migration code path that would be executed during
     database migrations, ensuring it handles ID collisions correctly.
     """
-    from django.apps import apps
-
-    from ansible_base.rbac.migrations._utils import create_types_if_needed
-    from ansible_base.rbac.models import DABPermission
-    from test_app.models import Organization, Team
 
     # Clear existing entries
     DABContentType.objects.all().delete()
@@ -284,10 +338,6 @@ def test_reserved_ids_prevents_direct_assignment_collision():
 
     This ensures the fix properly tracks batch reservations, not just DB state.
     """
-    from django.apps import apps
-
-    from ansible_base.rbac.management.create_types import create_DAB_contenttypes
-    from test_app.models import Organization, Team
 
     # Clear all existing DABContentType entries
     DABContentType.objects.all().delete()
