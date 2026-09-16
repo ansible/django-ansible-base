@@ -197,6 +197,16 @@ def _global_role_scope_errors(org: Optional[str], team: Optional[str]) -> dict[s
     return errors
 
 
+def _object_scoped_role_errors(
+    map_type: Optional[str],
+    is_org_role: bool,
+    is_team_role: bool,
+) -> dict[str, TranslatedString]:
+    if map_type == 'role' and not is_org_role and not is_team_role:
+        return {'role': _("Object-scoped roles cannot be assigned through an authenticator map.")}
+    return {}
+
+
 def _role_map_type_errors(
     map_type: Optional[str],
     is_org_role: bool,
@@ -243,6 +253,7 @@ def check_role_type(map_type: Optional[str], role: Optional[str], org: Optional[
             is_team_role = issubclass(model_class, get_team_model())
 
         errors.update(_role_map_type_errors(map_type, is_org_role, is_team_role, org, team))
+        errors.update(_object_scoped_role_errors(map_type, is_org_role, is_team_role))
 
     except ObjectDoesNotExist:
         errors['role'] = _("RoleDefinition {role} doesn't exist").format(role=role)

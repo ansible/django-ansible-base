@@ -114,13 +114,15 @@ class CleanTextMixin:
         """Validate CharField / TextField values (Tier 1 name fields + Tier 2 free-text).
 
         We use get_internal_type() rather than isinstance() here deliberately.
-        isinstance(f, (CharField, TextField)) would also catch SlugField and
-        URLField — format-constrained subclasses that have their own validators
-        and are not free-text fields per ANSTRAT-1756. Those subclasses override
-        get_internal_type() to return their own name (e.g. "SlugField"), so they
-        are naturally excluded by this check. Custom free-text subclasses (e.g.
-        EncryptedTextField) typically do NOT override get_internal_type(), so they
-        inherit "CharField"/"TextField" and are caught here automatically.
+        isinstance(f, (CharField, TextField)) would also catch format-constrained
+        subclasses like SlugField and GenericIPAddressField that have their own
+        validators and are not free-text fields per ANSTRAT-1756. Those subclasses
+        override get_internal_type() to return their own name (e.g. "SlugField"),
+        so they are naturally excluded by this check. URLField is a CharField
+        subclass that does NOT override get_internal_type() (it inherits
+        "CharField"), so it IS treated as free text and validated here -- same as
+        custom free-text subclasses (e.g. EncryptedTextField) that also don't
+        override get_internal_type().
         """
         for field_name in field_names:
             if field_name in self.excluded_fields or field_name not in attrs:
