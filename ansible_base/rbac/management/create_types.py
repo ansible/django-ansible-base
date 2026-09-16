@@ -49,6 +49,10 @@ def create_DAB_contenttypes(
     current_max_id = dab_ct_cls.objects.order_by('-id').values_list('id', flat=True).first() or 0
     next_available_id = current_max_id + 1
 
+    # Track IDs reserved in this batch to prevent collision between direct and fallback assignments
+    # A fallback ID could otherwise collide with a later direct assignment from real_ct.id
+    reserved_ids = set()
+
     ct_data = []
     for model in permission_registry.all_registered_models:
         service = get_resource_prefix(model)
@@ -65,10 +69,16 @@ def create_DAB_contenttypes(
             # of any new entries created here to the id of its corresponding ContentType
             # from the actual contenttypes app, allowing many filters to work
             real_ct = ct_cls.objects.get_for_model(model)
-            if not dab_ct_cls.objects.filter(id=real_ct.id).exists():
+            # Check both database AND batch reservations to avoid ID collision
+            if not dab_ct_cls.objects.filter(id=real_ct.id).exists() and real_ct.id not in reserved_ids:
                 ct_item_data['id'] = real_ct.id
+                reserved_ids.add(real_ct.id)
             else:
+                # Skip IDs already reserved in this batch
+                while next_available_id in reserved_ids:
+                    next_available_id += 1
                 ct_item_data['id'] = next_available_id
+                reserved_ids.add(next_available_id)
                 next_available_id += 1
             ct_data.append(ct_item_data)
 
