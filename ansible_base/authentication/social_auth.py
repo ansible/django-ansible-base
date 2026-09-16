@@ -1,6 +1,7 @@
 import importlib
 import logging
 
+import requests
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import models
@@ -13,6 +14,7 @@ from social_django.strategy import DjangoStrategy
 
 from ansible_base.authentication.authenticator_plugins.utils import generate_authenticator_slug, get_authenticator_class, get_authenticator_plugins
 from ansible_base.authentication.models import Authenticator, AuthenticatorUser
+from ansible_base.authentication.utils.oauth_http import format_oauth_http_error
 from ansible_base.authentication.utils.user import normalize_and_get_email
 from ansible_base.lib.logging import log_auth_error, log_auth_event
 from ansible_base.lib.utils.response import get_fully_qualified_url
@@ -164,6 +166,20 @@ class SocialAuthMixin:
             )
 
         return super().start()
+
+    def request(self, *args, **kwargs):
+        """Log provider HTTP error bodies before social-core maps them to empty AuthForbidden/AuthCanceled.
+
+        social-auth-core 4.5.4 (the version AAP pins) raises AuthForbidden() for HTTP 401
+        without attaching response.text. Token-endpoint failures such as AADSTS7000215
+        are otherwise only visible as /?auth_failed.
+        """
+        try:
+            return super().request(*args, **kwargs)
+        except requests.HTTPError as err:
+            authenticator_name = getattr(self.database_instance, "name", "unknown")
+            log_auth_error(format_oauth_http_error(authenticator_name, err))
+            raise
 
     @property
     def name(self):
