@@ -32,13 +32,7 @@ from ansible_base.lib.utils.response import get_relative_url
 # strict=True turns that into a hard CI failure -- forcing someone to notice
 # and remove the marker, instead of a comment nobody remembers to revisit.
 QUERY_COUNT_CASES = [
-    pytest.param(
-        'resource-list',
-        {'extra_fields': 'resource_data'},
-        15,
-        marks=pytest.mark.xfail(reason="AAP-88287 N+1 in ResourceDataField.to_representation(); fixed by #1109", strict=True),
-        id='resource_list_with_extra_fields',
-    ),
+    pytest.param('resource-list', {'extra_fields': 'resource_data'}, 15, id='resource_list_with_extra_fields'),
     pytest.param('resource-list', {}, 8, id='resource_list_without_extra_fields'),
     pytest.param('organization-list', {}, 15, id='organization_list'),
     pytest.param('roleuserassignment-list', {}, 20, id='role_user_assignment_list'),
