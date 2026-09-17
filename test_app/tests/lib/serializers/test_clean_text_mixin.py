@@ -1029,6 +1029,24 @@ class TestCleanTextMixinPerformance:
 
         assert elapsed < 5.0, f"1000 validate() calls took {elapsed:.2f}s -- expected well under 5s"
 
+    @staticmethod
+    def _average_duration(make_serializer, iterations):
+        """Return the average wall-clock time of one is_valid() call, over enough
+        iterations that the result isn't dominated by timer-resolution noise.
+
+        Runs one untimed warmup call first so one-time costs (e.g. Django model
+        metadata caching) don't get attributed to whichever measurement happens
+        to run first, which would otherwise skew a small-vs-large comparison.
+        """
+        warmup = make_serializer()
+        assert warmup.is_valid(), warmup.errors
+
+        start = time.perf_counter()
+        for _ in range(iterations):
+            serializer = make_serializer()
+            assert serializer.is_valid(), serializer.errors
+        return (time.perf_counter() - start) / iterations
+
     @pytest.mark.django_db
     def test_large_realistic_json_payload_scales_linearly(self):
         """A JSONField shaped like real-world extra_vars/inputs data (hundreds of
@@ -1041,22 +1059,17 @@ class TestCleanTextMixinPerformance:
         small_data = {'name': 'TestCity', 'extra_data': build_payload(50)}
         large_data = {'name': 'TestCity', 'extra_data': build_payload(500)}
 
-        start = time.perf_counter()
-        serializer = CitySerializer(data=small_data)
-        assert serializer.is_valid(), serializer.errors
-        small_elapsed = time.perf_counter() - start
+        small_avg = self._average_duration(lambda: CitySerializer(data=small_data), iterations=50)
+        large_avg = self._average_duration(lambda: CitySerializer(data=large_data), iterations=20)
 
-        start = time.perf_counter()
-        serializer = CitySerializer(data=large_data)
-        assert serializer.is_valid(), serializer.errors
-        large_elapsed = time.perf_counter() - start
-
-        assert large_elapsed < 3.0, f"Large JSON payload (500 entries) took {large_elapsed:.2f}s -- expected well under 3s"
+        assert large_avg < 3.0, f"Large JSON payload (500 entries) took {large_avg:.4f}s/call -- expected well under 3s"
         # A 10x increase in entry count should not translate into a wildly super-linear
         # (e.g. quadratic) increase in validation time. Generous multiplier to avoid flakiness.
-        assert large_elapsed < max(small_elapsed * 30, 1.0), (
-            f"Validation time grew disproportionately with payload size " f"(50 entries: {small_elapsed:.4f}s, 500 entries: {large_elapsed:.4f}s)"
-        )
+        # No absolute floor here: with averaged, stable per-call timings a floor would mask
+        # a real regression that stays under the absolute cap above.
+        assert (
+            large_avg < small_avg * 30
+        ), f"Validation time grew disproportionately with payload size (50 entries: {small_avg:.6f}s/call, 500 entries: {large_avg:.6f}s/call)"
 
     @pytest.mark.django_db
     def test_long_single_text_field_scales_linearly(self):
@@ -1065,17 +1078,9 @@ class TestCleanTextMixinPerformance:
         short_text = 'This is a perfectly ordinary sentence. ' * 50  # ~2KB
         long_text = 'This is a perfectly ordinary sentence. ' * 2500  # ~100KB
 
-        start = time.perf_counter()
-        serializer = OrgSerializer(data={'name': 'Org', 'description': short_text})
-        assert serializer.is_valid(), serializer.errors
-        short_elapsed = time.perf_counter() - start
+        short_avg = self._average_duration(lambda: OrgSerializer(data={'name': 'Org', 'description': short_text}), iterations=50)
+        long_avg = self._average_duration(lambda: OrgSerializer(data={'name': 'Org', 'description': long_text}), iterations=20)
 
-        start = time.perf_counter()
-        serializer = OrgSerializer(data={'name': 'Org', 'description': long_text})
-        assert serializer.is_valid(), serializer.errors
-        long_elapsed = time.perf_counter() - start
-
-        assert long_elapsed < 2.0, f"100KB description took {long_elapsed:.2f}s -- expected well under 2s"
-        assert long_elapsed < max(short_elapsed * 100, 1.0), (
-            f"Validation time grew disproportionately with text length " f"(2KB: {short_elapsed:.4f}s, 100KB: {long_elapsed:.4f}s)"
-        )
+        assert long_avg < 2.0, f"100KB description took {long_avg:.4f}s/call -- expected well under 2s"
+        # No absolute floor here, for the same reason as above.
+        assert long_avg < short_avg * 100, f"Validation time grew disproportionately with text length (2KB: {short_avg:.6f}s/call, 100KB: {long_avg:.6f}s/call)"
