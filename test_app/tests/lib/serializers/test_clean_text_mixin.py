@@ -1,4 +1,5 @@
 import logging
+import time
 from unittest import mock
 
 import pytest
@@ -1000,3 +1001,81 @@ class TestCleanTextMixinUnexpectedErrors:
             serializer = CitySerializer(data=data)
             assert serializer.is_valid(), serializer.errors
         assert any('Unexpected error validating JSON key' in r.message for r in caplog.records)
+
+
+@pytest.mark.usefixtures('enable_validation')
+class TestCleanTextMixinPerformance:
+    """Wall-clock regression guards for CleanTextMixin.validate().
+
+    These are not micro-benchmarks or security tests -- they exist to catch a
+    future change that accidentally makes validation non-linear (e.g. an added
+    per-call query, a list-based membership check replacing a frozenset, or a
+    quadratic traversal), before it becomes a production latency problem on
+    large real-world payloads. Thresholds are deliberately generous (order of
+    magnitude, not tight) to avoid CI flakiness.
+    """
+
+    @pytest.mark.django_db
+    def test_repeated_validate_calls_stay_cheap(self):
+        """Per-call overhead (e.g. _classify_fields' model introspection) should not
+        grow or spike across many repeated calls on the same serializer shape."""
+        data = {'name': 'Org', 'description': 'A perfectly ordinary description.', 'extra_field': 'nothing unusual here'}
+
+        start = time.perf_counter()
+        for _ in range(1000):
+            serializer = OrgSerializer(data=data)
+            assert serializer.is_valid(), serializer.errors
+        elapsed = time.perf_counter() - start
+
+        assert elapsed < 5.0, f"1000 validate() calls took {elapsed:.2f}s -- expected well under 5s"
+
+    @pytest.mark.django_db
+    def test_large_realistic_json_payload_scales_linearly(self):
+        """A JSONField shaped like real-world extra_vars/inputs data (hundreds of
+        string values spread across nested dicts and lists) should validate in
+        roughly linear time, not blow up quadratically."""
+
+        def build_payload(width):
+            return {'hosts': [{'name': f'host-{i}', 'vars': {'ansible_user': 'deploy', 'note': f'entry number {i}'}} for i in range(width)]}
+
+        small_data = {'name': 'TestCity', 'extra_data': build_payload(50)}
+        large_data = {'name': 'TestCity', 'extra_data': build_payload(500)}
+
+        start = time.perf_counter()
+        serializer = CitySerializer(data=small_data)
+        assert serializer.is_valid(), serializer.errors
+        small_elapsed = time.perf_counter() - start
+
+        start = time.perf_counter()
+        serializer = CitySerializer(data=large_data)
+        assert serializer.is_valid(), serializer.errors
+        large_elapsed = time.perf_counter() - start
+
+        assert large_elapsed < 3.0, f"Large JSON payload (500 entries) took {large_elapsed:.2f}s -- expected well under 3s"
+        # A 10x increase in entry count should not translate into a wildly super-linear
+        # (e.g. quadratic) increase in validation time. Generous multiplier to avoid flakiness.
+        assert large_elapsed < max(small_elapsed * 30, 1.0), (
+            f"Validation time grew disproportionately with payload size " f"(50 entries: {small_elapsed:.4f}s, 500 entries: {large_elapsed:.4f}s)"
+        )
+
+    @pytest.mark.django_db
+    def test_long_single_text_field_scales_linearly(self):
+        """A single large free-text field (unbounded length, unlike name fields)
+        should validate in roughly linear time as it grows."""
+        short_text = 'This is a perfectly ordinary sentence. ' * 50  # ~2KB
+        long_text = 'This is a perfectly ordinary sentence. ' * 2500  # ~100KB
+
+        start = time.perf_counter()
+        serializer = OrgSerializer(data={'name': 'Org', 'description': short_text})
+        assert serializer.is_valid(), serializer.errors
+        short_elapsed = time.perf_counter() - start
+
+        start = time.perf_counter()
+        serializer = OrgSerializer(data={'name': 'Org', 'description': long_text})
+        assert serializer.is_valid(), serializer.errors
+        long_elapsed = time.perf_counter() - start
+
+        assert long_elapsed < 2.0, f"100KB description took {long_elapsed:.2f}s -- expected well under 2s"
+        assert long_elapsed < max(short_elapsed * 100, 1.0), (
+            f"Validation time grew disproportionately with text length " f"(2KB: {short_elapsed:.4f}s, 100KB: {long_elapsed:.4f}s)"
+        )
