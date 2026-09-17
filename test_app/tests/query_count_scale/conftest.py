@@ -209,6 +209,6 @@ def session_admin_api_client(_unblocked_db, session_admin_user, session_local_au
     would silently leave every later test unauthenticated. Use a throwaway
     `APIClient()` instead if a test needs to exercise logout.
     """
-    client, login_ok = _login_admin_api_client(session_admin_user, session_local_authenticator)
+    client, login_ok = _login_admin_api_client(session_admin_user)
     assert login_ok, "session_admin_api_client login failed — tests would run as anonymous user"
     return client

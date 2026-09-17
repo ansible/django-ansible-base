@@ -84,13 +84,13 @@ def _get_or_create_local_authenticator():
 
     authenticator, _ = Authenticator.objects.get_or_create(
         name="Test Local Authenticator",
-        defaults=dict(
-            enabled=True,
-            create_objects=True,
-            remove_users=False,
-            type="ansible_base.authentication.authenticator_plugins.local",
-            configuration={},
-        ),
+        defaults={
+            "enabled": True,
+            "create_objects": True,
+            "remove_users": False,
+            "type": "ansible_base.authentication.authenticator_plugins.local",
+            "configuration": {},
+        },
     )
     return authenticator
 
@@ -118,10 +118,12 @@ def _get_or_create_admin_user(user_model):
     return user
 
 
-def _login_admin_api_client(user, authenticator):
+def _login_admin_api_client(user):
     """Build an `APIClient` logged in as `user`. Returns `(client, login_ok)`
     -- callers with per-test rollback (a stale user can't survive) may ignore
-    `login_ok`; non-transactional callers should assert it.
+    `login_ok`; non-transactional callers should assert it. Callers must still
+    depend on a `local_authenticator`-type fixture themselves so a local
+    authenticator exists in the DB for login to succeed against.
     """
     # We don't use the is_staff flag anywhere. Instead we use is_superuser. This can
     # cause some permission checks to unexpectedly break in production where this flag
@@ -145,7 +147,7 @@ def unauthenticated_api_client(db):
 
 @pytest.fixture
 def admin_api_client(db, admin_user, local_authenticator):
-    client, _login_ok = _login_admin_api_client(admin_user, local_authenticator)
+    client, _login_ok = _login_admin_api_client(admin_user)
     yield client
     try:
         client.logout()
