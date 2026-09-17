@@ -3,11 +3,12 @@ from django.utils.translation import gettext_lazy as _
 from oauth2_provider.generators import generate_client_secret
 
 from ansible_base.lib.serializers.common import NamedCommonModelSerializer
+from ansible_base.lib.serializers.mixins import CleanTextMixin
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.oauth2_provider.models import OAuth2Application
 
 
-class OAuth2ApplicationSerializer(NamedCommonModelSerializer):
+class OAuth2ApplicationSerializer(CleanTextMixin, NamedCommonModelSerializer):
     oauth2_client_secret = None
 
     class Meta:

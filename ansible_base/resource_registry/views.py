@@ -112,6 +112,13 @@ class ResourceViewSet(
 
         return super().get_serializer_class()
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        extra = self.request.query_params.get("extra_fields", "")
+        if "resource_data" in extra.split(","):
+            qs = qs.prefetch_related("content_object")
+        return qs
+
     @extend_schema_if_available(
         description="List all resources. Accepts an optional 'extra_fields' query parameter "
         "(comma-separated) to include additional fields in the response. "
@@ -319,11 +326,15 @@ class ResourceTypeViewSet(
 
         if name == SHARED_USER_RESOURCE_TYPE and (system_user := getattr(settings, "SYSTEM_USERNAME", None)):
             resources = resources.exclude(name=system_user)
+        resources = list(resources)
+        count = len(resources)  # force evaluation to avoid lazy queryset issues in streaming response
 
         if not resources:
             return HttpResponseNotFound()
 
-        return CSVStreamResponse(self.serialize_resources_hashes(resources, resource_type.serializer_class)).stream()
+        resp = CSVStreamResponse(self.serialize_resources_hashes(resources, resource_type.serializer_class)).stream()
+        resp.headers["X-Resource-Count"] = str(count)
+        return resp
 
 
 class ServiceMetadataView(

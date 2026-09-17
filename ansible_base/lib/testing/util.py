@@ -1,4 +1,6 @@
+import csv
 from contextlib import contextmanager
+from io import StringIO
 from pathlib import Path
 
 from flags.state import disable_flag, enable_flag, flag_state
@@ -72,6 +74,13 @@ class StaticResourceAPIClient(ResourceAPIClient):
             response._content = content_file_path.read_bytes()
         except FileNotFoundError:
             response.status_code = 404
+
+        if response.status_code == 200 and path.endswith("manifest/"):
+            # Mirror the real manifest endpoint's completeness contract (see
+            # ResourceTypeViewSet.manifest) so tests exercise the same code path
+            # production traffic does, rather than always looking "incomplete".
+            row_count = len(list(csv.DictReader(StringIO(response.text))))
+            response.headers["X-Resource-Count"] = str(row_count)
 
         return response
 
