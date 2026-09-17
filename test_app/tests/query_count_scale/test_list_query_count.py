@@ -60,7 +60,7 @@ QUERY_COUNT_CASES = [
 
 @pytest.mark.parametrize('url_name, query_params, max_queries', QUERY_COUNT_CASES)
 def test_list_query_count_hard_cutoff(
-    admin_api_client,
+    session_admin_api_client,
     _seed_large_dataset,
     _seed_oauth_applications,
     _seed_oauth_tokens,
@@ -73,9 +73,9 @@ def test_list_query_count_hard_cutoff(
     cutoff, regardless of how many objects are returned."""
     url = get_relative_url(url_name)
 
-    admin_api_client.get(url, query_params)  # warm up (e.g. ContentType cache)
+    session_admin_api_client.get(url, query_params)  # warm up (e.g. ContentType cache)
     with CaptureQueriesContext(connection) as ctx:
-        response = admin_api_client.get(url, query_params)
+        response = session_admin_api_client.get(url, query_params)
 
     assert response.status_code == 200
     # A query-count cutoff on an empty list is meaningless (AAP-88874).

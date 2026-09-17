@@ -74,19 +74,68 @@ def settings_override_mutable(settings):
     return f
 
 
-@pytest.fixture
-def local_authenticator(db):
+def _get_or_create_local_authenticator():
+    """Shared by the function-scoped `local_authenticator` below and any
+    session-scoped counterpart (e.g. non-transactional suites). `get_or_create`
+    is safe for both: under per-test rollback it behaves like `.create()` since
+    no prior row survives to be found.
+    """
     from ansible_base.authentication.models import Authenticator
 
-    authenticator = Authenticator.objects.create(
+    authenticator, _ = Authenticator.objects.get_or_create(
         name="Test Local Authenticator",
-        enabled=True,
-        create_objects=True,
-        remove_users=False,
-        type="ansible_base.authentication.authenticator_plugins.local",
-        configuration={},
+        defaults=dict(
+            enabled=True,
+            create_objects=True,
+            remove_users=False,
+            type="ansible_base.authentication.authenticator_plugins.local",
+            configuration={},
+        ),
     )
     return authenticator
+
+
+def _get_or_create_admin_user(user_model):
+    """Get-or-create a superuser named "admin", normalizing (active,
+    superuser, password) any pre-existing row so it's always usable -- e.g.
+    a stale row surviving a `--reuse-db` run in a non-transactional suite.
+    """
+    username_field = user_model.USERNAME_FIELD
+    username = "admin@example.com" if username_field == "email" else "admin"
+
+    try:
+        user = user_model._default_manager.get_by_natural_key(username)
+        user.is_active = True
+        user.is_superuser = True
+        user.set_password("password")
+        user.save()
+    except user_model.DoesNotExist:
+        user_data = {"password": "password", username_field: username}
+        if "email" in user_model.REQUIRED_FIELDS:
+            user_data["email"] = "admin@example.com"
+        user = user_model._default_manager.create_superuser(**user_data)
+
+    return user
+
+
+def _login_admin_api_client(user, authenticator):
+    """Build an `APIClient` logged in as `user`. Returns `(client, login_ok)`
+    -- callers with per-test rollback (a stale user can't survive) may ignore
+    `login_ok`; non-transactional callers should assert it.
+    """
+    # We don't use the is_staff flag anywhere. Instead we use is_superuser. This can
+    # cause some permission checks to unexpectedly break in production where this flag
+    # never gets set to true.
+    user.is_staff = False
+    user.save()
+    client = APIClient()
+    login_ok = client.login(username=user.get_username(), password="password")
+    return client, login_ok
+
+
+@pytest.fixture
+def local_authenticator(db):
+    return _get_or_create_local_authenticator()
 
 
 @pytest.fixture
@@ -96,13 +145,7 @@ def unauthenticated_api_client(db):
 
 @pytest.fixture
 def admin_api_client(db, admin_user, local_authenticator):
-    # We don't use the is_staff flag anywhere. Instead we use is_superuser. This can
-    # cause some permission checks to unexpectedly break in production where this flag
-    # never gets set to true.
-    admin_user.is_staff = False
-    admin_user.save()
-    client = APIClient()
-    client.login(username="admin", password="password")
+    client, _login_ok = _login_admin_api_client(admin_user, local_authenticator)
     yield client
     try:
         client.logout()
