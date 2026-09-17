@@ -471,6 +471,7 @@ class LDAPSettings(BaseLDAPSettings):
 
 class AuthenticatorPlugin(LDAPBackend, AbstractAuthenticatorPlugin):
     configuration_class = LDAPConfiguration
+    configuration_encrypted_fields = ['BIND_PASSWORD']
     type = 'LDAP'
     category = "password"
 
@@ -479,7 +480,6 @@ class AuthenticatorPlugin(LDAPBackend, AbstractAuthenticatorPlugin):
         self.database_instance = database_instance
         if database_instance:
             self.settings = LDAPSettings(defaults=database_instance.configuration)
-        self.configuration_encrypted_fields = ['BIND_PASSWORD']
         self.set_logger(logger)
 
     def authenticate(self, request, username=None, password=None, **kwargs):
