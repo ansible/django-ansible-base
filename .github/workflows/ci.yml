@@ -116,6 +116,10 @@ jobs:
           echo "::remove-matcher owner=python::"  # Disable annoying annotations from setup-python
           tox --colored yes -e py312-query-count-scale
 
+      - name: Inject PR number into coverage.xml
+        if: hashFiles('coverage.xml') != ''
+        run: sed -i '2i <!-- PR ${{ github.event.number }} -->' coverage.xml
+
       - name: Upload coverage as artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: hashFiles('coverage.xml') != ''

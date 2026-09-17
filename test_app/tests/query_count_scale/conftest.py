@@ -16,7 +16,7 @@ Two differences from the rest of `test_app/tests/`:
 None of these fixtures are `autouse` (that would run them for every test
 *collected* under this directory, not just ones that need them) -- tests
 must request them explicitly, or a fixture that depends on them (e.g.
-`admin_api_client`).
+`session_admin_api_client`).
 
 The small `_seed_oauth_*`/`_seed_authenticator_maps` fixtures below are each
 ~30 cheap single-row `.create()` calls (no signals/permission recompute) --
@@ -32,8 +32,8 @@ import pytest
 from django.conf import settings
 from django.db import transaction
 from oauthlib.common import generate_token
-from rest_framework.test import APIClient
 
+from ansible_base.lib.testing.fixtures import _get_or_create_admin_user, _get_or_create_local_authenticator, _login_admin_api_client
 from ansible_base.oauth2_provider.models import OAuth2AccessToken, OAuth2Application
 from test_app.management.commands.create_demo_data import Command
 from test_app.models import Organization
@@ -84,7 +84,7 @@ def _seed_large_dataset(_unblocked_db):
 
     Calls `create_large()` rather than the full `create_demo_data` command
     (which also enables its own local authenticator, colliding with
-    `local_authenticator` below). Covers orgs/teams/users/inventories/
+    `session_local_authenticator` below). Covers orgs/teams/users/inventories/
     credentials/role-definitions with direct/org-level/team-mediated
     assignments.
 
@@ -96,26 +96,23 @@ def _seed_large_dataset(_unblocked_db):
     from django.contrib.auth import get_user_model
 
     from ansible_base.rbac.models import RoleDefinition
-    from test_app.models import Inventory, Team
+    from test_app.models import Credential, Inventory, Team
 
-    # Check if seeding already completed successfully by validating all expected counts
+    # Check if seeding already completed successfully by validating all expected counts.
+    # Checked per-model (not just "does 1 row exist") so a --reuse-db database that
+    # predates a DEMO_DATA_COUNTS key being added doesn't silently skip reseeding forever.
     expected = settings.DEMO_DATA_COUNTS
-    actual_orgs = Organization.objects.filter(name__startswith='large_').count()
-    actual_users = get_user_model().objects.filter(username__startswith='large_user_').count()
-    actual_teams = Team.objects.filter(name__startswith='large_team_').count()
-    actual_rds = RoleDefinition.objects.filter(name__startswith='Large Role Definition').count()
+    actual_counts = {
+        'organization': Organization.objects.filter(name__startswith='large_').count(),
+        'user': get_user_model().objects.filter(username__startswith='large_user_').count(),
+        'team': Team.objects.filter(name__startswith='large_team_').count(),
+        'roledefinition': RoleDefinition.objects.filter(name__startswith='Large Role Definition').count(),
+        'inventory': Inventory.objects.filter(name__startswith='large_inventory_').count(),
+        'credential': Credential.objects.filter(name__startswith='large_credential_').count(),
+    }
 
-    # Also check inventory/credential if they're in DEMO_DATA_COUNTS
-    actual_inventories = Inventory.objects.filter(name__startswith='large_inventory_').count() if 'inventory' in expected else 0
-
-    # Skip seeding if all expected counts match (complete dataset already exists)
-    if (
-        actual_orgs == expected.get('organization', 0)
-        and actual_users == expected.get('user', 0)
-        and actual_teams == expected.get('team', 0)
-        and actual_rds == expected.get('roledefinition', 0)
-        and (actual_inventories == expected.get('inventory', 0) if 'inventory' in expected else True)
-    ):
+    # Skip seeding if every count present in DEMO_DATA_COUNTS already matches
+    if all(actual_counts.get(key, 0) == count for key, count in expected.items() if key in actual_counts):
         return
 
     # Seed atomically (all-or-nothing) so crashes leave no partial junk behind
@@ -143,14 +140,14 @@ def _seed_oauth_applications(_seed_large_dataset):
 
 
 @pytest.fixture(scope='session')
-def _seed_oauth_tokens(_seed_large_dataset, admin_user):
+def _seed_oauth_tokens(_seed_large_dataset, session_admin_user):
     """Seed 30 OAuth2 access tokens once per session (AAP-88874) -- needed for
     `token-list`. Idempotent: no-ops if `large_token_`-prefixed rows exist.
     """
     if not OAuth2AccessToken.objects.filter(description__startswith='large_token_').exists():
         for i in range(30):
             OAuth2AccessToken.objects.create(
-                user=admin_user,
+                user=session_admin_user,
                 token=generate_token(),
                 scope='read write',
                 expires=datetime(2088, 1, 1, tzinfo=timezone.utc),
@@ -159,7 +156,7 @@ def _seed_oauth_tokens(_seed_large_dataset, admin_user):
 
 
 @pytest.fixture(scope='session')
-def _seed_authenticator_maps(_seed_large_dataset, local_authenticator):
+def _seed_authenticator_maps(_seed_large_dataset, session_local_authenticator):
     """Seed 30 authenticator maps once per session (AAP-88874) -- needed for
     `authenticatormap-list`. Idempotent: no-ops if `large_map_`-prefixed rows exist.
     """
@@ -169,81 +166,49 @@ def _seed_authenticator_maps(_seed_large_dataset, local_authenticator):
         for i in range(30):
             AuthenticatorMap.objects.create(
                 name=f'large_map_{i}',
-                authenticator=local_authenticator,
+                authenticator=session_local_authenticator,
                 map_type='allow',
             )
 
 
 @pytest.fixture(scope='session')
-def local_authenticator(_unblocked_db):
-    """Session-scoped, idempotent counterpart to
-    `ansible_base.lib.testing.fixtures.local_authenticator`, which
-    unconditionally `.create()`s a row per test -- safe there since
-    pytest-django rolls back each test's transaction. Nothing is rolled back
-    here, so this is `get_or_create()`'d once and shared for the session.
+def session_local_authenticator(_unblocked_db):
+    """Session-scoped, shared-helper-backed counterpart to
+    `ansible_base.lib.testing.fixtures.local_authenticator`. That one
+    `.create()`s per test (safe there, since pytest-django rolls back each
+    test's transaction); nothing is rolled back here, so this is created once
+    and shared for the session.
     """
-    from ansible_base.authentication.models import Authenticator
-
-    authenticator, _ = Authenticator.objects.get_or_create(
-        name='Test Local Authenticator',
-        defaults=dict(
-            enabled=True,
-            create_objects=True,
-            remove_users=False,
-            type='ansible_base.authentication.authenticator_plugins.local',
-            configuration={},
-        ),
-    )
-    return authenticator
+    return _get_or_create_local_authenticator()
 
 
 @pytest.fixture(scope='session')
-def admin_user(_unblocked_db):
-    """Session-scoped, idempotent counterpart to pytest-django's `admin_user`:
-    same get-or-create-a-superuser-named-"admin" logic, but calls
-    `get_user_model()` directly since `django_user_model` is function-scoped
-    (via `db`) and can't be used here. Normalizes any persisted user from
-    --reuse-db to ensure it's active + superuser with correct password.
+def session_admin_user(_unblocked_db):
+    """Session-scoped, shared-helper-backed counterpart to pytest-django's
+    `admin_user`. That one is a pytest-django built-in (no in-repo sibling to
+    share a helper with), so `_get_or_create_admin_user()` normalizes any
+    stale user surviving a `--reuse-db` run (active, superuser, password)
+    since it's not re-created per test the way pytest-django's is.
     """
     from django.contrib.auth import get_user_model
 
-    user_model = get_user_model()
-    username_field = user_model.USERNAME_FIELD
-    username = 'admin@example.com' if username_field == 'email' else 'admin'
-
-    try:
-        user = user_model._default_manager.get_by_natural_key(username)
-        # Normalize any stale user from --reuse-db: ensure active, superuser, correct password
-        user.is_active = True
-        user.is_superuser = True
-        user.set_password('password')
-        user.save()
-    except user_model.DoesNotExist:
-        user_data = {'password': 'password', username_field: username}
-        if 'email' in user_model.REQUIRED_FIELDS:
-            user_data['email'] = 'admin@example.com'
-        user = user_model._default_manager.create_superuser(**user_data)
-
-    return user
+    return _get_or_create_admin_user(get_user_model())
 
 
 @pytest.fixture(scope='session')
-def admin_api_client(_unblocked_db, admin_user, local_authenticator):
+def session_admin_api_client(_unblocked_db, session_admin_user, session_local_authenticator):
     """Session-scoped counterpart to
     `ansible_base.lib.testing.fixtures.admin_api_client`: logs in once and
     reuses the same client for every test, instead of per-test login/logout.
-    Asserts login succeeds (critical — tests would silently run as anonymous
-    user if login failed with stale --reuse-db data).
+    Asserts login succeeds -- critical here (unlike the function-scoped
+    fixture) since a stale user could otherwise silently fail to log in and
+    every test would run unauthenticated.
+
+    No test in this directory may call `.logout()` on this client -- it is
+    shared for the whole session with no per-test reset, so a logout here
+    would silently leave every later test unauthenticated. Use a throwaway
+    `APIClient()` instead if a test needs to exercise logout.
     """
-    # We don't use the is_staff flag anywhere. Instead we use is_superuser. This can
-    # cause some permission checks to unexpectedly break in production where this flag
-    # never gets set to true.
-    admin_user.is_staff = False
-    admin_user.save()
-    client = APIClient()
-
-    # Verify login actually succeeded (admin_user fixture already normalized password)
-    login_ok = client.login(username='admin', password='password')
-    assert login_ok, "admin_api_client login failed — tests would run as anonymous user"
-
+    client, login_ok = _login_admin_api_client(session_admin_user, session_local_authenticator)
+    assert login_ok, "session_admin_api_client login failed — tests would run as anonymous user"
     return client
