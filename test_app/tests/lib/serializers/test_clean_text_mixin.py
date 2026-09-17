@@ -13,6 +13,8 @@ from test_app.models import City, Organization, User
 @pytest.fixture
 def enable_validation(settings):
     settings.ENHANCED_INPUT_VALIDATION_ENABLED = True
+    yield
+    settings.ENHANCED_INPUT_VALIDATION_ENABLED = False
 
 
 class OrgSerializer(CleanTextMixin, serializers.ModelSerializer):
