@@ -111,8 +111,16 @@ def _seed_large_dataset(_unblocked_db):
         'credential': Credential.objects.filter(name__startswith='large_credential_').count(),
     }
 
-    # Skip seeding if every count present in DEMO_DATA_COUNTS already matches
-    if all(actual_counts.get(key, 0) == count for key, count in expected.items() if key in actual_counts):
+    # Fail loudly (not silently skip) if DEMO_DATA_COUNTS ever gains a key with no
+    # corresponding count check above -- same bug class this fixed for `credential`.
+    missing = expected.keys() - actual_counts.keys()
+    assert not missing, (
+        f"DEMO_DATA_COUNTS has keys with no corresponding count check in _seed_large_dataset: "
+        f"{sorted(missing)}. Add a query for each new resource type above."
+    )
+
+    # Skip seeding if every count already matches
+    if all(actual_counts[key] == count for key, count in expected.items()):
         return
 
     # Seed atomically (all-or-nothing) so crashes leave no partial junk behind

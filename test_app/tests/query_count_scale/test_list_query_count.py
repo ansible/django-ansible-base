@@ -27,10 +27,18 @@ from ansible_base.lib.utils.response import get_relative_url
 # authenticator-list, resourcetype-list, dabcontenttype-list,
 # dabpermission-list, activitystream-list, aap_flags_states-list.
 #
-# Failing (real N+1s found this way -- disabled below until fixed, see TODOs).
+# Failing (real N+1s found this way). Marked xfail(strict=True) rather than
+# commented out: once each underlying bug is fixed, the case starts *passing*,
+# strict=True turns that into a hard CI failure -- forcing someone to notice
+# and remove the marker, instead of a comment nobody remembers to revisit.
 QUERY_COUNT_CASES = [
-    # TODO: uncomment once #1109 (AAP-88287 fix) merges (~50+q/2 rows vs cutoff 15).
-    # pytest.param('resource-list', {'extra_fields': 'resource_data'}, 15, id='resource_list_with_extra_fields'),
+    pytest.param(
+        'resource-list',
+        {'extra_fields': 'resource_data'},
+        15,
+        marks=pytest.mark.xfail(reason="AAP-88287 N+1 in ResourceDataField.to_representation(); fixed by #1109", strict=True),
+        id='resource_list_with_extra_fields',
+    ),
     pytest.param('resource-list', {}, 8, id='resource_list_without_extra_fields'),
     pytest.param('organization-list', {}, 15, id='organization_list'),
     pytest.param('roleuserassignment-list', {}, 20, id='role_user_assignment_list'),
@@ -45,16 +53,41 @@ QUERY_COUNT_CASES = [
     pytest.param('dabpermission-list', {}, 10, id='dab_permission_list'),
     pytest.param('activitystream-list', {}, 12, id='activity_stream_list'),
     pytest.param('aap_flags_states-list', {}, 12, id='aap_flags_states_list'),
-    # TODO: uncomment once AAP-92618 is fixed (154q/30 rows vs cutoff 10).
-    # pytest.param('application-list', {}, 10, id='application_list'),
-    # TODO: uncomment once AAP-92626 is fixed (124q/30 rows vs cutoff 15).
-    # pytest.param('token-list', {}, 15, id='token_list'),
-    # TODO: uncomment once AAP-92627 is fixed (94q/30 rows vs cutoff 15).
-    # pytest.param('authenticatormap-list', {}, 15, id='authenticator_map_list'),
-    # TODO: uncomment once AAP-92628 is fixed (37q vs public equivalent's 13q, cutoff 20).
-    # pytest.param('serviceuserassignment-list', {}, 20, id='service_user_assignment_list'),
-    # TODO: uncomment once AAP-92628 is fixed (45q vs public equivalent's 14q, cutoff 20).
-    # pytest.param('serviceteamassignment-list', {}, 20, id='service_team_assignment_list'),
+    pytest.param(
+        'application-list',
+        {},
+        10,
+        marks=pytest.mark.xfail(reason="AAP-92618 N+1 (access_tokens + unprefetched FK summary fields); 154q/30 rows vs cutoff 10", strict=True),
+        id='application_list',
+    ),
+    pytest.param(
+        'token-list',
+        {},
+        15,
+        marks=pytest.mark.xfail(reason="AAP-92626 N+1 in OAuth2TokenViewSet; 124q/30 rows vs cutoff 15", strict=True),
+        id='token_list',
+    ),
+    pytest.param(
+        'authenticatormap-list',
+        {},
+        15,
+        marks=pytest.mark.xfail(reason="AAP-92627 N+1 in AuthenticatorMapViewSet; 94q/30 rows vs cutoff 15", strict=True),
+        id='authenticator_map_list',
+    ),
+    pytest.param(
+        'serviceuserassignment-list',
+        {},
+        20,
+        marks=pytest.mark.xfail(reason="AAP-92628 N+1 GenericForeignKey prefetch; 37q vs public equivalent's 13q, cutoff 20", strict=True),
+        id='service_user_assignment_list',
+    ),
+    pytest.param(
+        'serviceteamassignment-list',
+        {},
+        20,
+        marks=pytest.mark.xfail(reason="AAP-92628 N+1 GenericForeignKey prefetch; 45q vs public equivalent's 14q, cutoff 20", strict=True),
+        id='service_team_assignment_list',
+    ),
 ]
 
 
