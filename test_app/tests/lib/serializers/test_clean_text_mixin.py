@@ -1054,6 +1054,7 @@ class TestCleanTextMixinPerformance:
         roughly linear time, not blow up quadratically."""
 
         def build_payload(width):
+            """Build an extra_vars-shaped JSON payload with `width` host entries."""
             return {'hosts': [{'name': f'host-{i}', 'vars': {'ansible_user': 'deploy', 'note': f'entry number {i}'}} for i in range(width)]}
 
         small_data = {'name': 'TestCity', 'extra_data': build_payload(50)}
