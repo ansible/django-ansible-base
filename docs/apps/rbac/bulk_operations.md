@@ -129,3 +129,79 @@ These APIs handle different concerns:
 |---|---|
 | Bulk permission assignment/removal | `bulk_give_permissions(...)` / `bulk_remove_permissions(...)` |
 | Bulk resource creation/deletion (e.g. org delete cascade) | `defer_rbac_computations` context manager |
+
+## Assignment Signals
+
+Every assignment created or removed through the pipeline — whether via
+`bulk_give_permissions` / `bulk_remove_permissions`, the lower-level
+`give_assignments` / `remove_assignments`, or the single-assignment
+`give_permission` / `remove_permission` helpers — emits one of two Django
+signals. Downstream systems (e.g. mirroring assignments into another RBAC
+system, or recording activity-stream entries) connect to these instead of
+listening to per-row model `post_save` / `post_delete`.
+
+```python
+from ansible_base.rbac.triggers import (
+    dab_rbac_assignments_created,
+    dab_rbac_assignments_pre_delete,
+)
+```
+
+Both signals fire **once per operation** (not once per row) and are sent with
+`sender=None`. The keyword arguments are:
+
+| Argument | Type | Meaning |
+|---|---|---|
+| `assignments` | `list[RoleUserAssignment \| RoleTeamAssignment]` | The rows created (`created` signal) or about to be deleted (`pre_delete` signal). |
+| `content_objects` | `dict[(content_type_id, object_id), instance]` | Pre-fetched content objects for object-scoped assignments. |
+
+Connect handlers with a `dispatch_uid` and no sender filter:
+
+```python
+dab_rbac_assignments_created.connect(my_handler, dispatch_uid='myapp_created')
+dab_rbac_assignments_pre_delete.connect(my_handler, dispatch_uid='myapp_pre_delete')
+```
+
+### Ordering relative to recomputation
+
+The two signals sit on opposite sides of recomputation, matching their tenses,
+all within the same transaction:
+
+- `dab_rbac_assignments_created` — fires **after** `RoleEvaluation` is
+  recomputed. State is fully settled: the assignment rows exist *and*
+  `has_obj_perm` / `accessible_objects` already reflect them, so a handler can
+  query effective permissions inline and see accurate results.
+- `dab_rbac_assignments_pre_delete` — fires **before** the rows are deleted
+  (they are still readable in the handler) and therefore before recomputation.
+  This is by design: consumers must be able to read the soon-to-be-removed rows
+  and resolve their content objects — critical for cascade deletes where the
+  content object itself is also going away. At this point `RoleEvaluation` still
+  reflects the **pre-removal** state; a handler needing the post-removal
+  permission state must defer (e.g. `transaction.on_commit`).
+
+The asymmetry is intentional. Creation is additive, so a single post-recompute
+`created` signal carries both the new rows and the settled evaluations at once.
+Deletion is destructive, so those two moments are in conflict: the rows (and
+their content objects) are only readable *before* the delete, while fresh
+evaluations only exist *after* recompute. `pre_delete` deliberately chooses the
+data-rich moment.
+
+If a consumer ever needs the post-removal *settled* state (fresh
+`RoleEvaluation` after recompute), the reserved extension point is a new,
+additive signal named `dab_rbac_assignments_deleted` (past tense, mirroring
+`created`) — not an overload of `pre_delete`. There is deliberately no
+`pre_create` signal: it would be redundant (validation is internal and these
+signals do not veto) and could not carry the uniform `AssignmentBase` payload,
+since no rows exist yet at that point.
+
+### `content_objects` population
+
+`content_objects` is a lookup keyed by `(content_type_id, object_id)`. It is
+fully populated on the `bulk_give_permissions` / `bulk_remove_permissions` paths
+(the in-memory objects come straight from the input triples, no re-fetch). On
+the lower-level `give_assignments` / `remove_assignments` paths it may be empty
+or partial — a handler that needs the content object for an assignment not
+present in the dict must fetch it itself (falling back to
+`assignment.content_object` for a per-row lookup). The generic-foreign-key
+`content_object` is never carried on the assignment rows themselves; it travels
+only through this dict.

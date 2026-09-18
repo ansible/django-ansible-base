@@ -317,8 +317,11 @@ def save_user_claims(user: Model, objects: dict, object_roles: dict, global_role
 
     managed_roles = settings.ANSIBLE_BASE_JWT_MANAGED_ROLES
 
-    # Global roles are few (0-2 typically), keep serial
-    global_assignment_pks = set()
+    # Pass 1: resolve every desired grant into a (role_definition, user, content_object) triple.
+    # Global (singleton) roles are simply a None content object -- the bulk pipeline handles them
+    # alongside object roles in a single call (AAP-90170), so there is no separate global pass.
+    desired_permissions = []
+
     for system_role_name in global_roles:
         rd = get_role_definition(system_role_name)
         if rd is None:
@@ -327,12 +330,9 @@ def save_user_claims(user: Model, objects: dict, object_roles: dict, global_role
         if rd.name not in managed_roles:
             logger.error(f"Unable to grant {user.username} system level role {system_role_name} because it is not a JWT managed role")
             continue
-        assignment = rd.give_global_permission(user)
-        global_assignment_pks.add(assignment.pk)
+        desired_permissions.append((rd, user, None))
         logger.info(f"Granting user {user.username} global role {system_role_name}")
 
-    # Pass 1: resolve resources (may create org/team stubs)
-    desired_permissions = []
     for object_role_name, role_data in object_roles.items():
         rd = get_role_definition(object_role_name)
         if rd is None:
@@ -357,26 +357,23 @@ def save_user_claims(user: Model, objects: dict, object_roles: dict, global_role
                 desired_permissions.append((rd, user, obj))
                 logger.info(f"Granting user {user.username} role {object_role_name} to object {obj.name} with ansible_id {object_data['ansible_id']}")
 
-    # Pass 2: bulk assign all desired permissions
+    # Pass 2: bulk assign all desired permissions (global + object) in one call
     if desired_permissions:
-        bulk_give_permissions(user_permissions=desired_permissions, fire_signals_on_create=False)
+        bulk_give_permissions(user_permissions=desired_permissions)
 
-    # Pass 3: remove stale assignments not in the desired set
-    desired_keys = {(rd.pk, obj.pk) for rd, _user, obj in desired_permissions}
-    stale_assignments = (
-        RoleUserAssignment.objects.filter(user=user, role_definition__name__in=managed_roles)
-        .exclude(pk__in=global_assignment_pks)
-        .select_related('role_definition')
-    )
-
-    stale_user_assignments = []
-    for assignment in stale_assignments:
-        if (assignment.role_definition_id, assignment.cache_id) not in desired_keys:
-            if not assignment.content_type_id:
-                assignment.role_definition.remove_global_permission(user)
-            else:
-                stale_user_assignments.append(assignment)
-
+    # Pass 3: remove stale assignments not in the desired set. Global assignments carry a null
+    # content object -> keyed as (rd.pk, None); remove_assignments deletes them the same as
+    # object assignments, so there is no separate global-removal branch.
+    desired_keys = {(rd.pk, obj.pk if obj is not None else None) for rd, _user, obj in desired_permissions}
+    stale_user_assignments = [
+        assignment
+        for assignment in RoleUserAssignment.objects.filter(user=user, role_definition__name__in=managed_roles).select_related('role_definition')
+        if (assignment.role_definition_id, assignment.cache_id) not in desired_keys
+    ]
+    # Every stale row belongs to this one user, which we already hold -- attach it so signal
+    # consumers reading assignment.user don't trigger a per-row refetch of what we have.
+    for assignment in stale_user_assignments:
+        assignment.user = user
     if stale_user_assignments:
         logger.info(f"Removing {len(stale_user_assignments)} stale role assignments for user {user.username}")
         remove_assignments(user_assignments=stale_user_assignments)
