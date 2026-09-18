@@ -1,6 +1,9 @@
+from django.apps import apps
+from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.utils.translation import gettext_lazy as _
 from oauth2_provider.generators import generate_client_secret
+from rest_framework import serializers
 
 from ansible_base.lib.serializers.common import NamedCommonModelSerializer
 from ansible_base.lib.serializers.mixins import CleanTextMixin
@@ -10,6 +13,12 @@ from ansible_base.oauth2_provider.models import OAuth2Application
 
 class OAuth2ApplicationSerializer(CleanTextMixin, NamedCommonModelSerializer):
     oauth2_client_secret = None
+    organization = serializers.PrimaryKeyRelatedField(
+        queryset=apps.get_model(settings.ANSIBLE_BASE_ORGANIZATION_MODEL).objects.all(),
+        required=True,
+        allow_null=False,
+        help_text=_('Organization containing this application.'),
+    )
 
     class Meta:
         model = OAuth2Application
@@ -18,7 +27,6 @@ class OAuth2ApplicationSerializer(CleanTextMixin, NamedCommonModelSerializer):
         read_only_on_update_fields = ('user', 'authorization_grant_type')
         extra_kwargs = {
             'user': {'allow_null': True, 'required': False},
-            'organization': {'allow_null': False},
             'authorization_grant_type': {'allow_null': False, 'label': _('Authorization Grant Type')},
             'client_secret': {'label': _('Client Secret')},
             'client_type': {'label': _('Client Type')},
