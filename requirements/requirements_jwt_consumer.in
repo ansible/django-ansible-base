@@ -1,2 +1,2 @@
-pyjwt
+pyjwt>=2.13.0  # Required for cryptography>=49.0.0 compatibility
 requests

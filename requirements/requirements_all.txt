@@ -176,7 +176,7 @@ pyasn1-modules==0.4.2
     # via python-ldap
 pycparser==2.23
     # via cffi
-pyjwt==2.10.1
+pyjwt==2.14.0
     # via
     #   -r requirements/requirements_jwt_consumer.in
     #   -r requirements/requirements_resource_registry.in
