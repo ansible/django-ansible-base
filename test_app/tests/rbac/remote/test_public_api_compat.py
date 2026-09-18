@@ -4,7 +4,7 @@ import pytest
 
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac import permission_registry
-from ansible_base.rbac.models import RoleUserAssignment
+from ansible_base.rbac.models import DABPermission, RoleDefinition, RoleUserAssignment
 from ansible_base.rbac.remote import RemoteObject
 from ansible_base.rbac.service_api.serializers import ServiceRoleUserAssignmentSerializer
 from test_app.models import Organization
@@ -138,3 +138,55 @@ def test_give_permission_to_remote_object_uuid(admin_api_client, rando, foo_type
     serializer = ServiceRoleUserAssignmentSerializer(assignment)
     assignment_data = serializer.data
     assert assignment_data['object_id'] == str(assignment.object_id)
+
+
+@pytest.mark.django_db
+class TestRemoteObjectManagePermission:
+    """Tests for check_content_obj_permission with RemoteObject and manage_action."""
+
+    @pytest.fixture
+    def change_foo_permission(self, foo_type):
+        return DABPermission.objects.create(codename='change_foo', content_type=foo_type)
+
+    @pytest.fixture
+    def change_foo_rd(self, foo_type, change_foo_permission, foo_permission):
+        return RoleDefinition.objects.create_from_permissions(
+            name='Foo change+foo role',
+            permissions=[change_foo_permission.api_slug, foo_permission.api_slug],
+            content_type=foo_type,
+        )
+
+    @pytest.fixture
+    def change_only_rd(self, foo_type, change_foo_permission):
+        return RoleDefinition.objects.create_from_permissions(
+            name='Foo change-only role',
+            permissions=[change_foo_permission.api_slug],
+            content_type=foo_type,
+        )
+
+    @pytest.fixture(autouse=True)
+    def _make_users_visible(self, user, rando, org_admin_rd, org_member_rd, organization):
+        org_admin_rd.give_permission(user, organization)
+        org_member_rd.give_permission(rando, organization)
+
+    def test_non_admin_with_change_can_assign_remote_role(self, user_api_client, user, rando, foo_type, foo_rd, change_foo_rd):
+        a_foo = RemoteObject(content_type=foo_type, object_id=42)
+        change_foo_rd.give_permission(user, a_foo)
+
+        url = get_relative_url('roleuserassignment-list')
+        response = user_api_client.post(url, data={"role_definition": foo_rd.id, "user": rando.pk, "object_id": 42})
+        assert response.status_code == 201, response.data
+
+    def test_non_admin_without_change_cannot_assign_remote_role(self, user_api_client, user, rando, foo_type, foo_rd, change_foo_permission):
+        url = get_relative_url('roleuserassignment-list')
+        response = user_api_client.post(url, data={"role_definition": foo_rd.id, "user": rando.pk, "object_id": 42})
+        assert response.status_code == 403
+
+    def test_escalation_blocked_for_remote_object(self, user_api_client, user, rando, foo_type, foo_rd, change_only_rd):
+        a_foo = RemoteObject(content_type=foo_type, object_id=42)
+        change_only_rd.give_permission(user, a_foo)
+
+        url = get_relative_url('roleuserassignment-list')
+        response = user_api_client.post(url, data={"role_definition": foo_rd.id, "user": rando.pk, "object_id": 42})
+        assert response.status_code == 403
+        assert 'foo_foo' in str(response.data)
