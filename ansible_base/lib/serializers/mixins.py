@@ -49,6 +49,32 @@ class CleanTextMixin:
     excluded_fields = frozenset()
     excluded_json_keys = MappingProxyType({})
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        # Register this serializer's model with the ORM-bypass validation signal so it
+        # knows which models are actually covered by a CleanTextMixin serializer. Concrete
+        # subclasses define Meta.model directly; intermediate/abstract mixins without a
+        # Meta (or without Meta.model) are skipped.
+        model = getattr(getattr(cls, 'Meta', None), 'model', None)
+        if model is not None:
+            from ansible_base.lib.utils.validation_signals import register_protected_model
+
+            register_protected_model(model, frozenset(cls.name_fields), frozenset(cls.excluded_fields))
+
+    def save(self, **kwargs):
+        # Held for the full duration of the actual persistence (including any post_save
+        # receivers it triggers, e.g. resource_registry's Resource sync) so the ORM-bypass
+        # validation signal can tell this write came from a validated serializer and skip
+        # it. Note: validate() alone is not sufficient here -- it completes during
+        # is_valid(), before save() (and the model's post_save signal) ever runs.
+        from ansible_base.lib.utils.validation_signals import get_validation_context_token, reset_validation_context
+
+        token = get_validation_context_token()
+        try:
+            return super().save(**kwargs)
+        finally:
+            reset_validation_context(token)
+
     def _log_validation_failure(self, field_name, detail):
         """Emit a WARNING-level audit log for a rejected field value.
 

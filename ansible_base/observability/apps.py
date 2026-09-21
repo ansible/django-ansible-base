@@ -11,4 +11,9 @@ class ObservabilityConfig(AppConfig):
 
     def ready(self):
         setup_observability()
+
+        # Register validation bypass logging signal
+        from ansible_base.lib.utils.validation_signals import register_validation_signals
+        register_validation_signals()
+
         super().ready()
