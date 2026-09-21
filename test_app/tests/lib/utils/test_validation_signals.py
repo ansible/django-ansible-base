@@ -7,6 +7,7 @@ Tests verify that the validation_bypass_logger signal:
 4. Includes structured audit information (resource type, field, tier, caller)
 5. Never blocks saves (observability-only)
 """
+
 import logging
 
 import pytest
@@ -22,7 +23,6 @@ from ansible_base.lib.utils.validation_signals import (
     reset_validation_context,
 )
 from test_app.models import City, Organization
-
 
 # Register signals before tests run
 register_validation_signals()
@@ -50,10 +50,7 @@ class TestValidationBypassLogging:
         caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
 
         # Create via ORM with a Tier 2 violation (HTML tag in description)
-        org = Organization.objects.create(
-            name='ValidName',
-            description='<script>alert("xss")</script>'
-        )
+        org = Organization.objects.create(name='ValidName', description='<script>alert("xss")</script>')
 
         # Save succeeded (observability-only, doesn't block)
         assert org.pk is not None
@@ -108,10 +105,7 @@ class TestValidationBypassLogging:
         caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
 
         # Create via serializer with invalid data (should be rejected by serializer)
-        serializer = OrgSerializer(data={
-            'name': 'ValidName',
-            'description': '<script>xss</script>'
-        })
+        serializer = OrgSerializer(data={'name': 'ValidName', 'description': '<script>xss</script>'})
 
         # Serializer validation catches the error
         assert not serializer.is_valid()
@@ -174,7 +168,7 @@ class TestValidationBypassLogging:
 
         # Organization has integer and JSON fields that should be ignored
         # Only text fields (name, description) are validated
-        org = Organization.objects.create(
+        Organization.objects.create(
             name='ValidName',
             description='Valid description',
             # extra_field is JSONField - should not trigger validation signal
@@ -196,10 +190,7 @@ class TestValidationBypassLogging:
         caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
 
         # Create with violation while validation is disabled
-        org = Organization.objects.create(
-            name='ValidName',
-            description='<script>alert("xss")</script>'
-        )
+        org = Organization.objects.create(name='ValidName', description='<script>alert("xss")</script>')
 
         assert org.pk is not None
 
@@ -214,10 +205,7 @@ class TestValidationBypassLogging:
         caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
 
         # Create with violations in both name and description
-        org = Organization.objects.create(
-            name='Invalid<Name>',
-            description='<script>xss</script>'
-        )
+        org = Organization.objects.create(name='Invalid<Name>', description='<script>xss</script>')
 
         assert org.pk is not None
 
@@ -236,10 +224,7 @@ class TestValidationBypassLogging:
         caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
 
         # Create with violation
-        Organization.objects.create(
-            name='Valid',
-            description='<b>html</b>'
-        )
+        Organization.objects.create(name='Valid', description='<b>html</b>')
 
         signal_logs = [r for r in caplog.records if 'ORM bypass' in r.message]
         assert len(signal_logs) == 1
