@@ -198,17 +198,16 @@ The `validation_bypass_logger` signal uses this detection flow:
    held for the duration of the actual persistence, not just `is_valid()`/`validate()`,
    so it also covers any `post_save` cascades triggered synchronously within that save)
 
-3. **Check validation setting:** Skip if `ENHANCED_INPUT_VALIDATION_ENABLED` is False
-   (no point logging violations when enforcement is off)
-
-4. **Get text fields:** Use same field discovery as CleanTextMixin
+3. **Get text fields:** Use same field discovery as CleanTextMixin
    (`get_internal_type() in ('CharField', 'TextField')`), skipping any field name in
    the registered `excluded_fields`
 
-5. **Validate each field:** Run `validate_resource_name` (Tier 1) or
+4. **Validate each field:** Run `validate_resource_name` (Tier 1) or
    `validate_free_text` (Tier 2) on each text field value
 
-6. **Log violations:** Emit WARNING log with structured data:
+5. **Log violations:** Emit WARNING log with structured data (logged regardless of
+   `ENHANCED_INPUT_VALIDATION_ENABLED` setting — observability is independent of
+   enforcement):
    - Resource type (app_label.ModelName)
    - Field name
    - Violation tier (Tier 1 / Tier 2)

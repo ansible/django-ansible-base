@@ -12,6 +12,7 @@ bulk_update(), or QuerySet.update() -- see docs/lib/validation_bypass_paths.md. 
 paths are NOT observable via this signal; model-level validators are the only way to
 cover them (see docs/lib/validation.md).
 """
+
 import inspect
 import logging
 from contextvars import ContextVar
