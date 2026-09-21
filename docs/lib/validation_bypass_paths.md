@@ -5,8 +5,9 @@ This document catalogs known code paths that write to the database via ORM metho
 rather than through DRF serializers, and therefore bypass CleanTextMixin validation.
 
 The validation signal handler (`ansible_base.lib.utils.validation_signals.validation_bypass_logger`)
-provides observability for these bypass paths by logging validation violations
-without blocking the save operation.
+provides observability for **single-instance saves** (create(), save()) by logging validation
+violations without blocking the save operation. **Bulk operations** (bulk_create(), bulk_update(),
+queryset.update()) are not observable via this signal — see the "Known Limitations" section below.
 
 ## Why This Matters
 
