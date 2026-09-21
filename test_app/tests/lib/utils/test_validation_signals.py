@@ -44,12 +44,22 @@ def enable_validation(settings):
 class TestValidationBypassLogging:
     """Test that ORM-direct writes log validation violations."""
 
+    @pytest.fixture(autouse=True)
+    def setup_logger(self, caplog):
+        """Ensure validation signal logger is captured."""
+        # Set root logger to DEBUG to capture all messages
+        caplog.set_level(logging.DEBUG)
+        # Get the signal handler logger and ensure it's not suppressed
+        sig_logger = logging.getLogger('ansible_base.lib.utils.validation_signals')
+        sig_logger.setLevel(logging.DEBUG)
+        sig_logger.propagate = True
+        yield
+        # Cleanup
+        sig_logger.setLevel(logging.WARNING)
+
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_orm_create_tier2_violation_logs(self, caplog):
         """AC #6.1: ORM-direct create with Tier 2 violation triggers a log entry."""
-        # Ensure the logger is at DEBUG level so caplog can capture WARNING messages
-        caplog.set_level(logging.DEBUG)
-        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
 
         # Create via ORM with a Tier 2 violation (HTML tag in description)
         org = Organization.objects.create(name='ValidName', description='<script>alert("xss")</script>')
@@ -76,8 +86,6 @@ class TestValidationBypassLogging:
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_orm_update_tier1_violation_logs(self, caplog):
         """AC #6.2: ORM-direct update with Tier 1 violation triggers a log entry."""
-        caplog.set_level(logging.DEBUG)
-        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
 
         # Create with valid data
         org = Organization.objects.create(name='ValidName', description='Valid description')
@@ -105,8 +113,6 @@ class TestValidationBypassLogging:
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_serializer_write_no_signal_log(self, caplog):
         """AC #6.3: Serializer-mediated writes do NOT trigger the signal log."""
-        caplog.set_level(logging.DEBUG)
-        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
 
         # Create via serializer with invalid data (should be rejected by serializer)
         serializer = OrgSerializer(data={'name': 'ValidName', 'description': '<script>xss</script>'})
@@ -128,8 +134,6 @@ class TestValidationBypassLogging:
         The guard has to survive through serializer.save() (and any post_save cascades it
         triggers), not just validate().
         """
-        caplog.set_level(logging.DEBUG)
-        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
 
         serializer = OrgSerializer(data={'name': 'ValidName', 'description': 'A valid description'})
         assert serializer.is_valid(), serializer.errors
@@ -153,8 +157,6 @@ class TestValidationBypassLogging:
         # Create the "legacy" record directly (simulating data that predates validation).
         org = Organization.objects.create(name='Legacy<Invalid>Name', description='original')
         caplog.clear()
-        caplog.set_level(logging.DEBUG)
-        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
 
         serializer = OrgSerializer(org, data={'description': 'updated description'}, partial=True)
         assert serializer.is_valid(), serializer.errors
@@ -170,8 +172,6 @@ class TestValidationBypassLogging:
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_non_text_fields_ignored(self, caplog):
         """AC #6.4: Non-text fields are ignored by the signal."""
-        caplog.set_level(logging.DEBUG)
-        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
 
         # Organization has integer and JSON fields that should be ignored
         # Only text fields (name, description) are validated
@@ -194,8 +194,6 @@ class TestValidationBypassLogging:
         CleanTextMixin's behavior: it logs violations at WARNING level whether
         enforcement is on or off.
         """
-        caplog.set_level(logging.DEBUG)
-        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
 
         # Create with violation while validation is disabled
         org = Organization.objects.create(name='ValidName', description='<script>alert("xss")</script>')
@@ -210,8 +208,6 @@ class TestValidationBypassLogging:
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_multiple_field_violations_logged(self, caplog):
         """Multiple violations in a single save should log each one."""
-        caplog.set_level(logging.DEBUG)
-        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
 
         # Create with violations in both name and description
         org = Organization.objects.create(name='Invalid<Name>', description='<script>xss</script>')
@@ -230,8 +226,6 @@ class TestValidationBypassLogging:
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_caller_info_captured(self, caplog):
         """Caller information should be captured in the log."""
-        caplog.set_level(logging.DEBUG)
-        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
 
         # Create with violation
         Organization.objects.create(name='Valid', description='<b>html</b>')
@@ -256,9 +250,6 @@ class TestValidationBypassLogging:
         as ORM bypass violations.
         """
         from ansible_base.resource_registry.models import Resource
-
-        caplog.set_level(logging.DEBUG)
-        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
 
         # Saving Organization triggers resource_registry's post_save cascade, which
         # updates/saves a Resource row with the same (invalid) name copied over.
