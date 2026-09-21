@@ -40,10 +40,15 @@ _protected_models: dict[type, tuple[frozenset, frozenset]] = {}
 # Frame modules to skip when walking the stack for caller info -- these are the
 # save()/signal-dispatch internals between the real caller and this signal handler,
 # not useful information for an auditor tracing the bypass back to its source.
+# ansible_base.lib.abstract_models is included because nearly every model's save()
+# chain passes through CommonModel/CreatableModel/AbstractCommonModel.save() (which
+# only add bookkeeping like modified_by/created_by/encryption before calling
+# super().save()) -- that's still framework plumbing, not the real call site.
 _INTERNAL_CALLER_PREFIXES = (
     'django.db.models',
     'django.dispatch',
     'ansible_base.lib.utils.validation_signals',
+    'ansible_base.lib.abstract_models',
 )
 
 
@@ -176,13 +181,6 @@ def validation_bypass_logger(sender, instance: Model, created: bool, **kwargs):
 
     # Skip if this save originated from a DRF serializer with CleanTextMixin
     if _serializer_validation_active.get(False):
-        return
-
-    # Skip if enhanced validation is not configured (no validators to check against)
-    from ansible_base.lib.utils.settings import get_setting
-    if not get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False):
-        # Validation is not enabled, so we shouldn't log bypass attempts
-        # (logging would be noise since the validators aren't enforced anyway)
         return
 
     # Get text fields for this model

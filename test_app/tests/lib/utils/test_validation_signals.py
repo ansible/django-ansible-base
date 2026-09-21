@@ -185,8 +185,14 @@ class TestValidationBypassLogging:
         assert len(signal_logs) == 0
 
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=False)
-    def test_signal_skips_when_validation_disabled(self, caplog):
-        """Signal should not log when ENHANCED_INPUT_VALIDATION_ENABLED is False."""
+    def test_signal_logs_even_when_enforcement_disabled(self, caplog):
+        """Signal logs violations even when ENHANCED_INPUT_VALIDATION_ENABLED is False.
+
+        The enforcement setting controls whether violations block saves, not whether
+        they are observed. Observability (logging) happens regardless, matching
+        CleanTextMixin's behavior: it logs violations at WARNING level whether
+        enforcement is on or off.
+        """
         caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
 
         # Create with violation while validation is disabled
@@ -197,9 +203,10 @@ class TestValidationBypassLogging:
 
         assert org.pk is not None
 
-        # No log entry (validation is disabled)
+        # Log entry is created even though enforcement is off
         signal_logs = [r for r in caplog.records if 'ORM bypass' in r.message]
-        assert len(signal_logs) == 0
+        assert len(signal_logs) == 1
+        assert 'Tier 2' in signal_logs[0].message
 
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_multiple_field_violations_logged(self, caplog):
