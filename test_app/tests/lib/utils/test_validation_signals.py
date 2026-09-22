@@ -713,5 +713,5 @@ class TestValidationBypassLoggerEdgeCases:
         validation_bypass_logger(Organization, instance, created=True)
         signal_logs = [r for r in caplog.records if 'ORM bypass' in r.message]
         assert len(signal_logs) == 1
-        assert 'name' in signal_logs[0].message
-        assert 'description' not in signal_logs[0].message
+        assert "validation rejected 'name'" in signal_logs[0].message
+        assert "validation rejected 'description'" not in signal_logs[0].message
