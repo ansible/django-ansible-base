@@ -90,6 +90,8 @@ def test_ansible_base_view_deprecated_view(view_with_headers, mock_request, defa
     view = DeprecatedView()
     response = view.finalize_response(mock_request, initial_response)
     assert 'Warning' in response
+    assert response['X-Deprecated'] == 'true'
+    assert 'deprecated' in response['X-Deprecated-Detail'].lower()
 
 
 def test_ansible_base_view_time_header(view_with_headers, mock_request):

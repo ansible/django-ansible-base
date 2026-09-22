@@ -85,6 +85,7 @@ def _register_skip_ai_description(view_class: type, class_name: str, prefix: str
         logger.info(f"View class {class_name} (prefix: {prefix}) has skip_ai_description=True")
 
 
+
 def _register_resource_purpose(view_class: type, class_name: str, prefix: str) -> None:
     """Register a ViewSet's resource_purpose for description generation."""
     resource_purpose = getattr(view_class, 'resource_purpose', None)
@@ -127,7 +128,6 @@ def collect_ai_description_metadata(endpoints: Optional[list[tuple[str, str, str
     SKIP_AI_DESCRIPTION_PREFIXES.clear()
     RESOURCE_PURPOSE_MAP.clear()
     OPERATION_CLASS_MAP.clear()
-
     if endpoints:
         for path, path_regex, method, view in endpoints:
             try:

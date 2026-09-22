@@ -60,6 +60,13 @@ class AnsibleBaseView(APIView):
             time_elapsed = time.time() - self.time_started
             response['X-API-Time'] = '%0.3fs' % time_elapsed
 
+        if getattr(self, '_dab_deprecated', False) or getattr(self, 'deprecated', False):
+            from ansible_base.lib.utils.views.deprecation import mark_deprecated
+
+            detail = getattr(self, '_dab_deprecated_detail', 'This resource has been deprecated and will be removed in a future release.')
+            link = getattr(self, '_dab_deprecated_link', None)
+            mark_deprecated(response, detail, link)
+
         if getattr(self, 'deprecated', False):
             response['Warning'] = _('This resource has been deprecated and will be removed in a future release.')
 
