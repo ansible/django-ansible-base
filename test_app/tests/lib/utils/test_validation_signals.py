@@ -50,16 +50,14 @@ class TestValidationBypassLogging:
 
     @pytest.fixture(autouse=True)
     def setup_logger(self, caplog):
-        """Ensure validation signal logger is captured."""
-        # Set root logger to DEBUG to capture all messages
+        """Ensure caplog captures validation signal WARNINGs (pytest + xdist safe).
+
+        Order matters: set root DEBUG first, then the named logger to WARNING — see
+        2f764a1 fix for signal logging tests.
+        """
         caplog.set_level(logging.DEBUG)
-        # Get the signal handler logger and ensure it's not suppressed
-        sig_logger = logging.getLogger('ansible_base.lib.utils.validation_signals')
-        sig_logger.setLevel(logging.DEBUG)
-        sig_logger.propagate = True
+        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
         yield
-        # Cleanup
-        sig_logger.setLevel(logging.WARNING)
 
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_orm_create_tier2_violation_logs(self, caplog):
@@ -425,12 +423,15 @@ class TestCallerAttribution:
 class TestBulkValidationAudit:
     """Bulk ORM paths use shared registry and validators."""
 
+    @pytest.fixture(autouse=True)
+    def _capture_signal_logs(self, caplog):
+        caplog.set_level(logging.DEBUG)
+        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
+        yield
+
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_audit_bulk_model_instances_logs_violation(self, caplog):
         from ansible_base.lib.utils.bulk_validation_audit import audit_bulk_model_instances
-
-        caplog.set_level(logging.DEBUG)
-        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
 
         instances = [Organization(name='Valid', description='<script>x</script>')]
         audit_bulk_model_instances(instances, operation='bulk_create')
@@ -442,9 +443,6 @@ class TestBulkValidationAudit:
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_audit_bulk_item_dicts_logs_violation(self, caplog):
         from ansible_base.lib.utils.bulk_validation_audit import audit_bulk_item_dicts
-
-        caplog.set_level(logging.DEBUG)
-        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
 
         audit_bulk_item_dicts(
             Organization,
@@ -459,8 +457,6 @@ class TestBulkValidationAudit:
     def test_audit_bulk_skips_unregistered_model(self, caplog):
         from ansible_base.lib.utils.bulk_validation_audit import audit_bulk_item_dicts
         from ansible_base.resource_registry.models import Resource
-
-        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
 
         audit_bulk_item_dicts(Resource, [{'ansible_id': '00000000-0000-0000-0000-000000000001', 'name': '<b>x</b>'}])
 
