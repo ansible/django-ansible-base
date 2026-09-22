@@ -9,12 +9,15 @@ Tests verify that the validation_bypass_logger signal:
 """
 
 import logging
+from unittest import mock
 
 import pytest
 from django.test import override_settings
 from rest_framework import serializers
 
 from ansible_base.lib.serializers.mixins import CleanTextMixin
+from ansible_base.lib.utils import validation_signals as validation_signals_module
+from ansible_base.lib.utils.bulk_validation_audit import audit_bulk_item_dicts, audit_bulk_model_instances
 from ansible_base.lib.utils.validation import DEFAULT_NAME_FIELDS
 from ansible_base.lib.utils.validation_signals import (
     _get_caller_info,
@@ -23,6 +26,7 @@ from ansible_base.lib.utils.validation_signals import (
     extend_caller_allowlist_prefixes,
     extend_internal_caller_prefixes,
     get_validation_context_token,
+    register_protected_model,
     register_validation_signals,
     reset_validation_context,
     validation_bypass_logger,
@@ -42,13 +46,11 @@ class OrgSerializer(CleanTextMixin, serializers.ModelSerializer):
 @pytest.fixture
 def organization_bypass_registry_no_exclusions():
     """Reset Organization registry; other test modules union ``excluded_fields`` (e.g. description)."""
-    import ansible_base.lib.utils.validation_signals as vs
-
-    snapshot = vs._protected_models.copy()
-    vs._protected_models[Organization] = (frozenset(DEFAULT_NAME_FIELDS), frozenset())
+    snapshot = validation_signals_module._protected_models.copy()
+    validation_signals_module._protected_models[Organization] = (frozenset(DEFAULT_NAME_FIELDS), frozenset())
     yield
-    vs._protected_models.clear()
-    vs._protected_models.update(snapshot)
+    validation_signals_module._protected_models.clear()
+    validation_signals_module._protected_models.update(snapshot)
 
 
 @pytest.fixture
@@ -376,10 +378,6 @@ class TestCallerAttribution:
 
     def test_allowlist_selects_first_matching_frame(self):
         """Phase 1: configured allowlist wins over later denylisted plumbing frames."""
-        from unittest import mock
-
-        import ansible_base.lib.utils.validation_signals as vs
-
         frames = []
         modules = {}
         for module_name, func in (
@@ -396,17 +394,13 @@ class TestCallerAttribution:
             frame_info.lineno = 99
             frames.append(frame_info)
 
-        with mock.patch.object(vs.inspect, 'stack', return_value=[mock.Mock()] + frames):
-            with mock.patch.object(vs.inspect, 'getmodule', side_effect=lambda fr: modules.get(id(fr))):
-                with mock.patch.object(vs, '_caller_allowlist_prefixes', return_value=('my_service.tasks',)):
+        with mock.patch.object(validation_signals_module.inspect, 'stack', return_value=[mock.Mock()] + frames):
+            with mock.patch.object(validation_signals_module.inspect, 'getmodule', side_effect=lambda fr: modules.get(id(fr))):
+                with mock.patch.object(validation_signals_module, '_caller_allowlist_prefixes', return_value=('my_service.tasks',)):
                     assert _get_caller_info() == 'my_service.tasks.jobs.run_sync:99'
 
     def test_denylist_when_allowlist_empty(self):
         """Phase 2: skip denylisted frames; return first remaining."""
-        from unittest import mock
-
-        import ansible_base.lib.utils.validation_signals as vs
-
         frames = []
         modules = {}
         for module_name, func in (
@@ -422,9 +416,9 @@ class TestCallerAttribution:
             frame_info.lineno = 7
             frames.append(frame_info)
 
-        with mock.patch.object(vs.inspect, 'stack', return_value=[mock.Mock()] + frames):
-            with mock.patch.object(vs.inspect, 'getmodule', side_effect=lambda fr: modules.get(id(fr))):
-                with mock.patch.object(vs, '_caller_allowlist_prefixes', return_value=()):
+        with mock.patch.object(validation_signals_module.inspect, 'stack', return_value=[mock.Mock()] + frames):
+            with mock.patch.object(validation_signals_module.inspect, 'getmodule', side_effect=lambda fr: modules.get(id(fr))):
+                with mock.patch.object(validation_signals_module, '_caller_allowlist_prefixes', return_value=()):
                     assert _get_caller_info() == 'real_app.management.commands.import_data.handle:7'
 
     @pytest.mark.django_db
@@ -442,24 +436,56 @@ class TestCallerAttribution:
 
     def test_extend_internal_caller_prefixes(self):
         """Runtime denylist extension is applied during phase 2."""
-        from ansible_base.lib.utils import validation_signals as vs
-
         extend_internal_caller_prefixes(['synthetic.internal.plumbing'])
-        assert 'synthetic.internal.plumbing' in vs._INTERNAL_CALLER_PREFIXES
+        assert 'synthetic.internal.plumbing' in validation_signals_module._INTERNAL_CALLER_PREFIXES
+
+    def test_extend_internal_caller_prefixes_skips_empty_and_duplicates(self):
+        before = len(validation_signals_module._INTERNAL_CALLER_PREFIXES)
+        extend_internal_caller_prefixes(['', 'django.db.models', 'synthetic.dedupe.test'])
+        extend_internal_caller_prefixes(['synthetic.dedupe.test'])
+        assert validation_signals_module._INTERNAL_CALLER_PREFIXES.count('synthetic.dedupe.test') == 1
+        assert len(validation_signals_module._INTERNAL_CALLER_PREFIXES) == before + 1
 
     def test_extend_caller_allowlist_prefixes(self):
         extend_caller_allowlist_prefixes(['synthetic.tasks'])
-        from ansible_base.lib.utils import validation_signals as vs
+        assert 'synthetic.tasks' in validation_signals_module._RUNTIME_ALLOWLIST_PREFIXES
 
-        assert 'synthetic.tasks' in vs._RUNTIME_ALLOWLIST_PREFIXES
+    def test_extend_caller_allowlist_prefixes_skips_empty_and_duplicates(self):
+        before = len(validation_signals_module._RUNTIME_ALLOWLIST_PREFIXES)
+        extend_caller_allowlist_prefixes(['', 'synthetic.allow.dedupe'])
+        extend_caller_allowlist_prefixes(['synthetic.allow.dedupe'])
+        assert validation_signals_module._RUNTIME_ALLOWLIST_PREFIXES.count('synthetic.allow.dedupe') == 1
+        assert len(validation_signals_module._RUNTIME_ALLOWLIST_PREFIXES) == before + 1
 
     def test_fallback_returns_unknown_when_no_frames(self):
-        from unittest import mock
-
-        import ansible_base.lib.utils.validation_signals as vs
-
-        with mock.patch.object(vs.inspect, 'stack', return_value=[mock.Mock()]):
+        with mock.patch.object(validation_signals_module.inspect, 'stack', return_value=[mock.Mock()]):
             assert _get_caller_info() == 'unknown'
+
+    def test_get_caller_info_returns_unknown_on_stack_failure(self):
+        with mock.patch.object(validation_signals_module.inspect, 'stack', side_effect=RuntimeError('stack broke')):
+            assert _get_caller_info() == 'unknown'
+
+    def test_get_caller_info_fallback_phase_after_denylist_exhausted(self):
+        frames = []
+        modules = {}
+        for module_name, func in (
+            ('django.db.models.base', 'save_base'),
+            ('ansible_base.lib.utils.validation_signals', 'validation_bypass_logger'),
+            ('customer_app.sync.tasks', 'import_rows'),
+        ):
+            frame_info = mock.Mock()
+            mod = mock.Mock()
+            mod.__name__ = module_name
+            frame_info.frame = mock.Mock()
+            modules[id(frame_info.frame)] = mod
+            frame_info.function = func
+            frame_info.lineno = 12
+            frames.append(frame_info)
+
+        with mock.patch.object(validation_signals_module.inspect, 'stack', return_value=[mock.Mock()] + frames):
+            with mock.patch.object(validation_signals_module.inspect, 'getmodule', side_effect=lambda fr: modules.get(id(fr))):
+                with mock.patch.object(validation_signals_module, '_caller_allowlist_prefixes', return_value=()):
+                    assert _get_caller_info() == 'customer_app.sync.tasks.import_rows:12'
 
 
 @pytest.mark.usefixtures('organization_bypass_registry_no_exclusions')
@@ -474,8 +500,6 @@ class TestBulkValidationAudit:
 
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_audit_bulk_model_instances_logs_violation(self, caplog):
-        from ansible_base.lib.utils.bulk_validation_audit import audit_bulk_model_instances
-
         instances = [Organization(name='Valid', description='<script>x</script>')]
         audit_bulk_model_instances(instances, operation='bulk_create')
 
@@ -485,8 +509,6 @@ class TestBulkValidationAudit:
 
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_audit_bulk_item_dicts_logs_violation(self, caplog):
-        from ansible_base.lib.utils.bulk_validation_audit import audit_bulk_item_dicts
-
         audit_bulk_item_dicts(
             Organization,
             [{'name': 'Valid', 'description': '<script>x</script>'}],
@@ -498,7 +520,6 @@ class TestBulkValidationAudit:
         assert 'description' in bulk_logs[0].message
 
     def test_audit_bulk_skips_unregistered_model(self, caplog):
-        from ansible_base.lib.utils.bulk_validation_audit import audit_bulk_item_dicts
         from ansible_base.resource_registry.models import Resource
 
         audit_bulk_item_dicts(Resource, [{'ansible_id': '00000000-0000-0000-0000-000000000001', 'name': '<b>x</b>'}])
@@ -507,13 +528,13 @@ class TestBulkValidationAudit:
 
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_audit_bulk_skips_excluded_fields(self, caplog):
-        from ansible_base.lib.utils.bulk_validation_audit import audit_bulk_model_instances
-        import ansible_base.lib.utils.validation_signals as vs
-
         caplog.set_level(logging.DEBUG)
         caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
 
-        vs._protected_models[Organization] = (frozenset(DEFAULT_NAME_FIELDS), frozenset({'description'}))
+        validation_signals_module._protected_models[Organization] = (
+            frozenset(DEFAULT_NAME_FIELDS),
+            frozenset({'description'}),
+        )
 
         instances = [
             Organization(name='Invalid<Name>', description='<script>x</script>'),
@@ -524,6 +545,18 @@ class TestBulkValidationAudit:
         assert len(bulk_logs) == 1
         assert 'name' in bulk_logs[0].message
         assert 'description' not in bulk_logs[0].message
+
+    def test_audit_bulk_model_instances_skips_unregistered_instance_type(self, caplog):
+        from ansible_base.resource_registry.models import Resource
+
+        unregistered = Resource.__new__(Resource)
+        audit_bulk_model_instances(
+            [Organization(name='Valid', description='<script>x</script>'), unregistered],
+            operation='bulk_create',
+        )
+        bulk_logs = [r for r in caplog.records if 'ORM bypass (bulk_create)' in r.message]
+        assert len(bulk_logs) == 1
+        assert 'test_app.Organization' in bulk_logs[0].message
 
 
 @pytest.mark.django_db
@@ -641,14 +674,62 @@ class TestHelperFunctions:
         assert tier == 'Tier 2'
         assert 'HTML' in reason
 
-    def test_validate_field_handles_none(self):
-        """None values should not cause errors."""
-        # This is handled in the main signal handler, not _validate_field
-        # _validate_field expects strings, signal handler filters None
-        pass
+    def test_register_protected_model_unions_fields(self):
+        snap = validation_signals_module._protected_models.copy()
+        try:
+            register_protected_model(Organization, frozenset({'custom_name_field'}), frozenset({'extra_field'}))
+            name_fields, excluded = validation_signals_module._protected_models[Organization]
+            assert 'custom_name_field' in name_fields
+            assert 'extra_field' in excluded
+        finally:
+            validation_signals_module._protected_models.clear()
+            validation_signals_module._protected_models.update(snap)
 
-    def test_validate_field_handles_non_string(self):
-        """Non-string values should not cause errors."""
-        # This is handled in the main signal handler
-        # The signal handler skips non-string values
-        pass
+    def test_validate_field_non_list_validation_error_detail(self):
+        from rest_framework.serializers import ValidationError
+
+        with mock.patch(
+            'ansible_base.lib.utils.validation_signals.validate_free_text',
+            side_effect=ValidationError('plain string detail'),
+        ):
+            result = _validate_field('description', 'value', frozenset())
+        assert result == ('Tier 2', 'plain string detail')
+
+    def test_validate_field_unexpected_exception_logged(self, caplog):
+        caplog.set_level(logging.ERROR, logger='ansible_base.lib.utils.validation_signals')
+        with mock.patch(
+            'ansible_base.lib.utils.validation_signals.validate_free_text',
+            side_effect=RuntimeError('validator exploded'),
+        ):
+            assert _validate_field('description', 'value', frozenset()) is None
+        assert any('Unexpected error during ORM bypass validation' in r.message for r in caplog.records)
+
+    def test_register_validation_signals_logs_debug(self, caplog):
+        caplog.set_level(logging.DEBUG, logger='ansible_base.lib.utils.validation_signals')
+        register_validation_signals()
+        assert any('Registered validation bypass logging signal' in r.message for r in caplog.records)
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures('organization_bypass_registry_no_exclusions')
+class TestValidationBypassLoggerEdgeCases:
+    """Branches in validation_bypass_logger not covered by happy-path ORM tests."""
+
+    @pytest.fixture(autouse=True)
+    def setup_logger(self, caplog):
+        caplog.set_level(logging.DEBUG)
+        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
+        yield
+
+    def test_skips_when_model_has_no_text_fields(self, mocker):
+        mocker.patch('ansible_base.lib.utils.validation_signals._get_text_fields', return_value=([], []))
+        caller = mocker.patch('ansible_base.lib.utils.validation_signals._get_caller_info')
+        Organization.objects.create(name='Valid', description='clean')
+        caller.assert_not_called()
+
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    def test_skips_none_description_values(self, caplog):
+        Organization.objects.create(name='Invalid<Name>', description=None)
+        signal_logs = [r for r in caplog.records if 'ORM bypass' in r.message]
+        assert len(signal_logs) == 1
+        assert 'name' in signal_logs[0].message
