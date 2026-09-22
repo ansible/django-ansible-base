@@ -303,6 +303,25 @@ class TestContextVariableHandling:
 class TestProtectedModelRegistry:
     """Test the CleanTextMixin -> signal model registry."""
 
+    def test_cached_property_excluded_fields_registers_at_import_and_init(self):
+        """AWX settings serializers use @cached_property for excluded_fields."""
+        from functools import cached_property
+
+        from ansible_base.lib.utils.validation_signals import _protected_models
+
+        class _DynamicExcludedSerializer(CleanTextMixin, serializers.ModelSerializer):
+            @cached_property
+            def excluded_fields(self):
+                return frozenset({'description'})
+
+            class Meta:
+                model = Organization
+                fields = ['name', 'description']
+
+        _DynamicExcludedSerializer()
+        _name_fields, excluded = _protected_models[Organization]
+        assert 'description' in excluded
+
     def test_serializer_subclass_registers_its_model(self):
         """Defining a CleanTextMixin serializer registers Meta.model automatically."""
         from ansible_base.lib.utils.validation_signals import _protected_models
@@ -419,6 +438,14 @@ class TestCallerAttribution:
 
         assert 'synthetic.tasks' in vs._RUNTIME_ALLOWLIST_PREFIXES
 
+    def test_fallback_returns_unknown_when_no_frames(self):
+        from unittest import mock
+
+        import ansible_base.lib.utils.validation_signals as vs
+
+        with mock.patch.object(vs.inspect, 'stack', return_value=[mock.Mock()]):
+            assert _get_caller_info() == 'unknown'
+
 
 class TestBulkValidationAudit:
     """Bulk ORM paths use shared registry and validators."""
@@ -461,6 +488,55 @@ class TestBulkValidationAudit:
         audit_bulk_item_dicts(Resource, [{'ansible_id': '00000000-0000-0000-0000-000000000001', 'name': '<b>x</b>'}])
 
         assert [r for r in caplog.records if 'ORM bypass' in r.message] == []
+
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    def test_audit_bulk_skips_excluded_fields(self, caplog):
+        from ansible_base.lib.utils.bulk_validation_audit import audit_bulk_model_instances
+
+        caplog.set_level(logging.DEBUG)
+        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
+
+        instances = [
+            Organization(name='Invalid<Name>', description='<script>x</script>'),
+        ]
+        audit_bulk_model_instances(instances, operation='bulk_update')
+
+        bulk_logs = [r for r in caplog.records if 'ORM bypass (bulk_update)' in r.message]
+        assert len(bulk_logs) == 1
+        assert 'name' in bulk_logs[0].message
+        assert 'description' not in bulk_logs[0].message
+
+
+@pytest.mark.django_db
+class TestDynamicRegistryWithOrmBypass:
+    """Dynamic excluded_fields affect ORM bypass checks after serializer __init__."""
+
+    @pytest.fixture(autouse=True)
+    def setup_logger(self, caplog):
+        caplog.set_level(logging.DEBUG)
+        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
+        yield
+
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    def test_excluded_field_ignored_after_serializer_init(self, caplog):
+        from functools import cached_property
+
+        class _DynExcludeDescription(CleanTextMixin, serializers.ModelSerializer):
+            @cached_property
+            def excluded_fields(self):
+                return frozenset({'description'})
+
+            class Meta:
+                model = Organization
+                fields = ['name', 'description']
+
+        _DynExcludeDescription()
+        caplog.clear()
+
+        Organization.objects.create(name='Valid', description='<script>x</script>')
+
+        desc_logs = [r for r in caplog.records if 'ORM bypass' in r.message and "'description'" in r.message]
+        assert desc_logs == []
 
 
 @pytest.mark.django_db

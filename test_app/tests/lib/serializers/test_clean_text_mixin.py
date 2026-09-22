@@ -1087,3 +1087,31 @@ class TestCleanTextMixinPerformance:
         assert long_avg < 2.0, f"100KB description took {long_avg:.4f}s/call -- expected well under 2s"
         # No absolute floor here, for the same reason as above.
         assert long_avg < short_avg * 100, f"Validation time grew disproportionately with text length (2KB: {short_avg:.6f}s/call, 100KB: {long_avg:.6f}s/call)"
+
+
+class TestCleanTextMixinSignalRegistry:
+    """ORM bypass model registry (validation_signals) stays aligned with mixin config."""
+
+    def test_static_excluded_fields_in_registry_at_import(self):
+        from ansible_base.lib.utils.validation_signals import _protected_models
+
+        _name_fields, excluded = _protected_models[Organization]
+        assert 'description' in excluded
+
+    def test_init_unions_cached_property_excluded_fields(self):
+        from functools import cached_property
+
+        from ansible_base.lib.utils.validation_signals import _protected_models
+
+        class _SettingsStyleSerializer(CleanTextMixin, serializers.ModelSerializer):
+            @cached_property
+            def excluded_fields(self):
+                return frozenset({'extra_field'})
+
+            class Meta:
+                model = Organization
+                fields = ['name', 'description', 'extra_field']
+
+        _SettingsStyleSerializer()
+        _name_fields, excluded = _protected_models[Organization]
+        assert 'extra_field' in excluded

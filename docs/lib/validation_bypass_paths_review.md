@@ -89,6 +89,27 @@ and similar paths. AAP is **not** changing model `save()` / `full_clean()` for t
 
 ---
 
+### Registry + AWX compatibility (`CleanTextMixin`)
+
+**Issue:** AWX consumer CI failed importing `awx.conf.serializers` because
+`__init_subclass__` called `frozenset(cls.excluded_fields)` while `excluded_fields` is a
+`@cached_property` on settings serializers (`TypeError: 'cached_property' object is not
+iterable`).
+
+**Fix:** Register static collections at class creation; re-register from `__init__` using
+instance `getattr()` so dynamic exclusions union into the registry.
+
+| Area | Impact |
+|------|--------|
+| DRF `validate()` / enforcement | **None** (unchanged) |
+| ORM bypass registry | Aligns with instance exclusions; tiny per-serializer registry update |
+| Import / startup | **Fixes** AWX and any descriptor-based mixin config |
+| Risk before first serializer instance | Narrow: dynamic `excluded_fields` not in registry until first `Serializer(...)` |
+
+Documented in [validation_bypass_paths.md#registry-and-dynamic-serializer-configuration](validation_bypass_paths.md#registry-and-dynamic-serializer-configuration).
+
+---
+
 ## Full Findings
 
 Findings were empirically reproduced by running the branch's own test suite under `TESTAPP_MODE=sqlite` (no Postgres available in this environment) and by scripting two additional scenarios the existing tests don't cover: a fully valid serializer-mediated save, and a grandfathered-field serializer update.
@@ -412,11 +433,11 @@ Re-verify with:
   `_protected_models` registry and validators; one unit test asserts log format.
   Closing the epic's sync/import risk requires **downstream PRs** at bulk write
   sites (option 3). No QuerySet monkeypatch; no platform-wide model validator rollout.
-- **#5 (no registry) — FIXED, verified.** `CleanTextMixin.__init_subclass__`
-  now registers `Meta.model` (plus `name_fields`/`excluded_fields`) into a
-  module-level registry, and the signal short-circuits for any unregistered
-  model. Three new tests cover registration, no-`Meta.model` safety, and
-  `excluded_fields` unioning across multiple serializers for the same model
+- **#5 (no registry) — FIXED, verified.** `CleanTextMixin` registers `Meta.model`
+  at class creation (static `name_fields`/`excluded_fields`) and on each
+  `__init__` (supports `@cached_property` exclusions — see Registry + AWX above).
+  The signal short-circuits for any unregistered model. Tests cover registration,
+  no-`Meta.model` safety, `excluded_fields` unioning, and dynamic exclusions
   (worth noting: `name_fields` is unioned the same way but that isn't called
   out in the doc's caveat — a serializer-specific Tier 1/Tier 2 classification
   difference for the same field name across services would silently resolve

@@ -15,6 +15,38 @@ _INCOMPLETE_VALIDATION_MSG = _("Validation could not be completed for this field
 _LOG_CONTROL_RE = re.compile(r'[\x00-\x1f\x7f-\x9f]')
 
 
+def _static_frozenset_from_class_dict(cls, attr_name):
+    """Return a frozenset mixin config declared as a concrete collection on the MRO.
+
+    Descriptors (``@cached_property``, ``@property``) on the defining class cannot be
+    resolved at import time and are skipped so ``__init__`` can register later.
+    """
+    if attr_name in cls.__dict__:
+        val = cls.__dict__[attr_name]
+        if isinstance(val, (frozenset, set, list, tuple)):
+            return frozenset(val)
+        return None
+    for base in cls.__mro__[1:]:
+        if attr_name not in base.__dict__:
+            continue
+        val = base.__dict__[attr_name]
+        if isinstance(val, (frozenset, set, list, tuple)):
+            return frozenset(val)
+    return None
+
+
+def _frozenset_from_mixin_attr(obj, attr_name, default):
+    """Resolve a mixin config on a serializer instance (supports cached_property)."""
+    val = getattr(obj, attr_name, default)
+    if isinstance(val, frozenset):
+        return val
+    if isinstance(val, (set, list, tuple)):
+        return frozenset(val)
+    if isinstance(default, frozenset):
+        return default
+    return frozenset(default)
+
+
 class CleanTextMixin:
     """
     Drop-in mixin for DRF ModelSerializer that rejects unsafe text input.
@@ -43,6 +75,10 @@ class CleanTextMixin:
             Example: {'inputs': frozenset({'ssh_key_data'})}
 
     See docs/lib/validation.md for the full contract.
+
+    ORM bypass registry: static ``name_fields``/``excluded_fields`` register at class
+    definition; dynamic descriptors register on each serializer ``__init__`` (see
+    docs/lib/validation_bypass_paths.md#registry-and-dynamic-serializer-configuration).
     """
 
     name_fields = DEFAULT_NAME_FIELDS
@@ -59,7 +95,30 @@ class CleanTextMixin:
         if model is not None:
             from ansible_base.lib.utils.validation_signals import register_protected_model
 
-            register_protected_model(model, frozenset(cls.name_fields), frozenset(cls.excluded_fields))
+            name_fields = _static_frozenset_from_class_dict(cls, 'name_fields')
+            if name_fields is None:
+                name_fields = frozenset(DEFAULT_NAME_FIELDS)
+            excluded_fields = _static_frozenset_from_class_dict(cls, 'excluded_fields')
+            if excluded_fields is None:
+                excluded_fields = frozenset()
+            register_protected_model(model, name_fields, excluded_fields)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._register_model_with_validation_signal()
+
+    def _register_model_with_validation_signal(self):
+        """Union registry config from instance (dynamic excluded_fields/name_fields)."""
+        model = getattr(getattr(self.__class__, 'Meta', None), 'model', None)
+        if model is None:
+            return
+        from ansible_base.lib.utils.validation_signals import register_protected_model
+
+        register_protected_model(
+            model,
+            _frozenset_from_mixin_attr(self, 'name_fields', DEFAULT_NAME_FIELDS),
+            _frozenset_from_mixin_attr(self, 'excluded_fields', frozenset()),
+        )
 
     def save(self, **kwargs):
         # Held for the full duration of the actual persistence (including any post_save

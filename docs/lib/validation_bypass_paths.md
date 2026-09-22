@@ -200,7 +200,9 @@ test specific edge cases, including invalid data.
 **Scope: only `post_save`-firing writes on registered models.** The signal only ever
 fires for models that have at least one serializer using `CleanTextMixin` -- every such
 serializer registers its `Meta.model` (plus its `name_fields`/`excluded_fields`) with the
-signal via `CleanTextMixin.__init_subclass__`. This is deliberate on two counts:
+signal via `CleanTextMixin.__init_subclass__` and again on each serializer `__init__`
+(see [Registry and dynamic serializer configuration](#registry-and-dynamic-serializer-configuration)).
+This is deliberate on two counts:
 
 - It matches AC #1's literal scope ("models that are covered by `CleanTextMixin` in
   their serializers"), rather than checking every model in the process.
@@ -235,6 +237,30 @@ The `validation_bypass_logger` signal uses this detection flow:
    - Violation tier (Tier 1 / Tier 2)
    - Sanitized error message (NOT the raw value)
    - Caller info (module.function:line — see [Caller attribution](#caller-attribution))
+
+### Registry and dynamic serializer configuration
+
+Models enter the ORM bypass registry when a `CleanTextMixin` serializer subclass is
+defined and when each serializer **instance** is constructed.
+
+| Configuration style | When applied | Example |
+|--------------------|--------------|---------|
+| Static `name_fields` / `excluded_fields` (`frozenset` on the class) | Import time (`__init_subclass__`) | Most API `ModelSerializer`s |
+| Dynamic `@cached_property` / `@property` | Serializer `__init__` (unioned into registry) | AWX settings serializers (`SettingSingletonSerializer`) |
+
+**API validation is unchanged** — `validate()` always used instance-level
+`excluded_fields` / `name_fields`. This registration path only affects **which models
+and fields** the ORM bypass signal inspects on direct `.save()` / `.create()`.
+
+**Implications:**
+
+- **No import-time crash** when `excluded_fields` is a descriptor (required for AWX
+  consumer compatibility).
+- **ORM bypass scope** for dynamic exclusions matches serializer validation after at
+  least one serializer instance for that class has been created in the process
+  (uncommon gap: ORM-only writes before any API use).
+- **Multiple serializers per model** still **union** `name_fields` and `excluded_fields`
+  across all registrations.
 
 ### Grandfathering vs ORM bypass
 
