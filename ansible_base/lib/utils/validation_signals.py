@@ -8,7 +8,7 @@ violations that occur through these bypass paths.
 This is defense-in-depth observability — it does NOT block saves, only logs them.
 
 Known limitation: Django does not send post_save (or any) signals for bulk_create(),
-bulk_update(), or QuerySet.update() -- see docs/lib/validation_bypass_paths.md. Use
+bulk_update(), or QuerySet.update() -- see docs/lib/validation_bypass_observability.md. Use
 ansible_base.lib.utils.bulk_validation_audit for optional audit hooks at bulk write sites.
 """
 

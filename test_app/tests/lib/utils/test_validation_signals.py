@@ -15,6 +15,7 @@ from django.test import override_settings
 from rest_framework import serializers
 
 from ansible_base.lib.serializers.mixins import CleanTextMixin
+from ansible_base.lib.utils.validation import DEFAULT_NAME_FIELDS
 from ansible_base.lib.utils.validation_signals import (
     _get_caller_info,
     _get_text_fields,
@@ -39,12 +40,25 @@ class OrgSerializer(CleanTextMixin, serializers.ModelSerializer):
 
 
 @pytest.fixture
+def organization_bypass_registry_no_exclusions():
+    """Reset Organization registry; other test modules union ``excluded_fields`` (e.g. description)."""
+    import ansible_base.lib.utils.validation_signals as vs
+
+    snapshot = vs._protected_models.copy()
+    vs._protected_models[Organization] = (frozenset(DEFAULT_NAME_FIELDS), frozenset())
+    yield
+    vs._protected_models.clear()
+    vs._protected_models.update(snapshot)
+
+
+@pytest.fixture
 def enable_validation(settings):
     """Enable ENHANCED_INPUT_VALIDATION_ENABLED for tests."""
     settings.ENHANCED_INPUT_VALIDATION_ENABLED = True
 
 
 @pytest.mark.django_db
+@pytest.mark.usefixtures('organization_bypass_registry_no_exclusions')
 class TestValidationBypassLogging:
     """Test that ORM-direct writes log validation violations."""
 
@@ -413,8 +427,9 @@ class TestCallerAttribution:
                 with mock.patch.object(vs, '_caller_allowlist_prefixes', return_value=()):
                     assert _get_caller_info() == 'real_app.management.commands.import_data.handle:7'
 
+    @pytest.mark.django_db
     @override_settings(CALLER_INFO_APP_MODULES=['test_app.tests.lib.utils'])
-    def test_settings_allowlist_used_on_orm_save(self, caplog):
+    def test_settings_allowlist_used_on_orm_save(self, caplog, organization_bypass_registry_no_exclusions):
         """Integration: CALLER_INFO_APP_MODULES applies on real ORM bypass logs."""
         caplog.set_level(logging.DEBUG)
         caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
@@ -447,6 +462,7 @@ class TestCallerAttribution:
             assert _get_caller_info() == 'unknown'
 
 
+@pytest.mark.usefixtures('organization_bypass_registry_no_exclusions')
 class TestBulkValidationAudit:
     """Bulk ORM paths use shared registry and validators."""
 
@@ -492,9 +508,12 @@ class TestBulkValidationAudit:
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_audit_bulk_skips_excluded_fields(self, caplog):
         from ansible_base.lib.utils.bulk_validation_audit import audit_bulk_model_instances
+        import ansible_base.lib.utils.validation_signals as vs
 
         caplog.set_level(logging.DEBUG)
         caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
+
+        vs._protected_models[Organization] = (frozenset(DEFAULT_NAME_FIELDS), frozenset({'description'}))
 
         instances = [
             Organization(name='Invalid<Name>', description='<script>x</script>'),
@@ -540,6 +559,7 @@ class TestDynamicRegistryWithOrmBypass:
 
 
 @pytest.mark.django_db
+@pytest.mark.usefixtures('organization_bypass_registry_no_exclusions')
 class TestPerformanceContract:
     """Mock-based guards: keep stack walk and field scans off serializer / unregistered paths."""
 

@@ -78,7 +78,7 @@ class CleanTextMixin:
 
     ORM bypass registry: static ``name_fields``/``excluded_fields`` register at class
     definition; dynamic descriptors register on each serializer ``__init__`` (see
-    docs/lib/validation_bypass_paths.md#registry-and-dynamic-serializer-configuration).
+    docs/lib/validation_bypass_observability.md#registry-and-dynamic-serializer-configuration).
     """
 
     name_fields = DEFAULT_NAME_FIELDS

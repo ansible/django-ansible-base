@@ -430,7 +430,9 @@ single `ValidationError` keyed by field name:
   method. Code that creates or updates records via `Model.objects.create()`,
   `Model.save()`, or raw SQL bypasses these checks entirely. The mixin is not a
   substitute for database-level constraints. For new models, prefer model-level
-  validators (see below).
+  validators (see below). For **observability** on ORM-direct and bulk bypass
+  paths (without blocking saves), see
+  [validation_bypass_observability.md](validation_bypass_observability.md).
 - **SlugField / GenericIPAddressField excluded.** These format-constrained
   subclasses have their own validators and are intentionally skipped.
   `URLField` is NOT excluded -- it's validated as free text (see "How field
