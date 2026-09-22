@@ -250,16 +250,18 @@ Caller info answers: “which code called `.save()` / `.create()` outside the se
 
 Resolution uses a **hybrid** stack walk (outward from the signal handler):
 
-1. **Allowlist (per service):** If configured (e.g. `CALLER_INFO_APP_MODULES` in Django
-   settings or registration at startup), use the **first** outward frame whose module
-   matches a service allowlist prefix (typical values: task modules, API views,
-   management commands — keep prefixes **narrow**, not whole `awx.main`).
+1. **Allowlist (per service):** If configured via Django setting `CALLER_INFO_APP_MODULES`
+   and/or `extend_caller_allowlist_prefixes()` at startup, use the **first** outward frame
+   whose module matches (typical values: task modules, API views, management commands —
+   keep prefixes **narrow**, not whole `awx.main`). If the allowlist is empty, this phase
+   is skipped.
 2. **Denylist:** Skip frames matching DAB defaults (`django.db.models`, `django.dispatch`,
    `ansible_base.lib.utils.validation_signals`, `ansible_base.lib.abstract_models`, …) plus
    optional per-service plumbing via `extend_internal_caller_prefixes()` in
-   `AppConfig.ready()` (e.g. `awx.main.models`, `aap_eda.core.models`).
-3. **Fallback:** If no frame is selected, use an implementation-defined fallback (e.g.
-   `"unknown"`) rather than reporting Django `save_base` as the caller.
+   `AppConfig.ready()` (e.g. `awx.main.models`, `aap_eda.core.models`). Return the first
+   remaining frame.
+3. **Fallback:** If still no frame, return the first outward frame that is not under
+   `django.*` or this utility package; otherwise `"unknown"`.
 
 Downstream services (Controller, EDA, Hub, Gateway) must register allowlist and/or extra
 denylist prefixes when they deploy `CleanTextMixin` so logs point at real call sites.
@@ -372,4 +374,4 @@ When a bypass violation is logged:
 - [docs/lib/validation_bypass_paths_review.md](validation_bypass_paths_review.md) - Review findings, caller/bulk decisions
 - [ansible_base/lib/utils/validation.py](../../ansible_base/lib/utils/validation.py) - Validator implementations
 - [ansible_base/lib/utils/validation_signals.py](../../ansible_base/lib/utils/validation_signals.py) - Signal handler implementation
-- Optional bulk-write audit helpers in `ansible_base.lib.utils.bulk_validation_audit` (when added to DAB) — see review doc §4
+- [ansible_base/lib/utils/bulk_validation_audit.py](../../ansible_base/lib/utils/bulk_validation_audit.py) - Bulk-write audit helpers

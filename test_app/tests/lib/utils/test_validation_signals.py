@@ -16,11 +16,15 @@ from rest_framework import serializers
 
 from ansible_base.lib.serializers.mixins import CleanTextMixin
 from ansible_base.lib.utils.validation_signals import (
+    _get_caller_info,
     _get_text_fields,
     _validate_field,
+    extend_caller_allowlist_prefixes,
+    extend_internal_caller_prefixes,
     get_validation_context_token,
     register_validation_signals,
     reset_validation_context,
+    validation_bypass_logger,
 )
 from test_app.models import City, Organization
 
@@ -334,6 +338,173 @@ class TestProtectedModelRegistry:
 
         _name_fields, excluded_fields = _protected_models[Organization]
         assert 'description' in excluded_fields
+
+
+class TestCallerAttribution:
+    """Hybrid allowlist → denylist → fallback caller resolution."""
+
+    def test_allowlist_selects_first_matching_frame(self):
+        """Phase 1: configured allowlist wins over later denylisted plumbing frames."""
+        from unittest import mock
+
+        import ansible_base.lib.utils.validation_signals as vs
+
+        frames = []
+        modules = {}
+        for module_name, func in (
+            ('django.db.models.base', 'save_base'),
+            ('my_service.models.base', 'save'),
+            ('my_service.tasks.jobs', 'run_sync'),
+        ):
+            frame_info = mock.Mock()
+            mod = mock.Mock()
+            mod.__name__ = module_name
+            frame_info.frame = mock.Mock()
+            modules[id(frame_info.frame)] = mod
+            frame_info.function = func
+            frame_info.lineno = 99
+            frames.append(frame_info)
+
+        with mock.patch.object(vs.inspect, 'stack', return_value=[mock.Mock()] + frames):
+            with mock.patch.object(vs.inspect, 'getmodule', side_effect=lambda fr: modules.get(id(fr))):
+                with mock.patch.object(vs, '_caller_allowlist_prefixes', return_value=('my_service.tasks',)):
+                    assert _get_caller_info() == 'my_service.tasks.jobs.run_sync:99'
+
+    def test_denylist_when_allowlist_empty(self):
+        """Phase 2: skip denylisted frames; return first remaining."""
+        from unittest import mock
+
+        import ansible_base.lib.utils.validation_signals as vs
+
+        frames = []
+        modules = {}
+        for module_name, func in (
+            ('django.db.models.base', 'save_base'),
+            ('real_app.management.commands.import_data', 'handle'),
+        ):
+            frame_info = mock.Mock()
+            mod = mock.Mock()
+            mod.__name__ = module_name
+            frame_info.frame = mock.Mock()
+            modules[id(frame_info.frame)] = mod
+            frame_info.function = func
+            frame_info.lineno = 7
+            frames.append(frame_info)
+
+        with mock.patch.object(vs.inspect, 'stack', return_value=[mock.Mock()] + frames):
+            with mock.patch.object(vs.inspect, 'getmodule', side_effect=lambda fr: modules.get(id(fr))):
+                with mock.patch.object(vs, '_caller_allowlist_prefixes', return_value=()):
+                    assert _get_caller_info() == 'real_app.management.commands.import_data.handle:7'
+
+    @override_settings(CALLER_INFO_APP_MODULES=['test_app.tests.lib.utils'])
+    def test_settings_allowlist_used_on_orm_save(self, caplog):
+        """Integration: CALLER_INFO_APP_MODULES applies on real ORM bypass logs."""
+        caplog.set_level(logging.DEBUG)
+        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
+
+        Organization.objects.create(name='Valid', description='<b>x</b>')
+
+        signal_logs = [r for r in caplog.records if 'ORM bypass' in r.message]
+        assert len(signal_logs) == 1
+        assert 'test_validation_signals' in signal_logs[0].message
+
+    def test_extend_internal_caller_prefixes(self):
+        """Runtime denylist extension is applied during phase 2."""
+        from ansible_base.lib.utils import validation_signals as vs
+
+        extend_internal_caller_prefixes(['synthetic.internal.plumbing'])
+        assert 'synthetic.internal.plumbing' in vs._INTERNAL_CALLER_PREFIXES
+
+    def test_extend_caller_allowlist_prefixes(self):
+        extend_caller_allowlist_prefixes(['synthetic.tasks'])
+        from ansible_base.lib.utils import validation_signals as vs
+
+        assert 'synthetic.tasks' in vs._RUNTIME_ALLOWLIST_PREFIXES
+
+
+class TestBulkValidationAudit:
+    """Bulk ORM paths use shared registry and validators."""
+
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    def test_audit_bulk_model_instances_logs_violation(self, caplog):
+        from ansible_base.lib.utils.bulk_validation_audit import audit_bulk_model_instances
+
+        caplog.set_level(logging.DEBUG)
+        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
+
+        instances = [Organization(name='Valid', description='<script>x</script>')]
+        audit_bulk_model_instances(instances, operation='bulk_create')
+
+        bulk_logs = [r for r in caplog.records if 'ORM bypass (bulk_create)' in r.message]
+        assert len(bulk_logs) == 1
+        assert 'test_app.Organization' in bulk_logs[0].message
+
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    def test_audit_bulk_item_dicts_logs_violation(self, caplog):
+        from ansible_base.lib.utils.bulk_validation_audit import audit_bulk_item_dicts
+
+        caplog.set_level(logging.DEBUG)
+        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
+
+        audit_bulk_item_dicts(
+            Organization,
+            [{'name': 'Valid', 'description': '<script>x</script>'}],
+            operation='bulk_create',
+        )
+
+        bulk_logs = [r for r in caplog.records if 'ORM bypass (bulk_create)' in r.message]
+        assert len(bulk_logs) == 1
+        assert 'description' in bulk_logs[0].message
+
+    def test_audit_bulk_skips_unregistered_model(self, caplog):
+        from ansible_base.lib.utils.bulk_validation_audit import audit_bulk_item_dicts
+        from ansible_base.resource_registry.models import Resource
+
+        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
+
+        audit_bulk_item_dicts(Resource, [{'ansible_id': '00000000-0000-0000-0000-000000000001', 'name': '<b>x</b>'}])
+
+        assert [r for r in caplog.records if 'ORM bypass' in r.message] == []
+
+
+@pytest.mark.django_db
+class TestPerformanceContract:
+    """Mock-based guards: keep stack walk and field scans off serializer / unregistered paths."""
+
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    def test_serializer_save_does_not_call_inspect_stack(self, mocker):
+        stack = mocker.patch('ansible_base.lib.utils.validation_signals.inspect.stack')
+
+        org = Organization.objects.create(name='PerfSerializerOrg', description='clean description')
+        stack.reset_mock()
+
+        serializer = OrgSerializer(org, data={'description': 'updated description'}, partial=True)
+        assert serializer.is_valid(), serializer.errors
+        serializer.save()
+
+        stack.assert_not_called()
+
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    def test_orm_bypass_resolves_caller_when_logging(self, mocker):
+        caller = mocker.patch(
+            'ansible_base.lib.utils.validation_signals._get_caller_info',
+            return_value='test.caller:1',
+        )
+
+        Organization.objects.create(name='ValidName', description='<script>x</script>')
+
+        caller.assert_called_once()
+
+    def test_unregistered_model_skips_caller_and_field_scan(self, mocker):
+        from ansible_base.resource_registry.models import Resource
+
+        caller = mocker.patch('ansible_base.lib.utils.validation_signals._get_caller_info')
+        text_fields = mocker.patch('ansible_base.lib.utils.validation_signals._get_text_fields')
+
+        validation_bypass_logger(Resource, mocker.Mock(spec=Resource), created=True)
+
+        caller.assert_not_called()
+        text_fields.assert_not_called()
 
 
 class TestHelperFunctions:

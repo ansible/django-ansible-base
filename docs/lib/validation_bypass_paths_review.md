@@ -5,43 +5,46 @@
 | Finding | Category | Status |
 |---------|----------|--------|
 | #1: Double-logging guard | Correctness | ✅ FIXED |
-| #2: Caller info | Usability | 🟡 HYBRID APPROACH DOCUMENTED (implementation in progress) |
+| #2: Caller info | Usability | ✅ HYBRID (allowlist → denylist → fallback) in DAB |
 | #3: Duplicate log entries | Observability | ✅ FIXED |
-| #4: Bulk operations unobservable | Scope | 🟡 SYNC/IMPORT HOOKS (documented; service wiring TBD) |
+| #4: Bulk operations unobservable | Scope | 🟡 DAB helpers shipped; sync/import wiring in services TBD |
 | #5a: Enforcement gating | Consistency | ✅ FIXED |
 | #5: No model registry | Scope | ✅ FIXED |
 | #6: Platform-wide blast radius | Risk | 🟡 PARTIALLY MITIGATED |
 
-**Net result:** The signal is now trustworthy for its core function (accurate, non-blocking observability on serializer-mediated ORM bypasses). Two correctness issues (#1, #3) and one consistency issue (#5a) are fixed and verified. The registry fix (#5) eliminates false-positive scope problems. Caller attribution (#2) is improved but incomplete; bulk-operation coverage (#4) is deliberately out-of-scope; platform-wide performance (#6) requires load testing before broad deployment.
+**Net result:** The signal is trustworthy for its core function (accurate, non-blocking observability on single-instance ORM bypasses, with serializer-mediated writes suppressed via the context var). Correctness (#1, #3), registry scope (#5), and enforcement/logging consistency (#5a) are fixed. **Caller attribution (#2)** is implemented in DAB as a hybrid allowlist → denylist → fallback walk, with `CALLER_INFO_APP_MODULES`, `extend_caller_allowlist_prefixes()`, and `extend_internal_caller_prefixes()` — **downstream services still must register prefixes** for production-accurate callers. **Bulk (#4):** `post_save` still cannot see bulk APIs; DAB now ships `bulk_validation_audit` helpers; Controller/EDA/Hub/Gateway must call them at sync/import sites. **Performance (#6)** remains a load-test item (expensive work only on registered models and only when the save is not serializer-mediated).
 
 ---
 
 ## Open Items & Recommendations
 
-### #2: Caller Info Attribution (Structurally Incomplete)
+### #2: Caller Info Attribution
 
-**Current state:** PATCHED for DAB's own `CommonModel.save()` wrapper; all 22 tests pass. However, when Controller/EDA/Hub/Gateway wire in `CleanTextMixin`, their own base-model `save()` wrappers will have the same "wrong caller" problem — DAB's denylist can't know about them.
+**DAB (done on branch):** `_get_caller_info()` in `validation_signals.py` uses **hybrid**
+resolution — (1) first outward frame matching `CALLER_INFO_APP_MODULES` and/or
+`extend_caller_allowlist_prefixes()`, (2) else denylist walk over DAB defaults plus
+`extend_internal_caller_prefixes()`, (3) else fallback (first non-`django.*` frame not
+in utility modules, else `"unknown"`). Tests: `TestCallerAttribution` (mocked stack +
+`CALLER_INFO_APP_MODULES` integration + extend APIs).
 
-**Available approaches:**
+**Downstream (still required):** DAB cannot know AWX/EDA/Hub/Gateway module names at
+build time. Each service should register **narrow** allowlists (e.g. `awx.main.tasks`,
+`awx.api.views`) and/or denylist prefixes for base-model plumbing (e.g.
+`awx.main.models`) in `AppConfig.ready()` before relying on `[caller: …]` in production
+logs. See [Caller attribution](validation_bypass_paths.md#caller-attribution).
 
-1. **Per-service denylist extension:** Each service adds its own internal module prefixes. Pro: local control. Con: maintenance burden spreads, no guarantee of completeness.
-2. **Whitelist configuration:** Services explicitly declare `CALLER_INFO_APP_MODULES` so the signal knows their app code. Pro: clear intent. Con: setup burden, requires configuration.
-3. **Heuristic: first non-Django frame.** Pro: simple, no config. Con: fragile to library versions, might misidentify.
-4. **Heuristic: first frame outside current repo.** Pro: natural boundary. Con: complex to implement, edge cases.
-
-**Team direction (documented in validation_bypass_paths.md):** **Hybrid** resolution —
-(1) allowlist hit first (service entry points), (2) denylist walk for first remaining
-frame, (3) fallback when neither applies. Downstream services register allowlist and/or
-`extend_internal_caller_prefixes()` in `AppConfig.ready()`. See [Caller attribution](validation_bypass_paths.md#caller-attribution).
-
-**Recommendation:** Implement hybrid in DAB; services use **narrow** allowlists
-(tasks, API, management) plus DAB denylist defaults. See [implementation sketches for options 1 & 2](#implementation-sketches-for-options-1--2) for starting points.
+**Residual:** Misconfigured allowlists that are too broad (e.g. entire `awx.main`) can
+still stop at the wrong layer; fallback frames may be low-confidence for REPL/tests.
 
 ---
 
-### #4: Bulk Operations Coverage (Scope Decision Needed)
+### #4: Bulk Operations Coverage
 
-**Current state:** TBD. Django doesn't fire signals for `bulk_create()`/`bulk_update()`/`update()`, so this signal structurally can't see them. Yet the ticket's own Goal names sync/import as the "primary motivating risk" — and those use bulk APIs.
+**Current state:** `validation_bypass_logger` still cannot observe bulk APIs (no
+`post_save`). DAB adds **`ansible_base.lib.utils.bulk_validation_audit`**
+(`audit_bulk_model_instances`, `audit_bulk_item_dicts`) — same registry and validators as
+the signal, log prefix `ORM bypass (bulk_create): …`. Unit test:
+`TestBulkValidationAudit.test_audit_bulk_model_instances_logs_violation`.
 
 **Available approaches:**
 
@@ -80,7 +83,9 @@ for item in items_to_sync:
 MyModel.objects.bulk_create([MyModel(**item) for item in items_to_sync])
 ```
 
-**Optional:** DAB could provide a helper (e.g., `validate_bulk_items(items, model_class)`) to reduce boilerplate across services, but it's not required — services can call the validators directly.
+**Service follow-up:** Add `audit_bulk_*` (or direct validator calls) immediately before
+`bulk_create()` / `bulk_update()` at project sync, inventory import, collection import,
+and similar paths. AAP is **not** changing model `save()` / `full_clean()` for this epic.
 
 ---
 
@@ -117,7 +122,7 @@ double-logged"). The included test suite never catches this because its one
 the case where `is_valid()` returns `False`, so `.save()` is never called and
 the assertion trivially passes.
 
-## 2. Caller info resolves to Django internals, not the real caller (CONFIRMED — PATCHED for the DAB-internal case, structurally still open; see "Status of fixes" below)
+## 2. Caller info resolves to Django internals, not the real caller (CONFIRMED — FIXED in DAB via hybrid walk; downstream registration still required; see "Status of fixes" below)
 
 **File:** `ansible_base/lib/utils/validation_signals.py:60`
 
@@ -192,32 +197,18 @@ extend_internal_caller_prefixes([
 ])
 ```
 
-Option 2 (whitelist configuration):
+Option 2 (allowlist — implemented as phase 1 of hybrid, not merged into denylist):
 ```python
-# In DAB (ansible_base/lib/utils/validation_signals.py)
-from ansible_base.lib.utils.settings import get_setting
-
-def _get_caller_info() -> str:
-    try:
-        app_modules = get_setting('CALLER_INFO_APP_MODULES', [])
-        internal_prefixes = _INTERNAL_CALLER_PREFIXES + app_modules
-        
-        for frame_info in inspect.stack()[1:]:
-            module = inspect.getmodule(frame_info.frame)
-            module_name = module.__name__ if module else ''
-            if module_name.startswith(tuple(internal_prefixes)):
-                continue
-            return f"{module_name or 'unknown'}.{frame_info.function}:{frame_info.lineno}"
-        return "unknown"
-    except Exception:
-        return "unknown"
-
-# Then in each service's settings (e.g., AWX settings.py):
+# settings.py (Controller example) — narrow entry points, not whole awx.main
 CALLER_INFO_APP_MODULES = [
-    'awx.main.models',
     'awx.main.tasks',
     'awx.api.views',
+    'awx.main.management',
 ]
+
+# and/or AppConfig.ready():
+from ansible_base.lib.utils.validation_signals import extend_caller_allowlist_prefixes
+extend_caller_allowlist_prefixes(['awx.main.tasks'])
 ```
 
 ## 3. Duplicate log entries for a single save (CONFIRMED — now FIXED, see "Status of fixes" below)
@@ -236,7 +227,7 @@ an internal re-save), and `validation_bypass_logger` has no de-duplication —
 inflating downstream audit/alerting volume and making the "one entry per
 violation" framing in the doc's Log Format section inaccurate.
 
-## 4. Bulk operations are silently unobservable (CONFIRMED — coverage is TBD)
+## 4. Bulk operations are silently unobservable via post_save (CONFIRMED — signal unchanged; DAB audit helpers + service hooks are the mitigation)
 
 **File:** `docs/lib/validation_bypass_paths.md:341`
 
@@ -282,10 +273,10 @@ instantiation.
    ships faster, lower risk, minimal blast radius. Cons: leaves the "primary
    motivating risk" (per the ticket's Goal) unobserved by this story.
 
-**Current state:** The latest changes document that bulk operations are not
-caught (see `validation_bypass_paths.md`). Whether to expand this story to
-close the gap (options 2-3 above) or accept the gap as documented (option 4)
-is a scope decision for the team.
+**Current state:** Bulk writes remain invisible to `post_save`. **Option 3** is adopted:
+`bulk_validation_audit` in DAB plus targeted service call sites (see Open Items §4).
+QuerySet monkeypatch (option 2) rejected; model validators (option 1) ruled out for the
+serializer/grandfathering approach.
 
 ## 5a. Signal is gated on `ENHANCED_INPUT_VALIDATION_ENABLED`, but `CleanTextMixin` itself is not (CONFIRMED — now FIXED, see "Status of fixes" below)
 
@@ -350,12 +341,14 @@ changes the risk profile of this story considerably:
   times depending on each service's independent DAB upgrade cadence — making
   root-causing "weird behavior in EDA" back to a DAB change harder than a
   normal single-service bug.
-- **Hot-path performance exposure.** As implemented, the signal runs
-  `inspect.stack()` plus regex validation of every text field on *every*
-  model save platform-wide once `ENHANCED_INPUT_VALIDATION_ENABLED` is on —
-  including high-frequency tables like AWX `JobEvent`/`Host` writes or EDA's
-  event tables. Stack introspection in an unfiltered global hook is a known
-  way to quietly tax the busiest write paths in every service at once.
+- **Hot-path performance exposure.** The handler is invoked on every `post_save`,
+  but **expensive work** (`inspect.stack()` + per-field regex) runs only for
+  **registered** models when the save did **not** go through `CleanTextMixin.save()`
+  (context var). Serializer-mediated API writes short-circuit after a dict lookup and
+  context-var check. Risk concentrates on **high-frequency registered models** saved
+  via ORM (tasks, callbacks) and on growing serializer wiring — not on every row in
+  the database. Load-test registered resources before assuming API paths are negligible
+  at scale.
 - **Monkeypatching core ORM methods (for the bulk-op gap, #4) would raise the
   stakes further.** Django has no official hook for `bulk_create`/`update`,
   so closing that gap likely means overriding `QuerySet` methods process-wide
@@ -383,12 +376,16 @@ broadly, and prefer the narrower registry-based approach (§5) over any global
 monkeypatch — the smaller the unscoped surface, the smaller the blast radius
 when something is wrong.
 
-## Status of fixes (as of latest unstaged changes)
+## Status of fixes (as of latest unstaged changes on AAP-86051)
 
-A follow-up round of changes to `ansible_base/lib/serializers/mixins.py`,
-`ansible_base/lib/utils/validation_signals.py`, `docs/lib/validation_bypass_paths.md`,
-and the test suite addresses most of the above. Verified by re-running the
-branch's test suite under `TESTAPP_MODE=sqlite`:
+Changes on the branch include `ansible_base/lib/serializers/mixins.py`,
+`ansible_base/lib/utils/validation_signals.py`, new
+`ansible_base/lib/utils/bulk_validation_audit.py`, `docs/lib/validation_bypass_paths.md`,
+this review doc, and `test_app/tests/lib/utils/test_validation_signals.py` (expanded
+beyond the original 22 tests with `TestCallerAttribution` and `TestBulkValidationAudit`).
+Re-verify with:
+
+`TESTAPP_MODE=sqlite python -m pytest test_app/tests/lib/utils/test_validation_signals.py -v`
 
 - **#1 (double-logging guard) — FIXED, verified.** The context var is now set
   and reset around `CleanTextMixin.save()` itself (spanning the actual
@@ -396,34 +393,25 @@ branch's test suite under `TESTAPP_MODE=sqlite`:
   just `validate()`. New regression tests reproduce both scenarios used to
   prove the original bug (a valid serializer create, and a grandfathered-field
   serializer update) and both pass.
-- **#2 (caller info) — PATCHED for the DAB-internal case, structurally still open.**
-  `_get_caller_info()` walks the stack skipping a denylist of internal module
-  prefixes instead of using a fixed frame offset — a better approach in
-  principle. A follow-up change added `ansible_base.lib.abstract_models` to
-  the denylist (DAB's own `CommonModel`/`CreatableModel` `save()` wrappers,
-  which only add bookkeeping like `modified_by` before calling `super().save()`),
-  and `test_caller_info_captured` now passes — all 22 tests in the suite pass.
-  That said, this closes the one case DAB's own test suite can exercise, not
-  the general problem: the denylist only knows about modules living inside
-  `ansible_base`. AWX, EDA, Hub, and Gateway each have their own base-model
-  `save()` overrides in their own repos (per the primer doc), which this list
-  has no way to know about and DAB's tests have no way to catch. The most
-  likely outcome is that the first downstream service to wire in `CleanTextMixin`
-  reproduces the same "caller resolves to an internal wrapper" symptom for its
-  own base model — this needs either a documented pattern for services to
-  extend the denylist themselves, or a different detection strategy that
-  doesn't rely on an enumerated list of "known internal" modules.
+- **#2 (caller info) — IMPLEMENTED in DAB (hybrid); downstream config outstanding.**
+  `_get_caller_info()` now runs three phases: allowlist (`CALLER_INFO_APP_MODULES`,
+  `extend_caller_allowlist_prefixes()`), denylist (DAB defaults including
+  `ansible_base.lib.abstract_models`, plus `extend_internal_caller_prefixes()`),
+  then fallback. `test_caller_info_captured` still passes when allowlist is empty
+  (denylist-only path). New tests cover allowlist priority, denylist-only path, settings
+  integration, and extend APIs. **Production-accurate callers for AWX/EDA/Hub/Gateway
+  still require per-service registration** documented in `validation_bypass_paths.md` —
+  not verifiable inside DAB's test app alone.
 - **#3 (duplicate log entries) — FIXED, verified**, as a side effect of the
   #5 registry fix. A new test (`test_unregistered_model_not_checked`) confirms
   the duplicate came from `resource_registry`'s `Resource` model cascading a
   save and getting logged too; scoping to registered models eliminates it.
-- **#4 (bulk operations) — COVERAGE IS TBD.** Django structurally doesn't fire
-  signals for `bulk_create()`/`bulk_update()`/`update()`, so this signal
-  cannot observe them. See finding #4 above for four concrete approaches to
-  close the gap (model validators, QuerySet wrapping, site-specific hooks, or
-  accepting the gap as documented). Whether to expand this story's scope to
-  implement one of those, or ship with the documented limitation, is a scope
-  decision for the team.
+- **#4 (bulk operations) — PARTIAL in DAB; service wiring TBD.** The `post_save`
+  signal still cannot observe bulk APIs. **`bulk_validation_audit`** provides
+  `audit_bulk_model_instances` / `audit_bulk_item_dicts` using the same
+  `_protected_models` registry and validators; one unit test asserts log format.
+  Closing the epic's sync/import risk requires **downstream PRs** at bulk write
+  sites (option 3). No QuerySet monkeypatch; no platform-wide model validator rollout.
 - **#5 (no registry) — FIXED, verified.** `CleanTextMixin.__init_subclass__`
   now registers `Meta.model` (plus `name_fields`/`excluded_fields`) into a
   module-level registry, and the signal short-circuits for any unregistered
@@ -456,25 +444,15 @@ branch's test suite under `TESTAPP_MODE=sqlite`:
     doc, Service Wiring for Controller/EDA/Hub/Gateway is underway and
     complete for some services already, so registered-model blast radius is
     live now, not a future-only consideration.
-  - *"Validation stays default-off"* — this leaned on the
-    `ENHANCED_INPUT_VALIDATION_ENABLED` gate as a safety net, but that gate
-    was just removed (see #5a) for good reason (it made the signal
-    inconsistent with `CleanTextMixin`'s own always-log behavior). With it
-    gone, there is no remaining environment-level throttle on the expensive
-    path — once a model is registered, every save of it pays full validation
-    cost unconditionally. Fixing #5a correctly *removes* the safety net #6's
-    original mitigation claim depended on.
+  - *"Validation stays default-off"* — enforcement remains gated by
+    `ENHANCED_INPUT_VALIDATION_ENABLED` on serializers only; bypass **logging**
+    is always on (see #5a). There is no flag to disable the expensive signal
+    path for registered ORM bypass saves.
 
-  Net: the registry fix is a real, correctly-targeted improvement — it
-  eliminates wasted work on irrelevant models and was the right call — but it
-  mitigates the *false-positive/scope* dimension of the risk (closer to
-  finding #5) more than the *platform-wide performance/incident-blast-radius*
-  dimension #6 was actually about. For whichever models get registered first
-  (increasingly the common, busy resources as Service Wiring completes), the
-  original hot-path concern — full stack-walk-plus-regex-validation cost on
-  every save, now with no enforcement-flag throttle — stands unchanged. This
-  argues for load-testing the registered path specifically, not for treating
-  #6 as closed.
+  Net: registry + context-var short-circuit materially reduce cost versus an
+  unscoped global validator, but **registered ORM bypass saves** still pay stack
+  walk + regex. Load-test registered models under realistic save rates; avoid
+  registering hot internal tables unless required.
 
 **Residual risk worth flagging separately:** DRF's `ListSerializer.save()`
 (used for `many=True` serializers) calls `child.create()`/`child.update()`
@@ -486,17 +464,11 @@ calling #1 fully closed.
 
 ## Bottom line
 
-The correctness issues that made the signal untrustworthy at first pass — the
-broken double-logging guard (#1) and the false-positive noise from having no
-model registry (#5, and its knock-on duplicate-entry effect, #3) — are now
-fixed and verified by regression tests. What remains open is narrower but
-still real: caller info (#2) still misattributes to internal `save()`
-wrappers rather than the actual bypass site, which limits the audit log's
-usefulness for its stated purpose even though the log itself is now accurate
-about *whether* a bypass happened. #4 (bulk sync/import operations) remains
-fully unobservable by design — correctly documented now rather than silently
-implied as covered — and would need a different mechanism entirely if this
-story's scope is expanded to close it. And because DAB sits at the base of
-every component (#6), any further expansion — especially one that touches
-`bulk_create`/`update()` via monkeypatching — needs to be evaluated for
-platform-wide blast radius, not just correctness within this repo.
+DAB side: the signal is **correct and scoped** (#1, #3, #5, #5a), **caller resolution
+is implemented** as hybrid allowlist/denylist/fallback (#2), and **bulk audit helpers**
+exist (#4) for services to call at sync/import sites. Remaining work is mostly
+**downstream**: register caller prefixes per service, wire `audit_bulk_*` at high-risk
+bulk paths, load-test registered models (#6), and confirm `many=True` / `ListSerializer`
+paths set the serializer context var (#1 residual). Serializer-layer `CleanTextMixin`
+with grandfathering remains the enforcement boundary — no model behavior change for this
+epic.

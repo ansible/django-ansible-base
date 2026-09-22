@@ -8,9 +8,8 @@ violations that occur through these bypass paths.
 This is defense-in-depth observability — it does NOT block saves, only logs them.
 
 Known limitation: Django does not send post_save (or any) signals for bulk_create(),
-bulk_update(), or QuerySet.update() -- see docs/lib/validation_bypass_paths.md. Those
-paths are NOT observable via this signal; model-level validators are the only way to
-cover them (see docs/lib/validation.md).
+bulk_update(), or QuerySet.update() -- see docs/lib/validation_bypass_paths.md. Use
+ansible_base.lib.utils.bulk_validation_audit for optional audit hooks at bulk write sites.
 """
 
 import inspect
@@ -22,6 +21,7 @@ from django.db.models import Model
 from django.db.models.signals import post_save
 from rest_framework.serializers import ValidationError
 
+from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.validation import validate_free_text, validate_resource_name
 
 logger = logging.getLogger('ansible_base.lib.utils.validation_signals')
@@ -38,18 +38,23 @@ _serializer_validation_active: ContextVar[bool] = ContextVar('serializer_validat
 # Maps model -> (name_fields: frozenset[str], excluded_fields: frozenset[str])
 _protected_models: dict[type, tuple[frozenset, frozenset]] = {}
 
-# Frame modules to skip when walking the stack for caller info -- these are the
-# save()/signal-dispatch internals between the real caller and this signal handler,
-# not useful information for an auditor tracing the bypass back to its source.
-# ansible_base.lib.abstract_models is included because nearly every model's save()
-# chain passes through CommonModel/CreatableModel/AbstractCommonModel.save() (which
-# only add bookkeeping like modified_by/created_by/encryption before calling
-# super().save()) -- that's still framework plumbing, not the real call site.
-_INTERNAL_CALLER_PREFIXES = (
+# Denylist: framework plumbing frames to skip during caller resolution (phase 2).
+_INTERNAL_CALLER_PREFIXES: list[str] = [
     'django.db.models',
     'django.dispatch',
     'ansible_base.lib.utils.validation_signals',
     'ansible_base.lib.abstract_models',
+]
+
+# Allowlist: product-code entry points (phase 1). Also populated from
+# CALLER_INFO_APP_MODULES and extend_caller_allowlist_prefixes().
+_RUNTIME_ALLOWLIST_PREFIXES: list[str] = []
+
+# Modules skipped during fallback (phase 3) after allowlist and denylist miss.
+_FALLBACK_SKIP_PREFIXES = (
+    'django.',
+    'ansible_base.lib.utils.validation_signals',
+    'ansible_base.lib.utils.bulk_validation_audit',
 )
 
 
@@ -64,6 +69,27 @@ def get_validation_context_token():
 def reset_validation_context(token):
     """Reset the validation context using the token from get_validation_context_token()."""
     _serializer_validation_active.reset(token)
+
+
+def extend_internal_caller_prefixes(prefixes: list[str]) -> None:
+    """Register service-internal module prefixes to skip during caller denylist walk (phase 2).
+
+    Downstream services override model ``save()`` in base model modules; register those
+    prefixes from ``AppConfig.ready()`` so denylist resolution does not stop on wrappers.
+    """
+    for prefix in prefixes:
+        if prefix and prefix not in _INTERNAL_CALLER_PREFIXES:
+            _INTERNAL_CALLER_PREFIXES.append(prefix)
+
+
+def extend_caller_allowlist_prefixes(prefixes: list[str]) -> None:
+    """Register module prefixes treated as real application call sites (phase 1).
+
+    Prefer narrow prefixes (tasks, API views, management commands), not entire app trees.
+    """
+    for prefix in prefixes:
+        if prefix and prefix not in _RUNTIME_ALLOWLIST_PREFIXES:
+            _RUNTIME_ALLOWLIST_PREFIXES.append(prefix)
 
 
 def register_protected_model(model: type, name_fields: frozenset, excluded_fields: frozenset) -> None:
@@ -100,26 +126,52 @@ def _get_text_fields(model: type[Model]) -> tuple[list[str], list[str]]:
     return text_fields, json_fields
 
 
+def _caller_allowlist_prefixes() -> tuple[str, ...]:
+    configured = get_setting('CALLER_INFO_APP_MODULES', []) or []
+    merged: list[str] = []
+    for prefix in list(configured) + _RUNTIME_ALLOWLIST_PREFIXES:
+        if prefix and prefix not in merged:
+            merged.append(prefix)
+    return tuple(merged)
+
+
+def _frame_module_and_label(frame_info) -> tuple[str, str]:
+    module = inspect.getmodule(frame_info.frame)
+    module_name = module.__name__ if module else ''
+    label = f"{module_name or 'unknown'}.{frame_info.function}:{frame_info.lineno}"
+    return module_name, label
+
+
 def _get_caller_info() -> str:
-    """Walk the call stack to find the real caller that triggered this save.
+    """Resolve audit caller using allowlist, then denylist, then fallback.
 
-    Skips frames belonging to Django's save()/signal-dispatch machinery and this module's
-    own functions, returning the first frame outside of those -- i.e. the actual
-    application code that invoked .save() / .create() / etc.
-
-    Returns:
-        String like "module.function:line" or "unknown" if no such frame is found.
+    Walks ``inspect.stack()`` outward from this function (phase 1 → 2 → 3).
     """
     try:
-        for frame_info in inspect.stack()[1:]:
-            module = inspect.getmodule(frame_info.frame)
-            module_name = module.__name__ if module else ''
-            if module_name.startswith(_INTERNAL_CALLER_PREFIXES):
+        frames = inspect.stack()[1:]
+        allowlist = _caller_allowlist_prefixes()
+        denylist = tuple(_INTERNAL_CALLER_PREFIXES)
+
+        if allowlist:
+            for frame_info in frames:
+                module_name, label = _frame_module_and_label(frame_info)
+                if module_name.startswith(allowlist):
+                    return label
+
+        for frame_info in frames:
+            module_name, label = _frame_module_and_label(frame_info)
+            if module_name.startswith(denylist):
                 continue
-            return f"{module_name or 'unknown'}.{frame_info.function}:{frame_info.lineno}"
+            return label
+
+        for frame_info in frames:
+            module_name, label = _frame_module_and_label(frame_info)
+            if module_name.startswith(_FALLBACK_SKIP_PREFIXES):
+                continue
+            return label
+
         return "unknown"
     except Exception:
-        # Stack introspection can fail in some environments (e.g., certain test runners)
         return "unknown"
 
 
@@ -150,7 +202,6 @@ def _validate_field(field_name: str, value: str, name_fields: frozenset) -> Opti
             reason = str(exc.detail)
         return (tier, reason)
     except Exception:
-        # Unexpected validation errors should not break the save
         logger.exception("Unexpected error during ORM bypass validation check for field '%s'", field_name)
         return None
 
@@ -172,28 +223,19 @@ def validation_bypass_logger(sender, instance: Model, created: bool, **kwargs):
         created: True if this was an INSERT, False if UPDATE
         **kwargs: Additional signal kwargs
     """
-    # Skip models that have no serializer using CleanTextMixin -- out of scope per AC #1,
-    # and prevents false positives from unrelated models saved as a side effect of this
-    # save (e.g. resource_registry.Resource, synced via its own post_save handler).
     protected = _protected_models.get(sender)
     if protected is None:
         return
     name_fields, excluded_fields = protected
 
-    # Skip if this save originated from a DRF serializer with CleanTextMixin
     if _serializer_validation_active.get(False):
         return
 
-    # Get text fields for this model
     text_fields, _json_fields = _get_text_fields(sender)
     if not text_fields:
-        # No text fields to validate
         return
 
-    # Get caller information for the audit log
     caller_info = _get_caller_info()
-
-    # Validate each text field and log violations
     resource_type = f"{instance._meta.app_label}.{instance._meta.object_name}"
 
     for field_name in text_fields:
@@ -202,17 +244,13 @@ def validation_bypass_logger(sender, instance: Model, created: bool, **kwargs):
 
         value = getattr(instance, field_name, None)
 
-        # Skip None and non-string values
         if value is None or not isinstance(value, str):
             continue
 
-        # Validate the field
         violation = _validate_field(field_name, value, name_fields)
 
         if violation:
             tier, reason = violation
-            # Log in the same format as CleanTextMixin._log_validation_failure()
-            # but with "ORM bypass" prefix and caller info
             logger.warning(
                 "ORM bypass: validation rejected '%s' on %s (violates %s) [caller: %s]: %s",
                 field_name,
