@@ -24,7 +24,8 @@ from rest_framework.serializers import ValidationError
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.validation import validate_free_text, validate_resource_name
 
-logger = logging.getLogger('ansible_base.lib.utils.validation_signals')
+LOGGER_NAME = __name__
+logger = logging.getLogger(LOGGER_NAME)
 
 # Context variable to track when a save originates from CleanTextMixin-mediated
 # serializer.save() so the signal handler can skip it (avoids double-logging).
@@ -42,7 +43,7 @@ _protected_models: dict[type, tuple[frozenset, frozenset]] = {}
 _INTERNAL_CALLER_PREFIXES: list[str] = [
     'django.db.models',
     'django.dispatch',
-    'ansible_base.lib.utils.validation_signals',
+    LOGGER_NAME,
     'ansible_base.lib.abstract_models',
 ]
 
@@ -53,7 +54,7 @@ _RUNTIME_ALLOWLIST_PREFIXES: list[str] = []
 # Modules skipped during fallback (phase 3) after allowlist and denylist miss.
 _FALLBACK_SKIP_PREFIXES = (
     'django.',
-    'ansible_base.lib.utils.validation_signals',
+    LOGGER_NAME,
     'ansible_base.lib.utils.bulk_validation_audit',
 )
 

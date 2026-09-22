@@ -6,7 +6,7 @@ violations are logged with the same validators and a similar format as
 ``validation_bypass_logger``.
 """
 
-import logging
+from collections.abc import Callable
 from typing import Iterable
 
 from django.db.models import Model
@@ -16,9 +16,8 @@ from ansible_base.lib.utils.validation_signals import (
     _get_text_fields,
     _protected_models,
     _validate_field,
+    logger,
 )
-
-logger = logging.getLogger('ansible_base.lib.utils.validation_signals')
 
 
 def _log_bulk_violation(
@@ -40,6 +39,31 @@ def _log_bulk_violation(
     )
 
 
+def _audit_registered_model_fields(
+    *,
+    operation: str,
+    caller_info: str,
+    model: type[Model],
+    resource_type: str,
+    name_fields: frozenset,
+    excluded_fields: frozenset,
+    get_field_value: Callable[[str], object],
+) -> None:
+    text_fields, _json_fields = _get_text_fields(model)
+    if not text_fields:
+        return
+    for field_name in text_fields:
+        if field_name in excluded_fields:
+            continue
+        value = get_field_value(field_name)
+        if value is None or not isinstance(value, str):
+            continue
+        violation = _validate_field(field_name, value, name_fields)
+        if violation:
+            tier, reason = violation
+            _log_bulk_violation(operation, field_name, resource_type, tier, caller_info, reason)
+
+
 def audit_bulk_model_instances(
     instances: Iterable[Model],
     *,
@@ -52,20 +76,16 @@ def audit_bulk_model_instances(
         if protected is None:
             continue
         name_fields, excluded_fields = protected
-        text_fields, _json_fields = _get_text_fields(type(instance))
-        if not text_fields:
-            continue
         resource_type = f"{instance._meta.app_label}.{instance._meta.object_name}"
-        for field_name in text_fields:
-            if field_name in excluded_fields:
-                continue
-            value = getattr(instance, field_name, None)
-            if value is None or not isinstance(value, str):
-                continue
-            violation = _validate_field(field_name, value, name_fields)
-            if violation:
-                tier, reason = violation
-                _log_bulk_violation(operation, field_name, resource_type, tier, caller_info, reason)
+        _audit_registered_model_fields(
+            operation=operation,
+            caller_info=caller_info,
+            model=type(instance),
+            resource_type=resource_type,
+            name_fields=name_fields,
+            excluded_fields=excluded_fields,
+            get_field_value=lambda field_name, inst=instance: getattr(inst, field_name, None),
+        )
 
 
 def audit_bulk_item_dicts(
@@ -85,13 +105,12 @@ def audit_bulk_item_dicts(
     caller_info = _get_caller_info()
     resource_type = f"{model._meta.app_label}.{model._meta.object_name}"
     for item in items:
-        for field_name in text_fields:
-            if field_name in excluded_fields:
-                continue
-            value = item.get(field_name)
-            if value is None or not isinstance(value, str):
-                continue
-            violation = _validate_field(field_name, value, name_fields)
-            if violation:
-                tier, reason = violation
-                _log_bulk_violation(operation, field_name, resource_type, tier, caller_info, reason)
+        _audit_registered_model_fields(
+            operation=operation,
+            caller_info=caller_info,
+            model=model,
+            resource_type=resource_type,
+            name_fields=name_fields,
+            excluded_fields=excluded_fields,
+            get_field_value=item.get,
+        )

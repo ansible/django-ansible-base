@@ -20,6 +20,7 @@ from ansible_base.lib.utils import validation_signals as validation_signals_modu
 from ansible_base.lib.utils.bulk_validation_audit import audit_bulk_item_dicts, audit_bulk_model_instances
 from ansible_base.lib.utils.validation import DEFAULT_NAME_FIELDS
 from ansible_base.lib.utils.validation_signals import (
+    LOGGER_NAME,
     _get_caller_info,
     _get_text_fields,
     _validate_field,
@@ -59,21 +60,21 @@ def enable_validation(settings):
     settings.ENHANCED_INPUT_VALIDATION_ENABLED = True
 
 
+@pytest.fixture
+def capture_validation_signal_logs(caplog):
+    """Ensure caplog captures validation signal WARNINGs (pytest + xdist safe).
+
+    Order matters: set root DEBUG first, then the named logger to WARNING — see
+    2f764a1 fix for signal logging tests.
+    """
+    caplog.set_level(logging.DEBUG)
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+
+
 @pytest.mark.django_db
-@pytest.mark.usefixtures('organization_bypass_registry_no_exclusions')
+@pytest.mark.usefixtures('organization_bypass_registry_no_exclusions', 'capture_validation_signal_logs')
 class TestValidationBypassLogging:
     """Test that ORM-direct writes log validation violations."""
-
-    @pytest.fixture(autouse=True)
-    def setup_logger(self, caplog):
-        """Ensure caplog captures validation signal WARNINGs (pytest + xdist safe).
-
-        Order matters: set root DEBUG first, then the named logger to WARNING — see
-        2f764a1 fix for signal logging tests.
-        """
-        caplog.set_level(logging.DEBUG)
-        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
-        yield
 
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_orm_create_tier2_violation_logs(self, caplog):
@@ -423,11 +424,9 @@ class TestCallerAttribution:
 
     @pytest.mark.django_db
     @override_settings(CALLER_INFO_APP_MODULES=['test_app.tests.lib.utils'])
-    def test_settings_allowlist_used_on_orm_save(self, caplog, organization_bypass_registry_no_exclusions):
+    @pytest.mark.usefixtures('organization_bypass_registry_no_exclusions', 'capture_validation_signal_logs')
+    def test_settings_allowlist_used_on_orm_save(self, caplog):
         """Integration: CALLER_INFO_APP_MODULES applies on real ORM bypass logs."""
-        caplog.set_level(logging.DEBUG)
-        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
-
         Organization.objects.create(name='Valid', description='<b>x</b>')
 
         signal_logs = [r for r in caplog.records if 'ORM bypass' in r.message]
@@ -488,15 +487,9 @@ class TestCallerAttribution:
                     assert _get_caller_info() == 'customer_app.sync.tasks.import_rows:12'
 
 
-@pytest.mark.usefixtures('organization_bypass_registry_no_exclusions')
+@pytest.mark.usefixtures('organization_bypass_registry_no_exclusions', 'capture_validation_signal_logs')
 class TestBulkValidationAudit:
     """Bulk ORM paths use shared registry and validators."""
-
-    @pytest.fixture(autouse=True)
-    def _capture_signal_logs(self, caplog):
-        caplog.set_level(logging.DEBUG)
-        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
-        yield
 
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_audit_bulk_model_instances_logs_violation(self, caplog):
@@ -528,9 +521,6 @@ class TestBulkValidationAudit:
 
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_audit_bulk_skips_excluded_fields(self, caplog):
-        caplog.set_level(logging.DEBUG)
-        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
-
         validation_signals_module._protected_models[Organization] = (
             frozenset(DEFAULT_NAME_FIELDS),
             frozenset({'description'}),
@@ -560,14 +550,9 @@ class TestBulkValidationAudit:
 
 
 @pytest.mark.django_db
+@pytest.mark.usefixtures('capture_validation_signal_logs')
 class TestDynamicRegistryWithOrmBypass:
     """Dynamic excluded_fields affect ORM bypass checks after serializer __init__."""
-
-    @pytest.fixture(autouse=True)
-    def setup_logger(self, caplog):
-        caplog.set_level(logging.DEBUG)
-        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
-        yield
 
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_excluded_field_ignored_after_serializer_init(self, caplog):
@@ -696,7 +681,7 @@ class TestHelperFunctions:
         assert result == ('Tier 2', 'plain string detail')
 
     def test_validate_field_unexpected_exception_logged(self, caplog):
-        caplog.set_level(logging.ERROR, logger='ansible_base.lib.utils.validation_signals')
+        caplog.set_level(logging.ERROR, logger=LOGGER_NAME)
         with mock.patch(
             'ansible_base.lib.utils.validation_signals.validate_free_text',
             side_effect=RuntimeError('validator exploded'),
@@ -705,21 +690,15 @@ class TestHelperFunctions:
         assert any('Unexpected error during ORM bypass validation' in r.message for r in caplog.records)
 
     def test_register_validation_signals_logs_debug(self, caplog):
-        caplog.set_level(logging.DEBUG, logger='ansible_base.lib.utils.validation_signals')
+        caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
         register_validation_signals()
         assert any('Registered validation bypass logging signal' in r.message for r in caplog.records)
 
 
 @pytest.mark.django_db
-@pytest.mark.usefixtures('organization_bypass_registry_no_exclusions')
+@pytest.mark.usefixtures('organization_bypass_registry_no_exclusions', 'capture_validation_signal_logs')
 class TestValidationBypassLoggerEdgeCases:
     """Branches in validation_bypass_logger not covered by happy-path ORM tests."""
-
-    @pytest.fixture(autouse=True)
-    def setup_logger(self, caplog):
-        caplog.set_level(logging.DEBUG)
-        caplog.set_level(logging.WARNING, logger='ansible_base.lib.utils.validation_signals')
-        yield
 
     def test_skips_when_model_has_no_text_fields(self, mocker):
         mocker.patch('ansible_base.lib.utils.validation_signals._get_text_fields', return_value=([], []))
