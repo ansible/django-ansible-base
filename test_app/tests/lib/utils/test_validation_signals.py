@@ -708,7 +708,10 @@ class TestValidationBypassLoggerEdgeCases:
 
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_skips_none_description_values(self, caplog):
-        Organization.objects.create(name='Invalid<Name>', description=None)
+        # Organization.description is null=False in the DB; invoke the handler in-memory.
+        instance = Organization(name='Invalid<Name>', description=None)
+        validation_bypass_logger(Organization, instance, created=True)
         signal_logs = [r for r in caplog.records if 'ORM bypass' in r.message]
         assert len(signal_logs) == 1
         assert 'name' in signal_logs[0].message
+        assert 'description' not in signal_logs[0].message
