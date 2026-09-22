@@ -22,6 +22,20 @@ def test_reuse_by_permission_list():
 
 
 @pytest.mark.django_db
+def test_reuse_by_permission_list_prefers_managed_role():
+    permissions = ['view_inventory', 'delete_inventory']
+    RoleDefinition.objects.create_from_permissions(permissions=permissions, name='custom-deleter')
+    managed_rd = RoleDefinition.objects.create_from_permissions(permissions=permissions, name='managed-deleter', managed=True)
+    # A second, later-created managed role with the same permission set should not win over the first.
+    RoleDefinition.objects.create_from_permissions(permissions=permissions, name='managed-deleter-two', managed=True)
+
+    rd, created = RoleDefinition.objects.get_or_create(permissions=permissions, name='another-deleter')
+
+    assert not created
+    assert rd == managed_rd
+
+
+@pytest.mark.django_db
 def test_root_resource_add_invalid():
     with pytest.raises(ValidationError) as exc:
         org_admin, created = RoleDefinition.objects.get_or_create(

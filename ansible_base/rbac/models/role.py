@@ -141,7 +141,9 @@ class RoleDefinitionManager(models.Manager):
         for attempt in range(max_retries):
             # search by permission set
             target_count = len(permissions)
-            candidates = self.annotate(perm_count=Count('permissions')).filter(perm_count=target_count).prefetch_related('permissions')
+            candidates = (
+                self.annotate(perm_count=Count('permissions')).filter(perm_count=target_count).order_by('-managed', 'id').prefetch_related('permissions')
+            )
 
             for existing_rd in candidates:
                 existing_set = {perm.codename for perm in existing_rd.permissions.all()}
