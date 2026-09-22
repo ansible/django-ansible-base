@@ -19,6 +19,19 @@ migrations), it can also be a security gap if untrusted data reaches these paths
 The signal handler detects these bypass writes and logs them for security
 monitoring and compliance auditing.
 
+## Design principles (AAP)
+
+- **Serializer boundary:** `CleanTextMixin` lives on DRF serializers, not on model
+  fields or `Model.save()`. Enforcement and **grandfathering** (skipping unchanged
+  fields on partial API updates) apply in `validate()` — see
+  [docs/lib/validation.md](validation.md). This story does **not** change model
+  behavior, `full_clean()`, or migrations.
+- **ORM bypass signal:** `validation_bypass_logger` is **observability-only** — it
+  logs Tier 1/Tier 2 violations on direct ORM saves but never blocks writes.
+- **Registry scope:** A model is checked only after a `CleanTextMixin` serializer
+  registers it via `__init_subclass__`. Wiring more API serializers expands coverage;
+  models without such a serializer are out of scope (see Detection Strategy).
+
 ## Known Bypass Paths
 
 ### 1. Management Commands
@@ -92,10 +105,19 @@ do not trigger `full_clean()` or serializer validation.
 has no way to observe these writes at all. This is the same category of write used by
 project sync, inventory source updates, and collection imports (the paths called out
 as the primary motivation in this story's parent epic), so those specific operations
-remain fully unobserved by this signal. The only real mitigation for this path is a
-model-level validator on the field (see docs/lib/validation.md), which runs on
-`full_clean()` regardless of how the object is saved -- but is not called by
-`bulk_create()`/`bulk_update()` either unless the caller explicitly invokes it first.
+remain fully unobserved by this signal.
+
+**Recommended mitigation (AAP):** Add **audit hooks at sync/import call sites** in
+downstream services (Controller, EDA, Hub, Gateway) — call the same validators as
+`CleanTextMixin` (`validate_resource_name`, `validate_free_text`) or a shared DAB
+helper such as `ansible_base.lib.utils.bulk_validation_audit` before
+`bulk_create()` / `bulk_update()`. Log violations; do not block the sync. This
+avoids monkeypatching Django `QuerySet` methods and does not require model field
+validators. See [Remediation](#remediation) and
+[docs/lib/validation_bypass_paths_review.md](validation_bypass_paths_review.md).
+
+Model-level validators (see docs/lib/validation.md) remain optional defense-in-depth
+for greenfield models but are **not** the primary approach for existing AAP services.
 
 **Risk level:** Medium to High — if external_data comes from untrusted sources
 (API integrations, file imports, sync operations).
@@ -212,8 +234,55 @@ The `validation_bypass_logger` signal uses this detection flow:
    - Field name
    - Violation tier (Tier 1 / Tier 2)
    - Sanitized error message (NOT the raw value)
-   - Caller info (module.function:line from stack inspection, skipping Django's
-     save()/signal-dispatch frames and this module's own frames)
+   - Caller info (module.function:line — see [Caller attribution](#caller-attribution))
+
+### Grandfathering vs ORM bypass
+
+- **API / serializer path:** On update, `CleanTextMixin.validate()` grandfatheres
+  unchanged fields so legacy DB values do not fail validation. `CleanTextMixin.save()`
+  sets a context variable so the signal **skips** the write (no second validation pass).
+- **ORM-direct path:** The signal validates **current persisted field values** on the
+  instance. Grandfathering does not apply — intentional for bypass auditing.
+
+### Caller attribution
+
+Caller info answers: “which code called `.save()` / `.create()` outside the serializer?”
+
+Resolution uses a **hybrid** stack walk (outward from the signal handler):
+
+1. **Allowlist (per service):** If configured (e.g. `CALLER_INFO_APP_MODULES` in Django
+   settings or registration at startup), use the **first** outward frame whose module
+   matches a service allowlist prefix (typical values: task modules, API views,
+   management commands — keep prefixes **narrow**, not whole `awx.main`).
+2. **Denylist:** Skip frames matching DAB defaults (`django.db.models`, `django.dispatch`,
+   `ansible_base.lib.utils.validation_signals`, `ansible_base.lib.abstract_models`, …) plus
+   optional per-service plumbing via `extend_internal_caller_prefixes()` in
+   `AppConfig.ready()` (e.g. `awx.main.models`, `aap_eda.core.models`).
+3. **Fallback:** If no frame is selected, use an implementation-defined fallback (e.g.
+   `"unknown"`) rather than reporting Django `save_base` as the caller.
+
+Downstream services (Controller, EDA, Hub, Gateway) must register allowlist and/or extra
+denylist prefixes when they deploy `CleanTextMixin` so logs point at real call sites.
+Details and trade-offs: [validation_bypass_paths_review.md](validation_bypass_paths_review.md).
+
+### Performance
+
+`post_save.connect()` has no `sender` filter, so Django **invokes** the handler on every
+model save. Cost depends on path:
+
+| Path | Typical work |
+|------|----------------|
+| Model not in registry | Dict lookup → return |
+| Registered + `CleanTextMixin.save()` | Lookup + context var → return (**no** stack walk, **no** regex in signal) |
+| Registered + ORM bypass | Field discovery + `inspect.stack()` + validators per text field |
+
+Register serializers for **API-facing** resources; avoid registering high-churn internal
+models unless required. Load-test registered models under realistic save volume before
+broad production enablement.
+
+**Gap to verify:** `ListSerializer` / `many=True` may call `create()`/`update()` without
+going through `CleanTextMixin.save()`, so the context var might not suppress the signal —
+confirm for list endpoints that use `CleanTextMixin`.
 
 ## Log Format
 
@@ -241,14 +310,19 @@ When a bypass violation is logged:
    - High: Data comes from untrusted user input
 
 3. **Remediate if needed:**
-   - **Preferred:** Refactor to use a DRF serializer with CleanTextMixin
-   - **Alternative:** Add model-level validators (see docs/lib/validation.md)
-   - **Workaround:** Manually call validators before save:
+   - **Preferred (single-instance writes):** Refactor to use a DRF serializer with
+     `CleanTextMixin` so validation and grandfathering stay at the API boundary.
+   - **Preferred (bulk / sync / import):** Call shared validators (or
+     `bulk_validation_audit` helpers) immediately before `bulk_create()` /
+     `bulk_update()` at the sync/import call site; log only, do not block.
+   - **Workaround:** Manually call validators before ORM write:
      ```python
      from ansible_base.lib.utils.validation import validate_free_text
      validate_free_text(user_input)  # Raises ValidationError if invalid
      MyModel.objects.create(description=user_input)
      ```
+   - **Optional:** Model-level validators (see docs/lib/validation.md) for new models —
+     not required for this epic and does not replace serializer grandfathering on APIs.
 
 4. **Document the decision:** If the bypass is intentional (e.g., migration
    with legacy data), add a code comment explaining why validation is skipped.
@@ -261,9 +335,8 @@ When a bypass violation is logged:
   highest-risk paths named in this story's motivating epic: project sync, inventory
   source updates, and collection imports typically use one of these bulk APIs. The
   signal only observes per-instance saves (`Model.save()`, `Model.objects.create()`).
-  Real protection for bulk paths requires a model-level validator on the field (see
-  docs/lib/validation.md), and even that requires the caller to invoke `full_clean()`
-  explicitly since `bulk_create()`/`bulk_update()` skip it too.
+  Mitigation is **targeted audit at bulk write sites** (see §3 Bulk Operations), not
+  changing model `save()` behavior platform-wide.
 
 - **Scoped to models with a `CleanTextMixin` serializer.** The signal only checks
   models registered via `CleanTextMixin.__init_subclass__` (see Detection Strategy
@@ -282,19 +355,21 @@ When a bypass violation is logged:
 
 ## Future Enhancements
 
-- **Model-level validators:** New models should use model field validators
-  (see docs/lib/validation.md) for defense-in-depth validation that covers
-  all code paths, not just serializers.
-
 - **Audit dashboard:** Aggregate bypass violation logs into a security
   dashboard for ongoing monitoring.
 
-- **Policy enforcement:** For high-security deployments, consider making
-  `ENHANCED_INPUT_VALIDATION_ENABLED=True` mandatory and blocking known
-  bypass paths with custom model save() overrides that call full_clean().
+- **Policy enforcement:** For high-security deployments, require
+  `ENHANCED_INPUT_VALIDATION_ENABLED=True` on API paths (serializer blocking) while
+  keeping ORM bypass logging on for visibility.
+
+- **Optional defense-in-depth:** Model field validators (see docs/lib/validation.md) for
+  new models where all write paths must be covered — separate from grandfathering on
+  existing API serializers.
 
 ## See Also
 
 - [docs/lib/validation.md](validation.md) - CleanTextMixin documentation
+- [docs/lib/validation_bypass_paths_review.md](validation_bypass_paths_review.md) - Review findings, caller/bulk decisions
 - [ansible_base/lib/utils/validation.py](../../ansible_base/lib/utils/validation.py) - Validator implementations
 - [ansible_base/lib/utils/validation_signals.py](../../ansible_base/lib/utils/validation_signals.py) - Signal handler implementation
+- Optional bulk-write audit helpers in `ansible_base.lib.utils.bulk_validation_audit` (when added to DAB) — see review doc §4

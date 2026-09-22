@@ -5,9 +5,9 @@
 | Finding | Category | Status |
 |---------|----------|--------|
 | #1: Double-logging guard | Correctness | ✅ FIXED |
-| #2: Caller info | Usability | 🟡 PATCHED (DAB-internal case only) |
+| #2: Caller info | Usability | 🟡 HYBRID APPROACH DOCUMENTED (implementation in progress) |
 | #3: Duplicate log entries | Observability | ✅ FIXED |
-| #4: Bulk operations unobservable | Scope | ❓ TBD |
+| #4: Bulk operations unobservable | Scope | 🟡 SYNC/IMPORT HOOKS (documented; service wiring TBD) |
 | #5a: Enforcement gating | Consistency | ✅ FIXED |
 | #5: No model registry | Scope | ✅ FIXED |
 | #6: Platform-wide blast radius | Risk | 🟡 PARTIALLY MITIGATED |
@@ -29,7 +29,13 @@
 3. **Heuristic: first non-Django frame.** Pro: simple, no config. Con: fragile to library versions, might misidentify.
 4. **Heuristic: first frame outside current repo.** Pro: natural boundary. Con: complex to implement, edge cases.
 
-**Recommendation:** Document a pattern (option 1 or 2) for downstream services before they ship their CleanTextMixin wiring, so caller info doesn't regress when they deploy. See [implementation sketches for options 1 & 2](#implementation-sketches-for-options-1--2) in Finding #2 for concrete code examples.
+**Team direction (documented in validation_bypass_paths.md):** **Hybrid** resolution —
+(1) allowlist hit first (service entry points), (2) denylist walk for first remaining
+frame, (3) fallback when neither applies. Downstream services register allowlist and/or
+`extend_internal_caller_prefixes()` in `AppConfig.ready()`. See [Caller attribution](validation_bypass_paths.md#caller-attribution).
+
+**Recommendation:** Implement hybrid in DAB; services use **narrow** allowlists
+(tasks, API, management) plus DAB denylist defaults. See [implementation sketches for options 1 & 2](#implementation-sketches-for-options-1--2) for starting points.
 
 ---
 
@@ -44,7 +50,11 @@
 3. **Hook at sync/import site:** Add validation in the services where bulk writes happen (project sync, inventory source updates, collection imports). Pro: **low blast radius**, targeted. Con: coordinated changes across Controller/EDA/Hub/Gateway, doesn't catch other bulk ops.
 4. **Ship with documented gap:** Accept that bulk operations aren't observed by this signal. Pro: ships faster, lowest risk. Con: leaves primary risk unobserved.
 
-**Recommendation:** **Option 3 (sync/import hooks)** balances coverage of the actual risk with acceptable scope and blast radius. Requires coordination across services, but that's already happening as they wire in CleanTextMixin.
+**Decision:** **Option 3 (sync/import hooks)** — documented in
+[validation_bypass_paths.md](validation_bypass_paths.md) (Bulk Operations + Remediation).
+AAP is **not** relying on model-level validators or `save()`/`full_clean()` changes for
+this epic; optional `bulk_validation_audit` helpers in DAB reduce boilerplate. Service
+PRs add hooks at high-risk bulk sites.
 
 **Implementation approach:** Reuse DAB's existing validators rather than duplicating them:
 - Import `validate_resource_name()` and `validate_free_text()` from `ansible_base.lib.utils.validation`
