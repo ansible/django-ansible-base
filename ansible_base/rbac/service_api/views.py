@@ -1,5 +1,4 @@
 from django.db import transaction
-from django.db.models import Case, OuterRef, Subquery, UUIDField, When
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -8,7 +7,6 @@ from rest_framework.viewsets import GenericViewSet, mixins
 from ansible_base.lib.utils.schema import extend_schema_if_available
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
 from ansible_base.lib.utils.views.permissions import try_add_oauth2_scope_permission
-from ansible_base.resource_registry.models import Resource
 from ansible_base.resource_registry.views import HasResourceRegistryPermissions
 from ansible_base.rest_filters.rest_framework import ansible_id_backend
 from ansible_base.rest_filters.rest_framework.ansible_id_backend import (
@@ -22,7 +20,7 @@ from ..models import (
     RoleUserAssignment,
 )
 from ..policies import check_can_remove_assignment
-from ..remote import get_local_resource_prefix
+from ..resource_queries import assignment_resource_annotation
 from . import serializers as service_serializers
 
 
@@ -54,21 +52,6 @@ class RolePermissionTypeViewSet(
 
 
 prefetch_related = ('created_by__resource', 'content_type', 'role_definition')
-
-
-def resource_ansible_id_expr():
-    """Resolve an assignment target through its DAB content type and object ID."""
-    resource = Resource.objects.filter(
-        object_id=OuterRef('object_id'),
-        content_type__app_label=OuterRef('content_type__app_label'),
-        content_type__model=OuterRef('content_type__model'),
-    ).values('ansible_id')[:1]
-
-    return Case(
-        When(content_type__service__in=('shared', get_local_resource_prefix()), then=Subquery(resource)),
-        default=None,
-        output_field=UUIDField(),
-    )
 
 
 class BaseSerivceRoleAssignmentViewSet(
@@ -158,7 +141,7 @@ class ServiceRoleUserAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
 
     def get_queryset(self):
         return RoleUserAssignment.objects.prefetch_related('user__resource__content_type', *prefetch_related).annotate(
-            _object_ansible_id_annotation=resource_ansible_id_expr()
+            _object_ansible_id_annotation=assignment_resource_annotation('ansible_id')
         )
 
     @action(detail=False, methods=['post'], url_path='assign')
@@ -184,7 +167,7 @@ class ServiceRoleTeamAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
 
     def get_queryset(self):
         return RoleTeamAssignment.objects.prefetch_related('team__resource__content_type', *prefetch_related).annotate(
-            _object_ansible_id_annotation=resource_ansible_id_expr()
+            _object_ansible_id_annotation=assignment_resource_annotation('ansible_id')
         )
 
     @action(detail=False, methods=['post'], url_path='assign')

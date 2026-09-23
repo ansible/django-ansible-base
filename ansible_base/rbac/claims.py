@@ -6,41 +6,17 @@ from typing import Optional, Tuple, Union
 
 from django.apps import apps
 from django.conf import settings
-from django.db.models import (
-    Case,
-    CharField,
-    F,
-    Model,
-    OuterRef,
-    QuerySet,
-    Subquery,
-    UUIDField,
-    When,
-)
+from django.db.models import F, Model, QuerySet
 from django.db.utils import IntegrityError
 
 from ansible_base.lib.utils.auth import get_team_model
-from ansible_base.rbac.remote import get_local_resource_prefix
+from ansible_base.rbac.resource_queries import assignment_resource_annotation
 
 from .models.content_type import DABContentType
 from .models.role import RoleDefinition, RoleUserAssignment
 from .pipeline import bulk_give_permissions, remove_assignments
 
 logger = logging.getLogger(__name__)
-
-
-def _resource_annotation(resource_cls, field_name, output_field):
-    resource = resource_cls.objects.filter(
-        object_id=OuterRef('object_id'),
-        content_type__app_label=OuterRef('content_type__app_label'),
-        content_type__model=OuterRef('content_type__model'),
-    ).values(field_name)[:1]
-
-    return Case(
-        When(content_type__service__in=('shared', get_local_resource_prefix()), then=Subquery(resource)),
-        default=None,
-        output_field=output_field,
-    )
 
 
 # ---- for claims serialization ----
@@ -73,10 +49,8 @@ def get_user_object_roles(user: Model) -> QuerySet:
             print(assignment.rd_name, assignment.aid, assignment.resource_name, assignment.content_type_id)
     """
     # Create subqueries for resource data
-    resource_cls = apps.get_model('dab_resource_registry', 'Resource')
-    ansible_id_subquery = _resource_annotation(resource_cls, 'ansible_id', UUIDField())
-
-    resource_name_subquery = _resource_annotation(resource_cls, 'name', CharField())
+    ansible_id_subquery = assignment_resource_annotation('ansible_id')
+    resource_name_subquery = assignment_resource_annotation('name')
 
     return (
         user.role_assignments.filter(content_type__isnull=False)
