@@ -1,6 +1,4 @@
-from django.contrib.contenttypes.fields import (
-    GenericForeignKey as DjangoGenericForeignKey,
-)
+from django.contrib.contenttypes.fields import GenericForeignKey as DjangoGenericForeignKey
 from django.core import checks
 from django.core.exceptions import FieldDoesNotExist, ObjectDoesNotExist
 from django.db import models

@@ -1,6 +1,7 @@
 import pytest
 from django import VERSION
 from django.contrib.contenttypes.models import ContentType
+
 from ansible_base.resource_registry.models import Resource, ResourceType
 from test_app.models import Inventory, Organization
 
