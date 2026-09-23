@@ -1,10 +1,19 @@
+import uuid
 from copy import deepcopy
 
 import pytest
+from django.contrib.contenttypes.models import ContentType
 from rest_framework.test import APIClient
 
 from ansible_base.lib.utils.response import get_relative_url
-from ansible_base.rbac.models import DABContentType, DABPermission, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
+from ansible_base.rbac.models import (
+    DABContentType,
+    DABPermission,
+    RoleDefinition,
+    RoleTeamAssignment,
+    RoleUserAssignment,
+)
+from ansible_base.resource_registry.models import Resource
 from test_app.models import Organization, Team, User
 
 
@@ -160,6 +169,38 @@ def test_object_ansible_id_in_list_response(admin_api_client, rando, org_admin_r
     returned_ansible_ids = {a['object_ansible_id'] for a in org_assignments}
     assert str(organization.resource.ansible_id) in returned_ansible_ids
     assert str(org2.resource.ansible_id) in returned_ansible_ids
+
+
+@pytest.mark.django_db
+def test_assignment_annotation_does_not_join_dab_content_type_id_to_resource_content_type_id(rando):
+    """DAB and Django ContentType IDs are separate namespaces."""
+    wrong_resource_type = ContentType.objects.create(app_label='wrong', model=f'wrong_{uuid.uuid4().hex}')
+    while DABContentType.objects.filter(pk=wrong_resource_type.pk).exists():
+        wrong_resource_type = ContentType.objects.create(app_label='wrong', model=f'wrong_{uuid.uuid4().hex}')
+
+    dab_content_type = DABContentType.objects.create(
+        id=wrong_resource_type.pk,
+        service='remote',
+        app_label='test_app',
+        model='organization',
+        pk_field_type='integer',
+    )
+    role_definition = RoleDefinition.objects.create(name=f'wrong-content-type-{uuid.uuid4().hex}', content_type=dab_content_type)
+    assignment = RoleUserAssignment.objects.create(
+        user=rando,
+        role_definition=role_definition,
+        content_type=dab_content_type,
+        object_id='17',
+        object_role=None,
+    )
+    wrong_resource = Resource.objects.create(content_type=wrong_resource_type, object_id='17')
+
+    from ansible_base.rbac.service_api.views import ServiceRoleUserAssignmentViewSet
+
+    annotated_assignment = ServiceRoleUserAssignmentViewSet().get_queryset().get(pk=assignment.pk)
+
+    assert annotated_assignment._object_ansible_id_annotation is None
+    assert annotated_assignment._object_ansible_id_annotation != wrong_resource.ansible_id
 
 
 @pytest.mark.django_db
@@ -529,7 +570,9 @@ class TestCreatedByAnsibleIdAllowNull:
 
     def test_serializer_allows_null_values_in_validation(self, admin_api_client, rando, inv_rd, inventory):
         """Test that the serializer field properly handles null validation with allow_null=True"""
-        from ansible_base.rbac.service_api.serializers import ServiceRoleUserAssignmentSerializer
+        from ansible_base.rbac.service_api.serializers import (
+            ServiceRoleUserAssignmentSerializer,
+        )
 
         # Test data with null created_by_ansible_id
         data = {

@@ -215,13 +215,3 @@ class ResourceRegistryConfig(AppConfig):
         signals.pre_migrate.connect(disconnect_resource_signals, sender=self)
         signals.post_migrate.connect(initialize_resources, sender=self)
         signals.post_migrate.connect(connect_resource_signals, sender=self)
-
-        from django.apps import apps
-
-        if apps.is_installed("ansible_base.rbac"):
-            from ansible_base.rbac.models import RoleTeamAssignment, RoleUserAssignment
-            from ansible_base.resource_registry.fields import AssignmentResourceField
-
-            for model in (RoleUserAssignment, RoleTeamAssignment):
-                if not hasattr(model, "resource"):
-                    AssignmentResourceField().contribute_to_class(model, "resource")
