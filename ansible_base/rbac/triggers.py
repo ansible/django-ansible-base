@@ -1,15 +1,18 @@
 import logging
+from collections import defaultdict
 from contextlib import contextmanager
 from typing import Generator, Optional, Union
 from uuid import UUID
 
+from django.conf import settings
 from django.db import connection
-from django.db.models import Model
+from django.db.models import Model, Q
 from django.db.models.signals import m2m_changed, post_delete, post_init, post_save, pre_delete, pre_save
 from django.dispatch import Signal
 
 from ansible_base.lib.utils.db import migrations_are_complete
 from ansible_base.rbac.caching import (
+    _safe_bulk_create_evaluations,
     bulk_ancestor_roles,
     cleanup_deleted_object_roles,
     cleanup_deleted_team_roles,
@@ -21,7 +24,9 @@ from ansible_base.rbac.caching import (
     recompute_role_evaluations,
     team_ids_from_role_target,
 )
-from ansible_base.rbac.models import ObjectRole, RoleDefinition, get_evaluation_model
+from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation, RoleEvaluationUUID, get_evaluation_model
+from ansible_base.rbac.models.permission import DABPermission
+from ansible_base.rbac.models.role import RoleTeamAssignment
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.validators import validate_team_assignment_enabled
 
@@ -364,6 +369,117 @@ def rbac_pre_save_identify_changes(instance, *args, **kwargs):
         instance.__rbac_original_parent_id = getattr(type(instance).objects.only('pk').get(pk=instance.pk), f'{parent_field_name}_id')
 
 
+# bulk create role evaluations in cases where new objects (like job template) are created
+# we want to avoid the regular logic of comparing existing and expected role evaluations, because it is
+# slow and in the case of 'create' we don't need it: only new role evaluations are created, we never need
+# to remove existing evaluations.
+def _fast_create_evaluations(instance, object_pk, object_ct_id):
+    parent_gfks = get_parent_ids(instance)
+
+    # this attribute is used to detect when the parent org of an object has changed. In this case
+    # all we need to do is to clear it.
+    if hasattr(instance, '__rbac_original_parent_id'):
+        delattr(instance, '__rbac_original_parent_id')
+
+    # this is a top level object, it doesn't have parents, e.g. a Role
+    # in that case we can return immediately because this function deals with
+    # creating RoleEvaluations for objects and roles inside an Organization
+    if not parent_gfks:
+        return
+
+    parent_cts_and_ids = set(parent_gfks)
+
+    # first, get all the org level object roles for the parent
+    q_filter = Q()
+    for ct, pid in parent_cts_and_ids:
+        q_filter |= Q(content_type=ct, object_id=pid)
+    org_roles = list(ObjectRole.objects.filter(q_filter))
+
+    # if there are none, then we don't need to create any new role evaluations
+    if not org_roles:
+        return
+
+    # then get all the permissions that these object roles grant for the specific
+    # content type id, e.g. a job template
+    org_rd_ids = {r.role_definition_id for r in org_roles}
+    jt_perms = list(
+        DABPermission.objects.filter(
+            role_definitions__id__in=org_rd_ids,
+            content_type_id=object_ct_id,
+        ).values_list('codename', 'role_definitions__id').distinct()
+    )
+
+    rd_to_codenames = defaultdict(set)
+    for codename, rd_id in jt_perms:
+        rd_to_codenames[rd_id].add(codename)
+
+    # if there are no permissions, we can return immediately
+    if not rd_to_codenames:
+        return
+
+    use_uuid = isinstance(object_pk, UUID)
+    eval_model = RoleEvaluationUUID if use_uuid else RoleEvaluation
+
+    evaluations = []
+
+    # construct all the evaluations in memory first
+    for role in org_roles:
+        for codename in rd_to_codenames.get(role.role_definition_id, set()):
+            evaluations.append(eval_model(
+                codename=codename, content_type_id=object_ct_id,
+                object_id=object_pk, role=role,
+            ))
+
+    # find teams assigned to org roles with matching permissions,
+    # then create evaluations for their Team Member roles.
+    # this assumes that an object only has one parent
+    (parent_ct, parent_id), = parent_cts_and_ids
+
+    # which teams are assigned org level roles that grant permissions
+    # on the new object content type?
+    team_assignments = list(
+        RoleTeamAssignment.objects.filter(
+            object_id=str(parent_id),
+            content_type_id=parent_ct.id,
+            role_definition_id__in=rd_to_codenames.keys(),
+        ).values_list('team_id', 'role_definition_id')
+    )
+
+    if team_assignments:
+        team_to_codenames = defaultdict(set)
+        for team_id, rd_id in team_assignments:
+            team_to_codenames[team_id].update(rd_to_codenames[rd_id])
+
+        team_ct = permission_registry.content_type_model.objects.get_for_model(
+            permission_registry.team_model
+        )
+
+        team_member_roles = {
+            int(r.object_id): r for r in
+            ObjectRole.objects.filter(
+                content_type_id=team_ct.id,
+                object_id__in=[str(tid) for tid in team_to_codenames.keys()],
+                role_definition__permissions__codename=permission_registry.team_permission,
+            )
+        }
+
+        # create evaluations for every team member role (in memory only)
+        for team_id, codenames in team_to_codenames.items():
+            role = team_member_roles.get(team_id)
+            if role:
+                for codename in codenames:
+                    evaluations.append(eval_model(
+                        codename=codename, content_type_id=object_ct_id,
+                        object_id=object_pk, role=role,
+                    ))
+
+    # finally, bulk insert all evaluations
+    if evaluations:
+        ignore_conflicts = getattr(settings, 'ANSIBLE_BASE_EVALUATIONS_IGNORE_CONFLICTS', False)
+        _safe_bulk_create_evaluations(eval_model, evaluations, ignore_conflicts)
+        logger.info('Fast-path: created %d RoleEvaluation entries for %s pk=%s', len(evaluations), instance._meta.model_name, object_pk)
+
+
 def rbac_post_save_update_evaluations(instance, created, *args, **kwargs):
     """
     Connect to post_save signal for objects in the permission registry
@@ -381,7 +497,7 @@ def rbac_post_save_update_evaluations(instance, created, *args, **kwargs):
         if defer_rbac_state.active:
             defer_rbac_state.created_instances.append((instance, instance.pk, obj_ct_id))
             return
-        post_save_update_obj_permissions(instance, object_pk=instance.pk, object_ct_id=obj_ct_id)
+        _fast_create_evaluations(instance, instance.pk, obj_ct_id)
         return
 
     # The parent object can not have changed if update_fields was given and did not list that field
