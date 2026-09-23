@@ -6,7 +6,13 @@ from django.contrib.contenttypes.models import ContentType
 from rest_framework.test import APIClient
 
 from ansible_base.lib.utils.response import get_relative_url
-from ansible_base.rbac.models import DABContentType, DABPermission, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
+from ansible_base.rbac.models import (
+    DABContentType,
+    DABPermission,
+    RoleDefinition,
+    RoleTeamAssignment,
+    RoleUserAssignment,
+)
 from ansible_base.resource_registry.models import Resource
 from test_app.models import Organization, Team, User
 
@@ -175,6 +181,18 @@ def test_resource_ansible_id_filter_remains_supported(admin_api_client, rando, o
 
     assert response.status_code == 200, response.data
     assert [item['id'] for item in response.data['results']] == [assignment.id]
+
+
+@pytest.mark.django_db
+def test_global_assignment_resource_annotation_is_null(rando):
+    role_definition = RoleDefinition.objects.managed.sys_auditor
+    assignment = role_definition.give_global_permission(rando)
+
+    from ansible_base.rbac.service_api.views import ServiceRoleUserAssignmentViewSet
+
+    annotated_assignment = ServiceRoleUserAssignmentViewSet().get_queryset().get(pk=assignment.pk)
+
+    assert annotated_assignment._object_ansible_id_annotation is None
 
 
 @pytest.mark.django_db
@@ -576,7 +594,9 @@ class TestCreatedByAnsibleIdAllowNull:
 
     def test_serializer_allows_null_values_in_validation(self, admin_api_client, rando, inv_rd, inventory):
         """Test that the serializer field properly handles null validation with allow_null=True"""
-        from ansible_base.rbac.service_api.serializers import ServiceRoleUserAssignmentSerializer
+        from ansible_base.rbac.service_api.serializers import (
+            ServiceRoleUserAssignmentSerializer,
+        )
 
         # Test data with null created_by_ansible_id
         data = {
