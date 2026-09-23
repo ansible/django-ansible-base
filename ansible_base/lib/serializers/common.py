@@ -8,7 +8,7 @@ from rest_framework.fields import empty
 from rest_framework.serializers import ValidationError
 
 from ansible_base.lib.abstract_models.common import get_url_for_object
-from ansible_base.lib.serializers.mixins import EmailAdminOnlyMixin
+from ansible_base.lib.serializers.mixins import EmailAdminOnlyMixin, UsernameAdminOnlyMixin
 from ansible_base.lib.serializers.validation import ValidationSerializerMixin
 from ansible_base.lib.utils import models
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
@@ -105,10 +105,10 @@ class ImmutableCommonModelSerializer(AbstractCommonModelSerializer):
         fields = AbstractCommonModelSerializer.Meta.fields + ['created', 'created_by']
 
 
-class CommonUserSerializer(EmailAdminOnlyMixin, CommonModelSerializer):
+class CommonUserSerializer(EmailAdminOnlyMixin, UsernameAdminOnlyMixin, CommonModelSerializer):
     """
     Disallows editing of system user and enforces superuser requirement.
-    Restricts email changes to admins via EmailAdminOnlyMixin.
+    Restricts email and username changes to admins via dedicated mixins.
     """
 
     def validate(self, data):

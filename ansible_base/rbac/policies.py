@@ -54,7 +54,12 @@ def can_view_all_users(request_user):
     )
 
 
-def can_change_user(request_user: Optional[AbstractBaseUser], target_user: Optional[AbstractBaseUser], can_self_edit: bool = True) -> bool:
+def can_change_user(
+    request_user: Optional[AbstractBaseUser],
+    target_user: Optional[AbstractBaseUser],
+    can_self_edit: bool = True,
+    self_edit_setting: str = 'ALLOW_USER_EMAIL_SELF_EDIT',
+) -> bool:
     """Tells if the request user can modify details of the target user"""
     if request_user is None or target_user is None:
         return False
@@ -67,7 +72,7 @@ def can_change_user(request_user: Optional[AbstractBaseUser], target_user: Optio
     if not get_setting('MANAGE_ORGANIZATION_AUTH', False):
         return False
 
-    if request_user.pk == target_user.pk and (can_self_edit or get_setting('ALLOW_USER_EMAIL_SELF_EDIT', False)):
+    if request_user.pk == target_user.pk and (can_self_edit or get_setting(self_edit_setting, False)):
         return True
 
     # If the user is not in any organizations, answer can not consider organization permissions
