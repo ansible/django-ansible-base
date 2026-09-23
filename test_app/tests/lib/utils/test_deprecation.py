@@ -102,33 +102,31 @@ class TestDeprecatedDecoratorMethod:
         assert MyView.get.__name__ == 'get'
         assert MyView.get.__doc__ == 'Original docstring.'
 
-    def test_method_decorator_sets_dab_deprecated_attrs(self):
+    def test_method_decorator_sets_deprecation_dict(self):
         class MyView(APIView):
             @deprecated(detail='Test detail.', link='https://test.com')
             def get(self, request):
                 return Response({})
 
-        assert MyView.get._dab_deprecated is True
-        assert MyView.get._dab_deprecated_detail == 'Test detail.'
-        assert MyView.get._dab_deprecated_link == 'https://test.com'
+        assert hasattr(MyView.get, 'deprecation')
+        assert MyView.get.deprecation == {'detail': 'Test detail.', 'link': 'https://test.com'}
 
 
 class TestDeprecatedDecoratorClass:
-    def test_class_decorator_sets_attributes(self):
+    def test_class_decorator_sets_deprecation_dict(self):
         @deprecated(detail='This view is deprecated.')
         class MyView(APIView):
             pass
 
-        assert MyView._dab_deprecated is True
-        assert MyView._dab_deprecated_detail == 'This view is deprecated.'
-        assert MyView._dab_deprecated_link is None
+        assert hasattr(MyView, 'deprecation')
+        assert MyView.deprecation == {'detail': 'This view is deprecated.', 'link': None}
 
     def test_class_decorator_with_link(self):
         @deprecated(detail='Deprecated.', link='https://example.com')
         class MyView(APIView):
             pass
 
-        assert MyView._dab_deprecated_link == 'https://example.com'
+        assert MyView.deprecation == {'detail': 'Deprecated.', 'link': 'https://example.com'}
 
 
 @pytest.mark.django_db
