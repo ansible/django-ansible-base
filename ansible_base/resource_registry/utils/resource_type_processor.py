@@ -66,4 +66,4 @@ class RoleDefinitionProcessor(ResourceTypeProcessor):
             if old_permissions != set(permissions):
                 self.instance.permissions.set(permissions)
                 changed = True
-        return (changed, self.instance)
+        return (changed, self.instance)  # type: ignore[return-value]

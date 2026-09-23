@@ -23,7 +23,7 @@ def b64_encode_binary_data_in_dict(obj: Any) -> Any:
     return obj
 
 
-class AuthenticatorUser(AbstractUserSocialAuth, AbstractCommonModel):
+class AuthenticatorUser(AbstractUserSocialAuth, AbstractCommonModel):  # type: ignore[django-manager-missing]
     """
     This appends extra information on the local user model that includes extra data returned by
     the authenticators and links the user to the authenticator that they used to login.

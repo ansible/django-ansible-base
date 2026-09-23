@@ -62,6 +62,12 @@ def decide_to_sync_update(sender, instance, raw, using, update_fields, **kwargs)
         # We only concern ourselves with updates
         return
 
+    # A class-level flag signals that this model is registered for UUID generation
+    # only and has no managed_serializer. For those models serializer_class is None,
+    # and calling it below raises TypeError. Skip the whole handler.
+    if getattr(type(instance), '_skip_reverse_resource_sync', False):
+        return
+
     try:
         resource = Resource.get_resource_for_object(instance)
     except Resource.DoesNotExist:
@@ -181,4 +187,17 @@ def sync_to_resource_server_pre_delete(sender, instance, **kwargs):
     if not reverse_sync_enabled:
         return
 
-    sync_to_resource_server(instance, "delete", ansible_id=instance.resource.ansible_id)
+    # Same class-level opt-out as decide_to_sync_update — models registered without
+    # a managed_serializer skip reverse sync entirely.
+    if getattr(type(instance), '_skip_reverse_resource_sync', False):
+        return
+
+    # Use get_resource_for_object rather than instance.resource — Resource uses
+    # GenericForeignKey so there is no automatic reverse accessor on the instance.
+    try:
+        resource = Resource.get_resource_for_object(instance)
+    except Resource.DoesNotExist:
+        logger.warning(f"Resource for {instance} not found during pre_delete; skipping sync")
+        return
+
+    sync_to_resource_server(instance, "delete", ansible_id=resource.ansible_id)

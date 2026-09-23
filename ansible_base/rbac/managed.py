@@ -33,7 +33,7 @@ class ManagedRoleConstructor:
         return self.permission_list
 
     def get_translated_name(self) -> str:
-        return _(self.name)
+        return _(self.name)  # type: ignore[return-value]
 
     def get_content_type(self, apps):
         model = self.get_model(apps)

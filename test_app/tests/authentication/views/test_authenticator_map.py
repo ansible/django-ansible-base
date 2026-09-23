@@ -3,6 +3,7 @@ from django import VERSION
 from django.db import connection
 
 from ansible_base.lib.utils.response import get_relative_url
+from test_app.tests.authentication.conftest import OBJECT_SCOPED_ROLE_NAME
 
 
 def test_authenticator_map_list_empty_by_default(admin_api_client):
@@ -67,6 +68,22 @@ def test_authenticator_map_create(admin_api_client, local_authenticator, trigger
     assert response.data['authenticator'] == local_authenticator.id
     assert response.data['triggers'] == triggers
     assert response.data['map_type'] == 'is_superuser'
+
+
+@pytest.mark.django_db
+def test_authenticator_map_rejects_object_scoped_role(admin_api_client, local_authenticator, object_scoped_role, shut_up_logging):
+    url = get_relative_url("authenticatormap-list")
+    data = {
+        'name': 'Assign object-scoped role',
+        'authenticator': local_authenticator.id,
+        'map_type': 'role',
+        'role': OBJECT_SCOPED_ROLE_NAME,
+        'triggers': {'always': {}},
+        'order': 1,
+    }
+    response = admin_api_client.post(url, data=data, format='json')
+    assert response.status_code == 400, response.data
+    assert 'Object-scoped roles cannot be assigned through an authenticator map.' in response.data['role'][0]
 
 
 def test_authenticator_map_invalid_map_type(admin_api_client, local_authenticator, shut_up_logging):

@@ -25,6 +25,8 @@ jobs:
             command: check_black
           - name: api-isort
             command: check_isort
+          - name: api-mypy
+            command: check_mypy
           - name: pure-python-imports
             command: check_pure_python_imports
     steps:
@@ -41,8 +43,16 @@ jobs:
         with:
           python-version: 3.12
 
+      - name: Install build requirements for mypy
+        if: matrix.tests.name == 'api-mypy'
+        run: sudo apt-get update && sudo apt-get install -y libsasl2-dev libldap2-dev libssl-dev libxmlsec1-dev
+
       - name: Install requirments
         run: pip3.12 install -r requirements/requirements_dev.txt
+
+      - name: Install all dependencies for mypy
+        if: matrix.tests.name == 'api-mypy'
+        run: pip3.12 install -r requirements/requirements_all.txt
 
       - name: Install test dependencies for pure-python-imports
         if: matrix.tests.name == 'pure-python-imports'

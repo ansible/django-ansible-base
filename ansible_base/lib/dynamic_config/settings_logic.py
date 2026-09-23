@@ -81,7 +81,7 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
 
     installed_apps: list = copy(settings["INSTALLED_APPS"])
     middleware: list = copy(settings["MIDDLEWARE"])
-    rest_framework: dict = copy(settings["REST_FRAMEWORK"])
+    rest_framework: dict = copy(settings["REST_FRAMEWORK"]) if isinstance(settings["REST_FRAMEWORK"], dict) else {}
 
     oauth2_provider: dict = copy(settings.get("OAUTH2_PROVIDER", {}))
     templates: list = copy(settings.get("TEMPLATES", []))
@@ -117,6 +117,9 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
             'assignment',  # for RoleAssignmentFilterBackend, assignment filtering
         )
 
+    if settings.get('ENHANCED_INPUT_VALIDATION_ENABLED') is None:
+        dab_data['ENHANCED_INPUT_VALIDATION_ENABLED'] = False
+
     # SPECTACULAR SETTINGS
     if 'ansible_base.api_documentation' in installed_apps:
         rest_framework.setdefault('DEFAULT_SCHEMA_CLASS', 'drf_spectacular.openapi.AutoSchema')
@@ -135,6 +138,8 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         'rest_framework.filters.SearchFilter',
         'ansible_base.rest_filters.rest_framework.order_backend.OrderByBackend',
     )
+    rest_framework.setdefault('DEFAULT_METADATA_CLASS', 'ansible_base.lib.metadata.CleanTextMetadata')
+
     if 'ansible_base.rest_filters' in installed_apps:
         rest_framework['DEFAULT_FILTER_BACKENDS'] = dab_data['ANSIBLE_BASE_ALL_REST_FILTERS']
     else:

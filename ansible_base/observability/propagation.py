@@ -25,7 +25,7 @@ def headers_to_propagate(meta: dict[str, str]) -> dict[str, str]:
 
 def request_hook(_span: Span, request: HttpRequest) -> None:
     headers = headers_to_propagate(request.META)
-    request._otel_propagation_token = _active_propagation_headers.set(headers)  # type: ignore[attr-defined]
+    request._otel_propagation_token = _active_propagation_headers.set(headers)
 
 
 def response_hook(_span: Span, request: HttpRequest, _response: HttpResponse) -> None:
