@@ -120,3 +120,10 @@ class TestUsernameAdminOnlyMixin:
         serializer = UserSerializer(alice, data={'username': 'alice'}, context={'request': _make_request(alice)}, partial=True)
 
         assert serializer.is_valid(raise_exception=True)
+
+    @pytest.mark.django_db
+    def test_username_change_without_request_context_is_allowed(self):
+        alice = User.objects.create(username='alice')
+        serializer = UserSerializer(alice, data={'username': 'renamed'}, context={}, partial=True)
+
+        assert serializer.is_valid(raise_exception=True)
