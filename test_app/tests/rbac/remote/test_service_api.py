@@ -856,3 +856,221 @@ class TestServiceFilter:
 
         for a in response.data['results']:
             assert a['content_type'] is None, f"Only global assignments should be returned for nonexistent service, got {a['content_type']}"
+
+
+@pytest.mark.django_db
+class TestParentReference:
+    """Test parent_reference field in service API serializers."""
+
+    def test_assign_with_parent_reference_for_remote_object(self, admin_api_client, rando):
+        """When parent_reference is included in an assign request for a remote object,
+        it should be stored on the ObjectRole."""
+        from ansible_base.rbac.models import DABContentType, DABPermission, ObjectRole, RoleDefinition
+
+        org = Organization.objects.create(name='Parent Org')
+        org_ct = DABContentType.objects.get_for_model(org)
+        remote_ct = DABContentType.objects.create(service='awx', model='jobtemplate', app_label='main', parent_content_type=org_ct)
+        perm = DABPermission.objects.create(codename='execute_jobtemplate', content_type=remote_ct)
+        rd = RoleDefinition.objects.create_from_permissions(name='JT Execute', permissions=[perm.api_slug], content_type=remote_ct)
+
+        url = get_relative_url('serviceuserassignment-assign')
+        data = {
+            "role_definition": rd.name,
+            "user_ansible_id": str(rando.resource.ansible_id),
+            "object_id": "42",
+            "parent_reference": str(org.pk),
+        }
+        response = admin_api_client.post(url, data=data)
+        assert response.status_code == 201, response.data
+        assert response.data['parent_reference'] == str(org.pk)
+
+        obj_role = ObjectRole.objects.get(role_definition=rd, object_id='42')
+        assert str(obj_role.parent_reference) == str(org.pk)
+
+    def test_assign_without_parent_reference_defaults_to_empty(self, admin_api_client, rando):
+        """Omitting parent_reference should still work (backward compatible)."""
+        from ansible_base.rbac.models import DABContentType, DABPermission, ObjectRole, RoleDefinition
+
+        remote_ct = DABContentType.objects.create(service='awx', model='remote_inventory', app_label='main')
+        perm = DABPermission.objects.create(codename='use_remote_inventory', content_type=remote_ct)
+        rd = RoleDefinition.objects.create_from_permissions(name='Remote Inv Use', permissions=[perm.api_slug], content_type=remote_ct)
+
+        url = get_relative_url('serviceuserassignment-assign')
+        data = {
+            "role_definition": rd.name,
+            "user_ansible_id": str(rando.resource.ansible_id),
+            "object_id": "99",
+        }
+        response = admin_api_client.post(url, data=data)
+        assert response.status_code == 201, response.data
+        assert response.data['parent_reference'] == ''
+
+        obj_role = ObjectRole.objects.get(role_definition=rd, object_id='99')
+        assert obj_role.parent_reference == ''
+
+    def test_list_response_includes_parent_reference_for_local_object(self, admin_api_client, rando, inv_rd, inventory):
+        """parent_reference should be resolved from the local model's organization FK."""
+        inv_rd.give_permission(rando, inventory)
+
+        url = get_relative_url('serviceuserassignment-list')
+        response = admin_api_client.get(url + '?page_size=200', format="json")
+        assert response.status_code == 200, response.data
+
+        candidates = [a for a in response.data['results'] if a['role_definition'] == inv_rd.name]
+        assert len(candidates) >= 1
+        assert candidates[0]['parent_reference'] == str(inventory.organization.pk)
+
+    def test_list_response_parent_reference_empty_for_global_roles(self, admin_api_client, rando):
+        """Global/system role assignments should have empty parent_reference."""
+        sys_auditor = RoleDefinition.objects.managed.sys_auditor
+        sys_auditor.give_global_permission(rando)
+
+        url = get_relative_url('serviceuserassignment-list')
+        response = admin_api_client.get(url + '?page_size=200', format="json")
+        assert response.status_code == 200, response.data
+
+        candidates = [a for a in response.data['results'] if a['role_definition'] == sys_auditor.name]
+        assert len(candidates) >= 1
+        assert candidates[0]['parent_reference'] == ''
+
+    def test_team_assign_with_parent_reference(self, admin_api_client, team, member_rd, rando):
+        """parent_reference works for team assignments too."""
+        from ansible_base.rbac.models import DABContentType, DABPermission, ObjectRole, RoleDefinition
+
+        member_rd.give_permission(rando, team)
+        org = team.organization
+        org_ct = DABContentType.objects.get_for_model(org)
+        remote_ct = DABContentType.objects.create(service='awx', model='project', app_label='main', parent_content_type=org_ct)
+        perm = DABPermission.objects.create(codename='use_project', content_type=remote_ct)
+        rd = RoleDefinition.objects.create_from_permissions(name='Project Use', permissions=[perm.api_slug], content_type=remote_ct)
+
+        url = get_relative_url('serviceteamassignment-assign')
+        data = {
+            "role_definition": rd.name,
+            "team_ansible_id": str(team.resource.ansible_id),
+            "object_id": "77",
+            "parent_reference": str(org.pk),
+        }
+        response = admin_api_client.post(url, data=data)
+        assert response.status_code == 201, response.data
+        assert response.data['parent_reference'] == str(org.pk)
+
+        obj_role = ObjectRole.objects.get(role_definition=rd, object_id='77')
+        assert str(obj_role.parent_reference) == str(org.pk)
+
+    def test_org_permission_evaluates_with_parent_reference(self, admin_api_client, rando):
+        """When parent_reference is set, org-level roles should evaluate
+        permission on the remote child object."""
+        from ansible_base.rbac.models import DABContentType, DABPermission, RoleDefinition
+
+        org = Organization.objects.create(name='Eval Test Org')
+        org_ct = DABContentType.objects.get_for_model(org)
+        remote_ct = DABContentType.objects.create(service='ctrl', model='workflow', app_label='main', parent_content_type=org_ct)
+        view_perm = DABPermission.objects.create(codename='view_workflow', content_type=remote_ct)
+        change_perm = DABPermission.objects.create(codename='change_workflow', content_type=remote_ct)
+
+        obj_rd = RoleDefinition.objects.create_from_permissions(name='Workflow Viewer', permissions=[view_perm.api_slug], content_type=remote_ct)
+        org_rd = RoleDefinition.objects.create_from_permissions(
+            name='Org Workflow Admin',
+            permissions=[view_perm.api_slug, change_perm.api_slug, 'shared.view_organization'],
+            content_type=org_ct,
+        )
+
+        url = get_relative_url('serviceuserassignment-assign')
+        data = {
+            "role_definition": obj_rd.name,
+            "user_ansible_id": str(rando.resource.ansible_id),
+            "object_id": "55",
+            "parent_reference": str(org.pk),
+        }
+        response = admin_api_client.post(url, data=data)
+        assert response.status_code == 201, response.data
+
+        from ansible_base.rbac.remote import RemoteObject
+
+        remote_obj = RemoteObject(content_type=remote_ct, object_id=55, parent_reference=org.pk)
+        assert rando.has_obj_perm(remote_obj, 'view')
+        assert not rando.has_obj_perm(remote_obj, 'change')
+
+        org_rd.give_permission(rando, org)
+        assert rando.has_obj_perm(remote_obj, 'change')
+
+    def test_sync_assignment_includes_parent_reference(self, rando, inv_rd, inventory):
+        """rest_client.sync_assignment payload should include parent_reference."""
+        from unittest.mock import MagicMock, patch
+
+        from ansible_base.resource_registry.rest_client import ResourceAPIClient
+
+        assignment = inv_rd.give_permission(rando, inventory)
+
+        client = ResourceAPIClient(service_url='http://example.com', service_path='/api/v1/service-index/')
+        with patch.object(client, '_sync_assignment', return_value=MagicMock()) as mock_sync:
+            client.sync_assignment(assignment)
+            sent_data = mock_sync.call_args[0][0]
+            assert 'parent_reference' in sent_data
+            assert sent_data['parent_reference'] == str(inventory.organization.pk)
+
+    def test_pipeline_sets_parent_reference_for_local_models(self, rando, inv_rd, inventory):
+        """_resolve_content_object should fill parent_reference from the local model's parent FK."""
+        from ansible_base.rbac.models import ObjectRole
+
+        inv_rd.give_permission(rando, inventory)
+
+        obj_role = ObjectRole.objects.get(role_definition=inv_rd, object_id=str(inventory.pk))
+        assert obj_role.parent_reference == str(inventory.organization.pk)
+
+    def test_repair_parent_references_command(self, rando, inv_rd, inventory):
+        """Management command should backfill empty parent_reference on existing ObjectRoles."""
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        from ansible_base.rbac.models import ObjectRole
+
+        inv_rd.give_permission(rando, inventory)
+        obj_role = ObjectRole.objects.get(role_definition=inv_rd, object_id=str(inventory.pk))
+        ObjectRole.objects.filter(pk=obj_role.pk).update(parent_reference='')
+
+        out = StringIO()
+        call_command('repair_parent_references', stdout=out)
+        obj_role.refresh_from_db()
+        assert obj_role.parent_reference == str(inventory.organization.pk)
+
+    def test_repair_parent_references_dry_run(self, rando, inv_rd, inventory):
+        """Dry run should not modify data."""
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        from ansible_base.rbac.models import ObjectRole
+
+        inv_rd.give_permission(rando, inventory)
+        obj_role = ObjectRole.objects.get(role_definition=inv_rd, object_id=str(inventory.pk))
+        ObjectRole.objects.filter(pk=obj_role.pk).update(parent_reference='')
+
+        out = StringIO()
+        call_command('repair_parent_references', '--dry-run', stdout=out)
+        obj_role.refresh_from_db()
+        assert obj_role.parent_reference == ''
+        assert 'Would update' in out.getvalue()
+
+    def test_repair_parent_references_noop(self):
+        """Command should report nothing when all parent_references are already set."""
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        out = StringIO()
+        call_command('repair_parent_references', stdout=out)
+        assert 'No ObjectRoles need parent_reference backfill.' in out.getvalue()
+
+    def test_pipeline_parent_reference_empty_for_top_level_models(self, rando):
+        """Models without a parent FK (e.g. Organization) should get empty parent_reference."""
+        from ansible_base.rbac.models import ObjectRole, RoleDefinition
+
+        org = Organization.objects.create(name='Pipeline Test Org')
+        org_admin = RoleDefinition.objects.managed.org_admin
+        org_admin.give_permission(rando, org)
+
+        obj_role = ObjectRole.objects.get(role_definition=org_admin, object_id=str(org.pk))
+        assert obj_role.parent_reference == ''

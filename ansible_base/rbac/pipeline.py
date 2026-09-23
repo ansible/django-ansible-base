@@ -43,15 +43,18 @@ def _resolve_content_object(obj: models.Model | RemoteObject) -> tuple[DABConten
     """Resolve content_type, object_id, and parent_reference from a content object.
 
     For RemoteObject: uses its own attributes directly.
-    For local Django models: uses _meta (no extra query), empty parent_reference.
+    For local Django models: resolves parent_reference from the registered parent FK.
     """
     if isinstance(obj, RemoteObject):
         return cast(DABContentType, obj.content_type), str(obj.object_id), str(obj.parent_reference) if obj.parent_reference else ''
-    return (
-        cast(DABContentType, DABContentType.objects.get_for_model(obj)),
-        str(obj._meta.pk.get_db_prep_value(obj.pk, connection)),
-        '',
-    )
+    ct = cast(DABContentType, DABContentType.objects.get_for_model(obj))
+    object_id = str(obj._meta.pk.get_db_prep_value(obj.pk, connection))
+    parent_field_name = permission_registry.get_parent_fd_name(type(obj))
+    if parent_field_name:
+        parent_id = getattr(obj, f'{parent_field_name}_id', None)
+        if parent_id is not None:
+            return ct, object_id, str(parent_id)
+    return ct, object_id, ''
 
 
 def _resolve_triples(triples: Iterable[PermissionTriple]) -> list[ResolvedAssignment]:

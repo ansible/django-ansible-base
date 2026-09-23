@@ -133,8 +133,10 @@ class ServiceRoleUserAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     ]
 
     def get_queryset(self):
-        return RoleUserAssignment.objects.prefetch_related('user__resource__content_type', *prefetch_related).annotate(
-            _object_ansible_id_annotation=F('resource__ansible_id')
+        return (
+            RoleUserAssignment.objects.select_related('object_role')
+            .prefetch_related('user__resource__content_type', *prefetch_related)
+            .annotate(_object_ansible_id_annotation=F('resource__ansible_id'))
         )
 
     @action(detail=False, methods=['post'], url_path='assign')
@@ -159,8 +161,10 @@ class ServiceRoleTeamAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     ]
 
     def get_queryset(self):
-        return RoleTeamAssignment.objects.prefetch_related('team__resource__content_type', *prefetch_related).annotate(
-            _object_ansible_id_annotation=F('resource__ansible_id')
+        return (
+            RoleTeamAssignment.objects.select_related('object_role')
+            .prefetch_related('team__resource__content_type', *prefetch_related)
+            .annotate(_object_ansible_id_annotation=F('resource__ansible_id'))
         )
 
     @action(detail=False, methods=['post'], url_path='assign')
