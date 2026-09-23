@@ -67,7 +67,7 @@ class BaseSerivceRoleAssignmentViewSet(
         ]
     )
     # Handled by ServiceFilterBackend which adds OR-with-NULL for global assignments
-    rest_filters_reserved_names = ('content_type__service',)
+    rest_filters_reserved_names = ('content_type__service', 'resource__ansible_id')
 
     def remote_secondary_sync_assignment(self, assignment, from_service=None):
         """To allow service-specific sync when getting assignment from /service-index/ endpoint

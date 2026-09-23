@@ -18,7 +18,7 @@ class AnsibleIdAliasFilterBackend(BaseFilterBackend):
     '''
 
     def filter_queryset(self, request, queryset, view):
-        object_ansible_id = request.query_params.get('object_ansible_id')
+        object_ansible_id = request.query_params.get('object_ansible_id') or request.query_params.get('resource__ansible_id')
         if object_ansible_id:
             try:
                 # Validate if the provided ansible_id is a valid UUID

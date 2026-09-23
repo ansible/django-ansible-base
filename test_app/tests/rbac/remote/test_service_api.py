@@ -166,6 +166,18 @@ def test_object_ansible_id_in_list_response(admin_api_client, rando, org_admin_r
 
 
 @pytest.mark.django_db
+def test_resource_ansible_id_filter_remains_supported(admin_api_client, rando, org_admin_rd, organization):
+    """Keep the legacy resource__ansible_id service-index filter working."""
+    assignment = org_admin_rd.give_permission(rando, organization)
+    url = get_relative_url('serviceuserassignment-list')
+
+    response = admin_api_client.get(url + f'?resource__ansible_id={organization.resource.ansible_id}', format='json')
+
+    assert response.status_code == 200, response.data
+    assert [item['id'] for item in response.data['results']] == [assignment.id]
+
+
+@pytest.mark.django_db
 def test_assignment_annotation_does_not_join_dab_content_type_id_to_resource_content_type_id(rando):
     """DAB and Django ContentType IDs are separate namespaces."""
     wrong_resource_type = ContentType.objects.create(app_label='wrong', model=f'wrong_{uuid.uuid4().hex}')

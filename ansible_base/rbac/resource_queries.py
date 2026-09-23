@@ -2,7 +2,7 @@ from django.db.models import Case, OuterRef, Subquery, When
 
 from ansible_base.resource_registry.models import Resource
 
-from .remote import get_local_resource_prefix
+from .remote import get_local_resource_services
 
 
 def assignment_resource_annotation(field_name):
@@ -14,7 +14,7 @@ def assignment_resource_annotation(field_name):
     ).values(field_name)[:1]
 
     return Case(
-        When(content_type__service__in=('shared', get_local_resource_prefix()), then=Subquery(resource)),
+        When(content_type__service__in=get_local_resource_services(), then=Subquery(resource)),
         default=None,
         output_field=Resource._meta.get_field(field_name),
     )
