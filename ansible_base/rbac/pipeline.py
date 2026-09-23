@@ -418,14 +418,13 @@ def _find_assignments_chunked(
 ) -> list[AssignmentBase]:
     """Find existing assignments matching resolved triples, chunking to avoid query depth limits.
 
-    Chunks the resolved triples for SQLite (max_query_params: 999) to avoid expression-tree
-    depth limit in the OR-of-pairs Q filter. For PostgreSQL (max_query_params: None), chunks
-    at a conservative default (1000) to be safe, since expression-tree depth could still be
-    a theoretical limit for other databases.
+    Each resolved triple becomes an OR term in the Q filter. SQLite limits expression tree
+    depth to 1000, and max_query_params is 999, but empirically 999 OR terms still exceeds
+    the limit. Use 500 as a safe batch size for all databases.
     """
-    batch_size = connection.features.max_query_params
-    if batch_size is None:
-        batch_size = 1000  # Conservative default for databases without explicit limits
+    # Use a conservative batch size that works for all databases
+    # SQLite empirically fails at ~1000 Q nodes; use 500 for safety margin
+    batch_size = 500
 
     if len(resolved) <= batch_size:
         return _find_assignments(resolved, lookup, model, actor_field)
