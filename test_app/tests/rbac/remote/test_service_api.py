@@ -6,13 +6,7 @@ from django.contrib.contenttypes.models import ContentType
 from rest_framework.test import APIClient
 
 from ansible_base.lib.utils.response import get_relative_url
-from ansible_base.rbac.models import (
-    DABContentType,
-    DABPermission,
-    RoleDefinition,
-    RoleTeamAssignment,
-    RoleUserAssignment,
-)
+from ansible_base.rbac.models import DABContentType, DABPermission, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.resource_registry.models import Resource
 from test_app.models import Organization, Team, User
 
@@ -570,9 +564,7 @@ class TestCreatedByAnsibleIdAllowNull:
 
     def test_serializer_allows_null_values_in_validation(self, admin_api_client, rando, inv_rd, inventory):
         """Test that the serializer field properly handles null validation with allow_null=True"""
-        from ansible_base.rbac.service_api.serializers import (
-            ServiceRoleUserAssignmentSerializer,
-        )
+        from ansible_base.rbac.service_api.serializers import ServiceRoleUserAssignmentSerializer
 
         # Test data with null created_by_ansible_id
         data = {
