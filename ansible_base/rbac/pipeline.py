@@ -410,6 +410,30 @@ def _recompute_after_give(
         recompute_role_evaluations(roles_to_recompute)
 
 
+def _find_assignments_chunked(
+    resolved: Sequence[ResolvedAssignment],
+    lookup: ObjectRoleLookup,
+    model: type[AssignmentBase],
+    actor_field: str,
+) -> list[AssignmentBase]:
+    """Find existing assignments matching resolved triples, chunking to avoid query depth limits.
+
+    Chunks the resolved triples based on connection.features.max_query_params (SQLite: 999,
+    PostgreSQL: None) to avoid expression-tree depth limit in the OR-of-pairs Q filter.
+    When max_query_params is None, processes all at once (PostgreSQL behavior).
+    """
+    batch_size = connection.features.max_query_params
+    if batch_size is None:
+        # No limit, process all at once (PostgreSQL)
+        return _find_assignments(resolved, lookup, model, actor_field)
+    # Chunk and collect results (SQLite and other limited databases)
+    found = []
+    for i in range(0, len(resolved), batch_size):
+        chunk = resolved[i : i + batch_size]
+        found.extend(_find_assignments(chunk, lookup, model, actor_field))
+    return found
+
+
 def _find_assignments(
     resolved: Sequence[ResolvedAssignment],
     lookup: ObjectRoleLookup,
@@ -637,7 +661,7 @@ def bulk_remove_permissions(
     # need to be found (via object_role IS NULL) and removed. _find_assignments handles both.
     lookup = _lookup_object_roles(user_resolved + team_resolved)
 
-    user_found = _find_assignments(user_resolved, lookup, RoleUserAssignment, 'user_id')
-    team_found = _find_assignments(team_resolved, lookup, RoleTeamAssignment, 'team_id')
+    user_found = _find_assignments_chunked(user_resolved, lookup, RoleUserAssignment, 'user_id')
+    team_found = _find_assignments_chunked(team_resolved, lookup, RoleTeamAssignment, 'team_id')
     # Signal fires in remove_assignments with the content_objects we pass
     remove_assignments(user_assignments=user_found, team_assignments=team_found, content_objects=content_objects)
