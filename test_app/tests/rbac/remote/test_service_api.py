@@ -180,7 +180,7 @@ def test_assignment_annotation_does_not_join_dab_content_type_id_to_resource_con
 
     dab_content_type = DABContentType.objects.create(
         id=wrong_resource_type.pk,
-        service='remote',
+        service='aap',
         app_label='test_app',
         model='organization',
         pk_field_type='integer',
