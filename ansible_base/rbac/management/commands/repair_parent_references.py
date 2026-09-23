@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand
 from django.db.models import Q
 
@@ -23,10 +24,16 @@ class Command(BaseCommand):
         object_ids = list(empty_roles.values_list('object_id', flat=True))
 
         pk_field = cls._meta.pk
-        if pk_field.get_internal_type() in ('AutoField', 'IntegerField', 'BigAutoField'):
-            object_ids = [int(oid) for oid in object_ids if oid.isdigit()]
+        valid_object_ids = []
+        for oid in object_ids:
+            try:
+                valid_object_ids.append(pk_field.to_python(oid))
+            except (TypeError, ValueError, ValidationError) as exc:
+                self.stderr.write(self.style.WARNING(f"Skipping invalid object_id {oid!r} " f"for {cls.__name__}: {exc}"))
 
+        object_ids = valid_object_ids
         objects = cls.objects.filter(pk__in=object_ids).values_list('pk', parent_fk_col)
+
         return {str(pk): str(parent_id) for pk, parent_id in objects if parent_id is not None}
 
     def _apply_updates(self, cls, ct, parent_map, dry_run):
