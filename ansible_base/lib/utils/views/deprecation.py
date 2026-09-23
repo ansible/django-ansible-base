@@ -58,9 +58,7 @@ _DRF_ACTION_METHODS = ('list', 'create', 'retrieve', 'update', 'partial_update',
 
 
 def _apply_to_class(cls, detail, link):
-    cls._dab_deprecated = True
-    cls._dab_deprecated_detail = detail
-    cls._dab_deprecated_link = link
+    cls.deprecation = {"detail": detail, "link": link}
 
     from ansible_base.lib.utils.schema import extend_schema_if_available
 
@@ -82,9 +80,7 @@ def _apply_to_method(method, detail, link):
         mark_deprecated(response, detail, link)
         return response
 
-    wrapper._dab_deprecated = True
-    wrapper._dab_deprecated_detail = detail
-    wrapper._dab_deprecated_link = link
+    wrapper.deprecation = {"detail": detail, "link": link}
 
     schema_decorator = extend_schema_if_available(deprecated=True)
     wrapper = schema_decorator(wrapper)
