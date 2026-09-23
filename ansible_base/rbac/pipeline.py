@@ -7,7 +7,7 @@ from typing import NamedTuple, Union, cast
 from django.conf import settings
 from django.db import connection, models
 from django.db.models import Q
-from django.db.models.signals import post_save  # TEMPORARY: see _fire_post_save / AAP-90162 merge-order note
+from django.db.models.signals import post_save  # TEMPORARY: see _fire_post_save / AAP-90162 merge-order note (consumers must connect to ONE signal, not both)
 
 from ansible_base.lib.utils.models import current_user_or_system_user
 from ansible_base.rbac.caching import (

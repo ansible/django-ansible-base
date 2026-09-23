@@ -109,4 +109,3 @@ def test_bulk_remove_permissions_mixed_global_and_object_scoped():
 def test_bulk_remove_permissions_empty_input():
     """Verify that empty input is handled correctly."""
     bulk_remove_permissions()  # Should not raise
-    assert True
