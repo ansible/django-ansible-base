@@ -4,10 +4,11 @@ Tests for bulk_remove_permissions chunking (AAP-90162).
 These tests verify that bulk removal with forced small batch sizes works correctly,
 ensuring the chunking logic handles splits properly without losing data or correctness.
 """
+
 import pytest
 
 from ansible_base.rbac import permission_registry
-from ansible_base.rbac.models import RoleDefinition, RoleUserAssignment, RoleTeamAssignment
+from ansible_base.rbac.models import RoleDefinition, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.rbac.pipeline import bulk_give_permissions, bulk_remove_permissions
 from test_app.models import Inventory, Organization, User
 
@@ -34,11 +35,7 @@ def test_bulk_remove_permissions_with_forced_small_chunks():
     )
 
     # Create 1600 assignments (40 * 40)
-    permission_triples = [
-        (inv_change_rd, user, inv)
-        for user in users
-        for inv in inventories
-    ]
+    permission_triples = [(inv_change_rd, user, inv) for user in users for inv in inventories]
     assert len(permission_triples) == 1600
 
     # Give all permissions
