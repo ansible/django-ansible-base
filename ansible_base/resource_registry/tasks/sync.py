@@ -32,7 +32,10 @@ from ansible_base.resource_registry.constants import SHARED_USER_RESOURCE_TYPE
 from ansible_base.resource_registry.models import Resource, ResourceType
 from ansible_base.resource_registry.models.service_identifier import service_id
 from ansible_base.resource_registry.registry import get_registry
-from ansible_base.resource_registry.rest_client import ResourceAPIClient, get_resource_server_client
+from ansible_base.resource_registry.rest_client import (
+    ResourceAPIClient,
+    get_resource_server_client,
+)
 
 logger = logging.getLogger('ansible_base.resources_api.tasks.sync')
 
@@ -615,7 +618,7 @@ class SyncExecutor:
                     data.update(orphan.summary_fields())
                     with transaction.atomic():
                         delete_resource(orphan)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - continue cleaning remaining orphans
                     self.write(f"Error deleting orphaned resource {orphan.ansible_id}: {type(exc).__name__}: {exc}")
                 else:  # persist in the report
                     self.results["deleted"].append(data)

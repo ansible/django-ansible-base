@@ -433,7 +433,7 @@ def test_get_local_assignments_bounded_query_count():
 
 
 def test_backward_compat_imports():
-    from ansible_base.resource_registry.tasks.sync import (  # noqa: F401,F811
+    from ansible_base.resource_registry.tasks.sync import (  # noqa: F401
         AssignmentTuple,
         RemoteAssignmentFetcher,
         RemoteAssignmentResult,
