@@ -142,7 +142,7 @@ class Command(BaseCommand):
                     # too, on top of their direct/org-level assignments above ("mixed").
                     user_permissions.append((team_member_rd, user, large_teams[i % len(large_teams)]))
 
-            assignments = bulk_give_permissions(user_permissions=user_permissions, team_permissions=team_permissions, fire_signals_on_create=False)
+            assignments = bulk_give_permissions(user_permissions=user_permissions, team_permissions=team_permissions)
             self.stdout.write(
                 f'Assigned {len(user_permissions)} user-facing and {len(team_permissions)} team-facing permission '
                 f'triples ({len(assignments)} assignments created) via bulk_give_permissions'
