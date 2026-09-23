@@ -1,4 +1,6 @@
-from django.contrib.contenttypes.fields import GenericForeignKey as DjangoGenericForeignKey
+from django.contrib.contenttypes.fields import (
+    GenericForeignKey as DjangoGenericForeignKey,
+)
 from django.core import checks
 from django.core.exceptions import FieldDoesNotExist, ObjectDoesNotExist
 from django.db import models
@@ -97,7 +99,7 @@ class FederatedForeignKey(DjangoGenericForeignKey):
         # Handle prefetch_related cache issue for remote objects
         if ct_id is not None:
             ct = self.get_content_type(id=ct_id)
-            if ct.service not in get_local_resource_services():
+            if ct.is_remote:
                 # Remote object incorrectly cached as None - don't use cache
                 return False
 
@@ -119,7 +121,7 @@ class FederatedForeignKey(DjangoGenericForeignKey):
             return None
 
         ct = self.get_content_type(id=ct_id)
-        if ct.service in get_local_resource_services():
+        if not ct.is_remote:
             return self._fetch_local_object(ct, pk_val)
         else:
             return ct.get_object_for_this_type(pk=pk_val)

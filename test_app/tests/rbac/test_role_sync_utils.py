@@ -167,15 +167,15 @@ def test_resolve_object_ansible_id_non_org_team():
 
 def test_resolve_object_ansible_id_org_resolved():
     """Org/team types return the resolved ansible_id from the map."""
-    ct = mock.Mock(model='organization')
+    ct = mock.Mock(app_label='test_app', model='organization')
     assignment = mock.Mock(object_id='7', content_type=ct)
-    object_map = {('7', 'organization'): 'resolved-uuid'}
+    object_map = {('7', 'test_app', 'organization'): 'resolved-uuid'}
     assert _resolve_object_ansible_id(assignment, object_map) == 'resolved-uuid'
 
 
 def test_resolve_object_ansible_id_org_missing():
     """Missing org/team resource returns _SKIP sentinel."""
-    ct = mock.Mock(model='organization')
+    ct = mock.Mock(app_label='test_app', model='organization')
     assignment = mock.Mock(object_id='999', content_type=ct)
     assert _resolve_object_ansible_id(assignment, {}) is _SKIP
 

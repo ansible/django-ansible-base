@@ -55,7 +55,11 @@ def get_ansible_id_or_pk(assignment) -> str:
     if not is_rbac_installed():
         raise RuntimeError("get_ansible_id_or_pk requires ansible_base.rbac to be installed")
     if assignment.content_type.model in ('organization', 'team'):
-        object_resource = Resource.objects.filter(object_id=assignment.object_id, content_type__model=assignment.content_type.model).first()
+        object_resource = Resource.objects.filter(
+            object_id=assignment.object_id,
+            content_type__app_label=assignment.content_type.app_label,
+            content_type__model=assignment.content_type.model,
+        ).first()
         if object_resource:
             ansible_id_or_pk = object_resource.ansible_id
         else:
@@ -118,19 +122,25 @@ def _bulk_resolve_object_ansible_ids(assignments: list) -> dict[tuple[str, str],
     other types use the raw ``object_id`` directly.
     """
     org_team_ids = set()
+    org_team_types = set()
     for a in assignments:
         if a.object_id and a.content_type and a.content_type.model in ('organization', 'team'):
             org_team_ids.add(str(a.object_id))
+            org_team_types.add((a.content_type.app_label, a.content_type.model))
 
     if not org_team_ids:
         return {}
 
+    resource_filter = Q(object_id__in=org_team_ids)
+    type_filters = Q()
+    for app_label, model in org_team_types:
+        type_filters |= Q(content_type__app_label=app_label, content_type__model=model)
+
     return {
-        (str(obj_id), model): str(ansible_id)
-        for obj_id, model, ansible_id in Resource.objects.filter(
-            object_id__in=org_team_ids,
-            content_type__model__in=['organization', 'team'],
-        ).values_list('object_id', 'content_type__model', 'ansible_id')
+        (str(obj_id), app_label, model): str(ansible_id)
+        for obj_id, app_label, model, ansible_id in Resource.objects.filter(resource_filter & type_filters).values_list(
+            'object_id', 'content_type__app_label', 'content_type__model', 'ansible_id'
+        )
     }
 
 
@@ -151,7 +161,7 @@ def _resolve_object_ansible_id(assignment, object_map: dict[tuple[str, str], str
     if model_name not in ('organization', 'team'):
         return str(assignment.object_id)
 
-    key = (str(assignment.object_id), model_name)
+    key = (str(assignment.object_id), assignment.content_type.app_label, model_name)
     resolved = object_map.get(key)
     if resolved is None:
         logger.error(f"{model_name} {assignment.object_id} found without an associated Resource, skipping assignment.")
