@@ -448,6 +448,7 @@ def add_x_ai_description(result: dict, generator: Any, request: Any, public: Opt
 
     for path, path_item in paths.items():
         for method, operation in path_item.items():
+            # Ensure we're only generating values for methods we support
             if method in HTTP_METHODS:
                 _process_operation(operation, method, path)
 
