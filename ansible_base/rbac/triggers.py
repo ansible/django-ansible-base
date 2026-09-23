@@ -11,6 +11,7 @@ from django.db.models.signals import m2m_changed, post_delete, post_init, post_s
 from django.dispatch import Signal
 
 from ansible_base.lib.utils.db import migrations_are_complete
+from ansible_base.lib.utils.models import is_add_perm
 from ansible_base.rbac.caching import (
     _safe_bulk_create_evaluations,
     bulk_ancestor_roles,
@@ -413,7 +414,8 @@ def _fast_create_evaluations(instance, object_pk, object_ct_id):
 
     rd_to_codenames = defaultdict(set)
     for codename, rd_id in jt_perms:
-        rd_to_codenames[rd_id].add(codename)
+        if not is_add_perm(codename):
+            rd_to_codenames[rd_id].add(codename)
 
     # if there are no permissions, we can return immediately
     if not rd_to_codenames:
@@ -438,15 +440,12 @@ def _fast_create_evaluations(instance, object_pk, object_ct_id):
 
     # find teams assigned to org roles with matching permissions,
     # then create evaluations for their Team Member roles.
-    # this assumes that an object only has one parent
-    ((parent_ct, parent_id),) = parent_cts_and_ids
-
-    # which teams are assigned org level roles that grant permissions
-    # on the new object content type?
+    assignment_q = Q()
+    for ct, pid in parent_cts_and_ids:
+        assignment_q |= Q(content_type_id=ct.id, object_id=str(pid))
     team_assignments = list(
         RoleTeamAssignment.objects.filter(
-            object_id=str(parent_id),
-            content_type_id=parent_ct.id,
+            assignment_q,
             role_definition_id__in=rd_to_codenames.keys(),
         ).values_list('team_id', 'role_definition_id')
     )
@@ -505,6 +504,8 @@ def rbac_post_save_update_evaluations(instance, created, *args, **kwargs):
         if defer_rbac_state.active:
             defer_rbac_state.created_instances.append((instance, instance.pk, obj_ct_id))
             return
+        if instance._meta.model_name == permission_registry.team_model._meta.model_name:
+            compute_team_member_roles(team_ids=[instance.id])
         _fast_create_evaluations(instance, instance.pk, obj_ct_id)
         return
 
