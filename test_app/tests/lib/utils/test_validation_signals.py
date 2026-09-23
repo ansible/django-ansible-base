@@ -17,7 +17,12 @@ from rest_framework import serializers
 
 from ansible_base.lib.serializers.mixins import CleanTextMixin
 from ansible_base.lib.utils import validation_signals as validation_signals_module
-from ansible_base.lib.utils.bulk_validation_audit import audit_bulk_item_dicts, audit_bulk_model_instances
+from ansible_base.lib.utils.bulk_validation_audit import (
+    audit_bulk_item_dicts,
+    audit_bulk_model_instances,
+    audit_queryset_update,
+    audited_queryset_update,
+)
 from ansible_base.lib.utils.validation import DEFAULT_NAME_FIELDS
 from ansible_base.lib.utils.validation_signals import (
     LOGGER_NAME,
@@ -571,6 +576,36 @@ class TestBulkValidationAudit:
         assert len(bulk_logs) == 1
         assert "validation rejected 'description'" in bulk_logs[0].message
         assert "validation rejected 'name'" not in bulk_logs[0].message
+
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    def test_audit_queryset_update_logs_violation(self, caplog):
+        audit_queryset_update(Organization, {'description': '<script>x</script>'})
+
+        logs = [r for r in caplog.records if 'ORM bypass (queryset_update)' in r.message]
+        assert len(logs) == 1
+        assert 'test_app.Organization' in logs[0].message
+
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    def test_audit_queryset_update_skips_non_string_values(self, caplog):
+        from django.db.models import F
+
+        audit_queryset_update(
+            Organization,
+            {'description': F('name'), 'name': '<script>x</script>'},
+        )
+        logs = [r for r in caplog.records if 'ORM bypass (queryset_update)' in r.message]
+        assert len(logs) == 1
+        assert "validation rejected 'name'" in logs[0].message
+
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    def test_audited_queryset_update_runs_update(self, organization):
+        rows = audited_queryset_update(
+            Organization.objects.filter(pk=organization.pk),
+            description='Updated description text',
+        )
+        assert rows == 1
+        organization.refresh_from_db()
+        assert organization.description == 'Updated description text'
 
 
 @pytest.mark.django_db

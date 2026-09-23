@@ -7,9 +7,9 @@ violations are logged with the same validators and a similar format as
 """
 
 from collections.abc import Callable
-from typing import Iterable
+from typing import Any, Iterable
 
-from django.db.models import Model
+from django.db.models import Model, QuerySet
 
 from ansible_base.lib.utils.validation_signals import (
     _get_caller_info,
@@ -114,3 +114,34 @@ def audit_bulk_item_dicts(
             excluded_fields=excluded_fields,
             get_field_value=item.get,
         )
+
+
+def audit_queryset_update(model: type[Model], update_kwargs: dict[str, Any]) -> None:
+    """Log Tier 1/2 violations for literal strings in ``QuerySet.update()`` kwargs.
+
+    Non-string values (``F()``, ``Case``, subqueries, etc.) are skipped because the
+    resulting SQL value is not known without a ``SELECT``. Does not block the update.
+    """
+    if not update_kwargs:
+        return
+    protected = _protected_models.get(model)
+    if protected is None:
+        return
+    name_fields, excluded_fields = protected
+    caller_info = _get_caller_info()
+    resource_type = f"{model._meta.app_label}.{model._meta.object_name}"
+    _audit_registered_model_fields(
+        operation="queryset_update",
+        caller_info=caller_info,
+        model=model,
+        resource_type=resource_type,
+        name_fields=name_fields,
+        excluded_fields=excluded_fields,
+        get_field_value=update_kwargs.get,
+    )
+
+
+def audited_queryset_update(queryset: QuerySet, **update_kwargs: Any) -> int:
+    """Audit ``update_kwargs`` then run ``queryset.update(**update_kwargs)``."""
+    audit_queryset_update(queryset.model, update_kwargs)
+    return queryset.update(**update_kwargs)
