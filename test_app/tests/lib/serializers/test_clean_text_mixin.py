@@ -1132,6 +1132,17 @@ class TestCleanTextMixinSignalRegistry:
         _name_fields, excluded = _protected_models[Organization]
         assert 'description' in excluded
 
+    def test_serializer_init_without_meta_model_does_not_register(self):
+        from ansible_base.lib.utils.validation_signals import _protected_models
+
+        before = dict(_protected_models)
+
+        class _NoMetaModelSerializer(CleanTextMixin, serializers.Serializer):
+            pass
+
+        _NoMetaModelSerializer()
+        assert _protected_models == before
+
     def test_init_unions_cached_property_excluded_fields(self):
         from functools import cached_property
 

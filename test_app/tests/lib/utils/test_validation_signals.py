@@ -548,6 +548,30 @@ class TestBulkValidationAudit:
         assert len(bulk_logs) == 1
         assert 'test_app.Organization' in bulk_logs[0].message
 
+    def test_audit_bulk_item_dicts_skips_when_model_has_no_text_fields(self, caplog):
+        with mock.patch(
+            'ansible_base.lib.utils.bulk_validation_audit._get_text_fields',
+            return_value=([], []),
+        ):
+            audit_bulk_item_dicts(
+                Organization,
+                [{'name': 'Valid', 'description': '<script>x</script>'}],
+                operation='bulk_create',
+            )
+        assert [r for r in caplog.records if 'ORM bypass' in r.message] == []
+
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    def test_audit_bulk_item_dicts_skips_non_string_values(self, caplog):
+        audit_bulk_item_dicts(
+            Organization,
+            [{'name': 12345, 'description': '<script>x</script>'}],
+            operation='bulk_create',
+        )
+        bulk_logs = [r for r in caplog.records if 'ORM bypass (bulk_create)' in r.message]
+        assert len(bulk_logs) == 1
+        assert "validation rejected 'description'" in bulk_logs[0].message
+        assert "validation rejected 'name'" not in bulk_logs[0].message
+
 
 @pytest.mark.django_db
 @pytest.mark.usefixtures('capture_validation_signal_logs')
@@ -645,6 +669,16 @@ class TestHelperFunctions:
         tier, reason = result
         assert tier == 'Tier 1'
         assert 'valid name' in reason.lower()
+
+    def test_validate_field_tier1_list_error_detail(self):
+        from rest_framework.serializers import ValidationError
+
+        with mock.patch(
+            'ansible_base.lib.utils.validation_signals.validate_resource_name',
+            side_effect=ValidationError(['first', 'second']),
+        ):
+            result = _validate_field('name', 'bad', frozenset({'name'}))
+        assert result == ('Tier 1', 'first; second')
 
     def test_validate_field_tier2_pass(self):
         """Valid free text should pass Tier 2 validation."""
