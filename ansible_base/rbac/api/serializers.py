@@ -10,7 +10,8 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.serializers import ValidationError
 
 from ansible_base.lib.abstract_models.common import get_url_for_object
-from ansible_base.lib.serializers.common import AbstractCommonModelSerializer, CommonModelSerializer, ImmutableCommonModelSerializer
+from ansible_base.lib.serializers.common import CommonModelSerializer, ImmutableCommonModelSerializer
+from ansible_base.lib.serializers.mixins import CleanTextMixin
 from ansible_base.lib.utils.auth import get_team_model
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.models import RoleDefinition, RoleTeamAssignment, RoleUserAssignment
@@ -26,7 +27,7 @@ from .queries import assignment_qs_user_to_obj, assignment_qs_user_to_obj_perm
 logger = logging.getLogger(__name__)
 
 
-class RoleDefinitionSerializer(CommonModelSerializer):
+class RoleDefinitionSerializer(CleanTextMixin, CommonModelSerializer):
     permissions = serializers.SlugRelatedField(
         slug_field='api_slug',
         queryset=DABPermission.objects.all(),
@@ -234,6 +235,7 @@ class RoleUserAssignmentSerializer(BaseAssignmentSerializer):
     class Meta:
         model = RoleUserAssignment
         fields = ASSIGNMENT_FIELDS + ['user', 'user_ansible_id']
+        validators = []  # DRF can't auto-generate validators for partial UniqueConstraints with aliased fields
 
     def get_actor_queryset(self, requesting_user):
         return visible_users(requesting_user)
@@ -251,6 +253,7 @@ class RoleTeamAssignmentSerializer(BaseAssignmentSerializer):
     class Meta:
         model = RoleTeamAssignment
         fields = ASSIGNMENT_FIELDS + ['team', 'team_ansible_id']
+        validators = []  # DRF can't auto-generate validators for partial UniqueConstraints with aliased fields
 
     def get_actor_queryset(self, requesting_user):
         return permission_registry.team_model.access_qs(requesting_user)
@@ -306,7 +309,70 @@ class AccessListMixin:
 
         return assignment_list
 
+    def _bulk_fetch_assignments(self, actor_ids):
+        """Bulk-fetch and classify role assignments for a page of actors."""
+        from ..models import DABContentType, get_evaluation_model
+
+        obj = self.context["related_object"]
+        permission = self.context.get("permission")
+        ct = self.context["content_type"]
+
+        actor_cls = self.Meta.model
+        assignment_cls = actor_cls._meta.get_field('role_assignments').related_model
+        actor_field = 'user_id' if actor_cls._meta.model_name == 'user' else 'team_id'
+
+        evaluation_cls = get_evaluation_model(obj)
+        eval_filter = {'object_id': obj.pk, 'content_type_id': ct.id}
+        if permission:
+            eval_filter['codename'] = permission.codename
+        obj_eval_qs = evaluation_cls.objects.filter(**eval_filter)
+
+        obj_assignments = assignment_cls.objects.filter(
+            object_role__in=obj_eval_qs.values_list('role_id', flat=True),
+            **{f'{actor_field}__in': actor_ids},
+        ).select_related('role_definition')
+
+        global_filter = {
+            'content_type': None,
+            f'{actor_field}__in': actor_ids,
+        }
+        if permission:
+            global_filter['role_definition__permissions'] = permission
+        else:
+            global_filter['role_definition__permissions__content_type'] = ct
+        global_assignments = assignment_cls.objects.filter(**global_filter).select_related('role_definition')
+
+        team_ct = DABContentType.objects.get_for_model(get_team_model())
+        assignments_by_actor = {}
+        for qs_part in (obj_assignments, global_assignments):
+            for a in qs_part.distinct():
+                actor_id = getattr(a, actor_field)
+                if a.content_type_id is None:
+                    perm_type = "global"
+                elif a.content_type_id == team_ct.pk:
+                    perm_type = "team"
+                elif a.content_type_id == ct.pk:
+                    perm_type = "direct"
+                else:
+                    perm_type = "indirect"
+                entry = {"type": perm_type, "role_definition": self.summarize_role_definition(a.role_definition)}
+                assignments_by_actor.setdefault(actor_id, []).append(entry)
+        return assignments_by_actor
+
     def get_object_role_assignments(self, actor):
+        # When many=True, DRF wraps us in a ListSerializer. self.parent points
+        # to it, and self.parent.instance holds the page of objects. We lazy-
+        # prefetch on the first call and cache on the parent. Each request gets
+        # its own serializer tree so there is no instance-reuse or thread concern.
+        if self.parent is not None:
+            if not hasattr(self.parent, '_prefetched_assignments'):
+                actors = getattr(self.parent, 'instance', None)
+                if actors is not None:
+                    self.parent._prefetched_assignments = self._bulk_fetch_assignments([a.pk for a in actors])
+            prefetched = getattr(self.parent, '_prefetched_assignments', None)
+            if prefetched is not None:
+                return prefetched.get(actor.pk, [])
+
         obj = self.context.get("related_object")
         permission = self.context.get("permission")
         ct = self.context.get("content_type")
@@ -331,7 +397,7 @@ class UserAccessListMixin(AccessListMixin, serializers.ModelSerializer):
     _expected_fields = ['id', 'url', 'related', 'username', 'is_superuser', 'first_name', 'last_name', 'object_role_assignments']
 
 
-class TeamAccessListMixin(AccessListMixin, AbstractCommonModelSerializer):
+class TeamAccessListMixin(AccessListMixin, serializers.ModelSerializer):
     object_role_assignments = serializers.SerializerMethodField()
     url = serializers.SerializerMethodField()
     related = serializers.SerializerMethodField('_get_related')

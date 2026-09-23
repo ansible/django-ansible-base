@@ -61,7 +61,7 @@ def validate_x_trusted_proxy_header(header_value: str, ignore_cache=False) -> bo
             logger.warning(f"Timestamp {timestamp} was too old by {header_age_ms}ms to be valid-alter trusted_header_timeout if needed")
             return False
     except ValueError:
-        logger.warning(f"Unable to convert timestamp (base64) {b64encode(timestamp.encode('UTF-8'))} into an integer")
+        logger.warning(f"Unable to convert timestamp (base64) {b64encode(timestamp.encode('UTF-8')).decode()} into an integer")
         return False
 
     try:
@@ -71,7 +71,7 @@ def validate_x_trusted_proxy_header(header_value: str, ignore_cache=False) -> bo
         return False
 
     try:
-        public_key.verify(
+        public_key.verify(  # type: ignore[call-arg]
             signature_bytes,
             bytes(f'{_SHARED_SECRET}-{timestamp}', 'utf-8'),
             padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),

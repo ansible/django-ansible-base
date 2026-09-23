@@ -116,7 +116,7 @@ class ResourceRegistry:
         raise AttributeError(_("Must include either model or model_label arg."))
 
 
-def get_registry() -> ResourceRegistry:
+def get_registry() -> Optional[ResourceRegistry]:
     from django.conf import settings
 
     if hasattr(settings, "ANSIBLE_BASE_RESOURCE_CONFIG_MODULE"):
@@ -127,4 +127,4 @@ def get_registry() -> ResourceRegistry:
 
         return ResourceRegistry(resource_list, api_config())
     else:
-        return False
+        return None

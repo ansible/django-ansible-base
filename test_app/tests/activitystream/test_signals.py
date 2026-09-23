@@ -2,6 +2,7 @@ import re
 from unittest import mock
 
 import pytest
+from django.contrib.contenttypes.models import ContentType
 
 import ansible_base.activitystream.signals as signals
 from ansible_base.activitystream import no_activity_stream
@@ -865,6 +866,122 @@ def test_audit_log_message_content(expected_content):
 # =============================================================================
 
 
+class TestFormatAuditLines:
+    """Unit tests for _format_audit_lines helper."""
+
+    PREFIX = "User: admin "
+
+    @pytest.mark.parametrize(
+        'operation,changes,expected_substring',
+        [
+            (
+                'create',
+                {'added_fields': {'name': 'foo', 'email': 'a@b.com'}, 'removed_fields': {}, 'changed_fields': {}},
+                "create MyModel obj (1) {'name': 'foo', 'email': 'a@b.com'}",
+            ),
+            (
+                'delete',
+                {'added_fields': {}, 'removed_fields': {'name': 'foo'}, 'changed_fields': {}},
+                "delete MyModel obj (1) {'name': 'foo'}",
+            ),
+        ],
+        ids=['create_formats_added_fields', 'delete_formats_removed_fields'],
+    )
+    def test_create_and_delete_operations(self, operation, changes, expected_substring):
+        """Create and delete operations produce a single summary line."""
+        lines = signals._format_audit_lines(self.PREFIX, operation, 'MyModel', 'obj (1)', changes)
+        assert len(lines) == 1
+        assert expected_substring in lines[0]
+        assert lines[0].startswith(self.PREFIX)
+
+    @pytest.mark.parametrize(
+        'changes,expected_fragments',
+        [
+            (
+                {'added_fields': {'role': 'admin'}, 'removed_fields': {}, 'changed_fields': {}},
+                ["added role='admin'"],
+            ),
+            (
+                {'added_fields': {}, 'removed_fields': {'role': 'admin'}, 'changed_fields': {}},
+                ["removed role (was 'admin')"],
+            ),
+            (
+                {'added_fields': {}, 'removed_fields': {}, 'changed_fields': {'name': ('old', 'new')}},
+                ["changed name from 'old' to 'new'"],
+            ),
+            (
+                {
+                    'added_fields': {'email': 'a@b.com'},
+                    'removed_fields': {'phone': '555'},
+                    'changed_fields': {'name': ('old', 'new')},
+                },
+                ["added email='a@b.com'", "removed phone (was '555')", "changed name from 'old' to 'new'"],
+            ),
+        ],
+        ids=[
+            'update_added_field',
+            'update_removed_field',
+            'update_changed_field',
+            'update_all_field_types',
+        ],
+    )
+    def test_update_operation(self, changes, expected_fragments):
+        """Update operations produce one line per field change."""
+        lines = signals._format_audit_lines(self.PREFIX, 'update', 'MyModel', 'obj (1)', changes)
+        assert len(lines) == len(expected_fragments)
+        for fragment in expected_fragments:
+            assert any(fragment in line for line in lines), f"Expected '{fragment}' in {lines}"
+
+    def test_string_changes_m2m(self):
+        """M2M associate/disassociate passes changes as a plain string."""
+        lines = signals._format_audit_lines(self.PREFIX, 'associate', 'MyModel', 'obj (1)', 'with Team Parent (2)')
+        assert len(lines) == 1
+        assert lines[0] == f"{self.PREFIX}associate MyModel obj (1) with Team Parent (2)"
+
+    @pytest.mark.parametrize(
+        'operation,preposition',
+        [
+            ('associate', 'with'),
+            ('disassociate', 'from'),
+        ],
+        ids=['associate_with', 'disassociate_from'],
+    )
+    def test_m2m_prepositions(self, operation, preposition):
+        """Both associate and disassociate string changes format correctly."""
+        change_str = f"{preposition} Team Foo (99)"
+        lines = signals._format_audit_lines(self.PREFIX, operation, 'Widget', 'w (5)', change_str)
+        assert len(lines) == 1
+        assert f"{operation} Widget w (5) {preposition} Team Foo (99)" in lines[0]
+
+    def test_create_with_changed_fields_uses_new_value(self):
+        """For create, changed_fields should use the new value (index 1)."""
+        changes = {
+            'added_fields': {},
+            'removed_fields': {},
+            'changed_fields': {'status': ('draft', 'published')},
+        }
+        lines = signals._format_audit_lines(self.PREFIX, 'create', 'Post', 'p (3)', changes)
+        assert len(lines) == 1
+        assert 'published' in lines[0]
+
+    def test_delete_with_changed_fields_uses_old_value(self):
+        """For delete, changed_fields should use the old value (index 0)."""
+        changes = {
+            'added_fields': {},
+            'removed_fields': {},
+            'changed_fields': {'status': ('published', 'archived')},
+        }
+        lines = signals._format_audit_lines(self.PREFIX, 'delete', 'Post', 'p (3)', changes)
+        assert len(lines) == 1
+        assert 'published' in lines[0]
+
+    def test_empty_update_changes(self):
+        """Update with no fields in any category returns empty list."""
+        changes = {'added_fields': {}, 'removed_fields': {}, 'changed_fields': {}}
+        lines = signals._format_audit_lines(self.PREFIX, 'update', 'MyModel', 'obj (1)', changes)
+        assert lines == []
+
+
 @pytest.mark.django_db
 def test_audit_log_m2m_associate(user):
     """
@@ -942,3 +1059,243 @@ def test_audit_log_m2m_preposition(user, operation, method_name, expected_prepos
         call_args = mock_log.call_args[0][0]
         assert expected_preposition in call_args
         assert operation in call_args
+
+
+# =============================================================================
+# Tests for _flush_deferred_activity_stream helper
+# =============================================================================
+
+
+class TestFlushDeferredActivityStream:
+    """Tests for the extracted _flush_deferred_activity_stream helper."""
+
+    @pytest.mark.django_db
+    def test_empty_entries_and_lines_is_noop(self):
+        """Calling with empty entries and empty audit_lines does nothing."""
+        signals._flush_deferred_activity_stream([], [])
+        # No error, no entries created
+
+    @pytest.mark.django_db
+    def test_bulk_creates_entries_with_user(self, system_user):
+        """Entries with created_by=None get the current user filled in and are bulk-created."""
+
+        animal = Animal.objects.create(name='flush-test')
+        ct = ContentType.objects.get_for_model(animal)
+        entry = Entry(
+            content_type=ct,
+            object_id=str(animal.pk),
+            operation='create',
+            changes={'added_fields': {'name': 'flush-test'}, 'changed_fields': {}, 'removed_fields': {}},
+            created_by=None,
+        )
+
+        signals._flush_deferred_activity_stream([entry], [])
+
+        saved = Entry.objects.filter(content_type=ct, object_id=str(animal.pk), operation='create').last()
+        assert saved is not None
+        assert saved.created_by == system_user
+
+    @pytest.mark.django_db
+    def test_schedules_audit_lines_on_commit(self):
+        """Audit lines are scheduled via connection.on_commit."""
+        with mock.patch('ansible_base.activitystream.signals.log_auth_event') as mock_log:
+            from django.db import connection
+
+            with mock.patch.object(connection, 'on_commit') as mock_on_commit:
+                signals._flush_deferred_activity_stream([], ['line1', 'line2'])
+
+            mock_on_commit.assert_called_once()
+            # Call the scheduled function to verify it emits the lines
+            scheduled_fn = mock_on_commit.call_args[0][0]
+            scheduled_fn()
+            assert mock_log.call_count == 2
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize(
+        'entries_count,lines_count',
+        [(0, 2), (1, 0), (2, 3)],
+        ids=['only_lines', 'only_entries', 'both'],
+    )
+    def test_handles_entries_and_lines_independently(self, system_user, entries_count, lines_count):
+        """Each path (entries and audit_lines) operates independently."""
+
+        animal = Animal.objects.create(name='independent-test')
+        ct = ContentType.objects.get_for_model(animal)
+        entries = [
+            Entry(
+                content_type=ct,
+                object_id=str(animal.pk),
+                operation='create',
+                changes={'added_fields': {}, 'changed_fields': {}, 'removed_fields': {}},
+            )
+            for _ in range(entries_count)
+        ]
+        lines = [f'audit line {i}' for i in range(lines_count)]
+
+        initial_count = Entry.objects.filter(content_type=ct, object_id=str(animal.pk)).count()
+
+        with mock.patch('django.db.connection.on_commit') as mock_on_commit:
+            signals._flush_deferred_activity_stream(entries, lines)
+
+        assert Entry.objects.filter(content_type=ct, object_id=str(animal.pk)).count() == initial_count + entries_count
+        if lines_count > 0:
+            mock_on_commit.assert_called_once()
+        else:
+            mock_on_commit.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Tests for deferred_activity_stream context manager (integration)
+# ---------------------------------------------------------------------------
+
+
+class TestDeferredActivityStream:
+    """Integration tests for the deferred_activity_stream context manager."""
+
+    @pytest.mark.django_db
+    def test_entries_are_deferred_and_bulk_created(self, system_user):
+        """Activity stream entries created inside deferred_activity_stream
+        are accumulated and bulk-created on exit, not saved individually."""
+        from ansible_base.activitystream.signals import deferred_activity_stream
+
+        Animal.objects.create(name='deferred-1')
+        initial_count = Entry.objects.count()
+
+        with deferred_activity_stream():
+            animal_2 = Animal.objects.create(name='deferred-2')
+            animal_3 = Animal.objects.create(name='deferred-3')
+            # While deferred, new entries should not yet be in the DB
+            assert Entry.objects.count() == initial_count
+
+        # After exit, all entries should be flushed
+        assert Entry.objects.count() > initial_count
+        assert Entry.objects.filter(operation='create', object_id=str(animal_2.pk)).exists()
+        assert Entry.objects.filter(operation='create', object_id=str(animal_3.pk)).exists()
+
+    @pytest.mark.django_db
+    def test_entries_flushed_on_exception(self, system_user):
+        """Accumulated entries are still flushed when the body raises."""
+        from ansible_base.activitystream.signals import deferred_activity_stream
+
+        initial_count = Entry.objects.count()
+
+        def _create_and_raise():
+            with deferred_activity_stream():
+                Animal.objects.create(name='discard-me')
+                raise RuntimeError('test discard')
+
+        with pytest.raises(RuntimeError, match='test discard'):
+            _create_and_raise()
+
+        assert Entry.objects.count() == initial_count + 1
+
+    @pytest.mark.django_db
+    def test_reentrant_inner_is_noop(self, system_user):
+        """Inner deferred_activity_stream calls are no-ops; outermost flushes."""
+        from ansible_base.activitystream.signals import deferred_activity_stream
+
+        initial_count = Entry.objects.count()
+
+        with deferred_activity_stream():
+            Animal.objects.create(name='outer')
+            with deferred_activity_stream():
+                Animal.objects.create(name='inner')
+                # Still deferred — nothing flushed yet
+                assert Entry.objects.count() == initial_count
+            # Inner exited but outer still active — still deferred
+            assert Entry.objects.count() == initial_count
+
+        # Outermost exit flushes all
+        assert Entry.objects.count() > initial_count
+        assert Entry.objects.filter(operation='create', changes__added_fields__name='outer').exists()
+        assert Entry.objects.filter(operation='create', changes__added_fields__name='inner').exists()
+
+    @pytest.mark.django_db
+    def test_delete_entries_are_deferred(self, system_user):
+        """Delete activity stream entries are also deferred."""
+        from ansible_base.activitystream.signals import deferred_activity_stream
+
+        animal = Animal.objects.create(name='will-delete')
+        animal_pk = animal.pk
+        delete_count_before = Entry.objects.filter(operation='delete').count()
+
+        with deferred_activity_stream():
+            animal.delete()
+            # Delete entry should be deferred — no new delete entries yet
+            assert Entry.objects.filter(operation='delete').count() == delete_count_before
+
+        # After flush, delete entry should exist
+        assert Entry.objects.filter(operation='delete', object_id=str(animal_pk)).exists()
+
+    @pytest.mark.django_db
+    def test_deferred_delete_query_scaling(self, system_user):
+        """deferred_activity_stream should not scale queries with FK field count.
+
+        The diff() utility used by _store_activitystream_entry should use
+        attname (e.g. owner_id) for FK fields instead of the descriptor
+        (e.g. owner) to avoid triggering lazy-load SELECTs for related objects.
+        """
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from ansible_base.activitystream.signals import deferred_activity_stream, no_activity_stream
+
+        N = 20
+        with no_activity_stream():
+            for i in range(N):
+                Animal.objects.create(name=f'scale-{i}', owner=system_user)
+
+        with CaptureQueriesContext(connection) as ctx:
+            with deferred_activity_stream():
+                Animal.objects.filter(name__startswith='scale-').delete()
+
+        selects = sum(1 for q in ctx if q['sql'].strip().upper().startswith('SELECT'))
+        assert selects < N, (
+            f"Expected fewer than {N} SELECTs for {N} deletes, got {selects}. "
+            f"diff() is likely lazy-loading FK fields via getattr(obj, field) "
+            f"instead of getattr(obj, field_obj.attname)."
+        )
+
+
+class TestDeferredActivityStreamErrorHandling:
+    """Tests for error-handling paths in deferred_activity_stream's except handler."""
+
+    @pytest.mark.django_db
+    def test_exception_without_data_skips_flush(self):
+        """Exception raised before any data is accumulated skips the flush entirely."""
+        from ansible_base.activitystream.signals import deferred_activity_stream
+
+        def _raise_immediately():
+            with deferred_activity_stream():
+                raise RuntimeError("before data")
+
+        with pytest.raises(RuntimeError, match="before data"):
+            _raise_immediately()
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize(
+        "scenario",
+        [
+            pytest.param("rollback", id="skips_flush_on_rollback"),
+            pytest.param("flush_error", id="suppresses_flush_exception"),
+        ],
+    )
+    def test_exception_error_handling(self, system_user, scenario):
+        """Rollback and flush-error paths in the exception handler."""
+        from ansible_base.activitystream.signals import deferred_activity_stream
+
+        def _create_and_raise():
+            with deferred_activity_stream():
+                Animal.objects.create(name=f'{scenario}-animal')
+                raise RuntimeError("deliberate")
+
+        if scenario == "rollback":
+            with mock.patch('ansible_base.activitystream.signals.connection') as mock_conn:
+                mock_conn.in_atomic_block = True
+                mock_conn.needs_rollback = True
+                with pytest.raises(RuntimeError, match="deliberate"):
+                    _create_and_raise()
+        else:
+            with mock.patch('ansible_base.activitystream.signals._flush_deferred_activity_stream', side_effect=RuntimeError("flush error")):
+                with pytest.raises(RuntimeError, match="deliberate"):
+                    _create_and_raise()

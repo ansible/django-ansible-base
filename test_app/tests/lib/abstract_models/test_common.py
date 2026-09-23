@@ -366,3 +366,27 @@ def test_compare_data_types_after_decryption(input):
     decryptor = Fernet256()
     results = decryptor.decrypt_string(decryptor.encrypt_string(input))
     assert type(results) is type(input)
+
+
+@pytest.mark.django_db
+def test_from_db_invalid_token_logs_and_reraises(caplog):
+    """AbstractCommonModel.from_db() must log CRITICAL and re-raise InvalidToken.
+
+    Simulates a SECRET_KEY change that leaves encrypted_fields rows unreadable
+    -- the DAB side of AAP-76852.
+    """
+    import logging
+
+    from cryptography.fernet import InvalidToken
+
+    model = EncryptionModel.objects.create(testing1='sensitive_value')
+
+    with patch("ansible_base.lib.utils.encryption.ansible_encryption.decrypt_string", side_effect=InvalidToken):
+        with caplog.at_level(logging.CRITICAL, logger="ansible_base.lib.abstract_models.common"):
+            with pytest.raises(InvalidToken):
+                EncryptionModel.objects.get(pk=model.pk)
+
+    critical_records = [r for r in caplog.records if r.levelno == logging.CRITICAL]
+    assert critical_records, "Expected at least one CRITICAL log record"
+    assert any("SECRET_KEY" in r.message for r in critical_records), "Expected CRITICAL log to mention SECRET_KEY"
+    assert any(str(model.pk) in r.message for r in critical_records), "Expected CRITICAL log to include the model pk"

@@ -152,3 +152,46 @@ class AnsibleResourceField(models.ForeignObject):
         Return the content type associated with this field's model.
         """
         return ContentType.objects.get_for_model(self.model)
+
+
+class AssignmentResourceField(models.ForeignObject):
+    """
+    ForeignObject joining assignment models to Resource via the row's own
+    (content_type_id, object_id) — both columns are variable per row.
+
+    Unlike AnsibleResourceField which uses a constant content_type and a
+    Cast(pk, TextField), this field joins two columns that already match
+    in type (both TextField, both FK to ContentType).
+
+    Added dynamically via contribute_to_class in ResourceRegistryConfig.ready()
+    so that dab_rbac works standalone without resource_registry.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(
+            Resource,
+            on_delete=models.DO_NOTHING,
+            from_fields=['object_id'],
+            to_fields=['object_id'],
+            null=True,
+            blank=True,
+            editable=False,
+            serialize=False,
+            **kwargs,
+        )
+
+    def contribute_to_class(self, cls, name, private_only=False, **kwargs):
+        super().contribute_to_class(cls, name, private_only=True, **kwargs)
+
+    def get_extra_restriction(self, alias, remote_alias):
+        resource_ct_field = self.remote_field.model._meta.get_field("content_type")
+        local_ct_field = self.model._meta.get_field("content_type")
+
+        ct_lookup = self.get_lookup("exact")(
+            local_ct_field.get_col(remote_alias),
+            resource_ct_field.get_col(alias),
+        )
+        return WhereNode([ct_lookup], connector=AND)
+
+    def get_extra_descriptor_filter(self, instance):
+        return {"content_type_id": instance.content_type_id}

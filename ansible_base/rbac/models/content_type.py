@@ -40,7 +40,7 @@ class DABContentTypeManager(django_models.Manager[django_models.Model]):
     def _get_from_cache(self, opts: Options, service: str) -> django_models.Model:
         """Return a cached ``DABContentType`` for ``opts`` and ``service``."""
         key = (service, opts.app_label, opts.model_name)
-        return self._cache[self.db][key]
+        return self._cache[self.db][key]  # type: ignore[index]
 
     def _get_opts(self, model: Union[Type[django_models.Model], django_models.Model], for_concrete_model: bool) -> Options:
         """Return the ``Options`` object for ``model``."""
@@ -109,9 +109,9 @@ class DABContentTypeManager(django_models.Manager[django_models.Model]):
                 ct = self._get_from_cache(opts, model_service)
             except KeyError:
                 needed_models[(model_service, opts.app_label)].add(opts.model_name)
-                needed_opts[(model_service, opts.app_label, opts.model_name)].append(model)
+                needed_opts[(model_service, opts.app_label, opts.model_name)].append(model)  # type: ignore[index]
             else:
-                results[model] = ct
+                results[model] = ct  # type: ignore[index]
 
         if needed_opts:
             condition = django_models.Q(

@@ -5,7 +5,7 @@ from typing import Type
 from django.apps import apps
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
-from django.db.models import Model
+from django.db.models import Model, Q
 from django.utils.translation import gettext_lazy as _
 from rest_framework import permissions
 from rest_framework.exceptions import NotFound, ValidationError
@@ -395,26 +395,42 @@ class UserAccessViewSet(
         permission, ct, obj = self.get_data_from_url()
 
         evaluation_cls = get_evaluation_model(obj)
-        reverse_name = evaluation_cls._meta.get_field('role').remote_field.name
         assignment_cls = actor_cls._meta.get_field('role_assignments').related_model
+        actor_field = 'user_id' if actor_cls._meta.model_name == 'user' else 'team_id'
 
         if permission:
             obj_eval_qs = evaluation_cls.objects.filter(codename=permission.codename, object_id=obj.pk, content_type_id=ct.id)
         else:
-            # All relevant evaluations for the object
             obj_eval_qs = evaluation_cls.objects.filter(object_id=obj.pk, content_type_id=ct.id)
-        obj_assignment_qs = assignment_cls.objects.filter(**{f'object_role__{reverse_name}__in': obj_eval_qs})
+
+        # Collect actor IDs from the assignment side rather than correlating
+        # per actor row. The set of matching roles/assignments is small relative
+        # to the actor table, so querying from that direction avoids an EXISTS
+        # subquery that must be evaluated for every actor.
+        role_ids = obj_eval_qs.values_list('role_id', flat=True)
+        obj_actor_ids = assignment_cls.objects.filter(
+            object_role_id__in=role_ids,
+        ).values_list(actor_field, flat=True)
 
         if permission:
-            global_assignment_qs = assignment_cls.objects.filter(content_type=None, role_definition__permissions=permission)
+            global_actor_ids = assignment_cls.objects.filter(
+                content_type=None,
+                role_definition__permissions=permission,
+            ).values_list(actor_field, flat=True)
         else:
-            global_assignment_qs = assignment_cls.objects.filter(content_type=None, role_definition__permissions__content_type=ct)
+            global_actor_ids = assignment_cls.objects.filter(
+                content_type=None,
+                role_definition__permissions__content_type=ct,
+            ).values_list(actor_field, flat=True)
 
-        assignment_qs = obj_assignment_qs | global_assignment_qs
-        actor_qs = actor_cls.objects.filter(role_assignments__in=assignment_qs)
+        filters = Q(pk__in=obj_actor_ids) | Q(pk__in=global_actor_ids)
         if actor_cls._meta.model_name == 'user':
-            actor_qs |= actor_cls.objects.filter(is_superuser=True)
-        return actor_qs.distinct()
+            filters = filters | Q(is_superuser=True)
+
+        qs = actor_cls.objects.filter(filters)
+        if hasattr(actor_cls, 'resource'):
+            qs = qs.select_related('resource')
+        return qs
 
     def get_serializer(self, *args, **kwargs):
         """Awkwardly override this method, because eda-server uses a custom base viewset class.

@@ -121,6 +121,12 @@ def remote_obj_id_qs(actor, remote_cls: Type[RemoteObject], codename: str = 'vie
 
 
 def bound_has_obj_perm(self, obj, codename) -> bool:
+    from ansible_base.rbac.caching import defer_rbac_state
+
+    if defer_rbac_state.active and defer_rbac_state.has_deferred_data:
+        raise RuntimeError(
+            "has_obj_perm cannot be called inside defer_rbac_computations after resources have been created or deleted. Evaluations may be stale."
+        )
     if (inspect.isclass(obj) and issubclass(obj, RemoteObject)) or isinstance(obj, RemoteObject):
         pass  # no need to validate remote content type, assumed we have content type entry already
     elif not permission_registry.is_registered(obj):

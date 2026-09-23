@@ -7,6 +7,7 @@ import pytest
 
 from ansible_base.rbac.models import ObjectRole, RoleEvaluation
 from ansible_base.rbac.permission_registry import permission_registry
+from ansible_base.rbac.prefetch import TypesPrefetch
 from test_app.models import Inventory
 
 
@@ -155,7 +156,8 @@ def test_expected_direct_permissions_requires_both_pk_and_ct(rando, organization
     org_inv_rd.give_permission(rando, organization)
     org_role = ObjectRole.objects.get(role_definition=org_inv_rd, object_id=organization.pk)
 
+    types_prefetch = TypesPrefetch.from_db()
     with pytest.raises(ValueError):
-        org_role.expected_direct_permissions(object_pk=1)
+        org_role.expected_direct_permissions(types_prefetch, object_pk=1)
     with pytest.raises(ValueError):
-        org_role.expected_direct_permissions(object_ct_id=1)
+        org_role.expected_direct_permissions(types_prefetch, object_ct_id=1)

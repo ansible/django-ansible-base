@@ -30,7 +30,7 @@ api_version_urls = [
 
 oauth_urls = [
     re_path(r'^$', oauth2_provider_views.ApiOAuthAuthorizationRootView.as_view(), name='oauth_authorization_root_view'),
-    re_path(r"^authorize/$", oauth_views.AuthorizationView.as_view(), name="authorize"),
+    re_path(r"^authorize/$", oauth2_provider_views.AuthorizationView.as_view(), name="authorize"),
     re_path(r"^token/$", oauth2_provider_views.TokenView.as_view(), name="token"),
     re_path(r"^revoke_token/$", oauth_views.RevokeTokenView.as_view(), name="revoke-token"),
     # OIDC endpoints
@@ -39,7 +39,7 @@ oauth_urls = [
     re_path(r"^\.well-known/openid-configuration/$", oauth2_provider_views.DiscoveryInfoView.as_view(), name="oidc-connect-discovery-info"),
     re_path(r"^\.well-known/jwks\.json$", oauth_views.JwksInfoView.as_view(), name="jwks-info"),
     re_path(r"^userinfo/$", oauth_views.UserInfoView.as_view(), name="user-info"),
-    re_path(r"^logout/$", oauth_views.RPInitiatedLogoutView.as_view(), name="rp-initiated-logout"),
+    re_path(r"^logout/$", oauth2_provider_views.RPInitiatedLogoutView.as_view(), name="rp-initiated-logout"),
 ]
 
 

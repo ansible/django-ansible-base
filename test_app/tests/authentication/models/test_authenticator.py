@@ -1,4 +1,6 @@
+import logging
 from unittest import mock
+from unittest.mock import patch
 
 import pytest
 
@@ -47,3 +49,23 @@ def test_dupe_slug(ldap_authenticator):
 
     dupe.save()
     assert dupe.slug != ldap_slug, "authenticator slugs should be unique"
+
+
+@pytest.mark.django_db
+def test_authenticator_from_db_invalid_token_logs_and_reraises(ldap_authenticator, caplog):
+    """Authenticator.from_db() must log CRITICAL and re-raise InvalidToken.
+
+    Simulates a SECRET_KEY change making encrypted authenticator configuration
+    fields (e.g. LDAP BIND_PASSWORD) undecryptable -- part of AAP-76852.
+    """
+    from cryptography.fernet import InvalidToken
+
+    with patch("ansible_base.lib.utils.encryption.ansible_encryption.decrypt_string", side_effect=InvalidToken):
+        with caplog.at_level(logging.CRITICAL, logger="ansible_base.authentication.models.authenticator"):
+            with pytest.raises(InvalidToken):
+                Authenticator.objects.get(pk=ldap_authenticator.pk)
+
+    critical_records = [r for r in caplog.records if r.levelno == logging.CRITICAL]
+    assert critical_records, "Expected at least one CRITICAL log record"
+    assert any("SECRET_KEY" in r.message for r in critical_records), "Expected CRITICAL log to mention SECRET_KEY"
+    assert any(ldap_authenticator.name in r.message for r in critical_records), "Expected CRITICAL log to include the authenticator name"

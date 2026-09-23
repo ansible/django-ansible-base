@@ -9,7 +9,7 @@ authors = [
 ]
 description = "A Django app used by ansible services"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 keywords = ["ansible", "django"]
 license = {text = "Apache-2.0"}
 classifiers = [
@@ -23,7 +23,6 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
 dynamic = ["version", "dependencies", "optional-dependencies"]
@@ -98,29 +97,30 @@ legacy_tox_ini = """
     min_version = 4.0
     no_package = true
     env_list =
-        py311-check
         py312-check
-        py311
         py312
-        py311-sqlite
         py312-sqlite
-        py311-django4
-        py312-django4
-        py311-in-files
         py312-in-files
+        py312-query-count-scale
     labels =
-        test = py311-check, py312-check, py311, py312, py311-sqlite, py312-sqlite, py312-django4, py311-in-files, py312-in-files
-        lint = flake8, black, isort
+        test = py312-check, py312, py312-sqlite, py312-in-files
+        lint = flake8, black, isort, mypy
 
     [testenv]
     deps =
         -r{toxinidir}/requirements/requirements_all.txt
         -r{toxinidir}/requirements/requirements_dev.txt
     allowlist_externals = sh
-    commands = pytest -n auto --color=yes --cov=. --cov-report=xml:coverage.xml --cov-report=html --cov-report=json --cov-branch --junit-xml=django-ansible-base-test-results.xml {env:ANSIBLE_BASE_PYTEST_ARGS} {env:ANSIBLE_BASE_TEST_DIRS:test_app/tests} {posargs}
+    # --ignore=test_app/tests/query_count_scale: that directory has its own dedicated
+    # CI job/tox env (py312-query-count-scale, below) and relies on a shared, session-
+    # scoped, non-transactional data-seeding fixture (AAP-88875) instead of per-test
+    # isolation. Without this, the default `test_app/tests` target would also pick it
+    # up here -- duplicating its ~1 minute seeding cost per -n auto/xdist worker, and
+    # leaking its committed (not rolled-back) demo data into other tests' assertions.
+    commands = pytest -n auto --color=yes --cov=. --cov-report=xml:coverage.xml --cov-report=html --cov-report=json --cov-branch --junit-xml=django-ansible-base-test-results.xml --ignore=test_app/tests/query_count_scale {env:ANSIBLE_BASE_PYTEST_ARGS} {env:ANSIBLE_BASE_TEST_DIRS:test_app/tests} {posargs}
     docker = db
 
-    [testenv:py311-check,py312-check]
+    [testenv:py312-check]
     deps =
         -r{toxinidir}/requirements/requirements_all.txt
         -r{toxinidir}/requirements/requirements_dev.txt
@@ -129,20 +129,12 @@ legacy_tox_ini = """
         python3 manage.py check
         python3 manage.py makemigrations --check
 
-    [testenv:py311-sqlite,py312-sqlite]
+    [testenv:py312-sqlite]
     docker = db
     setenv =
         DJANGO_SETTINGS_MODULE = test_app.sqlite3settings
 
-    [testenv:py311-django4,py312-django4]
-    deps =
-        -r{toxinidir}/requirements/requirements_all.txt
-        -r{toxinidir}/requirements/requirements_dev.txt
-    commands_pre =
-        python -m pip install --upgrade "Django>=4.2.21,<4.3.0"
-    docker = db
-
-    [testenv:py311-in-files,py312-in-files]
+    [testenv:py312-in-files]
     deps =
         -r{toxinidir}/requirements/requirements.in
         -r{toxinidir}/requirements/requirements_activitystream.in
@@ -159,6 +151,17 @@ legacy_tox_ini = """
         -r{toxinidir}/requirements/requirements_observability.in
         -r{toxinidir}/requirements/requirements_testing.txt
         -r{toxinidir}/requirements/requirements_dev.txt
+
+    [testenv:py312-query-count-scale]
+    # Deliberately does not use pytest-xdist (-n auto): the query-count-scale suite is
+    # built around a single, shared, seeded dataset per run (see AAP-88875) rather than
+    # per-test DB transactions, so splitting across xdist workers would multiply seeding
+    # cost instead of parallelizing it. Runs as its own CI job in parallel with the main
+    # tox matrix instead (see .github/workflows/ci.yml).
+    setenv =
+        ANSIBLE_BASE_TEST_DIRS = test_app/tests/query_count_scale
+    commands = pytest --color=yes --cov=. --cov-report=xml:coverage.xml --cov-report=html --cov-report=json --cov-branch --junit-xml=django-ansible-base-test-results.xml {env:ANSIBLE_BASE_PYTEST_ARGS} {env:ANSIBLE_BASE_TEST_DIRS} {posargs}
+    docker = db
 
     [docker:db]
     dockerfile = {toxinidir}/tools/dev_postgres/Dockerfile
@@ -184,7 +187,37 @@ legacy_tox_ini = """
         isort==6.0.0
     docker =
     commands = isort {posargs:.}
+
+    [testenv:mypy]
+    deps =
+        -r{toxinidir}/requirements/requirements_all.txt
+        -r{toxinidir}/requirements/requirements_dev.txt
+    docker =
+    commands = mypy ansible_base {posargs}
 """
+
+[tool.mypy]
+plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
+ignore_missing_imports = true
+follow_imports = "silent"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+check_untyped_defs = false
+disallow_untyped_defs = false
+# Start permissive - tighten these as the codebase gets annotated
+disable_error_code = [
+    "attr-defined", "assignment", "union-attr", "var-annotated", "misc",
+    "arg-type",
+]
+exclude = ["test_app/", "migrations/", "\\.tox/", "build/", "\\.venv/", "venv/"]
+
+[[tool.mypy.overrides]]
+module = "ansible_base.lib.dynamic_config.dynamic_settings"
+disable_error_code = ["has-type", "used-before-def", "name-defined"]
+
+[tool.django-stubs]
+django_settings_module = "test_app.settings"
 
 [tool.coverage.run]
 omit = ["test_app/*", "manage.py"]

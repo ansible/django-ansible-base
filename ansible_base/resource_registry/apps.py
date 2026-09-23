@@ -2,7 +2,7 @@ import logging
 
 from django.apps import AppConfig
 from django.conf import settings
-from django.db.models import TextField, signals
+from django.db.models import Exists, OuterRef, TextField, signals
 from django.db.models.functions import Cast
 from django.db.utils import IntegrityError
 
@@ -10,10 +10,79 @@ import ansible_base.lib.checks  # noqa: F401 - register checks
 from ansible_base.lib.utils.db import ensure_transaction, migrations_are_complete
 from ansible_base.resource_registry.utils.settings import resource_server_defined
 
-logger = logging.getLogger('ansible_base.resource_registry.apps')
+logger = logging.getLogger("ansible_base.resource_registry.apps")
 
 
-def initialize_resources(sender, **kwargs):
+def _sync_resource_types(registry, resource_type_cls, content_type_cls):
+    """Create or update ResourceType rows for every resource in the registry."""
+    for key, resource_config in registry.get_resources().items():
+        content = content_type_cls.objects.get_for_model(resource_config.model)
+
+        if serializer := resource_config.managed_serializer:
+            resource_type = f"shared.{serializer.RESOURCE_TYPE}"
+        else:
+            resource_type = f"{registry.api_config.service_type}.{content.model}"
+        defaults = {
+            "externally_managed": resource_config.externally_managed,
+            "name": resource_type,
+        }
+
+        try:
+            resource_type_cls.objects.update_or_create(content_type=content, defaults=defaults)
+        except IntegrityError as e:
+            # if previous DAB migrations used the wrong content type id, we need to correct that now
+            # to eliminate integrity errors at the end of the migration process when this function
+            # gets called.
+            if not resource_type_cls.objects.filter(name=resource_type).exists():
+                raise e
+            rt = resource_type_cls.objects.get(name=resource_type)
+            logger.warn(f"changing content_type for '{resource_type}' from '{rt.content_type.model}' to '{content.model}'")
+            # Remove any stale row that already owns the target content_type,
+            # otherwise the OneToOne unique constraint prevents reassignment.
+            stale = resource_type_cls.objects.filter(content_type=content).exclude(pk=rt.pk)
+            if stale.exists():
+                logger.warn(f"deleting stale ResourceType row(s) that own content_type '{content.model}'")
+                stale.delete()
+            rt.content_type = content
+            for k, v in defaults.items():
+                setattr(rt, k, v)
+            rt.save()
+
+
+def _backfill_missing_resources(registry, resource_cls, resource_type_cls, apps):
+    """Create Resource rows for model instances that lack one."""
+    from ansible_base.resource_registry.models import init_resource_from_object
+
+    for r_type in resource_type_cls.objects.all():
+        resource_model = apps.get_model(r_type.content_type.app_label, r_type.content_type.model)
+        resource_config = registry.get_config_for_model(resource_model)
+
+        logger.info(f"adding unmigrated resources for {r_type.name}")
+
+        missing_resources_qs = resource_model.objects.annotate(pk_text=Cast("pk", TextField())).exclude(
+            Exists(resource_cls.objects.filter(content_type=r_type.content_type, object_id=OuterRef("pk_text")))
+        )
+
+        batch_size = 1000
+        data = []
+        for obj in missing_resources_qs.iterator(chunk_size=batch_size):
+            data.append(
+                init_resource_from_object(
+                    obj,
+                    resource_model=resource_cls,
+                    resource_type=r_type,
+                    resource_config=resource_config,
+                )
+            )
+            if len(data) == batch_size:
+                resource_cls.objects.bulk_create(data, ignore_conflicts=True)
+                data.clear()
+        if data:
+            resource_cls.objects.bulk_create(data, ignore_conflicts=True)
+        r_type.save()
+
+
+def initialize_resources(sender, force=False, **kwargs):
     from ansible_base.resource_registry.registry import get_registry
 
     # There isn't any evidence of this in the documentation, but it appears as though
@@ -32,15 +101,13 @@ def initialize_resources(sender, **kwargs):
     # resource types from being initialized in the database, so a direct import appears to be
     # better than doing nothing.
 
-    if not migrations_are_complete():
-        logger.info('Not running resource_registry post_migrate because migrations are incomplete')
+    if not force and not migrations_are_complete():
+        logger.info("Not running resource_registry post_migrate because migrations are incomplete")
         return
 
     apps = kwargs.get("apps")
     if apps is None:
         from django.apps import apps
-
-    from ansible_base.resource_registry.models import init_resource_from_object
 
     Resource = apps.get_model("dab_resource_registry", "Resource")
     ResourceType = apps.get_model("dab_resource_registry", "ResourceType")
@@ -49,48 +116,17 @@ def initialize_resources(sender, **kwargs):
     logger.info("updating resource types")
     registry = get_registry()
     if registry:
-        # Create resource types
-        for key, resource_config in registry.get_resources().items():
-            content = ContentType.objects.get_for_model(resource_config.model)
+        _sync_resource_types(registry, ResourceType, ContentType)
 
-            if serializer := resource_config.managed_serializer:
-                resource_type = f"shared.{serializer.RESOURCE_TYPE}"
-            else:
-                resource_type = f"{registry.api_config.service_type}.{content.model}"
-            defaults = {"externally_managed": resource_config.externally_managed, "name": resource_type}
+        # Skip the expensive missing-resource scan when no migrations were applied.
+        # ResourceType creation above must still run because post_save signal
+        # handlers depend on ResourceType records existing.
+        plan = kwargs.get("plan", None)
+        if plan is not None and len(plan) == 0:
+            logger.info("Skipping missing-resource scan — no migrations were applied")
+            return
 
-            try:
-                ResourceType.objects.update_or_create(content_type=content, defaults=defaults)
-            except IntegrityError as e:
-                # if previous DAB migrations used the wrong content type id, we need to correct that now
-                # to eliminate integrity errors at the end of the migration process when this function
-                # gets called.
-                if not ResourceType.objects.filter(name=resource_type).exists():
-                    raise e
-                rt = ResourceType.objects.get(name=resource_type)
-                logger.warn(f"changing content_type for '{resource_type}' from '{rt.content_type.model}' to '{content.model}'")
-                rt.content_type = content
-                for k, v in defaults.items():
-                    setattr(rt, k, v)
-                rt.save()
-
-        # Create resources
-        for r_type in ResourceType.objects.all():
-            resource_model = apps.get_model(r_type.content_type.app_label, r_type.content_type.model)
-            resource_config = registry.get_config_for_model(resource_model)
-
-            logger.info(f"adding unmigrated resources for {r_type.name}")
-
-            missing_resources_qs = resource_model.objects.annotate(pk_text=Cast('pk', TextField())).exclude(
-                pk_text__in=Resource.objects.filter(content_type=r_type.content_type).values("object_id")
-            )
-
-            data = []
-            for obj in missing_resources_qs:
-                data.append(init_resource_from_object(obj, resource_model=Resource, resource_type=r_type, resource_config=resource_config))
-
-            Resource.objects.bulk_create(data, ignore_conflicts=True)
-            r_type.save()
+        _backfill_missing_resources(registry, Resource, ResourceType, apps)
 
 
 def proxies_of_model(cls):
@@ -101,11 +137,11 @@ def proxies_of_model(cls):
 
 
 def _should_reverse_sync():
-    enabled = getattr(settings, 'RESOURCE_SERVER_SYNC_ENABLED', False)
+    enabled = getattr(settings, "RESOURCE_SERVER_SYNC_ENABLED", False)
     if enabled and (not resource_server_defined()):
         logger.debug("RESOURCE_SERVER is not configured. Reverse sync will not be enabled.")
         enabled = False
-    if enabled and resource_server_defined() and ('SECRET_KEY' not in settings.RESOURCE_SERVER or not settings.RESOURCE_SERVER['SECRET_KEY']):
+    if enabled and resource_server_defined() and ("SECRET_KEY" not in settings.RESOURCE_SERVER or not settings.RESOURCE_SERVER["SECRET_KEY"]):
         logger.error("RESOURCE_SERVER['SECRET_KEY'] is not configured. Reverse sync will not be enabled.")
         enabled = False
     return enabled
@@ -159,23 +195,33 @@ def disconnect_resource_signals(sender, **kwargs):
             signals.post_save.disconnect(handlers.sync_to_resource_server_post_save, sender=cls)
             signals.pre_delete.disconnect(handlers.sync_to_resource_server_pre_delete, sender=cls)
 
-            if hasattr(cls, '_original_save'):
+            if hasattr(cls, "_original_save"):
                 cls.save = cls._original_save
                 del cls._original_save
 
-            if hasattr(cls, '_original_delete'):
+            if hasattr(cls, "_original_delete"):
                 cls.delete = cls._original_delete
                 del cls._original_delete
 
 
 class ResourceRegistryConfig(AppConfig):
-    default_auto_field = 'django.db.models.BigAutoField'
-    name = 'ansible_base.resource_registry'
-    label = 'dab_resource_registry'
-    verbose_name = 'Service resources API'
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "ansible_base.resource_registry"
+    label = "dab_resource_registry"
+    verbose_name = "Service resources API"
 
     def ready(self):
         connect_resource_signals(sender=None)
         signals.pre_migrate.connect(disconnect_resource_signals, sender=self)
         signals.post_migrate.connect(initialize_resources, sender=self)
         signals.post_migrate.connect(connect_resource_signals, sender=self)
+
+        from django.apps import apps
+
+        if apps.is_installed("ansible_base.rbac"):
+            from ansible_base.rbac.models import RoleTeamAssignment, RoleUserAssignment
+            from ansible_base.resource_registry.fields import AssignmentResourceField
+
+            for model in (RoleUserAssignment, RoleTeamAssignment):
+                if not hasattr(model, "resource"):
+                    AssignmentResourceField().contribute_to_class(model, "resource")

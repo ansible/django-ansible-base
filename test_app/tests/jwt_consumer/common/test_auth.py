@@ -364,7 +364,7 @@ class TestJWTCommonAuth:
                     'managed': True,
                 },
             )
-            with expected_log(claims_logger, 'info', 'Granted user'):
+            with expected_log(claims_logger, 'info', 'Granting user'):
                 save_user_claims(authentication.user, {}, {}, global_roles)
         else:
             save_user_claims(authentication.user, {}, {}, global_roles)

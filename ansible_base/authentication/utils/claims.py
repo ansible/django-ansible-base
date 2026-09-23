@@ -62,9 +62,9 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
     logger.debug(f"[{tracking_id}] {username}'s groups: {groups}")
     logger.debug(f"[{tracking_id}] {username}'s attrs: {attrs}")
 
-    # load the maps
-    maps = AuthenticatorMap.objects.filter(authenticator=authenticator.pk).order_by("order")
-    logger.debug(f"Processing {maps.count()} map(s) for Authenticator ID [{authenticator.pk}] ID [{tracking_id}]")
+    # load the maps (materialize to avoid extra count() query)
+    maps = list(AuthenticatorMap.objects.filter(authenticator=authenticator.pk).order_by("order"))
+    logger.debug(f"Processing {len(maps)} map(s) for Authenticator ID [{authenticator.pk}] ID [{tracking_id}]")
 
     for auth_map in maps:
         mpk = auth_map.pk
@@ -233,7 +233,7 @@ def process_groups(trigger_condition: dict, groups: list, map_id: int, tracking_
     groups = [f"{group}".casefold() for group in groups]
     trigger_condition = _lowercase_group_triggers(trigger_condition)
 
-    invalid_conditions = set(trigger_condition.keys()) - set(TRIGGER_DEFINITION['groups']['keys'].keys())
+    invalid_conditions = set(trigger_condition.keys()) - set(TRIGGER_DEFINITION['groups']['keys'].keys())  # type: ignore[index]
     if invalid_conditions:
         logger.warning(f"[{tracking_id}] The conditions {', '.join(invalid_conditions)} for groups in mapping {map_id} are invalid and won't be processed")
 
@@ -276,6 +276,7 @@ def has_access_with_join(current_access: Optional[bool], new_access: bool, condi
 
     if condition == 'and':
         return current_access and new_access
+    return None
 
 
 def _lowercase_value(value: Any) -> Any:
@@ -346,7 +347,7 @@ def _validate_join_condition(join_condition, map_id: int, tracking_id: str) -> s
     Returns:
         Valid join condition ('or' or 'and')
     """
-    if join_condition not in TRIGGER_DEFINITION['attributes']['keys']['join_condition']['choices']:
+    if join_condition not in TRIGGER_DEFINITION['attributes']['keys']['join_condition']['choices']:  # type: ignore[index]
         logger.warning(f"[{tracking_id}] Trigger join_condition {join_condition} on authenticator map {map_id} is invalid and will be set to 'or'")
         return 'or'
     return join_condition
@@ -366,7 +367,7 @@ def _validate_attribute_conditions(attribute: str, condition: dict, map_id: int,
         True if conditions are valid and should be processed, False if should be skipped
     """
     # Warn if there are any invalid conditions, we are just going to ignore them
-    invalid_conditions = set(condition.keys()) - set(TRIGGER_DEFINITION['attributes']['keys']['*']['keys'].keys())
+    invalid_conditions = set(condition.keys()) - set(TRIGGER_DEFINITION['attributes']['keys']['*']['keys'].keys())  # type: ignore[index]
     if invalid_conditions:
         logger.warning(
             f"[{tracking_id}] The conditions {', '.join(invalid_conditions)} for attribute {attribute} "
@@ -507,11 +508,6 @@ def _evaluate_ends_with(user_value: str, trigger_value: str) -> bool:
     return user_value.endswith(trigger_value)
 
 
-def _evaluate_in(user_value: str, trigger_value: list) -> bool:
-    """Check if user value is in trigger value list."""
-    return user_value in trigger_value
-
-
 def _get_operator_messages(operator: str, result: bool) -> str:
     """Get appropriate message text for operator and result."""
     messages = {
@@ -525,18 +521,66 @@ def _get_operator_messages(operator: str, result: bool) -> str:
     return true_msg if result else false_msg
 
 
+def _process_in_operator(
+    has_access: Optional[bool], trigger_value, user_value: List[str], join_condition: str, attribute: str, map_id: int, tracking_id: str
+) -> Optional[bool]:
+    """Fast path for 'in' operator: set intersection instead of per-value loop.
+
+    Trigger values are casefolded defensively here even though the caller
+    (_prepare_case_insensitive_data) already lowercases them, so that direct
+    callers of _process_user_value also get correct case-insensitive behavior.
+    """
+    trigger_set = {f"{v}".casefold() for v in trigger_value}
+    user_set = {f"{v}".casefold() for v in user_value}
+    matched = user_set & trigger_set
+
+    result = bool(matched) if join_condition == 'or' else user_set.issubset(trigger_set)
+    has_access = has_access_with_join(has_access, result, join_condition)
+
+    if logger.isEnabledFor(logging.DEBUG):
+        if matched:
+            _prefixed_debug(map_id, tracking_id, f"Attr [{attribute}] matched value(s) {sorted(matched)} in {trigger_value}, {_result_suffix(result)}")
+        else:
+            _prefixed_debug(map_id, tracking_id, f"Attr [{attribute}] has no matching values in {trigger_value}, {_result_suffix(result)}")
+
+    return has_access
+
+
+_OPERATOR_DISPATCH = {
+    "equals": _evaluate_equals,
+    "matches": _evaluate_matches,
+    "contains": _evaluate_contains,
+    "ends_with": _evaluate_ends_with,
+}
+
+
+def _process_scalar_operator(
+    has_access: Optional[bool], operator: str, trigger_value, user_value: List[str], join_condition: str, attribute: str, map_id: int, tracking_id: str
+) -> Optional[bool]:
+    """Per-value loop with early exit for equals/matches/contains/ends_with."""
+    evaluate_fn = _OPERATOR_DISPATCH[operator]
+
+    for a_user_value in user_value:
+        user_str = f"{a_user_value}".casefold()
+        result = evaluate_fn(user_str, trigger_value)
+        has_access = has_access_with_join(has_access, result, join_condition)
+
+        if logger.isEnabledFor(logging.DEBUG):
+            header = f"Attr [{attribute}] value [{user_str}]"
+            message = _get_operator_messages(operator, result)
+            _prefixed_debug(map_id, tracking_id, f"{header} {message} [{trigger_value}], {_result_suffix(result)}")
+
+        if result and join_condition == 'or':
+            break
+        if not result and join_condition == 'and':
+            break
+
+    return has_access
+
+
 def _process_user_value(
     has_access: Optional[bool], trigger_condition: dict, user_value: List[str], join_condition: str, attribute: str, map_id: int, tracking_id: str
 ) -> Optional[bool]:
-    # Operator dispatch table
-    operators = {
-        "equals": _evaluate_equals,
-        "matches": _evaluate_matches,
-        "contains": _evaluate_contains,
-        "ends_with": _evaluate_ends_with,
-        "in": _evaluate_in,
-    }
-
     condition = trigger_condition[attribute]
 
     # Find which operator is present (preserve original priority order)
@@ -548,24 +592,13 @@ def _process_user_value(
             trigger_value = condition[op]
             break
 
-    if not operator:
+    if not operator or not user_value:
         return has_access
 
-    evaluate_fn = operators[operator]
+    if operator == "in":
+        return _process_in_operator(has_access, trigger_value, user_value, join_condition, attribute, map_id, tracking_id)
 
-    for a_user_value in user_value:
-        user_str = f"{a_user_value}".casefold()
-
-        # Evaluate condition
-        result = evaluate_fn(user_str, trigger_value)
-        has_access = has_access_with_join(has_access, result, join_condition)
-
-        # Log result
-        header = f"Attr [{attribute}] value [{user_str}]"
-        message = _get_operator_messages(operator, result)
-        _prefixed_debug(map_id, tracking_id, f"{header} {message} [{trigger_value}], {_result_suffix(result)}")
-
-    return has_access
+    return _process_scalar_operator(has_access, operator, trigger_value, user_value, join_condition, attribute, map_id, tracking_id)
 
 
 def _result_suffix(result: bool) -> str:

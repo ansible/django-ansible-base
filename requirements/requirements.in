@@ -3,9 +3,11 @@
 # if you are add a new feature which requires dependencies they should be in a separate requirements_<feature>.in file
 #
 cryptography
-Django>=4.2.26,<6.0    # Updating for CVE-2025-64459
+Django>=5,<6.0
 djangorestframework<3.16 # problem with OAuth2Application.organization null handling
 django-crum
 inflection
 sqlparse>=0.5.2 # https://github.com/ansible/django-ansible-base/security/dependabot/9
 dynaconf>=3.2.10,<4.0.0  # Dynaconf 4.0.0 is expected to be a major release with breaking changes
+nh3
+regex

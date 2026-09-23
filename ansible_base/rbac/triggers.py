@@ -1,14 +1,27 @@
 import logging
-from typing import Union
+from contextlib import contextmanager
+from typing import Generator, Optional, Union
 from uuid import UUID
 
-from django.db.models import Model, Q
+from django.db import connection
+from django.db.models import Model
 from django.db.models.signals import m2m_changed, post_delete, post_init, post_save, pre_delete, pre_save
 from django.dispatch import Signal
 
 from ansible_base.lib.utils.db import migrations_are_complete
-from ansible_base.rbac.caching import compute_object_role_permissions, compute_team_member_roles
-from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation, get_evaluation_model
+from ansible_base.rbac.caching import (
+    bulk_ancestor_roles,
+    cleanup_deleted_object_roles,
+    cleanup_deleted_team_roles,
+    cleanup_orphaned_object_roles,
+    compute_team_member_roles,
+    defer_rbac_state,
+    object_roles_for_parents,
+    recompute_all_role_evaluations,
+    recompute_role_evaluations,
+    team_ids_from_role_target,
+)
+from ansible_base.rbac.models import ObjectRole, RoleDefinition, get_evaluation_model
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.validators import validate_team_assignment_enabled
 
@@ -27,34 +40,31 @@ Sounds simple, but is actually more complicated that the caching logic itself.
 dab_post_migrate = Signal()
 
 
-def team_ancestor_roles(team):
-    """
-    Return a queryset of all roles that directly or indirectly grant any form of permission to a team.
-    This is generally used when invalidating a team membership for one reason or another.
-    This assumes that teams and all team parent models have integer primary keys.
-    """
-    permission_kwargs = dict(codename=permission_registry.team_permission, object_id=team.id, content_type_id=permission_registry.team_ct_id)
-    return set(ObjectRole.objects.filter(permission_partials__in=RoleEvaluation.objects.filter(**permission_kwargs)))
+def _recompute_team_ids_for_assignment(
+    object_role: 'ObjectRole',
+    created: bool,
+    deleted: bool,
+    has_team_perm: bool,
+    changes_team_owners: bool,
+) -> Optional[set[int]]:
+    """Determine which team IDs need provides_teams recomputation after an assignment change."""
+    if not (has_team_perm and (created or deleted or changes_team_owners)):
+        return None
+    if created:
+        # provides_teams not yet computed for new ObjectRoles
+        return team_ids_from_role_target(object_role)
+    # For existing roles, provides_teams already captures which
+    # teams this role grants membership to
+    return set(object_role.provides_teams.values_list('id', flat=True))
 
 
-def _team_ids_from_role_target(object_role: 'ObjectRole') -> set[int]:
-    """Derive which teams a member_team ObjectRole targets from its content type.
-
-    Used only when the provides_teams relationship is not yet computed —
-    i.e. for newly created ObjectRoles or when member_team permission was
-    just added to a RoleDefinition. For existing roles where provides_teams
-    is already populated, query provides_teams directly instead.
-    """
-    if object_role.content_type_id == permission_registry.team_ct_id:
-        return {int(object_role.object_id)}
-    if object_role.content_type_id == permission_registry.org_ct_id:
-        parent_fd = permission_registry.get_parent_fd_name(permission_registry.team_model)
-        if parent_fd:
-            return set(permission_registry.team_model.objects.filter(**{f'{parent_fd}_id': int(object_role.object_id)}).values_list('id', flat=True))
-    return set()
-
-
-def needed_updates_on_assignment(role_definition, actor, object_role, created=False, giving=True):
+def needed_updates_on_assignment(
+    role_definition: 'RoleDefinition',
+    actor: Model,
+    object_role: 'ObjectRole',
+    created: bool = False,
+    giving: bool = True,
+) -> tuple[Optional[set[int]], set['ObjectRole']]:
     """
     If a user or a team is granted a role or has a role revoked,
     then this returns instructions for what needs to be updated
@@ -77,14 +87,15 @@ def needed_updates_on_assignment(role_definition, actor, object_role, created=Fa
     # If permissions for team are changed. That tends to affect a lot.
     changes_team_owners = False
     if actor._meta.model_name != 'user':
-        to_update.update(team_ancestor_roles(actor))
+        to_update.update(bulk_ancestor_roles({actor.id}))
         if not giving:
             # this will delete some permission assignments that will be removed from this relationship
             to_update.update(object_role.descendent_roles())
         changes_team_owners = True
 
     deleted = False
-    if (not giving) and (not (object_role.users.exists() or object_role.teams.exists())):
+    role_has_no_actors = not giving and not (object_role.users.exists() or object_role.teams.exists())
+    if role_has_no_actors:
         # time to delete the object role because it is unused
         to_update.discard(object_role)
         deleted = True
@@ -95,28 +106,164 @@ def needed_updates_on_assignment(role_definition, actor, object_role, created=Fa
         to_update.update(object_role.descendent_roles())
 
     # actions which can change the team parentage structure
-    recompute_team_ids = None
-    if has_team_perm and (created or deleted or changes_team_owners):
-        if created:
-            # provides_teams not yet computed for new ObjectRoles
-            recompute_team_ids = _team_ids_from_role_target(object_role)
-        else:
-            # For existing roles, provides_teams already captures which
-            # teams this role grants membership to
-            recompute_team_ids = set(object_role.provides_teams.values_list('id', flat=True))
+    recompute_team_ids = _recompute_team_ids_for_assignment(object_role, created, deleted, has_team_perm, changes_team_owners)
 
     return (recompute_team_ids, to_update)
 
 
-def update_after_assignment(recompute_team_ids, to_update):
+def _reset_and_flush_deferred_rbac(suppress_flush_errors: bool = False) -> None:
+    """Reset deferred RBAC state and flush pending computations.
+
+    Args:
+        suppress_flush_errors: If True, log but do not raise flush errors
+            (used during exception handling to avoid masking the original error).
+    """
+    deleted_team_pks = defer_rbac_state.deleted_team_pks
+    deleted_object_pks = defer_rbac_state.deleted_object_pks
+    created_instances = defer_rbac_state.created_instances
+    defer_rbac_state.active = False
+    defer_rbac_state.deleted_team_pks = set()
+    defer_rbac_state.deleted_object_pks = []
+    defer_rbac_state.created_instances = []
+
+    if not (deleted_team_pks or deleted_object_pks or created_instances):
+        return
+
+    if suppress_flush_errors and connection.in_atomic_block and connection.needs_rollback:
+        logger.debug("Skipping RBAC flush — transaction is marked for rollback")
+        return
+
+    if suppress_flush_errors:
+        try:
+            _flush_rbac(deleted_team_pks, deleted_object_pks, created_instances)
+        except Exception:
+            logger.exception("Failed to flush RBAC computations during exception handling")
+    else:
+        _flush_rbac(deleted_team_pks, deleted_object_pks, created_instances)
+
+
+@contextmanager
+def defer_rbac_computations() -> Generator[None, None, None]:
+    """Defer RBAC signal-driven recomputation during bulk resource operations.
+
+    This is ONLY for creating or deleting non-RBAC resources (e.g. Inventory,
+    Team, Organization). It defers the RBAC signal handlers that normally fire
+    on every save/delete, then flushes all recomputation in a single pass on
+    exit.
+
+    While deferred data is pending, the following will raise RuntimeError:
+    - give_permission / remove_permission and the bulk/assignment variants
+      (RoleEvaluation is stale until the flush)
+    - has_obj_perm (evaluations are stale until the flush)
+
+    These calls are allowed before any resources are created or deleted inside
+    the context manager, so DRF permission checks that run before the view
+    action will work normally.
+
+    Cannot be nested. For permission assignment, call
+    bulk_give_permissions / bulk_remove_permissions outside this context manager.
+
+    Limitation: the deferred flush does not recompute descendant roles from
+    member_team permissions. This is correct when the objects granting
+    member_team cascade-delete with the parent (the normal case), but would
+    leave stale evaluations if member_team targets survive the deletion.
+    """
+    if defer_rbac_state.active:
+        raise RuntimeError("defer_rbac_computations cannot be nested")
+    defer_rbac_state.active = True
+    try:
+        yield
+    except BaseException:
+        _reset_and_flush_deferred_rbac(suppress_flush_errors=True)
+        raise
+    else:
+        _reset_and_flush_deferred_rbac(suppress_flush_errors=False)
+
+
+def _process_created_instances(created_instances) -> tuple[set[tuple], set[int]]:
+    """Extract parent GFKs and team IDs from deferred created instances."""
+    all_parent_gfks: set[tuple] = set()
+    team_ids: set[int] = set()
+    for instance, _, _ in created_instances:
+        parent_gfks = get_parent_ids(instance)
+        if parent_gfks:
+            all_parent_gfks.update(parent_gfks)
+        if instance._meta.model_name == permission_registry.team_model._meta.model_name:
+            team_ids.add(instance.id)
+    return all_parent_gfks, team_ids
+
+
+def _flush_rbac(deleted_team_pks, deleted_object_pks, created_instances):
+    object_roles: set[ObjectRole] = set()
+
+    if deleted_team_pks:
+        ancestor_roles, deleted_or_ids = cleanup_deleted_team_roles(deleted_team_pks)
+        object_roles.update(r for r in ancestor_roles if r.pk not in deleted_or_ids)
+
+    if deleted_object_pks:
+        deleted_or_ids = cleanup_deleted_object_roles(deleted_object_pks)
+        object_roles = {r for r in object_roles if r.pk not in deleted_or_ids}
+
+    team_ids: set[int] = set()
+    if created_instances:
+        all_parent_gfks, team_ids = _process_created_instances(created_instances)
+        if all_parent_gfks:
+            object_roles.update(object_roles_for_parents(all_parent_gfks))
+
+    if deleted_team_pks:
+        team_ids.update(deleted_team_pks)
+
+    if team_ids:
+        compute_team_member_roles(team_ids=team_ids)
+
+    if object_roles:
+        recompute_role_evaluations(object_roles)
+
+    cleanup_orphaned_object_roles()
+
+
+def update_after_assignment(recompute_team_ids: Optional[set[int]], to_update: Optional[set['ObjectRole']]) -> None:
     "Call this with the output of needed_updates_on_assignment"
     if recompute_team_ids is not None:
         compute_team_member_roles(team_ids=recompute_team_ids)
 
-    compute_object_role_permissions(object_roles=to_update)
+    if to_update:
+        recompute_role_evaluations(to_update)
 
 
-def permissions_changed(instance, action, model, pk_set, reverse, **kwargs):
+def _handle_permission_add_or_remove(to_recompute: set['ObjectRole'], pk_set: set, action: str) -> None:
+    """Handle post_add / post_remove m2m signal for RoleDefinition permissions."""
+    if permission_registry.permission_qs.filter(codename=permission_registry.team_permission, pk__in=pk_set).exists():
+        for object_role in to_recompute.copy():
+            to_recompute.update(object_role.descendent_roles())
+        team_ids = set()
+        for object_role in to_recompute:
+            # provides_teams covers removal (member_team was present, teams are populated)
+            team_ids.update(object_role.provides_teams.values_list('id', flat=True))
+            if action == 'post_add':
+                # provides_teams is empty when member_team was just added,
+                # so derive affected teams from the role's content type
+                team_ids.update(team_ids_from_role_target(object_role))
+        compute_team_member_roles(team_ids=team_ids)
+    # All team member roles that give this permission through this role need to be updated
+    for role in to_recompute.copy():
+        for team in role.teams.all():
+            to_recompute.update(team.member_roles.all())
+
+
+def _handle_permission_clear(to_recompute: set['ObjectRole']) -> None:
+    """Handle post_clear m2m signal for RoleDefinition permissions."""
+    # unfortunately this does not give us a list of permissions to work with
+    # provides_teams captures teams if member_team was among the cleared permissions;
+    # content-type derivation covers the case where it wasn't yet computed
+    team_ids = set()
+    for object_role in to_recompute:
+        team_ids.update(object_role.provides_teams.values_list('id', flat=True))
+        team_ids.update(team_ids_from_role_target(object_role))
+    compute_team_member_roles(team_ids=team_ids)
+
+
+def permissions_changed(instance: 'RoleDefinition', action: str, model: type, pk_set: Optional[set], reverse: bool, **kwargs) -> None:
     """Recompute object role permissions when a RoleDefinition's permissions m2m changes."""
     if action.startswith('pre_'):
         return
@@ -127,33 +274,12 @@ def permissions_changed(instance, action, model, pk_set, reverse, **kwargs):
         raise RuntimeError('Removal of permssions through reverse relationship not supported')
 
     if action in ('post_add', 'post_remove'):
-        if permission_registry.permission_qs.filter(codename=permission_registry.team_permission, pk__in=pk_set).exists():
-            for object_role in to_recompute.copy():
-                to_recompute.update(object_role.descendent_roles())
-            team_ids = set()
-            for object_role in to_recompute:
-                # provides_teams covers removal (member_team was present, teams are populated)
-                team_ids.update(object_role.provides_teams.values_list('id', flat=True))
-                if action == 'post_add':
-                    # provides_teams is empty when member_team was just added,
-                    # so derive affected teams from the role's content type
-                    team_ids.update(_team_ids_from_role_target(object_role))
-            compute_team_member_roles(team_ids=team_ids)
-        # All team member roles that give this permission through this role need to be updated
-        for role in to_recompute.copy():
-            for team in role.teams.all():
-                to_recompute.update(team.member_roles.all())
+        _handle_permission_add_or_remove(to_recompute, pk_set, action)
     elif action == 'post_clear':
-        # unfortunately this does not give us a list of permissions to work with
-        # provides_teams captures teams if member_team was among the cleared permissions;
-        # content-type derivation covers the case where it wasn't yet computed
-        team_ids = set()
-        for object_role in to_recompute:
-            team_ids.update(object_role.provides_teams.values_list('id', flat=True))
-            team_ids.update(_team_ids_from_role_target(object_role))
-        compute_team_member_roles(team_ids=team_ids)
-        to_recompute = None  # all
-    compute_object_role_permissions(object_roles=to_recompute)
+        _handle_permission_clear(to_recompute)
+        recompute_all_role_evaluations()
+        return
+    recompute_role_evaluations(to_recompute)
 
 
 m2m_changed.connect(permissions_changed, sender=RoleDefinition.permissions.through)
@@ -209,17 +335,9 @@ def post_save_update_obj_permissions(instance, object_pk=None, object_ct_id=None
         delattr(instance, '__rbac_original_parent_id')
 
     if parent_gfks:
-        q_exprs = [Q(content_type=parent_ct, object_id=parent_id) for parent_ct, parent_id in parent_gfks]
-        q_filter = q_exprs[0]
-        for next_q in q_exprs[1:]:
-            q_filter |= next_q
-        to_update = set(ObjectRole.objects.filter(q_filter))
+        to_update = object_roles_for_parents(set(parent_gfks))
     else:
         to_update = set()
-
-    # Account for parent team roles of those organization roles
-    ancestors = set(ObjectRole.objects.filter(provides_teams__has_roles__in=to_update))
-    to_update.update(ancestors)
 
     # If the actual object changed (created or modified) was a team, any org role
     # that has member_team needs to be updated, and any parent teams that have that role
@@ -227,7 +345,7 @@ def post_save_update_obj_permissions(instance, object_pk=None, object_ct_id=None
         compute_team_member_roles(team_ids=[instance.id])
 
     if to_update:
-        compute_object_role_permissions(object_roles=to_update, object_pk=object_pk, object_ct_id=object_ct_id)
+        recompute_role_evaluations(to_update, object_pk=object_pk, object_ct_id=object_ct_id)
 
 
 def rbac_pre_save_identify_changes(instance, *args, **kwargs):
@@ -260,6 +378,9 @@ def rbac_post_save_update_evaluations(instance, created, *args, **kwargs):
     # evaluations for the parent object roles need to be added
     if created:
         obj_ct_id = permission_registry.content_type_model.objects.get_for_model(instance).id
+        if defer_rbac_state.active:
+            defer_rbac_state.created_instances.append((instance, instance.pk, obj_ct_id))
+            return
         post_save_update_obj_permissions(instance, object_pk=instance.pk, object_ct_id=obj_ct_id)
         return
 
@@ -275,58 +396,52 @@ def rbac_post_save_update_evaluations(instance, created, *args, **kwargs):
         post_save_update_obj_permissions(instance)
 
 
-def team_pre_delete(instance, *args, **kwargs):
+def team_pre_delete(instance: Model, *args, **kwargs) -> None:
+    if defer_rbac_state.active:
+        return
     instance.__rbac_stashed_member_roles = list(instance.member_roles.all())
-    # Stash IDs of teams that have this team as a parent in the team-of-team graph.
-    # After this team is deleted, those teams need their member_roles recomputed.
-    # provides_teams tells us which teams these roles grant membership to.
     stashed_team_ids = set()
     for object_role in ObjectRole.objects.filter(teams=instance, role_definition__permissions__codename=permission_registry.team_permission):
         stashed_team_ids.update(object_role.provides_teams.values_list('id', flat=True))
-    stashed_team_ids.discard(instance.id)  # the deleted team itself won't need recomputation
+    stashed_team_ids.discard(instance.id)
     instance.__rbac_stashed_recompute_team_ids = stashed_team_ids
 
 
-def rbac_post_delete_remove_object_roles(instance, *args, **kwargs):
+def rbac_post_delete_remove_object_roles(instance: Model, *args, **kwargs) -> None:
     """
     Call this when deleting an object to cascade delete its object roles
     Deleting a team can have consequences for the rest of the graph
     """
     if instance._meta.model_name == permission_registry.team_model._meta.model_name:
+        if defer_rbac_state.active:
+            defer_rbac_state.deleted_team_pks.add(instance.pk)
+            return
         indirectly_affected_roles = set()
-        indirectly_affected_roles.update(team_ancestor_roles(instance))
+        indirectly_affected_roles.update(bulk_ancestor_roles({instance.id}))
         for team_role in instance.__rbac_stashed_member_roles:
             indirectly_affected_roles.update(team_role.descendent_roles())
         compute_team_member_roles(team_ids=instance.__rbac_stashed_recompute_team_ids)
-        compute_object_role_permissions(object_roles=indirectly_affected_roles)
+        recompute_role_evaluations(indirectly_affected_roles)
+        cleanup_orphaned_object_roles()
 
-        # Similar to user deletion, clean up any orphaned object roles
-        ObjectRole.objects.filter(users__isnull=True, teams__isnull=True).delete()
-        deleted_count, _ = ObjectRole.objects.filter(users__isnull=True, teams__isnull=True).delete()
-        if deleted_count:
-            had_object_assignments = True
+    if defer_rbac_state.active:
+        ct_id = permission_registry.content_type_model.objects.get_for_model(instance).pk
+        defer_rbac_state.deleted_object_pks.append((ct_id, instance.pk))
+        return
 
     ct = permission_registry.content_type_model.objects.get_for_model(instance)
-
-    # Use bulk delete return value to determine if object-level assignments existed
-    # This avoids the inefficient .exists() query and works correctly for team deletion cases
     deleted_count, _ = ObjectRole.objects.filter(content_type=ct, object_id=instance.pk).delete()
-    had_object_assignments = deleted_count > 0
 
     parent_field_name = permission_registry.get_parent_fd_name(instance)
     if parent_field_name:
-        # Delete all evaluations from inherited permissions
         get_evaluation_model(instance).objects.filter(content_type_id=ct.id, object_id=instance.pk).delete()
 
-    # Only sync when object-level assignments existed - this is the key performance optimization
-    if had_object_assignments:
+    if deleted_count:
         try:
             from ansible_base.rbac.sync import maybe_reverse_sync_object_deletion
 
             maybe_reverse_sync_object_deletion(instance)
         except Exception:
-            # Continue with local deletion even if cross-service sync fails
-            # This ensures we don't break local operations due to network/auth issues
             logger.exception(f"Failed to sync object deletion for {instance}")
 
 
@@ -395,7 +510,7 @@ def rbac_post_user_delete(instance, *args, **kwargs):
     """
     # Any RoleUserAssignment entries will already be cascade deleted
     # Just clean up any object roles that may be orphaned by this deletion
-    ObjectRole.objects.filter(users__isnull=True, teams__isnull=True).delete()
+    cleanup_orphaned_object_roles()
 
 
 def post_migration_rbac_setup(sender, *args, **kwargs):
@@ -405,8 +520,14 @@ def post_migration_rbac_setup(sender, *args, **kwargs):
 
     dab_post_migrate.send(sender=sender)
 
+    plan = kwargs.get('plan', None)
+    if plan is not None and len(plan) == 0:
+        logger.info('Skipping RBAC recompute — no migrations were applied')
+        return
+
+    cleanup_orphaned_object_roles()
     compute_team_member_roles()
-    compute_object_role_permissions()
+    recompute_all_role_evaluations()
 
 
 def connect_rbac_signals(cls):

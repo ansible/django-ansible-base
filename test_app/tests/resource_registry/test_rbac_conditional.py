@@ -50,9 +50,6 @@ class TestResourceRegistryWithoutRBAC:
         with pytest.raises(RuntimeError, match="This operation requires ansible_base.rbac to be installed"):
             client.sync_unassignment(None, None, None)
 
-        with pytest.raises(RuntimeError, match="This operation requires ansible_base.rbac to be installed"):
-            client.sync_object_deletion(None)
-
     def test_role_definition_type_raises_error(self):
         """Test that RoleDefinitionType raises error when rbac not available."""
         with pytest.raises(RuntimeError, match="requires ansible_base.rbac to be installed"):

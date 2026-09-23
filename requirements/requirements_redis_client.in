@@ -1,2 +1,2 @@
 django-redis
-redis>=7.4.0,<8.0.0  # 8.0.0 breaks Unix socket connections (https://github.com/redis/redis-py/issues/4086)
+redis>=7.4.0  # 8.0.0 broke Unix socket connections (redis/redis-py#4086), fixed in 8.0.1

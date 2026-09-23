@@ -196,11 +196,24 @@ class AbstractCommonModel(models.Model):
 
     @classmethod
     def from_db(self, db, field_names, values):
+        from cryptography.fernet import InvalidToken
+
         instance = super().from_db(db, field_names, values)
 
         for field in self.encrypted_fields:
             field_value = getattr(instance, field, None)
-            setattr(instance, field, ansible_encryption.decrypt_string(field_value))
+            try:
+                setattr(instance, field, ansible_encryption.decrypt_string(field_value))
+            except InvalidToken:
+                logger.critical(
+                    "Failed to decrypt field %r on %s (pk=%r): the SECRET_KEY may have changed. "
+                    "Restore the original SECRET_KEY that encrypted this database, then restart. "
+                    "Re-raising to prevent the model from loading with corrupted data.",
+                    field,
+                    self.__name__,
+                    getattr(instance, 'pk', None),
+                )
+                raise
 
         return instance
 

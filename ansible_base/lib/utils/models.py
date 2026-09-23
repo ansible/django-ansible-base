@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from itertools import chain
 from typing import TYPE_CHECKING, Optional
@@ -101,18 +103,53 @@ class NotARealException(Exception):
     pass
 
 
-def get_system_user() -> Optional[AbstractUser]:
+_system_user_local = threading.local()
 
+
+@contextmanager
+def cached_system_user():
+    """Cache the system user for the duration of the context.
+
+    Within this context, get_system_user() returns the cached instance
+    instead of querying the DB or Redis on every call. Use this to avoid
+    redundant lookups during bulk operations like cascade deletes where
+    get_system_user() may be called thousands of times via activity
+    stream signals.
+
+    Re-entrant: nested calls are no-ops.
+    """
+    if getattr(_system_user_local, 'cached', None) is not None:
+        yield
+        return
+    user = get_system_user()
+    _system_user_local.cached = (get_system_username()[0], user)
+    try:
+        yield
+    finally:
+        _system_user_local.cached = None
+
+
+def clear_system_user_cache():
+    _system_user_local.cached = None
+
+
+def get_system_user() -> Optional[AbstractUser]:
     from ansible_base.lib.abstract_models.user import AbstractDABUser
 
     system_username, setting_name = get_system_username()
+
+    cached = getattr(_system_user_local, 'cached', None)
+    if cached is not None:
+        cached_username, cached_user = cached
+        if cached_username == system_username:
+            return cached_user
+
     user_model = get_user_model()
 
     # If we use subclass of AbstractDABUser ensure we use manager for unfiltered queryset
     user_manager = user_model.all_objects if issubclass(user_model, AbstractDABUser) else user_model.objects
 
     system_user = user_manager.filter(username=system_username).first()
-    # We are using a global variable to try and track if this thread has already spit out the message, if so ignore
     if system_username is not None and system_user is None:
         logger.error(
             _(
@@ -299,7 +336,11 @@ def diff(
                 continue
 
             if all_values_as_strings:
-                if getattr(obj, field) is None:
+                # Use attname (e.g. owner_id) for FK fields to avoid
+                # triggering a lazy-load SELECT for the related object.
+                # value_to_string() only needs the raw PK anyway.
+                check_attr = field_obj.attname if hasattr(field_obj, 'attname') else field
+                if getattr(obj, check_attr) is None:
                     value = None
                 else:
                     value = field_obj.value_to_string(obj)

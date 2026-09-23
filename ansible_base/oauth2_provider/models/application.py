@@ -88,6 +88,11 @@ class OAuth2Application(NamedCommonModel, oauth2_models.AbstractApplication, act
         max_length=32, choices=CLIENT_TYPES, help_text=_('Set to Public or Confidential depending on how secure the client device is.')
     )
     skip_authorization = models.BooleanField(default=False, help_text=_('Set True to skip authorization step for completely trusted applications.'))
+    pkce_required = models.BooleanField(
+        default=True,
+        verbose_name=_('PKCE Required'),
+        help_text=_('When True, clients must use PKCE (send code_challenge) when requesting authorization codes for this application.'),
+    )
     authorization_grant_type = models.CharField(
         max_length=32, choices=GRANT_TYPES, help_text=_('The Grant type the user must use for acquire tokens for this application.')
     )

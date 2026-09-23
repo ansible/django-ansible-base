@@ -6,6 +6,7 @@ from ansible_base.rbac.role_sync_utils import (
     _SKIP,
     AssignmentTuple,
     _collect_assignment_tuples,
+    _is_resource_registered,
     _resolve_object_ansible_id,
     get_content_object,
     get_local_assignments,
@@ -52,6 +53,98 @@ def test_get_content_object_rejects_none_content_type():
     at = AssignmentTuple('user1', 'obj1', 'Admin', 'user')
     with pytest.raises(ValueError, match="content_type"):
         get_content_object(rd, at)
+
+
+@pytest.mark.django_db
+def test_get_content_object_resolves_uuid_via_resource_table():
+    """get_content_object resolves a UUID ansible_id through the Resource
+    table for non-org/team content types instead of crashing with
+    'Field id expected a number'."""
+    from ansible_base.authentication.models import Authenticator
+    from ansible_base.rbac.models import DABContentType, RoleDefinition
+
+    authenticator = Authenticator.objects.create(
+        name='UUID Test Auth',
+        type='ansible_base.authentication.authenticator_plugins.local',
+    )
+
+    auth_ct = DABContentType.objects.get_for_model(Authenticator)
+    rd = RoleDefinition.objects.create(name='Auth Read', content_type=auth_ct, managed=True)
+
+    auth_resource = Resource.get_resource_for_object(authenticator)
+    at = AssignmentTuple(
+        actor_ansible_id='unused',
+        ansible_id_or_pk=str(auth_resource.ansible_id),
+        role_definition_name='Auth Read',
+        assignment_type='user',
+    )
+
+    result = get_content_object(rd, at)
+    assert result == authenticator
+
+
+@pytest.mark.django_db
+def test_get_content_object_falls_back_to_pk_lookup():
+    """get_content_object falls back to direct PK lookup when the value
+    is not a UUID in the Resource table."""
+    from ansible_base.rbac.models import DABContentType, RoleDefinition
+    from test_app.models import Inventory
+
+    inventory = Inventory.objects.create(name='PK Fallback Inventory')
+    inv_ct = DABContentType.objects.get_for_model(Inventory)
+    rd = RoleDefinition.objects.create(name='Inventory PK Read', content_type=inv_ct, managed=True)
+
+    at = AssignmentTuple(
+        actor_ansible_id='unused',
+        ansible_id_or_pk=str(inventory.pk),
+        role_definition_name='Inventory PK Read',
+        assignment_type='user',
+    )
+
+    result = get_content_object(rd, at)
+    assert result == inventory
+
+
+# ---------------------------------------------------------------------------
+# _is_resource_registered
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_is_resource_registered_both_branches():
+    """Exercise both branches of _is_resource_registered in a single test.
+
+    Covers both branches in one worker to ensure pytest-xdist merges
+    branch coverage correctly.
+    """
+    from django.conf import settings
+    from django.test.utils import override_settings
+
+    from ansible_base.resource_registry.registry import get_registry
+    from test_app.models import Organization
+
+    assert _is_resource_registered(Organization) is True
+    assert get_registry() is not None
+
+    with override_settings():
+        delattr(settings, 'ANSIBLE_BASE_RESOURCE_CONFIG_MODULE')
+        assert _is_resource_registered(Organization) is False
+        assert get_registry() is None
+
+
+@pytest.mark.django_db
+def test_is_resource_registered_returns_true_for_registered_model():
+    """_is_resource_registered returns True for models in the resource registry."""
+    from test_app.models import Organization
+
+    assert _is_resource_registered(Organization) is True
+
+
+@pytest.mark.django_db
+def test_is_resource_registered_returns_false_for_unregistered_model():
+    """_is_resource_registered returns False for models not in the registry."""
+    unregistered = mock.Mock(_meta=mock.Mock(label='fake_app.FakeModel'))
+    assert _is_resource_registered(unregistered) is False
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,10 @@
 import pytest
 from django import VERSION
 from django.contrib.contenttypes.models import ContentType
+from django.db.models import F
 
+from ansible_base.rbac.models import RoleDefinition, RoleUserAssignment
+from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.resource_registry.models import Resource, ResourceType
 from test_app.models import Inventory, Organization
 
@@ -189,6 +192,90 @@ def test_resource_field_prefetch_resource_type_from_organization(organization, o
     expected_resource_type = ResourceType.objects.get(content_type=org_ctype)
     for org_pk, resource_type_pk in resource_type_data.items():
         assert resource_type_pk == expected_resource_type.pk
+
+
+@pytest.mark.django_db
+def test_assignment_resource_field_f_annotation(admin_user, organization):
+    """Test that F('resource__ansible_id') produces a JOIN-based annotation on assignment models."""
+    org_ct = ContentType.objects.get_for_model(Organization)
+    org_resource = Resource.objects.get(object_id=str(organization.pk), content_type=org_ct)
+    rd = RoleDefinition.objects.create_from_permissions(
+        name='test-org-view',
+        permissions=['view_organization'],
+        content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
+    )
+    rd.give_permission(admin_user, organization)
+
+    qs = RoleUserAssignment.objects.filter(user=admin_user, role_definition=rd).annotate(_ansible_id=F('resource__ansible_id'))
+    assignment = qs.first()
+    assert assignment is not None
+    assert str(assignment._ansible_id) == str(org_resource.ansible_id)
+
+
+@pytest.mark.django_db
+def test_assignment_resource_field_select_related(admin_user, organization):
+    """Test select_related('resource') on assignment models."""
+    org_ct = ContentType.objects.get_for_model(Organization)
+    org_resource = Resource.objects.get(object_id=str(organization.pk), content_type=org_ct)
+    rd = RoleDefinition.objects.create_from_permissions(
+        name='test-org-view-sr',
+        permissions=['view_organization'],
+        content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
+    )
+    rd.give_permission(admin_user, organization)
+
+    qs = RoleUserAssignment.objects.filter(user=admin_user, role_definition=rd).select_related('resource')
+    assignment = qs.first()
+    assert assignment is not None
+    assert assignment.resource is not None
+    assert assignment.resource.ansible_id == org_resource.ansible_id
+
+
+@pytest.mark.django_db
+def test_assignment_resource_field_lazy_access(admin_user, organization):
+    """Test lazy instance access on assignment.resource (exercises get_extra_descriptor_filter)."""
+    org_ct = ContentType.objects.get_for_model(Organization)
+    org_resource = Resource.objects.get(object_id=str(organization.pk), content_type=org_ct)
+    rd = RoleDefinition.objects.create_from_permissions(
+        name='test-org-view-lazy',
+        permissions=['view_organization'],
+        content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
+    )
+    rd.give_permission(admin_user, organization)
+
+    assignment = RoleUserAssignment.objects.filter(user=admin_user, role_definition=rd).first()
+    assert assignment.resource.ansible_id == org_resource.ansible_id
+
+
+@pytest.mark.django_db
+def test_assignment_resource_field_null_object(admin_user):
+    """Test that system-wide assignments (no content_type/object_id) return None for resource."""
+    rd = RoleDefinition.objects.create_from_permissions(
+        name='test-global-view',
+        permissions=['view_organization'],
+        content_type=None,
+    )
+    rd.give_global_permission(admin_user)
+
+    assignment = RoleUserAssignment.objects.filter(user=admin_user, role_definition=rd).select_related('resource').first()
+    assert assignment is not None
+    assert assignment.resource is None
+
+
+@pytest.mark.django_db
+def test_assignment_resource_excluded_from_summary_fields(admin_user, organization):
+    """Test that resource is excluded from summary_fields via ignore_relations."""
+    rd = RoleDefinition.objects.create_from_permissions(
+        name='test-org-view-sf',
+        permissions=['view_organization'],
+        content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
+    )
+    rd.give_permission(admin_user, organization)
+
+    assignment = RoleUserAssignment.objects.filter(user=admin_user, role_definition=rd).first()
+    assert 'resource' in type(assignment).ignore_relations
+    summary = assignment.get_summary_fields()
+    assert 'resource' not in summary
 
 
 @pytest.mark.skipif(VERSION[0] < 5, reason='get_prefetch_querysets() is only valid for Django 5+')

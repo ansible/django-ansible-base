@@ -21,7 +21,7 @@ from ansible_base.observability.propagation import outgoing_request_hook, reques
 
 
 def _setup_tracing(service_name: Optional[str] = None, span_exporter: Optional[SpanExporter] = None) -> Resource:
-    resource = Resource(attributes={SERVICE_NAME: service_name})
+    resource = Resource(attributes={SERVICE_NAME: service_name or "aap-generic"})
     provider = TracerProvider(resource=resource)
     trace.set_tracer_provider(provider)
 

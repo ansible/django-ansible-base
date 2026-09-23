@@ -28,6 +28,13 @@ urlpatterns = [
     path('api/v1/otel/observability-headers-start/', views.observability_headers_start, name='otel-observability-headers-start'),
     path('api/v1/otel/observability-headers-echo/', views.observability_headers_echo, name='otel-observability-headers-echo'),
     path('api/v1/timeout_view/', views.timeout_view, name='test-timeout-view'),
+    # Profile stories
+    path('api/v1/profile-stories/', views.profile_stories_root, name='profile-stories'),
+    path('api/v1/profile-stories/org-delete/', views.org_delete_root, name='profile-stories-org-delete'),
+    path('api/v1/profile-stories/org-delete/populate/', views.org_delete_populate, name='org-delete-populate'),
+    path('api/v1/profile-stories/org-delete/bare/', views.org_delete_bare, name='org-delete-bare'),
+    path('api/v1/profile-stories/org-delete/deferred/', views.org_delete_deferred, name='org-delete-deferred'),
+    path('api/v1/profile-stories/org-delete/optimized/', views.org_delete_all_optimized, name='org-delete-optimized'),
     path('login/', include('rest_framework.urls')),
     path("__debug__/", include("debug_toolbar.urls")),
 ] + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
