@@ -3,7 +3,7 @@ import pytest
 from ansible_base.rbac.caching import object_roles_for_parents, recompute_role_evaluations
 from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation, RoleEvaluationUUID
 from ansible_base.rbac.permission_registry import permission_registry
-from ansible_base.rbac.triggers import _fast_create_evaluations, get_parent_ids
+from ansible_base.rbac.triggers import get_parent_ids
 from test_app.models import Inventory, Organization, UUIDModel
 
 
@@ -122,9 +122,7 @@ def test_fast_create_uuid_pk(organization, org_inv_rd, team, member_rd, rando):
     obj = UUIDModel.objects.create(organization=organization)
     ct = permission_registry.content_type_model.objects.get_for_model(obj)
 
-    fast_evals = set(
-        RoleEvaluationUUID.objects.filter(object_id=obj.pk, content_type_id=ct.id).values_list('codename', 'content_type_id', 'role_id')
-    )
+    fast_evals = set(RoleEvaluationUUID.objects.filter(object_id=obj.pk, content_type_id=ct.id).values_list('codename', 'content_type_id', 'role_id'))
     assert len(fast_evals) > 0
 
     # Verify against recompute
@@ -170,6 +168,7 @@ def test_fast_create_multiple_teams(organization, org_inv_rd, member_rd):
     teams = []
     for i in range(5):
         from test_app.models import User
+
         t = permission_registry.team_model.objects.create(name=f'team-{i}', organization=organization)
         u = User.objects.create(username=f'user-{i}')
         member_rd.give_permission(u, t)

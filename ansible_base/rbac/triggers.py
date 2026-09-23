@@ -406,7 +406,9 @@ def _fast_create_evaluations(instance, object_pk, object_ct_id):
         DABPermission.objects.filter(
             role_definitions__id__in=org_rd_ids,
             content_type_id=object_ct_id,
-        ).values_list('codename', 'role_definitions__id').distinct()
+        )
+        .values_list('codename', 'role_definitions__id')
+        .distinct()
     )
 
     rd_to_codenames = defaultdict(set)
@@ -425,15 +427,19 @@ def _fast_create_evaluations(instance, object_pk, object_ct_id):
     # construct all the evaluations in memory first
     for role in org_roles:
         for codename in rd_to_codenames.get(role.role_definition_id, set()):
-            evaluations.append(eval_model(
-                codename=codename, content_type_id=object_ct_id,
-                object_id=object_pk, role=role,
-            ))
+            evaluations.append(
+                eval_model(
+                    codename=codename,
+                    content_type_id=object_ct_id,
+                    object_id=object_pk,
+                    role=role,
+                )
+            )
 
     # find teams assigned to org roles with matching permissions,
     # then create evaluations for their Team Member roles.
     # this assumes that an object only has one parent
-    (parent_ct, parent_id), = parent_cts_and_ids
+    ((parent_ct, parent_id),) = parent_cts_and_ids
 
     # which teams are assigned org level roles that grant permissions
     # on the new object content type?
@@ -450,13 +456,11 @@ def _fast_create_evaluations(instance, object_pk, object_ct_id):
         for team_id, rd_id in team_assignments:
             team_to_codenames[team_id].update(rd_to_codenames[rd_id])
 
-        team_ct = permission_registry.content_type_model.objects.get_for_model(
-            permission_registry.team_model
-        )
+        team_ct = permission_registry.content_type_model.objects.get_for_model(permission_registry.team_model)
 
         team_member_roles = {
-            int(r.object_id): r for r in
-            ObjectRole.objects.filter(
+            int(r.object_id): r
+            for r in ObjectRole.objects.filter(
                 content_type_id=team_ct.id,
                 object_id__in=[str(tid) for tid in team_to_codenames.keys()],
                 role_definition__permissions__codename=permission_registry.team_permission,
@@ -468,10 +472,14 @@ def _fast_create_evaluations(instance, object_pk, object_ct_id):
             role = team_member_roles.get(team_id)
             if role:
                 for codename in codenames:
-                    evaluations.append(eval_model(
-                        codename=codename, content_type_id=object_ct_id,
-                        object_id=object_pk, role=role,
-                    ))
+                    evaluations.append(
+                        eval_model(
+                            codename=codename,
+                            content_type_id=object_ct_id,
+                            object_id=object_pk,
+                            role=role,
+                        )
+                    )
 
     # finally, bulk insert all evaluations
     if evaluations:
