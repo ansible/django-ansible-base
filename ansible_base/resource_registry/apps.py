@@ -25,8 +25,8 @@ def _sync_assignment_resource_ids(sender, instance, created, update_fields, **kw
         app_label=instance.content_type.app_label,
         model=instance.content_type.model,
     )
-    for AssignmentModel in (RoleUserAssignment, RoleTeamAssignment):
-        AssignmentModel.objects.filter(content_type__in=content_types, object_id=instance.object_id).update(object_ansible_id=instance.ansible_id)
+    for assignment_model in (RoleUserAssignment, RoleTeamAssignment):
+        assignment_model.objects.filter(content_type__in=content_types, object_id=instance.object_id).update(object_ansible_id=instance.ansible_id)
 
 
 def _clear_assignment_resource_ids(sender, instance, **kwargs):
@@ -38,8 +38,8 @@ def _clear_assignment_resource_ids(sender, instance, **kwargs):
         app_label=instance.content_type.app_label,
         model=instance.content_type.model,
     )
-    for AssignmentModel in (RoleUserAssignment, RoleTeamAssignment):
-        AssignmentModel.objects.filter(content_type__in=content_types, object_id=instance.object_id).update(object_ansible_id=None)
+    for assignment_model in (RoleUserAssignment, RoleTeamAssignment):
+        assignment_model.objects.filter(content_type__in=content_types, object_id=instance.object_id).update(object_ansible_id=None)
 
 
 def _sync_resource_types(registry, resource_type_cls, content_type_cls):
