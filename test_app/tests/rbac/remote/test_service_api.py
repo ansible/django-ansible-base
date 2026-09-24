@@ -186,6 +186,17 @@ def test_backfill_object_ansible_id(rando, org_admin_rd, organization):
 
 
 @pytest.mark.django_db
+def test_assignment_object_ansible_id_tracks_resource_changes(rando, org_admin_rd, organization):
+    assignment = org_admin_rd.give_permission(rando, organization)
+    resource = organization.resource
+    resource.ansible_id = uuid.uuid4()
+    resource.save(update_fields=['ansible_id'])
+
+    assignment.refresh_from_db()
+    assert assignment.object_ansible_id == resource.ansible_id
+
+
+@pytest.mark.django_db
 def test_resource_ansible_id_filter_remains_supported(admin_api_client, rando, org_admin_rd, organization):
     """Keep the legacy resource__ansible_id service-index filter working."""
     assignment = org_admin_rd.give_permission(rando, organization)

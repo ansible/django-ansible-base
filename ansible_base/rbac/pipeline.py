@@ -6,7 +6,6 @@ from typing import NamedTuple, Union, cast
 
 from django.apps import apps as django_apps
 from django.conf import settings
-from django.contrib.contenttypes.models import ContentType
 from django.db import connection, models
 from django.db.models import Q
 from django.db.models.signals import post_save
@@ -22,7 +21,8 @@ from ansible_base.rbac.caching import (
 from ansible_base.rbac.models.content_type import DABContentType
 from ansible_base.rbac.models.role import AssignmentBase, ObjectRole, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry
-from ansible_base.rbac.remote import RemoteObject, get_local_resource_services
+from ansible_base.rbac.remote import RemoteObject
+from ansible_base.rbac.resource_queries import resolve_resource_ids
 from ansible_base.rbac.validators import validate_assignment, validate_team_assignment_enabled
 
 logger = logging.getLogger(__name__)
@@ -100,38 +100,15 @@ def _batch_resolve_object_ansible_ids(resolved: Sequence[ResolvedAssignment]) ->
     if not resolved or not django_apps.is_installed('ansible_base.resource_registry'):
         return {}
 
-    local_services = get_local_resource_services()
     object_ids_by_type: dict[tuple[str, str], set[str]] = {}
+    services_by_type: dict[tuple[str, str], set[str]] = {}
     for assignment in resolved:
         content_type = assignment.content_type
-        if content_type.service in local_services:
-            object_ids_by_type.setdefault((content_type.app_label, content_type.model), set()).add(assignment.object_id)
+        content_type_key = (content_type.app_label, content_type.model)
+        object_ids_by_type.setdefault(content_type_key, set()).add(assignment.object_id)
+        services_by_type.setdefault(content_type_key, set()).add(content_type.service)
 
-    if not object_ids_by_type:
-        return {}
-
-    content_type_filter = Q()
-    for app_label, model in object_ids_by_type:
-        content_type_filter |= Q(app_label=app_label, model=model)
-    django_content_types = list(ContentType.objects.filter(content_type_filter).values('id', 'app_label', 'model'))
-    if not django_content_types:
-        return {}
-
-    resource_filter = Q()
-    for content_type in django_content_types:
-        resource_filter |= Q(
-            content_type_id=content_type['id'],
-            object_id__in=object_ids_by_type[(content_type['app_label'], content_type['model'])],
-        )
-    if not resource_filter:
-        return {}
-
-    from ansible_base.resource_registry.models import Resource
-
-    return {
-        (row['content_type__app_label'], row['content_type__model'], row['object_id']): str(row['ansible_id'])
-        for row in Resource.objects.filter(resource_filter).values('content_type__app_label', 'content_type__model', 'object_id', 'ansible_id')
-    }
+    return resolve_resource_ids(object_ids_by_type, services_by_type)
 
 
 def _lookup_object_roles(resolved: list[ResolvedAssignment]) -> ObjectRoleLookup:

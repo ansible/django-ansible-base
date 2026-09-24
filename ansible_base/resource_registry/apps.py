@@ -13,6 +13,35 @@ from ansible_base.resource_registry.utils.settings import resource_server_define
 logger = logging.getLogger("ansible_base.resource_registry.apps")
 
 
+def _sync_assignment_resource_ids(sender, instance, created, update_fields, **kwargs):
+    if not created and update_fields is not None and 'ansible_id' not in update_fields:
+        return
+
+    from ansible_base.rbac.models import DABContentType, RoleTeamAssignment, RoleUserAssignment
+    from ansible_base.rbac.remote import get_local_resource_services
+
+    content_types = DABContentType.objects.filter(
+        service__in=get_local_resource_services(),
+        app_label=instance.content_type.app_label,
+        model=instance.content_type.model,
+    )
+    for AssignmentModel in (RoleUserAssignment, RoleTeamAssignment):
+        AssignmentModel.objects.filter(content_type__in=content_types, object_id=instance.object_id).update(object_ansible_id=instance.ansible_id)
+
+
+def _clear_assignment_resource_ids(sender, instance, **kwargs):
+    from ansible_base.rbac.models import DABContentType, RoleTeamAssignment, RoleUserAssignment
+    from ansible_base.rbac.remote import get_local_resource_services
+
+    content_types = DABContentType.objects.filter(
+        service__in=get_local_resource_services(),
+        app_label=instance.content_type.app_label,
+        model=instance.content_type.model,
+    )
+    for AssignmentModel in (RoleUserAssignment, RoleTeamAssignment):
+        AssignmentModel.objects.filter(content_type__in=content_types, object_id=instance.object_id).update(object_ansible_id=None)
+
+
 def _sync_resource_types(registry, resource_type_cls, content_type_cls):
     """Create or update ResourceType rows for every resource in the registry."""
     for key, resource_config in registry.get_resources().items():
@@ -211,6 +240,14 @@ class ResourceRegistryConfig(AppConfig):
     verbose_name = "Service resources API"
 
     def ready(self):
+        from django.apps import apps
+
+        if apps.is_installed('ansible_base.rbac'):
+            from ansible_base.resource_registry.models import Resource
+
+            signals.post_save.connect(_sync_assignment_resource_ids, sender=Resource, dispatch_uid='sync_assignment_resource_ids')
+            signals.post_delete.connect(_clear_assignment_resource_ids, sender=Resource, dispatch_uid='clear_assignment_resource_ids')
+
         connect_resource_signals(sender=None)
         signals.pre_migrate.connect(disconnect_resource_signals, sender=self)
         signals.post_migrate.connect(initialize_resources, sender=self)
