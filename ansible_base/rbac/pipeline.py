@@ -43,15 +43,18 @@ def _resolve_content_object(obj: models.Model | RemoteObject) -> tuple[DABConten
     """Resolve content_type, object_id, and parent_reference from a content object.
 
     For RemoteObject: uses its own attributes directly.
-    For local Django models: uses _meta (no extra query), empty parent_reference.
+    For local Django models: resolves parent_reference from the registered parent FK.
     """
     if isinstance(obj, RemoteObject):
         return cast(DABContentType, obj.content_type), str(obj.object_id), str(obj.parent_reference) if obj.parent_reference else ''
-    return (
-        cast(DABContentType, DABContentType.objects.get_for_model(obj)),
-        str(obj._meta.pk.get_db_prep_value(obj.pk, connection)),
-        '',
-    )
+    ct = cast(DABContentType, DABContentType.objects.get_for_model(obj))
+    object_id = str(obj._meta.pk.get_db_prep_value(obj.pk, connection))
+    parent_field_name = permission_registry.get_parent_fd_name(type(obj))
+    if parent_field_name:
+        parent_id = getattr(obj, f'{parent_field_name}_id', None)
+        if parent_id is not None:
+            return ct, object_id, str(parent_id)
+    return ct, object_id, ''
 
 
 def _resolve_triples(triples: Iterable[PermissionTriple]) -> list[ResolvedAssignment]:
@@ -113,14 +116,16 @@ def _lookup_object_roles(resolved: list[ResolvedAssignment]) -> ObjectRoleLookup
 def _ensure_object_roles(requested_assignments: list[ResolvedAssignment]) -> ObjectRoleLookup:
     """Look up existing ObjectRoles, create any that are missing, and return the full lookup."""
     object_ids_by_rd: dict[int, tuple[int, set[str]]] = {}
-    parent_refs: dict[str, str] = {}
+    # Key by (rd_id, object_id) so batches with the same object_id across different
+    # role definitions / content types do not overwrite each other's parent_reference.
+    parent_refs: dict[tuple[int, str], str] = {}
     for ra in requested_assignments:
         rd_id = ra.role_definition.pk
         if rd_id not in object_ids_by_rd:
             object_ids_by_rd[rd_id] = (ra.content_type.id, set())
         object_ids_by_rd[rd_id][1].add(ra.object_id)
         if ra.parent_reference:
-            parent_refs[ra.object_id] = ra.parent_reference
+            parent_refs[(rd_id, ra.object_id)] = ra.parent_reference
 
     lookup: ObjectRoleLookup = {}
     for rd_id, (ct_id, object_ids) in object_ids_by_rd.items():
@@ -129,7 +134,15 @@ def _ensure_object_roles(requested_assignments: list[ResolvedAssignment]) -> Obj
         missing = [oid for oid in object_ids if (rd_id, oid) not in lookup]
         if missing:
             ObjectRole.objects.bulk_create(
-                [ObjectRole(role_definition_id=rd_id, content_type_id=ct_id, object_id=oid, parent_reference=parent_refs.get(oid, '')) for oid in missing],
+                [
+                    ObjectRole(
+                        role_definition_id=rd_id,
+                        content_type_id=ct_id,
+                        object_id=oid,
+                        parent_reference=parent_refs.get((rd_id, oid), ''),
+                    )
+                    for oid in missing
+                ],
                 ignore_conflicts=True,
             )
             # Re-fetch to get PKs — bulk_create(ignore_conflicts=True) doesn't populate them.
