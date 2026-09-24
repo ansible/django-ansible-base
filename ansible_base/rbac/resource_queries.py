@@ -38,7 +38,7 @@ def resolve_resource_ids(
         content_type_model = ContentType
 
     content_type_filter = Q()
-    for app_label, model in local_types:
+    for (app_label, model), _object_ids in local_types.items():
         content_type_filter |= Q(app_label=app_label, model=model)
     content_type_manager = content_type_model.objects.db_manager(using) if using else content_type_model.objects
     django_content_types = list(content_type_manager.filter(content_type_filter).values('id', 'app_label', 'model'))
