@@ -7,7 +7,7 @@ from rest_framework.exceptions import ValidationError
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import DABContentType, DABPermission, ObjectRole, RoleDefinition, RoleEvaluation
 from ansible_base.rbac.validators import validate_permissions_for_model
-from test_app.models import ExampleEvent, Organization
+from test_app.models import ExampleEvent, Inventory, Organization
 
 
 @pytest.mark.django_db
@@ -19,6 +19,63 @@ def test_reuse_by_permission_list():
     # Will ignore name in favor of permissions
     rd2, created = RoleDefinition.objects.get_or_create(permissions=demo_permissions, name='test-deleter-two')
     assert (not created) and (rd2 == rd1)
+
+
+@pytest.mark.django_db
+def test_reuse_by_permission_list_respects_content_type():
+    """A role scoped to one content type must not be reused for another just because
+    permission codenames match (org-cascaded permissions vs. a role scoped
+    directly to the child type)."""
+    permissions = ['view_inventory', 'change_inventory']
+    org_ct = DABContentType.objects.get_for_model(Organization)
+    inv_ct = DABContentType.objects.get_for_model(Inventory)
+
+    org_scoped_rd = RoleDefinition.objects.create_from_permissions(permissions=permissions, name='org-scoped-custom-role', content_type=org_ct)
+
+    inv_scoped_rd, created = RoleDefinition.objects.get_or_create(permissions=permissions, name='Inventory Change Compat', defaults={'content_type': inv_ct})
+
+    assert created
+    assert inv_scoped_rd != org_scoped_rd
+    assert inv_scoped_rd.content_type == inv_ct
+
+
+@pytest.mark.django_db
+def test_get_or_create_respects_content_type_id():
+    """Same as test_reuse_by_permission_list_respects_content_type, but passing
+    content_type_id instead of content_type."""
+    permissions = ['view_inventory', 'change_inventory']
+    org_ct = DABContentType.objects.get_for_model(Organization)
+    inv_ct = DABContentType.objects.get_for_model(Inventory)
+
+    org_scoped_rd = RoleDefinition.objects.create_from_permissions(permissions=permissions, name='org-scoped-custom-role-2', content_type=org_ct)
+
+    inv_scoped_rd, created = RoleDefinition.objects.get_or_create(permissions=permissions, name='Inventory Change Compat 2', content_type_id=inv_ct.id)
+
+    assert created
+    assert inv_scoped_rd != org_scoped_rd
+    assert inv_scoped_rd.content_type == inv_ct
+
+
+@pytest.mark.django_db
+def test_reuse_by_permission_list_allows_correctly_scoped_assignment(organization, team, inventory):
+    """End-to-end version of test_reuse_by_permission_list_respects_content_type: the
+    correctly-scoped role returned by get_or_create() must also be assignable via
+    give_permission() without validate_assignment() rejecting it."""
+    permissions = ['view_inventory', 'change_inventory']
+    org_ct = DABContentType.objects.get_for_model(Organization)
+    inv_ct = DABContentType.objects.get_for_model(Inventory)
+
+    RoleDefinition.objects.create_from_permissions(permissions=permissions, name='org-scoped-custom-role-3', content_type=org_ct)
+
+    inv_scoped_rd, created = RoleDefinition.objects.get_or_create(permissions=permissions, name='Inventory Change Compat 3', defaults={'content_type': inv_ct})
+    assert created
+
+    assignment = inv_scoped_rd.give_permission(team, inventory)
+
+    assert assignment is not None
+    assert assignment.role_definition == inv_scoped_rd
+    assert assignment.object_role.content_type == inv_ct
+    assert inventory in Inventory.access_qs(team, 'change')
 
 
 @pytest.mark.django_db
