@@ -57,10 +57,8 @@ def resolve_resource_ids(
         object_ids = tuple(local_types[content_type_key])
         for start in range(0, len(object_ids), RESOURCE_LOOKUP_BATCH_SIZE):
             rows = resource_manager.filter(
-                Q(
-                    **resource_content_type_identity_filter(*content_type_key),
-                    object_id__in=object_ids[start : start + RESOURCE_LOOKUP_BATCH_SIZE],
-                )
+                **resource_content_type_identity_filter(*content_type_key),
+                object_id__in=object_ids[start : start + RESOURCE_LOOKUP_BATCH_SIZE],
             ).values('content_type__app_label', 'content_type__model', 'object_id', 'ansible_id')
             resource_ids.update({(row['content_type__app_label'], row['content_type__model'], row['object_id']): str(row['ansible_id']) for row in rows})
     return resource_ids
