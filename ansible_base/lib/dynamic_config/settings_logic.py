@@ -253,6 +253,9 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         'ALLOW_LOCAL_ASSIGNING_JWT_ROLES': True,
         # API clients can create custom roles that change shared resources
         'ALLOW_SHARED_RESOURCE_CUSTOM_ROLES': False,
+        # Additional shared-resource permissions allowed in custom roles,
+        # keyed by role content type API slug (e.g. shared.organization).
+        'ALLOW_SHARED_RESOURCE_CUSTOM_ROLE_PERMISSIONS': {},
         'MANAGE_ORGANIZATION_AUTH': True,
         # Enforce local permission checks for RemoteObject role assignments
         'ANSIBLE_BASE_ENFORCE_REMOTE_OBJECT_PERMISSIONS': True,
