@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import logging
+import uuid
+from collections import defaultdict
 from collections.abc import Iterable, Sequence
-from typing import NamedTuple, Union, cast
+from itertools import chain
+from typing import Any, NamedTuple, Union, cast
 
+from django.apps import apps as django_apps
 from django.conf import settings
+from django.contrib.contenttypes.models import ContentType
 from django.db import connection, models
 from django.db.models import Q
 from django.db.models.signals import post_save
@@ -25,6 +30,10 @@ from ansible_base.rbac.validators import validate_assignment, validate_team_assi
 
 logger = logging.getLogger(__name__)
 
+# Sentinel distinguishing "ansible_id not yet fetched" from "definitively None"
+# (remote object, global assignment, or resource not found).
+_ANSIBLE_ID_NOT_FETCHED: Any = object()
+
 
 class ResolvedAssignment(NamedTuple):
     role_definition: RoleDefinition
@@ -32,6 +41,7 @@ class ResolvedAssignment(NamedTuple):
     content_type: DABContentType
     object_id: str
     parent_reference: str
+    object_ansible_id: Any = _ANSIBLE_ID_NOT_FETCHED
 
 
 ContentObject = Union[models.Model, RemoteObject]
@@ -39,19 +49,67 @@ PermissionTriple = tuple[RoleDefinition, models.Model, ContentObject]
 ObjectRoleLookup = dict[tuple[int, str], ObjectRole]
 
 
-def _resolve_content_object(obj: models.Model | RemoteObject) -> tuple[DABContentType, str, str]:
-    """Resolve content_type, object_id, and parent_reference from a content object.
+def _resolve_content_object(obj: models.Model | RemoteObject) -> tuple[DABContentType, str, str, Any]:
+    """Resolve content_type, object_id, parent_reference, and object_ansible_id from a content object.
 
-    For RemoteObject: uses its own attributes directly.
-    For local Django models: uses _meta (no extra query), empty parent_reference.
+    For RemoteObject: ansible_id is None (no local Resource).
+    For local Django models: ansible_id is _ANSIBLE_ID_NOT_FETCHED; call _batch_fill_ansible_ids later.
     """
     if isinstance(obj, RemoteObject):
-        return cast(DABContentType, obj.content_type), str(obj.object_id), str(obj.parent_reference) if obj.parent_reference else ''
+        return cast(DABContentType, obj.content_type), str(obj.object_id), str(obj.parent_reference) if obj.parent_reference else '', None
     return (
         cast(DABContentType, DABContentType.objects.get_for_model(obj)),
         str(obj._meta.pk.get_db_prep_value(obj.pk, connection)),
         '',
+        _ANSIBLE_ID_NOT_FETCHED,
     )
+
+
+def _batch_fill_ansible_ids(user_resolved: list[ResolvedAssignment], team_resolved: list[ResolvedAssignment]) -> None:
+    """Fill _ANSIBLE_ID_NOT_FETCHED sentinels in-place across both lists in one shared batch."""
+    if django_apps.is_installed('ansible_base.resource_registry'):
+        from ansible_base.resource_registry.models import Resource
+    else:
+        Resource = None
+
+    distinct_keys = {
+        (ra.content_type.app_label, ra.content_type.model) for ra in chain(user_resolved, team_resolved) if ra.object_ansible_id is _ANSIBLE_ID_NOT_FETCHED
+    }
+    if not distinct_keys:
+        return
+
+    # Resolve DABContentType (app_label, model) pairs to Django model classes.
+    # Remote types not known to this Django install raise LookupError — skip them.
+    model_by_key: dict[tuple[str, str], Any] = {}
+    for key in distinct_keys:
+        try:
+            model_by_key[key] = django_apps.get_model(*key)
+        except LookupError:
+            pass
+
+    # get_for_models issues at most one query for types not yet in Django's built-in cache.
+    dab_ct_by_model = ContentType.objects.get_for_models(*model_by_key.values())
+    dab_ct_by_key = {key: dab_ct_by_model[model] for key, model in model_by_key.items()}
+
+    # Collect object_ids per content type for batched Resource queries.
+    by_django_ct: defaultdict[int, set[str]] = defaultdict(set)
+    for ra in chain(user_resolved, team_resolved):
+        if ra.object_ansible_id is _ANSIBLE_ID_NOT_FETCHED:
+            django_ct = dab_ct_by_key.get((ra.content_type.app_label, ra.content_type.model))
+            if django_ct is not None:
+                by_django_ct[django_ct.id].add(ra.object_id)
+
+    ansible_id_map: dict[tuple[int, str], uuid.UUID] = {}
+    if Resource is not None:
+        for django_ct_id, object_ids in by_django_ct.items():
+            for row in Resource.objects.filter(content_type_id=django_ct_id, object_id__in=object_ids).values('object_id', 'ansible_id'):
+                ansible_id_map[(django_ct_id, row['object_id'])] = row['ansible_id']
+
+    for resolved in (user_resolved, team_resolved):
+        for i, ra in enumerate(resolved):
+            if ra.object_ansible_id is _ANSIBLE_ID_NOT_FETCHED:
+                django_ct = dab_ct_by_key.get((ra.content_type.app_label, ra.content_type.model))
+                resolved[i] = ra._replace(object_ansible_id=ansible_id_map.get((django_ct.id, ra.object_id)) if django_ct else None)
 
 
 def _resolve_triples(triples: Iterable[PermissionTriple]) -> list[ResolvedAssignment]:
@@ -68,17 +126,17 @@ def _resolve_assignments(
 
     user_resolved: list[ResolvedAssignment] = []
     for rd, actor, obj in user_permissions:
-        obj_ct, object_id, parent_ref = _resolve_content_object(obj)
+        obj_ct, object_id, parent_ref, object_ansible_id = _resolve_content_object(obj)
         key = (rd.pk, obj_ct.id)
         if key not in validated_pairs:
             validate_assignment(rd, actor, obj)
             validated_pairs.add(key)
-        user_resolved.append(ResolvedAssignment(rd, actor, obj_ct, object_id, parent_ref))
+        user_resolved.append(ResolvedAssignment(rd, actor, obj_ct, object_id, parent_ref, object_ansible_id))
 
     team_validated_pairs: set[tuple[int, int]] = set()
     team_resolved: list[ResolvedAssignment] = []
     for rd, actor, obj in team_permissions:
-        obj_ct, object_id, parent_ref = _resolve_content_object(obj)
+        obj_ct, object_id, parent_ref, object_ansible_id = _resolve_content_object(obj)
         key = (rd.pk, obj_ct.id)
         if key not in validated_pairs:
             validate_assignment(rd, actor, obj)
@@ -88,7 +146,7 @@ def _resolve_assignments(
             has_org_member = rd.permissions.filter(codename='member_organization').exists()
             validate_team_assignment_enabled(obj_ct, has_team_perm=has_team_perm, has_org_member=has_org_member)
             team_validated_pairs.add(key)
-        team_resolved.append(ResolvedAssignment(rd, actor, obj_ct, object_id, parent_ref))
+        team_resolved.append(ResolvedAssignment(rd, actor, obj_ct, object_id, parent_ref, object_ansible_id))
 
     return user_resolved, team_resolved
 
@@ -187,6 +245,7 @@ def _create_assignments(
                 role_definition=ra.role_definition,
                 content_type=ra.content_type,
                 object_id=ra.object_id,
+                object_ansible_id=None if ra.object_ansible_id is _ANSIBLE_ID_NOT_FETCHED else ra.object_ansible_id,
                 created_by=created_by,
             )
         )
@@ -211,6 +270,7 @@ def _create_assignments(
                 role_definition=ra.role_definition,
                 content_type=ra.content_type,
                 object_id=ra.object_id,
+                object_ansible_id=None if ra.object_ansible_id is _ANSIBLE_ID_NOT_FETCHED else ra.object_ansible_id,
                 created_by=created_by,
             )
         )
@@ -357,8 +417,10 @@ def give_assignments(
     if not user_resolved and not team_resolved:
         return []
 
-    lookup = _ensure_object_roles(list(user_resolved) + list(team_resolved))
-    assignments = _create_assignments(list(user_resolved), list(team_resolved), lookup, fire_signals_on_create=fire_signals_on_create)
+    _batch_fill_ansible_ids(user_resolved, team_resolved)
+
+    lookup = _ensure_object_roles(list(chain(user_resolved, team_resolved)))
+    assignments = _create_assignments(user_resolved, team_resolved, lookup, fire_signals_on_create=fire_signals_on_create)
     _recompute_after_give(lookup, assignments)
     return assignments
 
