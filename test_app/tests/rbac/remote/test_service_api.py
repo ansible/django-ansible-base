@@ -908,6 +908,25 @@ class TestParentReference:
         obj_role = ObjectRole.objects.get(role_definition=rd, object_id='99')
         assert obj_role.parent_reference == ''
 
+    def test_assign_rejects_non_string_parent_reference(self, admin_api_client, rando):
+        """parent_reference must be a string; reject dict/list payloads."""
+        from ansible_base.rbac.models import DABContentType, DABPermission, RoleDefinition
+
+        remote_ct = DABContentType.objects.create(service='awx', model='remote_inventory', app_label='main')
+        perm = DABPermission.objects.create(codename='use_remote_inventory', content_type=remote_ct)
+        rd = RoleDefinition.objects.create_from_permissions(name='Remote Inv Use', permissions=[perm.api_slug], content_type=remote_ct)
+
+        url = get_relative_url('serviceuserassignment-assign')
+        data = {
+            "role_definition": rd.name,
+            "user_ansible_id": str(rando.resource.ansible_id),
+            "object_id": "99",
+            "parent_reference": {"id": 12},
+        }
+        response = admin_api_client.post(url, data=data, format='json')
+        assert response.status_code == 400, response.data
+        assert 'parent_reference' in response.data
+
     def test_list_response_includes_parent_reference_for_local_object(self, admin_api_client, rando, inv_rd, inventory):
         """parent_reference should be resolved from the local model's organization FK."""
         inv_rd.give_permission(rando, inventory)

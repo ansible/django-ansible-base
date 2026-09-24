@@ -100,7 +100,12 @@ class BaseAssignmentSerializer(serializers.ModelSerializer):
 
         So this does the mutual validation to assure we have sufficient data.
         """
-        attrs['parent_reference'] = self.initial_data.get('parent_reference', '')
+        parent_reference = self.initial_data.get('parent_reference', '')
+        if parent_reference is None:
+            parent_reference = ''
+        if not isinstance(parent_reference, str):
+            raise serializers.ValidationError({'parent_reference': 'Must be a string.'})
+        attrs['parent_reference'] = parent_reference
         rd = attrs['role_definition']
         has_object_id = 'object_id' in attrs and attrs['object_id']
         has_object_ansible_id = 'object_ansible_id' in attrs and attrs['object_ansible_id']
