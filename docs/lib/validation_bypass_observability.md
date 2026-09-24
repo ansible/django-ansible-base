@@ -28,7 +28,7 @@ monitoring and compliance auditing while teams prioritize remediation.
 
 ## North star (AAP-86051)
 
-**Goal:** When **protected** models (registered via `CleanTextMixin` serializers) receive Tier 1 / Tier 2 text through an **ORM bypass path**, emit a structured **WARNING** (`ORM bypass:`, `ORM bypass (bulk_…):`, or `ORM bypass (queryset_update):`) with caller attribution. **Never block** the write.
+**Goal:** When **protected** models (registered via `CleanTextMixin` serializers) receive Tier 1 / Tier 2 text through an **ORM bypass path**, emit a structured **WARNING** (`ORM bypass (post_save):`, `ORM bypass (bulk_…):`, or `ORM bypass (queryset_update):`) with caller attribution. **Never block** the write.
 
 | In scope | Boundaries (what this work does **not** change) |
 |----------|--------------------------------------------------|
@@ -170,7 +170,7 @@ the largest blind spot** even when single-instance logging is enabled.
 | `ansible_base.lib.utils.bulk_validation_audit` | `audit_bulk_model_instances`, `audit_bulk_item_dicts` (`bulk_create` / `bulk_update` instances or dicts); `audit_queryset_update`, `audited_queryset_update` (literal `QuerySet.update()` kwargs) |
 | `ansible_base.lib.serializers.mixins.CleanTextMixin` | API Tier 1/2 validation; registers `Meta.model` with the bypass registry via `register_protected_model` |
 | `ansible_base.lib.utils.validation` | `validate_resource_name`, `validate_free_text` (rules reused by mixin and bypass logs) |
-| `ansible_base.observability.apps` | Calls `register_validation_signals()` in `ready()` when the observability app is installed (services may also call it from their own `AppConfig`) |
+| `ansible_base.observability.apps` | **`ansible_base.observability` must be in `INSTALLED_APPS`** so `ObservabilityConfig.ready()` calls `register_validation_signals()` and wires `post_save` for ORM-direct writes (services may also call `register_validation_signals()` from their own `AppConfig`) |
 
 ### Detection flow (single-instance saves)
 
@@ -178,7 +178,7 @@ the largest blind spot** even when single-instance logging is enabled.
 2. **Context var:** Skip if the save originated from `CleanTextMixin.save()` (see [Serializer path vs ORM bypass logging](#serializer-path-vs-orm-bypass-logging-no-double-logging)).
 3. **Fields:** Same discovery as the mixin (`CharField` / `TextField`), minus registered `excluded_fields`.
 4. **Validate:** Run Tier 1 on `name_fields`, Tier 2 on other text fields.
-5. **Log:** Only if step 4 finds a violation — emit WARNING with resource type, field, tier, sanitized reason, and caller. **Independent of** `ENHANCED_INPUT_VALIDATION_ENABLED`. Valid ORM field values produce **no** `ORM bypass:` line.
+5. **Log:** Only if step 4 finds a violation — emit WARNING with resource type, field, tier, sanitized reason, and caller. **Independent of** `ENHANCED_INPUT_VALIDATION_ENABLED`. Valid ORM field values produce **no** `ORM bypass (`…`) log line.
 
 ### Serializer path vs ORM bypass logging (no double logging)
 
@@ -188,17 +188,17 @@ enforcement toggle.
 | Mechanism | Logger / message | When it runs | Blocks save? |
 |-----------|------------------|--------------|--------------|
 | **`CleanTextMixin.validate()`** | Serializer mixin (`Validation rejected …`) | DRF `is_valid()` on serializers that use the mixin | Only if **`ENHANCED_INPUT_VALIDATION_ENABLED`** is **true** (raises `ValidationError` → 400) |
-| **`validation_bypass_logger`** | `ORM bypass: …` | `post_save` on registered models | **Never** (observability only) |
+| **`validation_bypass_logger`** | `ORM bypass (post_save): …` | `post_save` on registered models | **Never** (observability only) |
 
 **Normal API create/update (serializer path):**
 
 1. `validate()` runs Tier 1/2 checks. On violation, the mixin logs **`Validation rejected …`**. If enforcement is **on**, it also raises and the instance is **not** saved. If enforcement is **off**, it does **not** raise; the request may still call `serializer.save()` with values that failed validation.
 2. `CleanTextMixin.save()` sets a **context flag** for the entire model `save()` (including any `post_save` receivers triggered during that save).
-3. `validation_bypass_logger` runs on `post_save` but **returns immediately** while the flag is set — **no** `ORM bypass:` log, even when enforcement is **off** and bad text was persisted.
+3. `validation_bypass_logger` runs on `post_save` but **returns immediately** while the flag is set — **no** `ORM bypass (post_save):` log, even when enforcement is **off** and bad text was persisted.
 
 So double logging is prevented by the **context variable around `serializer.save()`**, not by `ENHANCED_INPUT_VALIDATION_ENABLED`. The toggle controls whether the **API** rejects bad input before save; it does **not** turn the bypass signal on or off.
 
-**ORM-direct path** (shell, tasks, signals that call `.save()` without `CleanTextMixin.save()`, etc.): no context flag. If stored text would fail Tier 1/2, the handler logs **`ORM bypass:`** and still allows the write.
+**ORM-direct path** (shell, tasks, signals that call `.save()` without `CleanTextMixin.save()`, etc.): no context flag. If stored text would fail Tier 1/2, the handler logs **`ORM bypass (post_save):`** and still allows the write.
 
 ### Registry and dynamic serializer configuration
 
@@ -240,10 +240,14 @@ from ansible_base.lib.utils.bulk_validation_audit import (
     audited_queryset_update,
 )
 
-audit_bulk_model_instances(instances, operation="bulk_create")
+instances = audit_bulk_model_instances(instances, operation="bulk_create")
+MyModel.objects.bulk_create(instances)
 # or, before constructing instances:
-audit_bulk_item_dicts(MyModel, item_dicts, operation="bulk_create")
+item_dicts = audit_bulk_item_dicts(MyModel, item_dicts, operation="bulk_create")
 MyModel.objects.bulk_create([MyModel(**d) for d in item_dicts])
+
+# bulk_update: pass update_fields= to audit only columns being written (avoids deferred-field queries).
+audit_bulk_model_instances(instances, operation="bulk_update", update_fields=["description"])
 
 # Literal kwargs only — F(), Case, subqueries are skipped (SQL value unknown).
 audit_queryset_update(MyModel, {"description": user_supplied})
@@ -272,7 +276,7 @@ Services may wrap shared helpers (Controller example: **`audit_bulk_update_insta
 ### Log format (single-instance)
 
 ```
-WARNING ansible_base.lib.utils.validation_signals: ORM bypass: validation rejected 'description' on test_app.Organization (violates Tier 2) [caller: my_app.views.create_org:42]: This field can't include HTML tags, script markup, or unsafe URI schemes.
+WARNING ansible_base.lib.utils.validation_signals: ORM bypass (post_save): validation rejected 'description' on test_app.Organization (violates Tier 2) [caller: my_app.views.create_org:42]: This field can't include HTML tags, script markup, or unsafe URI schemes.
 ```
 
 Raw field values are **not** logged.
@@ -414,7 +418,7 @@ Example pattern:
 ```python
 from ansible_base.lib.utils.bulk_validation_audit import audit_bulk_item_dicts
 
-audit_bulk_item_dicts("bulk_create", rows, model=JobTemplate)
+rows = audit_bulk_item_dicts(JobTemplate, rows, operation="bulk_create")
 JobTemplate.objects.bulk_create([JobTemplate(**r) for r in rows])
 ```
 
@@ -431,7 +435,7 @@ ORM bypass registry. Service wiring epics that add the mixin to more endpoints
 - [ ] `audit_bulk_*` at agreed bulk API / sync / choke-point call sites
 - [ ] `audited_queryset_update` (or `audit_queryset_update`) where [inventory](#queryset-update-inventory) marks **Hook required**
 - [ ] Staging load test on heavily saved registered models (jobs, events, inventory)
-- [ ] Log pipeline alert on `ORM bypass:` and `ORM bypass (bulk_` / `(queryset_update)` prefixes
+- [ ] Log pipeline alert on `ORM bypass (` (e.g. `(post_save)`, `(bulk_create)`, `(queryset_update)`)
 - [ ] Document triage outcomes for bulk / `QuerySet.update()` sites (see [Controller bulk inventory](#why-four-bulk-hook-surfaces-on-controller) and [QuerySet inventory](#queryset-update-inventory))
 
 **Controller (AWX):** merge [awx#16672](https://github.com/ansible/awx/pull/16672) after DAB #1147; platform follow-up includes Hub/Gateway registry wiring, ops alerting, and re-inventory when the registry grows.

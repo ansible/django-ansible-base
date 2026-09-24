@@ -136,37 +136,46 @@ def _caller_allowlist_prefixes() -> tuple[str, ...]:
     return tuple(merged)
 
 
-def _frame_module_and_label(frame_info) -> tuple[str, str]:
-    module = inspect.getmodule(frame_info.frame)
-    module_name = module.__name__ if module else ''
-    label = f"{module_name or 'unknown'}.{frame_info.function}:{frame_info.lineno}"
+def _frame_module_and_label(frame) -> tuple[str, str]:
+    module_name = frame.f_globals.get('__name__', '') or ''
+    label = f"{module_name or 'unknown'}.{frame.f_code.co_name}:{frame.f_lineno}"
     return module_name, label
+
+
+def _iter_caller_frames():
+    """Yield stack frames outward from the caller of ``_get_caller_info`` (cheap walk)."""
+    frame = inspect.currentframe()
+    if frame is not None:
+        frame = frame.f_back
+    while frame is not None:
+        yield frame
+        frame = frame.f_back
 
 
 def _get_caller_info() -> str:
     """Resolve audit caller using allowlist, then denylist, then fallback.
 
-    Walks ``inspect.stack()`` outward from this function (phase 1 → 2 → 3).
+    Walks frames outward from the caller (phase 1 → 2 → 3).
     """
     try:
-        frames = inspect.stack()[1:]
+        frames = list(_iter_caller_frames())
         allowlist = _caller_allowlist_prefixes()
         denylist = tuple(_INTERNAL_CALLER_PREFIXES)
 
         if allowlist:
-            for frame_info in frames:
-                module_name, label = _frame_module_and_label(frame_info)
+            for frame in frames:
+                module_name, label = _frame_module_and_label(frame)
                 if module_name.startswith(allowlist):
                     return label
 
-        for frame_info in frames:
-            module_name, label = _frame_module_and_label(frame_info)
+        for frame in frames:
+            module_name, label = _frame_module_and_label(frame)
             if module_name.startswith(denylist):
                 continue
             return label
 
-        for frame_info in frames:
-            module_name, label = _frame_module_and_label(frame_info)
+        for frame in frames:
+            module_name, label = _frame_module_and_label(frame)
             if module_name.startswith(_FALLBACK_SKIP_PREFIXES):
                 continue
             return label
@@ -174,6 +183,26 @@ def _get_caller_info() -> str:
         return "unknown"
     except Exception:
         return "unknown"
+
+
+def log_orm_bypass_violation(
+    operation: str,
+    field_name: str,
+    resource_type: str,
+    tier: str,
+    caller_info: str,
+    reason: str,
+) -> None:
+    """Emit a structured ORM bypass WARNING (observability only; does not block writes)."""
+    logger.warning(
+        "ORM bypass (%s): validation rejected '%s' on %s (violates %s) [caller: %s]: %s",
+        operation,
+        field_name,
+        resource_type,
+        tier,
+        caller_info,
+        reason,
+    )
 
 
 def _validate_field(field_name: str, value: str, name_fields: frozenset) -> Optional[tuple[str, str]]:
@@ -236,7 +265,7 @@ def validation_bypass_logger(sender, instance: Model, created: bool, **kwargs):
     if not text_fields:
         return
 
-    caller_info = _get_caller_info()
+    caller_info = None
     resource_type = f"{instance._meta.app_label}.{instance._meta.object_name}"
 
     for field_name in text_fields:
@@ -252,8 +281,10 @@ def validation_bypass_logger(sender, instance: Model, created: bool, **kwargs):
 
         if violation:
             tier, reason = violation
-            logger.warning(
-                "ORM bypass: validation rejected '%s' on %s (violates %s) [caller: %s]: %s",
+            if caller_info is None:
+                caller_info = _get_caller_info()
+            log_orm_bypass_violation(
+                "post_save",
                 field_name,
                 resource_type,
                 tier,

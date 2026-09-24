@@ -1089,6 +1089,7 @@ class TestCleanTextMixinPerformance:
         assert long_avg < short_avg * 100, f"Validation time grew disproportionately with text length (2KB: {short_avg:.6f}s/call, 100KB: {long_avg:.6f}s/call)"
 
 
+@pytest.mark.usefixtures('restore_protected_models_registry')
 class TestCleanTextMixinSignalRegistry:
     """ORM bypass model registry (validation_signals) stays aligned with mixin config."""
 

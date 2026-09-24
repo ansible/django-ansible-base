@@ -322,6 +322,7 @@ class TestContextVariableHandling:
         assert _serializer_validation_active.get(False) is False
 
 
+@pytest.mark.usefixtures('restore_protected_models_registry')
 class TestProtectedModelRegistry:
     """Test the CleanTextMixin -> signal model registry."""
 
@@ -379,53 +380,43 @@ class TestProtectedModelRegistry:
         assert 'description' in excluded_fields
 
 
+def _mock_caller_frame(module_name: str, func_name: str, lineno: int, f_back=None):
+    frame = mock.Mock()
+    frame.f_globals = {'__name__': module_name}
+    frame.f_code = mock.Mock()
+    frame.f_code.co_name = func_name
+    frame.f_lineno = lineno
+    frame.f_back = f_back
+    return frame
+
+
+def _patch_caller_frame_chain(outermost_frame):
+    entry = mock.Mock()
+    entry.f_back = outermost_frame
+    return mock.patch.object(validation_signals_module.inspect, 'currentframe', return_value=entry)
+
+
 class TestCallerAttribution:
     """Hybrid allowlist → denylist → fallback caller resolution."""
 
     def test_allowlist_selects_first_matching_frame(self):
         """Phase 1: configured allowlist wins over later denylisted plumbing frames."""
-        frames = []
-        modules = {}
-        for module_name, func in (
-            ('django.db.models.base', 'save_base'),
-            ('my_service.models.base', 'save'),
-            ('my_service.tasks.jobs', 'run_sync'),
-        ):
-            frame_info = mock.Mock()
-            mod = mock.Mock()
-            mod.__name__ = module_name
-            frame_info.frame = mock.Mock()
-            modules[id(frame_info.frame)] = mod
-            frame_info.function = func
-            frame_info.lineno = 99
-            frames.append(frame_info)
+        inner = _mock_caller_frame('my_service.tasks.jobs', 'run_sync', 99)
+        mid = _mock_caller_frame('my_service.models.base', 'save', 99, inner)
+        outer = _mock_caller_frame('django.db.models.base', 'save_base', 99, mid)
 
-        with mock.patch.object(validation_signals_module.inspect, 'stack', return_value=[mock.Mock()] + frames):
-            with mock.patch.object(validation_signals_module.inspect, 'getmodule', side_effect=lambda fr: modules.get(id(fr))):
-                with mock.patch.object(validation_signals_module, '_caller_allowlist_prefixes', return_value=('my_service.tasks',)):
-                    assert _get_caller_info() == 'my_service.tasks.jobs.run_sync:99'
+        with _patch_caller_frame_chain(outer):
+            with mock.patch.object(validation_signals_module, '_caller_allowlist_prefixes', return_value=('my_service.tasks',)):
+                assert _get_caller_info() == 'my_service.tasks.jobs.run_sync:99'
 
     def test_denylist_when_allowlist_empty(self):
         """Phase 2: skip denylisted frames; return first remaining."""
-        frames = []
-        modules = {}
-        for module_name, func in (
-            ('django.db.models.base', 'save_base'),
-            ('real_app.management.commands.import_data', 'handle'),
-        ):
-            frame_info = mock.Mock()
-            mod = mock.Mock()
-            mod.__name__ = module_name
-            frame_info.frame = mock.Mock()
-            modules[id(frame_info.frame)] = mod
-            frame_info.function = func
-            frame_info.lineno = 7
-            frames.append(frame_info)
+        inner = _mock_caller_frame('real_app.management.commands.import_data', 'handle', 7)
+        outer = _mock_caller_frame('django.db.models.base', 'save_base', 99, inner)
 
-        with mock.patch.object(validation_signals_module.inspect, 'stack', return_value=[mock.Mock()] + frames):
-            with mock.patch.object(validation_signals_module.inspect, 'getmodule', side_effect=lambda fr: modules.get(id(fr))):
-                with mock.patch.object(validation_signals_module, '_caller_allowlist_prefixes', return_value=()):
-                    assert _get_caller_info() == 'real_app.management.commands.import_data.handle:7'
+        with _patch_caller_frame_chain(outer):
+            with mock.patch.object(validation_signals_module, '_caller_allowlist_prefixes', return_value=()):
+                assert _get_caller_info() == 'real_app.management.commands.import_data.handle:7'
 
     @pytest.mark.django_db
     @override_settings(CALLER_INFO_APP_MODULES=['test_app.tests.lib.utils'])
@@ -462,39 +453,37 @@ class TestCallerAttribution:
         assert len(validation_signals_module._RUNTIME_ALLOWLIST_PREFIXES) == before + 1
 
     def test_fallback_returns_unknown_when_no_frames(self):
-        with mock.patch.object(validation_signals_module.inspect, 'stack', return_value=[mock.Mock()]):
+        entry = mock.Mock()
+        entry.f_back = None
+        with mock.patch.object(validation_signals_module.inspect, 'currentframe', return_value=entry):
             assert _get_caller_info() == 'unknown'
 
     def test_get_caller_info_returns_unknown_on_stack_failure(self):
-        with mock.patch.object(validation_signals_module.inspect, 'stack', side_effect=RuntimeError('stack broke')):
+        with mock.patch.object(validation_signals_module.inspect, 'currentframe', side_effect=RuntimeError('stack broke')):
             assert _get_caller_info() == 'unknown'
 
     def test_get_caller_info_fallback_phase_after_denylist_exhausted(self):
-        frames = []
-        modules = {}
-        for module_name, func in (
-            ('django.db.models.base', 'save_base'),
-            ('ansible_base.lib.utils.validation_signals', 'validation_bypass_logger'),
-            ('customer_app.sync.tasks', 'import_rows'),
-        ):
-            frame_info = mock.Mock()
-            mod = mock.Mock()
-            mod.__name__ = module_name
-            frame_info.frame = mock.Mock()
-            modules[id(frame_info.frame)] = mod
-            frame_info.function = func
-            frame_info.lineno = 12
-            frames.append(frame_info)
+        inner = _mock_caller_frame('customer_app.sync.tasks', 'import_rows', 12)
+        mid = _mock_caller_frame(LOGGER_NAME, 'validation_bypass_logger', 12, inner)
+        outer = _mock_caller_frame('django.db.models.base', 'save_base', 99, mid)
 
-        with mock.patch.object(validation_signals_module.inspect, 'stack', return_value=[mock.Mock()] + frames):
-            with mock.patch.object(validation_signals_module.inspect, 'getmodule', side_effect=lambda fr: modules.get(id(fr))):
-                with mock.patch.object(validation_signals_module, '_caller_allowlist_prefixes', return_value=()):
-                    assert _get_caller_info() == 'customer_app.sync.tasks.import_rows:12'
+        with _patch_caller_frame_chain(outer):
+            with mock.patch.object(validation_signals_module, '_caller_allowlist_prefixes', return_value=()):
+                assert _get_caller_info() == 'customer_app.sync.tasks.import_rows:12'
 
 
 @pytest.mark.usefixtures('organization_bypass_registry_no_exclusions', 'capture_validation_signal_logs')
 class TestBulkValidationAudit:
     """Bulk ORM paths use shared registry and validators."""
+
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    def test_audit_bulk_model_instances_materializes_generator(self, caplog):
+        def gen():
+            yield Organization(name='Valid', description='<script>x</script>')
+
+        materialized = audit_bulk_model_instances(gen(), operation='bulk_create')
+        assert len(materialized) == 1
+        assert materialized[0].description == '<script>x</script>'
 
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_audit_bulk_model_instances_logs_violation(self, caplog):
@@ -540,6 +529,22 @@ class TestBulkValidationAudit:
         assert len(bulk_logs) == 1
         assert 'name' in bulk_logs[0].message
         assert 'description' not in bulk_logs[0].message
+
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    def test_audit_bulk_update_fields_limits_deferred_field_scan(self, caplog):
+        instances = [
+            Organization(name='Invalid<Name>', description='<script>x</script>'),
+        ]
+        audit_bulk_model_instances(
+            instances,
+            operation='bulk_update',
+            update_fields=['description'],
+        )
+
+        bulk_logs = [r for r in caplog.records if 'ORM bypass (bulk_update)' in r.message]
+        assert len(bulk_logs) == 1
+        assert 'description' in bulk_logs[0].message
+        assert "validation rejected 'name'" not in bulk_logs[0].message
 
     def test_audit_bulk_model_instances_skips_unregistered_instance_type(self, caplog):
         from ansible_base.resource_registry.models import Resource
@@ -609,7 +614,7 @@ class TestBulkValidationAudit:
 
 
 @pytest.mark.django_db
-@pytest.mark.usefixtures('capture_validation_signal_logs')
+@pytest.mark.usefixtures('restore_protected_models_registry', 'capture_validation_signal_logs')
 class TestDynamicRegistryWithOrmBypass:
     """Dynamic excluded_fields affect ORM bypass checks after serializer __init__."""
 
@@ -641,17 +646,25 @@ class TestPerformanceContract:
     """Mock-based guards: keep stack walk and field scans off serializer / unregistered paths."""
 
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
-    def test_serializer_save_does_not_call_inspect_stack(self, mocker):
-        stack = mocker.patch('ansible_base.lib.utils.validation_signals.inspect.stack')
+    def test_serializer_save_does_not_walk_caller_frames(self, mocker):
+        currentframe = mocker.patch('ansible_base.lib.utils.validation_signals.inspect.currentframe')
 
         org = Organization.objects.create(name='PerfSerializerOrg', description='clean description')
-        stack.reset_mock()
+        currentframe.reset_mock()
 
         serializer = OrgSerializer(org, data={'description': 'updated description'}, partial=True)
         assert serializer.is_valid(), serializer.errors
         serializer.save()
 
-        stack.assert_not_called()
+        currentframe.assert_not_called()
+
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    def test_clean_orm_save_does_not_resolve_caller(self, mocker):
+        caller = mocker.patch('ansible_base.lib.utils.validation_signals._get_caller_info')
+
+        Organization.objects.create(name='ValidName', description='clean description')
+
+        caller.assert_not_called()
 
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_orm_bypass_resolves_caller_when_logging(self, mocker):
