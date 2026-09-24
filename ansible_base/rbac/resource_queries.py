@@ -19,7 +19,6 @@ def resolve_resource_ids(
     object_ids_by_type: Mapping[tuple[str, str], Collection[str]],
     services_by_type: Mapping[tuple[str, str], Collection[str]],
     using=None,
-    content_type_model=None,
     resource_model=None,
 ) -> dict[tuple[str, str, str], str]:
     """Resolve local Resource IDs for bounded sets of app/model/object IDs."""
@@ -32,36 +31,49 @@ def resolve_resource_ids(
     if not local_types:
         return {}
 
-    if content_type_model is None:
-        from django.contrib.contenttypes.models import ContentType
-
-        content_type_model = ContentType
-
-    content_type_filter = Q()
-    for (app_label, model), _object_ids in local_types.items():
-        content_type_filter |= Q(app_label=app_label, model=model)
-    content_type_manager = content_type_model.objects.db_manager(using) if using else content_type_model.objects
-    django_content_types = list(content_type_manager.filter(content_type_filter).values('id', 'app_label', 'model'))
-    if not django_content_types:
-        return {}
-
     if resource_model is None:
         from ansible_base.resource_registry.models import Resource
 
         resource_model = Resource
 
     resource_manager = resource_model.objects.db_manager(using) if using else resource_model.objects
-    resource_ids = {}
-    for content_type in django_content_types:
-        content_type_key = (content_type['app_label'], content_type['model'])
-        object_ids = tuple(local_types[content_type_key])
+    lookup_terms = []
+    for content_type_key, object_ids in local_types.items():
+        object_ids = tuple(object_ids)
         for start in range(0, len(object_ids), RESOURCE_LOOKUP_BATCH_SIZE):
-            rows = resource_manager.filter(
-                **resource_content_type_identity_filter(*content_type_key),
-                object_id__in=object_ids[start : start + RESOURCE_LOOKUP_BATCH_SIZE],
-            ).values('content_type__app_label', 'content_type__model', 'object_id', 'ansible_id')
-            resource_ids.update({(row['content_type__app_label'], row['content_type__model'], row['object_id']): str(row['ansible_id']) for row in rows})
+            lookup_terms.append((content_type_key, object_ids[start : start + RESOURCE_LOOKUP_BATCH_SIZE]))
+
+    resource_ids = {}
+    term_batch = []
+    term_object_count = 0
+    for term in lookup_terms:
+        if term_batch and term_object_count + len(term[1]) > RESOURCE_LOOKUP_BATCH_SIZE:
+            resource_ids.update(_fetch_resource_ids(resource_manager, term_batch))
+            term_batch = []
+            term_object_count = 0
+        term_batch.append(term)
+        term_object_count += len(term[1])
+    if term_batch:
+        resource_ids.update(_fetch_resource_ids(resource_manager, term_batch))
     return resource_ids
+
+
+def _fetch_resource_ids(resource_manager, terms):
+    if len(terms) == 1:
+        content_type_key, object_ids = terms[0]
+        rows = resource_manager.filter(
+            **resource_content_type_identity_filter(*content_type_key),
+            object_id__in=object_ids,
+        ).values('content_type__app_label', 'content_type__model', 'object_id', 'ansible_id')
+    else:
+        resource_filter = Q()
+        for content_type_key, object_ids in terms:
+            resource_filter |= Q(
+                **resource_content_type_identity_filter(*content_type_key),
+                object_id__in=object_ids,
+            )
+        rows = resource_manager.filter(resource_filter).values('content_type__app_label', 'content_type__model', 'object_id', 'ansible_id')
+    return {(row['content_type__app_label'], row['content_type__model'], row['object_id']): str(row['ansible_id']) for row in rows}
 
 
 def assignment_resource_annotation(field_name):

@@ -1,8 +1,9 @@
 import logging
 
 from django.apps import AppConfig
+from django.apps import apps as django_apps
 from django.conf import settings
-from django.db.models import Exists, OuterRef, TextField, signals
+from django.db.models import Case, Exists, OuterRef, TextField, UUIDField, Value, When, signals
 from django.db.models.functions import Cast
 from django.db.utils import IntegrityError
 
@@ -14,7 +15,18 @@ logger = logging.getLogger("ansible_base.resource_registry.apps")
 
 
 def _sync_assignment_resource_ids(sender, instance, created, update_fields, **kwargs):
-    if not created and update_fields is not None and 'ansible_id' not in update_fields:
+    if not created:
+        if update_fields is not None and 'ansible_id' not in update_fields:
+            return
+        if update_fields is None and getattr(instance, '_loaded_ansible_id', instance.ansible_id) == instance.ansible_id:
+            return
+
+    _update_assignment_resource_ids(instance.content_type, {str(instance.object_id): instance.ansible_id})
+    instance._loaded_ansible_id = instance.ansible_id
+
+
+def _update_assignment_resource_ids(content_type, resource_ids):
+    if not django_apps.is_installed('ansible_base.rbac') or not resource_ids:
         return
 
     from ansible_base.rbac.models import DABContentType, RoleTeamAssignment, RoleUserAssignment
@@ -22,24 +34,22 @@ def _sync_assignment_resource_ids(sender, instance, created, update_fields, **kw
 
     content_types = DABContentType.objects.filter(
         service__in=get_local_resource_services(),
-        app_label=instance.content_type.app_label,
-        model=instance.content_type.model,
+        app_label=content_type.app_label,
+        model=content_type.model,
+    )
+    object_id_case = Case(
+        *(When(object_id=object_id, then=Value(ansible_id)) for object_id, ansible_id in resource_ids.items()),
+        output_field=UUIDField(),
     )
     for assignment_model in (RoleUserAssignment, RoleTeamAssignment):
-        assignment_model.objects.filter(content_type__in=content_types, object_id=instance.object_id).update(object_ansible_id=instance.ansible_id)
+        assignment_model.objects.filter(content_type__in=content_types, object_id__in=resource_ids).update(object_ansible_id=object_id_case)
 
 
-def _clear_assignment_resource_ids(sender, instance, **kwargs):
-    from ansible_base.rbac.models import DABContentType, RoleTeamAssignment, RoleUserAssignment
-    from ansible_base.rbac.remote import get_local_resource_services
-
-    content_types = DABContentType.objects.filter(
-        service__in=get_local_resource_services(),
-        app_label=instance.content_type.app_label,
-        model=instance.content_type.model,
-    )
-    for assignment_model in (RoleUserAssignment, RoleTeamAssignment):
-        assignment_model.objects.filter(content_type__in=content_types, object_id=instance.object_id).update(object_ansible_id=None)
+def _sync_backfilled_resource_ids(resource_cls, content_type, object_ids):
+    if not object_ids:
+        return
+    resource_ids = dict(resource_cls.objects.filter(content_type=content_type, object_id__in=object_ids).values_list('object_id', 'ansible_id'))
+    _update_assignment_resource_ids(content_type, resource_ids)
 
 
 def _sync_resource_types(registry, resource_type_cls, content_type_cls):
@@ -105,9 +115,11 @@ def _backfill_missing_resources(registry, resource_cls, resource_type_cls, apps)
             )
             if len(data) == batch_size:
                 resource_cls.objects.bulk_create(data, ignore_conflicts=True)
+                _sync_backfilled_resource_ids(resource_cls, r_type.content_type, [resource.object_id for resource in data])
                 data.clear()
         if data:
             resource_cls.objects.bulk_create(data, ignore_conflicts=True)
+            _sync_backfilled_resource_ids(resource_cls, r_type.content_type, [resource.object_id for resource in data])
         r_type.save()
 
 
@@ -246,7 +258,6 @@ class ResourceRegistryConfig(AppConfig):
             from ansible_base.resource_registry.models import Resource
 
             signals.post_save.connect(_sync_assignment_resource_ids, sender=Resource, dispatch_uid='sync_assignment_resource_ids')
-            signals.post_delete.connect(_clear_assignment_resource_ids, sender=Resource, dispatch_uid='clear_assignment_resource_ids')
 
         connect_resource_signals(sender=None)
         signals.pre_migrate.connect(disconnect_resource_signals, sender=self)

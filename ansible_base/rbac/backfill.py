@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 BATCH_SIZE = 1000
 
 
-def _backfill_batch(assignment_model, rows, dab_types, using, content_type_model, resource_model):
+def _backfill_batch(assignment_model, rows, dab_types, using, resource_model):
     object_ids_by_type = {}
     services_by_type = {}
     for row in rows:
@@ -25,7 +25,6 @@ def _backfill_batch(assignment_model, rows, dab_types, using, content_type_model
         object_ids_by_type,
         services_by_type,
         using=using,
-        content_type_model=content_type_model,
         resource_model=resource_model,
     )
     updates = []
@@ -65,7 +64,7 @@ def _get_local_dab_types(assignment_model, dab_content_type_model, db_alias, loc
     }
 
 
-def _backfill_assignment_model(assignment_model, dab_content_type_model, content_type_model, resource_model, local_services, schema_editor, using):
+def _backfill_assignment_model(assignment_model, dab_content_type_model, resource_model, local_services, schema_editor, using):
     db_alias = _get_db_alias(assignment_model, schema_editor, using)
     dab_types = _get_local_dab_types(assignment_model, dab_content_type_model, db_alias, local_services)
     if not dab_types:
@@ -82,10 +81,10 @@ def _backfill_assignment_model(assignment_model, dab_content_type_model, content
     for row in rows:
         batch.append(row)
         if len(batch) == BATCH_SIZE:
-            _backfill_batch(assignment_model, batch, dab_types, db_alias, content_type_model, resource_model)
+            _backfill_batch(assignment_model, batch, dab_types, db_alias, resource_model)
             batch.clear()
     if batch:
-        _backfill_batch(assignment_model, batch, dab_types, db_alias, content_type_model, resource_model)
+        _backfill_batch(assignment_model, batch, dab_types, db_alias, resource_model)
 
 
 def backfill_object_ansible_id(apps, schema_editor=None, using=None):
@@ -99,13 +98,11 @@ def backfill_object_ansible_id(apps, schema_editor=None, using=None):
     except LookupError:
         return
 
-    content_type_model = apps.get_model('contenttypes', 'ContentType')
     local_services = set(get_local_resource_services())
     for assignment_model in (role_user_assignment_model, role_team_assignment_model):
         _backfill_assignment_model(
             assignment_model,
             dab_content_type_model,
-            content_type_model,
             resource_model,
             local_services,
             schema_editor,
