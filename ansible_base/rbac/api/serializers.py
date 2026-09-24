@@ -293,21 +293,25 @@ class AccessListMixin:
         return {"name": role_definition.name, "url": get_url_for_object(role_definition)}
 
     @staticmethod
-    def summarize_assignment_list(assignment_qs, obj_ct):
-        assignment_list = []
-        team_ct = DABContentType.objects.get_for_model(get_team_model())
-        for assignment in assignment_qs.distinct():
-            if assignment.content_type_id is None:
-                perm_type = "global"
-            elif assignment.content_type_id == team_ct.pk:
-                perm_type = "team"
-            elif assignment.content_type_id == obj_ct.pk:
-                perm_type = "direct"
-            else:
-                perm_type = "indirect"
-            assignment_list.append({"type": perm_type, "role_definition": AccessListMixin.summarize_role_definition(assignment.role_definition)})
+    def _classify_assignment_type(content_type_id, obj_ct_id, team_ct_id):
+        if content_type_id is None:
+            return "global"
+        elif content_type_id == team_ct_id:
+            return "team"
+        elif content_type_id == obj_ct_id:
+            return "direct"
+        return "indirect"
 
-        return assignment_list
+    @staticmethod
+    def summarize_assignment_list(assignment_qs, obj_ct):
+        team_ct = DABContentType.objects.get_for_model(get_team_model())
+        return [
+            {
+                "type": AccessListMixin._classify_assignment_type(a.content_type_id, obj_ct.pk, team_ct.pk),
+                "role_definition": AccessListMixin.summarize_role_definition(a.role_definition),
+            }
+            for a in assignment_qs.distinct()
+        ]
 
     def _bulk_fetch_assignments(self, actor_ids):
         """Bulk-fetch and classify role assignments for a page of actors."""
@@ -342,20 +346,15 @@ class AccessListMixin:
             global_filter['role_definition__permissions__content_type'] = ct
         global_assignments = assignment_cls.objects.filter(**global_filter).select_related('role_definition')
 
-        team_ct = DABContentType.objects.get_for_model(get_team_model())
+        team_ct_id = DABContentType.objects.get_for_model(get_team_model()).pk
         assignments_by_actor = {}
         for qs_part in (obj_assignments, global_assignments):
             for a in qs_part.distinct():
                 actor_id = getattr(a, actor_field)
-                if a.content_type_id is None:
-                    perm_type = "global"
-                elif a.content_type_id == team_ct.pk:
-                    perm_type = "team"
-                elif a.content_type_id == ct.pk:
-                    perm_type = "direct"
-                else:
-                    perm_type = "indirect"
-                entry = {"type": perm_type, "role_definition": self.summarize_role_definition(a.role_definition)}
+                entry = {
+                    "type": self._classify_assignment_type(a.content_type_id, ct.pk, team_ct_id),
+                    "role_definition": self.summarize_role_definition(a.role_definition),
+                }
                 assignments_by_actor.setdefault(actor_id, []).append(entry)
         return assignments_by_actor
 
@@ -366,23 +365,11 @@ class AccessListMixin:
         # its own serializer tree so there is no instance-reuse or thread concern.
         if self.parent is not None:
             if not hasattr(self.parent, '_prefetched_assignments'):
-                actors = getattr(self.parent, 'instance', None)
-                if actors is not None:
-                    self.parent._prefetched_assignments = self._bulk_fetch_assignments([a.pk for a in actors])
-            prefetched = getattr(self.parent, '_prefetched_assignments', None)
-            if prefetched is not None:
-                return prefetched.get(actor.pk, [])
+                actors = getattr(self.parent, 'instance', None) or []
+                self.parent._prefetched_assignments = self._bulk_fetch_assignments([a.pk for a in actors])
+            return self.parent._prefetched_assignments.get(actor.pk, [])
 
-        obj = self.context.get("related_object")
-        permission = self.context.get("permission")
-        ct = self.context.get("content_type")
-
-        if permission:
-            assignment_qs = assignment_qs_user_to_obj_perm(actor, obj, permission)
-        else:
-            assignment_qs = assignment_qs_user_to_obj(actor, obj)
-
-        return self.summarize_assignment_list(assignment_qs, ct)
+        return self._bulk_fetch_assignments([actor.pk]).get(actor.pk, [])
 
     def get_url(self, obj) -> str:
         return get_url_for_object(obj)
