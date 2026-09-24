@@ -3,17 +3,19 @@ from typing import Optional
 from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser
-from django.db.models import Model
+from django.db.models import Model, Q
 from django.db.models.query import QuerySet
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import PermissionDenied
 
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.rbac.evaluations import has_super_permission
-from ansible_base.rbac.models import DABPermission, ObjectRole
+from ansible_base.rbac.models import DABContentType, DABPermission, ObjectRole
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.remote import RemoteObject
 from ansible_base.rbac.validators import permissions_allowed_for_role
+
+ContentObject = Model | RemoteObject
 
 
 def visible_users(request_user, queryset=None, always_show_superusers=True, always_show_self=True) -> QuerySet:
@@ -81,34 +83,113 @@ def can_change_user(request_user: Optional[AbstractBaseUser], target_user: Optio
     return not target_user_orgs.exclude(pk__in=org_cls.access_ids_qs(request_user, 'change_organization')).exists()
 
 
-def check_content_obj_permission(request_user, obj) -> None:
+def _model_has_permission_action(cls: type[Model], action: str) -> bool:
+    """Check if a model has a permission for the given action (default or custom)"""
+    if action in cls._meta.default_permissions:
+        return True
+    codename = f'{action}_{cls._meta.model_name}'
+    return any(code == codename for code, _ in cls._meta.permissions)
+
+
+def _check_all_obj_permissions(request_user: Model, obj: ContentObject) -> None:
+    """Require user to have all object-level permissions"""
+    cls = type(obj)
+    for codename in permissions_allowed_for_role(cls)[cls]:
+        if not request_user.has_obj_perm(obj, codename):
+            raise PermissionDenied({'detail': _('You do not have {codename} permission the object').format(codename=codename)})
+
+
+def _user_permission_ids_from_role_definitions(request_user: Model, obj: ContentObject) -> set[int]:
+    """Get permission IDs a user holds on an object by inspecting role definitions directly.
+
+    This is an alternative to has_obj_perm for the escalation check, needed when
+    ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS is False (the default). In that case,
+    child-model permissions (e.g. view_team in an org-scoped role) do not get
+    RoleEvaluation entries on the parent object, so has_obj_perm(org, 'view_team')
+    returns False even though the user's role definition includes that permission.
+
+    This function bypasses the evaluation table entirely and instead queries which
+    RoleDefinitions the user holds on the object — directly or via team membership —
+    and collects their declared permissions.
+    """
+    ct = DABContentType.objects.get_for_model(obj)
+    user_teams = permission_registry.team_model.objects.filter(member_roles__users=request_user)
+    obj_roles = ObjectRole.objects.filter(
+        content_type_id=ct.id,
+        object_id=obj.pk,
+    ).filter(Q(users=request_user) | Q(teams__in=user_teams))
+    return set(DABPermission.objects.filter(role_definitions__object_roles__in=obj_roles).values_list('pk', flat=True))
+
+
+def _check_assignment_permissions_non_cached(request_user: Model, obj: ContentObject, role_definition: Model) -> None:
+    """Verify user has every permission contained in the role being assigned.
+
+    For each permission, uses has_obj_perm when the permission's content type matches
+    the object (the evaluation table handles this correctly). For cross-content-type
+    permissions (e.g. view_team in an org-scoped role), falls back to inspecting
+    role definitions directly, since has_obj_perm can't find those entries on a
+    mismatched object type.
+    """
+    role_perms = list(role_definition.permissions.all())
+
+    # has_super_permission covers is_superuser, action-specific bypass flags,
+    # and singleton (global) role assignments.
+    missing_perms = [p for p in role_perms if not has_super_permission(request_user, p.codename)]
+    if not missing_perms:
+        return
+
+    obj_ct = DABContentType.objects.get_for_model(obj)
+    cross_type_perms = []
+
+    for permission in missing_perms:
+        if permission.content_type_id == obj_ct.id:
+            if not request_user.has_obj_perm(obj, permission.codename):
+                raise PermissionDenied(
+                    {'detail': _('You do not have {codename} permission and cannot assign it to others').format(codename=permission.codename)}
+                )
+        else:
+            cross_type_perms.append(permission)
+
+    if cross_type_perms:
+        user_perm_ids = _user_permission_ids_from_role_definitions(request_user, obj)
+        for permission in cross_type_perms:
+            if permission.pk not in user_perm_ids:
+                raise PermissionDenied(
+                    {'detail': _('You do not have {codename} permission and cannot assign it to others').format(codename=permission.codename)}
+                )
+
+
+def check_content_obj_permission(request_user, obj, role_definition=None) -> None:
     """Permission policy rules for giving or removing obj permission
 
-    Right now we are not supporting a separate permission to manage permission
-    on objects, so we firstly look to a simple matter of having change permission
-    If that is not available, then we check all object-level permissions.
+    Controlled by ANSIBLE_BASE_MANAGE_PERMISSION_ACTION setting:
+    - If set to an action (default 'change'), users need that permission to manage role assignments
+      AND must have every permission contained in the role being assigned (escalation prevention)
+    - If falsy (None or ''), users must have ALL object-level permissions
+    If the model does not have the configured action, falls back to requiring all permissions.
     """
+    manage_action = get_setting('ANSIBLE_BASE_MANAGE_PERMISSION_ACTION', 'change')
+
     if isinstance(obj, RemoteObject):
         if not get_setting('ANSIBLE_BASE_ENFORCE_REMOTE_OBJECT_PERMISSIONS', True):
             return
-        permissions = DABPermission.objects.filter(content_type=obj.content_type)
-        for permission in permissions:
-            if permission.codename.startswith('change'):
-                if not request_user.has_obj_perm(obj, 'change'):
-                    raise PermissionDenied
-                return
-        for permission in permissions:
-            if not request_user.has_obj_perm(obj, permission.codename):
-                raise PermissionDenied
-    elif 'change' in obj._meta.default_permissions:
-        # Model has no change permission, so user must have all permissions for the applicable model
-        if not request_user.has_obj_perm(obj, 'change'):
+        if manage_action:
+            permissions = DABPermission.objects.filter(content_type=obj.content_type)
+            for permission in permissions:
+                if permission.codename.startswith(manage_action):
+                    if not request_user.has_obj_perm(obj, manage_action):
+                        raise PermissionDenied
+                    if role_definition:
+                        _check_assignment_permissions_non_cached(request_user, obj, role_definition)
+                    return
+        _check_all_obj_permissions(request_user, obj)
+    elif manage_action and _model_has_permission_action(type(obj), manage_action):
+        if not request_user.has_obj_perm(obj, manage_action):
             raise PermissionDenied
+        if role_definition:
+            _check_assignment_permissions_non_cached(request_user, obj, role_definition)
     else:
-        cls = type(obj)
-        for codename in permissions_allowed_for_role(cls)[cls]:
-            if not request_user.has_obj_perm(obj, codename):
-                raise PermissionDenied({'detail': _('You do not have {codename} permission the object').format(codename=codename)})
+        _check_all_obj_permissions(request_user, obj)
 
 
 def check_can_remove_assignment(request_user: Model, assignment: Model):
