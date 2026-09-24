@@ -20,7 +20,6 @@ from ..models import (
     RoleUserAssignment,
 )
 from ..policies import check_can_remove_assignment
-from ..resource_queries import assignment_resource_annotation
 from . import serializers as service_serializers
 
 
@@ -140,11 +139,7 @@ class ServiceRoleUserAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     ]
 
     def get_queryset(self):
-        return (
-            RoleUserAssignment.objects.select_related('object_role')
-            .prefetch_related('user__resource__content_type', *prefetch_related)
-            _object_ansible_id_annotation=assignment_resource_annotation('ansible_id')
-        )
+        return RoleUserAssignment.objects.select_related('object_role').prefetch_related('user__resource__content_type', *prefetch_related)
 
     @action(detail=False, methods=['post'], url_path='assign')
     def assign(self, request):
@@ -168,11 +163,7 @@ class ServiceRoleTeamAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     ]
 
     def get_queryset(self):
-        return (
-            RoleTeamAssignment.objects.select_related('object_role')
-            .prefetch_related('team__resource__content_type', *prefetch_related)
-            _object_ansible_id_annotation=assignment_resource_annotation('ansible_id')
-        )
+        return RoleTeamAssignment.objects.select_related('object_role').prefetch_related('team__resource__content_type', *prefetch_related)
 
     @action(detail=False, methods=['post'], url_path='assign')
     def assign(self, request):

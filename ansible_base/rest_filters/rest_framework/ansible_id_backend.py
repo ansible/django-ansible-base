@@ -32,7 +32,7 @@ class AnsibleIdAliasFilterBackend(BaseFilterBackend):
 
                 # Filter the queryset based on the resource's content_type and object_id
                 ct = DABContentType.objects.get_for_model(resource_obj.content_type.model_class())
-                queryset = queryset.filter(object_role__content_type=ct, object_role__object_id=resource_obj.object_id)
+                queryset = queryset.filter(content_type=ct, object_id=resource_obj.object_id)
             except Resource.DoesNotExist:
                 # If the resource is not found, return an empty queryset
                 return queryset.none()

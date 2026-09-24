@@ -2,10 +2,12 @@ import uuid
 from copy import deepcopy
 
 import pytest
+from django.apps import apps as django_apps
 from django.contrib.contenttypes.models import ContentType
 from rest_framework.test import APIClient
 
 from ansible_base.lib.utils.response import get_relative_url
+from ansible_base.rbac.backfill import backfill_object_ansible_id
 from ansible_base.rbac.models import (
     DABContentType,
     DABPermission,
@@ -156,8 +158,9 @@ def test_list_role_team_assignments_includes_id(admin_api_client, inv_rd, invent
 def test_object_ansible_id_in_list_response(admin_api_client, rando, org_admin_rd, organization):
     """Verify object_ansible_id is correctly returned for organization-level assignments."""
     org2 = Organization.objects.create(name='Covering Index Test Org')
-    org_admin_rd.give_permission(rando, organization)
+    assignment = org_admin_rd.give_permission(rando, organization)
     org_admin_rd.give_permission(rando, org2)
+    assert assignment.object_ansible_id == organization.resource.ansible_id
 
     url = get_relative_url('serviceuserassignment-list')
     response = admin_api_client.get(url + '?page_size=200', format="json")
@@ -172,9 +175,21 @@ def test_object_ansible_id_in_list_response(admin_api_client, rando, org_admin_r
 
 
 @pytest.mark.django_db
+def test_backfill_object_ansible_id(rando, org_admin_rd, organization):
+    assignment = org_admin_rd.give_permission(rando, organization)
+    RoleUserAssignment.objects.filter(pk=assignment.pk).update(object_ansible_id=None)
+
+    backfill_object_ansible_id(django_apps)
+
+    assignment.refresh_from_db()
+    assert assignment.object_ansible_id == organization.resource.ansible_id
+
+
+@pytest.mark.django_db
 def test_resource_ansible_id_filter_remains_supported(admin_api_client, rando, org_admin_rd, organization):
     """Keep the legacy resource__ansible_id service-index filter working."""
     assignment = org_admin_rd.give_permission(rando, organization)
+    RoleUserAssignment.objects.filter(pk=assignment.pk).update(object_role=None)
     url = get_relative_url('serviceuserassignment-list')
 
     response = admin_api_client.get(url + f'?resource__ansible_id={organization.resource.ansible_id}', format='json')
@@ -192,7 +207,7 @@ def test_global_assignment_resource_annotation_is_null(rando):
 
     annotated_assignment = ServiceRoleUserAssignmentViewSet().get_queryset().get(pk=assignment.pk)
 
-    assert annotated_assignment._object_ansible_id_annotation is None
+    assert annotated_assignment.object_ansible_id is None
 
 
 @pytest.mark.django_db
@@ -223,8 +238,8 @@ def test_assignment_annotation_does_not_join_dab_content_type_id_to_resource_con
 
     annotated_assignment = ServiceRoleUserAssignmentViewSet().get_queryset().get(pk=assignment.pk)
 
-    assert annotated_assignment._object_ansible_id_annotation is None
-    assert annotated_assignment._object_ansible_id_annotation != wrong_resource.ansible_id
+    assert annotated_assignment.object_ansible_id is None
+    assert annotated_assignment.object_ansible_id != wrong_resource.ansible_id
 
 
 @pytest.mark.django_db

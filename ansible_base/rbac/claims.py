@@ -147,6 +147,9 @@ def _build_objects_and_roles(
 
     # Single loop: build object_arrays and object_roles
     for assignment in get_user_object_roles(user):
+        if assignment.aid is None:
+            continue
+
         role_name = assignment.rd_name
         ansible_id = str(assignment.aid)
         resource_name = str(assignment.resource_name)
