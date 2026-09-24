@@ -280,6 +280,23 @@ def test_user_object_roles_does_not_match_content_type_ids():
 
 
 @pytest.mark.django_db
+@override_settings(ANSIBLE_BASE_JWT_MANAGED_ROLES=['Namespace Owner'])
+def test_user_claims_skip_assignments_without_resources():
+    user = get_user_model().objects.create(username='missing-resource-user')
+    dab_content_type = DABContentType.objects.get_for_model(Organization)
+    role_definition = RoleDefinition.objects.create(name='Namespace Owner', content_type=dab_content_type)
+    RoleUserAssignment.objects.create(
+        user=user,
+        role_definition=role_definition,
+        content_type=dab_content_type,
+        object_id='missing-object',
+        object_role=None,
+    )
+
+    assert get_user_claims(user)['object_roles'] == {}
+
+
+@pytest.mark.django_db
 class TestUserClaims:
     @pytest.fixture
     def shared_test_data(self, db):

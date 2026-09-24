@@ -407,6 +407,11 @@ class AssignmentBase(ImmutableCommonModel, ObjectRoleFields, _AuditableBase):
     object_id = models.TextField(
         null=True, blank=True, help_text=_('The primary key of the object this assignment applies to; null value indicates system-wide assignment.')
     )
+    object_ansible_id = models.UUIDField(
+        null=True,
+        blank=True,
+        help_text=_('Cached ansible_id of the resource this assignment applies to.'),
+    )
     content_type = models.ForeignKey(DABContentType, on_delete=models.CASCADE, null=True, help_text=_("The content type this applies to."))
 
     # object_role is internal, and not shown in serializer

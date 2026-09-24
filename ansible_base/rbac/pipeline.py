@@ -4,7 +4,9 @@ import logging
 from collections.abc import Iterable, Sequence
 from typing import NamedTuple, Union, cast
 
+from django.apps import apps as django_apps
 from django.conf import settings
+from django.contrib.contenttypes.models import ContentType
 from django.db import connection, models
 from django.db.models import Q
 from django.db.models.signals import post_save
@@ -20,7 +22,7 @@ from ansible_base.rbac.caching import (
 from ansible_base.rbac.models.content_type import DABContentType
 from ansible_base.rbac.models.role import AssignmentBase, ObjectRole, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry
-from ansible_base.rbac.remote import RemoteObject
+from ansible_base.rbac.remote import RemoteObject, get_local_resource_services
 from ansible_base.rbac.validators import validate_assignment, validate_team_assignment_enabled
 
 logger = logging.getLogger(__name__)
@@ -91,6 +93,45 @@ def _resolve_assignments(
         team_resolved.append(ResolvedAssignment(rd, actor, obj_ct, object_id, parent_ref))
 
     return user_resolved, team_resolved
+
+
+def _batch_resolve_object_ansible_ids(resolved: Sequence[ResolvedAssignment]) -> dict[tuple[str, str, str], str]:
+    """Resolve local assignment resources in one query for the whole batch."""
+    if not resolved or not django_apps.is_installed('ansible_base.resource_registry'):
+        return {}
+
+    local_services = get_local_resource_services()
+    object_ids_by_type: dict[tuple[str, str], set[str]] = {}
+    for assignment in resolved:
+        content_type = assignment.content_type
+        if content_type.service in local_services:
+            object_ids_by_type.setdefault((content_type.app_label, content_type.model), set()).add(assignment.object_id)
+
+    if not object_ids_by_type:
+        return {}
+
+    content_type_filter = Q()
+    for app_label, model in object_ids_by_type:
+        content_type_filter |= Q(app_label=app_label, model=model)
+    django_content_types = list(ContentType.objects.filter(content_type_filter).values('id', 'app_label', 'model'))
+    if not django_content_types:
+        return {}
+
+    resource_filter = Q()
+    for content_type in django_content_types:
+        resource_filter |= Q(
+            content_type_id=content_type['id'],
+            object_id__in=object_ids_by_type[(content_type['app_label'], content_type['model'])],
+        )
+    if not resource_filter:
+        return {}
+
+    from ansible_base.resource_registry.models import Resource
+
+    return {
+        (row['content_type__app_label'], row['content_type__model'], row['object_id']): str(row['ansible_id'])
+        for row in Resource.objects.filter(resource_filter).values('content_type__app_label', 'content_type__model', 'object_id', 'ansible_id')
+    }
 
 
 def _lookup_object_roles(resolved: list[ResolvedAssignment]) -> ObjectRoleLookup:
@@ -171,6 +212,7 @@ def _create_assignments(
     user_resolved: list[ResolvedAssignment],
     team_resolved: list[ResolvedAssignment],
     lookup: ObjectRoleLookup,
+    object_ansible_ids: dict[tuple[str, str, str], str],
     fire_signals_on_create: bool = True,
 ) -> list[AssignmentBase]:
     """Bulk-create user and team assignment objects, return all resulting assignments."""
@@ -187,6 +229,7 @@ def _create_assignments(
                 role_definition=ra.role_definition,
                 content_type=ra.content_type,
                 object_id=ra.object_id,
+                object_ansible_id=object_ansible_ids.get((ra.content_type.app_label, ra.content_type.model, ra.object_id)),
                 created_by=created_by,
             )
         )
@@ -211,6 +254,7 @@ def _create_assignments(
                 role_definition=ra.role_definition,
                 content_type=ra.content_type,
                 object_id=ra.object_id,
+                object_ansible_id=object_ansible_ids.get((ra.content_type.app_label, ra.content_type.model, ra.object_id)),
                 created_by=created_by,
             )
         )
@@ -357,8 +401,17 @@ def give_assignments(
     if not user_resolved and not team_resolved:
         return []
 
-    lookup = _ensure_object_roles(list(user_resolved) + list(team_resolved))
-    assignments = _create_assignments(list(user_resolved), list(team_resolved), lookup, fire_signals_on_create=fire_signals_on_create)
+    user_resolved = list(user_resolved)
+    team_resolved = list(team_resolved)
+    object_ansible_ids = _batch_resolve_object_ansible_ids(user_resolved + team_resolved)
+    lookup = _ensure_object_roles(user_resolved + team_resolved)
+    assignments = _create_assignments(
+        user_resolved,
+        team_resolved,
+        lookup,
+        object_ansible_ids,
+        fire_signals_on_create=fire_signals_on_create,
+    )
     _recompute_after_give(lookup, assignments)
     return assignments
 

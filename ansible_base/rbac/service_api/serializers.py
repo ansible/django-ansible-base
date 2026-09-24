@@ -16,17 +16,16 @@ logger = logging.getLogger('ansible_base.rbac.service_api.serializers')
 
 class ObjectAnsibleIdField(serializers.Field):
     """
-    Field for object_ansible_id that supports both annotation optimization and fallback.
+    Field for object_ansible_id that supports the cached assignment value and fallback.
 
-    For read operations: Uses annotation when available, falls back to manual lookup.
+    For read operations: Uses the cached assignment value, falling back to manual lookup.
     For write operations: Converts ansible_id to object_id for internal use.
     """
 
     def to_representation(self, obj):
-        """Get object_ansible_id, using annotation when available, falling back to manual lookup"""
-        # First try to use the annotation from the queryset (for optimized list operations)
-        if hasattr(obj, '_object_ansible_id_annotation') and obj._object_ansible_id_annotation:
-            return str(obj._object_ansible_id_annotation)
+        """Get object_ansible_id from the assignment cache or its content object."""
+        if obj.object_ansible_id:
+            return str(obj.object_ansible_id)
 
         # Fallback for cases where annotation is not available (creation, etc.)
         if not obj.content_type_id or not obj.object_id:
