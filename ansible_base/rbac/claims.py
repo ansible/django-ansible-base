@@ -49,12 +49,11 @@ def get_user_object_roles(user: Model) -> QuerySet:
             print(assignment.rd_name, assignment.aid, assignment.resource_name, assignment.content_type_id)
     """
     # Create subqueries for resource data
-    ansible_id_subquery = assignment_resource_annotation('ansible_id')
     resource_name_subquery = assignment_resource_annotation('name')
 
     return (
         user.role_assignments.filter(content_type__isnull=False)
-        .annotate(aid=ansible_id_subquery, resource_name=resource_name_subquery, rd_name=F('role_definition__name'))
+        .annotate(aid=F('object_ansible_id'), resource_name=resource_name_subquery, rd_name=F('role_definition__name'))
         .filter(rd_name__in=settings.ANSIBLE_BASE_JWT_MANAGED_ROLES)
     )
 

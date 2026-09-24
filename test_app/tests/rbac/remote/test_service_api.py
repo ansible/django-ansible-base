@@ -190,10 +190,22 @@ def test_assignment_object_ansible_id_tracks_resource_changes(rando, org_admin_r
     assignment = org_admin_rd.give_permission(rando, organization)
     resource = organization.resource
     resource.ansible_id = uuid.uuid4()
-    resource.save(update_fields=['ansible_id'])
+    resource.save()
 
     assignment.refresh_from_db()
     assert assignment.object_ansible_id == resource.ansible_id
+
+
+@pytest.mark.django_db
+def test_service_api_uses_cached_object_ansible_id(admin_api_client, rando, org_admin_rd, organization):
+    assignment = org_admin_rd.give_permission(rando, organization)
+    RoleUserAssignment.objects.filter(pk=assignment.pk).update(object_ansible_id=None)
+
+    response = admin_api_client.get(get_relative_url('serviceuserassignment-list'), format='json')
+
+    assert response.status_code == 200, response.data
+    result = next(item for item in response.data['results'] if item['id'] == assignment.id)
+    assert result['object_ansible_id'] is None
 
 
 @pytest.mark.django_db
