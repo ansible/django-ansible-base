@@ -1,6 +1,5 @@
 """Validate CleanText OpenAPI fragments against runtime injection keys."""
 
-import pytest
 from django.test import override_settings
 from rest_framework import serializers
 
@@ -106,11 +105,16 @@ def test_public_helpers_align_with_mapped_wire_keys():
     tier2 = get_tier2_pattern()
     assert set(tier1) == {'pattern', 'description', 'flags', 'normalize'}
     assert set(tier2) == {'pattern', 'description', 'flags'}
-    assert {'pattern', 'patternDescription', 'flags', 'normalize'} == set(pattern_properties())
+    assert set(pattern_properties()) == {'pattern', 'patternDescription', 'flags', 'normalize'}
 
 
 def test_inject_clean_text_pattern_components_hook():
-    result = inject_clean_text_pattern_components({}, None, None, True)
+    result = inject_clean_text_pattern_components(
+        result={},
+        generator=None,
+        request=None,
+        public=True,
+    )
     schemas = result['components']['schemas']
     assert 'CleanTextFieldInfo' in schemas
     assert 'AuthenticatorPluginConfigurationField' in schemas

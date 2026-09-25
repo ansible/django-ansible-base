@@ -8,8 +8,13 @@ optional pattern field definitions.
 """
 
 
-def inject_clean_text_pattern_components(result, generator, request, public):  # noqa: ARG001
-    """Ensure CleanText pattern OpenAPI components exist in the generated schema."""
+def inject_clean_text_pattern_components(result, generator, request, public):
+    """Ensure CleanText pattern OpenAPI components exist in the generated schema.
+
+    ``generator``, ``request``, and ``public`` match drf-spectacular's
+    ``SchemaGenerator.get_schema`` POSTPROCESSING_HOOK keyword arguments.
+    """
+    del generator, request, public
     from ansible_base.lib.schemas.clean_text_patterns import openapi_components
 
     components = result.setdefault('components', {})

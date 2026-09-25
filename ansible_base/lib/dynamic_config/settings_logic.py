@@ -135,9 +135,7 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
 
         # Ensure CleanText OpenAPI components are registered even when a service
         # overrides POSTPROCESSING_HOOKS (common in Controller/Gateway).
-        _clean_text_hook = (
-            'ansible_base.api_documentation.clean_text_schema_hooks.inject_clean_text_pattern_components'
-        )
+        _clean_text_hook = 'ansible_base.api_documentation.clean_text_schema_hooks.inject_clean_text_pattern_components'
         hooks = list(spectacular_settings.get('POSTPROCESSING_HOOKS', []))
         if _clean_text_hook not in hooks:
             hooks.append(_clean_text_hook)
