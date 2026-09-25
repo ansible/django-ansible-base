@@ -139,7 +139,7 @@ class ServiceRoleUserAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     ]
 
     def get_queryset(self):
-        return RoleUserAssignment.objects.prefetch_related('user__resource__content_type', *prefetch_related)
+        return RoleUserAssignment.objects.select_related('object_role').prefetch_related('user__resource__content_type', *prefetch_related)
 
     @action(detail=False, methods=['post'], url_path='assign')
     def assign(self, request):
@@ -163,7 +163,7 @@ class ServiceRoleTeamAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     ]
 
     def get_queryset(self):
-        return RoleTeamAssignment.objects.prefetch_related('team__resource__content_type', *prefetch_related)
+        return RoleTeamAssignment.objects.select_related('object_role').prefetch_related('team__resource__content_type', *prefetch_related)
 
     @action(detail=False, methods=['post'], url_path='assign')
     def assign(self, request):
