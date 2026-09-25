@@ -44,7 +44,7 @@ class RolePermissionTypeViewSet(
 # NOTE: role definitions are exchanged via the resources endpoint, so not included here
 
 
-prefetch_related = ('created_by__resource', 'content_type', 'role_definition')
+prefetch_related = ('created_by__resource', 'content_type', 'role_definition', 'content_object', 'object_role')
 
 
 class BaseSerivceRoleAssignmentViewSet(
