@@ -1,238 +1,165 @@
 # ORM validation bypass observability
 
-This guide describes how Ansible Automation Platform (AAP) detects and logs
-**ORM-direct writes** that skip `CleanTextMixin` serializer validation. It covers
-what ships in **django-ansible-base (DAB)** (Jira **AAP-86051**) and what each
-**downstream service** (Controller, Gateway,
-EDA, Hub) must add on top.
+How **django-ansible-base (DAB)** helps applications **detect and log** database
+writes that skip `CleanTextMixin` serializer validation. Related:
+[CleanTextMixin and validators](validation.md).
 
-Related: [CleanTextMixin and validators](validation.md).
+## Who should read this
 
-This document catalogs **ORM-direct** code paths — `Model.objects.create()`,
-`instance.save()`, `queryset.update()`, `bulk_create()`, and similar — that write
-to the database **without** going through a DRF serializer that uses
-`CleanTextMixin`. Those paths bypass serializer-layer validation.
+| Reader | Start here |
+|--------|------------|
+| **DAB maintainer** | [Implementation reference](#implementation-reference-dab-maintainers), [Module reference](#module-reference), [Detection behavior](#how-detection-works) |
+| **Application developer** (AWX, EDA, Gateway, Hub, or any DAB consumer) | [Integration checklist](#integration-checklist-for-dab-consumers), [Cookbooks](#cookbooks) |
+| **Security / operations** | [What to monitor](#monitoring-and-log-format), [Remediation](#when-a-log-line-appears) |
+| **Platform security sign-off** (import/sync coverage) | [Platform triage reference](validation_bypass_platform_triage.md) |
 
-The handler `ansible_base.lib.utils.validation_signals.validation_bypass_logger`
-(and optional `ansible_base.lib.utils.bulk_validation_audit` helpers) provides
-**observability** for many of these writes by logging Tier 1/Tier 2 violations.
-It does **not** block saves.
+## Problem in one paragraph
 
-### Why this matters
+`CleanTextMixin` validates Tier 1 / Tier 2 text on **DRF serializers**. Code that
+calls `Model.objects.create()`, `instance.save()`, `bulk_create()`,
+`bulk_update()`, or `QuerySet.update()` **does not** run those serializers.
+DAB adds **observability**: the same validation rules run at selected points and
+emit **WARNING** logs (`ORM bypass (…):`). Writes are **never blocked** on these
+paths. API enforcement is unchanged (`ENHANCED_INPUT_VALIDATION_ENABLED` on
+serializers).
 
-`CleanTextMixin` enforces input validation at the **serializer** layer. Any code
-that creates or updates instances directly via the ORM skips that layer. That is
-sometimes intentional (management commands, migrations, internal sync), but it
-can be a gap if untrusted data reaches those paths. These logs support security
-monitoring and compliance auditing while teams prioritize remediation.
+### Which models get ORM bypass checks?
 
-## North star (AAP-86051)
+DAB maintains an in-process list of Django models to watch (`_protected_models`,
+the **registry**). A model is on that list only if the running app has already
+imported a DRF serializer that uses `CleanTextMixin` and points at that model
+via `Meta.model`. Import your API serializers in `AppConfig.ready()` so the list
+is populated before traffic (see [checklist](#integration-checklist-for-dab-consumers)).
 
-**Goal:** When **protected** models (registered via `CleanTextMixin` serializers) receive Tier 1 / Tier 2 text through an **ORM bypass path**, emit a structured **WARNING** (`ORM bypass (post_save):`, `ORM bypass (bulk_…):`, or `ORM bypass (queryset_update):`) with caller attribution. **Never block** the write.
+If a model is **not** on the list, the `post_save` handler and the bulk/queryset
+audit helpers **exit immediately** — no Tier 1/2 scan and no log. That means
+**no coverage** for that ORM path, not that the write was reviewed or approved.
 
-| In scope | Boundaries (what this work does **not** change) |
-|----------|--------------------------------------------------|
-| Same rules as `CleanTextMixin` on Char/Text fields (minus `excluded_fields`) | **Blocking** ORM writes when validation fails (logs only) |
-| `post_save` for `.save()` / `.create()` on registered models | Moving the **enforcement** boundary from serializers to `Model.save()` / `full_clean()` |
-| **`audit_bulk_*`** and service wrappers before `bulk_create` / `bulk_update` | **Global** monkeypatch of `QuerySet.update` / all `bulk_*` (default: explicit hooks; see [QuerySet `update()`](#4-queryset-update-calls)) |
-| Per-service caller allowlist/denylist + bulk site triage | Mandatory **model field validators** on every existing column platform-wide |
-| API enforcement via **`ENHANCED_INPUT_VALIDATION_ENABLED`** (unchanged) | Treating migrations / test fixtures as production monitoring targets |
-| Downstream services wiring registry, callers, and priority bulk surfaces | Expecting one DAB release alone to log every bypass in every component without service integration |
+## What DAB ships (automatically)
 
-**Protected model** = at least one loaded `CleanTextMixin` serializer for `Meta.model` → `_protected_models`. No mixin → helpers and signal **no-op** (not “safe,” just **undetected**).
+After you complete the [integration checklist](#integration-checklist-for-dab-consumers):
 
-### Coverage decision filter
+| ORM path | Covered by DAB without extra call sites? |
+|----------|------------------------------------------|
+| `.save()` / `.create()` on registered models | **Yes** — `post_save` handler `validation_bypass_logger` |
+| `serializer.save()` / `create()` / `update()` on `CleanTextMixin` | **No bypass log** — context flag suppresses false `post_save` lines |
+| `bulk_create()` / `bulk_update()` | **No** — Django does not fire `post_save`; you must call [audit helpers](#audit-helpers-bulk-and-queryset) at call sites |
+| `QuerySet.update()` | **No** — use `audited_queryset_update` at call sites |
 
-Use this before adding another hook:
+DAB does **not** monkeypatch `QuerySet` or all `bulk_*` globally. Each
+application adds **audit call sites** where import/sync/user bulk paths persist
+registered text outside serializers (see platform triage guide).
 
-1. **Model in registry?** If no → expand serializers first, or accept blind spot.
-2. **`bulk_update` / `update` fields ∩ (Char/Text \ excluded_fields) ≠ ∅?** If no → skip hook (e.g. Host `ansible_facts` JSON only).
-3. **Semi-trusted ingress?** (API bulk, sync, user-supplied prompts) → **hook**. Internal metrics/flags → document skip.
-4. **Single-instance `.save()`** on registered models → usually **already covered** by `post_save` (inventory import, many commands).
+### In scope vs out of scope (this feature)
 
-### Priority by bypass category (typical risk → rollout order)
+| In scope | Out of scope |
+|----------|----------------|
+| Log Tier 1/Tier 2 violations on registered Char/Text (minus `excluded_fields`) | Block ORM writes when validation fails |
+| Reuse `validate_resource_name` / `validate_free_text` | Move enforcement to `Model.save()` / `full_clean()` |
+| Optional bulk/queryset audit helpers | Global monkeypatch of Django ORM |
+| Caller attribution in logs (`[caller: …]`) | Full platform coverage without per-app wiring |
 
-| Priority | Category | Signal? | Bulk helper? | Controller notes |
-|----------|----------|---------|--------------|------------------|
-| 1 | **Bulk create/update** (user/sync ingress) | No | **Service hooks** | Bulk hosts, bulk workflow nodes, `bulk_update_sorted_by_id`, scheduler `job_explanation` batch — see [Controller reference](#controller-awx-reference-implementation-aap-86051) |
-| 2 | **`QuerySet.update()`** on text columns | No | **`audit_queryset_update`** / **`audited_queryset_update`** | See [inventory](#queryset-update-inventory); EDA project import is the primary prod hook today |
-| 3 | **Management commands** | Yes, if registered | N/A | e.g. inventory import via `.save()` |
-| 4 | **Signals / model methods** | Yes, if registered | Rare | Usually derived data |
-| 5 | **Migrations** | Theoretical | Rare | **Skip** for monitoring |
-| 6 | **Tests / fixtures** | Same as prod rules | Optional | **N/A** in prod |
+## Integration checklist for DAB consumers
 
-**Tradeoff:** Skipping a site means **no log**, not approval of the data. Document intentional skips in PR/epic notes.
+Do this in your Django app’s `AppConfig.ready()` (or rely on
+`ansible_base.observability` in `INSTALLED_APPS`, which calls
+`register_validation_signals()` for you).
 
-## Goals and design boundaries
+1. **Register the signal** — `register_validation_signals()` (or include
+   `ansible_base.observability` in `INSTALLED_APPS`).
+2. **Load serializers** — `import your_app.api.serializers` (and any DAB API
+   serializers you expose) so `CleanTextMixin` registers models before traffic.
+3. **Caller prefixes** — `extend_caller_allowlist_prefixes()` for views, tasks,
+   management commands; `extend_internal_caller_prefixes()` for models/signals
+   plumbing so `[caller: …]` points at product code.
+4. **Bulk / import paths** — Before `bulk_create` / `bulk_update` that persist
+   registered text from sync or user bulk APIs, call `audit_bulk_model_instances`
+   (or `audit_bulk_item_dicts`). Wrap custom `Serializer.create()` that bulk-writes
+   after `is_valid()` in `serializer_mediated_persistence_context` when needed
+   (see [bulk dedupe](#audit-helpers-bulk-and-queryset)).
+5. **`QuerySet.update()`** — Where product code updates registered text columns with
+   literal strings, use `audited_queryset_update` immediately before or instead of
+   raw `update()`.
 
-| Goal | How |
-|------|-----|
-| Visibility when data is written via `Model.objects.create()` / `instance.save()` without going through a `CleanTextMixin` serializer | DAB `post_save` handler logs Tier 1/Tier 2 violations (**observability-only** — saves are **not** blocked) |
-| Visibility for **`bulk_create` / `bulk_update`** on registered models at service-owned call sites | DAB `audit_bulk_*` helpers + service hooks (Controller example: [four bulk surfaces](#why-four-bulk-hook-surfaces-on-controller)) |
-| Visibility for **`QuerySet.update()`** with literal string kwargs on registered models | DAB `audit_queryset_update` / `audited_queryset_update` at service call sites ([inventory](#queryset-update-inventory)) |
-| Same validation rules as the API | Reuses `validate_resource_name` and `validate_free_text` |
-| Avoid false positives on normal API traffic | Model registry + context variable around `CleanTextMixin` persistence (`save()`, `create()`, `update()`) |
-| Actionable audit fields | Hybrid caller attribution (allowlist → denylist → fallback) |
+Until steps 4–5 are done for a given ingress path, that path remains a **blind
+spot** even if step 1–3 are complete.
 
-### Design boundaries (not “uncovered forever”)
+## Cookbooks
 
-These are **policy and architecture choices** for this feature. They do **not**
-mean `bulk_*` or `QuerySet.update()` are outside Product Security interest —
-those paths still need **explicit** instrumentation where triage shows registry +
-Char/Text + meaningful risk.
+### I added a CharField to a model exposed on the API
 
-| Boundary | Rationale |
-|----------|-----------|
-| **Warn only; never block** ORM bypass writes | Tasks, signals, migrations, and legacy sync must keep working; API blocking stays on serializers (`CleanTextMixin`, `ENHANCED_INPUT_VALIDATION_ENABLED`) |
-| **No platform-wide ORM enforcement** via `save()` / `full_clean()` changes | Grandfathering and the validation boundary remain at the serializer layer unless a separate initiative changes that |
-| **No default global monkeypatch** of `QuerySet.update` or all `bulk_*` | High blast radius (Hub `django-lifecycle`, third-party libs, Django upgrades); prefer opt-in helpers, shared wrappers, and inventories |
-| **No requirement** to add Django model field validators on every existing model | Large coordinated rollout; observability reuses the same rules as serializers without rewriting models |
-| **Service integration required** | DAB ships signals + bulk helpers; Controller, Hub, EDA, and Gateway each register callers, load serializers, and hook priority bulk/sync ingress |
+1. Add or extend a **`CleanTextMixin` serializer** for that model (see
+   [validation.md](validation.md)).
+2. Ensure that serializer module is **imported at startup** (step 2 above).
+3. **No DAB change required** — `.save()` on that model is now in the registry.
+4. If the field is legitimately free-form (templates, YAML), add it to
+   `excluded_fields` on the serializer (affects API validation **and** ORM bypass
+   scope for that model).
 
-### How ORM paths get coverage (common misconceptions)
+### My code calls `instance.save()` or `objects.create()` (no serializer)
 
-| Path | Covered by `post_save`? | How observability applies |
-|------|-------------------------|---------------------------|
-| `.save()` / `.create()` on registered models | Yes | Automatic once signals are registered and serializers are imported |
-| `bulk_create()` / `bulk_update()` | **No** (Django limitation) | **`audit_bulk_*` or wrappers** at call sites that persist registered text — not automatic from DAB install alone |
-| `QuerySet.update()` | **No** | **`audit_queryset_update`** / **`audited_queryset_update`** on literal kwargs; see [inventory](#queryset-update-inventory) |
+- If the model is registered: violations log as
+  `ORM bypass (post_save): …` and the row is still saved.
+- Fix: route user-facing data through a serializer, or accept documented internal
+  bypass.
 
-**Observability-only** means security and compliance teams get **WARNING** logs;
-application behavior and whether API requests fail are still governed by
-`CleanTextMixin` and `ENHANCED_INPUT_VALIDATION_ENABLED` on serializers.
+### My code calls `bulk_create()` or `bulk_update()`
 
-## Multi-component architecture
+1. Confirm the model is registered and the operation touches Char/Text (for
+   `bulk_update`, check `fields=`).
+2. Immediately before the ORM bulk call:
 
-DAB is a shared library loaded into each service’s Django process. No single
-repository can implement full coverage alone.
+```python
+from ansible_base.lib.utils.bulk_validation_audit import audit_bulk_model_instances
 
-```mermaid
-flowchart TB
-  subgraph dab ["django-ansible-base"]
-    CTM["CleanTextMixin registry"]
-    SIG["validation_bypass_logger post_save"]
-    BULK["bulk_validation_audit + queryset audit helpers"]
-    CALL["Caller resolution APIs"]
-    CTM --> SIG
-    CTM --> BULK
-    CALL --> SIG
-    CALL --> BULK
-  end
-
-  subgraph ctrl ["Controller (AWX)"]
-    C1["CleanTextMixin on API serializers"]
-    C2["AppConfig: extend_* caller prefixes"]
-    C3["audit_bulk_* at bulk API + choke points"]
-  end
-
-  subgraph eda ["EDA"]
-    E1["CleanTextMixin on API serializers"]
-    E2["AppConfig: extend_* caller prefixes"]
-    E3["audit_bulk_* at rulebook/import paths"]
-  end
-
-  subgraph hub ["Hub"]
-    H1["CleanTextMixin on API serializers"]
-    H2["AppConfig: extend_* caller prefixes"]
-    H3["audit_bulk_* at collection import"]
-  end
-
-  subgraph gw ["Gateway"]
-    G1["CleanTextMixin on API serializers"]
-    G2["AppConfig: extend_* caller prefixes"]
-  end
-
-  dab --> ctrl
-  dab --> eda
-  dab --> hub
-  dab --> gw
+audit_bulk_model_instances(instances, operation="bulk_create")
+MyModel.objects.bulk_create(instances)
 ```
 
-| Layer | Owner | Responsibility |
-|-------|--------|----------------|
-| Validators + mixin | DAB | Tier 1/Tier 2 rules; serializer enforcement and grandfathering |
-| Single-instance ORM bypass logging | DAB | `ansible_base.lib.utils.validation_signals` + observability app wiring |
-| Bulk/sync bypass logging | **Each service** | Call `bulk_validation_audit` (or validators) immediately before bulk ORM writes at high-risk sites |
-| Meaningful `[caller: …]` in logs | **Each service** | Register narrow allowlist and/or extra denylist prefixes at startup |
-| Expanding which models are monitored | **Each service** | Add `CleanTextMixin` to more DRF serializers (registry grows automatically) |
+3. For `bulk_update`, pass `update_fields=` so only written columns are scanned.
 
-Until a service registers caller prefixes, logs may show `unknown` or a
-low-confidence fallback frame. Until bulk hooks land, **sync/import paths remain
-the largest blind spot** even when single-instance logging is enabled.
+### My code calls `QuerySet.update(description=...)`
 
-## DAB implementation
+```python
+from ansible_base.lib.utils.bulk_validation_audit import audited_queryset_update
 
-### Modules
+audited_queryset_update(
+    MyModel.objects.filter(pk=pk),
+    description=user_supplied,
+)
+```
 
-| Module | Role |
-|--------|------|
-| `ansible_base.lib.utils.validation_signals` | `validation_bypass_logger` (`post_save`); `_protected_models` registry; `get_validation_context_token` / `reset_validation_context`; `register_validation_signals()`; `extend_caller_allowlist_prefixes()` / `extend_internal_caller_prefixes()`; shared `_validate_field` / caller resolution used by bulk and queryset helpers |
-| `ansible_base.lib.utils.bulk_validation_audit` | `audit_bulk_model_instances`, `audit_bulk_item_dicts` (`bulk_create` / `bulk_update` instances or dicts); `audit_queryset_update`, `audited_queryset_update` (literal `QuerySet.update()` kwargs) |
-| `ansible_base.lib.serializers.mixins.CleanTextMixin` | API Tier 1/2 validation; registers `Meta.model` with the bypass registry via `register_protected_model` |
-| `ansible_base.lib.utils.validation` | `validate_resource_name`, `validate_free_text` (rules reused by mixin and bypass logs) |
-| `ansible_base.observability.apps` | **`ansible_base.observability` must be in `INSTALLED_APPS`** so `ObservabilityConfig.ready()` calls `register_validation_signals()` and wires `post_save` for ORM-direct writes (services may also call `register_validation_signals()` from their own `AppConfig`) |
+Only **literal string** kwargs are audited; `F()` / `Case` are skipped.
 
-### Detection flow (single-instance saves)
+### I want to detect bypasses in production
 
-1. **Registry:** Skip if `sender` is not a model registered by a `CleanTextMixin` serializer (scope matches “models covered by CleanTextMixin in serializers”, not every model in the process).
-2. **Context var:** Skip if the save originated from `CleanTextMixin` persistence — `save()`, `create()`, or `update()` (see [Serializer path vs ORM bypass logging](#serializer-path-vs-orm-bypass-logging-no-double-logging)).
-3. **Fields:** Same discovery as the mixin (`CharField` / `TextField`), minus registered `excluded_fields`.
-4. **Validate:** Run Tier 1 on `name_fields`, Tier 2 on other text fields.
-5. **Log:** Only if step 4 finds a violation — emit WARNING with resource type, field, tier, sanitized reason, and caller. **Independent of** `ENHANCED_INPUT_VALIDATION_ENABLED`. Valid ORM field values produce **no** `ORM bypass (`…`) log line.
+Search logs for: `ORM bypass (` — subtypes `(post_save)`, `(bulk_create)`,
+`(bulk_update)`, `(queryset_update)`. Use `[caller: module:line]` for triage.
+Alerting on sustained volume is an application/ops concern.
 
-### Serializer path vs ORM bypass logging (no double logging)
+## How detection works
 
-Two different mechanisms apply on API traffic; do not confuse them with the
-enforcement toggle.
+### Serializer path vs ORM path
 
-| Mechanism | Logger / message | When it runs | Blocks save? |
-|-----------|------------------|--------------|--------------|
-| **`CleanTextMixin.validate()`** | Serializer mixin (`Validation rejected …`) | DRF `is_valid()` on serializers that use the mixin | Only if **`ENHANCED_INPUT_VALIDATION_ENABLED`** is **true** (raises `ValidationError` → 400) |
-| **`validation_bypass_logger`** | `ORM bypass (post_save): …` | `post_save` on registered models | **Never** (observability only) |
+| Mechanism | When | Blocks? |
+|-----------|------|---------|
+| `CleanTextMixin.validate()` | API `is_valid()` | Only if `ENHANCED_INPUT_VALIDATION_ENABLED` |
+| `validation_bypass_logger` | Registered model saved outside mixin persistence | **Never** |
 
-**Normal API create/update (serializer path):**
+`CleanTextMixin` sets a **context flag** during `save()`, `create()`, and
+`update()` (including `many=True` list serializers) so `post_save` does not
+double-log API traffic.
 
-1. `validate()` runs Tier 1/2 checks. On violation, the mixin logs **`Validation rejected …`**. If enforcement is **on**, it also raises and the instance is **not** saved. If enforcement is **off**, it does **not** raise; the request may still call `serializer.save()` (or list `save()` via `many=True`) with values that failed validation.
-2. **`CleanTextMixin.save()`**, **`create()`**, and **`update()`** each set the same **context flag** for the duration of ORM persistence they perform (including any `post_save` receivers triggered during that write). Single-object requests use `save()` → `create()`/`update()`; **`many=True`** list endpoints call child **`create()`** / **`update()`** without child **`save()`**, so the flag must be set on those methods too.
-3. `validation_bypass_logger` runs on `post_save` but **returns immediately** while the flag is set — **no** `ORM bypass (post_save):` log, even when enforcement is **off** and bad text was persisted.
+### Detection flow (`post_save`)
 
-So double logging is prevented by the **context variable around mixin persistence** (`save()` / `create()` / `update()`), not by `ENHANCED_INPUT_VALIDATION_ENABLED`. The toggle controls whether the **API** rejects bad input before save; it does **not** turn the bypass signal on or off. Bypass logs are suppressed for ORM writes that happen **inside** those methods, not merely because `is_valid()` ran.
+1. Skip if model not in registry.
+2. Skip if save is serializer-mediated (context flag).
+3. Validate Char/Text (minus unioned `excluded_fields`).
+4. Log **only on violation** — caller resolution runs only when logging.
 
-**Bulk API serializers (`Serializer`, not `ModelSerializer`):** Nested `CleanTextMixin` children still run `validate()` during `is_valid()` and may log **`Validation rejected …`**. If the parent `create()` calls `audit_bulk_*` then `bulk_create()` without entering mixin `create()`, you must wrap that block in **`serializer_mediated_persistence_context`** (import from `ansible_base.lib.serializers.mixins`). Otherwise, with enforcement **off**, the same field can log again as **`ORM bypass (bulk_create):`**. Shell-only bulk audits (no prior `is_valid()`) must **not** use that wrapper unless you intend to suppress logs.
+Bypass logging is **independent** of `ENHANCED_INPUT_VALIDATION_ENABLED`.
 
-**ORM-direct path** (shell, tasks, signals that call `.save()` / `.create()` without going through `CleanTextMixin` persistence hooks, etc.): no context flag. If stored text would fail Tier 1/2, the handler logs **`ORM bypass (post_save):`** and still allows the write.
-
-### Registry and dynamic serializer configuration
-
-| Configuration | When registered | Example |
-|---------------|-----------------|---------|
-| Static `name_fields` / `excluded_fields` on the class | Import (`__init_subclass__`) | Typical `ModelSerializer` |
-| `@cached_property` / dynamic exclusions | Each serializer `__init__` (unioned) | Controller settings serializers |
-
-- **DRF `validate()` / enforcement:** unchanged.
-- **Multiple serializers per model:** `name_fields` and `excluded_fields` are **unioned** across registrations.
-- **Residual:** Dynamic exclusions apply to ORM bypass checks after at least one serializer instance for that class exists in the process.
-
-### Grandfathering vs ORM bypass
-
-- **API path:** Unchanged values on update are grandfathered in `validate()`; mixin persistence (`save()` / `create()` / `update()`) sets the context var so the signal does not re-audit that write.
-- **ORM-direct path:** The signal validates **current field values** on the instance; grandfathering does not apply (intentional for bypass auditing).
-
-### Caller attribution (hybrid)
-
-Outward stack walk from the signal handler:
-
-1. **Allowlist:** `CALLER_INFO_APP_MODULES` setting and/or `extend_caller_allowlist_prefixes()` — first matching frame wins. Use **narrow** prefixes (tasks, API views, management commands), not entire app roots.
-2. **Denylist:** DAB defaults (`django.db.models`, `django.dispatch`, `ansible_base.lib.utils.validation_signals`, `ansible_base.lib.abstract_models`, …) plus `extend_internal_caller_prefixes()` per service (e.g. shared `CommonModel.save()` wrappers).
-3. **Fallback:** First frame outside `django.*` and DAB utility modules, else `"unknown"`.
-
-DAB cannot hardcode Controller/EDA/Hub/Gateway module trees; **caller quality depends on downstream registration**.
-
-### Bulk and QuerySet audit helpers
-
-Because `post_save` never runs for `bulk_create()`, `bulk_update()`, or
-`QuerySet.update()`, DAB provides optional helpers that use the **same registry
-and validators** as the signal:
+## Audit helpers (bulk and QuerySet)
 
 ```python
 from ansible_base.lib.utils.bulk_validation_audit import (
@@ -243,304 +170,229 @@ from ansible_base.lib.utils.bulk_validation_audit import (
 )
 
 instances = audit_bulk_model_instances(instances, operation="bulk_create")
-MyModel.objects.bulk_create(instances)
-# or, before constructing instances:
-item_dicts = audit_bulk_item_dicts(MyModel, item_dicts, operation="bulk_create")
-MyModel.objects.bulk_create([MyModel(**d) for d in item_dicts])
-
-# bulk_update: pass update_fields= to audit only columns being written (avoids deferred-field queries).
 audit_bulk_model_instances(instances, operation="bulk_update", update_fields=["description"])
-
-# Literal kwargs only — F(), Case, subqueries are skipped (SQL value unknown).
-audit_queryset_update(MyModel, {"description": user_supplied})
-MyModel.objects.filter(pk=pk).update(description=user_supplied)
-# or:
-audited_queryset_update(MyModel.objects.filter(pk=pk), description=user_supplied)
 ```
 
-Log prefix: `ORM bypass (bulk_create): …`, `ORM bypass (bulk_update): …`, or
-`ORM bypass (queryset_update): …`. **Log only; do not block** writes unless product
-policy requires blocking elsewhere.
-
-**Deduping `Validation rejected` vs `ORM bypass (bulk_*):`**
-
-| Condition | `ORM bypass` emitted? |
-|-----------|----------------------|
-| `audit_bulk_*` / `post_save` only (shell, tasks) | **Yes** when text fails Tier 1/2 |
-| Same request: `validate()` already logged rejection, persistence **outside** context | **Yes** (duplicate with enforcement off) |
-| Same request: rejection registered **and** `_serializer_validation_active` during audit | **No** for that `(resource_type, field_name)` |
-
-The rejection registry alone is **not** enough to suppress bulk logs (avoids stale registry suppressing unrelated audits in tests and long-lived workers). Both the registry entry **and** active serializer persistence context are required.
-
-Custom `create()` that bulk-writes after `is_valid()`:
+**Bulk API after `is_valid()`:** If `validate()` already logged
+`Validation rejected` and enforcement is off, wrap persistence in
+`serializer_mediated_persistence_context` (from `ansible_base.lib.serializers.mixins`)
+so bulk audits do not duplicate the same field in the same request.
 
 ```python
 from ansible_base.lib.serializers.mixins import serializer_mediated_persistence_context
-from ansible_base.lib.utils.bulk_validation_audit import audit_bulk_model_instances
 
-class MyBulkSerializer(serializers.Serializer):
-    def create(self, validated_data):
-        with serializer_mediated_persistence_context():
-            return self._create_bulk(validated_data)
-
-    def _create_bulk(self, validated_data):
-        instances = [MyModel(**row) for row in validated_data["rows"]]
-        audit_bulk_model_instances(instances, operation="bulk_create")
-        MyModel.objects.bulk_create(instances)
-        ...
+def create(self, validated_data):
+    with serializer_mediated_persistence_context():
+        return self._create_bulk(validated_data)
 ```
 
-The context clears the rejection registry in `finally` after persistence completes.
+`audit_bulk_*` **materializes** iterables before auditing so generators are not
+consumed before `bulk_create()`.
 
-Services may wrap shared helpers (Controller example: **`audit_bulk_update_instances(instances, fields)`**) so only columns named in `fields` that are registered Char/Text are checked — avoiding noise when bulk-updating JSON (e.g. Host `ansible_facts`) while unrelated text on the in-memory instance is unchanged.
+Full API examples:
 
-**Workflow prompt fields (Controller):** `limit`, `job_tags`, `skip_tags`, `scm_branch` live in `char_prompts` (`NullablePromptPseudoField`), not as ORM `CharField`s. Bulk workflow launch must audit via **`getattr`** after deferred attrs are set, in addition to `audit_bulk_model_instances`.
+```python
+item_dicts = audit_bulk_item_dicts(MyModel, item_dicts, operation="bulk_create")
+MyModel.objects.bulk_create([MyModel(**d) for d in item_dicts])
 
-**Rejected alternative:** monkeypatching `QuerySet` in DAB (platform-wide risk, interaction with libraries such as `django-lifecycle` on Hub).
+audit_queryset_update(MyModel, {"description": user_supplied})
+MyModel.objects.filter(pk=pk).update(description=user_supplied)
+```
+
+Log prefixes: `ORM bypass (bulk_create):`, `ORM bypass (bulk_update):`,
+`ORM bypass (queryset_update):`. Helpers **log only**; they do not block writes.
+
+## Implementation reference (DAB maintainers)
+
+This section documents **why** the library is shaped this way and how the pieces
+fit together. Application developers can stop at the [cookbooks](#cookbooks);
+maintainers and advanced integrators use this when changing DAB or designing
+service-wide wrappers.
+
+### Why `post_save` is not enough
+
+| Django API | `post_save` fires? | DAB coverage |
+|------------|-------------------|--------------|
+| `.save()` / `.create()` | Yes | `validation_bypass_logger` |
+| `bulk_create()` / `bulk_update()` | **No** | `audit_bulk_*` at call sites |
+| `QuerySet.update()` | **No** | `audit_queryset_update` / `audited_queryset_update` |
+
+Django never emits instance signals for bulk or queryset SQL. A single global
+`post_save` handler cannot observe those paths. Product Security import/sync
+requirements therefore need **explicit audit call sites** at triaged ingress
+points, not only installing DAB.
+
+### Why opt-in helpers instead of monkeypatching ORM
+
+**Rejected approach:** patch `QuerySet.update` or `bulk_create` platform-wide.
+
+| Concern | Why opt-in wins |
+|---------|-----------------|
+| Blast radius | Hub/Pulp, `django-lifecycle`, third-party libs, and Django upgrades behave differently per service |
+| Field scope | `bulk_update` must respect `fields=` — auditing every CharField on an in-memory instance when only JSON changed creates noise |
+| Registry scope | Helpers no-op when the model is not in `_protected_models` — a global patch would still run logic on every bulk call |
+
+DAB ships **shared validators + log format** in `bulk_validation_audit.py`; each
+service chooses choke points (shared `bulk_update` helper, bulk API `create()`,
+SCM import `update()`, etc.). See [platform triage](validation_bypass_platform_triage.md).
+
+### Bulk audit helpers — design
+
+**Functions:** `audit_bulk_model_instances`, `audit_bulk_item_dicts`.
+
+- Reuse `_protected_models`, `_get_text_fields`, and `_validate_field` from
+  `validation_signals` so rules match `CleanTextMixin` and `post_save`.
+- **`update_fields=`** (bulk_update): only audit columns actually listed in the
+  ORM `fields=` argument — avoids deferred-field queries and false positives when
+  unrelated text on the instance was changed in memory only.
+- **Materialize** the input iterable before the audit loop; return the list so
+  callers can pass a generator and still call `bulk_create(materialized)`.
+- **Caller resolution is lazy:** `_get_caller_info()` runs on the first violation
+  in a batch (shared `caller_info` per helper invocation), not per instance.
+
+**Pseudo-fields:** Some models store prompt-like text outside normal columns
+(for example workflow `char_prompts`). The mixin registry may not see those as
+`CharField`s; services add small wrappers that `getattr` and validate before
+`bulk_create` (documented in consumer PRs, not in DAB core).
+
+### QuerySet audit helpers — design
+
+**Functions:** `audit_queryset_update(model, kwargs)` and
+`audited_queryset_update(queryset, **kwargs)`.
+
+- Same registry and validators as bulk helpers.
+- Only **literal `str`** values in `update()` kwargs are checked. **`F()`**,
+  **`Case`**, and subqueries are skipped — SQL does not expose final row text
+  without an extra `SELECT`, and false positives would dominate.
+- Typical production use: SCM sync writes cached YAML/text via
+  `QuerySet.update(rulebook_rulesets=…)` where no serializer runs on that SQL
+  batch.
+
+### Caller attribution (hybrid, lazy)
+
+Logs include `[caller: module.function:line]` **only when a violation is logged**
+(not on every save). Resolution walks the stack outward from the audit site:
+
+| Phase | Source | Behavior |
+|-------|--------|----------|
+| **1 — Allowlist** | `CALLER_INFO_APP_MODULES` setting + `extend_caller_allowlist_prefixes()` | First frame whose `__name__` starts with a registered prefix wins |
+| **2 — Denylist skip** | DAB defaults (`django.db.models`, `django.dispatch`, `validation_signals`, `ansible_base.lib.abstract_models`, …) + `extend_internal_caller_prefixes()` | Skip framework / model-wrapper frames; first non-denied frame wins |
+| **3 — Fallback** | Skip `django.*`, signal module, `bulk_validation_audit` | First remaining frame, else `"unknown"` |
+
+DAB cannot hardcode AWX/EDA/Hub/Gateway module trees. **Caller quality depends on
+narrow allowlists** (views, tasks, management) and **denylisting** internal
+`models` / `signals` / sync helpers so logs point at product ingress, not
+plumbing.
+
+Implementation uses `inspect` frame walk (`_iter_caller_frames`) and
+`f_globals['__name__']` — not `inspect.stack()` on every clean save.
+
+### Registry (`_protected_models`)
+
+**What gets stored:** For each registered model, DAB remembers which text columns
+use Tier 1 (name) vs Tier 2 rules and which columns serializers skip via
+`excluded_fields`.
+
+**When entries are added:**
+
+- When a `CleanTextMixin` serializer class is defined, its `Meta.model` and
+  static `name_fields` / `excluded_fields` are recorded.
+- When that serializer is **instantiated**, registration runs again so dynamic
+  exclusions (for example `@cached_property excluded_fields`) are merged in.
+- If several serializers target the same model, their `name_fields` and
+  `excluded_fields` are **combined** (union).
+
+**Why it matters:** The signal and bulk helpers look up the model in this dict
+first. Unknown models are ignored so unrelated saves (for example side effects on
+models without `CleanTextMixin`) do not produce false positives.
+
+### Serializer path vs ORM path (detailed)
+
+| Logger / message | Trigger | Blocks? |
+|------------------|---------|---------|
+| `Validation rejected …` (mixin) | `CleanTextMixin.validate()` during `is_valid()` | Only if `ENHANCED_INPUT_VALIDATION_ENABLED` |
+| `ORM bypass (post_save):` | `post_save` on registered model, no persistence context | Never |
+| `ORM bypass (bulk_*):` / `(queryset_update):` | Audit helpers before bulk/update SQL | Never |
+
+**Context var** `_serializer_validation_active` is set for the duration of
+`CleanTextMixin.save()`, `create()`, and `update()` (including **`many=True`**
+list serializers, which call child `create()` / `update()` without child
+`save()`).
+
+**Grandfathering:** API updates skip unchanged text in `validate()`; mixin
+persistence sets the context var so `post_save` does not re-audit that write.
+**ORM-direct** saves validate **current** instance values — no grandfathering
+(intentional for bypass auditing).
+
+### Deduping `Validation rejected` vs `ORM bypass (bulk_*)`
+
+When enforcement is **off**, `validate()` may log `Validation rejected` and still
+persist via bulk ORM. Without dedupe, the same field would log again as
+`ORM bypass (bulk_create):`.
+
+| Situation | `ORM bypass` emitted? |
+|-----------|----------------------|
+| Shell/task `audit_bulk_*` only | **Yes** when text fails |
+| After `is_valid()`, bulk write **outside** persistence context | **Yes** (duplicate with enforcement off) |
+| Rejection recorded **and** `_serializer_validation_active` during audit | **No** for that `(resource_type, field_name)` |
+
+The rejection registry **alone** does not suppress bulk logs (avoids stale
+registry suppressing unrelated audits in workers/tests). **Both** registry entry
+**and** active serializer persistence context are required.
+
+Custom bulk `Serializer.create()` after `is_valid()` should use
+`serializer_mediated_persistence_context()` (clears rejection registry in
+`finally`).
 
 ### Performance and blast radius
 
-- Django invokes the connected `post_save` handler on **every** model save; unregistered models pay a dict lookup and return.
-- **Expensive work** (stack walk + validation) runs only for **registered** models when the save was **not** serializer-mediated.
-- Prefer registering API-facing resources; load-test registered models under realistic ORM save rates before broad production reliance.
-- **`many=True`:** Covered by the same persistence context as single-object API traffic (child `create()` / `update()`); see [Serializer path vs ORM bypass logging](#serializer-path-vs-orm-bypass-logging-no-double-logging).
+- `post_save` runs for every model save; unregistered models pay a dict lookup and return.
+- Validation + caller walk run only for **registered** models when the save was **not** serializer-mediated, and only log when a field fails.
+- Load-test hot paths that `.save()` registered models at high volume before relying on production logs.
 
-### Log format (single-instance)
+### Enforcement toggle independence
+
+`ENHANCED_INPUT_VALIDATION_ENABLED` controls whether the **API** raises on
+serializer validation failures. **ORM bypass logging is not gated on that flag**
+— observability remains when enforcement is off (common during rollout).
+
+## Module reference
+
+| Module | Role |
+|--------|------|
+| `ansible_base.lib.utils.validation_signals` | `register_validation_signals()`, `validation_bypass_logger`, registry, caller `extend_*` APIs |
+| `ansible_base.lib.utils.bulk_validation_audit` | `audit_bulk_*`, `audited_queryset_update` |
+| `ansible_base.lib.serializers.mixins.CleanTextMixin` | API validation + registry + persistence context |
+| `ansible_base.observability.apps` | Optional: add `ansible_base.observability` to `INSTALLED_APPS` to register signals |
+
+## Monitoring and log format
 
 ```
-WARNING ansible_base.lib.utils.validation_signals: ORM bypass (post_save): validation rejected 'description' on test_app.Organization (violates Tier 2) [caller: my_app.views.create_org:42]: This field can't include HTML tags, script markup, or unsafe URI schemes.
+WARNING … ORM bypass (post_save): validation rejected 'description' on myapp.Organization (violates Tier 2) [caller: myapp.tasks.sync:42]: …
 ```
 
-Raw field values are **not** logged.
+Field values are not logged. Caller quality depends on allowlist/denylist
+configuration in the host application.
 
-## Downstream integration (Controller, Gateway, EDA, Hub)
-
-These changes land in **follow-up work** in each service repo. They are not
-required to adopt a new DAB release, but production value is limited until they
-are in place.
-
-### Controller (AWX) reference implementation (AAP-86051)
-
-**Implementation:** [ansible/awx#16672](https://github.com/ansible/awx/pull/16672) (draft; branch `AAP-86051` — **not merged** to upstream `devel` yet). Depends on [django-ansible-base#1147](https://github.com/ansible/django-ansible-base/pull/1147).
-
-| Deliverable | Status |
-|-------------|--------|
-| `configure_validation_bypass_observability()` + caller prefixes | In [awx#16672](https://github.com/ansible/awx/pull/16672) |
-| `import awx.api.serializers` in `AppConfig.ready()` (registry) | In PR |
-| `audit_bulk_model_instances` — bulk host API | In PR |
-| `audit_workflow_job_nodes_for_bulk_create` — bulk workflow launch | In PR |
-| `audit_bulk_update_instances` — field-scoped `bulk_update` | In PR — `bulk_update_sorted_by_id`, scheduler `job_explanation` batch |
-| Functional / unit tests for above | In PR |
-| `QuerySet.update()` on registered text | **No AWX prod site** — use DAB `audited_queryset_update` elsewhere (EDA); see [inventory](#queryset-update-inventory) |
-
-**Depends on:** DAB release containing `ansible_base.lib.utils.bulk_validation_audit`.
-
-#### Why four bulk hook surfaces on Controller
-
-**Single-instance writes** on registered models are already covered by DAB
-`post_save` once `import awx.api.serializers` runs in `AppConfig.ready()` —
-inventory import, management commands, and most sync code use `.save()` / `.create()`
-and do not need a separate bulk hook per call site.
-
-**Bulk writes** never fire `post_save`. Controller therefore adds **four** hook
-surfaces where bulk ORM meets **semi-trusted ingress** or **shared choke points**,
-instead of pasting `audit_bulk_*` before every `bulk_create` / `bulk_update` in
-the tree:
-
-| # | Hook surface | AWX location | What it covers |
-|---|--------------|--------------|----------------|
-| 1 | `audit_bulk_model_instances` | Bulk host API (`BulkHostCreateSerializer.create` inside `serializer_mediated_persistence_context`) | User-supplied host dicts → `Host.objects.bulk_create` |
-| 2 | `audit_workflow_job_nodes_for_bulk_create` | Bulk job launch (`BulkJobLaunchSerializer.create` inside `serializer_mediated_persistence_context`) | `WorkflowJobNode` rows + `char_prompts` pseudo-fields (`limit`, `job_tags`, …) before `bulk_create` |
-| 3 | `audit_bulk_update_instances` inside `bulk_update_sorted_by_id` | `awx/main/utils/db.py` | Every caller that bulk-updates through the helper; only columns in `fields=` that are registered Char/Text are scanned |
-| 4 | `audit_bulk_update_instances` before direct `bulk_update` | `awx/main/scheduler/task_manager.py` | Scheduler batch on `job_explanation` for `Job` (uses `UnifiedJob.objects.bulk_update`, not `db.py`) |
-
-Hooks **3** and **4** are both field-scoped `bulk_update` audit; they are listed
-separately because production uses both a **shared helper** and one **direct**
-`bulk_update` on registered text.
-
-**Why not wire the remaining production bulk sites?** `audit_bulk_*` only logs when
-(1) the model is in `_protected_models` and (2) the bulk operation persists
-registered Char/Text (for `bulk_update`, intersection with `fields=`). Adding a
-hook where either condition fails produces **no log** until the registry or call
-site changes — useful as future-proofing, but it does not improve observability
-today. The table below is the AWX production inventory used to prioritize the
-four surfaces above; re-run triage when new `CleanTextMixin` serializers ship or
-bulk paths start updating text columns.
-
-| Production site (AWX) | Bulk API | Typical `fields` / payload | Model in registry? | Bulk hook? | Rationale |
-|---------------------|----------|----------------------------|--------------------|------------|-----------|
-| Bulk host API | `bulk_create` | `name`, `description`, … | Yes (`Host`) | **Yes** (#1) | Primary user bulk ingress for hosts |
-| Bulk workflow launch | `bulk_create` | nodes + prompt pseudo-fields | Yes (`WorkflowJobNode`) | **Yes** (#2) | User-supplied launch prompts |
-| Facts / host maintenance | `bulk_update` via `bulk_update_sorted_by_id` | `ansible_facts`, `ansible_facts_modified` | Yes (`Host`) | **Yes** (#3) | Field-scoped audit runs but **no Tier 1/2 text** in `fields` — no log noise |
-| Host metrics rollup | `bulk_update` via `bulk_update_sorted_by_id` | `license_consumed`, `hosts_added`, … | Partial (`HostMetricSummaryMonthly` not mixin-covered) | **Yes** (#3) | Numeric / metric columns only |
-| Scheduler job explanations | `bulk_update` | `job_explanation` | Yes (`Job`) | **Yes** (#4) | Registered text column; content usually system-generated; audit for parity |
-| Scheduler workflow nodes | `bulk_update` | `do_not_run` | Yes (node model) | No | Boolean flag — not Char/Text Tier 1/2 |
-| Instance link maintenance | `bulk_update` | `link_state` | No / not text tier | No | Operational enum-like state |
-| Inventory task impact batch | `bulk_update` | `task_impact` | Yes (`UnifiedJob` family) | No | Integer field — not Char/Text |
-| Job event callback buffer | `bulk_create` | event rows | No (`JobEventSerializer` without `CleanTextMixin`) | No | Hook would **no-op** until registry includes event models |
-| Playbook stats / host summary | `bulk_create` | `JobHostSummary` (+ `host_name`) | No (summary serializer without mixin) | No | Hook would **no-op** today; revisit if mixin added |
-| Host metrics automation | `bulk_create` / `.update()` | `hostname`, counters | No (`HostMetric` without mixin) | No | Hook would **no-op** today |
-| Workflow M2M through table | `bulk_create` | FK join rows | N/A | No | No free-text columns |
-| RBAC role backfill | `bulk_create` | `Role` rows | No (DAB internal) | No | Trusted internal plumbing |
-| Smart inventory / indirect audit | `bulk_create` | membership / audit rows | No | No | Not in Controller text registry |
-
-**When to add another hook:** model ∈ registry **and** bulk write includes Char/Text
-in `fields=` (or instance dict for `bulk_create`) **and** data is semi-trusted or
-user-shaped. Prefer routing `bulk_update` through `bulk_update_sorted_by_id` (or a
-service-wide `audited_bulk_update` wrapper) over scattering one-off calls. Use an
-automated inventory (grep + field analysis) before each release if the registry
-grows.
-
-**Related:** `QuerySet.update()` uses the same validators via
-[queryset helpers](#bulk-and-queryset-audit-helpers); see [inventory](#queryset-update-inventory).
-
-### 1. Caller registration (`AppConfig.ready()`)
-
-Register **before** relying on `[caller: …]` in production logs.
-
-**Controller (AWX)** — illustrative prefixes; narrow to real entry points:
-
-```python
-# awx/main/apps.py (or conf AppConfig) — example only
-from ansible_base.lib.utils.validation_signals import (
-    extend_caller_allowlist_prefixes,
-    extend_internal_caller_prefixes,
-)
-
-def ready(self):
-    extend_caller_allowlist_prefixes([
-        "awx.main.tasks",
-        "awx.api.views",
-        "awx.main.management",
-    ])
-    extend_internal_caller_prefixes([
-        "awx.main.models",
-    ])
-```
-
-**EDA** — e.g. `aap_eda.core.tasks`, `aap_eda.api.views`; denylist `aap_eda.core.models`.
-
-**Hub** — signal + caller wiring can land before serializers; **`CleanTextMixin` on Galaxy API serializers** (e.g. [galaxy_ng PR 786](https://github.com/ansible-automation-platform/galaxy_ng/pull/786)) grows the registry. After merge: **`import` serializer modules in `AppConfig.ready()`**, then triage collection/import **`bulk_create`** paths for `audit_bulk_*` where user text hits registered models.
-
-**Gateway** — API views and auth flows; denylist internal model plumbing.
-
-Optional settings:
-
-```python
-CALLER_INFO_APP_MODULES = [
-    "awx.main.tasks",
-    "awx.api.views",
-]
-```
-
-### 2. Bulk / sync / import hooks
-
-Add `audit_bulk_*` (or direct validator calls) **immediately before** bulk ORM
-writes at paths that ingest external or semi-trusted data:
-
-| Service | Typical high-risk paths |
-|---------|-------------------------|
-| **Controller** | Project SCM sync, inventory source updates, LDAP/SAML user sync |
-| **EDA** | Rulebook / project content import, bulk persistence of synced objects |
-| **Hub** | Collection sync and import pipelines |
-| **Gateway** | Fewer bulk imports; focus on caller registration unless specific bulk admin paths exist |
-
-Example pattern:
-
-```python
-from ansible_base.lib.utils.bulk_validation_audit import audit_bulk_item_dicts
-
-rows = audit_bulk_item_dicts(JobTemplate, rows, operation="bulk_create")
-JobTemplate.objects.bulk_create([JobTemplate(**r) for r in rows])
-```
-
-### 3. Serializer wiring (ongoing)
-
-Each `CleanTextMixin` serializer **automatically** adds its `Meta.model` to the
-ORM bypass registry. Service wiring epics that add the mixin to more endpoints
-**expand observability** without further DAB changes.
-
-### 4. Operational checklist per service
-
-- [ ] `register_validation_signals()` (or observability app) + `extend_caller_allowlist_prefixes` / `extend_internal_caller_prefixes`
-- [ ] **`import …serializers`** (or equivalent) in `AppConfig.ready()` so `_protected_models` is populated
-- [ ] `audit_bulk_*` at agreed bulk API / sync / choke-point call sites
-- [ ] `audited_queryset_update` (or `audit_queryset_update`) where [inventory](#queryset-update-inventory) marks **Hook required**
-- [ ] Staging load test on heavily saved registered models (jobs, events, inventory)
-- [ ] Log pipeline alert on `ORM bypass (` (e.g. `(post_save)`, `(bulk_create)`, `(queryset_update)`)
-- [ ] Document triage outcomes for bulk / `QuerySet.update()` sites (see [Controller bulk inventory](#why-four-bulk-hook-surfaces-on-controller) and [QuerySet inventory](#queryset-update-inventory))
-
-**Controller (AWX):** merge [awx#16672](https://github.com/ansible/awx/pull/16672) after DAB #1147; platform follow-up includes Hub/Gateway registry wiring, ops alerting, and re-inventory when the registry grows.
-
-## QuerySet.update() inventory
-
-Django emits **no** `post_save` for `QuerySet.update()`. Use
-**`audit_queryset_update(model, kwargs)`** before the update, or
-**`audited_queryset_update(queryset, **kwargs)`** as a drop-in wrapper. Only
-**literal `str`** values in `kwargs` are validated; `F()`, `Case`, and subqueries
-are skipped (final row values are not known without a `SELECT`).
-
-**When to hook:** `model` ∈ `_protected_models` **and** `update(kwargs)` includes
-at least one registered Char/Text key (minus `excluded_fields`) with a string
-literal. **When to skip:** kwargs are booleans, integers, FK ids, hashes, or
-`F()` expressions only — hooking would no-op today but is acceptable for
-consistency.
-
-### Production sites (platform triage)
-
-| Component | Location | `update()` kwargs | Registry / text? | Hook? | Rationale |
-|-----------|----------|-------------------|------------------|-------|-----------|
-| **EDA** | `imports.py` — `_update_activations_for_rulebook` | `rulebook_rulesets`, `rulebook_rulesets_sha256`, `git_hash` | Yes — `Activation` (`TextField` rulesets) | **Yes** — `audited_queryset_update` | SCM-synced YAML on activations without serializers; **this** call can emit `ORM bypass (queryset_update)` if rulesets violate Tier 2 |
-| **EDA** | `imports.py` — `_sync_rulebook` (rulesets unchanged) | `git_hash` only | Yes — `Activation` | **Yes** — `audited_queryset_update` (same helper) | Same pattern for consistency; kwargs are hash-only so audit **usually no-ops** (no registered text in `update()`) |
-| **EDA** | `api/views/project.py` | `import_task_id` | Project registered; field is task id | No | Operational id, not user HTML ingress |
-| **EDA** | `conf/registry.py` | `Setting.value` | `Setting` not mixin-covered | No | Internal config store |
-| **Controller** | Task manager, jobs, system, receptor, events, signals, … (~15 sites) | `status`, flags, `link_state`, `event_queries_processed`, empty `start_args`, etc. | Often registered models | No | No prod path updates `name` / `description` / `job_explanation` via `update()` (`job_explanation` uses **bulk_update** + audit) |
-| **Gateway** | `utils/service_id_sync.py` | `service_id` | `ServiceCluster` registered; UUID not Tier text | No | Assign service identity, not `name` |
-| **Gateway** | DAB models (`RoleDefinition`, `Authenticator`, OAuth2) | *(none in Gateway app code)* | Serializers in `ansible_base.*` | No prod `.update(name=…)` | Tests use `.update(name=…)` to simulate legacy DB; defensive policy optional |
-| **Hub** (`galaxy_ng` app) | — | — | — | **None in app tree** | Persistence uses `.save()` / Pulp; [PR 786](https://github.com/ansible-automation-platform/galaxy_ng/pull/786) adds mixins — wire `ready()` + bulk import triage, not `update()` |
-| **DAB** (`ansible_base`) | — | — | `RoleDefinition`, `Authenticator`, OAuth2 mixins | No prod `objects.filter().update()` | JWT `update_or_create` + `.save()` use **post_save**; RBAC `bulk_create` is not text registry |
-
-### Optional hardening (not required by triage today)
-
-| Action | Why |
-|--------|-----|
-| Controller / Gateway: route **all** `update()` on registered models through `audited_queryset_update` | Future-proof if someone adds `update(description=…)` |
-| Gateway `ready()`: `import ansible_base.rbac.api.serializers`, `ansible_base.authentication.serializers` | Ensures DAB shared models are in `_protected_models` at startup |
-| CI grep: `.update(` on protected models must use `audited_queryset_update` | Catches new call sites |
-
-### Tests that document the bypass class
-
-Integration tests in **DAB** (`test_app`), **Gateway**, and **EDA** use
-`.update(name=…)` / `.update(description=…)` to simulate pre-validation database
-rows for grandfathering. Those are **not** production paths; they show why
-`audit_queryset_update` exists if product code ever mirrors them.
-
-## Remediation when a violation is logged
+## When a log line appears
 
 1. Use `[caller: …]` to find the write site.
-2. Classify data source (trusted config vs external/sync vs user input).
-3. **Preferred fixes:**
-   - Single-instance: route through a `CleanTextMixin` serializer where appropriate.
-   - Bulk: validators or `audit_bulk_*` at the sync/import site (already logging); then fix upstream data or add serializer validation on API ingress.
-   - `QuerySet.update()`: use `audited_queryset_update` or fix upstream data; for `F()`-based updates, consider a read-then-validate path if product requires parity.
-4. If bypass is intentional, document in code and optionally exclude fields via `excluded_fields` on the serializer (union affects ORM bypass scope for that model).
-
-### DAB library internal bulk (RBAC, resource registry)
-
-Django **`bulk_create`** in `ansible_base` (RBAC pipeline, resource registry backfill) does not fire `post_save`. Those rows are usually **not** in `_protected_models` (no `CleanTextMixin` on `ObjectRole`, `Resource`, etc.) — **`audit_bulk_*` would no-op today**. Treat as **trusted internal plumbing** unless Product Security requires parity; then register models + hook at choke points in DAB.
+2. Decide if data is trusted (config/sync) vs user-controlled.
+3. Prefer fixing ingress (serializer) or upstream data; document intentional bypass.
+4. For intentional internal writes, `excluded_fields` on serializers reduces ORM
+   bypass scope (union across serializers for the same model).
 
 ## Limitations
 
-- No `post_save` for bulk or `QuerySet.update()` — use bulk helpers, [Controller bulk inventory](#why-four-bulk-hook-surfaces-on-controller), and [QuerySet inventory](#queryset-update-inventory).
-- `audit_queryset_update` inspects **literal** string kwargs only, not SQL expressions or per-row values already in the database.
-- Only models with at least one `CleanTextMixin` serializer are in scope.
-- Union of `excluded_fields` across serializers can skip ORM checks on fields one team excluded (e.g. template bodies) while another serializer would validate them on the API.
-- Bypass logging is always on for registered ORM bypass saves; there is no separate flag to disable only the signal path.
-- Caller strings are only as good as per-service allowlist/denylist configuration.
+- No automatic coverage for `bulk_*` or `QuerySet.update()` without audit call sites.
+- Only registered models; only Char/Text per mixin rules.
+- `audited_queryset_update` does not inspect `F()`-based SQL updates.
+- Caller attribution is best-effort, not a full stack trace.
 
 ## See also
 
-- [validation.md](validation.md) — `CleanTextMixin`, tiers, grandfathering, `ENHANCED_INPUT_VALIDATION_ENABLED`
-- [ansible_base/lib/utils/validation_signals.py](../../ansible_base/lib/utils/validation_signals.py)
-- [ansible_base/lib/utils/bulk_validation_audit.py](../../ansible_base/lib/utils/bulk_validation_audit.py)
-- [ansible_base/lib/serializers/mixins.py](../../ansible_base/lib/serializers/mixins.py)
+- [validation.md](validation.md) — tiers, grandfathering, enforcement toggle
+- [validation_bypass_platform_triage.md](validation_bypass_platform_triage.md) — import/sync coverage, inventories, sign-off context
+- Source: `ansible_base/lib/utils/validation_signals.py`,
+  `ansible_base/lib/utils/bulk_validation_audit.py`,
+  `ansible_base/lib/serializers/mixins.py`
