@@ -61,7 +61,9 @@ class AnsibleBaseView(APIView):
             response['X-API-Time'] = '%0.3fs' % time_elapsed
 
         if getattr(self, 'deprecated', False):
-            response['Warning'] = _('This resource has been deprecated and will be removed in a future release.')
+            response['Warning'] = getattr(
+                self, 'deprecation_warning_header_override', _('This resource has been deprecated and will be removed in a future release.')
+            )
 
         return response
 
