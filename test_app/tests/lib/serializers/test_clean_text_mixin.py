@@ -1087,3 +1087,77 @@ class TestCleanTextMixinPerformance:
         assert long_avg < 2.0, f"100KB description took {long_avg:.4f}s/call -- expected well under 2s"
         # No absolute floor here, for the same reason as above.
         assert long_avg < short_avg * 100, f"Validation time grew disproportionately with text length (2KB: {short_avg:.6f}s/call, 100KB: {long_avg:.6f}s/call)"
+
+
+@pytest.mark.usefixtures('restore_protected_models_registry')
+class TestCleanTextMixinSignalRegistry:
+    """ORM bypass model registry (validation_signals) stays aligned with mixin config."""
+
+    def test_static_frozenset_helpers_resolve_mro_collections(self):
+        from ansible_base.lib.serializers.mixins import _frozenset_from_mixin_attr, _static_frozenset_from_class_dict
+
+        class _Base(CleanTextMixin, serializers.ModelSerializer):
+            excluded_fields = ['description']
+
+        class _Child(_Base):
+            name_fields = ('name', 'hostname')
+
+            class Meta:
+                model = Organization
+                fields = ['name', 'description']
+
+        assert _static_frozenset_from_class_dict(_Child, 'excluded_fields') == frozenset({'description'})
+        assert _static_frozenset_from_class_dict(_Child, 'name_fields') == frozenset({'name', 'hostname'})
+        instance = _Child()
+        assert _frozenset_from_mixin_attr(instance, 'excluded_fields', frozenset()) == frozenset({'description'})
+
+    def test_static_frozenset_skips_descriptor_on_class(self):
+        from functools import cached_property
+
+        from ansible_base.lib.serializers.mixins import _static_frozenset_from_class_dict
+
+        class _DescriptorSerializer(CleanTextMixin, serializers.ModelSerializer):
+            @cached_property
+            def excluded_fields(self):
+                return frozenset({'description'})
+
+            class Meta:
+                model = Organization
+                fields = ['name', 'description']
+
+        assert _static_frozenset_from_class_dict(_DescriptorSerializer, 'excluded_fields') is None
+
+    def test_static_excluded_fields_in_registry_at_import(self):
+        from ansible_base.lib.utils.validation_signals import _protected_models
+
+        _name_fields, excluded = _protected_models[Organization]
+        assert 'description' in excluded
+
+    def test_serializer_init_without_meta_model_does_not_register(self):
+        from ansible_base.lib.utils.validation_signals import _protected_models
+
+        before = dict(_protected_models)
+
+        class _NoMetaModelSerializer(CleanTextMixin, serializers.Serializer):
+            pass
+
+        _NoMetaModelSerializer()
+        assert _protected_models == before
+
+    def test_init_unions_cached_property_excluded_fields(self):
+        from functools import cached_property
+
+        from ansible_base.lib.utils.validation_signals import _protected_models
+
+        class _SettingsStyleSerializer(CleanTextMixin, serializers.ModelSerializer):
+            @cached_property
+            def excluded_fields(self):
+                return frozenset({'extra_field'})
+
+            class Meta:
+                model = Organization
+                fields = ['name', 'description', 'extra_field']
+
+        _SettingsStyleSerializer()
+        _name_fields, excluded = _protected_models[Organization]
+        assert 'extra_field' in excluded

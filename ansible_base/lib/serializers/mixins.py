@@ -1,5 +1,6 @@
 import logging
 import re
+from contextlib import contextmanager
 from types import MappingProxyType
 
 from django.utils.translation import gettext_lazy as _
@@ -13,6 +14,70 @@ logger = logging.getLogger('ansible_base.lib.serializers.mixins')
 
 _INCOMPLETE_VALIDATION_MSG = _("Validation could not be completed for this field.")
 _LOG_CONTROL_RE = re.compile(r'[\x00-\x1f\x7f-\x9f]')
+
+
+@contextmanager
+def _serializer_validation_persistence_context():
+    """Mark serializer-mediated ORM persistence for bypass observability.
+
+    Sets ``_serializer_validation_active`` so ``validation_bypass_logger`` skips
+    ``post_save`` duplicate lines. When ``CleanTextMixin.validate()`` already
+    logged ``Validation rejected …``, also allows ``log_orm_bypass_violation`` to
+    skip matching ``ORM bypass (bulk_*)`` lines **only while this context is
+    active** (see ``docs/lib/validation_bypass_observability.md``).
+
+    Use on custom ``Serializer.create()`` / ``update()`` that call
+    ``audit_bulk_*`` instead of ``CleanTextMixin.create()`` — wrap the full
+    persistence block (audit + ``bulk_create`` / ``bulk_update`` / ``save``).
+    """
+    from ansible_base.lib.utils.validation_signals import (
+        clear_serializer_validation_rejection_log,
+        get_validation_context_token,
+        reset_validation_context,
+    )
+
+    token = get_validation_context_token()
+    try:
+        yield
+    finally:
+        reset_validation_context(token)
+        clear_serializer_validation_rejection_log()
+
+
+# Public name for downstream imports (Controller bulk API serializers, etc.).
+serializer_mediated_persistence_context = _serializer_validation_persistence_context
+
+
+def _static_frozenset_from_class_dict(cls, attr_name):
+    """Return a frozenset mixin config declared as a concrete collection on the MRO.
+
+    Descriptors (``@cached_property``, ``@property``) on the defining class cannot be
+    resolved at import time and are skipped so ``__init__`` can register later.
+    """
+    if attr_name in cls.__dict__:
+        val = cls.__dict__[attr_name]
+        if isinstance(val, (frozenset, set, list, tuple)):
+            return frozenset(val)
+        return None
+    for base in cls.__mro__[1:]:
+        if attr_name not in base.__dict__:
+            continue
+        val = base.__dict__[attr_name]
+        if isinstance(val, (frozenset, set, list, tuple)):
+            return frozenset(val)
+    return None
+
+
+def _frozenset_from_mixin_attr(obj, attr_name, default):
+    """Resolve a mixin config on a serializer instance (supports cached_property)."""
+    val = getattr(obj, attr_name, default)
+    if isinstance(val, frozenset):
+        return val
+    if isinstance(val, (set, list, tuple)):
+        return frozenset(val)
+    if isinstance(default, frozenset):
+        return default
+    return frozenset(default)
 
 
 class CleanTextMixin:
@@ -43,11 +108,69 @@ class CleanTextMixin:
             Example: {'inputs': frozenset({'ssh_key_data'})}
 
     See docs/lib/validation.md for the full contract.
+
+    ORM bypass registry: static ``name_fields``/``excluded_fields`` register at class
+    definition; dynamic descriptors register on each serializer ``__init__`` (see
+    docs/lib/validation_bypass_observability.md#registry-and-dynamic-serializer-configuration).
     """
 
     name_fields = DEFAULT_NAME_FIELDS
     excluded_fields = frozenset()
     excluded_json_keys = MappingProxyType({})
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        # Register this serializer's model with the ORM-bypass validation signal so it
+        # knows which models are actually covered by a CleanTextMixin serializer. Concrete
+        # subclasses define Meta.model directly; intermediate/abstract mixins without a
+        # Meta (or without Meta.model) are skipped.
+        model = getattr(getattr(cls, 'Meta', None), 'model', None)
+        if model is not None:
+            from ansible_base.lib.utils.validation_signals import register_protected_model
+
+            name_fields = _static_frozenset_from_class_dict(cls, 'name_fields')
+            if name_fields is None:
+                name_fields = frozenset(DEFAULT_NAME_FIELDS)
+            excluded_fields = _static_frozenset_from_class_dict(cls, 'excluded_fields')
+            if excluded_fields is None:
+                excluded_fields = frozenset()
+            register_protected_model(model, name_fields, excluded_fields)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._register_model_with_validation_signal()
+
+    def _register_model_with_validation_signal(self):
+        """Union registry config from instance (dynamic excluded_fields/name_fields)."""
+        model = getattr(getattr(self.__class__, 'Meta', None), 'model', None)
+        if model is None:
+            return
+        from ansible_base.lib.utils.validation_signals import register_protected_model
+
+        register_protected_model(
+            model,
+            _frozenset_from_mixin_attr(self, 'name_fields', DEFAULT_NAME_FIELDS),
+            _frozenset_from_mixin_attr(self, 'excluded_fields', frozenset()),
+        )
+
+    def save(self, **kwargs):
+        # Held for the full duration of the actual persistence (including any post_save
+        # receivers it triggers, e.g. resource_registry's Resource sync) so the ORM-bypass
+        # validation signal can tell this write came from a validated serializer and skip
+        # it. Note: validate() alone is not sufficient here -- it completes during
+        # is_valid(), before save() (and the model's post_save signal) ever runs.
+        with _serializer_validation_persistence_context():
+            return super().save(**kwargs)
+
+    def create(self, validated_data):
+        # ``many=True`` uses ``ListSerializer.create()`` → child ``create()`` without
+        # calling child ``save()``; the context must still suppress false ORM-bypass logs.
+        with _serializer_validation_persistence_context():
+            return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        with _serializer_validation_persistence_context():
+            return super().update(instance, validated_data)
 
     def _log_validation_failure(self, field_name, detail):
         """Emit a WARNING-level audit log for a rejected field value.
@@ -76,6 +199,9 @@ class CleanTextMixin:
         ip_fragment = f" (ip {client_ip})" if client_ip else ""
 
         logger.warning("Validation rejected '%s' on %s%s%s: %s", field_name, resource_type, user_fragment, ip_fragment, reason)
+        from ansible_base.lib.utils.validation_signals import register_serializer_validation_rejection
+
+        register_serializer_validation_rejection(resource_type, field_name)
 
     def validate(self, attrs):
         enforce = get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False)
@@ -88,6 +214,9 @@ class CleanTextMixin:
         self._validate_json_fields(json_fields, attrs, errors)
 
         if errors and enforce:
+            from ansible_base.lib.utils.validation_signals import clear_serializer_validation_rejection_log
+
+            clear_serializer_validation_rejection_log()
             raise serializers.ValidationError(errors)
 
         return super().validate(attrs)
