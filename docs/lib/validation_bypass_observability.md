@@ -133,9 +133,8 @@ Only **literal string** kwargs are audited; `F()` / `Case` are skipped.
 
 ### I want to detect bypasses in production
 
-Search logs for: `ORM bypass (` — subtypes `(post_save)`, `(bulk_create)`,
-`(bulk_update)`, `(queryset_update)`. Use `[caller: module:line]` for triage.
-Alerting on sustained volume is an application/ops concern.
+See [Finding logs in production](#finding-logs-in-production) (message patterns,
+logger names, and how this differs from API `Validation rejected` lines).
 
 ## How detection works
 
@@ -367,12 +366,44 @@ serializer validation failures. **ORM bypass logging is not gated on that flag**
 
 ## Monitoring and log format
 
+### Finding logs in production
+
+DAB only defines **what** is logged and at which level. **Where** lines appear
+(stdout, files, centralized logging) depends on the host application’s Django
+`LOGGING` config and deployment (Kubernetes pod logs, systemd, Splunk, etc.).
+
+| What to search | When to use it |
+|----------------|----------------|
+| `ORM bypass (` | All bypass observability lines (recommended broad filter) |
+| `ORM bypass (post_save):` | Direct `.save()` / `.create()` on registered models |
+| `ORM bypass (bulk_create):` / `(bulk_update):` | After `audit_bulk_*` at bulk call sites |
+| `ORM bypass (queryset_update):` | After `audited_queryset_update` / `audit_queryset_update` |
+| Logger `ansible_base.lib.utils.validation_signals` | Narrow filter in systems that index by logger name |
+
+**Level:** `WARNING` (violations only — valid ORM text does not emit bypass lines).
+
+**Not the same as API enforcement logs:** Serializer `validate()` logs
+`Validation rejected '…'` from logger
+`ansible_base.lib.serializers.mixins`. That is the normal API path. ORM bypass
+observability uses the prefix `ORM bypass (` from
+`ansible_base.lib.utils.validation_signals`. On a healthy API request you should
+see **neither** a new `ORM bypass` line (serializer persistence suppresses
+`post_save` duplicates).
+
+**Triage:** Each bypass line includes `[caller: module.function:line]` when
+caller resolution succeeds. Raw field values are **not** logged.
+
+**Alerting:** Define thresholds in your log platform (for example sustained
+`ORM bypass` rate or new callers after a release). DAB does not ship alerts or
+dashboards.
+
+### Example line
+
 ```
-WARNING … ORM bypass (post_save): validation rejected 'description' on myapp.Organization (violates Tier 2) [caller: myapp.tasks.sync:42]: …
+WARNING ansible_base.lib.utils.validation_signals: ORM bypass (post_save): validation rejected 'description' on myapp.Organization (violates Tier 2) [caller: myapp.tasks.sync:42]: …
 ```
 
-Field values are not logged. Caller quality depends on allowlist/denylist
-configuration in the host application.
+Caller quality depends on allowlist/denylist configuration in the host application.
 
 ## When a log line appears
 
