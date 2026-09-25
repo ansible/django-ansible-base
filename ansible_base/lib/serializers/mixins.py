@@ -19,13 +19,22 @@ _LOG_CONTROL_RE = re.compile(r'[\x00-\x1f\x7f-\x9f]')
 @contextmanager
 def _serializer_validation_persistence_context():
     """Mark ORM writes as serializer-mediated for ``validation_bypass_logger``."""
-    from ansible_base.lib.utils.validation_signals import get_validation_context_token, reset_validation_context
+    from ansible_base.lib.utils.validation_signals import (
+        clear_serializer_validation_rejection_log,
+        get_validation_context_token,
+        reset_validation_context,
+    )
 
     token = get_validation_context_token()
     try:
         yield
     finally:
         reset_validation_context(token)
+        clear_serializer_validation_rejection_log()
+
+
+# Public alias for custom serializer ``create()`` paths that bypass ``CleanTextMixin.create()``.
+serializer_mediated_persistence_context = _serializer_validation_persistence_context
 
 
 def _static_frozenset_from_class_dict(cls, attr_name):
@@ -179,6 +188,9 @@ class CleanTextMixin:
         ip_fragment = f" (ip {client_ip})" if client_ip else ""
 
         logger.warning("Validation rejected '%s' on %s%s%s: %s", field_name, resource_type, user_fragment, ip_fragment, reason)
+        from ansible_base.lib.utils.validation_signals import register_serializer_validation_rejection
+
+        register_serializer_validation_rejection(resource_type, field_name)
 
     def validate(self, attrs):
         enforce = get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False)
@@ -191,6 +203,9 @@ class CleanTextMixin:
         self._validate_json_fields(json_fields, attrs, errors)
 
         if errors and enforce:
+            from ansible_base.lib.utils.validation_signals import clear_serializer_validation_rejection_log
+
+            clear_serializer_validation_rejection_log()
             raise serializers.ValidationError(errors)
 
         return super().validate(attrs)

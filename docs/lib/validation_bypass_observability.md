@@ -260,6 +260,14 @@ Log prefix: `ORM bypass (bulk_create): …`, `ORM bypass (bulk_update): …`, or
 `ORM bypass (queryset_update): …`. **Log only; do not block** writes unless product
 policy requires blocking elsewhere.
 
+When the same request already ran `CleanTextMixin.validate()` and logged
+**`Validation rejected …`** for a `(resource_type, field_name)` pair, bulk and
+`post_save` bypass helpers **skip** a duplicate `ORM bypass (`…`)` line for that
+pair until serializer-mediated persistence finishes (`serializer_mediated_persistence_context`
+or mixin `save()` / `create()` / `update()`). Custom `create()` implementations that
+bulk-write should wrap persistence in that context so the dedupe registry is cleared
+after the request.
+
 Services may wrap shared helpers (Controller example: **`audit_bulk_update_instances(instances, fields)`**) so only columns named in `fields` that are registered Char/Text are checked — avoiding noise when bulk-updating JSON (e.g. Host `ansible_facts`) while unrelated text on the in-memory instance is unchanged.
 
 **Workflow prompt fields (Controller):** `limit`, `job_tags`, `skip_tags`, `scm_branch` live in `char_prompts` (`NullablePromptPseudoField`), not as ORM `CharField`s. Bulk workflow launch must audit via **`getattr`** after deferred attrs are set, in addition to `audit_bulk_model_instances`.

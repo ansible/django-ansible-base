@@ -72,6 +72,32 @@ def reset_validation_context(token):
     _serializer_validation_active.reset(token)
 
 
+# Rejections already logged by CleanTextMixin.validate() during is_valid() — skip duplicate
+# ORM bypass (bulk_create / post_save) lines for the same resource_type + field_name until
+# serializer-mediated persistence completes.
+_serializer_validation_rejections_logged: ContextVar[set[tuple[str, str]] | None] = ContextVar(
+    'serializer_validation_rejections_logged', default=None
+)
+
+
+def register_serializer_validation_rejection(resource_type: str, field_name: str) -> None:
+    """Record that validate() already emitted ``Validation rejected …`` for this field."""
+    logged = _serializer_validation_rejections_logged.get()
+    if logged is None:
+        logged = set()
+        _serializer_validation_rejections_logged.set(logged)
+    logged.add((resource_type, field_name))
+
+
+def serializer_validation_rejection_already_logged(resource_type: str, field_name: str) -> bool:
+    logged = _serializer_validation_rejections_logged.get()
+    return logged is not None and (resource_type, field_name) in logged
+
+
+def clear_serializer_validation_rejection_log() -> None:
+    _serializer_validation_rejections_logged.set(None)
+
+
 def extend_internal_caller_prefixes(prefixes: list[str]) -> None:
     """Register service-internal module prefixes to skip during caller denylist walk (phase 2).
 
@@ -194,6 +220,8 @@ def log_orm_bypass_violation(
     reason: str,
 ) -> None:
     """Emit a structured ORM bypass WARNING (observability only; does not block writes)."""
+    if serializer_validation_rejection_already_logged(resource_type, field_name):
+        return
     logger.warning(
         "ORM bypass (%s): validation rejected '%s' on %s (violates %s) [caller: %s]: %s",
         operation,

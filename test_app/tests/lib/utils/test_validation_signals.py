@@ -342,6 +342,24 @@ class TestContextVariableHandling:
         reset_validation_context(token1)
         assert _serializer_validation_active.get(False) is False
 
+    def test_orm_bypass_skips_when_validate_already_logged(self, caplog):
+        from ansible_base.lib.utils.validation_signals import (
+            log_orm_bypass_violation,
+            register_serializer_validation_rejection,
+        )
+
+        register_serializer_validation_rejection('test_app.Organization', 'description')
+        with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
+            log_orm_bypass_violation(
+                'bulk_create',
+                'description',
+                'test_app.Organization',
+                'Tier 2',
+                'test.caller:1',
+                'bad',
+            )
+        assert not [r for r in caplog.records if 'ORM bypass' in r.message]
+
 
 @pytest.mark.usefixtures('restore_protected_models_registry')
 class TestProtectedModelRegistry:
