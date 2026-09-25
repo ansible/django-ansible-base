@@ -574,7 +574,7 @@ def _mock_response(status_code=200, body=None):
 @pytest.mark.parametrize("failure_mode", ["http_error", "exception"])
 def test_get_remote_assignments_incomplete_on_failure(failure_mode):
     """is_complete must be False on HTTP error or exception mid-pagination."""
-    RoleDefinition.objects.managed.team_member  # ensure the role exists for filtering
+    _ = RoleDefinition.objects.managed.team_member  # ensure the role exists for filtering
     api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
     page1 = _mock_response(
         body={
@@ -987,16 +987,18 @@ def test_attempt_update_resource_error_exception(static_api_client, resource_to_
 @pytest.mark.django_db
 def test_delete_resource_exception_handling():
     """Test that delete_resource logs exceptions with logger.exception."""
-    from ansible_base.resource_registry.tasks.sync import ResourceDeletionError, delete_resource
+    from ansible_base.resource_registry.tasks.sync import (
+        ResourceDeletionError,
+        delete_resource,
+    )
 
     # Create a user (which will auto-create a Resource via signals)
     user = User.objects.create(username='testuser', email='test@example.com')
     resource = Resource.get_resource_for_object(user)
 
     # Mock delete_resource to raise an Error
-    with mock.patch.object(resource, 'delete_resource', side_effect=Error("Delete failed")):
-        with pytest.raises(ResourceDeletionError):
-            delete_resource(resource)
+    with mock.patch.object(resource, 'delete_resource', side_effect=Error("Delete failed")), pytest.raises(ResourceDeletionError):
+        delete_resource(resource)
 
 
 @override_settings(RESOURCE_JWT_USER_ID='test-user-id', RESOURCE_SERVICE_PATH='/api/v1/', RESOURCE_SYNC_JWT_EXPIRATION=120)
@@ -1319,7 +1321,10 @@ def test_get_ansible_id_or_pk_for_non_org_team():
 def test_get_content_object_for_non_org_team():
     """Test get_content_object retrieves non-org/team objects by pk."""
     from ansible_base.rbac.models import DABContentType, RoleDefinition
-    from ansible_base.resource_registry.tasks.sync import AssignmentTuple, get_content_object
+    from ansible_base.resource_registry.tasks.sync import (
+        AssignmentTuple,
+        get_content_object,
+    )
     from test_app.models import Inventory, Organization
 
     # Create inventory
@@ -1346,7 +1351,10 @@ def test_get_content_object_for_non_org_team():
 @mock.patch('ansible_base.resource_registry.tasks.sync.RemoteAssignmentFetcher._paginate')
 def test_get_remote_assignments_fails_on_user_pagination(mock_paginate):
     """Test get_remote_assignments returns incomplete when user pagination fails."""
-    from ansible_base.resource_registry.tasks.sync import create_api_client, get_remote_assignments
+    from ansible_base.resource_registry.tasks.sync import (
+        create_api_client,
+        get_remote_assignments,
+    )
 
     # Make user pagination fail
     mock_paginate.return_value = False
@@ -1362,8 +1370,15 @@ def test_get_remote_assignments_fails_on_user_pagination(mock_paginate):
 @pytest.mark.django_db
 def test_create_local_assignment_with_object():
     """Test create_local_assignment creates object-scoped assignment."""
-    from ansible_base.rbac.models import DABContentType, RoleDefinition, RoleUserAssignment
-    from ansible_base.resource_registry.tasks.sync import AssignmentTuple, create_local_assignment
+    from ansible_base.rbac.models import (
+        DABContentType,
+        RoleDefinition,
+        RoleUserAssignment,
+    )
+    from ansible_base.resource_registry.tasks.sync import (
+        AssignmentTuple,
+        create_local_assignment,
+    )
     from test_app.models import Organization, User
 
     # Create user and organization with resources
@@ -1396,7 +1411,10 @@ def test_create_local_assignment_with_object():
 def test_create_local_assignment_global():
     """Test create_local_assignment creates global assignment."""
     from ansible_base.rbac.models import RoleDefinition, RoleUserAssignment
-    from ansible_base.resource_registry.tasks.sync import AssignmentTuple, create_local_assignment
+    from ansible_base.resource_registry.tasks.sync import (
+        AssignmentTuple,
+        create_local_assignment,
+    )
 
     # Create user with resource
     user = User.objects.create(username='testuser', email='test@example.com')
@@ -1424,8 +1442,15 @@ def test_create_local_assignment_global():
 @pytest.mark.django_db
 def test_create_local_assignment_for_team():
     """Test create_local_assignment creates team assignment."""
-    from ansible_base.rbac.models import DABContentType, RoleDefinition, RoleTeamAssignment
-    from ansible_base.resource_registry.tasks.sync import AssignmentTuple, create_local_assignment
+    from ansible_base.rbac.models import (
+        DABContentType,
+        RoleDefinition,
+        RoleTeamAssignment,
+    )
+    from ansible_base.resource_registry.tasks.sync import (
+        AssignmentTuple,
+        create_local_assignment,
+    )
     from test_app.models import Organization, Team
 
     # Create team and organization with resources
@@ -1459,7 +1484,10 @@ def test_create_local_assignment_for_team():
 def test_delete_local_assignment_with_object():
     """Test delete_local_assignment removes object-scoped assignment."""
     from ansible_base.rbac.models import DABContentType, RoleDefinition
-    from ansible_base.resource_registry.tasks.sync import AssignmentTuple, delete_local_assignment
+    from ansible_base.resource_registry.tasks.sync import (
+        AssignmentTuple,
+        delete_local_assignment,
+    )
     from test_app.models import Organization, User
 
     # Create user and organization with resources
@@ -1495,7 +1523,10 @@ def test_delete_local_assignment_with_object():
 def test_delete_local_assignment_global():
     """Test delete_local_assignment removes global assignment"""
     from ansible_base.rbac.models import RoleDefinition
-    from ansible_base.resource_registry.tasks.sync import AssignmentTuple, delete_local_assignment
+    from ansible_base.resource_registry.tasks.sync import (
+        AssignmentTuple,
+        delete_local_assignment,
+    )
 
     # Create user with resource
     user = User.objects.create(username='testuser', email='test@example.com')
@@ -1547,3 +1578,98 @@ def test_cleanup_orphans_continues_after_deletion_error(admin_api_client, static
     assert len(error_lines) == 2
     assert User.objects.filter(username__in=["orphan_one", "orphan_two"]).count() == 2
     assert executor.deleted_count == 0
+
+
+@pytest.mark.django_db
+def test_paginate_skips_corrupted_uuid_object_id():
+    """Assignments whose object_id is a UUID are skipped and flagged as invalid.
+
+    This guards against corrupted Gateway data where a RoleDefinition UUID ends up
+    as object_id for a namespace assignment. The corrupted assignment must be skipped
+    and the actor+role+type recorded in protected_pairs, while a valid assignment on
+    the same page is still applied.
+    """
+    corrupted_object_id = str(uuid4())
+    corrupted_actor = str(uuid4())
+    valid_actor = str(uuid4())
+    role_name = 'galaxy.collection_publisher'
+    RoleDefinition.objects.create(name=role_name, managed=True)
+
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+    api_client.list_user_assignments.return_value = _mock_response(
+        body={
+            'results': [
+                # corrupted — object_id is a UUID
+                {
+                    'user_ansible_id': corrupted_actor,
+                    'object_ansible_id': None,
+                    'object_id': corrupted_object_id,
+                    'role_definition': role_name,
+                },
+                # valid — object_id is an integer PK
+                {
+                    'user_ansible_id': valid_actor,
+                    'object_ansible_id': None,
+                    'object_id': '42',
+                    'role_definition': role_name,
+                },
+            ],
+            'next': None,
+        }
+    )
+    api_client.list_team_assignments.return_value = _mock_response()
+
+    result = RemoteAssignmentFetcher(api_client).fetch()
+
+    assert result.is_complete is True
+    # The corrupted actor+role+type is recorded so deletions for that pair are shielded.
+    assert result.protected_pairs == frozenset([(corrupted_actor, role_name, 'user')])
+    assert len(result.assignments) == 1
+    surviving = next(iter(result.assignments))
+    assert surviving.actor_ansible_id == valid_actor
+    assert surviving.ansible_id_or_pk == '42'
+
+
+@pytest.mark.django_db
+def test_sync_assignments_shields_affected_pair_but_allows_other_deletions(stdout):
+    """Only the local assignment matching a corrupted remote pair is shielded from deletion.
+
+    When object_id is a UUID for a given actor+role+type, that specific local
+    assignment is protected.  An unrelated local assignment (different actor) that
+    was genuinely revoked must still be deleted.
+    """
+    corrupted_actor = str(uuid4())
+    unrelated_actor = str(uuid4())
+    role_name = 'galaxy.collection_publisher'
+
+    # Local assignment that matches the corrupted remote pair — must NOT be deleted.
+    shielded_tuple = AssignmentTuple(
+        actor_ansible_id=corrupted_actor,
+        ansible_id_or_pk='42',
+        role_definition_name=role_name,
+        assignment_type='user',
+    )
+    # Local assignment that was genuinely revoked — must be deleted.
+    revoked_tuple = AssignmentTuple(
+        actor_ansible_id=unrelated_actor,
+        ansible_id_or_pk='99',
+        role_definition_name=role_name,
+        assignment_type='user',
+    )
+
+    remote_result = RemoteAssignmentResult(
+        assignments=set(),
+        is_complete=True,
+        protected_pairs=frozenset([(corrupted_actor, role_name, 'user')]),
+    )
+
+    with (
+        mock.patch('ansible_base.resource_registry.tasks.sync.get_remote_assignments', return_value=remote_result),
+        mock.patch('ansible_base.resource_registry.tasks.sync.get_local_assignments', return_value={shielded_tuple, revoked_tuple}),
+        mock.patch('ansible_base.resource_registry.tasks.sync.delete_local_assignment') as mock_delete,
+    ):
+        executor = SyncExecutor(api_client=mock.Mock(), sync_assignments=True)
+        executor._sync_assignments()
+
+    # Only the genuinely revoked assignment should be deleted.
+    mock_delete.assert_called_once_with(revoked_tuple)
