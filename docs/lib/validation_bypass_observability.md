@@ -71,7 +71,7 @@ Use this before adding another hook:
 | Visibility for **`bulk_create` / `bulk_update`** on registered models at service-owned call sites | DAB `audit_bulk_*` helpers + service hooks (Controller example: [four bulk surfaces](#why-four-bulk-hook-surfaces-on-controller)) |
 | Visibility for **`QuerySet.update()`** with literal string kwargs on registered models | DAB `audit_queryset_update` / `audited_queryset_update` at service call sites ([inventory](#queryset-update-inventory)) |
 | Same validation rules as the API | Reuses `validate_resource_name` and `validate_free_text` |
-| Avoid false positives on normal API traffic | Model registry + context variable around `CleanTextMixin.save()` |
+| Avoid false positives on normal API traffic | Model registry + context variable around `CleanTextMixin` persistence (`save()`, `create()`, `update()`) |
 | Actionable audit fields | Hybrid caller attribution (allowlist → denylist → fallback) |
 
 ### Design boundaries (not “uncovered forever”)
@@ -175,7 +175,7 @@ the largest blind spot** even when single-instance logging is enabled.
 ### Detection flow (single-instance saves)
 
 1. **Registry:** Skip if `sender` is not a model registered by a `CleanTextMixin` serializer (scope matches “models covered by CleanTextMixin in serializers”, not every model in the process).
-2. **Context var:** Skip if the save originated from `CleanTextMixin.save()` (see [Serializer path vs ORM bypass logging](#serializer-path-vs-orm-bypass-logging-no-double-logging)).
+2. **Context var:** Skip if the save originated from `CleanTextMixin` persistence — `save()`, `create()`, or `update()` (see [Serializer path vs ORM bypass logging](#serializer-path-vs-orm-bypass-logging-no-double-logging)).
 3. **Fields:** Same discovery as the mixin (`CharField` / `TextField`), minus registered `excluded_fields`.
 4. **Validate:** Run Tier 1 on `name_fields`, Tier 2 on other text fields.
 5. **Log:** Only if step 4 finds a violation — emit WARNING with resource type, field, tier, sanitized reason, and caller. **Independent of** `ENHANCED_INPUT_VALIDATION_ENABLED`. Valid ORM field values produce **no** `ORM bypass (`…`) log line.
@@ -192,13 +192,13 @@ enforcement toggle.
 
 **Normal API create/update (serializer path):**
 
-1. `validate()` runs Tier 1/2 checks. On violation, the mixin logs **`Validation rejected …`**. If enforcement is **on**, it also raises and the instance is **not** saved. If enforcement is **off**, it does **not** raise; the request may still call `serializer.save()` with values that failed validation.
-2. `CleanTextMixin.save()` sets a **context flag** for the entire model `save()` (including any `post_save` receivers triggered during that save).
+1. `validate()` runs Tier 1/2 checks. On violation, the mixin logs **`Validation rejected …`**. If enforcement is **on**, it also raises and the instance is **not** saved. If enforcement is **off**, it does **not** raise; the request may still call `serializer.save()` (or list `save()` via `many=True`) with values that failed validation.
+2. **`CleanTextMixin.save()`**, **`create()`**, and **`update()`** each set the same **context flag** for the duration of ORM persistence they perform (including any `post_save` receivers triggered during that write). Single-object requests use `save()` → `create()`/`update()`; **`many=True`** list endpoints call child **`create()`** / **`update()`** without child **`save()`**, so the flag must be set on those methods too.
 3. `validation_bypass_logger` runs on `post_save` but **returns immediately** while the flag is set — **no** `ORM bypass (post_save):` log, even when enforcement is **off** and bad text was persisted.
 
-So double logging is prevented by the **context variable around `serializer.save()`**, not by `ENHANCED_INPUT_VALIDATION_ENABLED`. The toggle controls whether the **API** rejects bad input before save; it does **not** turn the bypass signal on or off.
+So double logging is prevented by the **context variable around mixin persistence** (`save()` / `create()` / `update()`), not by `ENHANCED_INPUT_VALIDATION_ENABLED`. The toggle controls whether the **API** rejects bad input before save; it does **not** turn the bypass signal on or off. Bypass logs are suppressed for ORM writes that happen **inside** those methods, not merely because `is_valid()` ran.
 
-**ORM-direct path** (shell, tasks, signals that call `.save()` without `CleanTextMixin.save()`, etc.): no context flag. If stored text would fail Tier 1/2, the handler logs **`ORM bypass (post_save):`** and still allows the write.
+**ORM-direct path** (shell, tasks, signals that call `.save()` / `.create()` without going through `CleanTextMixin` persistence hooks, etc.): no context flag. If stored text would fail Tier 1/2, the handler logs **`ORM bypass (post_save):`** and still allows the write.
 
 ### Registry and dynamic serializer configuration
 
@@ -213,7 +213,7 @@ So double logging is prevented by the **context variable around `serializer.save
 
 ### Grandfathering vs ORM bypass
 
-- **API path:** Unchanged values on update are grandfathered in `validate()`; `CleanTextMixin.save()` sets the context var so the signal does not re-audit that write.
+- **API path:** Unchanged values on update are grandfathered in `validate()`; mixin persistence (`save()` / `create()` / `update()`) sets the context var so the signal does not re-audit that write.
 - **ORM-direct path:** The signal validates **current field values** on the instance; grandfathering does not apply (intentional for bypass auditing).
 
 ### Caller attribution (hybrid)
@@ -271,7 +271,7 @@ Services may wrap shared helpers (Controller example: **`audit_bulk_update_insta
 - Django invokes the connected `post_save` handler on **every** model save; unregistered models pay a dict lookup and return.
 - **Expensive work** (stack walk + validation) runs only for **registered** models when the save was **not** serializer-mediated.
 - Prefer registering API-facing resources; load-test registered models under realistic ORM save rates before broad production reliance.
-- **Open check:** `ListSerializer` / `many=True` may persist via `create()`/`update()` without `CleanTextMixin.save()` — confirm list endpoints that use the mixin.
+- **`many=True`:** Covered by the same persistence context as single-object API traffic (child `create()` / `update()`); see [Serializer path vs ORM bypass logging](#serializer-path-vs-orm-bypass-logging-no-double-logging).
 
 ### Log format (single-instance)
 

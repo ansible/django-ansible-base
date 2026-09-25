@@ -1,5 +1,6 @@
 import logging
 import re
+from contextlib import contextmanager
 from types import MappingProxyType
 
 from django.utils.translation import gettext_lazy as _
@@ -13,6 +14,18 @@ logger = logging.getLogger('ansible_base.lib.serializers.mixins')
 
 _INCOMPLETE_VALIDATION_MSG = _("Validation could not be completed for this field.")
 _LOG_CONTROL_RE = re.compile(r'[\x00-\x1f\x7f-\x9f]')
+
+
+@contextmanager
+def _serializer_validation_persistence_context():
+    """Mark ORM writes as serializer-mediated for ``validation_bypass_logger``."""
+    from ansible_base.lib.utils.validation_signals import get_validation_context_token, reset_validation_context
+
+    token = get_validation_context_token()
+    try:
+        yield
+    finally:
+        reset_validation_context(token)
 
 
 def _static_frozenset_from_class_dict(cls, attr_name):
@@ -126,13 +139,18 @@ class CleanTextMixin:
         # validation signal can tell this write came from a validated serializer and skip
         # it. Note: validate() alone is not sufficient here -- it completes during
         # is_valid(), before save() (and the model's post_save signal) ever runs.
-        from ansible_base.lib.utils.validation_signals import get_validation_context_token, reset_validation_context
-
-        token = get_validation_context_token()
-        try:
+        with _serializer_validation_persistence_context():
             return super().save(**kwargs)
-        finally:
-            reset_validation_context(token)
+
+    def create(self, validated_data):
+        # ``many=True`` uses ``ListSerializer.create()`` → child ``create()`` without
+        # calling child ``save()``; the context must still suppress false ORM-bypass logs.
+        with _serializer_validation_persistence_context():
+            return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        with _serializer_validation_persistence_context():
+            return super().update(instance, validated_data)
 
     def _log_validation_failure(self, field_name, detail):
         """Emit a WARNING-level audit log for a rejected field value.

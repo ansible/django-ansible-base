@@ -167,6 +167,27 @@ class TestValidationBypassLogging:
         signal_logs = [r for r in caplog.records if 'ORM bypass' in r.message]
         assert signal_logs == []
 
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=False)
+    def test_many_true_serializer_save_no_orm_bypass_log(self, caplog):
+        """ListSerializer persists via child create() — must not look like an ORM bypass.
+
+        With enforcement off, invalid text is logged by CleanTextMixin but still saved;
+        post_save must not emit a second ORM bypass warning.
+        """
+        serializer = OrgSerializer(
+            data=[
+                {'name': 'ValidName', 'description': '<script>alert("xss")</script>'},
+            ],
+            many=True,
+        )
+        assert serializer.is_valid(), serializer.errors
+        instances = serializer.save()
+        assert len(instances) == 1
+        assert instances[0].pk is not None
+
+        signal_logs = [r for r in caplog.records if 'ORM bypass' in r.message]
+        assert signal_logs == [], f"Serializer many=True save must not trigger ORM bypass logs: {signal_logs}"
+
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_serializer_grandfathered_update_no_signal_log(self, caplog):
         """A grandfathered field must not falsely appear as an ORM bypass via the signal.
