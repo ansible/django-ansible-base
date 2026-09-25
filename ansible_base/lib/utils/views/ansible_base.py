@@ -10,6 +10,8 @@ from ansible_base.lib.utils.settings import get_function_from_setting, get_setti
 
 logger = logging.getLogger('ansible_base.lib.utils.views.ansible_base')
 
+_GENERIC_DEPRECATION_MESSAGE = 'This resource has been deprecated and will be removed in a future release.'
+
 
 class AnsibleBaseView(APIView):
 
@@ -59,6 +61,20 @@ class AnsibleBaseView(APIView):
         if time_started:
             time_elapsed = time.time() - self.time_started
             response['X-API-Time'] = '%0.3fs' % time_elapsed
+
+        deprecation = getattr(self, 'deprecation', None)
+        if deprecation or getattr(self, 'deprecated', False):
+            from ansible_base.lib.utils.views.deprecation import mark_deprecated
+
+            if deprecation:
+                detail = deprecation['detail']
+                link = deprecation.get('link')
+            else:
+                # Legacy deprecated = True (no detail provided)
+                detail = _GENERIC_DEPRECATION_MESSAGE
+                link = None
+
+            mark_deprecated(response, detail, link)
 
         if getattr(self, 'deprecated', False):
             response['Warning'] = _('This resource has been deprecated and will be removed in a future release.')

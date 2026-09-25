@@ -453,3 +453,51 @@ def add_x_ai_description(result: dict, generator: Any, request: Any, public: Opt
                 _process_operation(operation, method, path)
 
     return result
+
+
+# Deprecation response headers to inject into deprecated operations
+DEPRECATION_RESPONSE_HEADERS = {
+    "X-Deprecated": {
+        "description": "Boolean signal that the response involves deprecated functionality.",
+        "schema": {"type": "string", "enum": ["true"]},
+    },
+    "X-Deprecated-Detail": {
+        "description": "Human-readable description of what is deprecated and migration guidance.",
+        "schema": {"type": "string"},
+    },
+}
+
+
+def postprocess_inject_deprecation_headers(
+    result,
+    generator,  # NOSONAR
+    request,  # NOSONAR
+    public,  # NOSONAR
+):
+    """
+    Add X-Deprecated and X-Deprecated-Detail response headers to deprecated operations.
+
+    Automatically injects deprecation response headers into the OpenAPI schema for any
+    operation marked with deprecated: true. This ensures API consumers and code generators
+    are aware that these headers may appear in responses.
+
+    Args:
+        result: The OpenAPI schema dict to be modified
+        generator: The SchemaGenerator instance (unused)
+        request: The HTTP request (unused)
+        public: Boolean indicating if this is for public schema (unused)
+
+    Returns:
+        The modified schema dictionary with deprecation headers added
+    """
+    operations = (
+        op
+        for path_item in result.get("paths", {}).values()
+        for op in path_item.values()
+        if isinstance(op, dict) and op.get("deprecated")
+    )
+    for operation in operations:
+        for response in operation.get("responses", {}).values():
+            if isinstance(response, dict):
+                response.setdefault("headers", {}).update(DEPRECATION_RESPONSE_HEADERS)
+    return result

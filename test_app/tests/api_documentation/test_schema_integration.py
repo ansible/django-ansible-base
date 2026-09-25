@@ -188,3 +188,49 @@ def test_role_user_assignment_create_schema(admin_api_client):
     assert 'properties' in object_requirement
     assert 'object_id' in object_requirement['properties']
     assert 'object_ansible_id' in object_requirement['properties']
+
+
+def test_openapi_schema_deprecated_endpoint_marked(admin_api_client):
+    """Test that @deprecated decorated endpoints have deprecated: true in schema."""
+    url = '/api/v1/docs/schema/'
+    response = admin_api_client.get(url)
+    schema = response.data
+
+    deprecated_path = schema['paths'].get('/api/v1/deprecated_endpoint/')
+    assert deprecated_path is not None, "deprecated_endpoint should exist in schema"
+
+    list_op = deprecated_path.get('get')
+    assert list_op is not None
+    assert list_op.get('deprecated') is True
+
+
+def test_openapi_schema_conditional_deprecation_not_marked(admin_api_client):
+    """Test that conditional deprecation endpoints are NOT marked deprecated in schema."""
+    url = '/api/v1/docs/schema/'
+    response = admin_api_client.get(url)
+    schema = response.data
+
+    conditional_path = schema['paths'].get('/api/v1/conditional_deprecation/')
+    assert conditional_path is not None, "conditional_deprecation should exist in schema"
+
+    list_op = conditional_path.get('get')
+    assert list_op is not None
+    assert list_op.get('deprecated') is not True
+
+
+def test_openapi_schema_legacy_deprecated_not_marked(admin_api_client):
+    """Test that legacy deprecated=True endpoints are NOT marked deprecated in schema.
+
+    The legacy boolean attribute doesn't carry detail/link metadata, so it only
+    emits runtime headers. Services should migrate to @deprecated for schema marking.
+    """
+    url = '/api/v1/docs/schema/'
+    response = admin_api_client.get(url)
+    schema = response.data
+
+    legacy_path = schema['paths'].get('/api/v1/legacy_deprecated/')
+    assert legacy_path is not None, "legacy_deprecated should exist in schema"
+
+    list_op = legacy_path.get('get')
+    assert list_op is not None
+    assert list_op.get('deprecated') is not True
