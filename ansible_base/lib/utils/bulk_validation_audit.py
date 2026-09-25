@@ -108,24 +108,22 @@ def audit_bulk_item_dicts(
     """
     materialized = list(items)
     protected = _protected_models.get(model)
-    if protected is None:
-        return materialized
-    name_fields, excluded_fields = protected
-    text_fields, _json_fields = _get_text_fields(model)
-    if not text_fields:
-        return materialized
-    caller_info = None
-    resource_type = f"{model._meta.app_label}.{model._meta.object_name}"
-    for item in materialized:
-        caller_info = _audit_registered_model_fields(
-            operation=operation,
-            caller_info=caller_info,
-            model=model,
-            resource_type=resource_type,
-            name_fields=name_fields,
-            excluded_fields=excluded_fields,
-            get_field_value=item.get,
-        )
+    if protected is not None:
+        name_fields, excluded_fields = protected
+        text_fields, _json_fields = _get_text_fields(model)
+        if text_fields:
+            caller_info = None
+            resource_type = f"{model._meta.app_label}.{model._meta.object_name}"
+            for item in materialized:
+                caller_info = _audit_registered_model_fields(
+                    operation=operation,
+                    caller_info=caller_info,
+                    model=model,
+                    resource_type=resource_type,
+                    name_fields=name_fields,
+                    excluded_fields=excluded_fields,
+                    get_field_value=item.get,
+                )
     return materialized
 
 

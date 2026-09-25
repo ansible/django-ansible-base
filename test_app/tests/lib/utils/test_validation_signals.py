@@ -506,6 +506,14 @@ class TestBulkValidationAudit:
         assert len(materialized) == 1
         assert materialized[0].description == '<script>x</script>'
 
+    def test_audit_bulk_item_dicts_materializes_generator(self):
+        def gen():
+            yield {'name': 'Valid', 'description': 'Bulk row'}
+
+        rows = audit_bulk_item_dicts(Organization, gen(), operation='bulk_create')
+        assert len(rows) == 1
+        assert rows[0]['description'] == 'Bulk row'
+
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_audit_bulk_model_instances_logs_violation(self, caplog):
         instances = [Organization(name='Valid', description='<script>x</script>')]
@@ -610,6 +618,10 @@ class TestBulkValidationAudit:
         logs = [r for r in caplog.records if 'ORM bypass (queryset_update)' in r.message]
         assert len(logs) == 1
         assert 'test_app.Organization' in logs[0].message
+
+    def test_audit_queryset_update_noop_when_empty_kwargs(self, caplog):
+        audit_queryset_update(Organization, {})
+        assert [r for r in caplog.records if 'ORM bypass' in r.message] == []
 
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_audit_queryset_update_skips_non_string_values(self, caplog):
