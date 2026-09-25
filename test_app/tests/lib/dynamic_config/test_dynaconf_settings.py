@@ -110,8 +110,10 @@ def test_rbac_required_settings():
         'MANAGE_ORGANIZATION_AUTH',
         'ANSIBLE_BASE_RBAC_MODEL_REGISTRY',
         'ORG_ADMINS_CAN_SEE_ALL_USERS',
+        'ALLOW_USER_USERNAME_SELF_EDIT',
     ]
     assert set(rbac_expected_settings) == set(settings.keys() & rbac_expected_settings)
+    assert settings['ALLOW_USER_USERNAME_SELF_EDIT'] is False
 
 
 def test_resource_registry_required_settings():
