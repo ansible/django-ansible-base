@@ -18,7 +18,18 @@ _LOG_CONTROL_RE = re.compile(r'[\x00-\x1f\x7f-\x9f]')
 
 @contextmanager
 def _serializer_validation_persistence_context():
-    """Mark ORM writes as serializer-mediated for ``validation_bypass_logger``."""
+    """Mark serializer-mediated ORM persistence for bypass observability.
+
+    Sets ``_serializer_validation_active`` so ``validation_bypass_logger`` skips
+    ``post_save`` duplicate lines. When ``CleanTextMixin.validate()`` already
+    logged ``Validation rejected …``, also allows ``log_orm_bypass_violation`` to
+    skip matching ``ORM bypass (bulk_*)`` lines **only while this context is
+    active** (see ``docs/lib/validation_bypass_observability.md``).
+
+    Use on custom ``Serializer.create()`` / ``update()`` that call
+    ``audit_bulk_*`` instead of ``CleanTextMixin.create()`` — wrap the full
+    persistence block (audit + ``bulk_create`` / ``bulk_update`` / ``save``).
+    """
     from ansible_base.lib.utils.validation_signals import (
         clear_serializer_validation_rejection_log,
         get_validation_context_token,
@@ -33,7 +44,7 @@ def _serializer_validation_persistence_context():
         clear_serializer_validation_rejection_log()
 
 
-# Public alias for custom serializer ``create()`` paths that bypass ``CleanTextMixin.create()``.
+# Public name for downstream imports (Controller bulk API serializers, etc.).
 serializer_mediated_persistence_context = _serializer_validation_persistence_context
 
 

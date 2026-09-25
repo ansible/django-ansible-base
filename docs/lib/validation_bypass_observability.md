@@ -198,6 +198,8 @@ enforcement toggle.
 
 So double logging is prevented by the **context variable around mixin persistence** (`save()` / `create()` / `update()`), not by `ENHANCED_INPUT_VALIDATION_ENABLED`. The toggle controls whether the **API** rejects bad input before save; it does **not** turn the bypass signal on or off. Bypass logs are suppressed for ORM writes that happen **inside** those methods, not merely because `is_valid()` ran.
 
+**Bulk API serializers (`Serializer`, not `ModelSerializer`):** Nested `CleanTextMixin` children still run `validate()` during `is_valid()` and may log **`Validation rejected …`**. If the parent `create()` calls `audit_bulk_*` then `bulk_create()` without entering mixin `create()`, you must wrap that block in **`serializer_mediated_persistence_context`** (import from `ansible_base.lib.serializers.mixins`). Otherwise, with enforcement **off**, the same field can log again as **`ORM bypass (bulk_create):`**. Shell-only bulk audits (no prior `is_valid()`) must **not** use that wrapper unless you intend to suppress logs.
+
 **ORM-direct path** (shell, tasks, signals that call `.save()` / `.create()` without going through `CleanTextMixin` persistence hooks, etc.): no context flag. If stored text would fail Tier 1/2, the handler logs **`ORM bypass (post_save):`** and still allows the write.
 
 ### Registry and dynamic serializer configuration
@@ -260,13 +262,35 @@ Log prefix: `ORM bypass (bulk_create): …`, `ORM bypass (bulk_update): …`, or
 `ORM bypass (queryset_update): …`. **Log only; do not block** writes unless product
 policy requires blocking elsewhere.
 
-When the same request already ran `CleanTextMixin.validate()` and logged
-**`Validation rejected …`** for a `(resource_type, field_name)` pair, bulk and
-`post_save` bypass helpers **skip** a duplicate `ORM bypass (`…`)` line for that
-pair until serializer-mediated persistence finishes (`serializer_mediated_persistence_context`
-or mixin `save()` / `create()` / `update()`). Custom `create()` implementations that
-bulk-write should wrap persistence in that context so the dedupe registry is cleared
-after the request.
+**Deduping `Validation rejected` vs `ORM bypass (bulk_*):`**
+
+| Condition | `ORM bypass` emitted? |
+|-----------|----------------------|
+| `audit_bulk_*` / `post_save` only (shell, tasks) | **Yes** when text fails Tier 1/2 |
+| Same request: `validate()` already logged rejection, persistence **outside** context | **Yes** (duplicate with enforcement off) |
+| Same request: rejection registered **and** `_serializer_validation_active` during audit | **No** for that `(resource_type, field_name)` |
+
+The rejection registry alone is **not** enough to suppress bulk logs (avoids stale registry suppressing unrelated audits in tests and long-lived workers). Both the registry entry **and** active serializer persistence context are required.
+
+Custom `create()` that bulk-writes after `is_valid()`:
+
+```python
+from ansible_base.lib.serializers.mixins import serializer_mediated_persistence_context
+from ansible_base.lib.utils.bulk_validation_audit import audit_bulk_model_instances
+
+class MyBulkSerializer(serializers.Serializer):
+    def create(self, validated_data):
+        with serializer_mediated_persistence_context():
+            return self._create_bulk(validated_data)
+
+    def _create_bulk(self, validated_data):
+        instances = [MyModel(**row) for row in validated_data["rows"]]
+        audit_bulk_model_instances(instances, operation="bulk_create")
+        MyModel.objects.bulk_create(instances)
+        ...
+```
+
+The context clears the rejection registry in `finally` after persistence completes.
 
 Services may wrap shared helpers (Controller example: **`audit_bulk_update_instances(instances, fields)`**) so only columns named in `fields` that are registered Char/Text are checked — avoiding noise when bulk-updating JSON (e.g. Host `ansible_facts`) while unrelated text on the in-memory instance is unchanged.
 
@@ -325,8 +349,8 @@ the tree:
 
 | # | Hook surface | AWX location | What it covers |
 |---|--------------|--------------|----------------|
-| 1 | `audit_bulk_model_instances` | Bulk host API (`BulkHostCreateSerializer.create`) | User-supplied host dicts → `Host.objects.bulk_create` |
-| 2 | `audit_workflow_job_nodes_for_bulk_create` | Bulk job launch (`BulkJobLaunchSerializer`) | `WorkflowJobNode` rows + `char_prompts` pseudo-fields (`limit`, `job_tags`, …) before `bulk_create` |
+| 1 | `audit_bulk_model_instances` | Bulk host API (`BulkHostCreateSerializer.create` inside `serializer_mediated_persistence_context`) | User-supplied host dicts → `Host.objects.bulk_create` |
+| 2 | `audit_workflow_job_nodes_for_bulk_create` | Bulk job launch (`BulkJobLaunchSerializer.create` inside `serializer_mediated_persistence_context`) | `WorkflowJobNode` rows + `char_prompts` pseudo-fields (`limit`, `job_tags`, …) before `bulk_create` |
 | 3 | `audit_bulk_update_instances` inside `bulk_update_sorted_by_id` | `awx/main/utils/db.py` | Every caller that bulk-updates through the helper; only columns in `fields=` that are registered Char/Text are scanned |
 | 4 | `audit_bulk_update_instances` before direct `bulk_update` | `awx/main/scheduler/task_manager.py` | Scheduler batch on `job_explanation` for `Job` (uses `UnifiedJob.objects.bulk_update`, not `db.py`) |
 
