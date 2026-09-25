@@ -35,8 +35,7 @@ _PATTERN_DESCRIPTION_DESC = (
 )
 
 _FLAGS_DESCRIPTION = (
-    'Regex flags to apply when evaluating `pattern` (e.g. "u" for Unicode mode, '
-    '"i" for case-insensitive). Present under the same condition as `pattern`.'
+    'Regex flags to apply when evaluating `pattern` (e.g. "u" for Unicode mode, ' + '"i" for case-insensitive). Present under the same condition as `pattern`.'
 )
 
 _NORMALIZE_DESCRIPTION = (
