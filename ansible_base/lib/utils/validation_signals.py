@@ -75,9 +75,7 @@ def reset_validation_context(token):
 # Rejections already logged by CleanTextMixin.validate() during is_valid() — skip duplicate
 # ORM bypass (bulk_create / post_save) lines for the same resource_type + field_name until
 # serializer-mediated persistence completes.
-_serializer_validation_rejections_logged: ContextVar[set[tuple[str, str]] | None] = ContextVar(
-    'serializer_validation_rejections_logged', default=None
-)
+_serializer_validation_rejections_logged: ContextVar[set[tuple[str, str]] | None] = ContextVar('serializer_validation_rejections_logged', default=None)
 
 
 def register_serializer_validation_rejection(resource_type: str, field_name: str) -> None:
@@ -220,7 +218,7 @@ def log_orm_bypass_violation(
     reason: str,
 ) -> None:
     """Emit a structured ORM bypass WARNING (observability only; does not block writes)."""
-    if serializer_validation_rejection_already_logged(resource_type, field_name):
+    if _serializer_validation_active.get(False) and serializer_validation_rejection_already_logged(resource_type, field_name):
         return
     logger.warning(
         "ORM bypass (%s): validation rejected '%s' on %s (violates %s) [caller: %s]: %s",

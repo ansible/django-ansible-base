@@ -349,15 +349,19 @@ class TestContextVariableHandling:
         )
 
         register_serializer_validation_rejection('test_app.Organization', 'description')
-        with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
-            log_orm_bypass_violation(
-                'bulk_create',
-                'description',
-                'test_app.Organization',
-                'Tier 2',
-                'test.caller:1',
-                'bad',
-            )
+        token = get_validation_context_token()
+        try:
+            with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
+                log_orm_bypass_violation(
+                    'bulk_create',
+                    'description',
+                    'test_app.Organization',
+                    'Tier 2',
+                    'test.caller:1',
+                    'bad',
+                )
+        finally:
+            reset_validation_context(token)
         assert not [r for r in caplog.records if 'ORM bypass' in r.message]
 
 
