@@ -1,11 +1,21 @@
+import uuid
+
 import pytest
 from django.contrib.auth import get_user_model
+from django.contrib.contenttypes.models import ContentType
 from django.db import connection
 from django.test.utils import override_settings
 
 from ansible_base.rbac import permission_registry
-from ansible_base.rbac.claims import get_claims_hash, get_user_claims, get_user_claims_hashable_form, save_user_claims
-from ansible_base.rbac.models import RoleDefinition
+from ansible_base.rbac.claims import (
+    get_claims_hash,
+    get_user_claims,
+    get_user_claims_hashable_form,
+    get_user_object_roles,
+    save_user_claims,
+)
+from ansible_base.rbac.models import DABContentType, RoleDefinition, RoleUserAssignment
+from ansible_base.resource_registry.models import Resource
 from test_app.models import Inventory, Organization, Team
 
 
@@ -235,6 +245,55 @@ class ClaimsScenario:
             hashable_claims['object_roles']['Team Member'] = sorted(team_ansible_ids)
 
         return hashable_claims
+
+
+@pytest.mark.django_db
+@override_settings(ANSIBLE_BASE_JWT_MANAGED_ROLES=['Namespace Owner'])
+def test_user_object_roles_does_not_match_content_type_ids():
+    user = get_user_model().objects.create(username='content-type-collision-user')
+    wrong_resource_type = ContentType.objects.create(app_label='wrong', model=f'wrong_{uuid.uuid4().hex}')
+    while DABContentType.objects.filter(pk=wrong_resource_type.pk).exists():
+        wrong_resource_type = ContentType.objects.create(app_label='wrong', model=f'wrong_{uuid.uuid4().hex}')
+
+    dab_content_type = DABContentType.objects.create(
+        id=wrong_resource_type.pk,
+        service='aap',
+        app_label='test_app',
+        model=f'organization_alias_{uuid.uuid4().hex}',
+        pk_field_type='integer',
+    )
+    role_definition = RoleDefinition.objects.create(name='Namespace Owner', content_type=dab_content_type)
+    assignment = RoleUserAssignment.objects.create(
+        user=user,
+        role_definition=role_definition,
+        content_type=dab_content_type,
+        object_id='17',
+        object_role=None,
+    )
+    wrong_resource = Resource.objects.create(content_type=wrong_resource_type, object_id='17')
+
+    result = get_user_object_roles(user).get(pk=assignment.pk)
+
+    assert result.aid is None
+    assert result.resource_name is None
+    assert result.aid != wrong_resource.ansible_id
+
+
+@pytest.mark.django_db
+@override_settings(ANSIBLE_BASE_JWT_MANAGED_ROLES=['Namespace Owner'])
+def test_user_claims_skip_assignments_without_resources():
+    user = get_user_model().objects.create(username='missing-resource-user')
+    dab_content_type = DABContentType.objects.get_for_model(Organization)
+    role_definition = RoleDefinition.objects.create(name='Namespace Owner', content_type=dab_content_type)
+    RoleUserAssignment.objects.create(
+        user=user,
+        role_definition=role_definition,
+        content_type=dab_content_type,
+        object_id='missing-object',
+        object_role=None,
+    )
+
+    assert get_user_claims(user)['object_roles'] == {}
 
 
 @pytest.mark.django_db

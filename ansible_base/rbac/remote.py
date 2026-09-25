@@ -164,6 +164,11 @@ def get_local_resource_prefix() -> str:
     return 'local'
 
 
+def get_local_resource_services() -> tuple[str, str]:
+    """Return service names whose objects exist in this Django process."""
+    return ('shared', get_local_resource_prefix())
+
+
 def get_resource_prefix(model: Union[Type[models.Model], models.Model, Type[RemoteObject], RemoteObject]) -> str:
     """The API project designator for given cls, according to the resource registry
 
