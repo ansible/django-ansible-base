@@ -23,6 +23,8 @@ def try_add_oauth2_scope_permission(permission_classes: list):
 
 
 def check_service_token_auth(request, view):
+    if not (request.user and request.user.is_authenticated):
+        return False
     if is_system_user(request.user) and getattr(view, 'allow_service_token', False) is True and request.auth == 'ServiceTokenAuthentication':
         return True
     return False
