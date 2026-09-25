@@ -6,6 +6,7 @@ from django.utils.deprecation import MiddlewareMixin
 from social_django.middleware import SocialAuthExceptionMiddleware
 
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugins
+from ansible_base.authentication.utils.oauth_http import oauth_http_error_body
 from ansible_base.lib.logging import log_auth_error
 
 logger = logging.getLogger('ansible_base.authentication.middleware')
@@ -50,5 +51,7 @@ class SocialExceptionHandlerMiddleware(SocialAuthExceptionMiddleware):
         error_url = strategy.setting("LOGIN_ERROR_URL")
         backend = getattr(request, "backend", None)
         backend_name = getattr(backend, "name", "unknown-backend")
-        log_auth_error(f"Auth failure for backend {backend_name} - {repr(exception)}, redirecting to {error_url}")
+        provider_body = oauth_http_error_body(getattr(exception, "response", None))
+        extra = f", provider response={provider_body}" if provider_body else ""
+        log_auth_error(f"Auth failure for backend {backend_name} - {repr(exception)}{extra}, redirecting to {error_url}")
         return error_url
