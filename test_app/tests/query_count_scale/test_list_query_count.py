@@ -51,7 +51,6 @@ QUERY_COUNT_CASES = [
         'application-list',
         {},
         10,
-        marks=pytest.mark.xfail(reason="AAP-92618 N+1 (access_tokens + unprefetched FK summary fields); 154q/30 rows vs cutoff 10", strict=True),
         id='application_list',
     ),
     pytest.param(
