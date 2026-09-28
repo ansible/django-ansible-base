@@ -1,10 +1,12 @@
 import pytest
+from unittest.mock import patch
 from django.apps import apps
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
 from django.test import TestCase
 from django.test.utils import isolate_apps
 
+from ansible_base.rbac import permission_registry
 from ansible_base.rbac.management.create_types import create_DAB_contenttypes, find_next_unreserved_id
 from ansible_base.rbac.migrations._utils import create_types_if_needed
 from ansible_base.rbac.models import DABContentType, DABPermission
@@ -331,10 +333,10 @@ def test_reserved_ids_prevents_direct_assignment_collision():
     This specifically exercises the condition: real_ct.id not in reserved_ids
 
     Scenario:
-    - Organization needs fallback (its Django CT ID is blocked)
-    - Set max_id so Organization's fallback reserves Team's Django CT ID
-    - Team tries direct assignment with that ID
-    - reserved_ids check prevents collision, Team uses fallback instead
+    - First model (with higher CT ID) needs fallback (its Django CT ID is blocked)
+    - Set max_id so first model's fallback reserves second model's Django CT ID
+    - Second model tries direct assignment with that ID
+    - reserved_ids check prevents collision, second model uses fallback instead
 
     This ensures the fix properly tracks batch reservations, not just DB state.
     """
@@ -346,37 +348,60 @@ def test_reserved_ids_prevents_direct_assignment_collision():
     org_django_ct = ContentType.objects.get_for_model(Organization)
     team_django_ct = ContentType.objects.get_for_model(Team)
 
+    # Determine which model has higher CT ID - this will be processed first
+    # to ensure deterministic test behavior
+    models_by_ct_id = sorted(
+        [(Organization, org_django_ct.id), (Team, team_django_ct.id)],
+        key=lambda x: x[1],
+        reverse=True
+    )
+    first_model, first_ct_id = models_by_ct_id[0]
+    second_model, second_ct_id = models_by_ct_id[1]
+
+    # Get the actual ContentType objects for verification
+    first_django_ct = ContentType.objects.get_for_model(first_model)
+    second_django_ct = ContentType.objects.get_for_model(second_model)
+
     # Critical setup: Create a scenario where fallback ID equals a direct ID
-    # Block ONLY Organization's ID, leave Team's ID free
+    # Block the first model's ID (the one with higher CT ID)
     DABContentType.objects.create(
-        id=org_django_ct.id,
+        id=first_ct_id,
         service='blocker_service',
         app_label='fake_app',
         model='blocker',
     )
 
-    # Set max_id = team_django_ct.id - 1
-    # So Organization's fallback calculates: max_id + 1 = team_django_ct.id
+    # Set max_id = second_ct_id - 1
+    # So first model's fallback calculates: max_id + 1 = second_ct_id
     # This creates the collision scenario
-    if team_django_ct.id > org_django_ct.id:
-        setup_id = team_django_ct.id - 1
-        if setup_id != org_django_ct.id:  # Don't duplicate the blocker
-            DABContentType.objects.create(
-                id=setup_id,
-                service='setup_service',
-                app_label='fake_app',
-                model='setup',
-            )
+    setup_id = second_ct_id - 1
+    if setup_id != first_ct_id:  # Don't duplicate the blocker
+        DABContentType.objects.create(
+            id=setup_id,
+            service='setup_service',
+            app_label='fake_app',
+            model='setup',
+        )
 
-    # Now when create_DAB_contenttypes runs:
-    # 1. Organization: CT ID blocked → fallback = max_id+1 = team_django_ct.id
-    #    Reserves team_django_ct.id in reserved_ids
-    # 2. Team: real_ct.id = team_django_ct.id
+    # Get all registered models and order them deterministically
+    # Place model with maximum CT ID first to exercise fallback allocation
+    registered_models = list(permission_registry.all_registered_models)
+    ordered_models = sorted(
+        registered_models,
+        key=lambda m: ContentType.objects.get_for_model(m).id,
+        reverse=True
+    )
+
+    # Now when create_DAB_contenttypes runs with ordered traversal:
+    # 1. First model (higher CT ID): CT ID blocked → fallback = max_id+1 = second_ct_id
+    #    Reserves second_ct_id in reserved_ids
+    # 2. Second model: real_ct.id = second_ct_id
     #    Check: not in DB? TRUE
     #    Check: not in reserved_ids? FALSE ← THIS IS THE KEY CHECK
     #    Must use fallback instead of direct assignment
 
-    create_DAB_contenttypes(apps=apps)
+    with patch.object(permission_registry, 'all_registered_models', ordered_models):
+        create_DAB_contenttypes(apps=apps)
 
     # Verify both created
     shared_org = DABContentType.objects.filter(service='shared', model='organization').first()
@@ -385,22 +410,31 @@ def test_reserved_ids_prevents_direct_assignment_collision():
     assert shared_org is not None, "shared.organization should be created"
     assert shared_team is not None, "shared.team should be created"
 
-    # The key assertion: Team should NOT have its Django CT ID
-    # because that ID was reserved by Organization's fallback
-    if team_django_ct.id > org_django_ct.id:
-        # If the scenario was set up correctly:
-        # - Organization likely got team_django_ct.id (fallback)
-        # - Team could NOT use team_django_ct.id (reserved), got different ID
-        assert shared_org.id != shared_team.id, "Must have different IDs"
+    # Strengthen assertions: verify exact direct and fallback ID assignments
+    first_result = DABContentType.objects.get(service='shared', model=first_model._meta.model_name)
+    second_result = DABContentType.objects.get(service='shared', model=second_model._meta.model_name)
 
-        # Verify the reserved_ids check worked:
-        # If Team has its Django CT ID, the check failed
-        if shared_org.id == team_django_ct.id:
-            assert shared_team.id != team_django_ct.id, (
-                f"Team should not have Django CT ID {team_django_ct.id} "
-                f"because Organization reserved it via fallback. "
-                f"This means 'real_ct.id not in reserved_ids' check failed!"
-            )
+    # First model should use fallback (second_ct_id) because its CT ID was blocked
+    assert first_result.id == second_ct_id, (
+        f"First model (max CT ID) should get fallback ID {second_ct_id}, "
+        f"but got {first_result.id}"
+    )
+
+    # Second model should NOT have its Django CT ID because it was reserved
+    assert second_result.id != second_ct_id, (
+        f"Second model should not have Django CT ID {second_ct_id} "
+        f"because first model reserved it via fallback. "
+        f"This means 'real_ct.id not in reserved_ids' check failed!"
+    )
+
+    # Second model should use next available fallback (second_ct_id + 1)
+    assert second_result.id == second_ct_id + 1, (
+        f"Second model should get fallback ID {second_ct_id + 1}, "
+        f"but got {second_result.id}"
+    )
+
+    # Verify they have different IDs
+    assert first_result.id != second_result.id, "Must have different IDs"
 
     # Verify no duplicates
     all_ids = list(DABContentType.objects.values_list('id', flat=True))
