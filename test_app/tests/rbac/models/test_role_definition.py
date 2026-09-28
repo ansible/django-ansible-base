@@ -7,7 +7,7 @@ from rest_framework.exceptions import ValidationError
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import DABContentType, DABPermission, ObjectRole, RoleDefinition, RoleEvaluation
 from ansible_base.rbac.validators import validate_permissions_for_model
-from test_app.models import ExampleEvent, Inventory, Organization
+from test_app.models import ExampleEvent, Inventory, Organization, Team
 
 
 @pytest.mark.django_db
@@ -305,3 +305,47 @@ def test_create_from_permissions_reuses_existing_name():
 
     # Verify only one RoleDefinition exists with this name
     assert RoleDefinition.objects.filter(name='collision-test-role').count() == 1
+
+
+@pytest.mark.django_db
+class TestAssignableScope:
+    """Covers RoleDefinition.assignable_scope_q(), used by the role_definition
+    list's assignable_scope filter to narrow results to roles usable without
+    a specific target object (system, organization, or team scoped)."""
+
+    @pytest.fixture
+    def system_rd(self):
+        return RoleDefinition.objects.create(name='assignable-scope-system')
+
+    @pytest.fixture
+    def org_rd(self):
+        org_ct = DABContentType.objects.get_for_model(Organization)
+        return RoleDefinition.objects.create_from_permissions(permissions=['view_organization'], name='assignable-scope-org', content_type=org_ct)
+
+    @pytest.fixture
+    def team_rd(self):
+        team_ct = DABContentType.objects.get_for_model(Team)
+        return RoleDefinition.objects.create_from_permissions(permissions=['view_team'], name='assignable-scope-team', content_type=team_ct, managed=True)
+
+    @pytest.fixture
+    def resource_rd(self):
+        inv_ct = DABContentType.objects.get_for_model(Inventory)
+        return RoleDefinition.objects.create_from_permissions(permissions=['view_inventory'], name='assignable-scope-inv', content_type=inv_ct)
+
+    @pytest.mark.parametrize('scopes', [['banana'], ['organization', 'apple'], ['system', 'team', 'orange']])
+    def test_assignable_scope_q_rejects_unknown_scope(self, scopes):
+        with pytest.raises(ValueError):
+            RoleDefinition.assignable_scope_q(scopes)
+
+    def test_assignable_scope_q_all_scopes_matches_expected_roles(self, system_rd, org_rd, team_rd, resource_rd):
+        matched = set(RoleDefinition.objects.filter(RoleDefinition.assignable_scope_q(RoleDefinition.ASSIGNABLE_SCOPES)))
+        assert system_rd in matched
+        assert org_rd in matched
+        assert team_rd in matched
+        assert resource_rd not in matched
+
+    @pytest.mark.parametrize('scope, expected_fixture', [('system', 'system_rd'), ('organization', 'org_rd'), ('team', 'team_rd')])
+    def test_assignable_scope_q_can_be_narrowed_to_a_single_scope(self, request, system_rd, org_rd, team_rd, scope, expected_fixture):
+        expected = request.getfixturevalue(expected_fixture)
+        matched = set(RoleDefinition.objects.filter(RoleDefinition.assignable_scope_q([scope])))
+        assert matched == {expected}
