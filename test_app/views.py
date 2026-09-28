@@ -15,6 +15,7 @@ from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.lib.utils.response import get_fully_qualified_url
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
+from ansible_base.lib.utils.views.deprecation import deprecated, mark_deprecated
 from ansible_base.oauth2_provider.permissions import OAuth2ScopePermission
 from ansible_base.oauth2_provider.views import DABOAuth2UserViewsetMixin
 from ansible_base.rbac import permission_registry
@@ -439,3 +440,26 @@ def org_delete_all_optimized(request, format=None):
     with cached_system_user(), deferred_activity_stream(), defer_resource_cleanup(), defer_rbac_computations():
         org.delete()
     return Response({'status': 'deleted', 'mode': 'all 4 context managers'})
+
+
+@deprecated(detail="The deprecated_endpoint resource is deprecated. Use /api/v1/cows/ instead.")
+class DeprecatedEndpointViewSet(TestAppViewSet):
+    serializer_class = serializers.CowSerializer
+    queryset = models.Cow.objects.all()
+
+
+class ConditionalDeprecationViewSet(TestAppViewSet):
+    serializer_class = serializers.CowSerializer
+    queryset = models.Cow.objects.all()
+
+    def list(self, request, *args, **kwargs):
+        response = super().list(request, *args, **kwargs)
+        if request.query_params.get('old_param'):
+            mark_deprecated(response, 'The old_param parameter is deprecated.')
+        return response
+
+
+class LegacyDeprecatedViewSet(TestAppViewSet):
+    deprecated = True
+    serializer_class = serializers.CowSerializer
+    queryset = models.Cow.objects.all()
