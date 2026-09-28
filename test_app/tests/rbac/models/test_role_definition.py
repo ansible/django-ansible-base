@@ -344,6 +344,9 @@ class TestAssignableScope:
         assert team_rd in matched
         assert resource_rd not in matched
 
+    def test_assignable_scope_q_empty_scopes_matches_no_roles(self, system_rd, org_rd, team_rd, resource_rd):
+        assert not RoleDefinition.objects.filter(RoleDefinition.assignable_scope_q([])).exists()
+
     @pytest.mark.parametrize('scope, expected_fixture', [('system', 'system_rd'), ('organization', 'org_rd'), ('team', 'team_rd')])
     def test_assignable_scope_q_can_be_narrowed_to_a_single_scope(self, request, system_rd, org_rd, team_rd, scope, expected_fixture):
         expected = request.getfixturevalue(expected_fixture)
