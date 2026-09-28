@@ -76,7 +76,10 @@ def reset_validation_context(token):
 # Rejections already logged by CleanTextMixin.validate() during is_valid() — skip duplicate
 # ORM bypass (bulk_create / post_save) lines for the same resource_type + field_name until
 # serializer-mediated persistence completes.
-_serializer_validation_rejections_logged: ContextVar[set[tuple[str, str]] | None] = ContextVar('serializer_validation_rejections_logged', default=None)
+_serializer_validation_rejections_logged: ContextVar[set[tuple[str, str]] | None] = ContextVar(
+    'serializer_validation_rejections_logged',
+    default=None,
+)
 
 
 def register_serializer_validation_rejection(resource_type: str, field_name: str) -> None:
@@ -218,7 +221,10 @@ def log_orm_bypass_violation(
     reason: str,
 ) -> None:
     """Emit a structured ORM bypass WARNING (observability only; does not block writes)."""
-    if _serializer_validation_active.get(False) and serializer_validation_rejection_already_logged(resource_type, field_name):
+    if _serializer_validation_active.get(False) and serializer_validation_rejection_already_logged(
+        resource_type,
+        field_name,
+    ):
         return
     logger.warning(
         "ORM bypass (%s): '%s' on %s would fail validation [caller: %s]: %s",
@@ -261,6 +267,66 @@ def _validate_field(field_name: str, value: str, name_fields: frozenset) -> Opti
         return None
 
 
+def _post_save_field_scope(kwargs) -> Optional[frozenset[str]]:
+    """Return fields to audit, or None when the save should not be scanned.
+
+    ``None`` means all model text fields; an empty frozenset means skip (empty
+    ``update_fields``).
+    """
+    update_fields = kwargs.get('update_fields')
+    if update_fields is None:
+        return None
+    if not update_fields:
+        return frozenset()
+    return frozenset(update_fields)
+
+
+def _should_audit_post_save_field(
+    field_name: str,
+    excluded_fields: frozenset,
+    fields_written: Optional[frozenset[str]],
+) -> bool:
+    if field_name in excluded_fields:
+        return False
+    if fields_written is not None and field_name not in fields_written:
+        return False
+    return True
+
+
+def _audit_post_save_text_fields(
+    instance: Model,
+    name_fields: frozenset,
+    excluded_fields: frozenset,
+    text_fields: list[str],
+    fields_written: Optional[frozenset[str]],
+) -> None:
+    caller_info = None
+    resource_type = f"{instance._meta.app_label}.{instance._meta.object_name}"
+
+    for field_name in text_fields:
+        if not _should_audit_post_save_field(field_name, excluded_fields, fields_written):
+            continue
+
+        value = getattr(instance, field_name, None)
+        if value is None or not isinstance(value, str):
+            continue
+
+        violation = _validate_field(field_name, value, name_fields)
+        if not violation:
+            continue
+
+        _tier, reason = violation
+        if caller_info is None:
+            caller_info = _get_caller_info()
+        log_orm_bypass_violation(
+            "post_save",
+            field_name,
+            resource_type,
+            caller_info,
+            reason,
+        )
+
+
 def validation_bypass_logger(sender, instance: Model, created: bool, **kwargs):
     """Signal handler for post_save that logs ORM-direct writes bypassing CleanTextMixin.
 
@@ -290,39 +356,11 @@ def validation_bypass_logger(sender, instance: Model, created: bool, **kwargs):
     if not text_fields:
         return
 
-    update_fields = kwargs.get('update_fields')
-    if update_fields is not None:
-        if not update_fields:
-            return
-        fields_written = frozenset(update_fields)
+    fields_written = _post_save_field_scope(kwargs)
+    if fields_written is not None and not fields_written:
+        return
 
-    caller_info = None
-    resource_type = f"{instance._meta.app_label}.{instance._meta.object_name}"
-
-    for field_name in text_fields:
-        if update_fields is not None and field_name not in fields_written:
-            continue
-        if field_name in excluded_fields:
-            continue
-
-        value = getattr(instance, field_name, None)
-
-        if value is None or not isinstance(value, str):
-            continue
-
-        violation = _validate_field(field_name, value, name_fields)
-
-        if violation:
-            _tier, reason = violation
-            if caller_info is None:
-                caller_info = _get_caller_info()
-            log_orm_bypass_violation(
-                "post_save",
-                field_name,
-                resource_type,
-                caller_info,
-                reason,
-            )
+    _audit_post_save_text_fields(instance, name_fields, excluded_fields, text_fields, fields_written)
 
 
 def register_validation_signals():
