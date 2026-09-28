@@ -81,15 +81,18 @@ intentional internal bypass.
 ```python
 from ansible_base.lib.utils.bulk_validation_audit import audit_bulk_model_instances
 
-audit_bulk_model_instances(instances, operation="bulk_create")
+instances = audit_bulk_model_instances(instances, operation="bulk_create")
 MyModel.objects.bulk_create(instances)
 
-audit_bulk_model_instances(instances, operation="bulk_update", update_fields=["description"])
+instances = audit_bulk_model_instances(
+    instances, operation="bulk_update", update_fields=["description"]
+)
 MyModel.objects.bulk_update(instances, fields=["description"])
 ```
 
 Pass `update_fields=` for `bulk_update` so only columns in the ORM `fields=` list are
-audited. Helpers materialize iterables before auditing.
+audited. Helpers **materialize** iterables (including generators) and return a list —
+reuse that return value for `bulk_create` / `bulk_update`.
 
 **`QuerySet.update()`:**
 
@@ -106,7 +109,7 @@ from ansible_base.lib.serializers.mixins import serializer_mediated_persistence_
 
 def create(self, validated_data):
     with serializer_mediated_persistence_context():
-        audit_bulk_model_instances(rows, operation="bulk_create")
+        rows = audit_bulk_model_instances(rows, operation="bulk_create")
         MyModel.objects.bulk_create(rows)
 ```
 
