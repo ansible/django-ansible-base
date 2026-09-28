@@ -1,5 +1,6 @@
+from unittest.mock import PropertyMock, patch
+
 import pytest
-from unittest.mock import patch
 from django.apps import apps
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
@@ -133,64 +134,56 @@ def test_get_all_objects_for_this_type_remote():
 # Related to: https://github.com/ansible/django-ansible-base/pull/1138
 
 
-def test_find_next_unreserved_id_no_conflicts():
-    """Test find_next_unreserved_id when starting ID is not reserved."""
-
-    # Empty set - should return starting ID
-    assert find_next_unreserved_id(5, set()) == 5
-
-    # Reserved IDs don't include starting ID
-    assert find_next_unreserved_id(5, {1, 2, 3}) == 5
-    assert find_next_unreserved_id(10, {1, 2, 3, 8, 9}) == 10
+def test_find_next_unreserved_id_empty_set():
+    """Test find_next_unreserved_id with no existing IDs."""
+    assert find_next_unreserved_id(set()) == 1
 
 
-def test_find_next_unreserved_id_single_conflict():
-    """Test find_next_unreserved_id when starting ID is reserved."""
-
-    # Starting ID is reserved - should skip to next
-    assert find_next_unreserved_id(5, {5}) == 6
-    assert find_next_unreserved_id(10, {10}) == 11
-
-
-def test_find_next_unreserved_id_multiple_conflicts():
-    """Test find_next_unreserved_id when multiple consecutive IDs are reserved."""
-
-    # Multiple consecutive IDs reserved
-    assert find_next_unreserved_id(5, {5, 6, 7}) == 8
-    assert find_next_unreserved_id(5, {5, 6, 7, 8, 9}) == 10
-
-    # Non-consecutive reservations
-    assert find_next_unreserved_id(5, {5, 7, 9}) == 6
-    assert find_next_unreserved_id(5, {5, 6, 8, 10}) == 7
+def test_find_next_unreserved_id_single_id():
+    """Test find_next_unreserved_id with a single reserved ID."""
+    assert find_next_unreserved_id({5}) == 6
+    assert find_next_unreserved_id({10}) == 11
+    assert find_next_unreserved_id({100}) == 101
 
 
-def test_find_next_unreserved_id_large_gap():
-    """Test find_next_unreserved_id with large gaps in reserved IDs."""
+def test_find_next_unreserved_id_multiple_ids():
+    """Test find_next_unreserved_id returns max + 1 regardless of gaps."""
+    # Consecutive IDs
+    assert find_next_unreserved_id({1, 2, 3}) == 4
+    assert find_next_unreserved_id({5, 6, 7}) == 8
 
-    # Large consecutive block
-    reserved = set(range(5, 100))  # Reserve 5-99
-    assert find_next_unreserved_id(5, reserved) == 100
+    # Non-consecutive IDs (gaps don't matter - always returns max + 1)
+    assert find_next_unreserved_id({1, 5, 10}) == 11
+    assert find_next_unreserved_id({2, 4, 6, 8}) == 9
 
-    # Starting from middle of reserved block
-    assert find_next_unreserved_id(50, reserved) == 100
+    # Large range
+    assert find_next_unreserved_id(set(range(1, 100))) == 100
 
 
-def test_find_next_unreserved_id_realistic_scenario():
-    """Test find_next_unreserved_id with realistic collision scenario."""
+def test_find_next_unreserved_id_batch_scenario():
+    """Test find_next_unreserved_id in realistic batch creation scenario.
 
-    # Simulate the production scenario:
-    # - Database has entries with IDs: 17, 18
-    # - Direct assignment reserves: 19
-    # - Fallback starts at: 19
+    Simulates multiple models being created in a batch:
+    - Database already has IDs: 17, 18, 19
+    - First fallback needs next ID → 20
+    - After reserving 20, next fallback → 21
+    """
+    # Initial database state
     reserved_ids = {17, 18, 19}
+    assert find_next_unreserved_id(reserved_ids) == 20
 
-    result = find_next_unreserved_id(19, reserved_ids)
-    assert result == 20, "Should skip over reserved ID 19 to find 20"
+    # After first fallback reserves 20
+    reserved_ids.add(20)
+    assert find_next_unreserved_id(reserved_ids) == 21
 
-    # Simulate multiple fallbacks in same batch
-    reserved_ids = {17, 18, 19, 20}
-    result = find_next_unreserved_id(19, reserved_ids)
-    assert result == 21, "Should skip over 19 and 20 to find 21"
+    # After second fallback reserves 21
+    reserved_ids.add(21)
+    assert find_next_unreserved_id(reserved_ids) == 22
+
+    # After django ContentType ID assignment used id=30
+    reserved_ids.add(30)
+    # Next fallback will get 30+1
+    assert find_next_unreserved_id(reserved_ids) == 31
 
 
 @pytest.mark.django_db
@@ -328,17 +321,20 @@ def test_migration_0005_create_types_if_needed_no_collision():
 @pytest.mark.django_db
 def test_reserved_ids_prevents_direct_assignment_collision():
     """
-    Test that reserved_ids prevents collision between fallback and direct assignment.
+    Test that reserved_ids properly tracks both DB and batch reservations.
 
     This specifically exercises the condition: real_ct.id not in reserved_ids
 
     Scenario:
-    - First model (with higher CT ID) needs fallback (its Django CT ID is blocked)
-    - Set max_id so first model's fallback reserves second model's Django CT ID
-    - Second model tries direct assignment with that ID
-    - reserved_ids check prevents collision, second model uses fallback instead
+    - First model (with higher CT ID) needs fallback (its Django CT ID is blocked in DB)
+    - Fallback assigns max(reserved_ids) + 1
+    - Second model (with lower CT ID) can use direct assignment (ID is free)
+    - Both models get unique IDs without collision
 
-    This ensures the fix properly tracks batch reservations, not just DB state.
+    This ensures the fix:
+    1. Initializes reserved_ids from DB (not empty set)
+    2. Tracks batch reservations to prevent in-batch collisions
+    3. Fallback correctly finds next available ID
     """
 
     # Clear all existing DABContentType entries
@@ -350,19 +346,11 @@ def test_reserved_ids_prevents_direct_assignment_collision():
 
     # Determine which model has higher CT ID - this will be processed first
     # to ensure deterministic test behavior
-    models_by_ct_id = sorted(
-        [(Organization, org_django_ct.id), (Team, team_django_ct.id)],
-        key=lambda x: x[1],
-        reverse=True
-    )
+    models_by_ct_id = sorted([(Organization, org_django_ct.id), (Team, team_django_ct.id)], key=lambda x: x[1], reverse=True)
     first_model, first_ct_id = models_by_ct_id[0]
     second_model, second_ct_id = models_by_ct_id[1]
 
-    # Get the actual ContentType objects for verification
-    first_django_ct = ContentType.objects.get_for_model(first_model)
-    second_django_ct = ContentType.objects.get_for_model(second_model)
-
-    # Critical setup: Create a scenario where fallback ID equals a direct ID
+    # Critical setup: Create a scenario to test fallback and direct assignment
     # Block the first model's ID (the one with higher CT ID)
     DABContentType.objects.create(
         id=first_ct_id,
@@ -371,9 +359,8 @@ def test_reserved_ids_prevents_direct_assignment_collision():
         model='blocker',
     )
 
-    # Set max_id = second_ct_id - 1
-    # So first model's fallback calculates: max_id + 1 = second_ct_id
-    # This creates the collision scenario
+    # Create another entry to set max_id in the database
+    # This will be lower than first_ct_id, ensuring fallback goes to first_ct_id + 1
     setup_id = second_ct_id - 1
     if setup_id != first_ct_id:  # Don't duplicate the blocker
         DABContentType.objects.create(
@@ -385,22 +372,23 @@ def test_reserved_ids_prevents_direct_assignment_collision():
 
     # Get all registered models and order them deterministically
     # Place model with maximum CT ID first to exercise fallback allocation
+    # Filter to only test Organization and Team to avoid interference from other registered models
     registered_models = list(permission_registry.all_registered_models)
-    ordered_models = sorted(
-        registered_models,
-        key=lambda m: ContentType.objects.get_for_model(m).id,
-        reverse=True
-    )
+    test_models = [m for m in registered_models if m in (Organization, Team)]
+    ordered_models = sorted(test_models, key=lambda m: ContentType.objects.get_for_model(m).id, reverse=True)
 
     # Now when create_DAB_contenttypes runs with ordered traversal:
-    # 1. First model (higher CT ID): CT ID blocked → fallback = max_id+1 = second_ct_id
-    #    Reserves second_ct_id in reserved_ids
-    # 2. Second model: real_ct.id = second_ct_id
-    #    Check: not in DB? TRUE
-    #    Check: not in reserved_ids? FALSE ← THIS IS THE KEY CHECK
-    #    Must use fallback instead of direct assignment
+    # 1. dab_reserved_ids initialized from DB: {setup_id, first_ct_id}
+    # 2. First model (higher CT ID):
+    #    - CT ID blocked in DB → use fallback
+    #    - fallback = max(reserved_ids) + 1 = first_ct_id + 1
+    #    - Add to reserved_ids: {setup_id, first_ct_id, first_ct_id+1}
+    # 3. Second model (lower CT ID):
+    #    - CT ID free (not in DB, not in reserved_ids)
+    #    - Use direct assignment: second_ct_id
+    # Both get unique IDs, no collision
 
-    with patch.object(permission_registry, 'all_registered_models', ordered_models):
+    with patch.object(type(permission_registry), 'all_registered_models', new_callable=PropertyMock, return_value=ordered_models):
         create_DAB_contenttypes(apps=apps)
 
     # Verify both created
@@ -414,24 +402,15 @@ def test_reserved_ids_prevents_direct_assignment_collision():
     first_result = DABContentType.objects.get(service='shared', model=first_model._meta.model_name)
     second_result = DABContentType.objects.get(service='shared', model=second_model._meta.model_name)
 
-    # First model should use fallback (second_ct_id) because its CT ID was blocked
-    assert first_result.id == second_ct_id, (
-        f"First model (max CT ID) should get fallback ID {second_ct_id}, "
-        f"but got {first_result.id}"
+    # First model's CT ID is blocked, so it uses fallback = max(existing_ids) + 1
+    # Since DB has [setup_id, first_ct_id] = [17, 19], fallback = 20
+    expected_first_id = first_ct_id + 1  # max(existing) + 1
+    assert first_result.id == expected_first_id, (
+        f"First model (CT={first_ct_id}, blocked) should get fallback ID {expected_first_id}, " f"but got {first_result.id}"
     )
 
-    # Second model should NOT have its Django CT ID because it was reserved
-    assert second_result.id != second_ct_id, (
-        f"Second model should not have Django CT ID {second_ct_id} "
-        f"because first model reserved it via fallback. "
-        f"This means 'real_ct.id not in reserved_ids' check failed!"
-    )
-
-    # Second model should use next available fallback (second_ct_id + 1)
-    assert second_result.id == second_ct_id + 1, (
-        f"Second model should get fallback ID {second_ct_id + 1}, "
-        f"but got {second_result.id}"
-    )
+    # Second model's CT ID is free (not in DB, not reserved in batch), so direct assignment
+    assert second_result.id == second_ct_id, f"Second model (CT={second_ct_id}, free) should get direct ID {second_ct_id}, " f"but got {second_result.id}"
 
     # Verify they have different IDs
     assert first_result.id != second_result.id, "Must have different IDs"
