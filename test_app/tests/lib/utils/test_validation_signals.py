@@ -787,6 +787,39 @@ class TestDynamicRegistryWithOrmBypass:
 
 
 @pytest.mark.django_db
+@pytest.mark.usefixtures('restore_protected_models_registry', 'capture_validation_signal_logs')
+class TestExcludedFieldsUnionPolicy:
+    """ORM registry unions excluded_fields across serializers on the same model."""
+
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    def test_union_excludes_field_when_any_serializer_excludes_it(self, caplog):
+        """If one serializer excludes description, ORM bypass does not audit description."""
+
+        class _OrgValidatesAllText(CleanTextMixin, serializers.ModelSerializer):
+            class Meta:
+                model = Organization
+                fields = ['name', 'description']
+
+        class _OrgExcludesDescription(CleanTextMixin, serializers.ModelSerializer):
+            excluded_fields = frozenset({'description'})
+
+            class Meta:
+                model = Organization
+                fields = ['name', 'description']
+
+        _OrgValidatesAllText()
+        _OrgExcludesDescription()
+        caplog.clear()
+
+        Organization.objects.create(name='Invalid<Name', description='<script>x</script>')
+
+        signal_logs = [r for r in caplog.records if 'ORM bypass' in r.message]
+        assert len(signal_logs) == 1
+        assert "'name' on" in signal_logs[0].message
+        assert "'description' on" not in signal_logs[0].message
+
+
+@pytest.mark.django_db
 @pytest.mark.usefixtures('organization_bypass_registry_no_exclusions')
 class TestPerformanceContract:
     """Mock-based guards: keep stack walk and field scans off serializer / unregistered paths."""

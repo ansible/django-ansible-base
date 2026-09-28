@@ -121,10 +121,10 @@ def extend_caller_allowlist_prefixes(prefixes: list[str]) -> None:
 def register_protected_model(model: type, name_fields: frozenset, excluded_fields: frozenset) -> None:
     """Register a model as covered by a CleanTextMixin serializer.
 
-    Called by CleanTextMixin.__init_subclass__ for every serializer subclass. If the same
-    model is registered by multiple serializers (e.g. different services with different
-    name_fields/excluded_fields configurations), the sets are unioned so the signal checks
-    the broadest configuration seen across all registered serializers for that model.
+    Called by CleanTextMixin.__init_subclass__ and serializer ``__init__``. When several
+    serializers target the same model, ``name_fields`` and ``excluded_fields`` are
+    **unioned** (model-level contract). See ``excluded_fields`` union policy in
+    ``docs/lib/validation_bypass_observability.md``.
     """
     existing_name_fields, existing_excluded_fields = _protected_models.get(model, (frozenset(), frozenset()))
     _protected_models[model] = (

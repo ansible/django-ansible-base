@@ -305,6 +305,52 @@ use Tier 1 (name) vs Tier 2 rules and which columns serializers skip via
 first. Unknown models are ignored so unrelated saves (for example side effects on
 models without `CleanTextMixin`) do not produce false positives.
 
+#### `excluded_fields` union policy (model-level contract)
+
+**Contract:** For a given Django model, `excluded_fields` in the registry is the
+**union** of every `CleanTextMixin` serializer that registers that model (class
+definition and per-instance re-registration). If **any** serializer excludes a
+column, ORM bypass observability **does not** scan that column on `post_save` or
+bulk audit helpers.
+
+**Meaning of `excluded_fields`:** Columns that are **not Tier 1/2 free text** for
+observability purposes — secrets, credential blobs, YAML/JSON/Jinja payloads, or
+settings that intentionally allow HTML or env expansion. Exclusions are **not**
+“this API endpoint skipped validation”; they declare that the column should never
+be treated as a simple Char/Text name or description for ORM bypass logging.
+
+**Why union (not intersection):** Intersection would require **every** serializer
+on a model to agree before a column is excluded from ORM audit. That would re-scan
+`password`, `extra_vars`, `variables`, `inputs`, and similar fields whenever sync,
+tasks, or shell code writes them — producing high-volume false positives on the
+paths this feature is meant to illuminate, without improving audit of real
+`name` / `description` columns.
+
+**AAP component review (CleanTextMixin usage):** Implementations across Controller
+(AWX), EDA, Gateway, and Hub ([galaxy_ng#786](https://github.com/ansible-automation-platform/galaxy_ng/pull/786))
+were reviewed for mixed-serializer conflicts (one serializer excluding a normal
+text field while another validates it on the same model).
+
+| Area | Pattern | Union fit |
+|------|---------|-----------|
+| **Controller** | `excluded_fields` on secrets and structured blobs (`password`, `extra_vars`, `variables`, `injectors`, dynamic `inputs` on credentials). Subclass serializers (for example bulk host, project playbooks) **inherit** the same exclusions on the same model. | Exclusions mean “not scannable text”; union matches production intent. |
+| **EDA** | Typically one write serializer with mixin per model (`password`, `proxy`); list/detail serializers often **without** mixin — only the mixin path registers the model. | No conflicting exclusions on the same field. |
+| **Gateway** | One `CleanTextMixin` serializer per registered model; `password` excluded on user. | Same as EDA. |
+| **Hub** | Remotes/users: static exclusions for TLS/password fields; `name_fields` tweaks where Tier 1 conflicts with existing validators. Multiple API modules may define serializers for the same auth model with **aligned** exclusions (for example `password`). | Union avoids ORM noise on credential columns during sync/import. |
+
+No production case was found where serializer A validates `description` (or similar
+user-facing text) while serializer B on the **same** model permanently excludes
+that column. If that appears in the future, revisit policy or scope exclusions to
+structured/secret fields only.
+
+**Intentional tradeoff:** Union can produce a **false negative** on ORM bypass if a
+new serializer excludes a column others treat as free text. The mixed-serializer unit
+test in `test_validation_signals.py` documents that behavior. Prefer narrow
+`excluded_fields` (secrets and structured fields only).
+
+**Tests:** `TestExcludedFieldsUnionPolicy` (two `Organization` serializers, one
+excluding `description`) and registry tests in `test_clean_text_mixin.py`.
+
 ### Serializer path vs ORM path (detailed)
 
 | Logger / message | Trigger | Blocks? |
