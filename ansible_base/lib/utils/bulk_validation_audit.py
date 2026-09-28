@@ -24,11 +24,10 @@ def _log_bulk_violation(
     operation: str,
     field_name: str,
     resource_type: str,
-    tier: str,
     caller_info: str,
     reason: str,
 ) -> None:
-    log_orm_bypass_violation(operation, field_name, resource_type, tier, caller_info, reason)
+    log_orm_bypass_violation(operation, field_name, resource_type, caller_info, reason)
 
 
 def _audit_registered_model_fields(
@@ -56,10 +55,10 @@ def _audit_registered_model_fields(
             continue
         violation = _validate_field(field_name, value, name_fields)
         if violation:
-            tier, reason = violation
+            _tier, reason = violation
             if resolved_caller is None:
                 resolved_caller = _get_caller_info()
-            _log_bulk_violation(operation, field_name, resource_type, tier, resolved_caller, reason)
+            _log_bulk_violation(operation, field_name, resource_type, resolved_caller, reason)
     return resolved_caller
 
 

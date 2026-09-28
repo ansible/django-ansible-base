@@ -45,6 +45,7 @@ _INTERNAL_CALLER_PREFIXES: list[str] = [
     'django.dispatch',
     LOGGER_NAME,
     'ansible_base.lib.abstract_models',
+    'ansible_base.lib.utils.bulk_validation_audit',
 ]
 
 # Allowlist: product-code entry points (phase 1). Also populated from
@@ -213,7 +214,6 @@ def log_orm_bypass_violation(
     operation: str,
     field_name: str,
     resource_type: str,
-    tier: str,
     caller_info: str,
     reason: str,
 ) -> None:
@@ -221,11 +221,10 @@ def log_orm_bypass_violation(
     if _serializer_validation_active.get(False) and serializer_validation_rejection_already_logged(resource_type, field_name):
         return
     logger.warning(
-        "ORM bypass (%s): validation rejected '%s' on %s (violates %s) [caller: %s]: %s",
+        "ORM bypass (%s): '%s' on %s would fail validation [caller: %s]: %s",
         operation,
         field_name,
         resource_type,
-        tier,
         caller_info,
         reason,
     )
@@ -306,14 +305,13 @@ def validation_bypass_logger(sender, instance: Model, created: bool, **kwargs):
         violation = _validate_field(field_name, value, name_fields)
 
         if violation:
-            tier, reason = violation
+            _tier, reason = violation
             if caller_info is None:
                 caller_info = _get_caller_info()
             log_orm_bypass_violation(
                 "post_save",
                 field_name,
                 resource_type,
-                tier,
                 caller_info,
                 reason,
             )

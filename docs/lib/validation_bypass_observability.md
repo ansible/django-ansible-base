@@ -400,7 +400,7 @@ dashboards.
 ### Example line
 
 ```
-WARNING ansible_base.lib.utils.validation_signals: ORM bypass (post_save): validation rejected 'description' on myapp.Organization (violates Tier 2) [caller: myapp.tasks.sync:42]: …
+WARNING ansible_base.lib.utils.validation_signals: ORM bypass (post_save): 'description' on myapp.Organization would fail validation [caller: myapp.tasks.sync:42]: …
 ```
 
 Caller quality depends on allowlist/denylist configuration in the host application.

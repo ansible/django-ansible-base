@@ -103,7 +103,7 @@ class TestValidationBypassLogging:
         assert log_record.levelname == 'WARNING'
         assert 'description' in log_record.message
         assert 'test_app.Organization' in log_record.message
-        assert 'Tier 2' in log_record.message
+        assert 'would fail validation' in log_record.message
         assert "can't include HTML tags" in log_record.message
         assert 'caller:' in log_record.message
 
@@ -131,7 +131,7 @@ class TestValidationBypassLogging:
         # Verify Tier 1 violation logged
         assert 'name' in log_record.message
         assert 'test_app.Organization' in log_record.message
-        assert 'Tier 1' in log_record.message
+        assert 'would fail validation' in log_record.message
         assert 'valid name' in log_record.message.lower()
 
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
@@ -248,7 +248,7 @@ class TestValidationBypassLogging:
         # Log entry is created even though enforcement is off
         signal_logs = [r for r in caplog.records if 'ORM bypass' in r.message]
         assert len(signal_logs) == 1
-        assert 'Tier 2' in signal_logs[0].message
+        assert 'would fail validation' in signal_logs[0].message
 
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_multiple_field_violations_logged(self, caplog):
@@ -265,8 +265,8 @@ class TestValidationBypassLogging:
 
         # Verify both fields logged
         messages = [r.message for r in signal_logs]
-        assert any('name' in msg and 'Tier 1' in msg for msg in messages)
-        assert any('description' in msg and 'Tier 2' in msg for msg in messages)
+        assert any('name' in msg and 'valid name' in msg.lower() for msg in messages)
+        assert any('description' in msg and "can't include html" in msg.lower() for msg in messages)
 
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_caller_info_captured(self, caplog):
@@ -356,7 +356,6 @@ class TestContextVariableHandling:
                     'bulk_create',
                     'description',
                     'test_app.Organization',
-                    'Tier 2',
                     'test.caller:1',
                     'bad',
                 )
@@ -514,6 +513,25 @@ class TestCallerAttribution:
             with mock.patch.object(validation_signals_module, '_caller_allowlist_prefixes', return_value=()):
                 assert _get_caller_info() == 'customer_app.sync.tasks.import_rows:12'
 
+    def test_get_caller_info_skips_bulk_validation_audit_helper_frames(self):
+        inner = _mock_caller_frame('customer_app.sync.tasks', 'import_rows', 12)
+        mid = _mock_caller_frame(
+            'ansible_base.lib.utils.bulk_validation_audit',
+            'audit_bulk_model_instances',
+            70,
+            inner,
+        )
+        outer = _mock_caller_frame(
+            'ansible_base.lib.utils.bulk_validation_audit',
+            '_audit_registered_model_fields',
+            60,
+            mid,
+        )
+
+        with _patch_caller_frame_chain(outer):
+            with mock.patch.object(validation_signals_module, '_caller_allowlist_prefixes', return_value=()):
+                assert _get_caller_info() == 'customer_app.sync.tasks.import_rows:12'
+
 
 @pytest.mark.usefixtures('organization_bypass_registry_no_exclusions', 'capture_validation_signal_logs')
 class TestBulkValidationAudit:
@@ -595,7 +613,7 @@ class TestBulkValidationAudit:
         bulk_logs = [r for r in caplog.records if 'ORM bypass (bulk_update)' in r.message]
         assert len(bulk_logs) == 1
         assert 'description' in bulk_logs[0].message
-        assert "validation rejected 'name'" not in bulk_logs[0].message
+        assert "'name' on" not in bulk_logs[0].message
 
     def test_audit_bulk_model_instances_skips_unregistered_instance_type(self, caplog):
         from ansible_base.resource_registry.models import Resource
@@ -630,8 +648,9 @@ class TestBulkValidationAudit:
         )
         bulk_logs = [r for r in caplog.records if 'ORM bypass (bulk_create)' in r.message]
         assert len(bulk_logs) == 1
-        assert "validation rejected 'description'" in bulk_logs[0].message
-        assert "validation rejected 'name'" not in bulk_logs[0].message
+        assert "'description' on" in bulk_logs[0].message
+        assert "would fail validation" in bulk_logs[0].message
+        assert "'name' on" not in bulk_logs[0].message
 
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_audit_queryset_update_logs_violation(self, caplog):
@@ -655,7 +674,8 @@ class TestBulkValidationAudit:
         )
         logs = [r for r in caplog.records if 'ORM bypass (queryset_update)' in r.message]
         assert len(logs) == 1
-        assert "validation rejected 'name'" in logs[0].message
+        assert "'name' on" in logs[0].message
+        assert "would fail validation" in logs[0].message
 
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_audited_queryset_update_runs_update(self, organization):
@@ -850,5 +870,6 @@ class TestValidationBypassLoggerEdgeCases:
         validation_bypass_logger(Organization, instance, created=True)
         signal_logs = [r for r in caplog.records if 'ORM bypass' in r.message]
         assert len(signal_logs) == 1
-        assert "validation rejected 'name'" in signal_logs[0].message
-        assert "validation rejected 'description'" not in signal_logs[0].message
+        assert "'name' on" in signal_logs[0].message
+        assert "would fail validation" in signal_logs[0].message
+        assert "'description' on" not in signal_logs[0].message
