@@ -147,7 +147,36 @@ logger names, and how this differs from API `Validation rejected` lines).
 
 `CleanTextMixin` sets a **context flag** during `save()`, `create()`, and
 `update()` (including `many=True` list serializers) so `post_save` does not
-double-log API traffic.
+double-log API traffic. See [Serializer persistence suppression](#serializer-persistence-suppression).
+
+### Serializer persistence suppression
+
+DAB sets `_serializer_validation_active` for the full duration of
+`CleanTextMixin.save()`, `create()`, and `update()`. While that flag is set,
+`validation_bypass_logger` **does not** emit `ORM bypass (post_save):` for **any**
+registered model — not only the serializer’s `Meta.model`. That is intentional:
+normal API traffic is validated in `validate()` during `is_valid()`; suppressing
+`post_save` avoids duplicate or misleading bypass lines (enforcement off,
+grandfathering on update, `many=True` child `create()` / `update()` without
+child `save()`).
+
+**Custom bulk APIs** that persist after `is_valid()` without calling mixin
+`create()` / `update()` should wrap the persistence block in
+`serializer_mediated_persistence_context()` so bulk dedupe matches serializer
+dedupe (see [Audit helpers](#audit-helpers-bulk-and-queryset)).
+That wrapper uses the **same** global flag — it is not scoped per model or field.
+
+**Known mechanical gaps** (documented trade-offs, not separate code paths today):
+
+| Gap | What happens |
+|-----|----------------|
+| `serializer.save(**kwargs)` with writable text kwargs that never passed `validate()` | Persistence still runs under the mixin context; `post_save` bypass logging is suppressed for those fields. Prefer putting user text in `validated_data` / `is_valid()`. |
+| Nested `.save()` / `.objects.create()` on **another** registered model inside the same context window | That nested write also skips `post_save` bypass logging. Prefer finishing mixin `super().create()` / `super().update()` first (context ends), routing through another serializer, or calling `audit_bulk_*` before bulk ORM. |
+
+ORM bypass observability is aimed at **non-serializer** ingress (tasks, shell,
+sync, direct ORM). Field-scoped suppression would widen regression risk across
+every serializer path for gaps that are rare in DRF if you follow the patterns
+above.
 
 ### Detection flow (`post_save`)
 
@@ -465,6 +494,9 @@ Caller quality depends on allowlist/denylist configuration in the host applicati
 - Only registered models; only Char/Text per mixin rules.
 - `audited_queryset_update` does not inspect `F()`-based SQL updates.
 - Caller attribution is best-effort, not a full stack trace.
+- Serializer persistence uses a **global** context flag; see
+  [Serializer persistence suppression](#serializer-persistence-suppression) for
+  edge cases and custom `create()` / `update()` expectations.
 
 ## See also
 
