@@ -296,3 +296,28 @@ class EmailAdminOnlyMixin:
             raise PermissionDenied("Email updates are restricted to administrators.")
 
         return value
+
+
+class UsernameAdminOnlyMixin:
+    """Mixin for User serializers that restricts username changes to admins.
+
+    Uses can_change_user with can_self_edit=False so that only superusers
+    and org admins can update the username field. Services that set
+    ALLOW_USER_USERNAME_SELF_EDIT=True override this and allow regular users
+    to change their own username.
+    """
+
+    def validate_username(self, value):
+        if self.instance is None or value == self.instance.username:
+            return value
+
+        request = self.context.get('request')
+        if request is None:
+            return value
+
+        from ansible_base.rbac.policies import can_change_user
+
+        if not can_change_user(request.user, self.instance, can_self_edit=False, self_edit_setting='ALLOW_USER_USERNAME_SELF_EDIT'):
+            raise PermissionDenied("Username updates are restricted to administrators.")
+
+        return value
