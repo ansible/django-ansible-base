@@ -165,9 +165,9 @@ def authenticator_plugin_field_schema() -> dict:
         'type': {'type': 'string', 'description': 'DRF field class name (e.g. CharField).'},
         'ui_field_label': {'type': 'string'},
         'choices': {
-            'type': 'array',
-            'items': {},
-            'description': 'Optional choice list when the field defines choices.',
+            'type': 'object',
+            'additionalProperties': {},
+            'description': 'Optional choice mapping (value -> label) when the field defines choices.',
         },
     }
     return {

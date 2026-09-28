@@ -14,6 +14,7 @@ from ansible_base.lib.metadata import (
 from ansible_base.lib.schemas.clean_text_patterns import (
     CLEAN_TEXT_NESTED_PATTERN_PROPERTY_KEYS,
     CLEAN_TEXT_PATTERN_PROPERTY_KEYS,
+    authenticator_plugin_field_schema,
     field_info_schema,
     nested_string_field_schema,
     openapi_components,
@@ -133,3 +134,20 @@ def test_authenticator_plugins_view_declares_pattern_keys_in_extend_schema():
     assert 'patternDescription' in props
     assert 'flags' in props
     assert 'normalize' not in props
+
+
+def test_authenticator_plugin_field_schema_declares_choices_as_object():
+    """choices must be an object mapping; DRF ChoiceField.choices is a dict."""
+    from ansible_base.authentication.views.authenticator_plugins import _authenticator_plugins_response_schema
+
+    field_schema = authenticator_plugin_field_schema()
+    choices = field_schema['properties']['choices']
+    assert choices['type'] == 'object'
+    assert 'additionalProperties' in choices
+    assert 'items' not in choices
+
+    # Regression: generated OpenAPI response schema must match the shared fragment.
+    response_schema = _authenticator_plugins_response_schema()
+    items = response_schema['properties']['authenticators']['items']['properties']['configuration_schema']['items']
+    assert items['properties']['choices']['type'] == 'object'
+    assert 'additionalProperties' in items['properties']['choices']
