@@ -17,6 +17,7 @@ DEFAULT_SPECTACULAR_SETTINGS = {
     'VERSION': 'v1',
     'SCHEMA_PATH_PREFIX': '/api/v1/',
     'COMPONENT_NO_READ_ONLY_REQUIRED': True,
+    'GET_LIB_DOC_EXCLUDES': 'ansible_base.api_documentation.customizations.get_dab_lib_doc_excludes',
     'PREPROCESSING_HOOKS': [
         'ansible_base.api_documentation.preprocessing_hooks.collect_ai_description_metadata',
     ],

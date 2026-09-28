@@ -10,6 +10,18 @@ These change allow the OAuth2Authentication securityScheme to be listed as
 from unittest.mock import MagicMock
 
 
+def test_dab_lib_doc_excludes_clean_text_mixin():
+    from rest_framework import serializers
+
+    from ansible_base.api_documentation.customizations import get_dab_lib_doc_excludes
+    from ansible_base.lib.serializers.mixins import CleanTextMixin
+
+    excludes = get_dab_lib_doc_excludes()
+
+    assert CleanTextMixin in excludes
+    assert serializers.ModelSerializer in excludes
+
+
 def test_oauth2_scheme_type_is_oauth2_not_apikey():
     """Test OAuth2Scheme returns type 'oauth2' instead of 'apiKey'.
 
