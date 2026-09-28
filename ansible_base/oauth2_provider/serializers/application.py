@@ -55,11 +55,13 @@ class OAuth2ApplicationSerializer(CleanTextMixin, NamedCommonModelSerializer):
         return ret
 
     def _summary_field_tokens(self, obj):
-        token_list = [{'id': x.pk, 'token': ENCRYPTED_STRING, 'scope': x.scope} for x in obj.access_tokens.all()[:10]]
-        if len(token_list) < 10:
-            token_count = len(token_list)
-        else:
+        tokens = getattr(obj, '_access_tokens', None)
+        if tokens is None:
+            tokens = list(obj.access_tokens.order_by('id')[:10])
+        token_count = getattr(obj, 'access_token_count', None)
+        if token_count is None:
             token_count = obj.access_tokens.count()
+        token_list = [{'id': token.pk, 'token': ENCRYPTED_STRING, 'scope': token.scope} for token in tokens]
         return {'count': token_count, 'results': token_list}
 
     def _get_summary_fields(self, obj) -> dict[str, dict]:
