@@ -135,6 +135,31 @@ class TestValidationBypassLogging:
         assert 'valid name' in log_record.message.lower()
 
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    def test_post_save_update_fields_skips_unwritten_text_columns(self, caplog):
+        """Partial save must not warn on stale in-memory text not included in update_fields."""
+        org = Organization.objects.create(name='ValidName', description='clean in db')
+        caplog.clear()
+
+        org.description = '<script>x</script>'
+        org.name = 'Invalid<Name'
+        org.save(update_fields=['name'])
+
+        signal_logs = [r for r in caplog.records if 'ORM bypass' in r.message]
+        assert len(signal_logs) == 1
+        assert "'name' on" in signal_logs[0].message
+        assert "'description' on" not in signal_logs[0].message
+
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    def test_post_save_empty_update_fields_skips_bypass_scan(self, caplog):
+        org = Organization.objects.create(name='ValidName', description='clean')
+        caplog.clear()
+
+        org.description = '<script>x</script>'
+        org.save(update_fields=[])
+
+        assert [r for r in caplog.records if 'ORM bypass' in r.message] == []
+
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_serializer_write_no_signal_log(self, caplog):
         """AC #6.3: Serializer-mediated writes do NOT trigger the signal log."""
 
@@ -592,12 +617,21 @@ class TestBulkValidationAudit:
         instances = [
             Organization(name='Invalid<Name>', description='<script>x</script>'),
         ]
-        audit_bulk_model_instances(instances, operation='bulk_update')
+        audit_bulk_model_instances(
+            instances,
+            operation='bulk_update',
+            update_fields=['name'],
+        )
 
         bulk_logs = [r for r in caplog.records if 'ORM bypass (bulk_update)' in r.message]
         assert len(bulk_logs) == 1
         assert 'name' in bulk_logs[0].message
         assert 'description' not in bulk_logs[0].message
+
+    def test_audit_bulk_update_requires_update_fields(self):
+        instances = [Organization(name='Valid', description='clean')]
+        with pytest.raises(ValueError, match="update_fields is required"):
+            audit_bulk_model_instances(instances, operation='bulk_update')
 
     @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
     def test_audit_bulk_update_fields_limits_deferred_field_scan(self, caplog):
@@ -686,6 +720,43 @@ class TestBulkValidationAudit:
         assert rows == 1
         organization.refresh_from_db()
         assert organization.description == 'Updated description text'
+
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    @pytest.mark.django_db
+    def test_audited_queryset_update_zero_rows_still_audits_kwargs(self, caplog):
+        rows = audited_queryset_update(
+            Organization.objects.filter(pk=-1),
+            description='<script>x</script>',
+        )
+        assert rows == 0
+        logs = [r for r in caplog.records if 'ORM bypass (queryset_update)' in r.message]
+        assert len(logs) == 1
+        assert "'description' on" in logs[0].message
+
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    @pytest.mark.django_db
+    def test_audit_bulk_then_real_bulk_update_respects_update_fields(self, caplog):
+        org = Organization.objects.create(name='ValidName', description='stored clean')
+        org.name = 'Invalid<Name'
+        org.description = '<script>x</script>'
+
+        materialized = audit_bulk_model_instances(
+            [org],
+            operation='bulk_update',
+            update_fields=['description'],
+        )
+        Organization.objects.bulk_update(materialized, ['description'])
+
+        bulk_logs = [r for r in caplog.records if 'ORM bypass (bulk_update)' in r.message]
+        assert len(bulk_logs) == 1
+        assert "'description' on" in bulk_logs[0].message
+        assert "'name' on" not in bulk_logs[0].message
+        post_save_logs = [r for r in caplog.records if 'ORM bypass (post_save)' in r.message]
+        assert post_save_logs == []
+
+    def test_audit_bulk_model_instances_empty_list_no_log(self, caplog):
+        audit_bulk_model_instances([], operation='bulk_create')
+        assert [r for r in caplog.records if 'ORM bypass' in r.message] == []
 
 
 @pytest.mark.django_db

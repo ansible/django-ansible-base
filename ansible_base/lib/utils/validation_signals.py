@@ -290,10 +290,18 @@ def validation_bypass_logger(sender, instance: Model, created: bool, **kwargs):
     if not text_fields:
         return
 
+    update_fields = kwargs.get('update_fields')
+    if update_fields is not None:
+        if not update_fields:
+            return
+        fields_written = frozenset(update_fields)
+
     caller_info = None
     resource_type = f"{instance._meta.app_label}.{instance._meta.object_name}"
 
     for field_name in text_fields:
+        if update_fields is not None and field_name not in fields_written:
+            continue
         if field_name in excluded_fields:
             continue
 

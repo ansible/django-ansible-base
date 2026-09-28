@@ -72,7 +72,12 @@ def audit_bulk_model_instances(
 
     Returns a list of the same instances (materialized) so callers may pass a generator
     and reuse the result for ``bulk_create()`` / ``bulk_update()``.
+
+    For ``operation='bulk_update'``, ``update_fields`` is required so in-memory values on
+    columns not included in ``bulk_update(..., fields=)`` are not scanned.
     """
+    if operation == "bulk_update" and update_fields is None:
+        raise ValueError("update_fields is required when operation='bulk_update'")
     materialized = list(instances)
     fields_to_audit = frozenset(update_fields) if update_fields is not None else None
     caller_info = None
