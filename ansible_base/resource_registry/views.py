@@ -21,7 +21,13 @@ from ansible_base.lib.utils.views.permissions import try_add_oauth2_scope_permis
 from ansible_base.resource_registry.constants import SHARED_USER_RESOURCE_TYPE
 from ansible_base.resource_registry.models import Resource, ResourceType, service_id
 from ansible_base.resource_registry.registry import get_registry
-from ansible_base.resource_registry.serializers import BulkResourceUpdateItemSerializer, ResourceListSerializer, ResourceSerializer, ResourceTypeSerializer
+from ansible_base.resource_registry.serializers import (
+    BulkResourceUpdateItemSerializer,
+    BulkResourceUpdateRequestSerializer,
+    ResourceListSerializer,
+    ResourceSerializer,
+    ResourceTypeSerializer,
+)
 from ansible_base.rest_filters.rest_framework.field_lookup_backend import FieldLookupBackend
 from ansible_base.rest_filters.rest_framework.order_backend import OrderByBackend
 from ansible_base.rest_filters.rest_framework.type_filter_backend import TypeFilterBackend
@@ -133,41 +139,7 @@ class ResourceViewSet(
     MAX_BULK_SIZE = 1000
 
     @extend_schema_if_available(
-        request={
-            "application/json": {
-                "type": "object",
-                "properties": {
-                    "items": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "ansible_id": {
-                                    "type": "string",
-                                    "format": "uuid",
-                                },
-                                "new_service_id": {
-                                    "type": "string",
-                                    "format": "uuid",
-                                },
-                                "new_ansible_id": {
-                                    "type": "string",
-                                    "format": "uuid",
-                                },
-                                "is_partially_migrated": {
-                                    "type": "boolean",
-                                },
-                                "resource_data": {
-                                    "type": "object",
-                                },
-                            },
-                            "required": ["ansible_id"],
-                        },
-                    }
-                },
-                "required": ["items"],
-            }
-        },
+        request=BulkResourceUpdateRequestSerializer,
         responses={
             status.HTTP_200_OK: {
                 "type": "object",
