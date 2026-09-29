@@ -56,8 +56,8 @@ def test_extra_data(mockedsuper):
     rDict["is_superuser"] = "True"
     rDict["Group"] = ["mygroup"]
     social = SocialUser()
-    ap.extra_data(None, None, response=rDict, social=social)
-    assert mockedsuper.called
+    ap.extra_data(None, None, rDict, {}, {"social": social})
+    mockedsuper.assert_called_once_with(None, None, rDict, {}, {"social": social})
     assert "is_superuser" in social.extra_data
 
 

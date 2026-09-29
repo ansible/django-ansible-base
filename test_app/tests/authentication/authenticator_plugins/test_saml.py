@@ -320,8 +320,8 @@ def test_extra_data(mockedsuper):
     rDict["attributes"][settings.ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG] = "True"
     rDict["attributes"]["Group"] = ["mygroup"]
     social = SocialUser()
-    ap.extra_data(None, None, response=rDict, social=social)
-    assert mockedsuper.called
+    ap.extra_data(None, None, rDict, {}, {"social": social})
+    mockedsuper.assert_called_once_with(None, None, rDict, {}, {"social": social})
     assert settings.ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG in social.extra_data
     assert "mygroup" in rDict["Group"]
 
@@ -426,7 +426,7 @@ def test_extra_data_default_attrs(idp_fields, expected_results):
     }
     au = AuthenticatorUser()
     with mock.patch('social_core.backends.saml.SAMLAuth.extra_data', return_value={}):
-        results = ap.extra_data(None, 'IdP:gateway_admin', response, **{'social': au})
+        results = ap.extra_data(None, 'IdP:gateway_admin', response, {}, {'social': au})
         assert results == expected_results
 
 
@@ -465,7 +465,7 @@ def test_extra_data_no_group_claims_logging(caplog):
     # Set logging level to DEBUG to capture the debug message
     with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.authenticator_plugins.saml'):
         with mock.patch('social_core.backends.saml.SAMLAuth.extra_data', return_value={}):
-            results = ap.extra_data(None, 'IdP:gateway_admin', response, **{'social': au})
+            results = ap.extra_data(None, 'IdP:gateway_admin', response, {}, {'social': au})
 
     # Verify the log message was captured
     assert "Unable to get any group claims from the SAML response" in caplog.text

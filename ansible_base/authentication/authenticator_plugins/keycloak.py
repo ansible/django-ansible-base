@@ -61,11 +61,11 @@ class AuthenticatorPlugin(SocialAuthMixin, KeycloakOAuth2, AbstractAuthenticator
     def groups_claim(self):
         return self.setting('GROUPS_CLAIM')
 
-    def extra_data(self, user, backend, response, *args, **kwargs):
+    def extra_data(self, user, uid, response, details, pipeline_kwargs):
         for perm in ["is_superuser", "is_platform_auditor"]:
             if perm in response:
-                kwargs["social"].extra_data[perm] = response[perm]
-        data = super().extra_data(user, backend, response, *args, **kwargs)
+                pipeline_kwargs["social"].extra_data[perm] = response[perm]
+        data = super().extra_data(user, uid, response, details, pipeline_kwargs)
         return data
 
     def get_user_groups(self, extra_groups=[]):
