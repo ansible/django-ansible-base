@@ -358,7 +358,7 @@ def test_resource_sync_create_non_local_role_definition(static_api_client, stdou
 )
 @pytest.mark.django_db
 def test_resource_sync_update_scenarios(static_api_client, resource_to_update, name, use_existing_service_id, expected_status):
-    """Test resource sync update scenarios with different names."""
+    """Test resource sync updates with unchanged and changed data or metadata."""
     # Get the existing resource that was created by the fixture
     resource = Resource.objects.get(ansible_id="97447387-8596-404f-b0d0-6429b04c8d22")
     auditor_rd = RoleDefinition.objects.managed.sys_auditor
