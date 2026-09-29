@@ -349,14 +349,15 @@ def test_resource_sync_create_non_local_role_definition(static_api_client, stdou
 
 
 @pytest.mark.parametrize(
-    "name,expected_status",
+    "name,use_existing_service_id,expected_status",
     [
-        ("Platform Auditor", "noop"),  # Same name as existing resource, should skip
-        ("Platform Auditor DIFFERENCE", "updated"),  # Different name, should update
+        ("Platform Auditor", True, "noop"),  # Same data and metadata should skip
+        ("Platform Auditor DIFFERENCE", True, "updated"),  # Different data should update
+        ("Platform Auditor", False, "updated"),  # Different metadata should update
     ],
 )
 @pytest.mark.django_db
-def test_resource_sync_update_scenarios(static_api_client, resource_to_update, name, expected_status):
+def test_resource_sync_update_scenarios(static_api_client, resource_to_update, name, use_existing_service_id, expected_status):
     """Test resource sync update scenarios with different names."""
     # Get the existing resource that was created by the fixture
     resource = Resource.objects.get(ansible_id="97447387-8596-404f-b0d0-6429b04c8d22")
@@ -401,6 +402,7 @@ def test_resource_sync_update_scenarios(static_api_client, resource_to_update, n
     }
     item_data['permissions'] += [perm.api_slug for perm in auditor_rd.permissions.all()]
     manifest_item = ManifestItem("97447387-8596-404f-b0d0-6429b04c8d22", str(uuid4()), item_data)
+    incoming_service_id = str(resource.service_id) if use_existing_service_id else str(uuid4())
 
     # Test the update behavior
     result = _attempt_update_resource(
@@ -408,9 +410,12 @@ def test_resource_sync_update_scenarios(static_api_client, resource_to_update, n
         resource=resource,
         resource_data=item_data,
         api_client=static_api_client,
+        service_id=incoming_service_id,
     )
 
     assert result.status == expected_status
+    resource.refresh_from_db()
+    assert str(resource.service_id) == incoming_service_id
 
 
 @pytest.mark.django_db
