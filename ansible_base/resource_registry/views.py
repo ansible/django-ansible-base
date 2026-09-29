@@ -132,6 +132,65 @@ class ResourceViewSet(
 
     MAX_BULK_SIZE = 1000
 
+    @extend_schema_if_available(
+        request={
+            "application/json": {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "ansible_id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                },
+                                "new_service_id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                },
+                                "new_ansible_id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                },
+                                "is_partially_migrated": {
+                                    "type": "boolean",
+                                },
+                                "resource_data": {
+                                    "type": "object",
+                                },
+                            },
+                            "required": ["ansible_id"],
+                        },
+                    }
+                },
+                "required": ["items"],
+            }
+        },
+        responses={
+            status.HTTP_200_OK: {
+                "type": "object",
+                "properties": {
+                    "updated": {"type": "integer"},
+                    "errors": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                    },
+                },
+                "required": ["updated", "errors"],
+            },
+        },
+        description=(
+            "Bulk-update resource metadata for up to "
+            f"{MAX_BULK_SIZE} resources per request. "
+            "Accepts a JSON object with an 'items' key containing a list "
+            "of update objects. Each object must contain 'ansible_id' and "
+            "at least one of: 'new_service_id', 'new_ansible_id', "
+            "'is_partially_migrated', 'resource_data'. Returns a summary "
+            "with the count of updated resources and any per-item errors."
+        ),
+    )
     @action(detail=False, methods=["post"], url_path="bulk-update")
     def bulk_update(self, request, *args, **kwargs):
         """
