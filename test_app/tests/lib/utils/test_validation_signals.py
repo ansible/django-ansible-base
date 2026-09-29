@@ -17,11 +17,13 @@ from rest_framework import serializers
 
 from ansible_base.lib.serializers.mixins import CleanTextMixin
 from ansible_base.lib.utils import validation_signals as validation_signals_module
+from ansible_base.lib.serializers.mixins import serializer_mediated_persistence_context
 from ansible_base.lib.utils.bulk_validation_audit import (
     audit_bulk_item_dicts,
     audit_bulk_model_instances,
     audit_queryset_update,
     audited_queryset_update,
+    input_validation_auditor,
 )
 from ansible_base.lib.utils.validation import DEFAULT_NAME_FIELDS
 from ansible_base.lib.utils.validation_signals import (
@@ -33,6 +35,7 @@ from ansible_base.lib.utils.validation_signals import (
     extend_internal_caller_prefixes,
     get_validation_context_token,
     register_protected_model,
+    register_serializer_validation_rejection,
     register_validation_signals,
     reset_validation_context,
     validation_bypass_logger,
@@ -757,6 +760,42 @@ class TestBulkValidationAudit:
     def test_audit_bulk_model_instances_empty_list_no_log(self, caplog):
         audit_bulk_model_instances([], operation='bulk_create')
         assert [r for r in caplog.records if 'ORM bypass' in r.message] == []
+
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    @pytest.mark.django_db
+    def test_input_validation_auditor_bulk_create_logs_and_persists(self, caplog):
+        rows = [Organization(name='ValidName', description='<script>x</script>')]
+        with input_validation_auditor(Organization) as m:
+            created = m.objects.bulk_create(rows)
+        assert len(created) == 1
+        assert Organization.objects.filter(pk=created[0].pk).exists()
+        bulk_logs = [r for r in caplog.records if 'ORM bypass (bulk_create)' in r.message]
+        assert len(bulk_logs) == 1
+
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    @pytest.mark.django_db
+    def test_input_validation_auditor_bulk_update(self, caplog):
+        org = Organization.objects.create(name='ValidName', description='stored')
+        org.description = '<script>x</script>'
+        with input_validation_auditor(Organization) as m:
+            m.objects.bulk_update([org], ['description'])
+        bulk_logs = [r for r in caplog.records if 'ORM bypass (bulk_update)' in r.message]
+        assert len(bulk_logs) == 1
+        org.refresh_from_db()
+        assert org.description == '<script>x</script>'
+
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    def test_nested_serializer_persistence_context_preserves_rejection_dedupe(self, caplog):
+        register_serializer_validation_rejection('test_app.Organization', 'description')
+        with serializer_mediated_persistence_context():
+            with serializer_mediated_persistence_context():
+                pass
+            audit_bulk_model_instances(
+                [Organization(name='ValidName', description='<script>x</script>')],
+                operation='bulk_create',
+            )
+        bulk_logs = [r for r in caplog.records if 'ORM bypass (bulk_create)' in r.message]
+        assert bulk_logs == []
 
 
 @pytest.mark.django_db

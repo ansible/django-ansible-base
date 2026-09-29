@@ -26,22 +26,25 @@ def _serializer_validation_persistence_context():
     skip matching ``ORM bypass (bulk_*)`` lines **only while this context is
     active** (see ``docs/lib/validation_bypass_observability.md``).
 
-    Use on custom ``Serializer.create()`` / ``update()`` that call
-    ``audit_bulk_*`` instead of ``CleanTextMixin.create()`` — wrap the full
-    persistence block (audit + ``bulk_create`` / ``bulk_update`` / ``save``).
+    Prefer :func:`~ansible_base.lib.utils.bulk_validation_audit.input_validation_auditor`
+    for standard ``bulk_create`` / ``bulk_update`` after ``is_valid()``. Use this
+    context directly when calling ``audit_bulk_*`` for non-standard persistence
+    (custom pseudo-fields, mixed ORM operations).
     """
     from ansible_base.lib.utils.validation_signals import (
-        clear_serializer_validation_rejection_log,
+        get_serializer_validation_rejection_log_token,
         get_validation_context_token,
+        reset_serializer_validation_rejection_log,
         reset_validation_context,
     )
 
     token = get_validation_context_token()
+    rejection_token = get_serializer_validation_rejection_log_token()
     try:
         yield
     finally:
         reset_validation_context(token)
-        clear_serializer_validation_rejection_log()
+        reset_serializer_validation_rejection_log(rejection_token)
 
 
 # Public name for downstream imports (Controller bulk API serializers, etc.).

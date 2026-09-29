@@ -6,10 +6,11 @@ violations are logged with the same validators and a similar format as
 ``validation_bypass_logger``.
 """
 
-from collections.abc import Callable
-from typing import Any, Iterable
+from collections.abc import Callable, Iterable
+from contextlib import contextmanager
+from typing import Any
 
-from django.db.models import Model, QuerySet
+from django.db.models import Manager, Model, QuerySet
 
 from ansible_base.lib.utils.validation_signals import (
     _get_caller_info,
@@ -79,6 +80,8 @@ def audit_bulk_model_instances(
     if operation == "bulk_update" and update_fields is None:
         raise ValueError("update_fields is required when operation='bulk_update'")
     materialized = list(instances)
+    if update_fields is not None:
+        update_fields = list(update_fields)
     fields_to_audit = frozenset(update_fields) if update_fields is not None else None
     caller_info = None
     for instance in materialized:
@@ -160,3 +163,51 @@ def audited_queryset_update(queryset: QuerySet, **update_kwargs: Any) -> int:
     """Audit ``update_kwargs`` then run ``queryset.update(**update_kwargs)``."""
     audit_queryset_update(queryset.model, update_kwargs)
     return queryset.update(**update_kwargs)
+
+
+class _AuditedModelManager:
+    """``objects`` facade for :func:`input_validation_auditor` (bulk_create / bulk_update only)."""
+
+    def __init__(self, manager: Manager):
+        self._manager = manager
+
+    def bulk_create(self, instances, **kwargs):
+        materialized = audit_bulk_model_instances(instances, operation="bulk_create")
+        return self._manager.bulk_create(materialized, **kwargs)
+
+    def bulk_update(self, instances, fields, batch_size=None):
+        fields_list = list(fields)
+        materialized = audit_bulk_model_instances(
+            instances,
+            operation="bulk_update",
+            update_fields=fields_list,
+        )
+        if batch_size is None:
+            return self._manager.bulk_update(materialized, fields_list)
+        return self._manager.bulk_update(materialized, fields_list, batch_size)
+
+
+class _InputValidationAuditor:
+    def __init__(self, model: type[Model]):
+        self._model = model
+
+    @property
+    def objects(self) -> _AuditedModelManager:
+        return _AuditedModelManager(self._model.objects)
+
+
+@contextmanager
+def input_validation_auditor(model: type[Model]):
+    """Audit bulk ORM writes from serializer ``create()`` / ``update()`` after ``is_valid()``.
+
+    Combines :func:`~ansible_base.lib.serializers.mixins.serializer_mediated_persistence_context`
+    with audited ``bulk_create`` / ``bulk_update`` on ``model.objects``. Use inside custom
+    bulk serializers instead of repeating ``operation=`` and manual ``audit_bulk_*`` calls.
+
+    Does not wrap ``QuerySet.update()`` or dict-based ``bulk_create`` — use
+    :func:`audited_queryset_update` and :func:`audit_bulk_item_dicts` at those call sites.
+    """
+    from ansible_base.lib.serializers.mixins import serializer_mediated_persistence_context
+
+    with serializer_mediated_persistence_context():
+        yield _InputValidationAuditor(model)

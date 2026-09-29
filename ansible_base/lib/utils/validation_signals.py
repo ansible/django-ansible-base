@@ -100,6 +100,15 @@ def clear_serializer_validation_rejection_log() -> None:
     _serializer_validation_rejections_logged.set(None)
 
 
+def get_serializer_validation_rejection_log_token():
+    """Token for nested ``serializer_mediated_persistence_context()`` blocks."""
+    return _serializer_validation_rejections_logged.set(_serializer_validation_rejections_logged.get())
+
+
+def reset_serializer_validation_rejection_log(token) -> None:
+    _serializer_validation_rejections_logged.reset(token)
+
+
 def extend_internal_caller_prefixes(prefixes: list[str]) -> None:
     """Register service-internal module prefixes to skip during caller denylist walk (phase 2).
 

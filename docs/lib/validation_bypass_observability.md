@@ -35,11 +35,10 @@ which calls `register_validation_signals()`):
 3. **Caller prefixes** — `extend_caller_allowlist_prefixes()` (views, tasks, management);
    `extend_internal_caller_prefixes()` (models, signals, internal helpers) so
    `[caller: …]` points at product code.
-4. **Bulk paths** — Before `bulk_create` / `bulk_update` on registered text, call
-   `audit_bulk_model_instances` (or `audit_bulk_item_dicts`). For custom bulk
-   `Serializer.create()` after `is_valid()`, wrap persistence in
-   `serializer_mediated_persistence_context` when deduping against
-   `Validation rejected` (see [Deduping](#deduping-validation-rejected-vs-orm-bypass-bulk_)).
+4. **Bulk paths** — For custom bulk `Serializer.create()` / `update()` after
+   `is_valid()`, use `input_validation_auditor` (see below). For tasks, sync, and
+   other non-serializer ingress, call `audit_bulk_model_instances` or
+   `audit_bulk_item_dicts` before the ORM write.
 5. **`QuerySet.update()`** — Use `audited_queryset_update` for literal string columns;
    `F()` / `Case` are skipped.
 
@@ -76,7 +75,7 @@ registered, bad Tier 1/2 text logs as `ORM bypass (post_save):` and the row is s
 saved. Prefer routing user-controlled data through a serializer, or document
 intentional internal bypass.
 
-**`bulk_create` / `bulk_update`:**
+**`bulk_create` / `bulk_update` (tasks, sync, management — not serializer APIs):**
 
 ```python
 from ansible_base.lib.utils.bulk_validation_audit import audit_bulk_model_instances
@@ -105,13 +104,21 @@ audited_queryset_update(MyModel.objects.filter(pk=pk), description=value)
 **Bulk API after `is_valid()`:**
 
 ```python
-from ansible_base.lib.serializers.mixins import serializer_mediated_persistence_context
+from ansible_base.lib.utils.bulk_validation_audit import input_validation_auditor
 
 def create(self, validated_data):
-    with serializer_mediated_persistence_context():
-        rows = audit_bulk_model_instances(rows, operation="bulk_create")
-        MyModel.objects.bulk_create(rows)
+    rows = build_rows(validated_data)
+    with input_validation_auditor(MyModel) as m:
+        m.objects.bulk_create(rows)
 ```
+
+`input_validation_auditor` applies serializer persistence context (dedupe against
+`Validation rejected` when enforcement is off) and audits the matching bulk operation.
+Only `bulk_create` and `bulk_update` on ``m.objects`` are wrapped — not arbitrary
+queryset methods.
+
+**Advanced:** `serializer_mediated_persistence_context()` plus `audit_bulk_*` remains
+valid when you audit before a non-standard ORM call (for example custom pseudo-fields).
 
 **Detect bypasses in production:** Search `ORM bypass (` (logger
 `ansible_base.lib.utils.validation_signals`, level WARNING). Distinct from API
@@ -197,7 +204,7 @@ On violation only: allowlist (`CALLER_INFO_APP_MODULES`,
 | Module | Role |
 |--------|------|
 | `ansible_base.lib.utils.validation_signals` | Signals, registry, `extend_*` caller APIs |
-| `ansible_base.lib.utils.bulk_validation_audit` | `audit_bulk_*`, `audited_queryset_update` |
+| `ansible_base.lib.utils.bulk_validation_audit` | `input_validation_auditor`, `audit_bulk_*`, `audited_queryset_update` |
 | `ansible_base.lib.serializers.mixins.CleanTextMixin` | API validation, registry, persistence context |
 | `ansible_base.observability.apps` | Optional `INSTALLED_APPS` entry to register signals |
 
