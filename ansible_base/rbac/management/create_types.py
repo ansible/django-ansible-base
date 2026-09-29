@@ -90,7 +90,7 @@ def create_DAB_contenttypes(
             # from the actual contenttypes app, allowing many filters to work
             django_ct = ct_cls.objects.get_for_model(model)
             # Check both database AND batch reservations to avoid ID collision
-            if not dab_ct_cls.objects.filter(id=django_ct.id).exists() and django_ct.id not in dab_reserved_ids:
+            if django_ct.id not in dab_reserved_ids:
                 ct_item_data['id'] = django_ct.id
                 dab_reserved_ids.add(django_ct.id)
             else:
