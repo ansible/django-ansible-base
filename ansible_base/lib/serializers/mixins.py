@@ -32,19 +32,15 @@ def _serializer_validation_persistence_context():
     (custom pseudo-fields, mixed ORM operations).
     """
     from ansible_base.lib.utils.validation_signals import (
-        get_serializer_validation_rejection_log_token,
-        get_validation_context_token,
-        reset_serializer_validation_rejection_log,
-        reset_validation_context,
+        enter_serializer_mediated_persistence,
+        exit_serializer_mediated_persistence,
     )
 
-    token = get_validation_context_token()
-    rejection_token = get_serializer_validation_rejection_log_token()
+    outermost, validation_token, rejection_token, depth_token = enter_serializer_mediated_persistence()
     try:
         yield
     finally:
-        reset_validation_context(token)
-        reset_serializer_validation_rejection_log(rejection_token)
+        exit_serializer_mediated_persistence(outermost, validation_token, rejection_token, depth_token)
 
 
 # Public name for downstream imports (Controller bulk API serializers, etc.).

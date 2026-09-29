@@ -796,6 +796,27 @@ class TestBulkValidationAudit:
         bulk_logs = [r for r in caplog.records if 'ORM bypass (bulk_create)' in r.message]
         assert bulk_logs == []
 
+    @override_settings(ENHANCED_INPUT_VALIDATION_ENABLED=True)
+    def test_rejection_dedupe_cleared_after_outermost_persistence_context(self, caplog):
+        """Rejections from is_valid() must not suppress bulk audit in a later serializer op."""
+        register_serializer_validation_rejection('test_app.Organization', 'description')
+        with serializer_mediated_persistence_context():
+            audit_bulk_model_instances(
+                [Organization(name='ValidName', description='<script>x</script>')],
+                operation='bulk_create',
+            )
+        assert [r for r in caplog.records if 'ORM bypass (bulk_create)' in r.message] == []
+
+        caplog.clear()
+        with serializer_mediated_persistence_context():
+            audit_bulk_model_instances(
+                [Organization(name='ValidName2', description='<script>x</script>')],
+                operation='bulk_create',
+            )
+        bulk_logs = [r for r in caplog.records if 'ORM bypass (bulk_create)' in r.message]
+        assert len(bulk_logs) == 1
+        assert "'description' on" in bulk_logs[0].message
+
 
 @pytest.mark.django_db
 @pytest.mark.usefixtures('restore_protected_models_registry', 'capture_validation_signal_logs')

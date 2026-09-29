@@ -81,6 +81,8 @@ _serializer_validation_rejections_logged: ContextVar[set[tuple[str, str]] | None
     default=None,
 )
 
+_serializer_persistence_context_depth: ContextVar[int] = ContextVar('serializer_persistence_context_depth', default=0)
+
 
 def register_serializer_validation_rejection(resource_type: str, field_name: str) -> None:
     """Record that validate() already emitted ``Validation rejected …`` for this field."""
@@ -107,6 +109,34 @@ def get_serializer_validation_rejection_log_token():
 
 def reset_serializer_validation_rejection_log(token) -> None:
     _serializer_validation_rejections_logged.reset(token)
+
+
+def enter_serializer_mediated_persistence() -> tuple[bool, object, object, object]:
+    """Enter ``serializer_mediated_persistence_context`` (validation active + rejection nesting).
+
+    Returns ``(is_outermost, validation_token, rejection_token, depth_token)``.
+    """
+    depth = _serializer_persistence_context_depth.get()
+    outermost = depth == 0
+    depth_token = _serializer_persistence_context_depth.set(depth + 1)
+    validation_token = get_validation_context_token()
+    rejection_token = get_serializer_validation_rejection_log_token()
+    return outermost, validation_token, rejection_token, depth_token
+
+
+def exit_serializer_mediated_persistence(
+    outermost: bool,
+    validation_token: object,
+    rejection_token: object,
+    depth_token: object,
+) -> None:
+    """Leave ``serializer_mediated_persistence_context``; clear rejections only at outermost exit."""
+    reset_validation_context(validation_token)
+    if outermost:
+        clear_serializer_validation_rejection_log()
+    else:
+        reset_serializer_validation_rejection_log(rejection_token)
+    _serializer_persistence_context_depth.reset(depth_token)
 
 
 def extend_internal_caller_prefixes(prefixes: list[str]) -> None:
