@@ -8,7 +8,7 @@ from django.test import TestCase
 from django.test.utils import isolate_apps
 
 from ansible_base.rbac import permission_registry
-from ansible_base.rbac.management.create_types import create_DAB_contenttypes, find_next_unreserved_id
+from ansible_base.rbac.management.create_types import create_DAB_contenttypes
 from ansible_base.rbac.migrations._utils import create_types_if_needed
 from ansible_base.rbac.models import DABContentType, DABPermission
 from ansible_base.rbac.remote import RemoteObject
@@ -132,60 +132,6 @@ def test_get_all_objects_for_this_type_remote():
 
 # Tests for DABContentType ID assignment race condition fixes
 # Related to: https://github.com/ansible/django-ansible-base/pull/1138
-
-
-def test_find_next_unreserved_id_empty_set():
-    """Test find_next_unreserved_id with no existing IDs."""
-    assert find_next_unreserved_id(set()) == 1
-
-
-def test_find_next_unreserved_id_single_id():
-    """Test find_next_unreserved_id with a single reserved ID."""
-    assert find_next_unreserved_id({5}) == 6
-    assert find_next_unreserved_id({10}) == 11
-    assert find_next_unreserved_id({100}) == 101
-
-
-def test_find_next_unreserved_id_multiple_ids():
-    """Test find_next_unreserved_id returns max + 1 regardless of gaps."""
-    # Consecutive IDs
-    assert find_next_unreserved_id({1, 2, 3}) == 4
-    assert find_next_unreserved_id({5, 6, 7}) == 8
-
-    # Non-consecutive IDs (gaps don't matter - always returns max + 1)
-    assert find_next_unreserved_id({1, 5, 10}) == 11
-    assert find_next_unreserved_id({2, 4, 6, 8}) == 9
-
-    # Large range
-    assert find_next_unreserved_id(set(range(1, 100))) == 100
-
-
-def test_find_next_unreserved_id_batch_scenario():
-    """Test find_next_unreserved_id in realistic batch creation scenario.
-
-    Simulates multiple models being created in a batch:
-    - Database already has IDs: 17, 18, 19
-    - First fallback needs next ID → 20
-    - After reserving 20, next fallback → 21
-    """
-    # Initial database state
-    reserved_ids = {17, 18, 19}
-    assert find_next_unreserved_id(reserved_ids) == 20
-
-    # After first fallback reserves 20
-    reserved_ids.add(20)
-    assert find_next_unreserved_id(reserved_ids) == 21
-
-    # After second fallback reserves 21
-    reserved_ids.add(21)
-    assert find_next_unreserved_id(reserved_ids) == 22
-
-    # After django ContentType ID assignment used id=30
-    reserved_ids.add(30)
-    # Next fallback will get 30+1
-    assert find_next_unreserved_id(reserved_ids) == 31
-
-
 @pytest.mark.django_db
 def test_create_DAB_contenttypes_multiple_fallback_no_collision():
     """

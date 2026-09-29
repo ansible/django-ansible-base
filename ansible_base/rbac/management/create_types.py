@@ -25,29 +25,6 @@ def model_class(apps, ct):
     return apps.get_model(ct.app_label, ct.model)
 
 
-def find_next_unreserved_id(dab_reserved_ids: set[int]) -> int:
-    """
-    Find the next ID that is not in the reserved set.
-
-    Args:
-        dab_reserved_ids: Set of IDs that are already reserved
-
-    Returns:
-        The next unreserved ID (> max(dab_reserved_ids))
-
-    Example:
-        >>> find_next_unreserved_id({5, 6, 7})
-        8
-        >>> find_next_unreserved_id({6, 7})
-        8
-        >>> find_next_unreserved_id(set())
-        1
-    """
-    if not dab_reserved_ids:
-        return 1
-    return max(dab_reserved_ids) + 1
-
-
 def create_DAB_contenttypes(
     verbosity=2,
     using=DEFAULT_DB_ALIAS,
@@ -95,7 +72,7 @@ def create_DAB_contenttypes(
                 dab_reserved_ids.add(django_ct.id)
             else:
                 # Skip IDs already reserved in this batch
-                next_available_id = find_next_unreserved_id(dab_reserved_ids)
+                next_available_id = max(dab_reserved_ids) + 1
                 ct_item_data['id'] = next_available_id
                 dab_reserved_ids.add(next_available_id)
             ct_data.append(ct_item_data)
