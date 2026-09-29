@@ -15,9 +15,8 @@ import pytest
 from django.test import override_settings
 from rest_framework import serializers
 
-from ansible_base.lib.serializers.mixins import CleanTextMixin
+from ansible_base.lib.serializers.mixins import CleanTextMixin, serializer_mediated_persistence_context
 from ansible_base.lib.utils import validation_signals as validation_signals_module
-from ansible_base.lib.serializers.mixins import serializer_mediated_persistence_context
 from ansible_base.lib.utils.bulk_validation_audit import (
     audit_bulk_item_dicts,
     audit_bulk_model_instances,
