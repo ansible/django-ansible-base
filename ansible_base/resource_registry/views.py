@@ -152,6 +152,21 @@ class ResourceViewSet(
                 },
                 "required": ["updated", "errors"],
             },
+            status.HTTP_400_BAD_REQUEST: {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "properties": {
+                            "detail": {"type": "string"},
+                        },
+                        "required": ["detail"],
+                    },
+                    {
+                        "type": "array",
+                        "items": {"type": "object"},
+                    },
+                ],
+            },
         },
         description=(
             "Bulk-update resource metadata for up to "
