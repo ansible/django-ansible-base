@@ -194,7 +194,7 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
 
         saml_auth = SAMLAuth(AuthenticatorConfigTestStrategy(AuthenticatorStorage(), additional_settings=attrs))
         saml_auth.redirect_uri = attrs['CALLBACK_URL']
-        idp = SAMLIdentityProvider(idp_string, **attrs['ENABLED_IDPS'][idp_string])
+        idp = SAMLIdentityProvider(saml_auth, idp_string, **attrs['ENABLED_IDPS'][idp_string])
         config = saml_auth.generate_saml_config(idp=idp)
         invalid_security_settings = []
         try:
@@ -238,7 +238,7 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
         return configuration
 
 
-class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAMLAuth, AbstractAuthenticatorPlugin):
+class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAMLAuth, AbstractAuthenticatorPlugin):  # type: ignore[override]
     configuration_class = SAMLConfiguration
     type = "SAML"
     logger = logger

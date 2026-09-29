@@ -219,7 +219,7 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
     )
 
 
-class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, OpenIdConnectAuth, AbstractAuthenticatorPlugin):
+class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, OpenIdConnectAuth, AbstractAuthenticatorPlugin):  # type: ignore[override]
     configuration_class = OpenIdConnectConfiguration
     type = "open_id_connect"
     logger = logger

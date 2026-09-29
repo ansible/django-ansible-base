@@ -37,7 +37,7 @@ def get_valid_saml_security_settings(saml_configuration):
 
     saml_auth = SAMLAuth(AuthenticatorConfigTestStrategy(AuthenticatorStorage(), additional_settings=attrs))
     saml_auth.redirect_uri = attrs['CALLBACK_URL']
-    idp = SAMLIdentityProvider(idp_string, **attrs['ENABLED_IDPS'][idp_string])
+    idp = SAMLIdentityProvider(saml_auth, idp_string, **attrs['ENABLED_IDPS'][idp_string])
     config = saml_auth.generate_saml_config(idp=idp)
 
     settings = OneLogin_Saml2_Settings(settings=config)

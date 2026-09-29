@@ -50,7 +50,7 @@ class KeycloakConfiguration(BaseAuthenticatorConfiguration):
     )
 
 
-class AuthenticatorPlugin(SocialAuthMixin, KeycloakOAuth2, AbstractAuthenticatorPlugin):
+class AuthenticatorPlugin(SocialAuthMixin, KeycloakOAuth2, AbstractAuthenticatorPlugin):  # type: ignore[override]
     configuration_class = KeycloakConfiguration
     type = "keycloak"
     logger = logger
