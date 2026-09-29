@@ -21,3 +21,9 @@ def test_cache_settings(caches, expect_exception):
     except RuntimeError:
         if not expect_exception:
             raise
+
+
+def test_api_documentation_uses_dab_docstring_exclusions():
+    settings = get_dab_settings(installed_apps=["ansible_base.api_documentation"])
+
+    assert settings["SPECTACULAR_SETTINGS"]["GET_LIB_DOC_EXCLUDES"] == ("ansible_base.api_documentation.customizations.get_dab_lib_doc_excludes")
