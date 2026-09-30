@@ -3172,6 +3172,20 @@ class TestCreateClaimsQueryCount:
         assert len(memberships) == 30
         assert list(memberships.values()).count(True) == granted
 
+    def test_expanded_roles_are_queried_once_each(self, local_authenticator, member_rd, admin_rd):
+        """A map whose role is expanded from an attribute names several roles; each is queried once."""
+        self._role_maps(local_authenticator, "team", ["{% for_attr_value(roles) %}"], 10, True)
+        attributes = {"roles": [member_rd.name, admin_rd.name, "Role that does not exist"]}
+
+        with CaptureQueriesContext(connection) as captured:
+            result = claims.create_claims(local_authenticator, "username", attributes, [])
+
+        role_queries = [query for query in captured.captured_queries if RoleDefinition._meta.db_table in query["sql"]]
+        assert len(role_queries) == 3
+        teams = result["claims"]["rbac_roles"]["organizations"]["testorg"]["teams"]
+        assert len(teams) == 10
+        assert teams["team 0"]["roles"] == {member_rd.name: False, admin_rd.name: False}
+
     def test_each_role_is_queried_once(self, local_authenticator, member_rd, admin_rd):
         """Each role is queried once per create_claims call, including a role that does not exist."""
         self._role_maps(local_authenticator, "team", [member_rd.name, admin_rd.name, "Role that does not exist"], 21, True)
