@@ -123,7 +123,9 @@ valid when you audit before a non-standard ORM call (for example custom pseudo-f
 **Detect bypasses in production:** Search `ORM bypass (` (logger
 `ansible_base.lib.utils.validation_signals`, level WARNING). Distinct from API
 `Validation rejected` (`ansible_base.lib.serializers.mixins`). Values are not logged;
-use `[caller: module.function:line]` to find the write site.
+use `[caller: module.function:line]` to find the write site. That label comes from
+a stack walk (`_get_caller_info()`): prefer frames under `CALLER_INFO_APP_MODULES`
+and `extend_caller_allowlist_prefixes()`, then skip internal denylist modules.
 
 ## Registry and dynamic serializer configuration
 

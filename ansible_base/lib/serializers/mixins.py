@@ -9,6 +9,10 @@ from rest_framework.exceptions import PermissionDenied
 
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.validation import DEFAULT_NAME_FIELDS, validate_free_text, validate_resource_name
+from ansible_base.lib.utils.validation_signals import (
+    clear_serializer_validation_rejection_log,
+    register_serializer_validation_rejection,
+)
 
 logger = logging.getLogger('ansible_base.lib.serializers.mixins')
 
@@ -198,8 +202,6 @@ class CleanTextMixin:
         ip_fragment = f" (ip {client_ip})" if client_ip else ""
 
         logger.warning("Validation rejected '%s' on %s%s%s: %s", field_name, resource_type, user_fragment, ip_fragment, reason)
-        from ansible_base.lib.utils.validation_signals import register_serializer_validation_rejection
-
         register_serializer_validation_rejection(resource_type, field_name)
 
     def validate(self, attrs):
@@ -213,8 +215,6 @@ class CleanTextMixin:
         self._validate_json_fields(json_fields, attrs, errors)
 
         if errors and enforce:
-            from ansible_base.lib.utils.validation_signals import clear_serializer_validation_rejection_log
-
             clear_serializer_validation_rejection_log()
             raise serializers.ValidationError(errors)
 

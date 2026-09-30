@@ -195,6 +195,11 @@ def _get_text_fields(model: type[Model]) -> tuple[list[str], list[str]]:
 
 
 def _caller_allowlist_prefixes() -> tuple[str, ...]:
+    """Merge settings and runtime prefixes for ORM bypass caller attribution.
+
+    ``_get_caller_info()`` prefers the first stack frame whose module name
+    starts with one of these prefixes (product code: API views, tasks, etc.).
+    """
     configured = get_setting('CALLER_INFO_APP_MODULES', []) or []
     merged: list[str] = []
     for prefix in list(configured) + _RUNTIME_ALLOWLIST_PREFIXES:
@@ -204,6 +209,10 @@ def _caller_allowlist_prefixes() -> tuple[str, ...]:
 
 
 def _frame_module_and_label(frame) -> tuple[str, str]:
+    """Return ``(module_name, label)`` for a stack frame.
+
+    ``label`` is ``module.function:line`` and appears in logs as ``[caller: …]``.
+    """
     module_name = frame.f_globals.get('__name__', '') or ''
     label = f"{module_name or 'unknown'}.{frame.f_code.co_name}:{frame.f_lineno}"
     return module_name, label
@@ -325,6 +334,11 @@ def _should_audit_post_save_field(
     excluded_fields: frozenset,
     fields_written: Optional[frozenset[str]],
 ) -> bool:
+    """True if ``field_name`` should be checked on this ``post_save``.
+
+    Honors ``excluded_fields`` and partial saves via ``fields_written``
+    (from ``update_fields``).
+    """
     if field_name in excluded_fields:
         return False
     if fields_written is not None and field_name not in fields_written:
@@ -339,6 +353,10 @@ def _audit_post_save_text_fields(
     text_fields: list[str],
     fields_written: Optional[frozenset[str]],
 ) -> None:
+    """Log Tier 1/2 ORM bypass warnings for text fields on ``instance``.
+
+    Resolves ``caller_info`` lazily on the first violation only.
+    """
     caller_info = None
     resource_type = f"{instance._meta.app_label}.{instance._meta.object_name}"
 
