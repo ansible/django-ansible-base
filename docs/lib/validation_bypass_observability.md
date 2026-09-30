@@ -93,6 +93,21 @@ Pass `update_fields=` for `bulk_update` so only columns in the ORM `fields=` lis
 audited. Helpers **materialize** iterables (including generators) and return a list —
 reuse that return value for `bulk_create` / `bulk_update`.
 
+**Models with a custom `Manager` (preferred when you already have one):** Override
+`bulk_create` / `bulk_update` on the model's manager to call `audit_bulk_model_instances`
+then `super()`. That covers every `Model.objects.bulk_*` without repeating `audit_*` at
+each call site. Do not import private DAB helpers such as `_AuditedModelManager`; mirror
+the same pattern (see `input_validation_auditor` in `bulk_validation_audit.py`, which
+wraps the real manager for the duration of a `with` block). Example reference:
+[ansible/awx#16672](https://github.com/ansible/awx/pull/16672) (`HostManager.bulk_create`).
+
+For bulk **serializers** after `is_valid()`, you still need
+`serializer_mediated_persistence_context()` around `create()` when you want dedupe
+against `Validation rejected` (and to skip false `post_save` lines on incidental `.save()`
+in the same method)—even if bulk audit lives on the manager. Alternatively, use
+`input_validation_auditor`, which combines persistence context with a short-lived audited
+`objects` facade.
+
 **`QuerySet.update()`:**
 
 ```python
@@ -101,7 +116,17 @@ from ansible_base.lib.utils.bulk_validation_audit import audited_queryset_update
 audited_queryset_update(MyModel.objects.filter(pk=pk), description=value)
 ```
 
-**Bulk API after `is_valid()`:**
+**Bulk API after `is_valid()`:** Either use an audited manager on the model (see above)
+inside `serializer_mediated_persistence_context()`, or use `input_validation_auditor`:
+
+```python
+from ansible_base.lib.serializers.mixins import serializer_mediated_persistence_context
+
+def create(self, validated_data):
+    rows = build_rows(validated_data)
+    with serializer_mediated_persistence_context():
+        MyModel.objects.bulk_create(rows)  # audit in MyModelManager.bulk_create
+```
 
 ```python
 from ansible_base.lib.utils.bulk_validation_audit import input_validation_auditor
