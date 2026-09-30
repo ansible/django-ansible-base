@@ -15,10 +15,11 @@ channels==4.3.2
     # via -r requirements/requirements_channels.in
 charset-normalizer==3.4.4
     # via requests
-cryptography==46.0.5
+cryptography==46.0.7
     # via
     #   -r requirements/requirements.in
     #   jwcrypto
+    #   pyjwt
     #   social-auth-core
 defusedxml==0.8.0rc2
     # via
@@ -175,7 +176,7 @@ pyasn1-modules==0.4.2
     # via python-ldap
 pycparser==2.23
     # via cffi
-pyjwt==2.10.1
+pyjwt[crypto]==2.15.1
     # via
     #   -r requirements/requirements_jwt_consumer.in
     #   -r requirements/requirements_resource_registry.in
@@ -203,7 +204,7 @@ referencing==0.36.2
     #   -r requirements/requirements_api_documentation.in
     #   jsonschema
     #   jsonschema-specifications
-requests==2.32.5
+requests==2.34.2
     # via
     #   -r requirements/requirements_jwt_consumer.in
     #   -r requirements/requirements_resource_registry.in
@@ -222,7 +223,7 @@ six==1.17.0
     #   tacacs-plus
 social-auth-app-django==5.4.1
     # via -r requirements/requirements_authentication.in
-social-auth-core==4.5.4
+social-auth-core==5.1.1
     # via
     #   -r requirements/requirements_authentication.in
     #   social-auth-app-django
