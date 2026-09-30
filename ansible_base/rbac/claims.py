@@ -9,7 +9,9 @@ from django.conf import settings
 from django.db.models import F, Model, OuterRef, QuerySet
 from django.db.utils import IntegrityError
 
-from ansible_base.lib.utils.auth import get_team_model
+from django.contrib.contenttypes.models import ContentType
+
+from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 
 from .models.content_type import DABContentType
 from .models.role import RoleDefinition, RoleUserAssignment
@@ -287,7 +289,28 @@ def get_or_create_resource(objects: dict, content_type: str, data: dict) -> Tupl
         organization_data = objects["organization"][org_id]
 
         # Now that we have the org we can build a team
-        org_resource, _ = get_or_create_resource(objects, "organization", organization_data)
+        org_resource, org_obj = get_or_create_resource(objects, "organization", organization_data)
+
+        # Natural-key fallback: find existing team by (name, organization) before
+        # attempting to create. Handles the case where the team already exists with
+        # a different ansible_id (e.g. after 2.4→2.6 upgrade where gateway and
+        # controller initialized separate resource registries).
+        team_cls = get_team_model()
+        try:
+            existing_team = team_cls.objects.get(name=data['name'], organization=org_obj)
+            ct = ContentType.objects.get_for_model(existing_team)
+            resource, created = resource_cls.objects.get_or_create(
+                content_type=ct,
+                object_id=existing_team.pk,
+                defaults={'name': data['name']},
+            )
+            if created:
+                logger.warning(f"Created missing resource entry for existing team '{data['name']}'")
+            else:
+                logger.info(f"Found existing team '{data['name']}' by natural key " f"(requested ansible_id={object_ansible_id}, found={resource.ansible_id})")
+            return resource, existing_team
+        except team_cls.DoesNotExist:
+            pass
 
         resource = resource_cls.create_resource(
             resource_type_cls.objects.get(name="shared.team"),
@@ -298,6 +321,26 @@ def get_or_create_resource(objects: dict, content_type: str, data: dict) -> Tupl
         return resource, resource.content_object
 
     elif content_type == 'organization':
+        # Natural-key fallback: find existing org by name before creating.
+        org_cls = get_organization_model()
+        try:
+            existing_org = org_cls.objects.get(name=data['name'])
+            ct = ContentType.objects.get_for_model(existing_org)
+            resource, created = resource_cls.objects.get_or_create(
+                content_type=ct,
+                object_id=existing_org.pk,
+                defaults={'name': data['name']},
+            )
+            if created:
+                logger.warning(f"Created missing resource entry for existing organization '{data['name']}'")
+            else:
+                logger.info(
+                    f"Found existing organization '{data['name']}' by natural key " f"(requested ansible_id={object_ansible_id}, found={resource.ansible_id})"
+                )
+            return resource, existing_org
+        except org_cls.DoesNotExist:
+            pass
+
         resource = resource_cls.create_resource(
             resource_type_cls.objects.get(name="shared.organization"),
             {"name": data["name"]},

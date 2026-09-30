@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.db import connection
@@ -5,7 +7,7 @@ from django.test.utils import override_settings
 
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.claims import get_claims_hash, get_user_claims, get_user_claims_hashable_form, save_user_claims
-from ansible_base.rbac.models import RoleDefinition
+from ansible_base.rbac.models import RoleDefinition, RoleUserAssignment
 from test_app.models import Inventory, Organization, Team
 
 
@@ -492,3 +494,48 @@ class TestUserClaims:
 
         # Assert the fix worked - even better performance than baseline!
         assert total_queries == 4, f"Claims generation used {total_queries} queries, expected 4 (N+1 problem fixed!)"
+
+    def test_save_claims_with_mismatched_ansible_id_team(self, shared_test_data):
+        """Regression test for AAP-95186: save_user_claims must not skip role
+        assignments when the claims contain an ansible_id that doesn't match the
+        controller's resource registry but the team already exists by natural key.
+
+        Simulates the 2.4→2.6 upgrade scenario where gateway and controller have
+        different ansible_ids for the same team/org.
+        """
+        user = get_user_model().objects.create(username='test_user_mismatched_ansible_id')
+        team = shared_test_data.teams[0]
+        org = team.organization
+
+        objects = {
+            'organization': [{'ansible_id': str(uuid.uuid4()), 'name': org.name}],
+            'team': [{'ansible_id': str(uuid.uuid4()), 'name': team.name, 'org': 0}],
+        }
+        object_roles = {
+            'Team Member': {'content_type': 'team', 'objects': [0]},
+        }
+
+        save_user_claims(user, objects=objects, object_roles=object_roles, global_roles=[])
+
+        assignments = RoleUserAssignment.objects.filter(user=user, role_definition=shared_test_data.roles['team_member'])
+        assert assignments.exists(), "Team role assignment was skipped despite team existing by natural key"
+        assert str(assignments.first().object_id) == str(team.pk)
+
+    def test_save_claims_with_mismatched_ansible_id_org(self, shared_test_data):
+        """Regression test for AAP-95186: same as above but for organization."""
+        user = get_user_model().objects.create(username='test_user_mismatched_ansible_id_org')
+        org = shared_test_data.orgs[0]
+
+        objects = {
+            'organization': [{'ansible_id': str(uuid.uuid4()), 'name': org.name}],
+            'team': [],
+        }
+        object_roles = {
+            'Organization Admin': {'content_type': 'organization', 'objects': [0]},
+        }
+
+        save_user_claims(user, objects=objects, object_roles=object_roles, global_roles=[])
+
+        assignments = RoleUserAssignment.objects.filter(user=user, role_definition=shared_test_data.roles['org_admin'])
+        assert assignments.exists(), "Org role assignment was skipped despite org existing by natural key"
+        assert str(assignments.first().object_id) == str(org.pk)
