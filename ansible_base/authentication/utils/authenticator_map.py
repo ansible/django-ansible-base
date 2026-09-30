@@ -230,16 +230,12 @@ def _role_map_type_errors(
     return errors
 
 
-def _get_role_definition(role: Optional[str], role_cache: Optional[dict[Optional[str], Any]]):
-    """Get the RoleDefinition by name, using role_cache (if given) so each name is only queried once."""
+def _get_role_definition(role: Optional[str], role_cache: dict[Optional[str], Any]):
+    """Get the RoleDefinition by name, using role_cache so each name is only queried once."""
     from ansible_base.rbac.models import RoleDefinition
 
-    if role_cache is None:
-        role_cache = {}
     if role not in role_cache:
-        role_cache[role] = RoleDefinition.objects.select_related('content_type').filter(name=role).first()
-    if role_cache[role] is None:
-        raise RoleDefinition.DoesNotExist()
+        role_cache[role] = RoleDefinition.objects.select_related('content_type').get(name=role)
     return role_cache[role]
 
 
@@ -252,6 +248,9 @@ def check_role_type(
     if not _is_rbac_installed():
         errors['role'] = _("You specified a role without RBAC installed ")
         return errors  # type: ignore[return-value]
+
+    if role_cache is None:
+        role_cache = {}
 
     try:
         rbac_role = _get_role_definition(role, role_cache)

@@ -256,15 +256,18 @@ def test_check_role_type_reads_role_in_one_query(member_rd):
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "map_type, role_fixture, org, team",
+    "map_type, role_fixture, org, team, later_queries",
     [
-        pytest.param("team", "member_rd", "testorg", "testteam", id="team role"),
-        pytest.param("role", "system_role", None, None, id="system role"),
-        pytest.param("team", None, "testorg", "testteam", id="role that does not exist"),
+        pytest.param("team", "member_rd", "testorg", "testteam", 0, id="team role"),
+        pytest.param("role", "system_role", None, None, 0, id="system role"),
+        pytest.param("team", None, "testorg", "testteam", 1, id="role that does not exist"),
     ],
 )
-def test_check_role_type_with_role_cache(request, map_type, role_fixture, org, team):
-    """With the same role_cache the result is unchanged and only the first call queries the role."""
+def test_check_role_type_with_role_cache(request, map_type, role_fixture, org, team, later_queries):
+    """With the same role_cache the result is unchanged and only the first call queries the role.
+
+    A role that does not exist is not cached, so it is queried on every call.
+    """
     role = request.getfixturevalue(role_fixture).name if role_fixture else "Role that does not exist"
     expected = check_role_type(map_type, role, org, team)
 
@@ -275,4 +278,4 @@ def test_check_role_type_with_role_cache(request, map_type, role_fixture, org, t
         assert check_role_type(map_type, role, org, team, role_cache=role_cache) == expected
 
     assert len(first_call.captured_queries) == 1
-    assert len(later_calls.captured_queries) == 0
+    assert len(later_calls.captured_queries) == later_queries
