@@ -1,9 +1,11 @@
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from ansible_base.authentication.models.authenticator_map import AuthenticatorMap
-from ansible_base.authentication.utils.authenticator_map import check_expansion_syntax, expand_syntax, has_expansion
+from ansible_base.authentication.utils.authenticator_map import check_expansion_syntax, check_role_type, expand_syntax, has_expansion
 
-# check_role_type is tested only though the serializer
+# check_role_type is mostly tested through the serializer
 
 
 @pytest.mark.parametrize(
@@ -241,3 +243,36 @@ def test_expand_syntax(azuread_authenticator, role, organization, team, expected
         authenticator=azuread_authenticator,
     )
     assert set({frozenset(d.items()) for d in expand_syntax(attrs, map)}) == set({frozenset(d.items()) for d in expected_results})
+
+
+@pytest.mark.django_db
+def test_check_role_type_reads_role_in_one_query(member_rd):
+    """The role and its content type are read together."""
+    with CaptureQueriesContext(connection) as captured:
+        assert check_role_type("team", member_rd.name, "testorg", "testteam") == {}
+
+    assert len(captured.captured_queries) == 1
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "map_type, role_fixture, org, team",
+    [
+        pytest.param("team", "member_rd", "testorg", "testteam", id="team role"),
+        pytest.param("role", "system_role", None, None, id="system role"),
+        pytest.param("team", None, "testorg", "testteam", id="role that does not exist"),
+    ],
+)
+def test_check_role_type_with_role_cache(request, map_type, role_fixture, org, team):
+    """With the same role_cache the result is unchanged and only the first call queries the role."""
+    role = request.getfixturevalue(role_fixture).name if role_fixture else "Role that does not exist"
+    expected = check_role_type(map_type, role, org, team)
+
+    role_cache = {}
+    with CaptureQueriesContext(connection) as first_call:
+        assert check_role_type(map_type, role, org, team, role_cache=role_cache) == expected
+    with CaptureQueriesContext(connection) as later_calls:
+        assert check_role_type(map_type, role, org, team, role_cache=role_cache) == expected
+
+    assert len(first_call.captured_queries) == 1
+    assert len(later_calls.captured_queries) == 0
