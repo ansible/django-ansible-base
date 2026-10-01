@@ -329,9 +329,15 @@ def post_save_update_obj_permissions(instance, object_pk=None, object_ct_id=None
     if hasattr(instance, '__rbac_original_parent_id'):
         parent_cls = permission_registry.get_parent_model(instance)
         parent_ct = permission_registry.content_type_model.objects.get_for_model(parent_cls)
-        parent_obj = parent_cls(pk=instance.__rbac_original_parent_id)
-        parent_gfks += get_parent_ids(parent_obj)
-        parent_gfks.append((parent_ct, instance.__rbac_original_parent_id))
+        original_parent_id = instance.__rbac_original_parent_id
+        parent_gfks.append((parent_ct, original_parent_id))
+        if permission_registry.get_parent_fd_name(parent_cls):
+            # The old parent has parents of its own (e.g. a namespace's organization). Load it
+            # so that chain resolves; a bare parent_cls(pk=...) instance has no parent id and
+            # would silently drop the old grandparent's roles from the recompute.
+            parent_obj = parent_cls.objects.filter(pk=original_parent_id).first()
+            if parent_obj is not None:
+                parent_gfks += get_parent_ids(parent_obj)
         delattr(instance, '__rbac_original_parent_id')
 
     if parent_gfks:
