@@ -35,7 +35,7 @@ def test_authenticators_cli_list_with_tabulate(command_args, local_authenticator
     for line, authenticator in ((2, local_authenticator), (3, ldap_authenticator)):
         auth_line = lines[line]
         auth_line = auth_line.strip('|')
-        (auth_id, enabled, name, order) = auth_line.split(' | ')
+        auth_id, enabled, name, order = auth_line.split(' | ')
 
         assert auth_id.strip() == str(authenticator.id)
         assert enabled.strip() == str(authenticator.enabled)
@@ -70,7 +70,7 @@ def test_authenticators_cli_list_without_tabulate(command_args, local_authentica
 
     for line, authenticator in ((1, local_authenticator), (2, ldap_authenticator)):
         auth_line = lines[line]
-        (auth_id, enabled, name, order) = auth_line.split('\t')
+        auth_id, enabled, name, order = auth_line.split('\t')
 
         assert auth_id.strip() == str(authenticator.id)
         assert enabled.strip() == str(authenticator.enabled)
