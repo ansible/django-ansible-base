@@ -718,6 +718,13 @@ class ObjectRole(ObjectRoleFields):
 
         return existing_partials
 
+    def _own_object_can_grant(self, object_pk, object_ct_id, target_parents) -> bool:
+        """True if this role's own object is the look-ahead object or one of its parents."""
+        own = (self.content_type_id, str(self.object_id))
+        if own == (object_ct_id, str(object_pk)):
+            return True
+        return any(own == (parent_ct_id, str(parent_id)) for parent_ct_id, parent_id in target_parents)
+
     def needed_cache_updates(
         self, types_prefetch=None, evaluations_prefetch=None, object_pk=None, object_ct_id=None, target_parents=None, lookahead_cache=None
     ):
@@ -756,7 +763,12 @@ class ObjectRole(ObjectRoleFields):
             types_prefetch = TypesPrefetch.from_db()
 
         existing_partials = self._load_existing_partials(object_pk, object_ct_id, evaluations_prefetch)
-        expected_evaluations = self.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id)
+        if object_pk is not None and target_parents is not None and not self._own_object_can_grant(object_pk, object_ct_id, target_parents):
+            # This role is in the recompute set only because it provides membership to a
+            # team that holds a relevant role; its own object cannot grant on the target.
+            expected_evaluations = set()
+        else:
+            expected_evaluations = self.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id)
 
         if evaluations_prefetch is not None:
             for team_role in evaluations_prefetch.get_team_roles(self.pk):
