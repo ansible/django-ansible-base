@@ -7,6 +7,7 @@ from typing import Optional, Tuple, Union
 from django.apps import apps
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
+from django.db import transaction
 from django.db.models import F, Model, OuterRef, QuerySet
 from django.db.utils import IntegrityError
 
@@ -290,13 +291,21 @@ def get_or_create_resource(objects: dict, content_type: str, data: dict) -> Tupl
         # Now that we have the org we can build a team
         org_resource, org_obj = get_or_create_resource(objects, "organization", organization_data)
 
-        # Natural-key fallback: find existing team by (name, organization) before
-        # attempting to create. Handles the case where the team already exists with
-        # a different ansible_id (e.g. after 2.4→2.6 upgrade where gateway and
-        # controller initialized separate resource registries).
-        team_cls = get_team_model()
         try:
-            existing_team = team_cls.objects.get(name=data['name'], organization=org_obj)
+            with transaction.atomic():
+                resource = resource_cls.create_resource(
+                    resource_type_cls.objects.get(name="shared.team"),
+                    {"name": data["name"], "organization": org_resource.ansible_id},
+                    ansible_id=data["ansible_id"],
+                )
+            return resource, resource.content_object
+        except IntegrityError:
+            # Team exists with a different ansible_id (e.g. after 2.4→2.6 upgrade
+            # where gateway and controller initialized separate resource registries).
+            team_cls = get_team_model()
+            existing_team = team_cls.objects.filter(name=data['name'], organization=org_obj).first()
+            if existing_team is None:
+                raise
             ct = ContentType.objects.get_for_model(existing_team)
             resource, created = resource_cls.objects.get_or_create(
                 content_type=ct,
@@ -308,22 +317,22 @@ def get_or_create_resource(objects: dict, content_type: str, data: dict) -> Tupl
             else:
                 logger.info(f"Found existing team '{data['name']}' by natural key (requested ansible_id={object_ansible_id}, found={resource.ansible_id})")
             return resource, existing_team
-        except team_cls.DoesNotExist:
-            pass
-
-        resource = resource_cls.create_resource(
-            resource_type_cls.objects.get(name="shared.team"),
-            {"name": data["name"], "organization": org_resource.ansible_id},
-            ansible_id=data["ansible_id"],
-        )
-
-        return resource, resource.content_object
 
     elif content_type == 'organization':
-        # Natural-key fallback: find existing org by name before creating.
-        org_cls = get_organization_model()
         try:
-            existing_org = org_cls.objects.get(name=data['name'])
+            with transaction.atomic():
+                resource = resource_cls.create_resource(
+                    resource_type_cls.objects.get(name="shared.organization"),
+                    {"name": data["name"]},
+                    ansible_id=data["ansible_id"],
+                )
+            return resource, resource.content_object
+        except IntegrityError:
+            # Org exists with a different ansible_id (e.g. after 2.4→2.6 upgrade).
+            org_cls = get_organization_model()
+            existing_org = org_cls.objects.filter(name=data['name']).first()
+            if existing_org is None:
+                raise
             ct = ContentType.objects.get_for_model(existing_org)
             resource, created = resource_cls.objects.get_or_create(
                 content_type=ct,
@@ -337,16 +346,6 @@ def get_or_create_resource(objects: dict, content_type: str, data: dict) -> Tupl
                     f"Found existing organization '{data['name']}' by natural key (requested ansible_id={object_ansible_id}, found={resource.ansible_id})"
                 )
             return resource, existing_org
-        except org_cls.DoesNotExist:
-            pass
-
-        resource = resource_cls.create_resource(
-            resource_type_cls.objects.get(name="shared.organization"),
-            {"name": data["name"]},
-            ansible_id=data["ansible_id"],
-        )
-
-        return resource, resource.content_object
     else:
         logger.error(f"build_resource_stub does not know how to build an object of type {type}")
         return None, None
