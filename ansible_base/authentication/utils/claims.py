@@ -880,9 +880,9 @@ class ReconcileUser:
             logger.info(_("Assigning role '{rd}' to user '{username}'").format(rd=role_definition.name, username=self.user.username))
 
         if obj:
-            role_definition.give_permission(self.user, obj)
+            return role_definition.give_permission(self.user, obj)
         else:
-            role_definition.give_global_permission(self.user)
+            return role_definition.give_global_permission(self.user)
 
     def _remove_permission(self, role_definition: CommonModel, obj: Union[AbstractOrganization, AbstractTeam, None] = None) -> None:
         if obj:

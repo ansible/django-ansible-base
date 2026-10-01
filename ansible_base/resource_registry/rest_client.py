@@ -5,6 +5,8 @@ from typing import Optional
 from django.apps import apps
 
 from ansible_base.lib.utils.apps import is_rbac_installed
+from ansible_base.lib.utils.models import get_system_user
+from ansible_base.resource_registry.models.service_identifier import service_id
 from ansible_base.resource_registry.resource_server import get_resource_server_config
 from ansible_base.resource_registry.service_client import BaseServiceClient
 
@@ -159,6 +161,14 @@ class ResourceAPIClient(BaseServiceClient):
             serializer = ServiceRoleTeamAssignmentSerializer(assignment)
 
         data = serializer.data
+        data['from_service'] = str(service_id())
+
+        # System users are local implementation details and do not have matching
+        # resources in every connected service. The receiving service supplies its
+        # own system actor when this optional field is absent.
+        system_user = get_system_user()
+        if system_user is not None and assignment.created_by_id == system_user.pk:
+            data.pop('created_by_ansible_id', None)
 
         # Remove object_id if object_ansible_id is present to avoid sending both
         # For registered objects: send only object_ansible_id
@@ -170,7 +180,7 @@ class ResourceAPIClient(BaseServiceClient):
 
     def sync_unassignment(self, role_definition, actor, content_object):
         _check_rbac_installed()
-        data = {'role_definition': role_definition.name}
+        data = {'role_definition': role_definition.name, 'from_service': str(service_id())}
         data[f'{actor._meta.model_name}_ansible_id'] = str(actor.resource.ansible_id)
 
         if content_object is None:
