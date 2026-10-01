@@ -301,7 +301,7 @@ def get_or_create_resource(objects: dict, content_type: str, data: dict) -> Tupl
             resource, created = resource_cls.objects.get_or_create(
                 content_type=ct,
                 object_id=existing_team.pk,
-                defaults={'name': data['name']},
+                defaults={'name': data['name'], 'ansible_id': object_ansible_id},
             )
             if created:
                 logger.warning(f"Created missing resource entry for existing team '{data['name']}'")
@@ -328,7 +328,7 @@ def get_or_create_resource(objects: dict, content_type: str, data: dict) -> Tupl
             resource, created = resource_cls.objects.get_or_create(
                 content_type=ct,
                 object_id=existing_org.pk,
-                defaults={'name': data['name']},
+                defaults={'name': data['name'], 'ansible_id': object_ansible_id},
             )
             if created:
                 logger.warning(f"Created missing resource entry for existing organization '{data['name']}'")

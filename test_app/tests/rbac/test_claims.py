@@ -539,3 +539,62 @@ class TestUserClaims:
         assignments = RoleUserAssignment.objects.filter(user=user, role_definition=shared_test_data.roles['org_admin'])
         assert assignments.exists(), "Org role assignment was skipped despite org existing by natural key"
         assert str(assignments.first().object_id) == str(org.pk)
+
+    def test_save_claims_missing_resource_entry_team(self, shared_test_data):
+        """AAP-95186: if a team exists but its Resource registry entry was
+        deleted, the natural-key fallback should recreate the entry."""
+        from django.contrib.contenttypes.models import ContentType as CT
+
+        from ansible_base.resource_registry.models import Resource
+
+        user = get_user_model().objects.create(username='test_user_missing_resource_team')
+        team = shared_test_data.teams[1]
+        org = team.organization
+
+        team_ct = CT.objects.get_for_model(team)
+        Resource.objects.filter(content_type=team_ct, object_id=team.pk).delete()
+
+        objects = {
+            'organization': [{'ansible_id': str(uuid.uuid4()), 'name': org.name}],
+            'team': [{'ansible_id': str(uuid.uuid4()), 'name': team.name, 'org': 0}],
+        }
+        object_roles = {
+            'Team Member': {'content_type': 'team', 'objects': [0]},
+        }
+
+        save_user_claims(user, objects=objects, object_roles=object_roles, global_roles=[])
+
+        assert Resource.objects.filter(content_type=team_ct, object_id=team.pk).exists(), \
+            "Resource entry should have been recreated for existing team"
+        assignments = RoleUserAssignment.objects.filter(user=user, role_definition=shared_test_data.roles['team_member'])
+        assert assignments.exists()
+        assert str(assignments.first().object_id) == str(team.pk)
+
+    def test_save_claims_missing_resource_entry_org(self, shared_test_data):
+        """AAP-95186: if an org exists but its Resource registry entry was
+        deleted, the natural-key fallback should recreate the entry."""
+        from django.contrib.contenttypes.models import ContentType as CT
+
+        from ansible_base.resource_registry.models import Resource
+
+        user = get_user_model().objects.create(username='test_user_missing_resource_org')
+        org = shared_test_data.orgs[1]
+
+        org_ct = CT.objects.get_for_model(org)
+        Resource.objects.filter(content_type=org_ct, object_id=org.pk).delete()
+
+        objects = {
+            'organization': [{'ansible_id': str(uuid.uuid4()), 'name': org.name}],
+            'team': [],
+        }
+        object_roles = {
+            'Organization Admin': {'content_type': 'organization', 'objects': [0]},
+        }
+
+        save_user_claims(user, objects=objects, object_roles=object_roles, global_roles=[])
+
+        assert Resource.objects.filter(content_type=org_ct, object_id=org.pk).exists(), \
+            "Resource entry should have been recreated for existing org"
+        assignments = RoleUserAssignment.objects.filter(user=user, role_definition=shared_test_data.roles['org_admin'])
+        assert assignments.exists()
+        assert str(assignments.first().object_id) == str(org.pk)
