@@ -782,6 +782,8 @@ class ObjectRole(ObjectRoleFields):
             team_role_filter = Q(content_type_id=object_ct_id, object_id=str(object_pk))
             for parent_ct_id, parent_id in target_parents:
                 team_role_filter |= Q(content_type_id=parent_ct_id, object_id=str(parent_id))
+            # and only roles whose definition can grant something on this type of object
+            team_role_filter &= Q(role_definition_id__in=types_prefetch.role_definition_ids_granting(object_ct_id))
 
         expected_evaluations = set()
         # one query for the roles held by all teams this role provides membership to, not one per team

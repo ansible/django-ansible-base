@@ -482,7 +482,9 @@ def _created_role_teams(role_pks: list[int]) -> tuple[dict[int, set[int]], set[i
     return role_to_teams, set().union(*role_to_teams.values()) if role_to_teams else set()
 
 
-def _created_team_roles(team_ids: set[int], object_ct_id: int, parent_keys: set[tuple[int, str]]) -> tuple[dict[int, ObjectRole], dict[int, set[int]]]:
+def _created_team_roles(
+    team_ids: set[int], object_ct_id: int, parent_keys: set[tuple[int, str]], granting_rd_ids: set[int]
+) -> tuple[dict[int, ObjectRole], dict[int, set[int]]]:
     team_roles_by_pk: dict[int, ObjectRole] = {}
     team_to_role_pks: dict[int, set[int]] = defaultdict(set)
     if not team_ids:
@@ -491,6 +493,7 @@ def _created_team_roles(team_ids: set[int], object_ct_id: int, parent_keys: set[
     relevant_filter = Q(content_type_id=object_ct_id, object_id__in=[])
     for ct_id, parent_id in parent_keys:
         relevant_filter |= Q(content_type_id=ct_id, object_id=parent_id)
+    relevant_filter &= Q(role_definition_id__in=granting_rd_ids)
     team_roles_by_pk = {role.pk: role for role in ObjectRole.objects.filter(teams__in=team_ids).filter(relevant_filter).distinct()}
     if not team_roles_by_pk:
         return team_roles_by_pk, team_to_role_pks
@@ -520,6 +523,7 @@ def _collect_created_role_updates(
     team_to_role_pks: dict[int, set[int]],
     team_roles_by_pk: dict[int, ObjectRole],
     expected_by_role_pk: dict[int, set],
+    granting_rd_ids: set[int],
     types_prefetch: TypesPrefetch,
     object_pk: int | UUID,
     object_ct_id: int,
@@ -532,7 +536,7 @@ def _collect_created_role_updates(
         return expected_by_role_pk[expected_role.pk]
 
     expected: set = set()
-    if (role.content_type_id, str(role.object_id)) in direct_keys:
+    if (role.content_type_id, str(role.object_id)) in direct_keys and role.role_definition_id in granting_rd_ids:
         expected |= expected_for(role)
     for team_id in role_to_teams.get(role.pk, ()):
         for team_role_pk in team_to_role_pks.get(team_id, ()):
@@ -578,7 +582,10 @@ def recompute_role_evaluations_for_created(
     direct_keys = parent_keys | {(object_ct_id, object_id_str)}
 
     role_to_teams, team_ids = _created_role_teams(role_pks)
-    team_roles_by_pk, team_to_role_pks = _created_team_roles(team_ids, object_ct_id, parent_keys | {(object_ct_id, object_id_str)})
+    granting_rd_ids = types_prefetch.role_definition_ids_granting(object_ct_id)
+    team_roles_by_pk, team_to_role_pks = _created_team_roles(
+        team_ids, object_ct_id, parent_keys | {(object_ct_id, object_id_str)}, granting_rd_ids
+    )
     existing = _created_existing_evaluations(role_pks, object_pk, object_ct_id)
     expected_by_role_pk: dict[int, set] = {}
     updates = EvaluationUpdates()
@@ -590,6 +597,7 @@ def recompute_role_evaluations_for_created(
             team_to_role_pks,
             team_roles_by_pk,
             expected_by_role_pk,
+            granting_rd_ids,
             types_prefetch,
             object_pk,
             object_ct_id,
