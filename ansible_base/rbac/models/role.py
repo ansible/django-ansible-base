@@ -761,12 +761,12 @@ class ObjectRole(ObjectRoleFields):
                 team_role_filter = Q(content_type_id=object_ct_id, object_id=str(object_pk))
                 for parent_ct_id, parent_id in target_parents:
                     team_role_filter |= Q(content_type_id=parent_ct_id, object_id=str(parent_id))
-            for team in self.provides_teams.all():
-                team_roles = team.has_roles.all()
-                if team_role_filter is not None:
-                    team_roles = team_roles.filter(team_role_filter)
-                for team_role in team_roles:
-                    expected_evaluations.update(team_role.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id))
+            # one query for the roles held by all teams this role provides membership to, not one per team
+            team_roles = ObjectRole.objects.filter(teams__in=self.provides_teams.all()).distinct()
+            if team_role_filter is not None:
+                team_roles = team_roles.filter(team_role_filter)
+            for team_role in team_roles:
+                expected_evaluations.update(team_role.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id))
 
         self._log_partials_count(len(expected_evaluations), 'expected evaluation', self.pk)
 
