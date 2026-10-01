@@ -306,7 +306,7 @@ def get_or_create_resource(objects: dict, content_type: str, data: dict) -> Tupl
             if created:
                 logger.warning(f"Created missing resource entry for existing team '{data['name']}'")
             else:
-                logger.info(f"Found existing team '{data['name']}' by natural key " f"(requested ansible_id={object_ansible_id}, found={resource.ansible_id})")
+                logger.info(f"Found existing team '{data['name']}' by natural key (requested ansible_id={object_ansible_id}, found={resource.ansible_id})")
             return resource, existing_team
         except team_cls.DoesNotExist:
             pass
@@ -334,7 +334,7 @@ def get_or_create_resource(objects: dict, content_type: str, data: dict) -> Tupl
                 logger.warning(f"Created missing resource entry for existing organization '{data['name']}'")
             else:
                 logger.info(
-                    f"Found existing organization '{data['name']}' by natural key " f"(requested ansible_id={object_ansible_id}, found={resource.ansible_id})"
+                    f"Found existing organization '{data['name']}' by natural key (requested ansible_id={object_ansible_id}, found={resource.ansible_id})"
                 )
             return resource, existing_org
         except org_cls.DoesNotExist:
