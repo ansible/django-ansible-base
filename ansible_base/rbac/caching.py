@@ -454,8 +454,19 @@ def recompute_role_evaluations(
         types_prefetch = TypesPrefetch.from_db()
 
     updates = EvaluationUpdates()
-    for object_role in object_roles:
-        updates.collect(object_role, types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id)
+    if object_pk is None:
+        # Full recompute of these roles: batch-load existing evaluations and team
+        # roles per chunk, the same way recompute_all_role_evaluations does, instead
+        # of one query per role and one per team.
+        roles = list(object_roles)
+        for start in range(0, len(roles), RECOMPUTE_CHUNK_SIZE):
+            chunk = roles[start : start + RECOMPUTE_CHUNK_SIZE]
+            evaluations_prefetch = EvaluationsPrefetch.from_roles(chunk)
+            for object_role in chunk:
+                updates.collect(object_role, types_prefetch, evaluations_prefetch)
+    else:
+        for object_role in object_roles:
+            updates.collect(object_role, types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id)
     updates.apply()
 
 
