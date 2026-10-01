@@ -385,9 +385,13 @@ class EvaluationUpdates:
         self.to_delete: set[tuple[int, type]] = set()
         self.to_add: list = []
 
-    def collect(self, object_role, types_prefetch, evaluations_prefetch=None, object_pk=None, object_ct_id=None):
+    def collect(self, object_role, types_prefetch, evaluations_prefetch=None, object_pk=None, object_ct_id=None, target_parents=None):
         role_to_delete, role_to_add = object_role.needed_cache_updates(
-            types_prefetch=types_prefetch, evaluations_prefetch=evaluations_prefetch, object_pk=object_pk, object_ct_id=object_ct_id
+            types_prefetch=types_prefetch,
+            evaluations_prefetch=evaluations_prefetch,
+            object_pk=object_pk,
+            object_ct_id=object_ct_id,
+            target_parents=target_parents,
         )
         if role_to_delete:
             logger.debug('Removing %d object-permissions from ObjectRole(pk=%s)', len(role_to_delete), object_role.pk)
@@ -440,6 +444,7 @@ def recompute_role_evaluations(
     types_prefetch: Optional[TypesPrefetch] = None,
     object_pk: Optional[Union[int, UUID]] = None,
     object_ct_id: Optional[int] = None,
+    target_parents: Optional[Iterable[tuple[int, Union[int, UUID]]]] = None,
 ) -> None:
     """Recompute RoleEvaluation entries for a specific set of ObjectRoles.
 
@@ -449,13 +454,19 @@ def recompute_role_evaluations(
 
     When object_pk and object_ct_id are provided, the scope is narrowed to
     a single target object (used by post_save signals for look-ahead).
+    target_parents, the (content_type_id, object_id) parent chain of that
+    object, additionally lets team-held roles be filtered to the ones that
+    can grant evaluations on it.
     """
     if types_prefetch is None:
         types_prefetch = TypesPrefetch.from_db()
 
+    if target_parents is not None:
+        target_parents = [(ct_id, obj_id) for ct_id, obj_id in target_parents]
+
     updates = EvaluationUpdates()
     for object_role in object_roles:
-        updates.collect(object_role, types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id)
+        updates.collect(object_role, types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id, target_parents=target_parents)
     updates.apply()
 
 
