@@ -6,10 +6,9 @@ from typing import Optional, Tuple, Union
 
 from django.apps import apps
 from django.conf import settings
+from django.contrib.contenttypes.models import ContentType
 from django.db.models import F, Model, OuterRef, QuerySet
 from django.db.utils import IntegrityError
-
-from django.contrib.contenttypes.models import ContentType
 
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 
