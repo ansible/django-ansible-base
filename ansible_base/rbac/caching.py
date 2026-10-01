@@ -474,6 +474,91 @@ def recompute_role_evaluations(
     updates.apply()
 
 
+def recompute_role_evaluations_for_created(
+    object_roles: Iterable[ObjectRole],
+    object_pk: Union[int, UUID],
+    object_ct_id: int,
+    target_parents: Iterable[tuple[int, Union[int, UUID]]],
+    types_prefetch: Optional[TypesPrefetch] = None,
+) -> None:
+    """Recompute RoleEvaluation entries for a single, just-created object.
+
+    Equivalent to recompute_role_evaluations(object_roles, object_pk=..., object_ct_id=...,
+    target_parents=...) but organised around the object instead of around each role:
+
+    * one query loads the teams every role provides membership to,
+    * one query loads the team-held roles that can grant on the new object
+      (roles on the object itself or on its parent chain),
+    * one query maps those teams to those roles,
+    * one query loads whatever evaluations already exist for the object,
+    * each relevant role's expected evaluations are computed once.
+
+    A role's own object can only contribute if it is the new object or one of its
+    parents; other roles in object_roles contribute purely through their teams.
+    """
+    if types_prefetch is None:
+        types_prefetch = TypesPrefetch.from_db()
+    roles = list(object_roles)
+    if not roles:
+        return
+    role_pks = [r.pk for r in roles]
+    object_id_str = str(object_pk)
+    parent_keys = {(ct_id, str(parent_id)) for ct_id, parent_id in target_parents}
+    direct_keys = parent_keys | {(object_ct_id, object_id_str)}
+
+    # ancestor role -> teams it provides membership to
+    role_to_teams: dict[int, set[int]] = defaultdict(set)
+    through = ObjectRole.provides_teams.through
+    for role_pk, team_id in through.objects.filter(objectrole_id__in=role_pks).values_list('objectrole_id', 'team_id'):
+        role_to_teams[role_pk].add(team_id)
+    team_ids = set().union(*role_to_teams.values()) if role_to_teams else set()
+
+    # team-held roles that can grant evaluations on the new object
+    relevant_filter = Q(content_type_id=object_ct_id, object_id=object_id_str)
+    for ct_id, parent_id in parent_keys:
+        relevant_filter |= Q(content_type_id=ct_id, object_id=parent_id)
+    team_roles_by_pk: dict[int, ObjectRole] = {}
+    team_to_role_pks: dict[int, set[int]] = defaultdict(set)
+    if team_ids:
+        team_roles_by_pk = {r.pk: r for r in ObjectRole.objects.filter(teams__in=team_ids).filter(relevant_filter).distinct()}
+        if team_roles_by_pk:
+            assignment_model = ObjectRole.teams.through
+            for team_id, role_pk in assignment_model.objects.filter(team_id__in=team_ids, object_role_id__in=team_roles_by_pk.keys()).values_list(
+                'team_id', 'object_role_id'
+            ):
+                team_to_role_pks[team_id].add(role_pk)
+
+    expected_by_role_pk: dict[int, set] = {}
+
+    def expected_for(role: ObjectRole) -> set:
+        if role.pk not in expected_by_role_pk:
+            expected_by_role_pk[role.pk] = role.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id)
+        return expected_by_role_pk[role.pk]
+
+    # evaluations already present for the new object, across all roles, in one query
+    evaluation_model = RoleEvaluationUUID if isinstance(object_pk, UUID) else RoleEvaluation
+    existing: dict[int, dict] = defaultdict(dict)
+    for eval_id, role_pk, codename, ct_id, obj_id in evaluation_model.objects.filter(
+        role_id__in=role_pks, content_type_id=object_ct_id, object_id=object_pk
+    ).values_list('id', 'role_id', 'codename', 'content_type_id', 'object_id'):
+        existing[role_pk][(codename, ct_id, obj_id)] = eval_id
+
+    updates = EvaluationUpdates()
+    for role in roles:
+        expected: set = set()
+        if (role.content_type_id, str(role.object_id)) in direct_keys:
+            expected |= expected_for(role)
+        for team_id in role_to_teams.get(role.pk, ()):
+            for team_role_pk in team_to_role_pks.get(team_id, ()):
+                expected |= expected_for(team_roles_by_pk[team_role_pk])
+        role_existing = existing.get(role.pk, {})
+        for key in role_existing.keys() - expected:
+            updates.to_delete.add((role_existing[key], type(key[2])))
+        for codename, ct_id, obj_id in expected - role_existing.keys():
+            updates.to_add.append(RoleEvaluation(codename=codename, content_type_id=ct_id, object_id=obj_id, role=role))
+    updates.apply()
+
+
 def recompute_all_role_evaluations() -> None:
     """Recompute RoleEvaluation entries for every ObjectRole in the database.
 
