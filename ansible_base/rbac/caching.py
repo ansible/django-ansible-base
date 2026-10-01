@@ -517,6 +517,9 @@ def recompute_role_evaluations_for_created(
     relevant_filter = Q(content_type_id=object_ct_id, object_id=object_id_str)
     for ct_id, parent_id in parent_keys:
         relevant_filter |= Q(content_type_id=ct_id, object_id=parent_id)
+    # only roles whose definition can grant something on this type of object
+    granting_rd_ids = types_prefetch.role_definition_ids_granting(object_ct_id)
+    relevant_filter &= Q(role_definition_id__in=granting_rd_ids)
     team_roles_by_pk: dict[int, ObjectRole] = {}
     team_to_role_pks: dict[int, set[int]] = defaultdict(set)
     if team_ids:
@@ -546,7 +549,7 @@ def recompute_role_evaluations_for_created(
     updates = EvaluationUpdates()
     for role in roles:
         expected: set = set()
-        if (role.content_type_id, str(role.object_id)) in direct_keys:
+        if (role.content_type_id, str(role.object_id)) in direct_keys and role.role_definition_id in granting_rd_ids:
             expected |= expected_for(role)
         for team_id in role_to_teams.get(role.pk, ()):
             for team_role_pk in team_to_role_pks.get(team_id, ()):
