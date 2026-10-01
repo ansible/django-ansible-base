@@ -86,7 +86,7 @@ class BaseAssignmentSerializer(serializers.ModelSerializer):
     object_ansible_id = ObjectAnsibleIdField(required=False, allow_null=True)
     object_id = serializers.CharField(allow_blank=True, required=False, allow_null=True)
     parent_reference = serializers.SerializerMethodField()
-    from_service = serializers.CharField(write_only=True)
+    from_service = serializers.CharField(write_only=True, required=False)
 
     def get_parent_reference(self, instance) -> str:
         """Read parent_reference from the prefetched object_role relation."""
