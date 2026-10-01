@@ -355,7 +355,10 @@ def post_save_update_obj_permissions(instance, object_pk=None, object_ct_id=None
         compute_team_member_roles(team_ids=[instance.id])
 
     if to_update:
-        recompute_role_evaluations(to_update, object_pk=object_pk, object_ct_id=object_ct_id)
+        target_parents = None
+        if object_pk is not None:
+            target_parents = [(parent_ct.id, parent_id) for parent_ct, parent_id in parent_gfks]
+        recompute_role_evaluations(to_update, object_pk=object_pk, object_ct_id=object_ct_id, target_parents=target_parents)
 
 
 def rbac_pre_save_identify_changes(instance, *args, **kwargs):
