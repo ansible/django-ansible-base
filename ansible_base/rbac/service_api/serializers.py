@@ -76,7 +76,17 @@ class DABPermissionSerializer(serializers.ModelSerializer):
 # 'id' is included so consumers can implement cursor-based pagination
 # (e.g. id__gt=<last_pk>&order_by=id) for efficient resume after
 # crashes and skip-on-reinstall in migrate_service_data.
-assignment_common_fields = ('id', 'created', 'created_by_ansible_id', 'object_id', 'object_ansible_id', 'content_type', 'role_definition', 'parent_reference')
+assignment_common_fields = (
+    'id',
+    'created',
+    'created_by_ansible_id',
+    'object_id',
+    'object_ansible_id',
+    'content_type',
+    'role_definition',
+    'parent_reference',
+    'from_service',
+)
 
 
 class BaseAssignmentSerializer(serializers.ModelSerializer):
