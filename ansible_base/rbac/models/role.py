@@ -665,13 +665,18 @@ class ObjectRole(ObjectRoleFields):
                 permission_model = permission_content_type.model_class()
                 if issubclass(permission_model, RemoteObject):
                     # Build id_list from ObjectRole objects if it is remote object
-                    id_list = (
-                        ObjectRole.objects.filter(parent_reference=object_id, content_type=eval_ct)
-                        .values_list(Cast('object_id', output_field=permission_model._meta.pk.django_field()), flat=True)
-                        .distinct()
-                    )
+                    remote_qs = ObjectRole.objects.filter(parent_reference=object_id, content_type=eval_ct)
+                    if object_pk is not None:
+                        remote_qs = remote_qs.filter(object_id=str(object_pk))
+                    id_list = remote_qs.values_list(Cast('object_id', output_field=permission_model._meta.pk.django_field()), flat=True).distinct()
                 else:
-                    id_list = child_model.objects.filter(**{filter_path: object_id}).values_list('pk', flat=True)
+                    child_qs = child_model.objects.filter(**{filter_path: object_id})
+                    if object_pk is not None:
+                        # Look-ahead: we only care whether the target object is a child of this
+                        # role's object. Filter in SQL instead of fetching every child id of the
+                        # parent (which for an organization can be tens of thousands of rows).
+                        child_qs = child_qs.filter(pk=object_pk)
+                    id_list = child_qs.values_list('pk', flat=True)
                 cached_id_lists[eval_ct] = list(id_list)
 
             for id in id_list:
