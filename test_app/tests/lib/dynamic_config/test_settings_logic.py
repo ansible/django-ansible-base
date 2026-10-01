@@ -2,9 +2,7 @@ import pytest
 
 from ansible_base.lib.dynamic_config.settings_logic import get_dab_settings
 
-CLEAN_TEXT_POSTPROCESSING_HOOK = (
-    "ansible_base.api_documentation.clean_text_schema_hooks.inject_clean_text_pattern_components"
-)
+CLEAN_TEXT_POSTPROCESSING_HOOK = "ansible_base.api_documentation.clean_text_schema_hooks.inject_clean_text_pattern_components"
 
 
 @pytest.mark.parametrize(
