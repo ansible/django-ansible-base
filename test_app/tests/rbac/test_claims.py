@@ -564,8 +564,7 @@ class TestUserClaims:
 
         save_user_claims(user, objects=objects, object_roles=object_roles, global_roles=[])
 
-        assert Resource.objects.filter(content_type=team_ct, object_id=team.pk).exists(), \
-            "Resource entry should have been recreated for existing team"
+        assert Resource.objects.filter(content_type=team_ct, object_id=team.pk).exists(), "Resource entry should have been recreated for existing team"
         assignments = RoleUserAssignment.objects.filter(user=user, role_definition=shared_test_data.roles['team_member'])
         assert assignments.exists()
         assert str(assignments.first().object_id) == str(team.pk)
@@ -593,8 +592,7 @@ class TestUserClaims:
 
         save_user_claims(user, objects=objects, object_roles=object_roles, global_roles=[])
 
-        assert Resource.objects.filter(content_type=org_ct, object_id=org.pk).exists(), \
-            "Resource entry should have been recreated for existing org"
+        assert Resource.objects.filter(content_type=org_ct, object_id=org.pk).exists(), "Resource entry should have been recreated for existing org"
         assignments = RoleUserAssignment.objects.filter(user=user, role_definition=shared_test_data.roles['org_admin'])
         assert assignments.exists()
         assert str(assignments.first().object_id) == str(org.pk)
