@@ -3,6 +3,8 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.contenttypes.models import ContentType
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.lib.utils.response import get_relative_url
@@ -533,3 +535,40 @@ def test_resources_list_page_size(admin_api_client, django_user_model):
     assert resp.status_code == 200
     assert len(resp.data["results"]) == 3
     assert resp.data["next"] is not None
+
+
+@pytest.mark.django_db
+def test_resources_list_extra_fields_query_count(admin_api_client, django_user_model):
+    """Query count should not scale with the number of resources in the result.
+    ResourceViewSet.queryset only does select_related("content_type__resource_type"),
+    it does not prefetch content_object. When extra_fields=resource_data is passed,
+    ResourceDataField.to_representation() accesses resource.content_object per row,
+    which is a GenericForeignKey lookup that is not batched, so it costs one extra
+    query per resource in the page (N+1)."""
+    url = get_relative_url("resource-list")
+
+    for i in range(2):
+        django_user_model.objects.create(username=f"query-count-resource-user-{i}")
+
+    admin_api_client.get(url, {"extra_fields": "resource_data"})  # warm up
+    with CaptureQueriesContext(connection) as ctx_small:
+        response = admin_api_client.get(url, {"extra_fields": "resource_data"})
+    assert response.status_code == 200
+    queries_small = len(ctx_small.captured_queries)
+
+    for i in range(2, 20):
+        django_user_model.objects.create(username=f"query-count-resource-user-{i}")
+
+    admin_api_client.get(url, {"extra_fields": "resource_data"})  # warm up
+    with CaptureQueriesContext(connection) as ctx_large:
+        response = admin_api_client.get(url, {"extra_fields": "resource_data"})
+    assert response.status_code == 200
+    queries_large = len(ctx_large.captured_queries)
+
+    added_queries = queries_large - queries_small
+    assert added_queries < 5, (
+        f"Adding 18 resources increased query count by {added_queries} "
+        f"({queries_small} -> {queries_large}). "
+        f"ResourceDataField.to_representation() is doing a per-resource content_object query; "
+        f"ResourceViewSet.queryset needs prefetch_related('content_object') when extra_fields=resource_data is requested."
+    )
