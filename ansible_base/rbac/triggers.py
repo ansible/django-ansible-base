@@ -39,6 +39,45 @@ Sounds simple, but is actually more complicated that the caching logic itself.
 
 dab_post_migrate = Signal()
 
+# Sent after assignments are created, ONLY for rows that were actually created (idempotent
+# re-grants send nothing -- equivalent to post_save with created=True). Fired by:
+#   - give_assignments / bulk_give_permissions / RoleDefinition.give_permission        (object roles)
+#   - bulk_give_permissions (triple with content object None) / give_global_permission (global roles)
+# These are the SUPPORTED grant entry points. A raw RoleUserAssignment.objects.create(...) or
+# .get_or_create(...) does NOT fire this signal -- route grants through the methods above.
+# kwargs:
+#   - assignments: list[AssignmentBase] - newly created RoleUserAssignment/RoleTeamAssignment instances
+#   - content_objects: dict[tuple[int, str], ContentObject] - optional lookup by (content_type_id, object_id)
+#
+# Content objects dict is populated when called from bulk_give_permissions (which has the model instances).
+# Content objects dict is empty when give_assignments is called directly without content_objects parameter.
+# Consumers can look up content objects as: content_objects.get((assignment.content_type_id, assignment.object_id))
+# Missing key means not provided.
+#
+# GLOBAL (singleton) assignments: for a global role, assignment.object_role is None,
+# assignment.content_type_id is None, assignment.object_id is None, and content_objects is empty.
+# Consumers MUST treat assignment.object_role as possibly None and not dereference
+# assignment.object_role.content_object unconditionally.
+dab_rbac_assignments_created = Signal()
+
+# Sent BEFORE assignments are deleted (all FKs still readable). Fired by:
+#   - remove_assignments / bulk_remove_permissions / RoleDefinition.remove_permission      (object roles)
+#   - bulk_remove_permissions (triple with content object None) / remove_global_permission (global roles)
+# kwargs:
+#   - assignments: list[AssignmentBase] - RoleUserAssignment/RoleTeamAssignment instances about to be deleted
+#   - content_objects: dict[tuple[int, str], ContentObject] - optional lookup by (content_type_id, object_id)
+#
+# Content objects dict is populated when called from bulk_remove_permissions (which has the model instances).
+# Content objects dict is empty when remove_assignments is called directly without content_objects parameter.
+# Consumers can look up content objects as: content_objects.get((assignment.content_type_id, assignment.object_id))
+# Missing key means not provided. See the global-assignment note on the created signal above.
+#
+# REENTRANCY HAZARD: unlike the old post_delete, this fires while the rows STILL EXIST. A
+# handler that mirrors a removal into another system (e.g. editing an old-RBAC M2M) can
+# trigger a reverse-sync that calls remove_permission again, re-finds the not-yet-deleted
+# row, and recurses infinitely. Consumers doing such mirroring MUST guard against reentrancy.
+dab_rbac_assignments_pre_delete = Signal()
+
 
 def _recompute_team_ids_for_assignment(
     object_role: 'ObjectRole',
