@@ -6,10 +6,11 @@ from typing import Optional, Tuple, Union
 
 from django.apps import apps
 from django.conf import settings
-from django.db.models import F, Model, OuterRef, QuerySet
+from django.db.models import F, Model, QuerySet
 from django.db.utils import IntegrityError
 
 from ansible_base.lib.utils.auth import get_team_model
+from ansible_base.rbac.resource_queries import assignment_resource_annotation
 
 from .models.content_type import DABContentType
 from .models.role import RoleDefinition, RoleUserAssignment
@@ -48,14 +49,11 @@ def get_user_object_roles(user: Model) -> QuerySet:
             print(assignment.rd_name, assignment.aid, assignment.resource_name, assignment.content_type_id)
     """
     # Create subqueries for resource data
-    resource_cls = apps.get_model('dab_resource_registry', 'Resource')
-    ansible_id_subquery = resource_cls.objects.filter(object_id=OuterRef('object_id'), content_type=OuterRef('content_type')).values('ansible_id')
-
-    resource_name_subquery = resource_cls.objects.filter(object_id=OuterRef('object_id'), content_type=OuterRef('content_type')).values('name')
+    resource_name_subquery = assignment_resource_annotation('name')
 
     return (
         user.role_assignments.filter(content_type__isnull=False)
-        .annotate(aid=ansible_id_subquery, resource_name=resource_name_subquery, rd_name=F('role_definition__name'))
+        .annotate(aid=F('object_ansible_id'), resource_name=resource_name_subquery, rd_name=F('role_definition__name'))
         .filter(rd_name__in=settings.ANSIBLE_BASE_JWT_MANAGED_ROLES)
     )
 
@@ -148,6 +146,9 @@ def _build_objects_and_roles(
 
     # Single loop: build object_arrays and object_roles
     for assignment in get_user_object_roles(user):
+        if assignment.aid is None:
+            continue
+
         role_name = assignment.rd_name
         ansible_id = str(assignment.aid)
         resource_name = str(assignment.resource_name)

@@ -8,7 +8,12 @@ from django.db.models import Max
 from django.db.models.options import Options
 from django.utils.translation import gettext_lazy as _
 
-from ..remote import RemoteObject, get_local_resource_prefix, get_resource_prefix
+from ..remote import (
+    RemoteObject,
+    get_local_resource_prefix,
+    get_local_resource_services,
+    get_resource_prefix,
+)
 
 
 class DABContentTypeManager(django_models.Manager[django_models.Model]):
@@ -283,7 +288,7 @@ class DABContentType(django_models.Model):
 
         So it could return a Django model class or a python class.
         """
-        if self.service not in ("shared", get_local_resource_prefix()):
+        if self.is_remote:
             from ..remote import get_remote_standin_class
 
             return get_remote_standin_class(self)
@@ -331,4 +336,4 @@ class DABContentType(django_models.Model):
 
     @property
     def is_remote(self):
-        return self.service not in ('shared', get_local_resource_prefix())
+        return self.service not in get_local_resource_services()
