@@ -1,8 +1,27 @@
+import uuid
+
 import pytest
 from django.contrib.contenttypes.models import ContentType
-from django.core.management import call_command
+from django.core.management import CommandError, call_command
+from django.db import connection
 
 from ansible_base.resource_registry.models import Resource
+
+
+def _insert_duplicate_resource(ct, object_id, name):
+    """Insert a duplicate Resource entry via raw SQL (unique constraint must be dropped first)."""
+    ansible_id = uuid.uuid4()
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT service_id FROM dab_resource_registry_resource LIMIT 1")
+        row = cursor.fetchone()
+        service_id = row[0] if row else str(uuid.uuid4())
+        cursor.execute(
+            "INSERT INTO dab_resource_registry_resource "
+            "(ansible_id, content_type_id, object_id, name, service_id, is_partially_migrated) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            [str(ansible_id), ct.pk, str(object_id), name, service_id, False],
+        )
+    return ansible_id
 
 
 @pytest.mark.django_db
@@ -74,10 +93,13 @@ class TestFixStaleAnsibleIds:
         captured = capsys.readouterr()
         assert "Orphan Resource entries" in captured.out
 
-    def test_no_matching_types(self, capsys):
-        call_command("fix_stale_ansible_ids", "nonexistent")
-        captured = capsys.readouterr()
-        assert "No matching resource types" in captured.err
+    def test_no_matching_types(self):
+        with pytest.raises(CommandError, match="Unknown resource type"):
+            call_command("fix_stale_ansible_ids", "nonexistent")
+
+    def test_partial_unknown_type_raises_error(self, team):
+        with pytest.raises(CommandError, match="shared.organizaton"):
+            call_command("fix_stale_ansible_ids", "team", "organizaton")
 
     def test_multiple_missing_entries(self, organization, capsys):
         from test_app.models import Team
@@ -92,3 +114,79 @@ class TestFixStaleAnsibleIds:
 
         for t in teams:
             assert Resource.objects.filter(content_type=ct, object_id=str(t.pk)).exists()
+
+    def test_orphan_summary(self, team, organization, capsys):
+        ct = ContentType.objects.get_for_model(team)
+        Resource.objects.create(content_type=ct, object_id="888888", name="orphan1")
+        Resource.objects.create(content_type=ct, object_id="888889", name="orphan2")
+
+        call_command("fix_stale_ansible_ids", "team")
+        captured = capsys.readouterr()
+        assert "2 orphan Resource entries" in captured.out
+        assert "harmless" in captured.out
+
+    def test_fix_missing_summary_with_fix_flag(self, team, capsys):
+        ct = ContentType.objects.get_for_model(team)
+        Resource.objects.filter(content_type=ct, object_id=str(team.pk)).delete()
+
+        call_command("fix_stale_ansible_ids", "team", fix=True)
+        captured = capsys.readouterr()
+        assert "Created 1 missing Resource entries." in captured.out
+        assert "resource_sync" in captured.out
+
+
+@pytest.mark.django_db(transaction=True)
+class TestFixStaleAnsibleIdsDuplicates:
+    """Tests for duplicate detection/repair — requires transaction=True for DDL (ALTER TABLE)."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_team_with_duplicate(self, organization):
+        from test_app.models import Team
+
+        self.team = Team.objects.create(name="dupe_test_team", organization=organization)
+        self.ct = ContentType.objects.get_for_model(self.team)
+        with connection.cursor() as cursor:
+            cursor.execute("ALTER TABLE dab_resource_registry_resource DROP CONSTRAINT IF EXISTS unique_resource_content_type_object_id")
+            cursor.execute("DROP INDEX IF EXISTS unique_resource_content_type_object_id")
+        _insert_duplicate_resource(self.ct, self.team.pk, self.team.name)
+        yield
+        Resource.objects.filter(content_type=self.ct, object_id=str(self.team.pk)).exclude(
+            pk=Resource.objects.filter(content_type=self.ct, object_id=str(self.team.pk)).order_by("pk").values("pk")[:1]
+        ).delete()
+        self.team.delete()
+        with connection.cursor() as cursor:
+            cursor.execute("DROP INDEX IF EXISTS unique_resource_content_type_object_id")
+            cursor.execute(
+                "ALTER TABLE dab_resource_registry_resource ADD CONSTRAINT unique_resource_content_type_object_id " "UNIQUE (content_type_id, object_id)"
+            )
+
+    def test_detect_duplicates_audit_only(self, capsys):
+        call_command("fix_stale_ansible_ids", "team")
+        captured = capsys.readouterr()
+        assert "DUPLICATE Resource entries: 1" in captured.out
+        assert "Run with --fix-duplicates" in captured.out
+
+    def test_fix_duplicates(self, capsys):
+        original = Resource.objects.filter(content_type=self.ct, object_id=str(self.team.pk)).order_by("pk").first()
+        original_ansible_id = original.ansible_id
+
+        call_command("fix_stale_ansible_ids", "team", fix_duplicates=True)
+        captured = capsys.readouterr()
+        assert "Removed 1 duplicate Resource entries" in captured.out
+        assert "Kept ansible_id=" in captured.out
+
+        remaining = Resource.objects.filter(content_type=self.ct, object_id=str(self.team.pk))
+        assert remaining.count() == 1
+        assert remaining.first().ansible_id == original_ansible_id
+
+    def test_fix_duplicates_summary(self, capsys):
+        call_command("fix_stale_ansible_ids", "team", fix_duplicates=True)
+        captured = capsys.readouterr()
+        assert "Removed 1 duplicate Resource entries." in captured.out
+
+    def test_duplicates_reported_in_audit_summary(self, capsys):
+        call_command("fix_stale_ansible_ids", "team")
+        captured = capsys.readouterr()
+        assert "1 duplicate Resource entries" in captured.out
+        assert "fix-duplicates" in captured.out
+        assert "All resource types OK" not in captured.out
