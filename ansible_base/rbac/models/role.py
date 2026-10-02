@@ -1,6 +1,6 @@
 import logging
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Optional, Type, Union
+from typing import TYPE_CHECKING, Optional, Type
 from uuid import UUID
 
 # Django
@@ -605,7 +605,7 @@ class ObjectRole(ObjectRoleFields):
 
         return (eval_ct, child_model, filter_path)
 
-    def expected_direct_permissions(self, types_prefetch, object_pk=None, object_ct_id=None) -> set[tuple[str, int, Union[int, UUID]]]:
+    def expected_direct_permissions(self, types_prefetch, object_pk=None, object_ct_id=None) -> set[tuple[str, int, int | UUID]]:
         """The expected permissions that holding this ObjectRole confers to the holder
 
         This is given in the form of tuples, which represent RoleEvaluation entries.
@@ -691,10 +691,10 @@ class ObjectRole(ObjectRoleFields):
 
     def _load_existing_partials(
         self,
-        object_pk: Optional[Union[int, UUID]],
-        object_ct_id: Optional[int],
-        evaluations_prefetch: Optional['EvaluationsPrefetch'],
-    ) -> dict[tuple[str, int, Union[int, UUID]], int]:
+        object_pk: int | UUID | None,
+        object_ct_id: int | None,
+        evaluations_prefetch: 'EvaluationsPrefetch | None',
+    ) -> dict[tuple[str, int, int | UUID], int]:
         existing_partials = {}
 
         if object_pk is not None and object_ct_id is not None:

@@ -2,7 +2,7 @@ import hashlib
 import json
 import logging
 from collections import defaultdict
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple
 
 from django.apps import apps
 from django.conf import settings
@@ -124,7 +124,7 @@ def _resolve_team_organization_references(
 
 def _build_objects_and_roles(
     user: Model,
-) -> tuple[dict[str, list], dict[str, dict[str, Union[str, list[int]]]]]:
+) -> tuple[dict[str, list], dict[str, dict[str, str | list[int]]]]:
     """Process user's object-scoped role assignments and return objects and roles data.
 
     Args:
@@ -201,7 +201,7 @@ def _get_user_global_roles(user: Model) -> list[str]:
     return [role_definition.name for role_definition in global_roles_query]
 
 
-def get_user_claims(user: Model) -> dict[str, Union[list[str], dict[str, Union[str, list[dict[str, str]]]]]]:
+def get_user_claims(user: Model) -> dict[str, list[str] | dict[str, str | list[dict[str, str]]]]:
     """Generate comprehensive claims data for a user including roles and object access.
 
     This function builds a complete picture of a user's permissions by gathering:
@@ -436,7 +436,7 @@ def save_user_claims(user: Model, objects: dict, object_roles: dict, global_role
 # ---- for claims hashing ----
 
 
-def get_user_claims_hashable_form(claims: dict) -> dict[str, Union[list[str], dict[str, list[str]]]]:
+def get_user_claims_hashable_form(claims: dict) -> dict[str, list[str] | dict[str, list[str]]]:
     """Convert user claims to hashable form suitable for generating deterministic hashes.
 
     Args:
