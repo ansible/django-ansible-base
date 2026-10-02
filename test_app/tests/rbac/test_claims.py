@@ -602,7 +602,7 @@ class TestUserClaims:
         matches the natural key, so the caller can re-raise the IntegrityError."""
         from ansible_base.resource_registry.models import Resource
 
-        resource, obj = _recover_resource_by_natural_key(Resource, Organization, {'name': 'nonexistent-org-name'}, str(uuid.uuid4()), 'organization')
+        resource, obj = _recover_resource_by_natural_key(Resource, Organization, 'nonexistent-org-name', str(uuid.uuid4()), 'organization')
         assert resource is None
         assert obj is None
 
@@ -618,7 +618,7 @@ class TestUserClaims:
         existing_resource = Resource.objects.get(content_type=org_ct, object_id=org.pk)
         original_ansible_id = str(existing_resource.ansible_id)
 
-        resource, obj = _recover_resource_by_natural_key(Resource, Organization, {'name': org.name}, original_ansible_id, 'organization')
+        resource, obj = _recover_resource_by_natural_key(Resource, Organization, org.name, original_ansible_id, 'organization')
         assert resource.pk == existing_resource.pk
         assert obj.pk == org.pk
         existing_resource.refresh_from_db()
@@ -632,10 +632,10 @@ class TestUserClaims:
 
         real_recover = _recover_resource_by_natural_key
 
-        def mock_recover(resource_cls, model_cls, lookup_kwargs, object_ansible_id, label):
-            if label == 'team':
+        def mock_recover(resource_cls, model_cls, name, object_ansible_id, resource_type_name, extra_model_kwargs=None):
+            if resource_type_name == 'shared.team':
                 return None, None
-            return real_recover(resource_cls, model_cls, lookup_kwargs, object_ansible_id, label)
+            return real_recover(resource_cls, model_cls, name, object_ansible_id, resource_type_name, extra_model_kwargs=extra_model_kwargs)
 
         user = get_user_model().objects.create(username='test_user_reraise')
         team = shared_test_data.teams[0]

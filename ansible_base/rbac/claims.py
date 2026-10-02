@@ -308,9 +308,7 @@ def _create_resource_with_recovery(resource_cls, resource_type_name, name, ansib
             )
         return resource, resource.content_object
     except IntegrityError:
-        resource, obj = _recover_resource_by_natural_key(
-            resource_cls, model_cls, name, ansible_id, resource_type_name, extra_model_kwargs=extra_model_kwargs
-        )
+        resource, obj = _recover_resource_by_natural_key(resource_cls, model_cls, name, ansible_id, resource_type_name, extra_model_kwargs=extra_model_kwargs)
         if resource is None:
             raise
         return resource, obj
@@ -341,14 +339,22 @@ def get_or_create_resource(objects: dict, content_type: str, data: dict) -> Tupl
         org_resource, org_obj = get_or_create_resource(objects, "organization", organization_data)
 
         return _create_resource_with_recovery(
-            resource_cls, "shared.team", data["name"], object_ansible_id, get_team_model(),
+            resource_cls,
+            "shared.team",
+            data["name"],
+            object_ansible_id,
+            get_team_model(),
             extra_resource_kwargs={"organization": org_resource.ansible_id},
             extra_model_kwargs={"organization": org_obj},
         )
 
     elif content_type == 'organization':
         return _create_resource_with_recovery(
-            resource_cls, "shared.organization", data["name"], object_ansible_id, get_organization_model(),
+            resource_cls,
+            "shared.organization",
+            data["name"],
+            object_ansible_id,
+            get_organization_model(),
         )
     else:
         logger.error(f"build_resource_stub does not know how to build an object of type {type}")
