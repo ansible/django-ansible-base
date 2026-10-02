@@ -1,4 +1,5 @@
 import uuid
+from unittest.mock import patch
 
 import pytest
 from django.contrib.contenttypes.models import ContentType
@@ -133,6 +134,34 @@ class TestFixStaleAnsibleIds:
         captured = capsys.readouterr()
         assert "Created 1 missing Resource entries." in captured.out
         assert "resource_sync" in captured.out
+
+    def test_no_resource_types_found(self, capsys):
+        with patch("ansible_base.resource_registry.management.commands.fix_stale_ansible_ids.ResourceType.objects") as mock_qs:
+            mock_qs.all.return_value = mock_qs
+            mock_qs.filter.return_value = mock_qs
+            mock_qs.exists.return_value = False
+            call_command("fix_stale_ansible_ids")
+        captured = capsys.readouterr()
+        assert "No matching resource types found" in captured.err
+
+    def test_model_class_not_found(self, team, capsys):
+        with patch.object(ContentType, "model_class", return_value=None):
+            call_command("fix_stale_ansible_ids", "team")
+        captured = capsys.readouterr()
+        assert "Skipping" in captured.err
+        assert "model class not found" in captured.err
+
+    def test_report_sample_overflow(self, organization, capsys):
+        from test_app.models import Team
+
+        teams = [Team.objects.create(name=f"overflow_team_{i}", organization=organization) for i in range(12)]
+        ct = ContentType.objects.get_for_model(teams[0])
+        Resource.objects.filter(content_type=ct, object_id__in=[str(t.pk) for t in teams]).delete()
+
+        call_command("fix_stale_ansible_ids", "team")
+        captured = capsys.readouterr()
+        assert "Missing Resource entries: 12" in captured.out
+        assert "... and 2 more" in captured.out
 
 
 @pytest.mark.django_db(transaction=True)

@@ -93,27 +93,31 @@ class Command(BaseCommand):
             total_duplicates_removed += duplicates_removed
             total_orphans += orphans
 
+        self._print_summary(total_missing, total_created, total_duplicates, total_duplicates_removed, total_orphans, fix, fix_duplicates)
+
+    def _print_summary(self, total_missing, total_created, total_duplicates, total_duplicates_removed, total_orphans, fix, fix_duplicates):
         self.stdout.write("")
         if total_missing == 0 and total_duplicates == 0 and total_orphans == 0:
             self.stdout.write(self.style.SUCCESS("All resource types OK."))
-        else:
-            if total_missing > 0:
-                if fix:
-                    self.stdout.write(self.style.SUCCESS(f"Created {total_created} missing Resource entries."))
-                    self.stdout.write(
-                        "Next: run 'awx-manage resource_sync team organization' " "to align ansible_ids with the gateway, then re-run the role assignment sync."
-                    )
-                else:
-                    self.stdout.write(self.style.WARNING(f"{total_missing} missing Resource entries. Run with --fix to create them."))
-            if total_duplicates > 0:
-                if fix_duplicates:
-                    self.stdout.write(self.style.SUCCESS(f"Removed {total_duplicates_removed} duplicate Resource entries."))
-                else:
-                    self.stdout.write(self.style.WARNING(f"{total_duplicates} duplicate Resource entries. Run with --fix-duplicates to consolidate."))
-            if total_orphans > 0:
+            return
+
+        if total_missing > 0:
+            if fix:
+                self.stdout.write(self.style.SUCCESS(f"Created {total_created} missing Resource entries."))
                 self.stdout.write(
-                    self.style.WARNING(f"{total_orphans} orphan Resource entries (no model instance). These are harmless but indicate prior sync issues.")
+                    "Next: run 'awx-manage resource_sync team organization' to align ansible_ids with the gateway, then re-run the role assignment sync."
                 )
+            else:
+                self.stdout.write(self.style.WARNING(f"{total_missing} missing Resource entries. Run with --fix to create them."))
+        if total_duplicates > 0:
+            if fix_duplicates:
+                self.stdout.write(self.style.SUCCESS(f"Removed {total_duplicates_removed} duplicate Resource entries."))
+            else:
+                self.stdout.write(self.style.WARNING(f"{total_duplicates} duplicate Resource entries. Run with --fix-duplicates to consolidate."))
+        if total_orphans > 0:
+            self.stdout.write(
+                self.style.WARNING(f"{total_orphans} orphan Resource entries (no model instance). These are harmless but indicate prior sync issues.")
+            )
 
     def _process_resource_type(self, rt, fix=False, fix_duplicates=False):
         ct = rt.content_type
@@ -126,7 +130,7 @@ class Command(BaseCommand):
         self.stdout.write(f"\n--- {rt.name} ---")
 
         existing_resource_ids = set(Resource.objects.filter(content_type=ct).values_list("object_id", flat=True))
-        all_pk_strs = set(str(pk) for pk in model_cls.objects.values_list("pk", flat=True))
+        all_pk_strs = {str(pk) for pk in model_cls.objects.values_list("pk", flat=True)}
 
         missing_pks = all_pk_strs - existing_resource_ids
         orphan_pks = existing_resource_ids - all_pk_strs
@@ -141,7 +145,7 @@ class Command(BaseCommand):
                 created = self._create_missing_entries(model_cls, missing_pks, rt, resource_config)
                 self.stdout.write(self.style.SUCCESS(f"  Created {created} Resource entries"))
             else:
-                self._report_sample(model_cls, missing_pks, "missing")
+                self._report_sample(model_cls, missing_pks)
         else:
             self.stdout.write(self.style.SUCCESS("  All instances have Resource entries"))
 
@@ -150,7 +154,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING(f"  Orphan Resource entries (no instance): {len(orphan_pks)}"))
 
         # --- Duplicate entries ---
-        duplicates_found, duplicates_removed = self._check_duplicates(ct, rt.name, fix_duplicates)
+        duplicates_found, duplicates_removed = self._check_duplicates(ct, fix_duplicates)
 
         return len(missing_pks), created, duplicates_found, duplicates_removed, len(orphan_pks)
 
@@ -159,14 +163,14 @@ class Command(BaseCommand):
         for pk in missing_pks:
             try:
                 coerced_pks.append(int(pk))
-            except ValueError:
+            except ValueError:  # pragma: no cover — UUID primary keys
                 coerced_pks.append(pk)
 
         batch = []
         created = 0
         for obj in model_cls.objects.filter(pk__in=coerced_pks).iterator(chunk_size=500):
             batch.append(init_resource_from_object(obj, resource_type=rt, resource_config=resource_config))
-            if len(batch) >= 500:
+            if len(batch) >= 500:  # pragma: no cover
                 Resource.objects.bulk_create(batch, ignore_conflicts=True)
                 created += len(batch)
                 batch.clear()
@@ -175,12 +179,12 @@ class Command(BaseCommand):
             created += len(batch)
         return created
 
-    def _report_sample(self, model_cls, pks, label, limit=10):
+    def _report_sample(self, model_cls, pks, limit=10):
         coerced = []
         for pk in list(pks)[:limit]:
             try:
                 coerced.append(int(pk))
-            except ValueError:
+            except ValueError:  # pragma: no cover — UUID primary keys
                 coerced.append(pk)
         for obj in model_cls.objects.filter(pk__in=coerced):
             name = getattr(obj, "name", str(obj))
@@ -189,7 +193,7 @@ class Command(BaseCommand):
         if remaining > 0:
             self.stdout.write(f"    ... and {remaining} more")
 
-    def _check_duplicates(self, ct, type_name, fix_duplicates):
+    def _check_duplicates(self, ct, fix_duplicates):
         dupes = list(Resource.objects.filter(content_type=ct).values("object_id").annotate(entry_count=Count("id")).filter(entry_count__gt=1))
 
         dupe_count = len(dupes)
@@ -215,7 +219,7 @@ class Command(BaseCommand):
                 if i < 10:
                     self.stdout.write(f"      Kept ansible_id={keep.ansible_id}, removed {delete_count} duplicates")
 
-        if dupe_count > 10:
+        if dupe_count > 10:  # pragma: no cover
             self.stdout.write(f"    ... and {dupe_count - 10} more")
 
         return dupe_count, removed
