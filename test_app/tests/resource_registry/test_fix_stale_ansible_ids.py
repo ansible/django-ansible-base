@@ -157,7 +157,8 @@ class TestFixStaleAnsibleIdsDuplicates:
         with connection.cursor() as cursor:
             cursor.execute("DROP INDEX IF EXISTS unique_resource_content_type_object_id")
             cursor.execute(
-                "ALTER TABLE dab_resource_registry_resource ADD CONSTRAINT unique_resource_content_type_object_id " "UNIQUE (content_type_id, object_id)"
+                "ALTER TABLE dab_resource_registry_resource ADD CONSTRAINT unique_resource_content_type_object_id "
+                "UNIQUE (content_type_id, object_id) INCLUDE (ansible_id)"
             )
 
     def test_detect_duplicates_audit_only(self, capsys):
