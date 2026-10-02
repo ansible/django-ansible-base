@@ -20,7 +20,7 @@ Usage::
 
 import logging
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Count
 
 from ansible_base.resource_registry.models import Resource, ResourceType, init_resource_from_object
@@ -63,7 +63,12 @@ class Command(BaseCommand):
             if not rt.startswith("shared."):
                 rt = f"shared.{rt}"
             normalized.append(rt)
-        return resource_types.filter(name__in=normalized)
+        matched = resource_types.filter(name__in=normalized)
+        matched_names = set(matched.values_list("name", flat=True))
+        unmatched = set(normalized) - matched_names
+        if unmatched:
+            raise CommandError(f"Unknown resource type(s): {', '.join(sorted(unmatched))}")
+        return matched
 
     def handle(self, *args, **options):
         fix = options["fix"]
@@ -77,13 +82,15 @@ class Command(BaseCommand):
         total_missing = 0
         total_created = 0
         total_duplicates = 0
+        total_duplicates_removed = 0
         total_orphans = 0
 
         for rt in resource_types:
-            missing, created, duplicates, orphans = self._process_resource_type(rt, fix=fix, fix_duplicates=fix_duplicates)
+            missing, created, duplicates, duplicates_removed, orphans = self._process_resource_type(rt, fix=fix, fix_duplicates=fix_duplicates)
             total_missing += missing
             total_created += created
             total_duplicates += duplicates
+            total_duplicates_removed += duplicates_removed
             total_orphans += orphans
 
         self.stdout.write("")
@@ -100,7 +107,7 @@ class Command(BaseCommand):
                     self.stdout.write(self.style.WARNING(f"{total_missing} missing Resource entries. Run with --fix to create them."))
             if total_duplicates > 0:
                 if fix_duplicates:
-                    self.stdout.write(self.style.SUCCESS(f"Removed {total_duplicates} duplicate Resource entries."))
+                    self.stdout.write(self.style.SUCCESS(f"Removed {total_duplicates_removed} duplicate Resource entries."))
                 else:
                     self.stdout.write(self.style.WARNING(f"{total_duplicates} duplicate Resource entries. Run with --fix-duplicates to consolidate."))
             if total_orphans > 0:
@@ -113,7 +120,7 @@ class Command(BaseCommand):
         model_cls = ct.model_class()
         if model_cls is None:
             self.stderr.write(f"Skipping {rt.name}: model class not found")
-            return 0, 0, 0, 0
+            return 0, 0, 0, 0, 0
 
         resource_config = rt.get_resource_config()
         self.stdout.write(f"\n--- {rt.name} ---")
@@ -143,9 +150,9 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING(f"  Orphan Resource entries (no instance): {len(orphan_pks)}"))
 
         # --- Duplicate entries ---
-        duplicates_removed = self._check_duplicates(ct, rt.name, fix_duplicates)
+        duplicates_found, duplicates_removed = self._check_duplicates(ct, rt.name, fix_duplicates)
 
-        return len(missing_pks), created, duplicates_removed, len(orphan_pks)
+        return len(missing_pks), created, duplicates_found, duplicates_removed, len(orphan_pks)
 
     def _create_missing_entries(self, model_cls, missing_pks, rt, resource_config):
         coerced_pks = []
@@ -183,19 +190,21 @@ class Command(BaseCommand):
             self.stdout.write(f"    ... and {remaining} more")
 
     def _check_duplicates(self, ct, type_name, fix_duplicates):
-        dupes = Resource.objects.filter(content_type=ct).values("object_id").annotate(entry_count=Count("id")).filter(entry_count__gt=1)
+        dupes = list(Resource.objects.filter(content_type=ct).values("object_id").annotate(entry_count=Count("id")).filter(entry_count__gt=1))
 
-        dupe_count = dupes.count()
+        dupe_count = len(dupes)
         if dupe_count == 0:
-            return 0
+            return 0, 0
 
         self.stdout.write(self.style.ERROR(f"  DUPLICATE Resource entries: {dupe_count} instances have multiple entries"))
 
         removed = 0
-        for dupe in dupes[:10]:
+        for i, dupe in enumerate(dupes):
             entries = Resource.objects.filter(content_type=ct, object_id=dupe["object_id"]).order_by("pk")
-            ids_list = list(entries.values_list("ansible_id", flat=True))
-            self.stdout.write(f"    object_id={dupe['object_id']}: {dupe['entry_count']} entries, ansible_ids={ids_list}")
+
+            if i < 10:
+                ids_list = list(entries.values_list("ansible_id", flat=True))
+                self.stdout.write(f"    object_id={dupe['object_id']}: {dupe['entry_count']} entries, ansible_ids={ids_list}")
 
             if fix_duplicates:
                 keep = entries.first()
@@ -203,9 +212,10 @@ class Command(BaseCommand):
                 delete_count = to_delete.count()
                 to_delete.delete()
                 removed += delete_count
-                self.stdout.write(f"      Kept ansible_id={keep.ansible_id}, removed {delete_count} duplicates")
+                if i < 10:
+                    self.stdout.write(f"      Kept ansible_id={keep.ansible_id}, removed {delete_count} duplicates")
 
         if dupe_count > 10:
             self.stdout.write(f"    ... and {dupe_count - 10} more")
 
-        return removed
+        return dupe_count, removed
