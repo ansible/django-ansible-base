@@ -43,14 +43,12 @@ PAGE_SIZE_SWEEP_CASES = [
         'serviceuserassignment-list',
         {},
         {},
-        marks=pytest.mark.xfail(reason="N+1 GenericForeignKey prefetch (fix: #1157, not yet backported)", strict=True),
         id='service_user_assignment_list',
     ),
     pytest.param(
         'serviceteamassignment-list',
         {},
         {},
-        marks=pytest.mark.xfail(reason="N+1 GenericForeignKey prefetch (fix: #1157, not yet backported)", strict=True),
         id='service_team_assignment_list',
     ),
     # Failing (real N+1s). xfail(strict=True) so a fix flips this to a hard
