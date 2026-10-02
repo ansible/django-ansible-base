@@ -9,6 +9,10 @@ from django.utils.translation import gettext_noop
 logger = logging.getLogger('ansible_base.rbac.managed')
 
 
+class ManagedRoleNameConflict(RuntimeError):
+    """Raised when an unmanaged role already occupies a managed role name."""
+
+
 class ManagedRoleConstructor:
     """Subclasses must define attributes, or override methods that use attribues
     - name
@@ -100,6 +104,12 @@ class ManagedRoleConstructor:
             'managed': True,
         }
         rd, created = role_definition_cls.objects.get_or_create(name=self.name, defaults=defaults)
+
+        if not created and not rd.managed:
+            raise ManagedRoleNameConflict(
+                f'Cannot create managed role "{self.name}": an unmanaged role already uses this name. '
+                'Rename the custom role before enabling the managed role.'
+            )
 
         if created:
             self.refresh_permissions(rd, apps=apps)
@@ -207,6 +217,8 @@ managed_role_templates = {
     'org_member': OrganizationMember,
     'team_admin': TeamAdmin,
     'team_member': TeamMember,
+    # For applications that need a managed role with an explicit permission list.
+    'custom': ManagedRoleConstructor,
     # These are not fully functional on their own, but can be easily subclassed
     'admin_base': ManagedAdminBase,
     'action_base': ManagedActionBase,

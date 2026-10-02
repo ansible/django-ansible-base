@@ -344,6 +344,14 @@ If you create (in code) a role definition that sets `managed` to True, then thes
 rules will be disregarded for that particular role definition. Managed role
 definitions can not be created through the API, but can be created in code like migration scripts.
 
+By default, custom roles can only include view permissions for shared resources.
+Applications can allow a narrow set of additional permissions with
+`ALLOW_SHARED_RESOURCE_CUSTOM_ROLE_PERMISSIONS`, mapping a role content type API
+slug to the exact shared permission API slugs permitted in that role. For
+example, `{'shared.organization': ['shared.change_automation_dashboard']}` permits
+that one permission only in organization roles. This keeps the broader
+`ALLOW_SHARED_RESOURCE_CUSTOM_ROLES` switch disabled.
+
 
 ### Role assignment callback
 
