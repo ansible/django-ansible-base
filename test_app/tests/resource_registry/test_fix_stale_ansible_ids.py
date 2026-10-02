@@ -136,6 +136,7 @@ class TestFixStaleAnsibleIds:
 
 
 @pytest.mark.django_db(transaction=True)
+@pytest.mark.skipif(connection.vendor == 'sqlite', reason='ALTER TABLE constraint operations not supported on SQLite')
 class TestFixStaleAnsibleIdsDuplicates:
     """Tests for duplicate detection/repair — requires transaction=True for DDL (ALTER TABLE)."""
 
