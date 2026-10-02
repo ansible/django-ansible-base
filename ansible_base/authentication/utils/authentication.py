@@ -321,6 +321,10 @@ def get_or_create_authenticator_user(
         logger.warning(f"AuthException: {e}")
         raise
 
+    # Validate the email parameter early so invalid emails from authenticators
+    # don't get persisted on the AuthenticatorUser record.
+    email = normalize_and_get_email(email) or ""
+
     # Step 1: Determine the username, running the migration logic FIRST. This is the key fix.
     if migrated_username := migrate_from_existing_authenticator(uid=uid, alt_uid=None, authenticator=authenticator, preferred_username=uid):
         username = migrated_username
@@ -342,7 +346,12 @@ def get_or_create_authenticator_user(
             return None, None, None
 
     # Step 3: Get or create the main User model instance.
+    # Validate email before storing on the User model to prevent invalid emails
+    # from being persisted (e.g., UIDs without @ from SAML authenticators).
     details = {k: user_details.get(k, "") for k in ["first_name", "last_name", "email"]}
+    raw_email = details.get("email", "")
+    validated_email = normalize_and_get_email(raw_email)
+    details["email"] = validated_email or ""
     local_user, user_created = get_user_model().objects.get_or_create(username=username, defaults=details)
     if user_created:
         logger.info(f"Authenticator {authenticator.name} created User {username}")
@@ -360,6 +369,4 @@ def get_or_create_authenticator_user(
             extra = ' attaching to existing user' if not user_created else ''
             logger.debug(f"Authenticator {authenticator.name} created AuthenticatorUser for {username}{extra}")
 
-    # Ensure the returned user object is the one linked to the auth_user.
-    final_user = auth_user.user if auth_user else local_user
-    return final_user, auth_user, created
+    return auth_user.user, auth_user, created
