@@ -266,17 +266,17 @@ def get_role_definition(name: str) -> Optional[Model]:
     return None
 
 
-def _recover_resource_by_natural_key(resource_cls, model_cls, lookup_kwargs, object_ansible_id, label):
+def _recover_resource_by_natural_key(resource_cls, model_cls, name, object_ansible_id, resource_type_name, extra_model_kwargs=None):
     """Recovery path when create_resource() fails with IntegrityError.
 
     Looks up the object by natural key, finds or creates the Resource entry,
     and corrects a stale ansible_id if needed so subsequent calls take the fast path.
     Returns (None, None) if the natural-key lookup finds nothing.
     """
-    existing_obj = model_cls.objects.filter(**lookup_kwargs).first()
+    model_kwargs = {"name": name, **(extra_model_kwargs or {})}
+    existing_obj = model_cls.objects.filter(**model_kwargs).first()
     if existing_obj is None:
         return None, None
-    name = lookup_kwargs['name']
     ct = ContentType.objects.get_for_model(existing_obj)
     resource, created = resource_cls.objects.get_or_create(
         content_type=ct,
@@ -284,15 +284,36 @@ def _recover_resource_by_natural_key(resource_cls, model_cls, lookup_kwargs, obj
         defaults={'name': name, 'ansible_id': object_ansible_id},
     )
     if created:
-        logger.warning(f"Created missing resource entry for existing {label} '{name}'")
+        logger.warning(f"Created missing resource entry for existing {resource_type_name} '{name}'")
     elif str(resource.ansible_id) != str(object_ansible_id):
         old_id = resource.ansible_id
         resource.ansible_id = object_ansible_id
         resource.save(update_fields=['ansible_id'])
-        logger.warning(f"Corrected ansible_id for {label} '{name}' from {old_id} to {object_ansible_id}")
+        logger.warning(f"Corrected ansible_id for {resource_type_name} '{name}' from {old_id} to {object_ansible_id}")
     else:
-        logger.info(f"Found existing {label} '{name}' by natural key with matching ansible_id")
+        logger.info(f"Found existing {resource_type_name} '{name}' by natural key with matching ansible_id")
     return resource, existing_obj
+
+
+def _create_resource_with_recovery(resource_cls, resource_type_name, name, ansible_id, model_cls, extra_resource_kwargs=None, extra_model_kwargs=None):
+    """Create a resource via create_resource(), recovering via natural key on IntegrityError."""
+    resource_type_cls = apps.get_model('dab_resource_registry', 'ResourceType')
+    resource_kwargs = {"name": name, **(extra_resource_kwargs or {})}
+    try:
+        with transaction.atomic():
+            resource = resource_cls.create_resource(
+                resource_type_cls.objects.get(name=resource_type_name),
+                resource_kwargs,
+                ansible_id=ansible_id,
+            )
+        return resource, resource.content_object
+    except IntegrityError:
+        resource, obj = _recover_resource_by_natural_key(
+            resource_cls, model_cls, name, ansible_id, resource_type_name, extra_model_kwargs=extra_model_kwargs
+        )
+        if resource is None:
+            raise
+        return resource, obj
 
 
 def get_or_create_resource(objects: dict, content_type: str, data: dict) -> Tuple[Optional[Model], Optional[Model]]:
@@ -303,7 +324,6 @@ def get_or_create_resource(objects: dict, content_type: str, data: dict) -> Tupl
     """
     object_ansible_id = data['ansible_id']
     resource_cls = apps.get_model('dab_resource_registry', 'Resource')
-    resource_type_cls = apps.get_model('dab_resource_registry', 'ResourceType')
     try:
         resource = resource_cls.objects.get(ansible_id=object_ansible_id)
         logger.debug(f"Resource {object_ansible_id} already exists")
@@ -320,36 +340,16 @@ def get_or_create_resource(objects: dict, content_type: str, data: dict) -> Tupl
         # Now that we have the org we can build a team
         org_resource, org_obj = get_or_create_resource(objects, "organization", organization_data)
 
-        try:
-            with transaction.atomic():
-                resource = resource_cls.create_resource(
-                    resource_type_cls.objects.get(name="shared.team"),
-                    {"name": data["name"], "organization": org_resource.ansible_id},
-                    ansible_id=data["ansible_id"],
-                )
-            return resource, resource.content_object
-        except IntegrityError:
-            resource, obj = _recover_resource_by_natural_key(
-                resource_cls, get_team_model(), {'name': data['name'], 'organization': org_obj}, object_ansible_id, 'team'
-            )
-            if resource is None:
-                raise
-            return resource, obj
+        return _create_resource_with_recovery(
+            resource_cls, "shared.team", data["name"], object_ansible_id, get_team_model(),
+            extra_resource_kwargs={"organization": org_resource.ansible_id},
+            extra_model_kwargs={"organization": org_obj},
+        )
 
     elif content_type == 'organization':
-        try:
-            with transaction.atomic():
-                resource = resource_cls.create_resource(
-                    resource_type_cls.objects.get(name="shared.organization"),
-                    {"name": data["name"]},
-                    ansible_id=data["ansible_id"],
-                )
-            return resource, resource.content_object
-        except IntegrityError:
-            resource, obj = _recover_resource_by_natural_key(resource_cls, get_organization_model(), {'name': data['name']}, object_ansible_id, 'organization')
-            if resource is None:
-                raise
-            return resource, obj
+        return _create_resource_with_recovery(
+            resource_cls, "shared.organization", data["name"], object_ansible_id, get_organization_model(),
+        )
     else:
         logger.error(f"build_resource_stub does not know how to build an object of type {type}")
         return None, None
