@@ -266,6 +266,35 @@ def get_role_definition(name: str) -> Optional[Model]:
     return None
 
 
+def _recover_resource_by_natural_key(resource_cls, model_cls, lookup_kwargs, object_ansible_id, label):
+    """Recovery path when create_resource() fails with IntegrityError.
+
+    Looks up the object by natural key, finds or creates the Resource entry,
+    and corrects a stale ansible_id if needed so subsequent calls take the fast path.
+    Returns (None, None) if the natural-key lookup finds nothing.
+    """
+    existing_obj = model_cls.objects.filter(**lookup_kwargs).first()
+    if existing_obj is None:
+        return None, None
+    name = lookup_kwargs['name']
+    ct = ContentType.objects.get_for_model(existing_obj)
+    resource, created = resource_cls.objects.get_or_create(
+        content_type=ct,
+        object_id=existing_obj.pk,
+        defaults={'name': name, 'ansible_id': object_ansible_id},
+    )
+    if created:
+        logger.warning(f"Created missing resource entry for existing {label} '{name}'")
+    elif resource.ansible_id != object_ansible_id:
+        old_id = resource.ansible_id
+        resource.ansible_id = object_ansible_id
+        resource.save(update_fields=['ansible_id'])
+        logger.warning(f"Corrected ansible_id for {label} '{name}' from {old_id} to {object_ansible_id}")
+    else:
+        logger.info(f"Found existing {label} '{name}' by natural key with matching ansible_id")
+    return resource, existing_obj
+
+
 def get_or_create_resource(objects: dict, content_type: str, data: dict) -> Tuple[Optional[Model], Optional[Model]]:
     """
     Gets or creates a resource from a content type and its default data
@@ -300,23 +329,12 @@ def get_or_create_resource(objects: dict, content_type: str, data: dict) -> Tupl
                 )
             return resource, resource.content_object
         except IntegrityError:
-            # Team exists with a different ansible_id (e.g. after 2.4→2.6 upgrade
-            # where gateway and controller initialized separate resource registries).
-            team_cls = get_team_model()
-            existing_team = team_cls.objects.filter(name=data['name'], organization=org_obj).first()
-            if existing_team is None:
-                raise
-            ct = ContentType.objects.get_for_model(existing_team)
-            resource, created = resource_cls.objects.get_or_create(
-                content_type=ct,
-                object_id=existing_team.pk,
-                defaults={'name': data['name'], 'ansible_id': object_ansible_id},
+            resource, obj = _recover_resource_by_natural_key(
+                resource_cls, get_team_model(), {'name': data['name'], 'organization': org_obj}, object_ansible_id, 'team'
             )
-            if created:
-                logger.warning(f"Created missing resource entry for existing team '{data['name']}'")
-            else:
-                logger.info(f"Found existing team '{data['name']}' by natural key (requested ansible_id={object_ansible_id}, found={resource.ansible_id})")
-            return resource, existing_team
+            if resource is None:
+                raise
+            return resource, obj
 
     elif content_type == 'organization':
         try:
@@ -328,24 +346,10 @@ def get_or_create_resource(objects: dict, content_type: str, data: dict) -> Tupl
                 )
             return resource, resource.content_object
         except IntegrityError:
-            # Org exists with a different ansible_id (e.g. after 2.4→2.6 upgrade).
-            org_cls = get_organization_model()
-            existing_org = org_cls.objects.filter(name=data['name']).first()
-            if existing_org is None:
+            resource, obj = _recover_resource_by_natural_key(resource_cls, get_organization_model(), {'name': data['name']}, object_ansible_id, 'organization')
+            if resource is None:
                 raise
-            ct = ContentType.objects.get_for_model(existing_org)
-            resource, created = resource_cls.objects.get_or_create(
-                content_type=ct,
-                object_id=existing_org.pk,
-                defaults={'name': data['name'], 'ansible_id': object_ansible_id},
-            )
-            if created:
-                logger.warning(f"Created missing resource entry for existing organization '{data['name']}'")
-            else:
-                logger.info(
-                    f"Found existing organization '{data['name']}' by natural key (requested ansible_id={object_ansible_id}, found={resource.ansible_id})"
-                )
-            return resource, existing_org
+            return resource, obj
     else:
         logger.error(f"build_resource_stub does not know how to build an object of type {type}")
         return None, None
