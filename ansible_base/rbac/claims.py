@@ -285,7 +285,7 @@ def _recover_resource_by_natural_key(resource_cls, model_cls, lookup_kwargs, obj
     )
     if created:
         logger.warning(f"Created missing resource entry for existing {label} '{name}'")
-    elif resource.ansible_id != object_ansible_id:
+    elif str(resource.ansible_id) != str(object_ansible_id):
         old_id = resource.ansible_id
         resource.ansible_id = object_ansible_id
         resource.save(update_fields=['ansible_id'])

@@ -6,7 +6,7 @@ from django.db import connection
 from django.test.utils import override_settings
 
 from ansible_base.rbac import permission_registry
-from ansible_base.rbac.claims import get_claims_hash, get_user_claims, get_user_claims_hashable_form, save_user_claims
+from ansible_base.rbac.claims import _recover_resource_by_natural_key, get_claims_hash, get_user_claims, get_user_claims_hashable_form, save_user_claims
 from ansible_base.rbac.models import RoleDefinition, RoleUserAssignment
 from test_app.models import Inventory, Organization, Team
 
@@ -596,3 +596,61 @@ class TestUserClaims:
         assignments = RoleUserAssignment.objects.filter(user=user, role_definition=shared_test_data.roles['org_admin'])
         assert assignments.exists()
         assert str(assignments.first().object_id) == str(org.pk)
+
+    def test_recover_resource_no_matching_object(self):
+        """_recover_resource_by_natural_key returns (None, None) when no object
+        matches the natural key, so the caller can re-raise the IntegrityError."""
+        from ansible_base.resource_registry.models import Resource
+
+        resource, obj = _recover_resource_by_natural_key(Resource, Organization, {'name': 'nonexistent-org-name'}, str(uuid.uuid4()), 'organization')
+        assert resource is None
+        assert obj is None
+
+    def test_recover_resource_matching_ansible_id(self, shared_test_data):
+        """_recover_resource_by_natural_key logs info (no update) when the
+        Resource already has the correct ansible_id."""
+        from django.contrib.contenttypes.models import ContentType as CT
+
+        from ansible_base.resource_registry.models import Resource
+
+        org = shared_test_data.orgs[0]
+        org_ct = CT.objects.get_for_model(org)
+        existing_resource = Resource.objects.get(content_type=org_ct, object_id=org.pk)
+        original_ansible_id = str(existing_resource.ansible_id)
+
+        resource, obj = _recover_resource_by_natural_key(Resource, Organization, {'name': org.name}, original_ansible_id, 'organization')
+        assert resource.pk == existing_resource.pk
+        assert obj.pk == org.pk
+        existing_resource.refresh_from_db()
+        assert str(existing_resource.ansible_id) == original_ansible_id
+
+    def test_save_claims_reraise_when_no_natural_key_match(self, shared_test_data):
+        """When create_resource() raises IntegrityError but the natural-key
+        lookup finds nothing, the error must propagate to save_user_claims
+        which logs a warning and skips the assignment."""
+        from unittest.mock import patch
+
+        real_recover = _recover_resource_by_natural_key
+
+        def mock_recover(resource_cls, model_cls, lookup_kwargs, object_ansible_id, label):
+            if label == 'team':
+                return None, None
+            return real_recover(resource_cls, model_cls, lookup_kwargs, object_ansible_id, label)
+
+        user = get_user_model().objects.create(username='test_user_reraise')
+        team = shared_test_data.teams[0]
+        org = team.organization
+
+        objects = {
+            'organization': [{'ansible_id': str(uuid.uuid4()), 'name': org.name}],
+            'team': [{'ansible_id': str(uuid.uuid4()), 'name': team.name, 'org': 0}],
+        }
+        object_roles = {
+            'Team Member': {'content_type': 'team', 'objects': [0]},
+        }
+
+        with patch('ansible_base.rbac.claims._recover_resource_by_natural_key', side_effect=mock_recover):
+            save_user_claims(user, objects=objects, object_roles=object_roles, global_roles=[])
+
+        assignments = RoleUserAssignment.objects.filter(user=user, role_definition=shared_test_data.roles['team_member'])
+        assert not assignments.exists(), "Role assignment should have been skipped when recovery returns None"
