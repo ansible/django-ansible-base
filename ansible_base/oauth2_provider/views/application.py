@@ -1,4 +1,5 @@
-from django.db.models import Count, Prefetch
+from django.db.models import Count, IntegerField, OuterRef, Prefetch, Subquery, Value
+from django.db.models.functions import Coalesce
 from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiView
@@ -16,9 +17,14 @@ class OAuth2ApplicationViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
 
     def get_queryset(self):
         access_token_model = OAuth2Application._meta.get_field('access_tokens').related_model
+
+        access_token_count = (
+            access_token_model.objects.filter(application_id=OuterRef("pk")).order_by().values("application_id").annotate(count=Count("pk")).values("count")
+        )
+
         return (
             OAuth2Application.objects.select_related(*self.select_related_fields)
-            .annotate(access_token_count=Count('access_tokens'))
+            .annotate(access_token_count=Coalesce(Subquery(access_token_count, output_field=IntegerField()), Value(0), output_field=IntegerField()))
             .prefetch_related(
                 Prefetch(
                     'access_tokens',

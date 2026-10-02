@@ -241,6 +241,22 @@ def test_oauth2_application_token_summary_limits_sample_but_reports_total_count(
 
 
 @pytest.mark.django_db
+def test_oauth2_application_token_summary_count_is_not_multiplied_by_token_filter(admin_api_client, oauth2_application):
+    application = oauth2_application[0]
+    token_url = get_relative_url('token-list')
+
+    for scope in ('read', 'read', 'write'):
+        response = admin_api_client.post(token_url, {'application': application.pk, 'scope': scope})
+        assert response.status_code == 201, response.data
+
+    response = admin_api_client.get(f"{get_relative_url('application-list')}?access_tokens__scope=read")
+
+    assert response.status_code == 200
+    assert len(response.data['results']) == 1
+    assert response.data['results'][0]['summary_fields']['tokens']['count'] == 3
+
+
+@pytest.mark.django_db
 def test_oauth2_authorized_list_for_user(oauth2_application, oauth2_user_pat, oauth2_user_pat_1, user, admin_api_client):
     """
     Tests that we can list a user's authorized tokens via API.

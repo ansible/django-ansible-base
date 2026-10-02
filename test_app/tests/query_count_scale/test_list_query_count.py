@@ -43,7 +43,7 @@ PAGE_SIZE_SWEEP_CASES = [
     pytest.param(
         'application-list',
         {},
-        10,
+        {'max_query_delta': 10},
         id='application_list',
     ),
     pytest.param(
