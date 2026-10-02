@@ -45,6 +45,7 @@ optional-dependencies.all = { file = [
     "requirements/requirements_resource_registry.in",
     "requirements/requirements_feature_flags.in",
     "requirements/requirements_observability.in",
+    "requirements/requirements_prometheus.in",
 ] }
 optional-dependencies.activitystream = { file = [ "requirements/requirements_activitystream.in" ] }
 optional-dependencies.authentication = { file = [ "requirements/requirements_authentication.in" ] }
@@ -59,6 +60,7 @@ optional-dependencies.oauth2_provider = { file = [ "requirements/requirements_oa
 optional-dependencies.resource_registry = { file = [ "requirements/requirements_resource_registry.in" ] }
 optional-dependencies.feature_flags = { file = [ "requirements/requirements_feature_flags.in" ] }
 optional-dependencies.observability = { file = [ "requirements/requirements_observability.in" ] }
+optional-dependencies.prometheus = { file = [ "requirements/requirements_prometheus.in" ] }
 
 [build-system]
 requires = ["setuptools>=64", "setuptools_scm>=8"]
