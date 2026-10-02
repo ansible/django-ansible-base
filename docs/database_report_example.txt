@@ -1,0 +1,381 @@
+Database Diagnostic Report
+Report generated at: 2025-07-24T18:48:44.435595+00:00
+
+Table Sizes and Row Counts
+Based on database schema inspection.
+Running query:
+SELECT table_name, pg_size_pretty(pg_total_relation_size(quote_ident(table_name))),
+       (xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %I', table_name), false, true, '')))[1]::text::bigint
+FROM information_schema.tables
+WHERE table_schema = 'public' AND table_name NOT LIKE 'pg_%%' ORDER BY 3 DESC;
+Table Name                                         Size                 Rows      
+---------------------------------------------------------------------------------------------------- ---------------------------------------- --------------------
+auth_permission                                    136 kB               357       
+django_migrations                                  72 kB                293       
+dab_rbac_roledefinition_permissions                104 kB               228       
+django_content_type                                40 kB                90        
+main_rbac_roles_parents                            72 kB                65        
+dab_rbac_dabpermission                             56 kB                49        
+main_rbac_roles                                    96 kB                39        
+dab_rbac_roledefinition                            112 kB               37        
+main_hostmetricsummarymonthly                      40 kB                36        
+main_activitystream                                48 kB                20        
+main_credentialtype                                112 kB               8         
+main_unifiedjobtemplate                            176 kB               5         
+main_activitystream_credential                     72 kB                5         
+dab_rbac_roleevaluation                            96 kB                4         
+main_activitystream_instance_group                 72 kB                4         
+main_systemjobtemplate                             24 kB                3         
+main_schedule                                      128 kB               3         
+dab_resource_registry_resourcetype                 72 kB                3         
+conf_setting                                       48 kB                3         
+main_instancegroup                                 128 kB               2         
+main_activitystream_job_template                   72 kB                2         
+main_credential                                    160 kB               2         
+main_activitystream_user                           72 kB                2         
+main_activitystream_organization                   72 kB                2         
+main_instancegroup_instances                       72 kB                2         
+dab_resource_registry_resource                     128 kB               2         
+main_executionenvironment                          128 kB               2         
+main_activitystream_execution_environment          72 kB                2         
+django_site                                        56 kB                1         
+auth_user                                          64 kB                1         
+main_inventory                                     176 kB               1         
+main_organization                                  320 kB               1         
+main_project                                       144 kB               1         
+main_jobtemplate                                   128 kB               1         
+main_organizationgalaxycredentialmembership        72 kB                1         
+main_host                                          152 kB               1         
+main_instance                                      72 kB                1         
+main_activitystream_host                           72 kB                1         
+main_activitystream_inventory                      72 kB                1         
+main_activitystream_project                        72 kB                1         
+main_rbac_roles_members                            72 kB                1         
+main_activitystream_role                           72 kB                1         
+main_towerschedulestate                            56 kB                1         
+main_unifiedjobtemplate_credentials                72 kB                1         
+dab_rbac_roleuserassignment                        128 kB               1         
+dab_rbac_objectrole                                96 kB                1         
+dab_resource_registry_serviceid                    24 kB                1         
+main_activitystream_instance                       72 kB                1         
+main_receptoraddress                               64 kB                1         
+auth_group_permissions                             32 kB                0         
+main_joblaunchconfig                               40 kB                0         
+main_custominventoryscript                         32 kB                0         
+main_activitystream_schedule                       32 kB                0         
+main_activitystream_team                           32 kB                0         
+main_activitystream_unified_job                    32 kB                0         
+main_activitystream_unified_job_template           32 kB                0         
+main_group                                         48 kB                0         
+main_jobevent                                      0 bytes              0         
+main_host_inventory_sources                        32 kB                0         
+main_group_inventory_sources                       32 kB                0         
+main_activitystream_ad_hoc_command                 32 kB                0         
+main_activitystream_inventory_source               32 kB                0         
+main_activitystream_inventory_update               32 kB                0         
+main_activitystream_job                            32 kB                0         
+main_workflowjobtemplate_notification_templates_approvals 32 kB                0         
+main_unifiedjob                                    136 kB               0         
+main_activitystream_project_update                 32 kB                0         
+main_notificationtemplate                          48 kB                0         
+main_notification                                  24 kB                0         
+main_inventoryupdateevent                          0 bytes              0         
+main_organization_notification_templates_approvals 32 kB                0         
+main_activitystream_notification                   32 kB                0         
+main_activitystream_notification_template          32 kB                0         
+main_organization_notification_templates_error     32 kB                0         
+main_organization_notification_templates_success   32 kB                0         
+main_unifiedjob_notifications                      32 kB                0         
+main_unifiedjobtemplate_notification_templates_error 32 kB                0         
+main_unifiedjobtemplate_notification_templates_success 32 kB                0         
+main_projectupdateevent                            0 bytes              0         
+main_workflowjob                                   48 kB                0         
+main_team                                          72 kB                0         
+main_rbac_role_ancestors                           56 kB                0         
+main_label                                         48 kB                0         
+main_activitystream_label                          32 kB                0         
+main_unifiedjob_labels                             32 kB                0         
+main_unifiedjobtemplate_labels                     32 kB                0         
+main_workflowjobnode                               72 kB                0         
+main_adhoccommandevent                             0 bytes              0         
+auth_group                                         24 kB                0         
+main_workflowjobtemplate                           64 kB                0         
+main_workflowjobnode_always_nodes                  32 kB                0         
+main_workflowjobnode_failure_nodes                 32 kB                0         
+main_workflowjobnode_success_nodes                 32 kB                0         
+main_workflowjobtemplatenode_always_nodes          32 kB                0         
+_unpartitioned_main_jobevent                       80 kB                0         
+main_workflowjobtemplatenode                       64 kB                0         
+main_workflowjobtemplatenode_failure_nodes         32 kB                0         
+main_workflowjobtemplatenode_success_nodes         32 kB                0         
+main_activitystream_workflow_job                   32 kB                0         
+main_activitystream_workflow_job_node              32 kB                0         
+main_activitystream_workflow_job_template          32 kB                0         
+main_activitystream_workflow_job_template_node     32 kB                0         
+main_systemjobevent                                0 bytes              0         
+main_activitystream_workflow_approval_template     32 kB                0         
+main_smartinventorymembership                      32 kB                0         
+main_activitystream_workflow_approval              32 kB                0         
+main_workflowapproval                              24 kB                0         
+main_activitystream_credential_type                32 kB                0         
+main_workflowapprovaltemplate                      8192 bytes           0         
+main_unifiedjobtemplate_notification_templates_started 32 kB                0         
+main_inventory_labels                              32 kB                0         
+main_instancelink                                  32 kB                0         
+main_unifiedjob_credentials                        32 kB                0         
+main_activitystream_receptor_address               32 kB                0         
+main_job                                           56 kB                0         
+main_eventquery                                    24 kB                0         
+dab_rbac_roleteamassignment                        64 kB                0         
+main_organization_notification_templates_started   32 kB                0         
+main_unifiedjobtemplateinstancegroupmembership     32 kB                0         
+main_organizationinstancegroupmembership           32 kB                0         
+main_inventoryinstancegroupmembership              32 kB                0         
+dab_rbac_objectrole_provides_teams                 32 kB                0         
+dab_rbac_roleevaluationuuid                        48 kB                0         
+main_indirectmanagednodeaudit                      56 kB                0         
+main_credentialinputsource                         56 kB                0         
+auth_user_user_permissions                         32 kB                0         
+flags_flagstate                                    16 kB                0         
+django_session                                     32 kB                0         
+main_schedule_credentials                          32 kB                0         
+main_workflowjobnode_credentials                   32 kB                0         
+main_workflowjobtemplatenode_credentials           32 kB                0         
+main_joblaunchconfig_credentials                   32 kB                0         
+main_joblaunchconfig_labels                        32 kB                0         
+main_schedule_labels                               32 kB                0         
+main_workflowjobnode_labels                        32 kB                0         
+main_workflowjobtemplatenode_labels                32 kB                0         
+main_usersessionmembership                         32 kB                0         
+_unpartitioned_main_inventoryupdateevent           48 kB                0         
+_unpartitioned_main_projectupdateevent             64 kB                0         
+_unpartitioned_main_systemjobevent                 48 kB                0         
+main_workflowjobtemplatenodebaseinstancegroupmembership 32 kB                0         
+main_workflowjobnodebaseinstancegroupmembership    32 kB                0         
+main_inventorygroupvariableswithhistory            40 kB                0         
+main_workflowjobinstancegroupmembership            32 kB                0         
+main_scheduleinstancegroupmembership               32 kB                0         
+main_joblaunchconfiginstancegroupmembership        32 kB                0         
+_unpartitioned_main_adhoccommandevent              64 kB                0         
+auth_user_groups                                   32 kB                0         
+main_adhoccommand                                  32 kB                0         
+main_inventorysource                               32 kB                0         
+main_inventoryupdate                               40 kB                0         
+main_projectupdate                                 32 kB                0         
+main_hostmetric                                    56 kB                0         
+main_inventoryconstructedinventorymembership       32 kB                0         
+main_systemjob                                     24 kB                0         
+main_unifiedjob_dependent_jobs                     32 kB                0         
+main_group_hosts                                   32 kB                0         
+main_group_parents                                 32 kB                0         
+main_jobhostsummary                                56 kB                0         
+main_activitystream_group                          32 kB                0         
+
+Model Object Counts
+Based on the Django model layer.
+
+Model (app.model)                                  Total Objects  
+---------------------------------------------------------------------------------------------------- ------------------------------
+auth.Group                                         0              
+auth.Permission                                    357            
+auth.User                                          1              
+conf.Setting                                       3              
+contenttypes.ContentType                           90             
+dab_rbac.DABPermission                             49             
+dab_rbac.ObjectRole                                1              
+dab_rbac.RoleDefinition                            37             
+dab_rbac.RoleEvaluation                            4              
+dab_rbac.RoleEvaluationUUID                        0              
+dab_rbac.RoleTeamAssignment                        0              
+dab_rbac.RoleUserAssignment                        1              
+dab_resource_registry.Resource                     2              
+dab_resource_registry.ResourceType                 3              
+dab_resource_registry.ServiceID                    1              
+flags.FlagState                                    0              
+main.ActivityStream                                20             
+main.AdHocCommand                                  0              
+main.AdHocCommandEvent                             0              
+main.Credential                                    2              
+main.CredentialInputSource                         0              
+main.CredentialType                                8              
+main.CustomInventoryScript                         0              
+main.EventQuery                                    0              
+main.ExecutionEnvironment                          2              
+main.Group                                         0              
+main.Host                                          1              
+main.HostMetric                                    0              
+main.HostMetricSummaryMonthly                      36             
+main.IndirectManagedNodeAudit                      0              
+main.Instance                                      1              
+main.InstanceGroup                                 2              
+main.InstanceLink                                  0              
+main.Inventory                                     1              
+main.InventoryConstructedInventoryMembership       0              
+main.InventoryGroupVariablesWithHistory            0              
+main.InventoryInstanceGroupMembership              0              
+main.InventorySource                               0              
+main.InventoryUpdate                               0              
+main.InventoryUpdateEvent                          0              
+main.Job                                           0              
+main.JobEvent                                      0              
+main.JobHostSummary                                0              
+main.JobLaunchConfig                               0              
+main.JobLaunchConfigInstanceGroupMembership        0              
+main.JobTemplate                                   1              
+main.Label                                         0              
+main.Notification                                  0              
+main.NotificationTemplate                          0              
+main.Organization                                  1              
+main.OrganizationGalaxyCredentialMembership        1              
+main.OrganizationInstanceGroupMembership           0              
+main.Project                                       1              
+main.ProjectUpdate                                 0              
+main.ProjectUpdateEvent                            0              
+main.ReceptorAddress                               1              
+main.Role                                          39             
+main.RoleAncestorEntry                             Error counting 
+main.Schedule                                      3              
+main.ScheduleInstanceGroupMembership               0              
+main.SmartInventoryMembership                      0              
+main.SystemJob                                     0              
+main.SystemJobEvent                                0              
+main.SystemJobTemplate                             3              
+main.Team                                          0              
+main.TowerScheduleState                            1              
+main.UnifiedJob                                    0              
+main.UnifiedJobDeprecatedStdout                    0              
+main.UnifiedJobTemplate                            5              
+main.UnifiedJobTemplateInstanceGroupMembership     0              
+main.UserSessionMembership                         0              
+main.WorkflowApproval                              0              
+main.WorkflowApprovalTemplate                      0              
+main.WorkflowJob                                   0              
+main.WorkflowJobInstanceGroupMembership            0              
+main.WorkflowJobNode                               0              
+main.WorkflowJobNodeBaseInstanceGroupMembership    0              
+main.WorkflowJobTemplate                           0              
+main.WorkflowJobTemplateNode                       0              
+main.WorkflowJobTemplateNodeBaseInstanceGroupMembership 0              
+sessions.Session                                   0              
+sites.Site                                         1              
+
+PostgreSQL Activity Report (pg_stat_activity)
+
+Top 10 Longest Running Active Queries
+Running query:
+SELECT pid, usename, client_addr, state, wait_event_type, wait_event, query_start, state_change, backend_start, left(query, 100) as query_snippet FROM pg_stat_activity WHERE state IS NOT NULL AND state = 'active' ORDER BY query_start ASC LIMIT 10
+PID        User            Client               State           Wait Event                Duration                  Query Snippet
+-------------------- ------------------------------ ---------------------------------------- ------------------------------ -------------------------------------------------- -------------------------------------------------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------
+4760       awx             172.23.0.4           active                                    0:00:00                   SELECT pid, usename, client_addr, state, wait_event_type, wait_event, query_start, state_change, bac
+
+Top 10 Oldest "Idle in Transaction" Connections
+Running query:
+SELECT pid, usename, client_addr, state, wait_event_type, wait_event, query_start, state_change, backend_start, left(query, 100) as query_snippet FROM pg_stat_activity WHERE state IS NOT NULL AND state = 'idle in transaction' ORDER BY state_change ASC LIMIT 10
+No matching activity found.
+
+Top 10 Connections by Wait Time
+Running query:
+SELECT pid, usename, client_addr, state, wait_event_type, wait_event, query_start, state_change, backend_start, left(query, 100) as query_snippet FROM pg_stat_activity WHERE state IS NOT NULL AND wait_event IS NOT NULL ORDER BY state_change ASC LIMIT 10
+PID        User            Client               State           Wait Event                Wait Time                 Query Snippet
+-------------------- ------------------------------ ---------------------------------------- ------------------------------ -------------------------------------------------- -------------------------------------------------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------
+49         awx             172.23.0.4           idle            Client:ClientRead         23:38:03                  SELECT "conf_setting"."id", "conf_setting"."created", "conf_setting"."modified", "conf_setting"."key
+50         awx             172.23.0.4           idle            Client:ClientRead         23:38:02                  LISTEN "tower_settings_change";
+56         awx             172.23.0.4           idle            Client:ClientRead         23:37:46                  LISTEN web_ws_heartbeat
+4758       awx             172.23.0.4           idle            Client:ClientRead         0:00:13                   SET idle_session_timeout = '0'
+52         awx             172.23.0.4           idle            Client:ClientRead         0:00:00                   SELECT pg_notify('web_ws_heartbeat', '{"hostname": "awx-1", "ip": null, "action": "online"}');
+48         awx             172.23.0.4           idle            Client:ClientRead         0:00:00                   SELECT pg_notify($1, $2);
+
+Top 10 Oldest Open Connections
+Running query:
+SELECT pid, usename, client_addr, state, wait_event_type, wait_event, query_start, state_change, backend_start, left(query, 100) as query_snippet FROM pg_stat_activity WHERE state IS NOT NULL ORDER BY backend_start ASC LIMIT 10
+PID        User            Client               State           Wait Event                Connection Age            Query Snippet
+-------------------- ------------------------------ ---------------------------------------- ------------------------------ -------------------------------------------------- -------------------------------------------------- ----------------------------------------------------------------------------------------------------------------------------------------------------------------
+48         awx             172.23.0.4           idle            Client:ClientRead         23:38:06                  SELECT pg_notify($1, $2);
+49         awx             172.23.0.4           idle            Client:ClientRead         23:38:04                  SELECT "conf_setting"."id", "conf_setting"."created", "conf_setting"."modified", "conf_setting"."key
+50         awx             172.23.0.4           idle            Client:ClientRead         23:38:03                  LISTEN "tower_settings_change";
+52         awx             172.23.0.4           idle            Client:ClientRead         23:37:59                  SELECT pg_notify('web_ws_heartbeat', '{"hostname": "awx-1", "ip": null, "action": "online"}');
+56         awx             172.23.0.4           idle            Client:ClientRead         23:37:46                  LISTEN web_ws_heartbeat
+4758       awx             172.23.0.4           idle            Client:ClientRead         0:00:13                   SET idle_session_timeout = '0'
+4760       awx             172.23.0.4           active                                    0:00:01                   SELECT pid, usename, client_addr, state, wait_event_type, wait_event, query_start, state_change, bac
+
+PostgreSQL Statement Statistics (pg_stat_statements)
+
+Top 10 Most Frequent Queries
+Running query:
+SELECT calls, query FROM pg_stat_statements ORDER BY calls DESC LIMIT 10;
+Calls                     Query Snippet
+-------------------------------------------------- --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+3,945                     SELECT set_config($1, $2, $3)
+3,473                     SELECT pg_advisory_unlock($1)
+3,473                     SELECT pg_try_advisory_lock($1)
+3,075                     SHOW idle_session_timeout
+3,075                     SHOW idle_in_transaction_session_timeout
+3,075                     SET idle_in_transaction_session_timeout = 360000
+3,075                     SET idle_session_timeout = '0'
+3,075                     SET idle_in_transaction_session_timeout = '0'
+3,075                     SET idle_session_timeout = 360000
+2,312                     BEGIN
+
+Top 10 Slowest Queries (by mean execution time)
+Running query:
+SELECT mean_exec_time, query FROM pg_stat_statements ORDER BY mean_exec_time DESC LIMIT 10;
+Mean Time (ms)            Query Snippet
+-------------------------------------------------- --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+71.08                     SELECT table_name, pg_size_pretty(pg_total_relation_size(quote_ident(table_name))), (xpath($1,...
+8.37                      <insufficient privilege>
+4.89                      SELECT c.relname, CASE WHEN c.relispartition THEN $1 WHEN c.relkind IN ($2, $3) THEN $4 ELSE $5...
+3.50                      DECLARE "_django_curs_140363913213760_sync_775" NO SCROLL CURSOR WITH HOLD FOR SELECT...
+3.28                      DECLARE "_django_curs_140363913213760_sync_10" NO SCROLL CURSOR WITH HOLD FOR SELECT...
+2.48                      DECLARE "_django_curs_140363913213760_sync_5" NO SCROLL CURSOR WITH HOLD FOR SELECT...
+2.46                      DECLARE "_django_curs_140363913213760_sync_8" NO SCROLL CURSOR WITH HOLD FOR SELECT...
+2.30                      DECLARE "_django_curs_140363913213760_sync_11" NO SCROLL CURSOR WITH HOLD FOR SELECT...
+2.25                      DECLARE "_django_curs_140363913213760_sync_7" NO SCROLL CURSOR WITH HOLD FOR SELECT...
+2.18                      DECLARE "_django_curs_140363913213760_sync_9" NO SCROLL CURSOR WITH HOLD FOR SELECT...
+
+Top 10 Queries by Total Execution Time (CPU)
+Running query:
+SELECT total_exec_time, query FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 10;
+Total Time (ms)           Query Snippet
+-------------------------------------------------- --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+824.04                    SELECT set_config($1, $2, $3)
+568.67                    SELECT table_name, pg_size_pretty(pg_total_relation_size(quote_ident(table_name))), (xpath($1,...
+152.22                    SELECT ("main_instancegroup_instances"."instancegroup_id") AS...
+102.31                    SELECT "main_unifiedjob"."id", "main_unifiedjob"."polymorphic_ctype_id",...
+96.46                     SELECT "main_unifiedjob"."id", "main_unifiedjob"."polymorphic_ctype_id",...
+83.52                     UPDATE "main_instance" SET "errors" = $1, "last_seen" = $2::timestamptz, "last_health_check" =...
+81.43                     SELECT pg_try_advisory_lock($1)
+73.42                     SELECT c.relname, CASE WHEN c.relispartition THEN $1 WHEN c.relkind IN ($2, $3) THEN $4 ELSE $5...
+58.63                     SELECT "main_schedule"."id", "main_schedule"."created", "main_schedule"."modified",...
+58.05                     SELECT "main_instance"."id", "main_instance"."hostname", "main_instance"."capacity",...
+
+Top 10 Queries by I/O Read
+Running query:
+SELECT (shared_blks_read + local_blks_read + temp_blks_read), query FROM pg_stat_statements ORDER BY (shared_blks_read + local_blks_read + temp_blks_read) DESC LIMIT 10;
+Blocks Read               Query Snippet
+-------------------------------------------------- --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+985                       SELECT table_name, pg_size_pretty(pg_total_relation_size(quote_ident(table_name))), (xpath($1,...
+58                        SELECT c.relname, CASE WHEN c.relispartition THEN $1 WHEN c.relkind IN ($2, $3) THEN $4 ELSE $5...
+5                         UPDATE "main_credentialtype" SET "created" = $1::timestamptz, "modified" = $2::timestamptz,...
+2                         SELECT "django_migrations"."id", "django_migrations"."app", "django_migrations"."name",...
+2                         SELECT "conf_setting"."id", "conf_setting"."created", "conf_setting"."modified",...
+2                         SELECT "django_migrations"."id", "django_migrations"."app", "django_migrations"."name",...
+2                         <insufficient privilege>
+1                         SELECT $1 FROM pg_extension WHERE extname = $2
+1                         UPDATE "main_instance" SET "errors" = $1, "last_seen" = $2::timestamptz, "last_health_check" =...
+1                         SELECT "main_credentialtype"."id", "main_credentialtype"."created",...
+
+Top 10 Queries by Buffer Cache Usage (Memory)
+Running query:
+SELECT (shared_blks_hit + shared_blks_read), query FROM pg_stat_statements ORDER BY (shared_blks_hit + shared_blks_read) DESC LIMIT 10;
+Shared Blocks Hit+Read    Query Snippet
+-------------------------------------------------- --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+140,543                   SELECT table_name, pg_size_pretty(pg_total_relation_size(quote_ident(table_name))), (xpath($1,...
+33,563                    SELECT c.relname, CASE WHEN c.relispartition THEN $1 WHEN c.relkind IN ($2, $3) THEN $4 ELSE $5...
+8,071                     SELECT ("main_instancegroup_instances"."instancegroup_id") AS...
+7,680                     UPDATE "main_instance" SET "errors" = $1, "last_seen" = $2::timestamptz, "last_health_check" =...
+5,765                     SELECT "main_unifiedjob"."id", "main_unifiedjob"."polymorphic_ctype_id",...
+5,377                     SELECT "main_schedule"."id", "main_schedule"."created", "main_schedule"."modified",...
+4,612                     SELECT "main_instance"."id", "main_instance"."hostname", "main_instance"."capacity",...
+3,459                     SELECT "main_unifiedjob"."id", "main_unifiedjob"."polymorphic_ctype_id",...
+3,444                     SELECT "main_unifiedjob"."id", "main_unifiedjob"."polymorphic_ctype_id",...
+2,321                     UPDATE "main_towerschedulestate" SET "schedule_last_run" = $1::timestamptz WHERE...
