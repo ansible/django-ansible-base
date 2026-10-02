@@ -35,6 +35,7 @@ from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.policies import check_can_remove_assignment
 from ansible_base.rbac.validators import check_locally_managed, permissions_allowed_for_role, system_roles_enabled
 from ansible_base.rest_filters.rest_framework import ansible_id_backend
+from ansible_base.rest_filters.rest_framework.role_definition_backend import RoleDefinitionScopeFilterBackend
 
 from ..models import DABContentType, DABPermission, get_evaluation_model
 from ..policies import check_content_obj_permission
@@ -122,6 +123,8 @@ class RoleDefinitionViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
     queryset = RoleDefinition.objects.prefetch_related('created_by', 'modified_by', 'content_type', 'permissions', 'resource')
     serializer_class = RoleDefinitionSerializer
     permission_classes = try_add_oauth2_scope_permission([RoleDefinitionPermissions])
+    filter_backends = AnsibleBaseDjangoAppApiView.filter_backends + [RoleDefinitionScopeFilterBackend]
+    rest_filters_reserved_names = ('assignable_scope',)
 
     def get_serializer_class(self):
         if self.action == 'update':

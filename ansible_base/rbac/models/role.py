@@ -1,5 +1,7 @@
 import logging
+import operator
 from collections.abc import Iterable
+from functools import reduce
 from typing import TYPE_CHECKING, Optional, Type, Union
 from uuid import UUID
 
@@ -19,6 +21,7 @@ from rest_framework.exceptions import ValidationError
 from ansible_base.lib.abstract_models.common import CommonModel, ImmutableCommonModel
 
 # ansible_base RBAC logic imports
+from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 from ansible_base.lib.utils.models import is_add_perm
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.sync import maybe_reverse_sync_assignment
@@ -224,6 +227,45 @@ class RoleDefinition(CommonModel):
         if self.managed:
             managed_str = ', managed=True'
         return f'RoleDefinition(pk={self.id}, name={self.name}{managed_str})'
+
+    # See assignable_scope_q() below for what each of these scopes means.
+    ASSIGNABLE_SCOPE_SYSTEM = 'system'
+    ASSIGNABLE_SCOPE_ORGANIZATION = 'organization'
+    ASSIGNABLE_SCOPE_TEAM = 'team'
+    ASSIGNABLE_SCOPES = (ASSIGNABLE_SCOPE_SYSTEM, ASSIGNABLE_SCOPE_ORGANIZATION, ASSIGNABLE_SCOPE_TEAM)
+
+    @classmethod
+    def assignable_scope_q(cls, scopes: Iterable[str]) -> models.Q:
+        """A Q object matching every RoleDefinition whose scope is one of `scopes`.
+
+        A role's scope is 'system' if it has no content type, or 'organization'/
+        'team' if its content type is (a subclass of) the organization/team
+        model; anything else is resource-scoped and excluded. Raises ValueError
+        if `scopes` contains a value not in ASSIGNABLE_SCOPES. An empty `scopes`
+        matches no roles.
+        """
+        scopes = set(scopes)
+        if unknown := scopes - set(cls.ASSIGNABLE_SCOPES):
+            raise ValueError(f"Unknown scope(s): {', '.join(sorted(unknown))}. Valid scopes are: {', '.join(cls.ASSIGNABLE_SCOPES)}")
+
+        conditions = []
+        if cls.ASSIGNABLE_SCOPE_SYSTEM in scopes:
+            conditions.append(models.Q(content_type__isnull=True))
+
+        wanted_models = []
+        if cls.ASSIGNABLE_SCOPE_ORGANIZATION in scopes:
+            wanted_models.append(get_organization_model())
+        if cls.ASSIGNABLE_SCOPE_TEAM in scopes:
+            wanted_models.append(get_team_model())
+        wanted_models = tuple(wanted_models)
+        if wanted_models:
+            candidate_models = [model for model in permission_registry.all_registered_models if issubclass(model, wanted_models)]
+            eligible_ct_ids = [ct.id for ct in DABContentType.objects.get_for_models(*candidate_models).values()]
+            conditions.append(models.Q(content_type_id__in=eligible_ct_ids))
+
+        if not conditions:
+            return models.Q(pk__in=[])
+        return reduce(operator.or_, conditions)
 
     def give_global_permission(self, actor):
         return self.give_or_remove_global_permission(actor, giving=True)
