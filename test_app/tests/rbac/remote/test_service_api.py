@@ -9,6 +9,14 @@ from test_app.models import Organization, Team, User
 
 
 @pytest.mark.django_db
+def test_service_assignment_serializer_does_not_require_from_service():
+    """Service-index clients may sync an assignment without a secondary-sync origin."""
+    from ansible_base.rbac.service_api.serializers import ServiceRoleUserAssignmentSerializer
+
+    assert ServiceRoleUserAssignmentSerializer().fields['from_service'].required is False
+
+
+@pytest.mark.django_db
 def test_get_resource_list(admin_api_client):
     url = get_relative_url('dabcontenttype-list')
     response = admin_api_client.get(url, format="json")
@@ -569,6 +577,7 @@ class TestRestClientSyncAssignment:
         """Test that sync_assignment removes object_id when object_ansible_id is present"""
         from unittest.mock import MagicMock, patch
 
+        from ansible_base.resource_registry.models import service_id
         from ansible_base.resource_registry.rest_client import ResourceAPIClient
 
         # Create an assignment to an organization (which has a resource)
@@ -592,6 +601,8 @@ class TestRestClientSyncAssignment:
 
             # Should NOT have object_id (removed by sync_assignment)
             assert 'object_id' not in sent_data, "object_id should not be sent for registered objects"
+            assert sent_data['from_service'] == str(service_id())
+            assert 'created_by_ansible_id' not in sent_data
 
     def test_sync_assignment_sends_only_object_id_for_non_registered_objects(self, rando, inventory, inv_rd):
         """Test that sync_assignment keeps object_id when object_ansible_id is None"""

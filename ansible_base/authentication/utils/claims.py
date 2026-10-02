@@ -869,7 +869,7 @@ class ReconcileUser:
         teams = Team.objects.filter(organization_id__in=org_ids).order_by()
         return {(team.organization_id, team.name): team for team in teams}
 
-    def _give_permission(self, role_definition: CommonModel, obj: Union[AbstractOrganization, AbstractTeam, None] = None) -> None:
+    def _give_permission(self, role_definition: CommonModel, obj: Union[AbstractOrganization, AbstractTeam, None] = None) -> models.Model:
         if obj:
             logger.info(
                 _("Assigning role '{rd}' to user '{username}' in '{object}").format(
@@ -880,9 +880,9 @@ class ReconcileUser:
             logger.info(_("Assigning role '{rd}' to user '{username}'").format(rd=role_definition.name, username=self.user.username))
 
         if obj:
-            role_definition.give_permission(self.user, obj)
+            return role_definition.give_permission(self.user, obj)
         else:
-            role_definition.give_global_permission(self.user)
+            return role_definition.give_global_permission(self.user)
 
     def _remove_permission(self, role_definition: CommonModel, obj: Union[AbstractOrganization, AbstractTeam, None] = None) -> None:
         if obj:
