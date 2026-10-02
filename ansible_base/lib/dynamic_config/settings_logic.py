@@ -17,11 +17,14 @@ DEFAULT_SPECTACULAR_SETTINGS = {
     'VERSION': 'v1',
     'SCHEMA_PATH_PREFIX': '/api/v1/',
     'COMPONENT_NO_READ_ONLY_REQUIRED': True,
+    'GET_LIB_DOC_EXCLUDES': 'ansible_base.api_documentation.customizations.get_dab_lib_doc_excludes',
     'PREPROCESSING_HOOKS': [
         'ansible_base.api_documentation.preprocessing_hooks.collect_ai_description_metadata',
     ],
     'POSTPROCESSING_HOOKS': [
         'ansible_base.api_documentation.postprocessing_hooks.add_x_ai_description',
+        # Declares optional CleanText pattern fields in components.schemas (OpenAPI).
+        'ansible_base.api_documentation.clean_text_schema_hooks.inject_clean_text_pattern_components',
     ],
 }
 DEFAULT_ANSIBLE_BASE_AUTH = "ansible_base.authentication.backend.AnsibleBaseAuth"
@@ -130,6 +133,14 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         for key, value in DEFAULT_SPECTACULAR_SETTINGS.items():
             if key not in spectacular_settings:
                 spectacular_settings[key] = value
+
+        # Ensure CleanText OpenAPI components are registered even when a service
+        # overrides POSTPROCESSING_HOOKS (common in Controller/Gateway).
+        _clean_text_hook = 'ansible_base.api_documentation.clean_text_schema_hooks.inject_clean_text_pattern_components'
+        hooks = list(spectacular_settings.get('POSTPROCESSING_HOOKS', []))
+        if _clean_text_hook not in hooks:
+            hooks.append(_clean_text_hook)
+            spectacular_settings['POSTPROCESSING_HOOKS'] = hooks
 
     # General, factual, constant of all filters that ansible_base.rest_filters ships
     dab_data['ANSIBLE_BASE_ALL_REST_FILTERS'] = (
@@ -260,6 +271,7 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         'ANSIBLE_BASE_RBAC_MODEL_REGISTRY': {},
         'ORG_ADMINS_CAN_SEE_ALL_USERS': True,
         'ALLOW_USER_EMAIL_SELF_EDIT': False,
+        'ALLOW_USER_USERNAME_SELF_EDIT': False,
     }
     if DEFAULT_ANSIBLE_BASE_RBAC_APP_NAME in installed_apps:
         for key, value in rbac_defaults.items():

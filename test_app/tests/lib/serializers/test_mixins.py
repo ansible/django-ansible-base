@@ -5,6 +5,7 @@ from rest_framework.exceptions import PermissionDenied
 
 from ansible_base.lib.serializers.mixins import EmailAdminOnlyMixin
 from test_app.models import User
+from test_app.serializers import UserSerializer
 
 
 class EmailTestSerializer(EmailAdminOnlyMixin, serializers.ModelSerializer):
@@ -85,3 +86,44 @@ class TestEmailAdminOnlyMixin:
         serializer = EmailTestSerializer(bob, context={'request': _make_request(alice)})
         with pytest.raises(PermissionDenied):
             serializer.validate_email('hacked@example.com')
+
+
+class TestUsernameAdminOnlyMixin:
+
+    @pytest.mark.django_db
+    def test_regular_user_cannot_change_own_username(self):
+        alice = User.objects.create(username='alice')
+        serializer = UserSerializer(alice, data={'username': 'renamed'}, context={'request': _make_request(alice)}, partial=True)
+
+        with pytest.raises(PermissionDenied):
+            serializer.is_valid(raise_exception=True)
+
+    @pytest.mark.django_db
+    @override_settings(ALLOW_USER_USERNAME_SELF_EDIT=True)
+    def test_regular_user_can_change_own_username_when_setting_enabled(self):
+        alice = User.objects.create(username='alice')
+        serializer = UserSerializer(alice, data={'username': 'renamed'}, context={'request': _make_request(alice)}, partial=True)
+
+        assert serializer.is_valid(raise_exception=True)
+
+    @pytest.mark.django_db
+    def test_superuser_can_change_another_users_username(self):
+        admin = User.objects.create(username='admin', is_superuser=True)
+        alice = User.objects.create(username='alice')
+        serializer = UserSerializer(alice, data={'username': 'renamed'}, context={'request': _make_request(admin)}, partial=True)
+
+        assert serializer.is_valid(raise_exception=True)
+
+    @pytest.mark.django_db
+    def test_unchanged_username_is_allowed(self):
+        alice = User.objects.create(username='alice')
+        serializer = UserSerializer(alice, data={'username': 'alice'}, context={'request': _make_request(alice)}, partial=True)
+
+        assert serializer.is_valid(raise_exception=True)
+
+    @pytest.mark.django_db
+    def test_username_change_without_request_context_is_allowed(self):
+        alice = User.objects.create(username='alice')
+        serializer = UserSerializer(alice, data={'username': 'renamed'}, context={}, partial=True)
+
+        assert serializer.is_valid(raise_exception=True)

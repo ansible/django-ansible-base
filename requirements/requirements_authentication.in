@@ -1,6 +1,7 @@
 social-auth-app-django==5.4.1
-social-auth-core<=4.5.4
+social-auth-core>=5.1.1
 tabulate
+cryptography<47  # Avoid unreviewed major-version jumps; bump deliberately in its own change
 
 # These should eventually be split out when the authentications move into their own repo
 

@@ -58,7 +58,7 @@ class AzureADConfiguration(BaseAuthenticatorConfiguration):
     )
 
 
-class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, AzureADOAuth2, AbstractAuthenticatorPlugin):
+class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, AzureADOAuth2, AbstractAuthenticatorPlugin):  # type: ignore[override]
     configuration_class = AzureADConfiguration
     type = "azuread"
     logger = logger
