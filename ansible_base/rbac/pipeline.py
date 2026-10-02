@@ -128,9 +128,16 @@ def _ensure_object_roles(requested_assignments: list[ResolvedAssignment]) -> Obj
             parent_refs[(rd_id, ra.object_id)] = ra.parent_reference
 
     lookup: ObjectRoleLookup = {}
+    EMPTY_PARENT_REF = Q(parent_reference='') | Q(parent_reference__isnull=True)
     for rd_id, (ct_id, object_ids) in object_ids_by_rd.items():
         for obj_role in ObjectRole.objects.filter(role_definition_id=rd_id, content_type_id=ct_id, object_id__in=object_ids):
             lookup[(rd_id, obj_role.object_id)] = obj_role
+            incoming_parent = parent_refs.get((rd_id, obj_role.object_id))
+            if incoming_parent and not obj_role.parent_reference:
+                updated = ObjectRole.objects.filter(pk=obj_role.pk).filter(EMPTY_PARENT_REF).update(parent_reference=incoming_parent)
+
+                if updated:
+                    obj_role.parent_reference = incoming_parent
         missing = [oid for oid in object_ids if (rd_id, oid) not in lookup]
         if missing:
             ObjectRole.objects.bulk_create(

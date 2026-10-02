@@ -79,33 +79,38 @@ class DABPermissionSerializer(serializers.ModelSerializer):
 assignment_common_fields = ('id', 'created', 'created_by_ansible_id', 'object_id', 'object_ansible_id', 'content_type', 'role_definition', 'parent_reference')
 
 
+class ParentReferenceField(serializers.CharField):
+    def get_attribute(self, instance):
+        """Return the parent_reference from the instance's object_role."""
+        object_role = getattr(instance, 'object_role', None)
+        if object_role and object_role.parent_reference:
+            return str(object_role.parent_reference)
+        return ''
+
+    def to_internal_value(self, value):
+        if not isinstance(value, str):
+            raise serializers.ValidationError('Must be a string.')
+        return super().to_internal_value(value)
+
+
 class BaseAssignmentSerializer(serializers.ModelSerializer):
     content_type = serializers.SlugRelatedField(read_only=True, slug_field='api_slug')
     role_definition = serializers.SlugRelatedField(slug_field='name', queryset=RoleDefinition.objects.all())
     created_by_ansible_id = ActorAnsibleIdField(source='created_by', required=False, allow_null=True)
     object_ansible_id = ObjectAnsibleIdField(required=False, allow_null=True)
     object_id = serializers.CharField(allow_blank=True, required=False, allow_null=True)
-    parent_reference = serializers.SerializerMethodField()
+    parent_reference = ParentReferenceField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+    )
     from_service = serializers.CharField(write_only=True)
-
-    def get_parent_reference(self, instance) -> str:
-        """Read parent_reference from the prefetched object_role relation."""
-        object_role = getattr(instance, 'object_role', None)
-        if object_role and object_role.parent_reference:
-            return str(object_role.parent_reference)
-        return ''
 
     def validate(self, attrs):
         """The object_id vs ansible_id is the only dual-write case, where we have to accept either
 
         So this does the mutual validation to assure we have sufficient data.
         """
-        parent_reference = self.initial_data.get('parent_reference', '')
-        if parent_reference is None:
-            parent_reference = ''
-        if not isinstance(parent_reference, str):
-            raise serializers.ValidationError({'parent_reference': 'Must be a string.'})
-        attrs['parent_reference'] = parent_reference
         rd = attrs['role_definition']
         has_object_id = 'object_id' in attrs and attrs['object_id']
         has_object_ansible_id = 'object_ansible_id' in attrs and attrs['object_ansible_id']
