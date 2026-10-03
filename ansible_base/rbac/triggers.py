@@ -19,6 +19,7 @@ from ansible_base.rbac.caching import (
     object_roles_for_parents,
     recompute_all_role_evaluations,
     recompute_role_evaluations,
+    recompute_role_evaluations_for_created,
     team_ids_from_role_target,
 )
 from ansible_base.rbac.models import ObjectRole, RoleDefinition, get_evaluation_model
@@ -321,7 +322,7 @@ def get_parent_ids(instance) -> list[tuple[Model, Union[int, UUID]]]:
     return []
 
 
-def post_save_update_obj_permissions(instance, object_pk=None, object_ct_id=None):
+def post_save_update_obj_permissions(instance, object_pk=None, object_ct_id=None, created=False):
     "Utility method shared by multiple signals"
     # Account for organization roles (and other parent objects), new and old
     parent_gfks = get_parent_ids(instance)
@@ -348,7 +349,10 @@ def post_save_update_obj_permissions(instance, object_pk=None, object_ct_id=None
         target_parents = None
         if object_pk is not None:
             target_parents = [(parent_ct.id, parent_id) for parent_ct, parent_id in parent_gfks]
-        recompute_role_evaluations(to_update, object_pk=object_pk, object_ct_id=object_ct_id, target_parents=target_parents)
+        if created and object_pk is not None:
+            recompute_role_evaluations_for_created(to_update, object_pk=object_pk, object_ct_id=object_ct_id, target_parents=target_parents)
+        else:
+            recompute_role_evaluations(to_update, object_pk=object_pk, object_ct_id=object_ct_id, target_parents=target_parents)
 
 
 def rbac_pre_save_identify_changes(instance, *args, **kwargs):
@@ -384,7 +388,7 @@ def rbac_post_save_update_evaluations(instance, created, *args, **kwargs):
         if defer_rbac_state.active:
             defer_rbac_state.created_instances.append((instance, instance.pk, obj_ct_id))
             return
-        post_save_update_obj_permissions(instance, object_pk=instance.pk, object_ct_id=obj_ct_id)
+        post_save_update_obj_permissions(instance, object_pk=instance.pk, object_ct_id=obj_ct_id, created=True)
         return
 
     # The parent object can not have changed if update_fields was given and did not list that field
