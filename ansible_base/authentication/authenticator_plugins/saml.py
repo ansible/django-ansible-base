@@ -194,7 +194,7 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
 
         saml_auth = SAMLAuth(AuthenticatorConfigTestStrategy(AuthenticatorStorage(), additional_settings=attrs))
         saml_auth.redirect_uri = attrs['CALLBACK_URL']
-        idp = SAMLIdentityProvider(idp_string, **attrs['ENABLED_IDPS'][idp_string])
+        idp = SAMLIdentityProvider(saml_auth, idp_string, **attrs['ENABLED_IDPS'][idp_string])
         config = saml_auth.generate_saml_config(idp=idp)
         invalid_security_settings = []
         try:
@@ -238,7 +238,7 @@ class SAMLConfiguration(BaseAuthenticatorConfiguration):
         return configuration
 
 
-class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAMLAuth, AbstractAuthenticatorPlugin):
+class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAMLAuth, AbstractAuthenticatorPlugin):  # type: ignore[override]
     configuration_class = SAMLConfiguration
     type = "SAML"
     logger = logger
@@ -294,11 +294,11 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAML
     def add_related_fields(self, request, authenticator):
         return {"metadata": get_relative_url('authenticator-metadata', kwargs={'pk': authenticator.id})}
 
-    def extra_data(self, user, backend, response, *args, **kwargs):
+    def extra_data(self, user, uid, response, details, pipeline_kwargs):
         attrs = response["attributes"] if "attributes" in response else {}
         for perm in ["is_superuser", get_setting('ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG')]:
             if perm in attrs:
-                kwargs["social"].extra_data[perm] = attrs[perm]
+                pipeline_kwargs["social"].extra_data[perm] = attrs[perm]
 
         # Get configured group attribute, if present
         configuration = getattr(self.database_instance, 'configuration', {})
@@ -315,7 +315,7 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAML
         else:
             logger.debug("Unable to get any group claims from the SAML response")
 
-        data = super().extra_data(user, backend, response, *args, **kwargs)
+        data = super().extra_data(user, uid, response, details, pipeline_kwargs)
 
         # Ideally we would always have a DB instance
         # But if something was mocked in a test or somehow a db_instance just wasn't passed in we don't want to error here
