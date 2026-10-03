@@ -191,16 +191,17 @@ class Resource(models.Model):
 
         changed_metadata = False
         with transaction.atomic():
-            if ansible_id:
+            if ansible_id is not None and str(self.ansible_id) != str(ansible_id):
                 self.ansible_id = ansible_id
                 changed_metadata = True
-            if service_id:
+            if service_id is not None and str(self.service_id) != str(service_id):
                 self.service_id = service_id
                 changed_metadata = True
-            if is_partially_migrated is not None:
+            if is_partially_migrated is not None and self.is_partially_migrated != is_partially_migrated:
                 self.is_partially_migrated = is_partially_migrated
                 changed_metadata = True
-            self.save()
+            if changed_metadata:
+                self.save()
 
             content_object: "ResourceTypeProcessor" = processor(self.content_object)
             with no_reverse_sync():
