@@ -718,7 +718,9 @@ class ObjectRole(ObjectRoleFields):
 
         return existing_partials
 
-    def needed_cache_updates(self, types_prefetch=None, evaluations_prefetch=None, object_pk=None, object_ct_id=None, target_parents=None):
+    def needed_cache_updates(
+        self, types_prefetch=None, evaluations_prefetch=None, object_pk=None, object_ct_id=None, target_parents=None, lookahead_cache=None
+    ):
         """Return (to_delete, to_add) changes needed in the RoleEvaluation table
         to make cached object-role permissions accurate for this role.
 
@@ -740,6 +742,10 @@ class ObjectRole(ObjectRoleFields):
         the look-ahead object's parent chain. When given, team-held roles are
         filtered to those on the look-ahead object or on one of its parents, the
         only roles that can grant evaluations on it.
+
+        lookahead_cache: optional dict shared across one recompute, memoising the
+        expected evaluations of team-held roles by ObjectRole pk. The same
+        organization role is typically reached through many teams; compute it once.
         """
         if (object_pk is None) != (object_ct_id is None):
             raise ValueError('object_pk and object_ct_id must both be provided or both be None')
@@ -766,7 +772,13 @@ class ObjectRole(ObjectRoleFields):
             if team_role_filter is not None:
                 team_roles = team_roles.filter(team_role_filter)
             for team_role in team_roles:
-                expected_evaluations.update(team_role.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id))
+                if lookahead_cache is not None and team_role.pk in lookahead_cache:
+                    expected_evaluations.update(lookahead_cache[team_role.pk])
+                    continue
+                team_role_expected = team_role.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id)
+                if lookahead_cache is not None:
+                    lookahead_cache[team_role.pk] = team_role_expected
+                expected_evaluations.update(team_role_expected)
 
         self._log_partials_count(len(expected_evaluations), 'expected evaluation', self.pk)
 
