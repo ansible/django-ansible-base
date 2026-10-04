@@ -47,6 +47,29 @@ class TypesPrefetch:
             self._content_types[ct_id] = DABContentType.objects.get_for_id(ct_id)
         return self._content_types[ct_id]
 
+    def _parent_content_type_id(self, perm_ct_id: int, parent_ct_cache: dict[int, int | None]) -> int | None:
+        if perm_ct_id not in parent_ct_cache:
+            perm_ct = self.get_content_type(perm_ct_id)
+            if perm_ct.is_remote:
+                parent_ct_cache[perm_ct_id] = perm_ct.parent_content_type_id
+            else:
+                from ansible_base.rbac.permission_registry import permission_registry
+
+                try:
+                    parent_model = permission_registry.get_parent_model(perm_ct.model_class())
+                except KeyError:
+                    # permission on a model that is not in the permission registry
+                    parent_model = None
+                parent_ct_cache[perm_ct_id] = DABContentType.objects.get_for_model(parent_model).id if parent_model else None
+        return parent_ct_cache[perm_ct_id]
+
+    def _permission_grants_on_type(self, permission: DABPermission, object_ct_id: int, parent_ct_cache: dict[int, int | None]) -> bool:
+        from ansible_base.lib.utils.models import is_add_perm
+
+        return permission.content_type_id == object_ct_id or (
+            is_add_perm(permission.codename) and self._parent_content_type_id(permission.content_type_id, parent_ct_cache) == object_ct_id
+        )
+
     def role_definition_ids_granting(self, object_ct_id: int) -> set[int]:
         """Ids of role definitions that can produce an evaluation on an object of type object_ct_id.
 
@@ -55,32 +78,15 @@ class TypesPrefetch:
         ObjectRole.get_child_filters). Anything else can be skipped in look-ahead
         mode without being loaded or evaluated. Cached per instance.
         """
-        from ansible_base.lib.utils.models import is_add_perm
-        from ansible_base.rbac.permission_registry import permission_registry
-
         if object_ct_id in self._granting_rd_ids:
             return self._granting_rd_ids[object_ct_id]
         parent_ct_cache: dict[int, int | None] = {}
-
-        def parent_ct_id_of(perm_ct_id: int):
-            if perm_ct_id not in parent_ct_cache:
-                perm_ct = self.get_content_type(perm_ct_id)
-                if perm_ct.is_remote:
-                    parent_ct_cache[perm_ct_id] = perm_ct.parent_content_type_id
-                else:
-                    try:
-                        parent_model = permission_registry.get_parent_model(perm_ct.model_class())
-                    except KeyError:
-                        # permission on a model that is not in the permission registry
-                        parent_model = None
-                    parent_ct_cache[perm_ct_id] = DABContentType.objects.get_for_model(parent_model).id if parent_model else None
-            return parent_ct_cache[perm_ct_id]
 
         result: set[int] = set()
         for rd_id, perm_ids in self._rd_permissions.items():
             for perm_id in perm_ids:
                 perm = self._permissions[perm_id]
-                if perm.content_type_id == object_ct_id or (is_add_perm(perm.codename) and parent_ct_id_of(perm.content_type_id) == object_ct_id):
+                if self._permission_grants_on_type(perm, object_ct_id, parent_ct_cache):
                     result.add(rd_id)
                     break
         self._granting_rd_ids[object_ct_id] = result
