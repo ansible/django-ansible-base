@@ -615,7 +615,10 @@ def recompute_role_evaluations_for_created(
     role_to_teams, team_ids = _created_role_teams(role_pks)
     granting_rd_ids = types_prefetch.role_definition_ids_granting(object_ct_id)
     team_roles_by_pk, team_to_role_pks = _created_team_roles(
-        team_ids, object_ct_id, parent_keys | {(object_ct_id, object_id_str)}, granting_rd_ids
+        team_ids,
+        object_ct_id,
+        parent_keys | {(object_ct_id, object_id_str)},
+        granting_rd_ids,
     )
     existing = _created_existing_evaluations(role_pks, object_pk, object_ct_id)
     expected_by_role_pk: dict[int, set] = {}
