@@ -444,7 +444,7 @@ def recompute_role_evaluations(
     types_prefetch: Optional[TypesPrefetch] = None,
     object_pk: Optional[int | UUID] = None,
     object_ct_id: Optional[int] = None,
-    target_parents: Optional[Iterable[tuple[int, Union[int, UUID]]]] = None,
+    target_parents: Optional[Iterable[tuple[int, int | UUID]]] = None,
 ) -> None:
     """Recompute RoleEvaluation entries for a specific set of ObjectRoles.
 
