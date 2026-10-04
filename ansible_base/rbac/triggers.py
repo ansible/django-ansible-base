@@ -322,27 +322,34 @@ def get_parent_ids(instance) -> list[tuple[Model, Union[int, UUID]]]:
     return []
 
 
+def _get_parent_gfks_for_update(instance):
+    """Return the parent GFKs to recompute for this object and, on a move, the roles that granted on it before."""
+    parent_gfks = get_parent_ids(instance)
+    if not hasattr(instance, '__rbac_original_parent_id'):
+        return parent_gfks, set()
+
+    original_parent_id = instance.__rbac_original_parent_id
+    delattr(instance, '__rbac_original_parent_id')
+    current_parent_id = getattr(instance, f'{permission_registry.get_parent_fd_name(instance)}_id')
+    if original_parent_id is None or original_parent_id == current_parent_id:
+        return parent_gfks, set()
+
+    parent_cls = permission_registry.get_parent_model(instance)
+    parent_ct = permission_registry.content_type_model.objects.get_for_model(parent_cls)
+    parent_gfks.append((parent_ct, original_parent_id))
+    # Roles on the old parent's own parents (e.g. a namespace's organization) granted on this
+    # object too. Rather than walk the old chain, which needs the old parent to still exist
+    # (it may be deleted concurrently), recompute every role that holds a cached evaluation
+    # for this object; any that no longer applies loses it.
+    obj_ct = permission_registry.content_type_model.objects.get_for_model(instance)
+    cached_role_ids = get_evaluation_model(instance).objects.filter(content_type_id=obj_ct.id, object_id=instance.pk).values('role_id')
+    return parent_gfks, set(ObjectRole.objects.filter(id__in=cached_role_ids))
+
+
 def post_save_update_obj_permissions(instance, object_pk=None, object_ct_id=None, created=False):
     "Utility method shared by multiple signals"
     # Account for organization roles (and other parent objects), new and old
-    parent_gfks = get_parent_ids(instance)
-
-    roles_granting_before_move = set()
-    if hasattr(instance, '__rbac_original_parent_id'):
-        original_parent_id = instance.__rbac_original_parent_id
-        delattr(instance, '__rbac_original_parent_id')
-        current_parent_id = getattr(instance, f'{permission_registry.get_parent_fd_name(instance)}_id')
-        if original_parent_id is not None and original_parent_id != current_parent_id:
-            parent_cls = permission_registry.get_parent_model(instance)
-            parent_ct = permission_registry.content_type_model.objects.get_for_model(parent_cls)
-            parent_gfks.append((parent_ct, original_parent_id))
-            # Roles on the old parent's own parents (e.g. a namespace's organization) granted on this
-            # object too. Rather than walk the old chain, which needs the old parent to still exist
-            # (it may be deleted concurrently), recompute every role that holds a cached evaluation
-            # for this object; any that no longer applies loses it.
-            obj_ct = permission_registry.content_type_model.objects.get_for_model(instance)
-            cached_role_ids = get_evaluation_model(instance).objects.filter(content_type_id=obj_ct.id, object_id=instance.pk).values('role_id')
-            roles_granting_before_move = set(ObjectRole.objects.filter(id__in=cached_role_ids))
+    parent_gfks, roles_granting_before_move = _get_parent_gfks_for_update(instance)
 
     if parent_gfks:
         to_update = object_roles_for_parents(set(parent_gfks))
