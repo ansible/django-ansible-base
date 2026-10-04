@@ -40,7 +40,8 @@ def test_other_org_admin_ancestor_issues_no_child_query(rando, org_inv_rd, membe
         to_delete, to_add = other_role.needed_cache_updates(object_pk=new_inv.pk, object_ct_id=_inv_ct_id(), target_parents=[(_org_ct_id(), target_org.pk)])
     own_queries = [q['sql'] for q in ctx.captured_queries if f'"test_app_inventory"."organization_id" = {other_org.pk}' in q['sql']]
     assert own_queries == []
-    assert not to_delete and not to_add  # already up to date from the create
+    assert not to_delete  # already up to date from the create
+    assert not to_add
     assert RoleEvaluation.objects.filter(role=other_role, object_id=new_inv.pk, content_type_id=_inv_ct_id(), codename='change_inventory').exists()
     after = _evaluation_rows()
     recompute_all_role_evaluations()
