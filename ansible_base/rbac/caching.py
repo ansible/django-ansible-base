@@ -442,7 +442,7 @@ class EvaluationUpdates:
 def recompute_role_evaluations(
     object_roles: Iterable[ObjectRole],
     types_prefetch: Optional[TypesPrefetch] = None,
-    object_pk: Optional[Union[int, UUID]] = None,
+    object_pk: Optional[int | UUID] = None,
     object_ct_id: Optional[int] = None,
     target_parents: Optional[Iterable[tuple[int, Union[int, UUID]]]] = None,
 ) -> None:
