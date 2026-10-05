@@ -21,7 +21,10 @@ def get_next_authenticator_order():
 class Authenticator(UniqueNamedCommonModel):  # type: ignore[django-manager-missing]
     ignore_relations = ['authenticator_users']
     enabled = fields.BooleanField(default=False, help_text="Should this authenticator be enabled.")
-    create_objects = fields.BooleanField(default=True, help_text="Allow authenticator to create objects (users, teams, organizations).")
+    create_objects = fields.BooleanField(
+        default=True,
+        help_text="Allow authenticator to create Organizations and Teams through authenticator maps.",
+    )
     remove_users = fields.BooleanField(
         default=True, help_text="When a user authenticates from this source should they be removed from any other groups they were previously added to."
     )
