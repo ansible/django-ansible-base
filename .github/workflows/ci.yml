@@ -53,9 +53,12 @@ jobs:
           echo "::remove-matcher owner=python::"  # Disable annoying annotations from setup-python
           tox --colored yes -e ${{ matrix.tests.env }}
 
-      - name: Inject PR number into coverage.xml
+      - name: Inject PR metadata into coverage.xml
         if: matrix.tests.env != 'check' && hashFiles('coverage.xml') != ''
-        run: sed -i '2i <!-- PR ${{ github.event.number }} -->' coverage.xml
+        run: |
+          sed -i '2i <!-- PR ${{ github.event.number }} -->' coverage.xml
+          # PR jobs test the synthetic merge commit, which is the source for this report.
+          sed -i '3i <!-- SHA ${{ github.sha }} -->' coverage.xml
 
       - name: Upload coverage as artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -118,7 +121,10 @@ jobs:
 
       - name: Inject PR number into coverage.xml
         if: hashFiles('coverage.xml') != ''
-        run: sed -i '2i <!-- PR ${{ github.event.number }} -->' coverage.xml
+        run: |
+          sed -i '2i <!-- PR ${{ github.event.number }} -->' coverage.xml
+          # Keep the source revision next to the report for the downstream Sonar scan.
+          sed -i '3i <!-- SHA ${{ github.sha }} -->' coverage.xml
 
       - name: Upload coverage as artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

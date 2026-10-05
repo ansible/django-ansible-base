@@ -62,9 +62,7 @@ jobs:
       # Extract PR metadata from workflow_run event
       - name: Set PR metadata and prepare for analysis
         env:
-          COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
           REPO_NAME: ${{ github.event.repository.full_name }}
-          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Find all downloaded coverage XML files (artifacts are extracted into subdirectories)
@@ -81,8 +79,10 @@ jobs:
           first_coverage=$(find ./coverage-* -name "coverage.xml" -type f 2>/dev/null | head -1)
           if [ -f "$first_coverage" ]; then
             PR_NUMBER=$(grep -m 1 '<!-- PR' "$first_coverage" | awk '{print $3}' || echo "")
+            SONAR_REVISION=$(grep -m 1 '<!-- SHA' "$first_coverage" | awk '{print $3}' || echo "")
           else
             PR_NUMBER=""
+            SONAR_REVISION=""
           fi
 
           echo "├── PR Number from coverage.xml: #${PR_NUMBER:-<not found>}"
@@ -94,6 +94,12 @@ jobs:
             exit 1
           fi
 
+          if ! [[ "$SONAR_REVISION" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "##[error]❌ FATAL: Tested commit SHA not found in coverage.xml"
+            echo "##[error]The CI workflow should have injected the tested SHA into coverage.xml."
+            exit 1
+          fi
+
           # Get PR metadata from GitHub API
           PR_DATA=$(gh api "repos/$REPO_NAME/pulls/$PR_NUMBER")
           PR_BASE=$(echo "$PR_DATA" | jq -r '.base.ref')
@@ -102,6 +108,7 @@ jobs:
           # Print summary
           echo "├── Base Branch: $PR_BASE"
           echo "├── Head Branch: $PR_HEAD"
+          echo "├── Tested Commit: $SONAR_REVISION"
           echo "├── Coverage Data: ✅ Available"
           echo "└── Result: ✅ Running SonarCloud PR analysis"
 
@@ -117,15 +124,22 @@ jobs:
           echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
           echo "PR_BASE=$PR_BASE" >> $GITHUB_ENV
           echo "PR_HEAD=$PR_HEAD" >> $GITHUB_ENV
-          echo "COMMIT_SHA=$COMMIT_SHA" >> $GITHUB_ENV
+          echo "SONAR_REVISION=$SONAR_REVISION" >> $GITHUB_ENV
           echo "REPO_NAME=$REPO_NAME" >> $GITHUB_ENV
 
-      - name: Add base branch
-        if: env.PR_NUMBER != ''
+      - name: Check out tested source revision
+        if: env.SONAR_REVISION != ''
         run: |
-          gh pr checkout ${{ env.PR_NUMBER }}
+          # PR CI covers its merge ref; scanning the PR head can reject valid coverage paths.
+          git fetch --no-tags origin "refs/pull/${PR_NUMBER}/merge"
+          if [ "$(git rev-parse FETCH_HEAD)" != "$SONAR_REVISION" ]; then
+            git fetch --no-tags origin "$SONAR_REVISION"
+          fi
+          git checkout --detach "$SONAR_REVISION"
+          test "$(git rev-parse HEAD)" = "$SONAR_REVISION"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ env.PR_NUMBER }}
+          SONAR_REVISION: ${{ env.SONAR_REVISION }}
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
@@ -134,7 +148,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets[format('{0}', vars.SONAR_TOKEN_SECRET_NAME)] }}
         with:
           args: >
-            -Dsonar.scm.revision=${{ env.COMMIT_SHA }}
+            -Dsonar.scm.revision=${{ env.SONAR_REVISION }}
             -Dsonar.pullrequest.key=${{ env.PR_NUMBER }}
             -Dsonar.pullrequest.branch=${{ env.PR_HEAD }}
             -Dsonar.pullrequest.base=${{ env.PR_BASE }}
