@@ -1,7 +1,7 @@
 """
 Audit and repair stale ansible_id references in the resource registry.
 
-After a 2.4→2.6 upgrade, the gateway and controller initialize independent
+After a 2.4->2.6 upgrade, the gateway and controller initialize independent
 resource registries with different ansible_id values for the same teams/orgs.
 If resource_sync doesn't fully converge the registries, teams can end up in
 a "frozen state" where role assignments can't be created, deleted, or synced.
@@ -15,7 +15,7 @@ Usage::
     awx-manage fix_stale_ansible_ids                    # audit all types
     awx-manage fix_stale_ansible_ids team organization  # audit specific types
     awx-manage fix_stale_ansible_ids --fix              # create missing entries
-    awx-manage fix_stale_ansible_ids --fix-duplicates   # consolidate duplicates
+    awx-manage fix_stale_ansible_ids --deduplicate      # consolidate duplicates
 """
 
 import logging
@@ -32,7 +32,7 @@ class Command(BaseCommand):
     help = (
         "Audit and repair stale ansible_id references in the resource registry. "
         "Detects missing Resource entries and duplicate entries that cause "
-        "role assignment sync failures after 2.4→2.6 upgrades."
+        "role assignment sync failures after 2.4->2.6 upgrades."
     )
 
     def add_arguments(self, parser):
@@ -47,9 +47,9 @@ class Command(BaseCommand):
             help="Create missing Resource entries. Without this flag, only reports findings.",
         )
         parser.add_argument(
-            "--fix-duplicates",
+            "--deduplicate",
             action="store_true",
-            dest="fix_duplicates",
+            dest="deduplicate",
             help="Remove duplicate Resource entries, keeping the one with the lowest pk.",
         )
 
@@ -72,7 +72,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         fix = options["fix"]
-        fix_duplicates = options["fix_duplicates"]
+        deduplicate = options["deduplicate"]
 
         resource_types = self._resolve_resource_types(options["resource_types"])
         if not resource_types.exists():
@@ -86,16 +86,16 @@ class Command(BaseCommand):
         total_orphans = 0
 
         for rt in resource_types:
-            missing, created, duplicates, duplicates_removed, orphans = self._process_resource_type(rt, fix=fix, fix_duplicates=fix_duplicates)
+            missing, created, duplicates, duplicates_removed, orphans = self._process_resource_type(rt, fix=fix, deduplicate=deduplicate)
             total_missing += missing
             total_created += created
             total_duplicates += duplicates
             total_duplicates_removed += duplicates_removed
             total_orphans += orphans
 
-        self._print_summary(total_missing, total_created, total_duplicates, total_duplicates_removed, total_orphans, fix, fix_duplicates)
+        self._print_summary(total_missing, total_created, total_duplicates, total_duplicates_removed, total_orphans, fix, deduplicate)
 
-    def _print_summary(self, total_missing, total_created, total_duplicates, total_duplicates_removed, total_orphans, fix, fix_duplicates):
+    def _print_summary(self, total_missing, total_created, total_duplicates, total_duplicates_removed, total_orphans, fix, deduplicate):
         self.stdout.write("")
         if total_missing == 0 and total_duplicates == 0 and total_orphans == 0:
             self.stdout.write(self.style.SUCCESS("All resource types OK."))
@@ -110,16 +110,19 @@ class Command(BaseCommand):
             else:
                 self.stdout.write(self.style.WARNING(f"{total_missing} missing Resource entries. Run with --fix to create them."))
         if total_duplicates > 0:
-            if fix_duplicates:
+            if deduplicate:
                 self.stdout.write(self.style.SUCCESS(f"Removed {total_duplicates_removed} duplicate Resource entries."))
             else:
-                self.stdout.write(self.style.WARNING(f"{total_duplicates} duplicate Resource entries. Run with --fix-duplicates to consolidate."))
+                self.stdout.write(self.style.WARNING(f"{total_duplicates} duplicate Resource entries. Run with --deduplicate to consolidate."))
         if total_orphans > 0:
             self.stdout.write(
-                self.style.WARNING(f"{total_orphans} orphan Resource entries (no model instance). These are harmless but indicate prior sync issues.")
+                self.style.WARNING(
+                    f"{total_orphans} orphan Resource entries (no model instance). "
+                    "No action needed -- these are stale references from prior sync issues and do not affect functionality."
+                )
             )
 
-    def _process_resource_type(self, rt, fix=False, fix_duplicates=False):
+    def _process_resource_type(self, rt, fix=False, deduplicate=False):
         ct = rt.content_type
         model_cls = ct.model_class()
         if model_cls is None:
@@ -154,7 +157,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING(f"  Orphan Resource entries (no instance): {len(orphan_pks)}"))
 
         # --- Duplicate entries ---
-        duplicates_found, duplicates_removed = self._check_duplicates(ct, fix_duplicates)
+        duplicates_found, duplicates_removed = self._check_duplicates(ct, deduplicate)
 
         return len(missing_pks), created, duplicates_found, duplicates_removed, len(orphan_pks)
 
@@ -193,7 +196,7 @@ class Command(BaseCommand):
         if remaining > 0:
             self.stdout.write(f"    ... and {remaining} more")
 
-    def _check_duplicates(self, ct, fix_duplicates):
+    def _check_duplicates(self, ct, deduplicate):
         dupes = list(Resource.objects.filter(content_type=ct).values("object_id").annotate(entry_count=Count("id")).filter(entry_count__gt=1))
 
         dupe_count = len(dupes)
@@ -210,7 +213,9 @@ class Command(BaseCommand):
                 ids_list = list(entries.values_list("ansible_id", flat=True))
                 self.stdout.write(f"    object_id={dupe['object_id']}: {dupe['entry_count']} entries, ansible_ids={ids_list}")
 
-            if fix_duplicates:
+            if deduplicate:
+                # Which entry we keep is arbitrary — the subsequent resource_sync
+                # aligns the ansible_id with the gateway's authoritative value.
                 keep = entries.first()
                 to_delete = entries.exclude(pk=keep.pk)
                 delete_count = to_delete.count()

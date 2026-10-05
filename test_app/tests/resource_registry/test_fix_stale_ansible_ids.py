@@ -124,7 +124,7 @@ class TestFixStaleAnsibleIds:
         call_command("fix_stale_ansible_ids", "team")
         captured = capsys.readouterr()
         assert "2 orphan Resource entries" in captured.out
-        assert "harmless" in captured.out
+        assert "No action needed" in captured.out
 
     def test_fix_missing_summary_with_fix_flag(self, team, capsys):
         ct = ContentType.objects.get_for_model(team)
@@ -195,13 +195,13 @@ class TestFixStaleAnsibleIdsDuplicates:
         call_command("fix_stale_ansible_ids", "team")
         captured = capsys.readouterr()
         assert "DUPLICATE Resource entries: 1" in captured.out
-        assert "Run with --fix-duplicates" in captured.out
+        assert "Run with --deduplicate" in captured.out
 
     def test_fix_duplicates(self, capsys):
         original = Resource.objects.filter(content_type=self.ct, object_id=str(self.team.pk)).order_by("pk").first()
         original_ansible_id = original.ansible_id
 
-        call_command("fix_stale_ansible_ids", "team", fix_duplicates=True)
+        call_command("fix_stale_ansible_ids", "team", deduplicate=True)
         captured = capsys.readouterr()
         assert "Removed 1 duplicate Resource entries" in captured.out
         assert "Kept ansible_id=" in captured.out
@@ -211,7 +211,7 @@ class TestFixStaleAnsibleIdsDuplicates:
         assert remaining.first().ansible_id == original_ansible_id
 
     def test_fix_duplicates_summary(self, capsys):
-        call_command("fix_stale_ansible_ids", "team", fix_duplicates=True)
+        call_command("fix_stale_ansible_ids", "team", deduplicate=True)
         captured = capsys.readouterr()
         assert "Removed 1 duplicate Resource entries." in captured.out
 
@@ -219,5 +219,5 @@ class TestFixStaleAnsibleIdsDuplicates:
         call_command("fix_stale_ansible_ids", "team")
         captured = capsys.readouterr()
         assert "1 duplicate Resource entries" in captured.out
-        assert "fix-duplicates" in captured.out
+        assert "deduplicate" in captured.out
         assert "All resource types OK" not in captured.out
