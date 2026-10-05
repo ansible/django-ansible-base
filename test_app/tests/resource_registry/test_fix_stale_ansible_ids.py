@@ -205,6 +205,7 @@ class TestFixStaleAnsibleIdsDuplicates:
         captured = capsys.readouterr()
         assert "Removed 1 duplicate Resource entries" in captured.out
         assert "Kept ansible_id=" in captured.out
+        assert "resource_sync" in captured.out
 
         remaining = Resource.objects.filter(content_type=self.ct, object_id=str(self.team.pk))
         assert remaining.count() == 1

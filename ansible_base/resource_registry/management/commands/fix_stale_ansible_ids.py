@@ -104,9 +104,6 @@ class Command(BaseCommand):
         if total_missing > 0:
             if fix:
                 self.stdout.write(self.style.SUCCESS(f"Created {total_created} missing Resource entries."))
-                self.stdout.write(
-                    "Next: run 'awx-manage resource_sync team organization' to align ansible_ids with the gateway, then re-run the role assignment sync."
-                )
             else:
                 self.stdout.write(self.style.WARNING(f"{total_missing} missing Resource entries. Run with --fix to create them."))
         if total_duplicates > 0:
@@ -114,6 +111,10 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.SUCCESS(f"Removed {total_duplicates_removed} duplicate Resource entries."))
             else:
                 self.stdout.write(self.style.WARNING(f"{total_duplicates} duplicate Resource entries. Run with --deduplicate to consolidate."))
+        if (fix and total_created > 0) or (deduplicate and total_duplicates_removed > 0):
+            self.stdout.write(
+                "Next: run 'awx-manage resource_sync team organization' to align ansible_ids with the gateway, then re-run the role assignment sync."
+            )
         if total_orphans > 0:
             self.stdout.write(
                 self.style.WARNING(
