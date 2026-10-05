@@ -204,6 +204,7 @@ def _create_assignments(
     lookup: ObjectRoleLookup,
     object_ansible_ids: dict[tuple[str, str, str], str],
     fire_signals_on_create: bool = True,
+    ignore_conflicts: bool = True,
 ) -> list[AssignmentBase]:
     """Bulk-create user and team assignment objects, return all resulting assignments."""
     created_by = current_user_or_system_user()
@@ -226,7 +227,7 @@ def _create_assignments(
     if user_assignments:
         pair_q = _pair_filter(user_assignments, 'user')
         existing_user_pks = set(RoleUserAssignment.objects.filter(pair_q).values_list('pk', flat=True))
-        RoleUserAssignment.objects.bulk_create(user_assignments, ignore_conflicts=True)
+        RoleUserAssignment.objects.bulk_create(user_assignments, ignore_conflicts=ignore_conflicts)
         db_users = list(RoleUserAssignment.objects.filter(pair_q))
         all_assignments.extend(db_users)
         if fire_signals_on_create:
@@ -251,7 +252,7 @@ def _create_assignments(
     if team_assignments:
         pair_q = _pair_filter(team_assignments, 'team')
         existing_team_pks = set(RoleTeamAssignment.objects.filter(pair_q).values_list('pk', flat=True))
-        RoleTeamAssignment.objects.bulk_create(team_assignments, ignore_conflicts=True)
+        RoleTeamAssignment.objects.bulk_create(team_assignments, ignore_conflicts=ignore_conflicts)
         db_teams = list(RoleTeamAssignment.objects.filter(pair_q))
         all_assignments.extend(db_teams)
         if fire_signals_on_create:
@@ -382,6 +383,7 @@ def give_assignments(
     user_resolved: Sequence[ResolvedAssignment] = (),
     team_resolved: Sequence[ResolvedAssignment] = (),
     fire_signals_on_create: bool = True,
+    ignore_conflicts: bool = True,
 ) -> list[AssignmentBase]:
     """Assign roles from already-resolved assignments (skips validation).
 
@@ -401,6 +403,7 @@ def give_assignments(
         lookup,
         object_ansible_ids,
         fire_signals_on_create=fire_signals_on_create,
+        ignore_conflicts=ignore_conflicts,
     )
     _recompute_after_give(lookup, assignments)
     return assignments
@@ -410,13 +413,19 @@ def bulk_give_permissions(
     user_permissions: Sequence[PermissionTriple] = (),
     team_permissions: Sequence[PermissionTriple] = (),
     fire_signals_on_create: bool = True,
+    ignore_conflicts: bool = True,
 ) -> list[AssignmentBase]:
     """Convenience API: validates triples, resolves, and delegates to give_assignments."""
     if not user_permissions and not team_permissions:
         return []
 
     user_resolved, team_resolved = _resolve_assignments(user_permissions, team_permissions)
-    return give_assignments(user_resolved, team_resolved, fire_signals_on_create=fire_signals_on_create)
+    return give_assignments(
+        user_resolved,
+        team_resolved,
+        fire_signals_on_create=fire_signals_on_create,
+        ignore_conflicts=ignore_conflicts,
+    )
 
 
 def bulk_remove_permissions(

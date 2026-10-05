@@ -52,6 +52,17 @@ def maybe_reverse_sync_assignment(assignment):
     client.sync_assignment(assignment)
 
 
+def maybe_reverse_sync_assignments(assignments):
+    assignments = [assignment for assignment in assignments if reverse_sync_enabled_all_conditions(assignment)]
+    if not assignments:
+        return
+
+    from ansible_base.resource_registry.utils.sync_to_resource_server import get_current_user_resource_client
+
+    client = get_current_user_resource_client()
+    client.sync_assignments(assignments)
+
+
 def maybe_reverse_sync_unassignment(role_definition, actor, content_object):
     if not reverse_sync_enabled_all_conditions(role_definition):
         return

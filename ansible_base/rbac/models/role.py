@@ -267,16 +267,13 @@ class RoleDefinition(CommonModel):
             return models.Q(pk__in=[])
         return reduce(operator.or_, conditions)
 
-    def give_global_permission(self, actor):
-        return self.give_or_remove_global_permission(actor, giving=True)
+    def give_global_permission(self, actor, return_created=False):
+        return self.give_or_remove_global_permission(actor, giving=True, return_created=return_created)
 
     def remove_global_permission(self, actor):
         return self.give_or_remove_global_permission(actor, giving=False)
 
-    def give_or_remove_global_permission(self, actor, giving=True):
-        if giving and (self.content_type is not None):
-            raise ValidationError('Role definition content type must be null to assign globally')
-
+    def _get_global_assignment_details(self, actor, giving):
         if actor._meta.model_name == 'user':
             if giving and (not settings.ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES):
                 raise ValidationError('Global roles are not enabled for users')
@@ -290,14 +287,10 @@ class RoleDefinition(CommonModel):
         else:
             raise RuntimeError(f'Cannot {giving and "give" or "remove"} permission for {actor}, must be a user or team')
 
-        if giving:
-            assignment, _ = cls.objects.get_or_create(**kwargs)
-        else:
-            assignment = cls.objects.filter(**kwargs).first()
-            if assignment:
-                assignment.delete()
+        return cls, kwargs
 
-        # Clear any cached permissions
+    @staticmethod
+    def _clear_global_permission_cache(actor):
         if actor._meta.model_name == 'user':
             if hasattr(actor, '_singleton_permissions'):
                 delattr(actor, '_singleton_permissions')
@@ -308,6 +301,22 @@ class RoleDefinition(CommonModel):
 
             bound_singleton_permissions._team_clear_signal = True
 
+    def give_or_remove_global_permission(self, actor, giving=True, return_created=False):
+        if giving and (self.content_type is not None):
+            raise ValidationError('Role definition content type must be null to assign globally')
+
+        cls, kwargs = self._get_global_assignment_details(actor, giving)
+        created = False
+        if giving:
+            assignment, created = cls.objects.get_or_create(**kwargs)
+        else:
+            assignment = cls.objects.filter(**kwargs).first()
+            if assignment:
+                assignment.delete()
+
+        self._clear_global_permission_cache(actor)
+        if return_created:
+            return assignment, created
         return assignment
 
     def give_permission(self, actor, content_object):

@@ -1,6 +1,7 @@
 import logging
 
 from crum import impersonate
+from django.core.exceptions import ObjectDoesNotExist
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
@@ -62,7 +63,17 @@ class DABPermissionSerializer(serializers.ModelSerializer):
 # 'id' is included so consumers can implement cursor-based pagination
 # (e.g. id__gt=<last_pk>&order_by=id) for efficient resume after
 # crashes and skip-on-reinstall in migrate_service_data.
-assignment_common_fields = ('id', 'created', 'created_by_ansible_id', 'object_id', 'object_ansible_id', 'content_type', 'role_definition', 'parent_reference')
+assignment_common_fields = (
+    'id',
+    'created',
+    'created_by_ansible_id',
+    'object_id',
+    'object_ansible_id',
+    'content_type',
+    'role_definition',
+    'parent_reference',
+    'from_service',
+)
 
 
 class BaseAssignmentSerializer(serializers.ModelSerializer):
@@ -76,7 +87,10 @@ class BaseAssignmentSerializer(serializers.ModelSerializer):
 
     def get_parent_reference(self, instance) -> str:
         """Read parent_reference from the prefetched object_role relation."""
-        object_role = getattr(instance, 'object_role', None)
+        try:
+            object_role = instance.object_role
+        except ObjectDoesNotExist:
+            object_role = None
         if object_role and object_role.parent_reference:
             return str(object_role.parent_reference)
         return ''
@@ -86,7 +100,7 @@ class BaseAssignmentSerializer(serializers.ModelSerializer):
 
         So this does the mutual validation to assure we have sufficient data.
         """
-        parent_reference = self.initial_data.get('parent_reference', '')
+        parent_reference = self._current_input_data.get('parent_reference', '')
         if parent_reference is None:
             parent_reference = ''
         if not isinstance(parent_reference, str):
@@ -108,6 +122,13 @@ class BaseAssignmentSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError("Can not provide either 'object_id' or 'object_ansible_id' for system role")
 
         return super().validate(attrs)
+
+    def to_internal_value(self, data):
+        # DRF's ListSerializer reuses its child serializer without setting
+        # child.initial_data. Retain each item's input so nested batch
+        # validation handles parent_reference the same way as single writes.
+        self._current_input_data = data
+        return super().to_internal_value(data)
 
     def find_existing_assignment(self, queryset):
         actor = self.validated_data[self.actor_field]
@@ -182,3 +203,34 @@ class ServiceRoleTeamAssignmentSerializer(BaseAssignmentSerializer):
         model = RoleTeamAssignment
         fields = assignment_common_fields + ('team_ansible_id',)
         validators = []  # DRF can't auto-generate validators for partial UniqueConstraints with aliased fields
+
+
+class BaseAssignmentBatchSerializer(serializers.Serializer):
+    from_service = serializers.UUIDField()
+    created_by_ansible_id = ActorAnsibleIdField(source='created_by', required=False, allow_null=True)
+    assignment_serializer_class = None
+
+    def get_fields(self):
+        fields = super().get_fields()
+        fields['assignments'] = self.assignment_serializer_class(many=True, allow_empty=False)
+        return fields
+
+    def validate(self, attrs):
+        item_errors = {}
+        for index, assignment in enumerate(self.initial_data.get('assignments', [])):
+            if not isinstance(assignment, dict):
+                continue
+            for field in ('from_service', 'created_by_ansible_id'):
+                if field in assignment:
+                    item_errors.setdefault(index, {})[field] = 'Provide this value once on the batch request.'
+        if item_errors:
+            raise serializers.ValidationError({'assignments': item_errors})
+        return attrs
+
+
+class ServiceRoleUserAssignmentBatchSerializer(BaseAssignmentBatchSerializer):
+    assignment_serializer_class = ServiceRoleUserAssignmentSerializer
+
+
+class ServiceRoleTeamAssignmentBatchSerializer(BaseAssignmentBatchSerializer):
+    assignment_serializer_class = ServiceRoleTeamAssignmentSerializer
