@@ -38,10 +38,42 @@ def test_org_inv_permissions_team(team, inventory, org_inv_change_rd):
 
     assert set(Organization.access_qs(team, 'change_organization')) == set([inventory.organization])
     assert set(Inventory.access_qs(team, 'view')) == set([inventory])
-
     assert set(RoleEvaluation.get_permissions(team, inventory)) == set(['change_inventory', 'view_inventory'])
     assert list(Inventory.access_qs(team)) == [inventory]
     assert list(Inventory.access_ids_qs(team)) == [(inventory.id,)]
+
+
+@pytest.mark.django_db
+def test_cross_org_team_role_grants_member_access(rando, team, member_rd, org_inv_change_rd):
+    """A team can grant its members access to resources in another organization."""
+    other_org = Organization.objects.create(name='other-org')
+    other_inventory = Inventory.objects.create(name='other-inventory', organization=other_org)
+
+    member_rd.give_permission(rando, team)
+    assert not rando.has_obj_perm(other_inventory, 'change')
+
+    assignment = org_inv_change_rd.give_permission(team, other_org)
+
+    assert rando.has_obj_perm(other_inventory, 'view')
+    assert rando.has_obj_perm(other_inventory, 'change')
+    assert other_inventory in Inventory.access_qs(rando, 'change')
+
+    org_inv_change_rd.remove_permission(team, other_org)
+    assert not rando.has_obj_perm(other_inventory, 'change')
+    assert not Inventory.access_qs(rando, 'change').filter(pk=other_inventory.pk).exists()
+    assert assignment is not None
+
+
+@pytest.mark.django_db
+def test_cross_org_team_role_does_not_grant_unrelated_member_access(rando, team, member_rd, org_inv_change_rd):
+    """A team member cannot access another organization's resources without an org role assignment."""
+    other_org = Organization.objects.create(name='other-org')
+    other_inventory = Inventory.objects.create(name='other-inventory', organization=other_org)
+
+    member_rd.give_permission(rando, team)
+    assert not rando.has_obj_perm(other_inventory, 'view')
+    assert not rando.has_obj_perm(other_inventory, 'change')
+    assert not Inventory.access_qs(rando, 'view').filter(pk=other_inventory.pk).exists()
 
 
 @pytest.mark.django_db
