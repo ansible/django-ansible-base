@@ -23,6 +23,13 @@ class OrgSerializer(CleanTextMixin, serializers.ModelSerializer):
         fields = ['name', 'description', 'extra_field']
 
 
+class OrgSerializerDescriptionNoTrim(CleanTextMixin, serializers.ModelSerializer):
+    class Meta:
+        model = Organization
+        fields = ['name', 'description']
+        extra_kwargs = {'description': {'trim_whitespace': False}}
+
+
 class OrgSerializerWithExclusions(CleanTextMixin, serializers.ModelSerializer):
     excluded_fields = frozenset({'description'})
 
@@ -197,6 +204,15 @@ class TestCleanTextMixinGrandfathering:
         org = Organization.objects.create(name='Org', description='Legacy <b>bold</b>\n')
         data = {'name': 'Org', 'description': 'Legacy <b>bold</b> extra'}
         serializer = OrgSerializer(org, data=data)
+        assert not serializer.is_valid()
+        assert 'description' in serializer.errors
+
+    @pytest.mark.django_db
+    def test_grandfather_respects_trim_whitespace_false(self):
+        """Whitespace-only deltas must not grandfather when trim_whitespace is off."""
+        org = Organization.objects.create(name='Org', description='$(dangerous)')
+        data = {'name': 'Org', 'description': '$(dangerous) '}
+        serializer = OrgSerializerDescriptionNoTrim(org, data=data)
         assert not serializer.is_valid()
         assert 'description' in serializer.errors
 

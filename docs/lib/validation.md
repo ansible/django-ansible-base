@@ -230,10 +230,12 @@ changed values are validated — unchanged values are grandfathered even if they
 contain content that would fail validation. This comparison works at every
 nesting depth, not just the top level.
 
-For top-level and nested strings, leading and trailing whitespace is ignored
-when comparing submitted input to stored data, matching DRF ``CharField`` /
-``TextField`` ``trim_whitespace`` behavior. Legacy rows seeded via the ORM with
-trailing newlines therefore grandfather when the API submits the trimmed form.
+For model ``CharField`` / ``TextField`` serializer fields with
+``trim_whitespace=True`` (DRF default), grandfathering compares the submitted
+value to ``stored.strip()`` so ORM-seeded leading/trailing whitespace still
+matches API input after DRF normalization. Fields with ``trim_whitespace=False``
+use exact comparison only. Strings inside ``JSONField`` values are not trimmed
+by DRF and always use exact comparison.
 
 For lists, grandfathering compares by index (item at position N in the
 submitted list is compared against item at position N in the stored list).

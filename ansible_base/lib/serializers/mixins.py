@@ -106,19 +106,30 @@ class CleanTextMixin:
                 json_fields.append(f.name)
         return text_fields, json_fields
 
+    def _serializer_field_trims_whitespace(self, field_name):
+        """Whether DRF trims this field's input before ``validate()`` runs."""
+        field = self.fields.get(field_name)
+        if field is None:
+            return True
+        return getattr(field, 'trim_whitespace', False)
+
     @staticmethod
-    def _strings_equal_for_grandfather(submitted, stored):
+    def _strings_equal_for_grandfather(submitted, stored, trim_whitespace=False):
         """Whether submitted text should be treated as unchanged legacy content.
 
-        DRF ``CharField`` / ``TextField`` apply ``trim_whitespace`` before values
-        reach ``validate()``, while ORM-seeded rows may still contain leading or
-        trailing whitespace. Compare stripped forms so grandfathering matches
-        what the API would persist.
+        When ``trim_whitespace`` is enabled on the serializer field, DRF strips
+        leading/trailing whitespace before values reach ``validate()``, while
+        ORM-seeded rows may still contain that whitespace. Strip only the stored
+        side (submitted is already normalized) for comparison. Nested JSON strings
+        are not trimmed by DRF and must use exact comparison (``trim_whitespace``
+        false).
         """
         if submitted == stored:
             return True
+        if not trim_whitespace:
+            return False
         if isinstance(submitted, str) and isinstance(stored, str):
-            return submitted.strip() == stored.strip()
+            return submitted == stored.strip()
         return False
 
     def _is_unchanged(self, field_name, value):
@@ -126,7 +137,8 @@ class CleanTextMixin:
         if not self.instance:
             return False
         stored = getattr(self.instance, field_name, None)
-        return self._strings_equal_for_grandfather(value, stored)
+        trim = self._serializer_field_trims_whitespace(field_name)
+        return self._strings_equal_for_grandfather(value, stored, trim_whitespace=trim)
 
     def _validate_text_fields(self, field_names, attrs, errors):
         """Validate CharField / TextField values (Tier 1 name fields + Tier 2 free-text).
@@ -241,7 +253,7 @@ class CleanTextMixin:
             stored_val = stored_data.get(key) if isinstance(stored_data, dict) else None
 
             if isinstance(val, str):
-                if self._strings_equal_for_grandfather(val, stored_val):
+                if val == stored_val:
                     continue
                 self._validate_json_string(val, qualified_key, errors, field_name)
             elif isinstance(val, dict):
@@ -258,7 +270,7 @@ class CleanTextMixin:
             item_key = f"{key_prefix}[{idx}]"
 
             if isinstance(item, str):
-                if self._strings_equal_for_grandfather(item, stored_item):
+                if item == stored_item:
                     continue
                 self._validate_json_string(item, item_key, errors, field_name)
             elif isinstance(item, dict):
