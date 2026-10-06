@@ -303,7 +303,7 @@ def validate_global_assignment(rd, actor) -> None:
     role definition's content type (which may have changed after the grant).
     """
     validate_assignment_actor(actor)
-    if rd.content_type is not None:
+    if rd.content_type_id is not None:
         raise ValidationError('Role definition content type must be null to assign globally')
     if actor._meta.model_name == 'user' and not settings.ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES:
         raise ValidationError('Global roles are not enabled for users')

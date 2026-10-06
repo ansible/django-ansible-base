@@ -545,7 +545,7 @@ def remove_assignments(
     Args:
         content_objects: Optional dict mapping (content_type_id, object_id) to model instances.
             When provided, these are included in the bulk signal. When None, signal fires
-            with None for content objects (consumer can fetch if needed).
+            with an empty dict for content objects (consumer can fetch if needed).
     """
     if not user_assignments and not team_assignments:
         return

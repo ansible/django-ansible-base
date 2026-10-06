@@ -109,8 +109,7 @@ def test_bulk_remove_permissions_dedup_across_chunks():
 
     duplicated_triples = [(rd, user, inv)] * 5
 
-    with patch('ansible_base.rbac.pipeline.remove_assignments',
-               wraps=rbac_pipeline.remove_assignments) as mock_ra:
+    with patch('ansible_base.rbac.pipeline.remove_assignments', wraps=rbac_pipeline.remove_assignments) as mock_ra:
         bulk_remove_permissions(user_permissions=duplicated_triples, fetch_batch_size=1)
 
     received = mock_ra.call_args.kwargs['user_assignments']
