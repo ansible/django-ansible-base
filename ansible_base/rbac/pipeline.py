@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Sequence
-from typing import NamedTuple, Union, cast
+from dataclasses import dataclass
+from typing import Union, cast
 
 from django.conf import settings
 from django.db import connection, models
@@ -26,13 +27,30 @@ from ansible_base.rbac.validators import validate_assignment, validate_assignmen
 
 logger = logging.getLogger(__name__)
 
+# SQLite empirically fails when a Q OR-chain exceeds ~1000 nodes; 500 gives a safe margin.
+# Module-level so tests can patch it without creating thousands of rows.
+_FIND_ASSIGNMENTS_BATCH_SIZE = 500
 
-class ResolvedAssignment(NamedTuple):
+
+@dataclass(frozen=True, eq=False)
+class ResolvedAssignment:
     role_definition: RoleDefinition
     actor: models.Model
     content_type: DABContentType | None  # None for a global (singleton) assignment
     object_id: str | None  # None for a global (singleton) assignment
     parent_reference: str
+
+    def _key(self) -> tuple:
+        """The DB uniqueness key: (actor, role_definition, content_type, object_id)."""
+        return (self.actor.pk, self.role_definition.pk, self.content_type.pk if self.content_type else None, self.object_id)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ResolvedAssignment):
+            return NotImplemented
+        return self._key() == other._key()
+
+    def __hash__(self) -> int:
+        return hash(self._key())
 
 
 ContentObject = Union[models.Model, RemoteObject]
@@ -428,24 +446,25 @@ def _find_assignments_chunked(
     lookup: ObjectRoleLookup,
     model: type[AssignmentBase],
     actor_field: str,
+    batch_size: int = _FIND_ASSIGNMENTS_BATCH_SIZE,
 ) -> list[AssignmentBase]:
     """Find existing assignments matching resolved triples, chunking to avoid query depth limits.
 
     Each resolved triple becomes an OR term in the Q filter. SQLite limits expression tree
     depth to 1000, and max_query_params is 999, but empirically 999 OR terms still exceeds
-    the limit. Use 500 as a safe batch size for all databases.
+    the limit. Use batch_size (default _FIND_ASSIGNMENTS_BATCH_SIZE) to control chunk size.
     """
-    # Use a conservative batch size that works for all databases
-    # SQLite empirically fails at ~1000 Q nodes; use 500 for safety margin
-    batch_size = 500
+    # Deduplicate using ResolvedAssignment's own uniqueness key
+    # (actor, role_definition, content_type, object_id) — same as the DB constraint.
+    # This prevents the same assignment from appearing in two chunks and being fetched twice.
+    unique_resolved = list(dict.fromkeys(resolved))
 
-    if len(resolved) <= batch_size:
-        return _find_assignments(resolved, lookup, model, actor_field)
+    if len(unique_resolved) <= batch_size:
+        return _find_assignments(unique_resolved, lookup, model, actor_field)
 
-    # Chunk and collect results
     found = []
-    for i in range(0, len(resolved), batch_size):
-        chunk = resolved[i : i + batch_size]
+    for i in range(0, len(unique_resolved), batch_size):
+        chunk = unique_resolved[i : i + batch_size]
         found.extend(_find_assignments(chunk, lookup, model, actor_field))
     return found
 
@@ -644,6 +663,7 @@ def bulk_give_permissions(
 def bulk_remove_permissions(
     user_permissions: Sequence[PermissionTriple] = (),
     team_permissions: Sequence[PermissionTriple] = (),
+    fetch_batch_size: int = _FIND_ASSIGNMENTS_BATCH_SIZE,
 ) -> None:
     """Bulk-remove multiple role assignments.
 
@@ -677,7 +697,7 @@ def bulk_remove_permissions(
     # need to be found (via object_role IS NULL) and removed. _find_assignments handles both.
     lookup = _lookup_object_roles(user_resolved + team_resolved)
 
-    user_found = _find_assignments_chunked(user_resolved, lookup, RoleUserAssignment, 'user_id')
-    team_found = _find_assignments_chunked(team_resolved, lookup, RoleTeamAssignment, 'team_id')
+    user_found = _find_assignments_chunked(user_resolved, lookup, RoleUserAssignment, 'user_id', batch_size=fetch_batch_size)
+    team_found = _find_assignments_chunked(team_resolved, lookup, RoleTeamAssignment, 'team_id', batch_size=fetch_batch_size)
     # Signal fires in remove_assignments with the content_objects we pass
     remove_assignments(user_assignments=user_found, team_assignments=team_found, content_objects=content_objects)
