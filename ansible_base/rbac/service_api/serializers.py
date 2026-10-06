@@ -227,6 +227,22 @@ class ServiceRoleTeamAssignmentRequestSerializer(serializers.Serializer):
     parent_reference = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 
+class ServiceRoleUserAssignmentBatchItemSerializer(ServiceRoleUserAssignmentSerializer):
+    created_by_ansible_id = None
+    from_service = None
+
+    class Meta(ServiceRoleUserAssignmentSerializer.Meta):
+        fields = tuple(field for field in ServiceRoleUserAssignmentSerializer.Meta.fields if field not in ('created_by_ansible_id', 'from_service'))
+
+
+class ServiceRoleTeamAssignmentBatchItemSerializer(ServiceRoleTeamAssignmentSerializer):
+    created_by_ansible_id = None
+    from_service = None
+
+    class Meta(ServiceRoleTeamAssignmentSerializer.Meta):
+        fields = tuple(field for field in ServiceRoleTeamAssignmentSerializer.Meta.fields if field not in ('created_by_ansible_id', 'from_service'))
+
+
 class BaseAssignmentBatchSerializer(serializers.Serializer):
     from_service = serializers.UUIDField()
     created_by_ansible_id = ActorAnsibleIdField(source='created_by', required=False, allow_null=True)
@@ -251,11 +267,11 @@ class BaseAssignmentBatchSerializer(serializers.Serializer):
 
 
 class ServiceRoleUserAssignmentBatchSerializer(BaseAssignmentBatchSerializer):
-    assignment_serializer_class = ServiceRoleUserAssignmentSerializer
+    assignment_serializer_class = ServiceRoleUserAssignmentBatchItemSerializer
 
 
 class ServiceRoleTeamAssignmentBatchSerializer(BaseAssignmentBatchSerializer):
-    assignment_serializer_class = ServiceRoleTeamAssignmentSerializer
+    assignment_serializer_class = ServiceRoleTeamAssignmentBatchItemSerializer
 
 
 class BulkRoleAssignmentResponseSerializer(serializers.Serializer):
