@@ -10,8 +10,6 @@ from ansible_base.lib.utils.settings import get_function_from_setting, get_setti
 
 logger = logging.getLogger('ansible_base.lib.utils.views.ansible_base')
 
-_GENERIC_DEPRECATION_MESSAGE = 'This resource has been deprecated and will be removed in a future release.'
-
 
 class AnsibleBaseView(APIView):
 
@@ -69,8 +67,7 @@ class AnsibleBaseView(APIView):
             if deprecation:
                 detail = deprecation['detail']
             else:
-                # Legacy deprecated = True (no detail provided)
-                detail = _GENERIC_DEPRECATION_MESSAGE
+                detail = 'This resource has been deprecated and will be removed in a future release.'
 
             mark_deprecated(response, detail)
 
