@@ -1,5 +1,5 @@
 social-auth-app-django==5.4.1
-social-auth-core>=5.1.1
+social-auth-core>=5.1.1,<6.0.0  # social-auth-app-django 5.4.1 is incompatible with social-auth-core 6
 tabulate
 cryptography<47  # Avoid unreviewed major-version jumps; bump deliberately in its own change
 
