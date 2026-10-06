@@ -181,9 +181,10 @@ def test_bulk_role_assignment_actions_document_batch_requests_and_count_response
     for resource, action, actor_field, response_fields in actions:
         operation = schema['paths'][f'/api/v1/service-index/{resource}/{action}/']['post']
         request_schema = resolve_schema(operation['requestBody']['content']['application/json']['schema'])
-        assert {'from_service', 'assignments'} <= set(request_schema['properties'])
+        assert {'from_service', 'created_by_ansible_id', 'assignments'} <= set(request_schema['properties'])
         assignment_schema = resolve_schema(request_schema['properties']['assignments']['items'])
         assert actor_field in assignment_schema['properties']
+        assert not {'from_service', 'created_by_ansible_id'} & set(assignment_schema['properties'])
 
         response_schema = resolve_schema(operation['responses']['200']['content']['application/json']['schema'])
         assert response_fields <= set(response_schema['properties'])
