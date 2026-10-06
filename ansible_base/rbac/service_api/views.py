@@ -338,7 +338,12 @@ class ServiceRoleUserAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
         request=service_serializers.ServiceRoleUserAssignmentBatchSerializer,
         responses={status.HTTP_200_OK: service_serializers.BulkRoleAssignmentResponseSerializer},
     )
-    @action(detail=False, methods=['post'], url_path='bulk-assign')
+    @action(
+        detail=False,
+        methods=['post'],
+        url_path='bulk-assign',
+        serializer_class=service_serializers.ServiceRoleUserAssignmentBatchSerializer,
+    )
     def bulk_assign(self, request):
         return self._bulk_assign(request)
 
@@ -350,7 +355,12 @@ class ServiceRoleUserAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
         request=service_serializers.ServiceRoleUserAssignmentBatchSerializer,
         responses={status.HTTP_200_OK: service_serializers.BulkRoleUnassignmentResponseSerializer},
     )
-    @action(detail=False, methods=['post'], url_path='bulk-unassign')
+    @action(
+        detail=False,
+        methods=['post'],
+        url_path='bulk-unassign',
+        serializer_class=service_serializers.ServiceRoleUserAssignmentBatchSerializer,
+    )
     def bulk_unassign(self, request):
         return self._bulk_unassign(request)
 
@@ -384,7 +394,12 @@ class ServiceRoleTeamAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
         request=service_serializers.ServiceRoleTeamAssignmentBatchSerializer,
         responses={status.HTTP_200_OK: service_serializers.BulkRoleAssignmentResponseSerializer},
     )
-    @action(detail=False, methods=['post'], url_path='bulk-assign')
+    @action(
+        detail=False,
+        methods=['post'],
+        url_path='bulk-assign',
+        serializer_class=service_serializers.ServiceRoleTeamAssignmentBatchSerializer,
+    )
     def bulk_assign(self, request):
         return self._bulk_assign(request)
 
@@ -392,7 +407,12 @@ class ServiceRoleTeamAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
         request=service_serializers.ServiceRoleTeamAssignmentBatchSerializer,
         responses={status.HTTP_200_OK: service_serializers.BulkRoleUnassignmentResponseSerializer},
     )
-    @action(detail=False, methods=['post'], url_path='bulk-unassign')
+    @action(
+        detail=False,
+        methods=['post'],
+        url_path='bulk-unassign',
+        serializer_class=service_serializers.ServiceRoleTeamAssignmentBatchSerializer,
+    )
     def bulk_unassign(self, request):
         return self._bulk_unassign(request)
 
