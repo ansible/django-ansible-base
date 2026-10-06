@@ -71,6 +71,23 @@ def test_user_batch_accepts_existing_item_schema(rando, inv_rd, inventory):
     assert serializer.is_valid(), serializer.errors
 
 
+@pytest.mark.parametrize(
+    'route_name',
+    [
+        'serviceuserassignment-bulk-assign',
+        'serviceuserassignment-bulk-unassign',
+        'serviceteamassignment-bulk-assign',
+        'serviceteamassignment-bulk-unassign',
+    ],
+)
+def test_bulk_assignment_action_options_documents_batch_wrapper(admin_api_client, route_name):
+    response = admin_api_client.options(get_relative_url(route_name))
+
+    assert response.status_code == 200, response.data
+    post_schema = response.data['actions']['POST']
+    assert {'from_service', 'assignments'} <= set(post_schema)
+
+
 @pytest.mark.django_db
 def test_user_batch_resolves_common_creator_once(admin_user, rando, inv_rd, inventory):
     from ansible_base.rbac.service_api.serializers import ServiceRoleUserAssignmentBatchSerializer
