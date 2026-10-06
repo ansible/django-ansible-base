@@ -165,6 +165,9 @@ class SocialAuthMixin:
 
         return super().start()
 
+    # social-core types BaseAuth.name as a writeable str; this override is intentionally
+    # read-only (derived from the database instance) but never reassigned at runtime, so
+    # each concrete plugin class silences mypy's "Cannot override writeable attribute" [override].
     @property
     def name(self):
         return str(self.database_instance.slug)

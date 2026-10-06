@@ -19,7 +19,7 @@ from ansible_base.oauth2_provider.permissions import OAuth2ScopePermission
 from ansible_base.oauth2_provider.views import DABOAuth2UserViewsetMixin
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.api.permissions import AnsibleBaseUserPermissions
-from ansible_base.rbac.policies import visible_users
+from ansible_base.rbac.policies import visible_teams, visible_users
 from test_app import models, serializers
 
 logger = logging.getLogger(__name__)
@@ -58,6 +58,11 @@ class TeamViewSet(TestAppViewSet):
     prefetch_related = ('created_by', 'modified_by', 'organization')
     # for demonstration purposes, this uses a select_related for the resource relationship
     select_related = ('resource__content_type',)
+
+    def filter_queryset(self, qs):
+        qs = visible_teams(self.request.user, queryset=qs)
+        qs = self.apply_optimizations(qs)
+        return ModelViewSet.filter_queryset(self, qs)
 
 
 class UserViewSet(DABOAuth2UserViewsetMixin, TestAppViewSet):

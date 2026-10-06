@@ -9,7 +9,12 @@ from ansible_base.authentication.social_auth import SocialAuthMixin, SocialAuthV
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.github_enterprise_organization')
 
 
-class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, GithubEnterpriseOrganizationOAuth2, AbstractAuthenticatorPlugin):
+class AuthenticatorPlugin(  # type: ignore[override]
+    SocialAuthMixin,
+    SocialAuthValidateCallbackMixin,
+    GithubEnterpriseOrganizationOAuth2,
+    AbstractAuthenticatorPlugin,
+):
     configuration_class = GithubEnterpriseOrgConfiguration
     logger = logger
     type = "github-enterprise-org"

@@ -16,7 +16,7 @@ from ansible_base.lib.utils.auth import get_team_model
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.models import RoleDefinition, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry  # careful for circular imports
-from ansible_base.rbac.policies import check_content_obj_permission, visible_users
+from ansible_base.rbac.policies import check_content_obj_permission, visible_teams, visible_users
 from ansible_base.rbac.validators import check_locally_managed, validate_permissions_for_model
 
 from ..models import DABContentType, DABPermission
@@ -256,7 +256,7 @@ class RoleTeamAssignmentSerializer(BaseAssignmentSerializer):
         validators = []  # DRF can't auto-generate validators for partial UniqueConstraints with aliased fields
 
     def get_actor_queryset(self, requesting_user):
-        return permission_registry.team_model.access_qs(requesting_user)
+        return visible_teams(requesting_user)
 
 
 class RoleMetadataSerializer(serializers.Serializer):
