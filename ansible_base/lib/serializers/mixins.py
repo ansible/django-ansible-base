@@ -106,9 +106,27 @@ class CleanTextMixin:
                 json_fields.append(f.name)
         return text_fields, json_fields
 
+    @staticmethod
+    def _strings_equal_for_grandfather(submitted, stored):
+        """Whether submitted text should be treated as unchanged legacy content.
+
+        DRF ``CharField`` / ``TextField`` apply ``trim_whitespace`` before values
+        reach ``validate()``, while ORM-seeded rows may still contain leading or
+        trailing whitespace. Compare stripped forms so grandfathering matches
+        what the API would persist.
+        """
+        if submitted == stored:
+            return True
+        if isinstance(submitted, str) and isinstance(stored, str):
+            return submitted.strip() == stored.strip()
+        return False
+
     def _is_unchanged(self, field_name, value):
         """True when the instance already stores an identical value (grandfather rule)."""
-        return self.instance and getattr(self.instance, field_name, None) == value
+        if not self.instance:
+            return False
+        stored = getattr(self.instance, field_name, None)
+        return self._strings_equal_for_grandfather(value, stored)
 
     def _validate_text_fields(self, field_names, attrs, errors):
         """Validate CharField / TextField values (Tier 1 name fields + Tier 2 free-text).
@@ -223,7 +241,7 @@ class CleanTextMixin:
             stored_val = stored_data.get(key) if isinstance(stored_data, dict) else None
 
             if isinstance(val, str):
-                if val == stored_val:
+                if self._strings_equal_for_grandfather(val, stored_val):
                     continue
                 self._validate_json_string(val, qualified_key, errors, field_name)
             elif isinstance(val, dict):
@@ -240,7 +258,7 @@ class CleanTextMixin:
             item_key = f"{key_prefix}[{idx}]"
 
             if isinstance(item, str):
-                if item == stored_item:
+                if self._strings_equal_for_grandfather(item, stored_item):
                     continue
                 self._validate_json_string(item, item_key, errors, field_name)
             elif isinstance(item, dict):

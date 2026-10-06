@@ -184,6 +184,22 @@ class TestCleanTextMixinGrandfathering:
         serializer.is_valid()
         assert 'name' not in serializer.errors
 
+    @pytest.mark.django_db
+    def test_grandfather_ignores_leading_trailing_whitespace_mismatch(self):
+        """ORM-seeded trailing whitespace must grandfather after DRF trim_whitespace."""
+        org = Organization.objects.create(name='Org', description='Legacy <b>bold</b>\n')
+        data = {'name': 'Org', 'description': 'Legacy <b>bold</b>'}
+        serializer = OrgSerializer(org, data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    def test_grandfather_whitespace_trim_does_not_hide_real_changes(self):
+        org = Organization.objects.create(name='Org', description='Legacy <b>bold</b>\n')
+        data = {'name': 'Org', 'description': 'Legacy <b>bold</b> extra'}
+        serializer = OrgSerializer(org, data=data)
+        assert not serializer.is_valid()
+        assert 'description' in serializer.errors
+
 
 @pytest.mark.usefixtures('enable_validation')
 class TestCleanTextMixinExcludedFields:
