@@ -286,6 +286,33 @@ def test_bulk_assign_remote_object_fallback(admin_api_client, rando, foo_rd):
     assert assignment.object_id == '42'
 
 
+@pytest.mark.parametrize('action', ['bulk-assign', 'bulk-unassign'])
+@pytest.mark.parametrize(
+    ('assignment_viewset', 'actor_field', 'actor_fixture'),
+    [('serviceuserassignment', 'user_ansible_id', 'rando'), ('serviceteamassignment', 'team_ansible_id', 'team')],
+)
+@pytest.mark.parametrize(
+    ('role_fixture', 'object_id'),
+    [('inv_rd', 'not-an-integer'), ('foo_rd_uuid', 'not-a-uuid')],
+)
+def test_bulk_assignment_actions_reject_malformed_object_ids(
+    admin_api_client, request, action, assignment_viewset, actor_field, actor_fixture, role_fixture, object_id
+):
+    role_definition = request.getfixturevalue(role_fixture)
+    actor = request.getfixturevalue(actor_fixture)
+    response = admin_api_client.post(
+        get_relative_url(f'{assignment_viewset}-{action}'),
+        data={
+            'from_service': str(uuid4()),
+            'assignments': [{'role_definition': role_definition.name, actor_field: str(actor.resource.ansible_id), 'object_id': object_id}],
+        },
+        format='json',
+    )
+
+    assert response.status_code == 400, response.data
+    assert 'object_id' in response.data
+
+
 @pytest.mark.django_db
 def test_bulk_unassign_user_and_global_roles_are_idempotent(admin_api_client, rando, inv_rd, inventory):
     inv_rd.give_permission(rando, inventory)
