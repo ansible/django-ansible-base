@@ -105,25 +105,25 @@ def test_user_batch_resolves_common_creator_once(admin_user, rando, inv_rd, inve
 
 
 @pytest.mark.django_db
-def test_user_batch_rejects_common_metadata_repeated_per_item(rando, inv_rd, inventory):
+@pytest.mark.parametrize('metadata_field', ('from_service', 'created_by_ansible_id'))
+def test_user_batch_rejects_common_metadata_repeated_per_item(rando, inv_rd, inventory, metadata_field):
     from ansible_base.rbac.service_api.serializers import ServiceRoleUserAssignmentBatchSerializer
 
+    assignment = {
+        'role_definition': inv_rd.name,
+        'user_ansible_id': str(rando.resource.ansible_id),
+        'object_id': str(inventory.pk),
+        metadata_field: str(uuid4()),
+    }
     serializer = ServiceRoleUserAssignmentBatchSerializer(
         data={
             'from_service': str(uuid4()),
-            'assignments': [
-                {
-                    'role_definition': inv_rd.name,
-                    'user_ansible_id': str(rando.resource.ansible_id),
-                    'object_id': str(inventory.pk),
-                    'from_service': str(uuid4()),
-                }
-            ],
+            'assignments': [assignment],
         }
     )
 
     assert not serializer.is_valid()
-    assert 'from_service' in str(serializer.errors['assignments'])
+    assert metadata_field in str(serializer.errors['assignments'])
 
 
 def test_bulk_assign_is_idempotent(admin_api_client, rando, inv_rd, inventory, organization):
