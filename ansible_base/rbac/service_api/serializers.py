@@ -234,3 +234,13 @@ class ServiceRoleUserAssignmentBatchSerializer(BaseAssignmentBatchSerializer):
 
 class ServiceRoleTeamAssignmentBatchSerializer(BaseAssignmentBatchSerializer):
     assignment_serializer_class = ServiceRoleTeamAssignmentSerializer
+
+
+class BulkRoleAssignmentResponseSerializer(serializers.Serializer):
+    created = serializers.IntegerField()
+    existing = serializers.IntegerField()
+
+
+class BulkRoleUnassignmentResponseSerializer(serializers.Serializer):
+    deleted = serializers.IntegerField()
+    missing = serializers.IntegerField()

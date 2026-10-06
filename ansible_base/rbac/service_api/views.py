@@ -150,13 +150,16 @@ class BaseSerivceRoleAssignmentViewSet(
 
         model = role_definition.content_type.model_class()
         parent_reference = validated_data.get('parent_reference') or None
-        if issubclass(model, RemoteObject):
-            return model(content_type=role_definition.content_type, object_id=object_id, parent_reference=parent_reference)
-
         try:
-            return model.objects.get(pk=object_id)
-        except (model.DoesNotExist, ValueError, TypeError, DjangoValidationError):
-            return RemoteObject(content_type=role_definition.content_type, object_id=object_id, parent_reference=parent_reference)
+            if issubclass(model, RemoteObject):
+                return model(content_type=role_definition.content_type, object_id=object_id, parent_reference=parent_reference)
+
+            try:
+                return model.objects.get(pk=object_id)
+            except model.DoesNotExist:
+                return RemoteObject(content_type=role_definition.content_type, object_id=object_id, parent_reference=parent_reference)
+        except (ValueError, TypeError, DjangoValidationError) as exc:
+            raise serializers.ValidationError({'object_id': 'Invalid primary key for this object type.'}) from exc
 
     def _get_permission_triples(self, assignment_data, request_user, check_object_permission=True):
         triples = []
@@ -331,6 +334,10 @@ class ServiceRoleUserAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     def assign(self, request):
         return self._assign(request)
 
+    @extend_schema_if_available(
+        request=service_serializers.ServiceRoleUserAssignmentBatchSerializer,
+        responses={status.HTTP_200_OK: service_serializers.BulkRoleAssignmentResponseSerializer},
+    )
     @action(detail=False, methods=['post'], url_path='bulk-assign')
     def bulk_assign(self, request):
         return self._bulk_assign(request)
@@ -339,6 +346,10 @@ class ServiceRoleUserAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     def unassign(self, request):
         return self._unassign(request)
 
+    @extend_schema_if_available(
+        request=service_serializers.ServiceRoleUserAssignmentBatchSerializer,
+        responses={status.HTTP_200_OK: service_serializers.BulkRoleUnassignmentResponseSerializer},
+    )
     @action(detail=False, methods=['post'], url_path='bulk-unassign')
     def bulk_unassign(self, request):
         return self._bulk_unassign(request)
@@ -369,10 +380,18 @@ class ServiceRoleTeamAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     def unassign(self, request):
         return self._unassign(request)
 
+    @extend_schema_if_available(
+        request=service_serializers.ServiceRoleTeamAssignmentBatchSerializer,
+        responses={status.HTTP_200_OK: service_serializers.BulkRoleAssignmentResponseSerializer},
+    )
     @action(detail=False, methods=['post'], url_path='bulk-assign')
     def bulk_assign(self, request):
         return self._bulk_assign(request)
 
+    @extend_schema_if_available(
+        request=service_serializers.ServiceRoleTeamAssignmentBatchSerializer,
+        responses={status.HTTP_200_OK: service_serializers.BulkRoleUnassignmentResponseSerializer},
+    )
     @action(detail=False, methods=['post'], url_path='bulk-unassign')
     def bulk_unassign(self, request):
         return self._bulk_unassign(request)
