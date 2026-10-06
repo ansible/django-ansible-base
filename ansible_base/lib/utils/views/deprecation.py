@@ -1,9 +1,7 @@
 import functools
 
-from ansible_base.lib.utils.settings import get_setting
 
-
-def mark_deprecated(response, detail: str, link: str = None) -> None:
+def mark_deprecated(response, detail: str) -> None:
     """
     Add deprecation headers to an HTTP response.
 
@@ -11,30 +9,24 @@ def mark_deprecated(response, detail: str, link: str = None) -> None:
     accumulate and duplicate sentences are ignored.
 
     Headers set:
-        X-Deprecated: true
-        X-Deprecated-Detail: <detail sentence(s)>
-        Link: <url>; rel="deprecation"  (first link wins)
+        X-API-Deprecated: true
+        X-API-Deprecated-Detail: <detail sentence(s)>
     """
     if not detail.endswith('.'):
         detail = detail + '.'
 
-    response['X-Deprecated'] = 'true'
+    response['X-API-Deprecated'] = 'true'
 
-    existing_detail = response.get('X-Deprecated-Detail', '')
+    existing_detail = response.get('X-API-Deprecated-Detail', '')
     if existing_detail:
         if detail in existing_detail:
             return
-        response['X-Deprecated-Detail'] = f'{existing_detail} {detail}'
+        response['X-API-Deprecated-Detail'] = f'{existing_detail} {detail}'
     else:
-        response['X-Deprecated-Detail'] = detail
-
-    if 'Link' not in response:
-        resolved_link = link or get_setting('ANSIBLE_BASE_DEPRECATION_LINK', '')
-        if resolved_link:
-            response['Link'] = f'<{resolved_link}>; rel="deprecation"'
+        response['X-API-Deprecated-Detail'] = detail
 
 
-def deprecated(detail: str, link: str = None):
+def deprecated(detail: str):
     """
     Decorator that marks a view method or class as deprecated.
 
@@ -48,8 +40,8 @@ def deprecated(detail: str, link: str = None):
 
     def decorator(target):
         if isinstance(target, type):
-            return _apply_to_class(target, detail, link)
-        return _apply_to_method(target, detail, link)
+            return _apply_to_class(target, detail)
+        return _apply_to_method(target, detail)
 
     return decorator
 
@@ -57,8 +49,8 @@ def deprecated(detail: str, link: str = None):
 _DRF_ACTION_METHODS = ('list', 'create', 'retrieve', 'update', 'partial_update', 'destroy')
 
 
-def _apply_to_class(cls, detail, link):
-    cls.deprecation = {"detail": detail, "link": link}
+def _apply_to_class(cls, detail):
+    cls.deprecation = {"detail": detail}
 
     from ansible_base.lib.utils.schema import extend_schema_if_available
 
@@ -71,16 +63,16 @@ def _apply_to_class(cls, detail, link):
     return cls
 
 
-def _apply_to_method(method, detail, link):
+def _apply_to_method(method, detail):
     from ansible_base.lib.utils.schema import extend_schema_if_available
 
     @functools.wraps(method)
     def wrapper(self, request, *args, **kwargs):
         response = method(self, request, *args, **kwargs)
-        mark_deprecated(response, detail, link)
+        mark_deprecated(response, detail)
         return response
 
-    wrapper.deprecation = {"detail": detail, "link": link}
+    wrapper.deprecation = {"detail": detail}
 
     schema_decorator = extend_schema_if_available(deprecated=True)
     wrapper = schema_decorator(wrapper)

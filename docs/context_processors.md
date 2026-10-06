@@ -45,7 +45,6 @@ The context processor returns a dictionary with the following keys:
 - `api_version`: The API version (from `ANSIBLE_BASE_PRODUCT_VERSION_FUNCTION`)
 - `deprecated`: Boolean indicating if the current view is deprecated
 - `deprecated_message`: The deprecation detail message (empty string if not deprecated)
-- `deprecated_link`: The deprecation documentation link (only present if a link is set)
 
 ### Example in Templates
 
@@ -55,9 +54,6 @@ In Django templates, you can use these variables:
 {% if deprecated %}
 <div class="alert alert-warning">
     <strong>Deprecated:</strong> {{ deprecated_message }}
-    {% if deprecated_link %}
-    <a href="{{ deprecated_link }}">Learn more</a>
-    {% endif %}
 </div>
 {% endif %}
 
@@ -70,7 +66,7 @@ In Django templates, you can use these variables:
 
 The context processor automatically detects deprecation using the same mechanism as the deprecation headers:
 
-1. **New style**: Checks for `view.deprecation` dict with `detail` and optional `link`
+1. **New style**: Checks for `view.deprecation` dict with `detail`
 2. **Legacy style**: Falls back to `view.deprecated = True` boolean
 
 This matches the behavior in `AnsibleBaseView.finalize_response()`.

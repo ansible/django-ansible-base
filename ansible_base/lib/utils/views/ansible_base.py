@@ -68,13 +68,11 @@ class AnsibleBaseView(APIView):
 
             if deprecation:
                 detail = deprecation['detail']
-                link = deprecation.get('link')
             else:
                 # Legacy deprecated = True (no detail provided)
                 detail = _GENERIC_DEPRECATION_MESSAGE
-                link = None
 
-            mark_deprecated(response, detail, link)
+            mark_deprecated(response, detail)
 
         if getattr(self, 'deprecated', False):
             response['Warning'] = _('This resource has been deprecated and will be removed in a future release.')

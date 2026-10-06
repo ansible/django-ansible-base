@@ -457,11 +457,11 @@ def add_x_ai_description(result: dict, generator: Any, request: Any, public: Opt
 
 # Deprecation response headers to inject into deprecated operations
 DEPRECATION_RESPONSE_HEADERS = {
-    "X-Deprecated": {
+    "X-API-Deprecated": {
         "description": "Boolean signal that the response involves deprecated functionality.",
         "schema": {"type": "string", "enum": ["true"]},
     },
-    "X-Deprecated-Detail": {
+    "X-API-Deprecated-Detail": {
         "description": "Human-readable description of what is deprecated and migration guidance.",
         "schema": {"type": "string"},
     },
@@ -475,7 +475,7 @@ def postprocess_inject_deprecation_headers(
     public,  # NOSONAR
 ):
     """
-    Add X-Deprecated and X-Deprecated-Detail response headers to deprecated operations.
+    Add X-API-Deprecated and X-API-Deprecated-Detail response headers to deprecated operations.
 
     Automatically injects deprecation response headers into the OpenAPI schema for any
     operation marked with deprecated: true. This ensures API consumers and code generators

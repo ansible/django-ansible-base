@@ -21,7 +21,6 @@ class TestContextProcessors:
         view = Mock()
         view.deprecation = {
             'detail': 'This endpoint is deprecated.',
-            'link': 'https://example.com/docs'
         }
         view.deprecated = False
 
@@ -32,25 +31,6 @@ class TestContextProcessors:
 
         assert result['deprecated'] is True
         assert result['deprecated_message'] == 'This endpoint is deprecated.'
-        assert result['deprecated_link'] == 'https://example.com/docs'
-
-    def test_version_with_deprecated_view_dict_no_link(self):
-        """Test context processor with deprecation dict but no link."""
-        view = Mock()
-        view.deprecation = {
-            'detail': 'This endpoint is deprecated.',
-            'link': None
-        }
-        view.deprecated = False
-
-        request = Mock()
-        request.parser_context = {'view': view}
-
-        result = version(request)
-
-        assert result['deprecated'] is True
-        assert result['deprecated_message'] == 'This endpoint is deprecated.'
-        assert 'deprecated_link' not in result
 
     def test_version_with_legacy_deprecated_boolean(self):
         """Test context processor with legacy deprecated boolean."""

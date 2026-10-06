@@ -15,7 +15,6 @@ def _check_deprecation(view):
     if getattr(view, 'deprecated', False):
         return {
             'detail': 'This resource has been deprecated and will be removed in a future release.',
-            'link': None
         }
 
     return None
@@ -46,7 +45,6 @@ def version(request):
     deprecation = _check_deprecation(view)
     deprecated = deprecation is not None
     deprecated_message = deprecation['detail'] if deprecation else ''
-    deprecated_link = deprecation.get('link') if deprecation else None
 
     # Get product version
     api_version = 'Unknown'
@@ -57,13 +55,8 @@ def version(request):
     except Exception:
         pass
 
-    result = {
+    return {
         'api_version': api_version,
         'deprecated': deprecated,
         'deprecated_message': deprecated_message,
     }
-
-    if deprecated_link:
-        result['deprecated_link'] = deprecated_link
-
-    return result
