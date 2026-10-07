@@ -72,6 +72,16 @@ class OrgSerializerWithStarSourceField(CleanTextMixin, serializers.ModelSerializ
         fields = ['name', 'description', 'related_fields']
 
 
+class OrgSerializerDescriptionBoundElsewhere(CleanTextMixin, serializers.ModelSerializer):
+    """Same-named serializer field sources a different model attribute."""
+
+    description = serializers.CharField(source='extra_field', required=False, allow_blank=True)
+
+    class Meta:
+        model = Organization
+        fields = ['name', 'description']
+
+
 class OrgSerializerWithExclusions(CleanTextMixin, serializers.ModelSerializer):
     excluded_fields = frozenset({'description'})
 
@@ -288,6 +298,33 @@ class TestCleanTextMixinGrandfathering:
         serializer = OrgSerializerWithStarSourceField(org, data=data, partial=True)
         assert not serializer.is_valid()
         assert 'description' in serializer.errors
+
+    @pytest.mark.django_db
+    def test_renamed_description_input_rejects_changed_html_on_update(self):
+        org = Organization.objects.create(name='Org', description='Legacy <b>bold</b>\n')
+        data = {'description_input': 'Legacy <b>bold</b> changed'}
+        serializer = OrgSerializerDescriptionRenamed(org, data=data, partial=True)
+        assert not serializer.is_valid()
+        assert 'description_input' in serializer.errors
+
+    @pytest.mark.django_db
+    def test_model_description_validated_when_serializer_field_sources_elsewhere(self):
+        org = Organization.objects.create(name='Org', description='safe')
+        data = {'description': '<script>evil</script>'}
+        serializer = OrgSerializerDescriptionBoundElsewhere(org, data=data, partial=True)
+        assert not serializer.is_valid()
+        assert 'description' in serializer.errors
+
+    def test_strings_equal_for_grandfather_trim_skips_non_string_types(self):
+        assert not CleanTextMixin._strings_equal_for_grandfather('text', 1, trim_whitespace=True)
+        assert not CleanTextMixin._strings_equal_for_grandfather(1, 'text', trim_whitespace=True)
+
+    def test_field_lookup_helpers_for_misbound_same_named_field(self):
+        serializer = OrgSerializerDescriptionBoundElsewhere()
+        assert serializer._serializer_field_for_model_attr('description') is None
+        assert serializer._serializer_field_for_model_attr('extra_field') is serializer.fields['description']
+        assert serializer._validation_error_key_for_model_attr('description') == 'description'
+        assert not serializer._serializer_field_trims_whitespace('description')
 
 
 @pytest.mark.usefixtures('enable_validation')
