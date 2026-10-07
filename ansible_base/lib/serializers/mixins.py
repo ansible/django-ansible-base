@@ -108,22 +108,32 @@ class CleanTextMixin:
 
     def _serializer_field_for_model_attr(self, field_name):
         """Return the serializer field bound to a model attribute, if any."""
-        field = self.fields.get(field_name)
-        if field is not None:
-            return field
         for candidate in self.fields.values():
             if getattr(candidate, 'source', None) == field_name:
                 return candidate
+        field = self.fields.get(field_name)
+        if field is not None and getattr(field, 'source', field_name) == field_name:
+            return field
         return None
 
     def _attrs_value_for_model_attr(self, field_name, attrs):
         """Submitted value for a model attribute, including renamed serializer fields."""
-        if field_name in attrs:
-            return attrs[field_name]
         for ser_name, field in self.fields.items():
             if getattr(field, 'source', None) == field_name and ser_name in attrs:
                 return attrs[ser_name]
+        if field_name in attrs:
+            # DRF keys attrs by serializer field name; do not require source == field_name
+            # here or PATCH bodies like {"description": "..."} are skipped when a same-named
+            # field binds to a different attribute (for example source="*").
+            return attrs[field_name]
         return None
+
+    def _validation_error_key_for_model_attr(self, field_name):
+        """DRF error dict key for a model attribute (serializer field name when renamed)."""
+        field = self._serializer_field_for_model_attr(field_name)
+        if field is not None:
+            return field.field_name
+        return field_name
 
     def _serializer_field_trims_whitespace(self, field_name):
         """Whether DRF trims this field's input before ``validate()`` runs."""
@@ -183,18 +193,19 @@ class CleanTextMixin:
 
     def _run_text_validator(self, field_name, value, errors):
         """Apply the appropriate validator (name vs free-text) and collect errors."""
+        error_key = self._validation_error_key_for_model_attr(field_name)
         try:
             if field_name in self.name_fields:
                 validate_resource_name(value)
             else:
                 validate_free_text(value)
         except serializers.ValidationError as exc:
-            errors[field_name] = exc.detail
+            errors[error_key] = exc.detail
             self._log_validation_failure(field_name, exc.detail)
         except Exception:
             logger.exception("Unexpected error validating field '%s'", field_name)
             if get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False):
-                errors[field_name] = [_INCOMPLETE_VALIDATION_MSG]
+                errors[error_key] = [_INCOMPLETE_VALIDATION_MSG]
 
     _MAX_JSON_DEPTH = 10
 

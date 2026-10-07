@@ -46,6 +46,29 @@ class OrgSerializerDescriptionRenamedNoTrim(CleanTextMixin, serializers.ModelSer
         fields = ['name', 'description_input']
 
 
+class OrgSerializerDescriptionSourceConflict(CleanTextMixin, serializers.ModelSerializer):
+    """Same-named field sources elsewhere; model description comes from description_input."""
+
+    description = serializers.CharField(
+        source='extra_field', trim_whitespace=True, required=False, allow_blank=True,
+    )
+    description_input = serializers.CharField(source='description', trim_whitespace=False)
+
+    class Meta:
+        model = Organization
+        fields = ['name', 'description', 'description_input']
+
+
+class OrgSerializerWithStarSourceField(CleanTextMixin, serializers.ModelSerializer):
+    """Mirrors NamespaceSerializer's related_fields source='*' alongside description."""
+
+    related_fields = serializers.JSONField(source='*', required=False)
+
+    class Meta:
+        model = Organization
+        fields = ['name', 'description', 'related_fields']
+
+
 class OrgSerializerWithExclusions(CleanTextMixin, serializers.ModelSerializer):
     excluded_fields = frozenset({'description'})
 
@@ -244,6 +267,22 @@ class TestCleanTextMixinGrandfathering:
         org = Organization.objects.create(name='Org', description='$(dangerous)')
         data = {'name': 'Org', 'description_input': '$(dangerous) '}
         serializer = OrgSerializerDescriptionRenamedNoTrim(org, data=data)
+        assert not serializer.is_valid()
+        assert 'description_input' in serializer.errors
+
+    @pytest.mark.django_db
+    def test_source_binding_wins_over_same_named_serializer_field(self):
+        org = Organization.objects.create(name='Org', description='$(dangerous)')
+        data = {'name': 'Org', 'description_input': '$(dangerous) '}
+        serializer = OrgSerializerDescriptionSourceConflict(org, data=data)
+        assert not serializer.is_valid()
+        assert 'description_input' in serializer.errors
+
+    @pytest.mark.django_db
+    def test_changed_description_rejected_with_star_source_field_present(self):
+        org = Organization.objects.create(name='Org', description='Legacy <b>bold</b>\n')
+        data = {'description': 'Legacy <b>bold</b> changed'}
+        serializer = OrgSerializerWithStarSourceField(org, data=data, partial=True)
         assert not serializer.is_valid()
         assert 'description' in serializer.errors
 
