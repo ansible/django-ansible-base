@@ -89,34 +89,41 @@ _HANDLER_URI_RE = re.compile(
 _INJECTION_RE = re.compile(r'[$]\([^)]+\)|[$]\{[^}]+\}' + r'|\{\{[^}]+\}\}|\{%[^%]+%\}')
 
 
-def _injection_pair_from_closer(text: str, opener: str, closer: str, forbidden_in_inner: str) -> bool:
+def _injection_pair_forward(text: str, opener: str, closer: str, forbidden_in_inner: str) -> bool:
     """Match opener/closer pairs with the same inner rules as _INJECTION_RE, without regex backtracking.
 
-    Scans from each ``closer`` occurrence and walks backward for a matching ``opener``.
-    Inner text must be non-empty and must not contain ``forbidden_in_inner`` (mirrors [^X]+
-    in the legacy pattern). If ``closer`` never appears (e.g. unclosed ``{{`` payloads),
-    returns immediately — O(n) on the substring check, no quadratic regex work.
+    Single forward pass from each ``opener``; inner text must be non-empty and must not
+    contain ``forbidden_in_inner`` (mirrors [^X]+ in the legacy pattern). Returns early
+    when either delimiter is absent (e.g. unclosed ``{{`` or ``)`` without ``$(``).
     """
-    if closer not in text:
+    if closer not in text or opener not in text:
         return False
     n = len(text)
-    close_len = len(closer)
     open_len = len(opener)
-    j = 0
-    while j <= n - close_len:
-        if text[j : j + close_len] != closer:
-            j += 1
+    close_len = len(closer)
+    i = 0
+    while i <= n - open_len:
+        if text[i : i + open_len] != opener:
+            i += 1
             continue
-        i = j - 1
-        while i >= 0:
-            if i <= j - open_len and text[i : i + open_len] == opener:
-                inner_start = i + open_len
-                if inner_start < j:
-                    inner = text[inner_start:j]
-                    if inner and forbidden_in_inner not in inner:
-                        return True
-            i -= 1
-        j += close_len
+        inner_start = i + open_len
+        if inner_start >= n:
+            return False
+        if close_len == 1:
+            close_ch = closer[0]
+            j = inner_start
+            while j < n and text[j] != close_ch:
+                j += 1
+            if j < n and j > inner_start and forbidden_in_inner not in text[inner_start:j]:
+                return True
+        else:
+            j = inner_start
+            while j < n and text[j] != closer[0]:
+                j += 1
+            if j + close_len <= n and text[j : j + close_len] == closer and j > inner_start:
+                if forbidden_in_inner not in text[inner_start:j]:
+                    return True
+        i += open_len
     return False
 
 
@@ -126,13 +133,13 @@ def _contains_injection_pattern(text: str) -> bool:
     Implements _INJECTION_RE semantics with linear scans. The compiled _INJECTION_RE is
     retained for client-side pattern hints only.
     """
-    if _injection_pair_from_closer(text, '$(', ')', ')'):
+    if _injection_pair_forward(text, '$(', ')', ')'):
         return True
-    if _injection_pair_from_closer(text, '${', '}', '}'):
+    if _injection_pair_forward(text, '${', '}', '}'):
         return True
-    if _injection_pair_from_closer(text, '{{', '}}', '}'):
+    if _injection_pair_forward(text, '{{', '}}', '}'):
         return True
-    if _injection_pair_from_closer(text, '{%', '%}', '%'):
+    if _injection_pair_forward(text, '{%', '%}', '%'):
         return True
     return False
 

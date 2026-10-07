@@ -975,6 +975,20 @@ class TestValidateFreeText:
         assert large < 2.0, f"80KB unclosed openers took {large:.2f}s"
         assert large < small * 30, f"scan time grew disproportionately (20KB: {small:.4f}s, 80KB: {large:.4f}s)"
 
+    def test_injection_scan_scales_linearly_on_unmatched_closers(self):
+        """Many closing delimiters without an opener must stay cheap."""
+
+        def run(size_kb):
+            payload = ")" * (size_kb * 1024)
+            start = time.perf_counter()
+            validate_free_text(payload)
+            return time.perf_counter() - start
+
+        small = run(20)
+        large = run(80)
+        assert large < 2.0, f"80KB unmatched ')' took {large:.2f}s"
+        assert large < small * 30, f"scan time grew disproportionately (20KB: {small:.4f}s, 80KB: {large:.4f}s)"
+
 
 class TestValidateResourceName:
     """Test the validate_resource_name function."""
