@@ -50,7 +50,10 @@ class OrgSerializerDescriptionSourceConflict(CleanTextMixin, serializers.ModelSe
     """Same-named field sources elsewhere; model description comes from description_input."""
 
     description = serializers.CharField(
-        source='extra_field', trim_whitespace=True, required=False, allow_blank=True,
+        source='extra_field',
+        trim_whitespace=True,
+        required=False,
+        allow_blank=True,
     )
     description_input = serializers.CharField(source='description', trim_whitespace=False)
 
