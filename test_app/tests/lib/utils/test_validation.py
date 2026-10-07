@@ -989,6 +989,16 @@ class TestValidateFreeText:
         assert large < 2.0, f"80KB unmatched ')' took {large:.2f}s"
         assert large < small * 30, f"scan time grew disproportionately (20KB: {small:.4f}s, 80KB: {large:.4f}s)"
 
+    def test_injection_scan_scales_linearly_on_invalid_first_closer(self):
+        """Many {{ before a lone } must not rescan the suffix for every opener (AAP-95828)."""
+        payload = "{{" * 8190 + "}x}}"
+
+        start = time.perf_counter()
+        validate_free_text(payload)
+        elapsed = time.perf_counter() - start
+
+        assert elapsed < 2.0, f"invalid-first-closer payload took {elapsed:.2f}s"
+
 
 class TestValidateResourceName:
     """Test the validate_resource_name function."""
