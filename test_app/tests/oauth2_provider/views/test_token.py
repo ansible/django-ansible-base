@@ -1,16 +1,16 @@
 import base64
 import hashlib
 import json
+import logging
 import time
 
 import pytest
-from django.utils.http import urlencode
-
 from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.lib.utils.hashing import hash_string
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.oauth2_provider.models import OAuth2AccessToken, OAuth2RefreshToken
+from django.utils.http import urlencode
 
 
 @pytest.mark.django_db
@@ -104,12 +104,13 @@ def test_oauth2_existing_token_enabled_for_external_accounts(
         pytest.param('admin_api_client', 'admin_user', id='admin'),
     ],
 )
-def test_oauth2_pat_create_and_list(request, client_fixture, user_fixture):
+def test_oauth2_pat_create_and_list(request, client_fixture, user_fixture, settings):
     """
     A user can create and list personal access tokens.
     """
     client = request.getfixturevalue(client_fixture)
     user = request.getfixturevalue(user_fixture)
+    settings.disable_local_pat_creation = False
     url = get_relative_url('token-list')
     response = client.post(url, data={'scope': 'read'})
     assert response.status_code == 201
@@ -119,6 +120,27 @@ def test_oauth2_pat_create_and_list(request, client_fixture, user_fixture):
     get_response = client.get(url)
     assert get_response.status_code == 200
     assert len(get_response.data['results']) == 1
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ('disable_local_pat_creation', 'status'),
+    [
+        pytest.param(False, 201, id='enabled'),
+        pytest.param(True, 400, id='disabled'),
+    ],
+)
+def test_oauth2_pat_creation_respects_disable_local_pat_creation_setting(user_api_client, user, settings, caplog, disable_local_pat_creation, status):
+    settings.disable_local_pat_creation = disable_local_pat_creation
+
+    with caplog.at_level(logging.INFO, logger='ansible_base.auth_audit'):
+        response = user_api_client.post(get_relative_url('token-list'), {'scope': 'read'})
+
+    assert response.status_code == status
+    assert OAuth2AccessToken.objects.count() == int(not disable_local_pat_creation)
+    if disable_local_pat_creation:
+        assert 'Local pat creation is disabled.' in response.data['non_field_errors']
+        assert f"User {user} attempted to create a PAT but they are disabled" in caplog.text
 
 
 @pytest.mark.django_db
