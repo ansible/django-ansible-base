@@ -5,8 +5,9 @@ These tests verify that bulk removal with forced small batch sizes works correct
 ensuring the chunking logic handles splits properly without losing data or correctness.
 """
 
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 import ansible_base.rbac.pipeline as rbac_pipeline
 from ansible_base.rbac import permission_registry
