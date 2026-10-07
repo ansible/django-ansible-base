@@ -1,11 +1,22 @@
+import uuid
+
 import pytest
 from django.contrib.auth import get_user_model
+from django.contrib.contenttypes.models import ContentType
 from django.db import connection
 from django.test.utils import override_settings
 
 from ansible_base.rbac import permission_registry
-from ansible_base.rbac.claims import get_claims_hash, get_user_claims, get_user_claims_hashable_form, save_user_claims
-from ansible_base.rbac.models import RoleDefinition
+from ansible_base.rbac.claims import (
+    _recover_resource_by_natural_key,
+    get_claims_hash,
+    get_user_claims,
+    get_user_claims_hashable_form,
+    get_user_object_roles,
+    save_user_claims,
+)
+from ansible_base.rbac.models import DABContentType, RoleDefinition, RoleUserAssignment
+from ansible_base.resource_registry.models import Resource
 from test_app.models import Inventory, Organization, Team
 
 
@@ -235,6 +246,55 @@ class ClaimsScenario:
             hashable_claims['object_roles']['Team Member'] = sorted(team_ansible_ids)
 
         return hashable_claims
+
+
+@pytest.mark.django_db
+@override_settings(ANSIBLE_BASE_JWT_MANAGED_ROLES=['Namespace Owner'])
+def test_user_object_roles_does_not_match_content_type_ids():
+    user = get_user_model().objects.create(username='content-type-collision-user')
+    wrong_resource_type = ContentType.objects.create(app_label='wrong', model=f'wrong_{uuid.uuid4().hex}')
+    while DABContentType.objects.filter(pk=wrong_resource_type.pk).exists():
+        wrong_resource_type = ContentType.objects.create(app_label='wrong', model=f'wrong_{uuid.uuid4().hex}')
+
+    dab_content_type = DABContentType.objects.create(
+        id=wrong_resource_type.pk,
+        service='aap',
+        app_label='test_app',
+        model=f'organization_alias_{uuid.uuid4().hex}',
+        pk_field_type='integer',
+    )
+    role_definition = RoleDefinition.objects.create(name='Namespace Owner', content_type=dab_content_type)
+    assignment = RoleUserAssignment.objects.create(
+        user=user,
+        role_definition=role_definition,
+        content_type=dab_content_type,
+        object_id='17',
+        object_role=None,
+    )
+    wrong_resource = Resource.objects.create(content_type=wrong_resource_type, object_id='17')
+
+    result = get_user_object_roles(user).get(pk=assignment.pk)
+
+    assert result.aid is None
+    assert result.resource_name is None
+    assert result.aid != wrong_resource.ansible_id
+
+
+@pytest.mark.django_db
+@override_settings(ANSIBLE_BASE_JWT_MANAGED_ROLES=['Namespace Owner'])
+def test_user_claims_skip_assignments_without_resources():
+    user = get_user_model().objects.create(username='missing-resource-user')
+    dab_content_type = DABContentType.objects.get_for_model(Organization)
+    role_definition = RoleDefinition.objects.create(name='Namespace Owner', content_type=dab_content_type)
+    RoleUserAssignment.objects.create(
+        user=user,
+        role_definition=role_definition,
+        content_type=dab_content_type,
+        object_id='missing-object',
+        object_role=None,
+    )
+
+    assert get_user_claims(user)['object_roles'] == {}
 
 
 @pytest.mark.django_db
@@ -492,3 +552,163 @@ class TestUserClaims:
 
         # Assert the fix worked - even better performance than baseline!
         assert total_queries == 4, f"Claims generation used {total_queries} queries, expected 4 (N+1 problem fixed!)"
+
+    def test_save_claims_with_mismatched_ansible_id_team(self, shared_test_data):
+        """Regression test for AAP-95186: save_user_claims must not skip role
+        assignments when the claims contain an ansible_id that doesn't match the
+        controller's resource registry but the team already exists by natural key.
+
+        Simulates the 2.4→2.6 upgrade scenario where gateway and controller have
+        different ansible_ids for the same team/org.
+        """
+        user = get_user_model().objects.create(username='test_user_mismatched_ansible_id')
+        team = shared_test_data.teams[0]
+        org = team.organization
+
+        objects = {
+            'organization': [{'ansible_id': str(uuid.uuid4()), 'name': org.name}],
+            'team': [{'ansible_id': str(uuid.uuid4()), 'name': team.name, 'org': 0}],
+        }
+        object_roles = {
+            'Team Member': {'content_type': 'team', 'objects': [0]},
+        }
+
+        save_user_claims(user, objects=objects, object_roles=object_roles, global_roles=[])
+
+        assignments = RoleUserAssignment.objects.filter(user=user, role_definition=shared_test_data.roles['team_member'])
+        assert assignments.exists(), "Team role assignment was skipped despite team existing by natural key"
+        assert str(assignments.first().object_id) == str(team.pk)
+
+    def test_save_claims_with_mismatched_ansible_id_org(self, shared_test_data):
+        """Regression test for AAP-95186: same as above but for organization."""
+        user = get_user_model().objects.create(username='test_user_mismatched_ansible_id_org')
+        org = shared_test_data.orgs[0]
+
+        objects = {
+            'organization': [{'ansible_id': str(uuid.uuid4()), 'name': org.name}],
+            'team': [],
+        }
+        object_roles = {
+            'Organization Admin': {'content_type': 'organization', 'objects': [0]},
+        }
+
+        save_user_claims(user, objects=objects, object_roles=object_roles, global_roles=[])
+
+        assignments = RoleUserAssignment.objects.filter(user=user, role_definition=shared_test_data.roles['org_admin'])
+        assert assignments.exists(), "Org role assignment was skipped despite org existing by natural key"
+        assert str(assignments.first().object_id) == str(org.pk)
+
+    def test_save_claims_missing_resource_entry_team(self, shared_test_data):
+        """AAP-95186: if a team exists but its Resource registry entry was
+        deleted, the natural-key fallback should recreate the entry."""
+        from django.contrib.contenttypes.models import ContentType as CT
+
+        from ansible_base.resource_registry.models import Resource
+
+        user = get_user_model().objects.create(username='test_user_missing_resource_team')
+        team = shared_test_data.teams[1]
+        org = team.organization
+
+        team_ct = CT.objects.get_for_model(team)
+        Resource.objects.filter(content_type=team_ct, object_id=team.pk).delete()
+
+        objects = {
+            'organization': [{'ansible_id': str(uuid.uuid4()), 'name': org.name}],
+            'team': [{'ansible_id': str(uuid.uuid4()), 'name': team.name, 'org': 0}],
+        }
+        object_roles = {
+            'Team Member': {'content_type': 'team', 'objects': [0]},
+        }
+
+        save_user_claims(user, objects=objects, object_roles=object_roles, global_roles=[])
+
+        assert Resource.objects.filter(content_type=team_ct, object_id=team.pk).exists(), "Resource entry should have been recreated for existing team"
+        assignments = RoleUserAssignment.objects.filter(user=user, role_definition=shared_test_data.roles['team_member'])
+        assert assignments.exists()
+        assert str(assignments.first().object_id) == str(team.pk)
+
+    def test_save_claims_missing_resource_entry_org(self, shared_test_data):
+        """AAP-95186: if an org exists but its Resource registry entry was
+        deleted, the natural-key fallback should recreate the entry."""
+        from django.contrib.contenttypes.models import ContentType as CT
+
+        from ansible_base.resource_registry.models import Resource
+
+        user = get_user_model().objects.create(username='test_user_missing_resource_org')
+        org = shared_test_data.orgs[1]
+
+        org_ct = CT.objects.get_for_model(org)
+        Resource.objects.filter(content_type=org_ct, object_id=org.pk).delete()
+
+        objects = {
+            'organization': [{'ansible_id': str(uuid.uuid4()), 'name': org.name}],
+            'team': [],
+        }
+        object_roles = {
+            'Organization Admin': {'content_type': 'organization', 'objects': [0]},
+        }
+
+        save_user_claims(user, objects=objects, object_roles=object_roles, global_roles=[])
+
+        assert Resource.objects.filter(content_type=org_ct, object_id=org.pk).exists(), "Resource entry should have been recreated for existing org"
+        assignments = RoleUserAssignment.objects.filter(user=user, role_definition=shared_test_data.roles['org_admin'])
+        assert assignments.exists()
+        assert str(assignments.first().object_id) == str(org.pk)
+
+    def test_recover_resource_no_matching_object(self):
+        """_recover_resource_by_natural_key returns (None, None) when no object
+        matches the natural key, so the caller can re-raise the IntegrityError."""
+        from ansible_base.resource_registry.models import Resource
+
+        resource, obj = _recover_resource_by_natural_key(Resource, Organization, 'nonexistent-org-name', str(uuid.uuid4()), 'organization')
+        assert resource is None
+        assert obj is None
+
+    def test_recover_resource_matching_ansible_id(self, shared_test_data):
+        """_recover_resource_by_natural_key logs info (no update) when the
+        Resource already has the correct ansible_id."""
+        from django.contrib.contenttypes.models import ContentType as CT
+
+        from ansible_base.resource_registry.models import Resource
+
+        org = shared_test_data.orgs[0]
+        org_ct = CT.objects.get_for_model(org)
+        existing_resource = Resource.objects.get(content_type=org_ct, object_id=org.pk)
+        original_ansible_id = str(existing_resource.ansible_id)
+
+        resource, obj = _recover_resource_by_natural_key(Resource, Organization, org.name, original_ansible_id, 'organization')
+        assert resource.pk == existing_resource.pk
+        assert obj.pk == org.pk
+        existing_resource.refresh_from_db()
+        assert str(existing_resource.ansible_id) == original_ansible_id
+
+    def test_save_claims_reraise_when_no_natural_key_match(self, shared_test_data):
+        """When create_resource() raises IntegrityError but the natural-key
+        lookup finds nothing, the error must propagate to save_user_claims
+        which logs a warning and skips the assignment."""
+        from unittest.mock import patch
+
+        real_recover = _recover_resource_by_natural_key
+
+        def mock_recover(resource_cls, model_cls, name, object_ansible_id, resource_type_name, extra_model_kwargs=None):
+            if resource_type_name == 'shared.team':
+                return None, None
+            return real_recover(resource_cls, model_cls, name, object_ansible_id, resource_type_name, extra_model_kwargs=extra_model_kwargs)
+
+        user = get_user_model().objects.create(username='test_user_reraise')
+        team = shared_test_data.teams[0]
+        org = team.organization
+
+        objects = {
+            'organization': [{'ansible_id': str(uuid.uuid4()), 'name': org.name}],
+            'team': [{'ansible_id': str(uuid.uuid4()), 'name': team.name, 'org': 0}],
+        }
+        object_roles = {
+            'Team Member': {'content_type': 'team', 'objects': [0]},
+        }
+
+        with patch('ansible_base.rbac.claims._recover_resource_by_natural_key', side_effect=mock_recover):
+            save_user_claims(user, objects=objects, object_roles=object_roles, global_roles=[])
+
+        assignments = RoleUserAssignment.objects.filter(user=user, role_definition=shared_test_data.roles['team_member'])
+        assert not assignments.exists(), "Role assignment should have been skipped when recovery returns None"

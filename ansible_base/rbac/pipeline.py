@@ -4,6 +4,7 @@ import logging
 from collections.abc import Iterable, Sequence
 from typing import NamedTuple, Union, cast
 
+from django.apps import apps as django_apps
 from django.conf import settings
 from django.db import connection, models
 from django.db.models import Q
@@ -21,6 +22,7 @@ from ansible_base.rbac.models.content_type import DABContentType
 from ansible_base.rbac.models.role import AssignmentBase, ObjectRole, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.remote import RemoteObject
+from ansible_base.rbac.resource_queries import resolve_resource_ids
 from ansible_base.rbac.validators import validate_assignment, validate_team_assignment_enabled
 
 logger = logging.getLogger(__name__)
@@ -43,15 +45,18 @@ def _resolve_content_object(obj: models.Model | RemoteObject) -> tuple[DABConten
     """Resolve content_type, object_id, and parent_reference from a content object.
 
     For RemoteObject: uses its own attributes directly.
-    For local Django models: uses _meta (no extra query), empty parent_reference.
+    For local Django models: resolves parent_reference from the registered parent FK.
     """
     if isinstance(obj, RemoteObject):
         return cast(DABContentType, obj.content_type), str(obj.object_id), str(obj.parent_reference) if obj.parent_reference else ''
-    return (
-        cast(DABContentType, DABContentType.objects.get_for_model(obj)),
-        str(obj._meta.pk.get_db_prep_value(obj.pk, connection)),
-        '',
-    )
+    ct = cast(DABContentType, DABContentType.objects.get_for_model(obj))
+    object_id = str(obj._meta.pk.get_db_prep_value(obj.pk, connection))
+    parent_field_name = permission_registry.get_parent_fd_name(type(obj))
+    if parent_field_name:
+        parent_id = getattr(obj, f'{parent_field_name}_id', None)
+        if parent_id is not None:
+            return ct, object_id, str(parent_id)
+    return ct, object_id, ''
 
 
 def _resolve_triples(triples: Iterable[PermissionTriple]) -> list[ResolvedAssignment]:
@@ -93,6 +98,22 @@ def _resolve_assignments(
     return user_resolved, team_resolved
 
 
+def _batch_resolve_object_ansible_ids(resolved: Sequence[ResolvedAssignment]) -> dict[tuple[str, str, str], str]:
+    """Resolve local assignment resources in one query for the whole batch."""
+    if not resolved or not django_apps.is_installed('ansible_base.resource_registry'):
+        return {}
+
+    object_ids_by_type: dict[tuple[str, str], set[str]] = {}
+    services_by_type: dict[tuple[str, str], set[str]] = {}
+    for assignment in resolved:
+        content_type = assignment.content_type
+        content_type_key = (content_type.app_label, content_type.model)
+        object_ids_by_type.setdefault(content_type_key, set()).add(assignment.object_id)
+        services_by_type.setdefault(content_type_key, set()).add(content_type.service)
+
+    return resolve_resource_ids(object_ids_by_type, services_by_type)
+
+
 def _lookup_object_roles(resolved: list[ResolvedAssignment]) -> ObjectRoleLookup:
     """Look up existing ObjectRoles for resolved assignments."""
     object_ids_by_rd: dict[int, tuple[int, set[str]]] = {}
@@ -113,14 +134,16 @@ def _lookup_object_roles(resolved: list[ResolvedAssignment]) -> ObjectRoleLookup
 def _ensure_object_roles(requested_assignments: list[ResolvedAssignment]) -> ObjectRoleLookup:
     """Look up existing ObjectRoles, create any that are missing, and return the full lookup."""
     object_ids_by_rd: dict[int, tuple[int, set[str]]] = {}
-    parent_refs: dict[str, str] = {}
+    # Key by (rd_id, object_id) so batches with the same object_id across different
+    # role definitions / content types do not overwrite each other's parent_reference.
+    parent_refs: dict[tuple[int, str], str] = {}
     for ra in requested_assignments:
         rd_id = ra.role_definition.pk
         if rd_id not in object_ids_by_rd:
             object_ids_by_rd[rd_id] = (ra.content_type.id, set())
         object_ids_by_rd[rd_id][1].add(ra.object_id)
         if ra.parent_reference:
-            parent_refs[ra.object_id] = ra.parent_reference
+            parent_refs[(rd_id, ra.object_id)] = ra.parent_reference
 
     lookup: ObjectRoleLookup = {}
     for rd_id, (ct_id, object_ids) in object_ids_by_rd.items():
@@ -129,7 +152,15 @@ def _ensure_object_roles(requested_assignments: list[ResolvedAssignment]) -> Obj
         missing = [oid for oid in object_ids if (rd_id, oid) not in lookup]
         if missing:
             ObjectRole.objects.bulk_create(
-                [ObjectRole(role_definition_id=rd_id, content_type_id=ct_id, object_id=oid, parent_reference=parent_refs.get(oid, '')) for oid in missing],
+                [
+                    ObjectRole(
+                        role_definition_id=rd_id,
+                        content_type_id=ct_id,
+                        object_id=oid,
+                        parent_reference=parent_refs.get((rd_id, oid), ''),
+                    )
+                    for oid in missing
+                ],
                 ignore_conflicts=True,
             )
             # Re-fetch to get PKs — bulk_create(ignore_conflicts=True) doesn't populate them.
@@ -171,6 +202,7 @@ def _create_assignments(
     user_resolved: list[ResolvedAssignment],
     team_resolved: list[ResolvedAssignment],
     lookup: ObjectRoleLookup,
+    object_ansible_ids: dict[tuple[str, str, str], str],
     fire_signals_on_create: bool = True,
 ) -> list[AssignmentBase]:
     """Bulk-create user and team assignment objects, return all resulting assignments."""
@@ -187,6 +219,7 @@ def _create_assignments(
                 role_definition=ra.role_definition,
                 content_type=ra.content_type,
                 object_id=ra.object_id,
+                object_ansible_id=object_ansible_ids.get((ra.content_type.app_label, ra.content_type.model, ra.object_id)),
                 created_by=created_by,
             )
         )
@@ -211,6 +244,7 @@ def _create_assignments(
                 role_definition=ra.role_definition,
                 content_type=ra.content_type,
                 object_id=ra.object_id,
+                object_ansible_id=object_ansible_ids.get((ra.content_type.app_label, ra.content_type.model, ra.object_id)),
                 created_by=created_by,
             )
         )
@@ -357,8 +391,17 @@ def give_assignments(
     if not user_resolved and not team_resolved:
         return []
 
-    lookup = _ensure_object_roles(list(user_resolved) + list(team_resolved))
-    assignments = _create_assignments(list(user_resolved), list(team_resolved), lookup, fire_signals_on_create=fire_signals_on_create)
+    user_resolved = list(user_resolved)
+    team_resolved = list(team_resolved)
+    object_ansible_ids = _batch_resolve_object_ansible_ids(user_resolved + team_resolved)
+    lookup = _ensure_object_roles(user_resolved + team_resolved)
+    assignments = _create_assignments(
+        user_resolved,
+        team_resolved,
+        lookup,
+        object_ansible_ids,
+        fire_signals_on_create=fire_signals_on_create,
+    )
     _recompute_after_give(lookup, assignments)
     return assignments
 

@@ -21,7 +21,13 @@ from ansible_base.lib.utils.views.permissions import try_add_oauth2_scope_permis
 from ansible_base.resource_registry.constants import SHARED_USER_RESOURCE_TYPE
 from ansible_base.resource_registry.models import Resource, ResourceType, service_id
 from ansible_base.resource_registry.registry import get_registry
-from ansible_base.resource_registry.serializers import BulkResourceUpdateItemSerializer, ResourceListSerializer, ResourceSerializer, ResourceTypeSerializer
+from ansible_base.resource_registry.serializers import (
+    BulkResourceUpdateItemSerializer,
+    BulkResourceUpdateRequestSerializer,
+    ResourceListSerializer,
+    ResourceSerializer,
+    ResourceTypeSerializer,
+)
 from ansible_base.rest_filters.rest_framework.field_lookup_backend import FieldLookupBackend
 from ansible_base.rest_filters.rest_framework.order_backend import OrderByBackend
 from ansible_base.rest_filters.rest_framework.type_filter_backend import TypeFilterBackend
@@ -132,6 +138,46 @@ class ResourceViewSet(
 
     MAX_BULK_SIZE = 1000
 
+    @extend_schema_if_available(
+        request=BulkResourceUpdateRequestSerializer,
+        responses={
+            status.HTTP_200_OK: {
+                "type": "object",
+                "properties": {
+                    "updated": {"type": "integer"},
+                    "errors": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                    },
+                },
+                "required": ["updated", "errors"],
+            },
+            status.HTTP_400_BAD_REQUEST: {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "properties": {
+                            "detail": {"type": "string"},
+                        },
+                        "required": ["detail"],
+                    },
+                    {
+                        "type": "array",
+                        "items": {"type": "object"},
+                    },
+                ],
+            },
+        },
+        description=(
+            "Bulk-update resource metadata for up to "
+            f"{MAX_BULK_SIZE} resources per request. "
+            "Accepts a JSON object with an 'items' key containing a list "
+            "of update objects. Each object must contain 'ansible_id' and "
+            "at least one of: 'new_service_id', 'new_ansible_id', "
+            "'is_partially_migrated', 'resource_data'. Returns a summary "
+            "with the count of updated resources and any per-item errors."
+        ),
+    )
     @action(detail=False, methods=["post"], url_path="bulk-update")
     def bulk_update(self, request, *args, **kwargs):
         """

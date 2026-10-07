@@ -16,6 +16,30 @@ from ansible_base.rbac.remote import RemoteObject
 from ansible_base.rbac.validators import permissions_allowed_for_role
 
 
+def visible_teams(request_user, queryset=None) -> QuerySet:
+    """Gives a queryset of teams that another user should be able to view.
+
+    Team visibility is governed by the same setting as user visibility
+    (ORG_ADMINS_CAN_SEE_ALL_USERS) because the UI exposes a single control
+    named "All Teams and Users Visible to Organization Admins".
+    """
+    team_cls = permission_registry.team_model
+
+    if not getattr(request_user, "is_authenticated", False):
+        return team_cls.objects.none()
+
+    if can_view_all_users(request_user):
+        if queryset is not None:
+            return queryset
+        else:
+            return team_cls.objects.all()
+
+    if queryset is None:
+        queryset = team_cls.objects.all()
+
+    return team_cls.access_qs(request_user, queryset=queryset)
+
+
 def visible_users(request_user, queryset=None, always_show_superusers=True, always_show_self=True) -> QuerySet:
     """Gives a queryset of users that another user should be able to view"""
     user_cls = permission_registry.user_model
@@ -54,7 +78,12 @@ def can_view_all_users(request_user):
     )
 
 
-def can_change_user(request_user: Optional[AbstractBaseUser], target_user: Optional[AbstractBaseUser], can_self_edit: bool = True) -> bool:
+def can_change_user(
+    request_user: Optional[AbstractBaseUser],
+    target_user: Optional[AbstractBaseUser],
+    can_self_edit: bool = True,
+    self_edit_setting: str = 'ALLOW_USER_EMAIL_SELF_EDIT',
+) -> bool:
     """Tells if the request user can modify details of the target user"""
     if request_user is None or target_user is None:
         return False
@@ -67,7 +96,7 @@ def can_change_user(request_user: Optional[AbstractBaseUser], target_user: Optio
     if not get_setting('MANAGE_ORGANIZATION_AUTH', False):
         return False
 
-    if request_user.pk == target_user.pk and (can_self_edit or get_setting('ALLOW_USER_EMAIL_SELF_EDIT', False)):
+    if request_user.pk == target_user.pk and (can_self_edit or get_setting(self_edit_setting, False)):
         return True
 
     # If the user is not in any organizations, answer can not consider organization permissions

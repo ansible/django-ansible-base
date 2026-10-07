@@ -16,28 +16,14 @@ logger = logging.getLogger('ansible_base.rbac.service_api.serializers')
 
 class ObjectAnsibleIdField(serializers.Field):
     """
-    Field for object_ansible_id that supports both annotation optimization and fallback.
+    Field for the cached assignment object_ansible_id.
 
-    For read operations: Uses annotation when available, falls back to manual lookup.
-    For write operations: Converts ansible_id to object_id for internal use.
+    For writes, converts an ansible_id to object_id for internal use.
     """
 
     def to_representation(self, obj):
-        """Get object_ansible_id, using annotation when available, falling back to manual lookup"""
-        # First try to use the annotation from the queryset (for optimized list operations)
-        if hasattr(obj, '_object_ansible_id_annotation') and obj._object_ansible_id_annotation:
-            return str(obj._object_ansible_id_annotation)
-
-        # Fallback for cases where annotation is not available (creation, etc.)
-        if not obj.content_type_id or not obj.object_id:
-            return None
-
-        content_object = obj.content_object
-        if isinstance(content_object, RemoteObject):
-            return None
-        if hasattr(content_object, 'resource'):
-            return str(content_object.resource.ansible_id)
-        return None
+        """Return the persisted assignment Resource ID."""
+        return str(obj.object_ansible_id) if obj.object_ansible_id else None
 
     def get_attribute(self, instance):
         """Override to return the full instance instead of a specific attribute"""
@@ -76,7 +62,7 @@ class DABPermissionSerializer(serializers.ModelSerializer):
 # 'id' is included so consumers can implement cursor-based pagination
 # (e.g. id__gt=<last_pk>&order_by=id) for efficient resume after
 # crashes and skip-on-reinstall in migrate_service_data.
-assignment_common_fields = ('id', 'created', 'created_by_ansible_id', 'object_id', 'object_ansible_id', 'content_type', 'role_definition')
+assignment_common_fields = ('id', 'created', 'created_by_ansible_id', 'object_id', 'object_ansible_id', 'content_type', 'role_definition', 'parent_reference')
 
 
 class BaseAssignmentSerializer(serializers.ModelSerializer):
@@ -85,13 +71,27 @@ class BaseAssignmentSerializer(serializers.ModelSerializer):
     created_by_ansible_id = ActorAnsibleIdField(source='created_by', required=False, allow_null=True)
     object_ansible_id = ObjectAnsibleIdField(required=False, allow_null=True)
     object_id = serializers.CharField(allow_blank=True, required=False, allow_null=True)
+    parent_reference = serializers.SerializerMethodField()
     from_service = serializers.CharField(write_only=True)
+
+    def get_parent_reference(self, instance) -> str:
+        """Read parent_reference from the prefetched object_role relation."""
+        object_role = getattr(instance, 'object_role', None)
+        if object_role and object_role.parent_reference:
+            return str(object_role.parent_reference)
+        return ''
 
     def validate(self, attrs):
         """The object_id vs ansible_id is the only dual-write case, where we have to accept either
 
         So this does the mutual validation to assure we have sufficient data.
         """
+        parent_reference = self.initial_data.get('parent_reference', '')
+        if parent_reference is None:
+            parent_reference = ''
+        if not isinstance(parent_reference, str):
+            raise serializers.ValidationError({'parent_reference': 'Must be a string.'})
+        attrs['parent_reference'] = parent_reference
         rd = attrs['role_definition']
         has_object_id = 'object_id' in attrs and attrs['object_id']
         has_object_ansible_id = 'object_ansible_id' in attrs and attrs['object_ansible_id']
@@ -123,6 +123,7 @@ class BaseAssignmentSerializer(serializers.ModelSerializer):
         rd = validated_data['role_definition']
         actor = validated_data[self.actor_field]
         requesting_user = self.context['view'].request.user
+        parent_reference = validated_data.get('parent_reference', '')
 
         as_user = None
         if 'created_by' in validated_data:
@@ -137,13 +138,13 @@ class BaseAssignmentSerializer(serializers.ModelSerializer):
                 model = rd.content_type.model_class()
 
                 if issubclass(model, RemoteObject):
-                    obj = model(content_type=rd.content_type, object_id=object_id)
+                    obj = model(content_type=rd.content_type, object_id=object_id, parent_reference=parent_reference or None)
                 else:
                     try:
                         obj = model.objects.get(pk=object_id)
                     except (model.DoesNotExist, ValueError, TypeError, DjangoValidationError):
                         logger.info("Object pk=%s not found locally for %s, using RemoteObject fallback", object_id, model.__name__)
-                        obj = RemoteObject(content_type=rd.content_type, object_id=object_id)
+                        obj = RemoteObject(content_type=rd.content_type, object_id=object_id, parent_reference=parent_reference or None)
 
             # Validators not ran, because this should be an internal action
 

@@ -1,3 +1,12 @@
+def get_dab_lib_doc_excludes():
+    """Extend drf-spectacular's docstring boundary with DAB mixins."""
+    from drf_spectacular.plumbing import get_lib_doc_excludes
+
+    from ansible_base.lib.serializers.mixins import CleanTextMixin
+
+    return [*get_lib_doc_excludes(), CleanTextMixin]
+
+
 def apply_authentication_customizations() -> None:
     """Declare schema of DAB authentication classes
 

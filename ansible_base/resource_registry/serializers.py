@@ -163,6 +163,12 @@ class BulkResourceUpdateItemSerializer(serializers.Serializer):
         return attrs
 
 
+class BulkResourceUpdateRequestSerializer(serializers.Serializer):
+    """Envelope serializer for the bulk resource update request."""
+
+    items = BulkResourceUpdateItemSerializer(many=True)
+
+
 class UserAuthenticationSerializer(serializers.Serializer):
     username = serializers.CharField()
     password = serializers.CharField()
