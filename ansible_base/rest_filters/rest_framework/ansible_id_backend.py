@@ -18,7 +18,7 @@ class AnsibleIdAliasFilterBackend(BaseFilterBackend):
     '''
 
     def filter_queryset(self, request, queryset, view):
-        object_ansible_id = request.query_params.get('object_ansible_id')
+        object_ansible_id = request.query_params.get('object_ansible_id') or request.query_params.get('resource__ansible_id')
         if object_ansible_id:
             try:
                 # Validate if the provided ansible_id is a valid UUID
@@ -32,7 +32,7 @@ class AnsibleIdAliasFilterBackend(BaseFilterBackend):
 
                 # Filter the queryset based on the resource's content_type and object_id
                 ct = DABContentType.objects.get_for_model(resource_obj.content_type.model_class())
-                queryset = queryset.filter(object_role__content_type=ct, object_role__object_id=resource_obj.object_id)
+                queryset = queryset.filter(content_type=ct, object_id=resource_obj.object_id)
             except Resource.DoesNotExist:
                 # If the resource is not found, return an empty queryset
                 return queryset.none()

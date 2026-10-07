@@ -1,5 +1,4 @@
 from django.db import transaction
-from django.db.models import F
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -10,9 +9,16 @@ from ansible_base.lib.utils.views.django_app_api import AnsibleBaseDjangoAppApiV
 from ansible_base.lib.utils.views.permissions import try_add_oauth2_scope_permission
 from ansible_base.resource_registry.views import HasResourceRegistryPermissions
 from ansible_base.rest_filters.rest_framework import ansible_id_backend
-from ansible_base.rest_filters.rest_framework.ansible_id_backend import ServiceFilterBackend
+from ansible_base.rest_filters.rest_framework.ansible_id_backend import (
+    ServiceFilterBackend,
+)
 
-from ..models import DABContentType, DABPermission, RoleTeamAssignment, RoleUserAssignment
+from ..models import (
+    DABContentType,
+    DABPermission,
+    RoleTeamAssignment,
+    RoleUserAssignment,
+)
 from ..policies import check_can_remove_assignment
 from . import serializers as service_serializers
 
@@ -60,7 +66,7 @@ class BaseSerivceRoleAssignmentViewSet(
         ]
     )
     # Handled by ServiceFilterBackend which adds OR-with-NULL for global assignments
-    rest_filters_reserved_names = ('content_type__service',)
+    rest_filters_reserved_names = ('content_type__service', 'resource__ansible_id')
 
     def remote_secondary_sync_assignment(self, assignment, from_service=None):
         """To allow service-specific sync when getting assignment from /service-index/ endpoint
@@ -133,11 +139,7 @@ class ServiceRoleUserAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     ]
 
     def get_queryset(self):
-        return (
-            RoleUserAssignment.objects.select_related('object_role')
-            .prefetch_related('user__resource__content_type', *prefetch_related)
-            .annotate(_object_ansible_id_annotation=F('resource__ansible_id'))
-        )
+        return RoleUserAssignment.objects.select_related('object_role').prefetch_related('user__resource__content_type', *prefetch_related)
 
     @action(detail=False, methods=['post'], url_path='assign')
     def assign(self, request):
@@ -161,11 +163,7 @@ class ServiceRoleTeamAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     ]
 
     def get_queryset(self):
-        return (
-            RoleTeamAssignment.objects.select_related('object_role')
-            .prefetch_related('team__resource__content_type', *prefetch_related)
-            .annotate(_object_ansible_id_annotation=F('resource__ansible_id'))
-        )
+        return RoleTeamAssignment.objects.select_related('object_role').prefetch_related('team__resource__content_type', *prefetch_related)
 
     @action(detail=False, methods=['post'], url_path='assign')
     def assign(self, request):
