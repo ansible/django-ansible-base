@@ -233,9 +233,11 @@ nesting depth, not just the top level.
 For model ``CharField`` / ``TextField`` serializer fields with
 ``trim_whitespace=True`` (DRF default), grandfathering compares the submitted
 value to ``stored.strip()`` so ORM-seeded leading/trailing whitespace still
-matches API input after DRF normalization. Fields with ``trim_whitespace=False``
-use exact comparison only. Strings inside ``JSONField`` values are not trimmed
-by DRF and always use exact comparison.
+matches API input after DRF normalization. The mixin resolves the serializer
+field by name or by ``source`` (for example ``description_input`` with
+``source='description'``). If no serializer field binds to the model attribute,
+or ``trim_whitespace=False``, comparison is exact only. Strings inside
+``JSONField`` values are not trimmed by DRF and always use exact comparison.
 
 For lists, grandfathering compares by index (item at position N in the
 submitted list is compared against item at position N in the stored list).

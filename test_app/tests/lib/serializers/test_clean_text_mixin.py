@@ -30,6 +30,22 @@ class OrgSerializerDescriptionNoTrim(CleanTextMixin, serializers.ModelSerializer
         extra_kwargs = {'description': {'trim_whitespace': False}}
 
 
+class OrgSerializerDescriptionRenamed(CleanTextMixin, serializers.ModelSerializer):
+    description_input = serializers.CharField(source='description')
+
+    class Meta:
+        model = Organization
+        fields = ['name', 'description_input']
+
+
+class OrgSerializerDescriptionRenamedNoTrim(CleanTextMixin, serializers.ModelSerializer):
+    description_input = serializers.CharField(source='description', trim_whitespace=False)
+
+    class Meta:
+        model = Organization
+        fields = ['name', 'description_input']
+
+
 class OrgSerializerWithExclusions(CleanTextMixin, serializers.ModelSerializer):
     excluded_fields = frozenset({'description'})
 
@@ -213,6 +229,21 @@ class TestCleanTextMixinGrandfathering:
         org = Organization.objects.create(name='Org', description='$(dangerous)')
         data = {'name': 'Org', 'description': '$(dangerous) '}
         serializer = OrgSerializerDescriptionNoTrim(org, data=data)
+        assert not serializer.is_valid()
+        assert 'description' in serializer.errors
+
+    @pytest.mark.django_db
+    def test_grandfather_trim_via_renamed_source_field(self):
+        org = Organization.objects.create(name='Org', description='Legacy <b>bold</b>\n')
+        data = {'name': 'Org', 'description_input': 'Legacy <b>bold</b>'}
+        serializer = OrgSerializerDescriptionRenamed(org, data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    def test_renamed_source_respects_trim_whitespace_false(self):
+        org = Organization.objects.create(name='Org', description='$(dangerous)')
+        data = {'name': 'Org', 'description_input': '$(dangerous) '}
+        serializer = OrgSerializerDescriptionRenamedNoTrim(org, data=data)
         assert not serializer.is_valid()
         assert 'description' in serializer.errors
 

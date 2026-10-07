@@ -106,11 +106,30 @@ class CleanTextMixin:
                 json_fields.append(f.name)
         return text_fields, json_fields
 
+    def _serializer_field_for_model_attr(self, field_name):
+        """Return the serializer field bound to a model attribute, if any."""
+        field = self.fields.get(field_name)
+        if field is not None:
+            return field
+        for candidate in self.fields.values():
+            if getattr(candidate, 'source', None) == field_name:
+                return candidate
+        return None
+
+    def _attrs_value_for_model_attr(self, field_name, attrs):
+        """Submitted value for a model attribute, including renamed serializer fields."""
+        if field_name in attrs:
+            return attrs[field_name]
+        for ser_name, field in self.fields.items():
+            if getattr(field, 'source', None) == field_name and ser_name in attrs:
+                return attrs[ser_name]
+        return None
+
     def _serializer_field_trims_whitespace(self, field_name):
         """Whether DRF trims this field's input before ``validate()`` runs."""
-        field = self.fields.get(field_name)
+        field = self._serializer_field_for_model_attr(field_name)
         if field is None:
-            return True
+            return False
         return getattr(field, 'trim_whitespace', False)
 
     @staticmethod
@@ -155,10 +174,10 @@ class CleanTextMixin:
         override get_internal_type().
         """
         for field_name in field_names:
-            if field_name in self.excluded_fields or field_name not in attrs:
+            if field_name in self.excluded_fields:
                 continue
-            value = attrs[field_name]
-            if not isinstance(value, str) or self._is_unchanged(field_name, value):
+            value = self._attrs_value_for_model_attr(field_name, attrs)
+            if value is None or not isinstance(value, str) or self._is_unchanged(field_name, value):
                 continue
             self._run_text_validator(field_name, value, errors)
 
