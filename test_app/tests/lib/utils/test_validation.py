@@ -1,3 +1,5 @@
+import time
+
 import pytest
 from rest_framework.exceptions import ValidationError
 
@@ -919,6 +921,59 @@ class TestValidateFreeText:
     def test_error_message_injection(self):
         with pytest.raises(ValidationError, match="shell or template"):
             validate_free_text("$(whoami)")
+
+    @pytest.mark.parametrize(
+        "value,description",
+        [
+            ("plain text", "no delimiters"),
+            ("a { b } c", "single braces"),
+            ("$5.00", "currency"),
+        ],
+    )
+    def test_accepts_benign_injection_like_text(self, value, description):
+        validate_free_text(value)
+
+    @pytest.mark.parametrize(
+        "value,description",
+        [
+            ("{{ var }}", "Jinja2 expression with spaces"),
+            ("{% if x %}", "Jinja2 tag with spaces"),
+        ],
+    )
+    def test_rejects_ticket_injection_samples(self, value, description):
+        with pytest.raises(ValidationError):
+            validate_free_text(value)
+
+    def test_accepts_large_unclosed_jinja_openers(self):
+        """Many unclosed {{ must not monopolize CPU (AAP-95828)."""
+        payload = "{{" * 80_000
+        validate_free_text(payload)
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            "{{" + "a" * 400 + "}}",
+            "${" + "a" * 400 + "}",
+            "$(" + "a" * 400 + ")",
+        ],
+    )
+    def test_rejects_long_inner_injection_delimiters(self, payload):
+        with pytest.raises(ValidationError):
+            validate_free_text(payload)
+
+    def test_injection_scan_scales_linearly_on_unclosed_openers(self):
+        """Doubling payload size should not imply quadratic scan time."""
+
+        def run(size_kb):
+            payload = "{{" * (size_kb * 512)
+            start = time.perf_counter()
+            validate_free_text(payload)
+            return time.perf_counter() - start
+
+        small = run(20)
+        large = run(80)
+        assert large < 2.0, f"80KB unclosed openers took {large:.2f}s"
+        assert large < small * 30, f"scan time grew disproportionately (20KB: {small:.4f}s, 80KB: {large:.4f}s)"
 
 
 class TestValidateResourceName:

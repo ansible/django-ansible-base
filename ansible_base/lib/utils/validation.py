@@ -89,6 +89,54 @@ _HANDLER_URI_RE = re.compile(
 _INJECTION_RE = re.compile(r'[$]\([^)]+\)|[$]\{[^}]+\}' + r'|\{\{[^}]+\}\}|\{%[^%]+%\}')
 
 
+def _injection_pair_from_closer(text: str, opener: str, closer: str, forbidden_in_inner: str) -> bool:
+    """Match opener/closer pairs with the same inner rules as _INJECTION_RE, without regex backtracking.
+
+    Scans from each ``closer`` occurrence and walks backward for a matching ``opener``.
+    Inner text must be non-empty and must not contain ``forbidden_in_inner`` (mirrors [^X]+
+    in the legacy pattern). If ``closer`` never appears (e.g. unclosed ``{{`` payloads),
+    returns immediately — O(n) on the substring check, no quadratic regex work.
+    """
+    if closer not in text:
+        return False
+    n = len(text)
+    close_len = len(closer)
+    open_len = len(opener)
+    j = 0
+    while j <= n - close_len:
+        if text[j : j + close_len] != closer:
+            j += 1
+            continue
+        i = j - 1
+        while i >= 0:
+            if i <= j - open_len and text[i : i + open_len] == opener:
+                inner_start = i + open_len
+                if inner_start < j:
+                    inner = text[inner_start:j]
+                    if inner and forbidden_in_inner not in inner:
+                        return True
+            i -= 1
+        j += close_len
+    return False
+
+
+def _contains_injection_pattern(text: str) -> bool:
+    """Return True when text contains shell or template injection delimiters.
+
+    Implements _INJECTION_RE semantics with linear scans. The compiled _INJECTION_RE is
+    retained for client-side pattern hints only.
+    """
+    if _injection_pair_from_closer(text, '$(', ')', ')'):
+        return True
+    if _injection_pair_from_closer(text, '${', '}', '}'):
+        return True
+    if _injection_pair_from_closer(text, '{{', '}}', '}'):
+        return True
+    if _injection_pair_from_closer(text, '{%', '%}', '%'):
+        return True
+    return False
+
+
 def _decoded_variants(value, max_depth=3):
     """Return the value plus successively HTML-, percent-, and NFKC-decoded
     forms, so that entity-, URL-, or fullwidth-encoded payloads cannot bypass
@@ -169,7 +217,7 @@ def validate_free_text(value):
         uri_check = re.sub(r'[\t\n\r]', '', v)
         if _HANDLER_URI_RE.search(uri_check):
             raise ValidationError(_("This field can't include HTML tags, script markup, or unsafe URI schemes."))
-        if _INJECTION_RE.search(v):
+        if _contains_injection_pattern(v):
             raise ValidationError(_("This field can't include shell or template syntax."))
 
 
