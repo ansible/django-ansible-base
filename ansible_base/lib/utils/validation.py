@@ -89,6 +89,31 @@ _HANDLER_URI_RE = re.compile(
 _INJECTION_RE = re.compile(r'[$]\([^)]+\)|[$]\{[^}]+\}' + r'|\{\{[^}]+\}\}|\{%[^%]+%\}')
 
 
+def _injection_close_index(text: str, inner_start: int, closer: str) -> int:
+    """Index where ``closer`` begins after ``inner_start``, or ``len(text)`` if none."""
+    n = len(text)
+    if len(closer) == 1:
+        j = inner_start
+        while j < n and text[j] != closer[0]:
+            j += 1
+        return j
+    j = inner_start
+    close_len = len(closer)
+    while j < n and text[j] != closer[0]:
+        j += 1
+    if j + close_len <= n and text[j : j + close_len] == closer:
+        return j
+    return n
+
+
+def _injection_pair_at(text: str, inner_start: int, closer: str, forbidden_in_inner: str) -> bool:
+    """True when a non-empty inner segment ends at a valid ``closer`` without forbidden chars."""
+    close_at = _injection_close_index(text, inner_start, closer)
+    if close_at >= len(text) or close_at <= inner_start:
+        return False
+    return forbidden_in_inner not in text[inner_start:close_at]
+
+
 def _injection_pair_forward(text: str, opener: str, closer: str, forbidden_in_inner: str) -> bool:
     """Match opener/closer pairs with the same inner rules as _INJECTION_RE, without regex backtracking.
 
@@ -100,7 +125,6 @@ def _injection_pair_forward(text: str, opener: str, closer: str, forbidden_in_in
         return False
     n = len(text)
     open_len = len(opener)
-    close_len = len(closer)
     i = 0
     while i <= n - open_len:
         if text[i : i + open_len] != opener:
@@ -109,20 +133,8 @@ def _injection_pair_forward(text: str, opener: str, closer: str, forbidden_in_in
         inner_start = i + open_len
         if inner_start >= n:
             return False
-        if close_len == 1:
-            close_ch = closer[0]
-            j = inner_start
-            while j < n and text[j] != close_ch:
-                j += 1
-            if j < n and j > inner_start and forbidden_in_inner not in text[inner_start:j]:
-                return True
-        else:
-            j = inner_start
-            while j < n and text[j] != closer[0]:
-                j += 1
-            if j + close_len <= n and text[j : j + close_len] == closer and j > inner_start:
-                if forbidden_in_inner not in text[inner_start:j]:
-                    return True
+        if _injection_pair_at(text, inner_start, closer, forbidden_in_inner):
+            return True
         i += open_len
     return False
 
