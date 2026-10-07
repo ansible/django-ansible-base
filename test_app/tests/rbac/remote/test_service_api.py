@@ -1,11 +1,13 @@
 from copy import deepcopy
+from io import StringIO
 
 import pytest
+from django.core.management import call_command
 from rest_framework.test import APIClient
 
 from ansible_base.lib.utils.response import get_relative_url
-from ansible_base.rbac.models import DABContentType, DABPermission, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
-from test_app.models import Organization, Team, User
+from ansible_base.rbac.models import DABContentType, DABPermission, ObjectRole, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
+from test_app.models import Organization, Team, User, UUIDModel
 
 
 @pytest.mark.django_db
@@ -887,6 +889,50 @@ class TestParentReference:
         obj_role = ObjectRole.objects.get(role_definition=rd, object_id='42')
         assert str(obj_role.parent_reference) == str(org.pk)
 
+    def test_assign_updates_existing_empty_parent_reference(self, admin_api_client, rando):
+        """An incoming parent reference fills an existing empty ObjectRole value."""
+        from ansible_base.rbac.models import DABContentType, DABPermission, ObjectRole, RoleDefinition
+
+        org = Organization.objects.create(name='Existing Parent Org')
+        org_ct = DABContentType.objects.get_for_model(org)
+        remote_ct = DABContentType.objects.create(
+            service='awx',
+            model='project',
+            app_label='main',
+            parent_content_type=org_ct,
+        )
+        perm = DABPermission.objects.create(codename='use_project', content_type=remote_ct)
+        rd = RoleDefinition.objects.create_from_permissions(
+            name='Project Use Existing',
+            permissions=[perm.api_slug],
+            content_type=remote_ct,
+        )
+        ObjectRole.objects.create(
+            role_definition=rd,
+            content_type=remote_ct,
+            object_id='77',
+            parent_reference='',
+        )
+
+        response = admin_api_client.post(
+            get_relative_url('serviceuserassignment-assign'),
+            {
+                'role_definition': rd.name,
+                'user_ansible_id': str(rando.resource.ansible_id),
+                'object_id': '77',
+                'parent_reference': str(org.pk),
+            },
+        )
+
+        assert response.status_code == 201, response.data
+
+        obj_role = ObjectRole.objects.get(
+            role_definition=rd,
+            content_type=remote_ct,
+            object_id='77',
+        )
+        assert obj_role.parent_reference == str(org.pk)
+
     def test_assign_without_parent_reference_defaults_to_empty(self, admin_api_client, rando):
         """Omitting parent_reference should still work (backward compatible)."""
         from ansible_base.rbac.models import DABContentType, DABPermission, ObjectRole, RoleDefinition
@@ -1054,6 +1100,39 @@ class TestParentReference:
         call_command('repair_parent_references', stdout=out)
         obj_role.refresh_from_db()
         assert obj_role.parent_reference == str(inventory.organization.pk)
+
+    def test_repair_parent_references_skips_malformed_uuid(self, organization):
+        """A malformed UUID should not prevent valid parent references from being repaired."""
+        uuid_object = UUIDModel.objects.create(organization=organization)
+        uuid_ct = DABContentType.objects.get_for_model(UUIDModel)
+        permission = DABPermission.objects.create(codename='view_uuidmodel_repair', content_type=uuid_ct)
+        role_definition = RoleDefinition.objects.create_from_permissions(
+            name='UUID Model Repair Role',
+            permissions=[permission.api_slug],
+            content_type=uuid_ct,
+        )
+        ObjectRole.objects.create(
+            role_definition=role_definition,
+            content_type=uuid_ct,
+            object_id=str(uuid_object.pk),
+            parent_reference='',
+        )
+        ObjectRole.objects.create(
+            role_definition=role_definition,
+            content_type=uuid_ct,
+            object_id='not-a-uuid',
+            parent_reference='',
+        )
+
+        stderr = StringIO()
+        call_command('repair_parent_references', stderr=stderr)
+
+        repaired_role = ObjectRole.objects.get(
+            role_definition=role_definition,
+            object_id=str(uuid_object.pk),
+        )
+        assert repaired_role.parent_reference == str(organization.pk)
+        assert 'not-a-uuid' in stderr.getvalue()
 
     def test_repair_parent_references_dry_run(self, rando, inv_rd, inventory):
         """Dry run should not modify data."""
