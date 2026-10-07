@@ -5,7 +5,12 @@ from django.apps import apps as global_apps
 from django.db import DEFAULT_DB_ALIAS, connection, models
 
 from ansible_base.rbac import permission_registry
-from ansible_base.rbac.remote import RemoteObject, get_local_resource_prefix, get_remote_standin_class, get_resource_prefix
+from ansible_base.rbac.remote import (
+    RemoteObject,
+    get_local_resource_services,
+    get_remote_standin_class,
+    get_resource_prefix,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +24,7 @@ def get_local_dab_contenttypes(using: str, ct_model: Type[models.Model]) -> dict
 
 def model_class(apps, ct):
     "Model methods normally can not be used in migrations so this is a safer utility method"
-    if ct.service not in ("shared", get_local_resource_prefix()):
+    if ct.service not in get_local_resource_services():
         return get_remote_standin_class(ct)
 
     return apps.get_model(ct.app_label, ct.model)
