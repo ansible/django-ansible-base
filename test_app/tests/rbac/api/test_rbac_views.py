@@ -192,3 +192,63 @@ def test_role_definitions_post_disabled_by_settings(admin_api_client):
     assert response.status_code == 200, response.data
     print(response.data)
     assert 'POST' not in response.data.get('actions', {})
+
+
+@pytest.mark.django_db
+def test_role_definition_list_without_assignable_scope_returns_everything(admin_api_client, inv_rd):
+    """Backward compatibility: omitting the param must not change existing behavior."""
+    url = get_relative_url('roledefinition-list')
+    response = admin_api_client.get(url)
+    assert response.status_code == 200, response.data
+    assert response.data['count'] == RoleDefinition.objects.count()
+    names = {item['name'] for item in response.data['results']}
+    assert inv_rd.name in names
+
+
+@pytest.mark.django_db
+def test_role_definition_list_assignable_scope_excludes_resource_scoped_roles(admin_api_client, inv_rd, global_inv_rd, org_admin_rd, member_rd):
+    url = get_relative_url('roledefinition-list')
+    response = admin_api_client.get(url, data={'assignable_scope': 'system,organization,team'})
+    assert response.status_code == 200, response.data
+    names = {item['name'] for item in response.data['results']}
+    assert global_inv_rd.name in names
+    assert org_admin_rd.name in names
+    assert member_rd.name in names
+    assert inv_rd.name not in names
+
+
+@pytest.mark.django_db
+def test_role_definition_list_assignable_scope_can_be_narrowed(admin_api_client, global_inv_rd, org_admin_rd, member_rd):
+    """The scope-to-role mapping itself is exhaustively covered at the model level
+    (TestAssignableScope); this only needs to prove the query param reaches
+    assignable_scope_q() and the result is applied to the queryset."""
+    url = get_relative_url('roledefinition-list')
+    response = admin_api_client.get(url, data={'assignable_scope': 'organization'})
+    assert response.status_code == 200, response.data
+    names = {item['name'] for item in response.data['results']}
+    assert org_admin_rd.name in names
+    assert member_rd.name not in names
+    assert global_inv_rd.name not in names
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('assignable_scope', [' organization , team ', 'organization,,team'])
+def test_role_definition_list_assignable_scope_tolerates_whitespace_and_empty_components(
+    admin_api_client, assignable_scope, org_admin_rd, member_rd, global_inv_rd
+):
+    """Comma-splitting/stripping is filter-backend-only logic, not covered by the model-level tests."""
+    url = get_relative_url('roledefinition-list')
+    response = admin_api_client.get(url, data={'assignable_scope': assignable_scope})
+    assert response.status_code == 200, response.data
+    names = {item['name'] for item in response.data['results']}
+    assert org_admin_rd.name in names
+    assert member_rd.name in names
+    assert global_inv_rd.name not in names
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('assignable_scope', ['bogus', 'organization,bogus'])
+def test_role_definition_list_assignable_scope_rejects_unknown_value(admin_api_client, assignable_scope):
+    url = get_relative_url('roledefinition-list')
+    response = admin_api_client.get(url, data={'assignable_scope': assignable_scope})
+    assert response.status_code == 400, response.data

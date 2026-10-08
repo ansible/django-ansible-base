@@ -5,6 +5,17 @@ These tests verify that the schema endpoint is accessible and that x-ai-descript
 fields are properly included in the generated OpenAPI spec for MCP (Model Context Protocol) server tools.
 """
 
+import os
+import subprocess
+import sys
+
+import pytest
+from django.conf import settings
+
+from ansible_base.rbac.api.views import RoleDefinitionViewSet
+from ansible_base.rbac.models import RoleDefinition
+from ansible_base.rest_filters.rest_framework.role_definition_backend import RoleDefinitionScopeFilterBackend
+
 
 def test_openapi_schema_endpoint_accessible(admin_api_client):
     """Test that the OpenAPI schema endpoint is accessible and returns valid schema."""
@@ -188,3 +199,54 @@ def test_role_user_assignment_create_schema(admin_api_client):
     assert 'properties' in object_requirement
     assert 'object_id' in object_requirement['properties']
     assert 'object_ansible_id' in object_requirement['properties']
+
+
+def test_role_definition_viewset_includes_scope_filter_backend():
+    """RoleDefinitionViewSet must apply RoleDefinitionScopeFilterBackend for assignable_scope filtering to take effect."""
+    assert RoleDefinitionScopeFilterBackend in RoleDefinitionViewSet.filter_backends
+
+
+def test_role_definition_scope_filter_extension_is_discovered_by_spectacular():
+    """App startup must register the scope filter extension in a clean process."""
+    code = '''
+import django
+
+django.setup()
+
+from drf_spectacular.extensions import OpenApiFilterExtension
+from ansible_base.rest_filters.rest_framework.role_definition_backend import RoleDefinitionScopeFilterBackend
+
+extension = OpenApiFilterExtension.get_match(RoleDefinitionScopeFilterBackend())
+assert extension is not None, "RoleDefinitionScopeFilterBackend extension was not registered"
+assert extension.target_class is RoleDefinitionScopeFilterBackend
+'''
+    result = subprocess.run(
+        [sys.executable, '-c', code],
+        capture_output=True,
+        text=True,
+        env={**os.environ, 'DJANGO_SETTINGS_MODULE': settings.SETTINGS_MODULE},
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.fixture
+def assignable_scope_parameter(admin_api_client):
+    """The assignable_scope OpenAPI parameter for the role_definitions list (GET) operation."""
+    response = admin_api_client.get('/api/v1/docs/schema/')
+    operation = response.data['paths']['/api/v1/role_definitions/']['get']
+    parameters = {param['name']: param for param in operation['parameters']}
+    return parameters['assignable_scope']
+
+
+def test_assignable_scope_parameter_is_query_parameter(assignable_scope_parameter):
+    assert assignable_scope_parameter['in'] == 'query'
+
+
+def test_assignable_scope_parameter_is_optional(assignable_scope_parameter):
+    # OpenAPI omits 'required' entirely for optional parameters, defaulting to false
+    assert assignable_scope_parameter.get('required', False) is False
+
+
+def test_assignable_scope_parameter_documents_supported_scopes(assignable_scope_parameter):
+    description = assignable_scope_parameter['description']
+    assert all(scope in description for scope in RoleDefinition.ASSIGNABLE_SCOPES)
