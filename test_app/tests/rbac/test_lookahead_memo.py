@@ -42,7 +42,7 @@ def test_lookahead_cache_is_shared_across_roles(rando, organization, org_inv_rd,
 
     org_role = ObjectRole.objects.get(role_definition=org_inv_rd, object_id=organization.pk)
     # once for itself as a member of to_update, once memoised through the team member roles
-    assert calls.count(org_role.pk) <= 2
+    assert calls.count(org_role.pk) == 2
 
     after_create = _evaluation_rows()
     recompute_all_role_evaluations()
