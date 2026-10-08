@@ -1,10 +1,13 @@
 """moving a grandchild object recomputes the roles of its OLD grandparent too."""
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from ansible_base.rbac.caching import recompute_all_role_evaluations
 from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation
 from ansible_base.rbac.permission_registry import permission_registry
+from ansible_base.rbac.triggers import post_save_update_obj_permissions
 from test_app.models import CollectionImport, Namespace, Organization
 
 
@@ -37,3 +40,43 @@ def test_single_grandchild_move_drops_old_org_rows(rando):
     after = _evaluation_rows()
     recompute_all_role_evaluations()
     assert _evaluation_rows() == after
+
+
+@pytest.mark.django_db
+def test_grandchild_move_when_old_parent_is_deleted_mid_move(rando):
+    """The old namespace is deleted after the move is written but before its post_save recompute runs
+    (two requests racing). The old org's role must still lose its rows for the moved collection."""
+    rd = RoleDefinition.objects.create_from_permissions(
+        permissions=['change_collectionimport', 'view_collectionimport', 'view_namespace'],
+        name='collection-manager',
+        content_type=permission_registry.content_type_model.objects.get_for_model(Organization),
+    )
+    orgs = [Organization.objects.create(name=f'org-{i}') for i in range(2)]
+    namespaces = [Namespace.objects.create(name=f'ns-{i}', organization=orgs[i]) for i in range(2)]
+    collection = CollectionImport.objects.get(pk=CollectionImport.objects.create(name='c', namespace=namespaces[0]).pk)
+    rd.give_permission(rando, orgs[0])
+    assert rando.has_obj_perm(collection, 'change_collectionimport')
+
+    # The move is written, but its post_save recompute has not run yet
+    collection.namespace = namespaces[1]
+    CollectionImport.objects.filter(pk=collection.pk).update(namespace=namespaces[1])
+    # Another request deletes the old namespace in that window; the collection no longer belongs to it
+    Namespace.objects.filter(pk=namespaces[0].pk).delete()
+    post_save_update_obj_permissions(collection)
+
+    assert not rando.has_obj_perm(collection, 'change_collectionimport')
+    after = _evaluation_rows()
+    recompute_all_role_evaluations()
+    assert _evaluation_rows() == after
+
+
+@pytest.mark.django_db
+def test_creating_a_grandchild_does_not_load_its_parent_again():
+    """On create the original parent is the current parent, so the old-parent handling must not run."""
+    org = Organization.objects.create(name='org')
+    namespace = Namespace.objects.create(name='ns', organization=org)
+    namespace_table = Namespace._meta.db_table
+    with CaptureQueriesContext(connection) as ctx:
+        CollectionImport.objects.create(name='c', namespace=namespace)
+    namespace_selects = [q['sql'] for q in ctx.captured_queries if q['sql'].startswith('SELECT') and f'"{namespace_table}"' in q['sql'].split(' WHERE ')[0]]
+    assert namespace_selects == []
