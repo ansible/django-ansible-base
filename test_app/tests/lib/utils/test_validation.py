@@ -999,6 +999,20 @@ class TestValidateFreeText:
 
         assert elapsed < 2.0, f"invalid-first-closer payload took {elapsed:.2f}s"
 
+    def test_injection_scan_scales_linearly_on_repeated_invalid_closer_blocks(self):
+        """Repeated {{...}x}} segments must not rescan inner text for every opener (AAP-95828)."""
+
+        def run(repeat):
+            payload = ("{{" * 200 + "}x}}") * repeat
+            start = time.perf_counter()
+            validate_free_text(payload)
+            return time.perf_counter() - start
+
+        small = run(25)
+        large = run(100)
+        assert large < 2.0, f"repeated invalid-closer blocks took {large:.2f}s"
+        assert large < small * 30, f"scan time grew disproportionately (small: {small:.4f}s, large: {large:.4f}s)"
+
 
 class TestValidateResourceName:
     """Test the validate_resource_name function."""
