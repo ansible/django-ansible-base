@@ -1,112 +1,90 @@
-"""Hard-cutoff query-count benchmarks for list endpoints (AAP-88874/AAP-88876).
+"""Query-count regression coverage for list endpoints.
 
-Asserts each list endpoint stays under a fixed query-count cutoff regardless
-of result-set size -- the pattern that caught the AAP-88287 N+1.
+Requests each endpoint at page_size=1/10/100 and asserts the query count
+stays flat -- a growing count as the page grows is the signature of an N+1,
+caught directly without a hand-picked per-endpoint cutoff.
 
-One function, parametrized over `QUERY_COUNT_CASES` (`url_name, query_params,
-max_queries` triples). Add new endpoints/scenarios as list entries here, not
-new test functions.
+This includes the RBAC-assignment-list endpoints: `BaseAssignmentViewSet`'s
+permission filter runs a fixed number of queries regardless of page size or
+total assignment volume, so they behave like any other endpoint here.
 
 Uses the shared dataset from this directory's `conftest.py`. No
 `@pytest.mark.django_db` marker needed -- see that module's docstring.
 """
 
 import pytest
-from django.db import connection
-from django.test.utils import CaptureQueriesContext
 
+from ansible_base.lib.testing.query_counts import assert_query_count_flat
 from ansible_base.lib.utils.response import get_relative_url
 
-# Measured against the AAP-88875 shared dataset (~150 orgs/380 users/~2,000
-# assignments) plus 30 each of seeded OAuth2Applications/AccessTokens/
-# AuthenticatorMaps. Page size is 50, so counts are per-page, not per-total-rows.
-#
-# Passing (regression guards, already well-optimized): resource-list,
-# organization-list, roleuserassignment-list, team-list, user-list,
-# inventory-list, roledefinition-list, roleteamassignment-list,
-# authenticator-list, resourcetype-list, dabcontenttype-list,
-# dabpermission-list, activitystream-list, aap_flags_states-list.
-#
-# Failing (real N+1s found this way). Marked xfail(strict=True) rather than
-# commented out: once each underlying bug is fixed, the case starts *passing*,
-# strict=True turns that into a hard CI failure -- forcing someone to notice
-# and remove the marker, instead of a comment nobody remembers to revisit.
-QUERY_COUNT_CASES = [
-    pytest.param('resource-list', {'extra_fields': 'resource_data'}, 15, id='resource_list_with_extra_fields'),
-    pytest.param('resource-list', {}, 8, id='resource_list_without_extra_fields'),
-    pytest.param('organization-list', {}, 15, id='organization_list'),
-    pytest.param('roleuserassignment-list', {}, 20, id='role_user_assignment_list'),
-    pytest.param('team-list', {}, 15, id='team_list'),
-    pytest.param('user-list', {}, 15, id='user_list'),
-    pytest.param('inventory-list', {}, 12, id='inventory_list'),
-    pytest.param('roledefinition-list', {}, 15, id='role_definition_list'),
-    pytest.param('roleteamassignment-list', {}, 20, id='role_team_assignment_list'),
-    pytest.param('authenticator-list', {}, 12, id='authenticator_list'),
-    pytest.param('resourcetype-list', {}, 10, id='resource_type_list'),
-    pytest.param('dabcontenttype-list', {}, 10, id='dab_content_type_list'),
-    pytest.param('dabpermission-list', {}, 10, id='dab_permission_list'),
-    pytest.param('activitystream-list', {}, 12, id='activity_stream_list'),
-    pytest.param('aap_flags_states-list', {}, 12, id='aap_flags_states_list'),
+# Endpoints to sweep across page sizes. Add new list endpoints here by default.
+PAGE_SIZE_SWEEP_CASES = [
+    # Higher tolerance, not a weaker check: the content_object prefetch fix
+    # batches once per distinct content type on the page (bounded by the ~9
+    # registered resource types here), not once per row.
+    pytest.param('resource-list', {'extra_fields': 'resource_data'}, dict(max_query_delta=8), id='resource_list_with_extra_fields'),
+    pytest.param('resource-list', {}, {}, id='resource_list_without_extra_fields'),
+    pytest.param('organization-list', {}, {}, id='organization_list'),
+    pytest.param('team-list', {}, {}, id='team_list'),
+    pytest.param('user-list', {}, {}, id='user_list'),
+    pytest.param('inventory-list', {}, {}, id='inventory_list'),
+    pytest.param('roledefinition-list', {}, {}, id='role_definition_list'),
+    pytest.param('resourcetype-list', {}, {}, id='resource_type_list'),
+    pytest.param('dabcontenttype-list', {}, {}, id='dab_content_type_list'),
+    pytest.param('dabpermission-list', {}, {}, id='dab_permission_list'),
+    pytest.param('activitystream-list', {}, {}, id='activity_stream_list'),
+    pytest.param('aap_flags_states-list', {}, {}, id='aap_flags_states_list'),
+    pytest.param('roleuserassignment-list', {}, {}, id='role_user_assignment_list'),
+    pytest.param('roleteamassignment-list', {}, {}, id='role_team_assignment_list'),
+    pytest.param('serviceuserassignment-list', {}, {}, id='service_user_assignment_list'),
+    pytest.param('serviceteamassignment-list', {}, {}, id='service_team_assignment_list'),
+    # Failing (real N+1s). xfail(strict=True) so a fix flips this to a hard
+    # CI failure (forcing marker removal) instead of a stale comment.
     pytest.param(
         'application-list',
         {},
-        10,
-        marks=pytest.mark.xfail(reason="AAP-92618 N+1 (access_tokens + unprefetched FK summary fields); 154q/30 rows vs cutoff 10", strict=True),
+        {},
+        marks=pytest.mark.xfail(reason="N+1: access_tokens + unprefetched FK summary fields", strict=True),
         id='application_list',
     ),
     pytest.param(
         'token-list',
         {},
-        15,
-        marks=pytest.mark.xfail(reason="AAP-92626 N+1 in OAuth2TokenViewSet; 124q/30 rows vs cutoff 15", strict=True),
+        {},
+        marks=pytest.mark.xfail(reason="N+1 in OAuth2TokenViewSet", strict=True),
         id='token_list',
     ),
     pytest.param(
         'authenticatormap-list',
         {},
-        15,
-        marks=pytest.mark.xfail(reason="AAP-92627 N+1 in AuthenticatorMapViewSet; 94q/30 rows vs cutoff 15", strict=True),
+        {},
+        marks=pytest.mark.xfail(reason="N+1 in AuthenticatorMapViewSet", strict=True),
         id='authenticator_map_list',
     ),
     pytest.param(
-        'serviceuserassignment-list',
+        'authenticator-list',
         {},
-        20,
-        id='service_user_assignment_list',
-    ),
-    pytest.param(
-        'serviceteamassignment-list',
         {},
-        20,
-        id='service_team_assignment_list',
+        marks=pytest.mark.xfail(reason="N+1: missing select_related for created_by/modified_by", strict=True),
+        id='authenticator_list',
     ),
 ]
 
 
-@pytest.mark.parametrize('url_name, query_params, max_queries', QUERY_COUNT_CASES)
-def test_list_query_count_hard_cutoff(
+@pytest.mark.parametrize('url_name, query_params, sweep_kwargs', PAGE_SIZE_SWEEP_CASES)
+def test_list_query_count_flat_across_page_size(
     session_admin_api_client,
     _seed_large_dataset,
     _seed_oauth_applications,
     _seed_oauth_tokens,
     _seed_authenticator_maps,
+    _seed_authenticators,
     url_name,
     query_params,
-    max_queries,
+    sweep_kwargs,
 ):
-    """A request to a list endpoint should never exceed a fixed query-count
-    cutoff, regardless of how many objects are returned."""
+    """A request to a list endpoint should use roughly the same number of
+    queries whether it returns 1, 10, or 100 objects -- a growing count as
+    page size increases is the signature of an N+1."""
     url = get_relative_url(url_name)
-
-    session_admin_api_client.get(url, query_params)  # warm up (e.g. ContentType cache)
-    with CaptureQueriesContext(connection) as ctx:
-        response = session_admin_api_client.get(url, query_params)
-
-    assert response.status_code == 200
-    # A query-count cutoff on an empty list is meaningless (AAP-88874).
-    assert response.data['count'] > 0, "Expected seeded objects in the response; got an empty list."
-
-    query_count = len(ctx.captured_queries)
-    assert query_count <= max_queries, (
-        f"{url}?{query_params} used {query_count} queries for " f"{response.data['count']} objects, exceeding the hard cutoff of {max_queries}."
-    )
+    assert_query_count_flat(session_admin_api_client, url, query_params, **sweep_kwargs)
