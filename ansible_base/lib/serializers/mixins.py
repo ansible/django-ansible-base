@@ -106,9 +106,68 @@ class CleanTextMixin:
                 json_fields.append(f.name)
         return text_fields, json_fields
 
+    def _serializer_field_for_model_attr(self, field_name):
+        """Return the serializer field bound to a model attribute, if any."""
+        for candidate in self.fields.values():
+            if getattr(candidate, 'source', None) == field_name:
+                return candidate
+        field = self.fields.get(field_name)
+        if field is not None and getattr(field, 'source', field_name) == field_name:
+            return field
+        return None
+
+    def _attrs_value_for_model_attr(self, field_name, attrs):
+        """Submitted value for a model attribute, including renamed serializer fields."""
+        for ser_name, field in self.fields.items():
+            if getattr(field, 'source', None) == field_name and ser_name in attrs:
+                return attrs[ser_name]
+        if field_name in attrs:
+            # DRF keys attrs by serializer field name; do not require source == field_name
+            # here or PATCH bodies like {"description": "..."} are skipped when a same-named
+            # field binds to a different attribute (for example source="*").
+            return attrs[field_name]
+        return None
+
+    def _validation_error_key_for_model_attr(self, field_name):
+        """DRF error dict key for a model attribute (serializer field name when renamed)."""
+        field = self._serializer_field_for_model_attr(field_name)
+        if field is not None:
+            return field.field_name
+        return field_name
+
+    def _serializer_field_trims_whitespace(self, field_name):
+        """Whether DRF trims this field's input before ``validate()`` runs."""
+        field = self._serializer_field_for_model_attr(field_name)
+        if field is None:
+            return False
+        return getattr(field, 'trim_whitespace', False)
+
+    @staticmethod
+    def _strings_equal_for_grandfather(submitted, stored, trim_whitespace=False):
+        """Whether submitted text should be treated as unchanged legacy content.
+
+        When ``trim_whitespace`` is enabled on the serializer field, DRF strips
+        leading/trailing whitespace before values reach ``validate()``, while
+        ORM-seeded rows may still contain that whitespace. Strip only the stored
+        side (submitted is already normalized) for comparison. Nested JSON strings
+        are not trimmed by DRF and must use exact comparison (``trim_whitespace``
+        false).
+        """
+        if submitted == stored:
+            return True
+        if not trim_whitespace:
+            return False
+        if isinstance(submitted, str) and isinstance(stored, str):
+            return submitted == stored.strip()
+        return False
+
     def _is_unchanged(self, field_name, value):
         """True when the instance already stores an identical value (grandfather rule)."""
-        return self.instance and getattr(self.instance, field_name, None) == value
+        if not self.instance:
+            return False
+        stored = getattr(self.instance, field_name, None)
+        trim = self._serializer_field_trims_whitespace(field_name)
+        return self._strings_equal_for_grandfather(value, stored, trim_whitespace=trim)
 
     def _validate_text_fields(self, field_names, attrs, errors):
         """Validate CharField / TextField values (Tier 1 name fields + Tier 2 free-text).
@@ -125,27 +184,28 @@ class CleanTextMixin:
         override get_internal_type().
         """
         for field_name in field_names:
-            if field_name in self.excluded_fields or field_name not in attrs:
+            if field_name in self.excluded_fields:
                 continue
-            value = attrs[field_name]
-            if not isinstance(value, str) or self._is_unchanged(field_name, value):
+            value = self._attrs_value_for_model_attr(field_name, attrs)
+            if value is None or not isinstance(value, str) or self._is_unchanged(field_name, value):
                 continue
             self._run_text_validator(field_name, value, errors)
 
     def _run_text_validator(self, field_name, value, errors):
         """Apply the appropriate validator (name vs free-text) and collect errors."""
+        error_key = self._validation_error_key_for_model_attr(field_name)
         try:
             if field_name in self.name_fields:
                 validate_resource_name(value)
             else:
                 validate_free_text(value)
         except serializers.ValidationError as exc:
-            errors[field_name] = exc.detail
+            errors[error_key] = exc.detail
             self._log_validation_failure(field_name, exc.detail)
         except Exception:
             logger.exception("Unexpected error validating field '%s'", field_name)
             if get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False):
-                errors[field_name] = [_INCOMPLETE_VALIDATION_MSG]
+                errors[error_key] = [_INCOMPLETE_VALIDATION_MSG]
 
     _MAX_JSON_DEPTH = 10
 

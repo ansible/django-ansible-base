@@ -23,6 +23,65 @@ class OrgSerializer(CleanTextMixin, serializers.ModelSerializer):
         fields = ['name', 'description', 'extra_field']
 
 
+class OrgSerializerDescriptionNoTrim(CleanTextMixin, serializers.ModelSerializer):
+    class Meta:
+        model = Organization
+        fields = ['name', 'description']
+        extra_kwargs = {'description': {'trim_whitespace': False}}
+
+
+class OrgSerializerDescriptionRenamed(CleanTextMixin, serializers.ModelSerializer):
+    description_input = serializers.CharField(source='description')
+
+    class Meta:
+        model = Organization
+        fields = ['name', 'description_input']
+
+
+class OrgSerializerDescriptionRenamedNoTrim(CleanTextMixin, serializers.ModelSerializer):
+    description_input = serializers.CharField(source='description', trim_whitespace=False)
+
+    class Meta:
+        model = Organization
+        fields = ['name', 'description_input']
+
+
+class OrgSerializerDescriptionSourceConflict(CleanTextMixin, serializers.ModelSerializer):
+    """Same-named field sources elsewhere; model description comes from description_input."""
+
+    description = serializers.CharField(
+        source='extra_field',
+        trim_whitespace=True,
+        required=False,
+        allow_blank=True,
+    )
+    description_input = serializers.CharField(source='description', trim_whitespace=False)
+
+    class Meta:
+        model = Organization
+        fields = ['name', 'description', 'description_input']
+
+
+class OrgSerializerWithStarSourceField(CleanTextMixin, serializers.ModelSerializer):
+    """Mirrors NamespaceSerializer's related_fields source='*' alongside description."""
+
+    related_fields = serializers.JSONField(source='*', required=False)
+
+    class Meta:
+        model = Organization
+        fields = ['name', 'description', 'related_fields']
+
+
+class OrgSerializerDescriptionBoundElsewhere(CleanTextMixin, serializers.ModelSerializer):
+    """Same-named serializer field sources a different model attribute."""
+
+    description = serializers.CharField(source='extra_field', required=False, allow_blank=True)
+
+    class Meta:
+        model = Organization
+        fields = ['name', 'description']
+
+
 class OrgSerializerWithExclusions(CleanTextMixin, serializers.ModelSerializer):
     excluded_fields = frozenset({'description'})
 
@@ -183,6 +242,97 @@ class TestCleanTextMixinGrandfathering:
         serializer = OrgSerializer(org, data=data)
         serializer.is_valid()
         assert 'name' not in serializer.errors
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize(
+        'stored',
+        [
+            'Legacy <b>bold</b>\n',
+            ' Legacy <b>bold</b>',
+            '\nLegacy <b>bold</b>\n',
+        ],
+    )
+    def test_grandfather_ignores_leading_trailing_whitespace_mismatch(self, stored):
+        """ORM-seeded leading/trailing whitespace must grandfather after DRF trim_whitespace."""
+        org = Organization.objects.create(name='Org', description=stored)
+        data = {'name': 'Org', 'description': 'Legacy <b>bold</b>'}
+        serializer = OrgSerializer(org, data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    def test_grandfather_whitespace_trim_does_not_hide_real_changes(self):
+        org = Organization.objects.create(name='Org', description='Legacy <b>bold</b>\n')
+        data = {'name': 'Org', 'description': 'Legacy <b>bold</b> extra'}
+        serializer = OrgSerializer(org, data=data)
+        assert not serializer.is_valid()
+        assert 'description' in serializer.errors
+
+    @pytest.mark.django_db
+    def test_grandfather_respects_trim_whitespace_false(self):
+        """Whitespace-only deltas must not grandfather when trim_whitespace is off."""
+        org = Organization.objects.create(name='Org', description='$(dangerous)')
+        data = {'name': 'Org', 'description': '$(dangerous) '}
+        serializer = OrgSerializerDescriptionNoTrim(org, data=data)
+        assert not serializer.is_valid()
+        assert 'description' in serializer.errors
+
+    @pytest.mark.django_db
+    def test_grandfather_trim_via_renamed_source_field(self):
+        org = Organization.objects.create(name='Org', description='Legacy <b>bold</b>\n')
+        data = {'name': 'Org', 'description_input': 'Legacy <b>bold</b>'}
+        serializer = OrgSerializerDescriptionRenamed(org, data=data)
+        assert serializer.is_valid(), serializer.errors
+
+    @pytest.mark.django_db
+    def test_renamed_source_respects_trim_whitespace_false(self):
+        org = Organization.objects.create(name='Org', description='$(dangerous)')
+        data = {'name': 'Org', 'description_input': '$(dangerous) '}
+        serializer = OrgSerializerDescriptionRenamedNoTrim(org, data=data)
+        assert not serializer.is_valid()
+        assert 'description_input' in serializer.errors
+
+    @pytest.mark.django_db
+    def test_source_binding_wins_over_same_named_serializer_field(self):
+        org = Organization.objects.create(name='Org', description='$(dangerous)')
+        data = {'name': 'Org', 'description_input': '$(dangerous) '}
+        serializer = OrgSerializerDescriptionSourceConflict(org, data=data)
+        assert not serializer.is_valid()
+        assert 'description_input' in serializer.errors
+
+    @pytest.mark.django_db
+    def test_changed_description_rejected_with_star_source_field_present(self):
+        org = Organization.objects.create(name='Org', description='Legacy <b>bold</b>\n')
+        data = {'description': 'Legacy <b>bold</b> changed'}
+        serializer = OrgSerializerWithStarSourceField(org, data=data, partial=True)
+        assert not serializer.is_valid()
+        assert 'description' in serializer.errors
+
+    @pytest.mark.django_db
+    def test_renamed_description_input_rejects_changed_html_on_update(self):
+        org = Organization.objects.create(name='Org', description='Legacy <b>bold</b>\n')
+        data = {'description_input': 'Legacy <b>bold</b> changed'}
+        serializer = OrgSerializerDescriptionRenamed(org, data=data, partial=True)
+        assert not serializer.is_valid()
+        assert 'description_input' in serializer.errors
+
+    @pytest.mark.django_db
+    def test_model_description_validated_when_serializer_field_sources_elsewhere(self):
+        org = Organization.objects.create(name='Org', description='safe')
+        data = {'description': '<script>evil</script>'}
+        serializer = OrgSerializerDescriptionBoundElsewhere(org, data=data, partial=True)
+        assert not serializer.is_valid()
+        assert 'description' in serializer.errors
+
+    def test_strings_equal_for_grandfather_trim_skips_non_string_types(self):
+        assert not CleanTextMixin._strings_equal_for_grandfather('text', 1, trim_whitespace=True)
+        assert not CleanTextMixin._strings_equal_for_grandfather(1, 'text', trim_whitespace=True)
+
+    def test_field_lookup_helpers_for_misbound_same_named_field(self):
+        serializer = OrgSerializerDescriptionBoundElsewhere()
+        assert serializer._serializer_field_for_model_attr('description') is None
+        assert serializer._serializer_field_for_model_attr('extra_field') is serializer.fields['description']
+        assert serializer._validation_error_key_for_model_attr('description') == 'description'
+        assert not serializer._serializer_field_trims_whitespace('description')
 
 
 @pytest.mark.usefixtures('enable_validation')
