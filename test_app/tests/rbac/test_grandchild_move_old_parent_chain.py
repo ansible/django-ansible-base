@@ -2,7 +2,6 @@
 
 import pytest
 from django.db import connection
-from django.test.utils import CaptureQueriesContext
 
 from ansible_base.rbac.caching import recompute_all_role_evaluations
 from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation
@@ -70,13 +69,15 @@ def test_grandchild_move_when_old_parent_is_deleted_mid_move(rando):
     assert _evaluation_rows() == after
 
 
+def _fail_on_namespace_read(execute, sql, params, many, context):
+    assert f'FROM "{Namespace._meta.db_table}"' not in sql, f'creating a collection read its namespace again: {sql}'
+    return execute(sql, params, many, context)
+
+
 @pytest.mark.django_db
 def test_creating_a_grandchild_does_not_load_its_parent_again():
     """On create the original parent is the current parent, so the old-parent handling must not run."""
     org = Organization.objects.create(name='org')
     namespace = Namespace.objects.create(name='ns', organization=org)
-    namespace_table = Namespace._meta.db_table
-    with CaptureQueriesContext(connection) as ctx:
+    with connection.execute_wrapper(_fail_on_namespace_read):
         CollectionImport.objects.create(name='c', namespace=namespace)
-    namespace_selects = [q['sql'] for q in ctx.captured_queries if q['sql'].startswith('SELECT') and f'"{namespace_table}"' in q['sql'].split(' WHERE ')[0]]
-    assert namespace_selects == []
