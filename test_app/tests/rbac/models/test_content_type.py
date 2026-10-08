@@ -88,7 +88,7 @@ class DABContentTypeTests(TestCase):
         with self.assertNumQueries(1):
             DABContentType.objects.get_for_model(Inventory)
 
-    @isolate_apps("tests")
+    @isolate_apps()
     def test_get_for_model_not_registered(self):
         class ModelCreatedOnTheFly(models.Model):
             name = models.CharField(max_length=10)
