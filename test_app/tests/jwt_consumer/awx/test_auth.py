@@ -174,11 +174,11 @@ def mock_awx_rbac():
 
     original_filter = Resource.objects.filter
 
-    def patched_filter(**kwargs):
+    def patched_filter(*args, **kwargs):
         if 'ansible_id__in' in kwargs:
-            real_qs = original_filter(**kwargs)
+            real_qs = original_filter(*args, **kwargs)
             return [FakeResource(r, object_registry.get(str(r.ansible_id), r.content_object)) for r in real_qs]
-        return original_filter(**kwargs)
+        return original_filter(*args, **kwargs)
 
     with mock.patch.dict(
         'sys.modules',

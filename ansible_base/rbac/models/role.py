@@ -415,11 +415,16 @@ class AssignmentBase(ImmutableCommonModel, ObjectRoleFields, _AuditableBase):
     object_id = models.TextField(
         null=True, blank=True, help_text=_('The primary key of the object this assignment applies to; null value indicates system-wide assignment.')
     )
+    object_ansible_id = models.UUIDField(
+        null=True,
+        blank=True,
+        help_text=_('Cached ansible_id of the resource this assignment applies to.'),
+    )
     content_type = models.ForeignKey(DABContentType, on_delete=models.CASCADE, null=True, help_text=_("The content type this applies to."))
 
     # object_role is internal, and not shown in serializer
     # content_type does not have a link, and ResourceType will be used in lieu sometime
-    ignore_relations = ['content_type', 'object_role', 'resource']
+    ignore_relations = ['content_type', 'object_role']
 
     class Meta:
         app_label = 'dab_rbac'
@@ -634,16 +639,22 @@ class ObjectRole(ObjectRoleFields):
         # own content type (e.g. organization) if it doesn't match the target.
         skip_role_ct = object_ct_id is not None and self.content_type_id != object_ct_id
 
+        # When looking ahead to a specific object, evaluations on the role's own
+        # object are only relevant if that object *is* the look-ahead object.
+        # Otherwise a role like "JobTemplate Execute on JT 42", reached through a
+        # team, would contribute evaluations for JT 42 while we are computing JT 43.
+        own_object_is_target = object_pk is None or object_id == object_pk
+
         for permission in types_prefetch.permissions_for_object_role(self):
 
             # direct object permission
             if permission.content_type_id == self.content_type_id:
-                if not skip_role_ct:
+                if not skip_role_ct and own_object_is_target:
                     expected_evaluations.add((permission.codename, self.content_type_id, object_id))
                 continue
 
             # Add evaluation for the parent object, usually only for add permission
-            if not skip_role_ct and (is_add_perm(permission.codename) or settings.ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS):
+            if not skip_role_ct and own_object_is_target and (is_add_perm(permission.codename) or settings.ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS):
                 expected_evaluations.add((permission.codename, self.content_type_id, object_id))
 
             # Add evaluations for child objects, where this role gives permission to child objects

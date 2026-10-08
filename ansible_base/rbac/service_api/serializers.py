@@ -16,28 +16,14 @@ logger = logging.getLogger('ansible_base.rbac.service_api.serializers')
 
 class ObjectAnsibleIdField(serializers.Field):
     """
-    Field for object_ansible_id that supports both annotation optimization and fallback.
+    Field for the cached assignment object_ansible_id.
 
-    For read operations: Uses annotation when available, falls back to manual lookup.
-    For write operations: Converts ansible_id to object_id for internal use.
+    For writes, converts an ansible_id to object_id for internal use.
     """
 
     def to_representation(self, obj):
-        """Get object_ansible_id, using annotation when available, falling back to manual lookup"""
-        # First try to use the annotation from the queryset (for optimized list operations)
-        if hasattr(obj, '_object_ansible_id_annotation') and obj._object_ansible_id_annotation:
-            return str(obj._object_ansible_id_annotation)
-
-        # Fallback for cases where annotation is not available (creation, etc.)
-        if not obj.content_type_id or not obj.object_id:
-            return None
-
-        content_object = obj.content_object
-        if isinstance(content_object, RemoteObject):
-            return None
-        if hasattr(content_object, 'resource'):
-            return str(content_object.resource.ansible_id)
-        return None
+        """Return the persisted assignment Resource ID."""
+        return str(obj.object_ansible_id) if obj.object_ansible_id else None
 
     def get_attribute(self, instance):
         """Override to return the full instance instead of a specific attribute"""
