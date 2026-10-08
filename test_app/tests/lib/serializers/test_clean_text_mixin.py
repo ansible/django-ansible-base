@@ -244,9 +244,17 @@ class TestCleanTextMixinGrandfathering:
         assert 'name' not in serializer.errors
 
     @pytest.mark.django_db
-    def test_grandfather_ignores_leading_trailing_whitespace_mismatch(self):
-        """ORM-seeded trailing whitespace must grandfather after DRF trim_whitespace."""
-        org = Organization.objects.create(name='Org', description='Legacy <b>bold</b>\n')
+    @pytest.mark.parametrize(
+        'stored',
+        [
+            'Legacy <b>bold</b>\n',
+            ' Legacy <b>bold</b>',
+            '\nLegacy <b>bold</b>\n',
+        ],
+    )
+    def test_grandfather_ignores_leading_trailing_whitespace_mismatch(self, stored):
+        """ORM-seeded leading/trailing whitespace must grandfather after DRF trim_whitespace."""
+        org = Organization.objects.create(name='Org', description=stored)
         data = {'name': 'Org', 'description': 'Legacy <b>bold</b>'}
         serializer = OrgSerializer(org, data=data)
         assert serializer.is_valid(), serializer.errors
