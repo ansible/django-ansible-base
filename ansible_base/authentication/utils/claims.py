@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import contextlib
 import importlib
 import logging
 import re
 from enum import Enum, auto
-from typing import Any, Iterable, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Union
 from uuid import uuid4
 
 from django.conf import settings
@@ -24,6 +26,9 @@ from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 from ansible_base.lib.utils.string import is_empty
 
 from .trigger_definition import TRIGGER_DEFINITION
+
+if TYPE_CHECKING:
+    from ansible_base.rbac.models import RoleTeamAssignment, RoleUserAssignment
 
 logger = logging.getLogger('ansible_base.authentication.utils.claims')
 Organization = get_organization_model()
@@ -834,6 +839,7 @@ class ReconcileUser:
 
     def apply_permissions(self) -> None:
         """See RoleUserAssignmentsCache for more details."""
+        assignments_to_sync = []
         for role_name, role_permissions in self.permissions_cache.items():
             if not self.permissions_cache.rd_by_name(role_name):
                 # If we failed to load this role for some reason
@@ -842,18 +848,27 @@ class ReconcileUser:
 
             for content_type_id, content_type_permissions in role_permissions.items():
                 for _object_id, object_with_status in content_type_permissions.items():
-                    self._apply_permission(object_with_status, role_name)
+                    assignment = self._apply_permission(object_with_status, role_name)
+                    if assignment is not None:
+                        assignments_to_sync.append(assignment)
 
-    def _apply_permission(self, object_with_status, role_name):
+        if assignments_to_sync:
+            from ansible_base.rbac.sync import maybe_reverse_sync_assignments
+
+            maybe_reverse_sync_assignments(assignments_to_sync)
+
+    def _apply_permission(self, object_with_status, role_name) -> Optional[models.Model]:
         status = object_with_status['status']
         obj = object_with_status['object']
 
         if status == self.permissions_cache.STATUS_ADD:
-            self._give_permission(self.permissions_cache.rd_by_name(role_name), obj)
+            return self._give_permission(self.permissions_cache.rd_by_name(role_name), obj)
         elif status == self.permissions_cache.STATUS_REMOVE:
             self._remove_permission(self.permissions_cache.rd_by_name(role_name), obj)
         elif status == self.permissions_cache.STATUS_EXISTING and self.rebuild_user_permissions:
             self._remove_permission(self.permissions_cache.rd_by_name(role_name), obj)
+
+        return None
 
     @staticmethod
     def _get_orgs_by_name(org_names) -> dict[str, AbstractOrganization]:
@@ -869,7 +884,11 @@ class ReconcileUser:
         teams = Team.objects.filter(organization_id__in=org_ids).order_by()
         return {(team.organization_id, team.name): team for team in teams}
 
-    def _give_permission(self, role_definition: CommonModel, obj: Union[AbstractOrganization, AbstractTeam, None] = None) -> None:
+    def _give_permission(
+        self,
+        role_definition: CommonModel,
+        obj: AbstractOrganization | AbstractTeam | None = None,
+    ) -> RoleUserAssignment | RoleTeamAssignment:
         if obj:
             logger.info(
                 _("Assigning role '{rd}' to user '{username}' in '{object}").format(
@@ -880,9 +899,9 @@ class ReconcileUser:
             logger.info(_("Assigning role '{rd}' to user '{username}'").format(rd=role_definition.name, username=self.user.username))
 
         if obj:
-            role_definition.give_permission(self.user, obj)
+            return role_definition.give_permission(self.user, obj)
         else:
-            role_definition.give_global_permission(self.user)
+            return role_definition.give_global_permission(self.user)
 
     def _remove_permission(self, role_definition: CommonModel, obj: Union[AbstractOrganization, AbstractTeam, None] = None) -> None:
         if obj:

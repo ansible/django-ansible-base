@@ -5,6 +5,8 @@ from typing import Optional
 from django.apps import apps
 
 from ansible_base.lib.utils.apps import is_rbac_installed
+from ansible_base.lib.utils.models import get_system_user
+from ansible_base.resource_registry.models.service_identifier import service_id
 from ansible_base.resource_registry.resource_server import get_resource_server_config
 from ansible_base.resource_registry.service_client import BaseServiceClient
 
@@ -159,6 +161,14 @@ class ResourceAPIClient(BaseServiceClient):
             serializer = ServiceRoleTeamAssignmentSerializer(assignment)
 
         data = serializer.data
+        data['from_service'] = str(service_id())
+
+        # System users are local implementation details and do not have matching
+        # resources in every connected service. The receiving service supplies its
+        # own system actor when this optional field is absent.
+        system_user = get_system_user()
+        if system_user is not None and assignment.created_by_id == system_user.pk:
+            data.pop('created_by_ansible_id', None)
 
         # Remove object_id if object_ansible_id is present to avoid sending both
         # For registered objects: send only object_ansible_id
@@ -170,7 +180,7 @@ class ResourceAPIClient(BaseServiceClient):
 
     def sync_unassignment(self, role_definition, actor, content_object):
         _check_rbac_installed()
-        data = {'role_definition': role_definition.name}
+        data = {'role_definition': role_definition.name, 'from_service': str(service_id())}
         data[f'{actor._meta.model_name}_ansible_id'] = str(actor.resource.ansible_id)
 
         if content_object is None:
@@ -185,6 +195,143 @@ class ResourceAPIClient(BaseServiceClient):
                 data["object_id"] = str(content_object.pk)
 
         return self._sync_assignment(data, giving=False)
+
+    @staticmethod
+    def _get_assignment_actor_type(model_name):
+        if model_name == 'roleuserassignment' or model_name == 'user':
+            return 'user'
+        if model_name == 'roleteamassignment' or model_name == 'team':
+            return 'team'
+        raise ValueError(f'Unsupported role assignment actor type: {model_name}')
+
+    @staticmethod
+    def _get_assignment_model_and_serializer(actor_type):
+        from ansible_base.rbac.models import RoleTeamAssignment, RoleUserAssignment
+        from ansible_base.rbac.service_api.serializers import ServiceRoleTeamAssignmentSerializer, ServiceRoleUserAssignmentSerializer
+
+        if actor_type == 'user':
+            return RoleUserAssignment, ServiceRoleUserAssignmentSerializer
+        return RoleTeamAssignment, ServiceRoleTeamAssignmentSerializer
+
+    @staticmethod
+    def _serialize_assignment_instances_by_pk(instances, serializer_class):
+        return {instance.pk: dict(item_data) for instance, item_data in zip(instances, serializer_class(instances, many=True).data, strict=True)}
+
+    @staticmethod
+    def _ensure_assignment_batch_items_are_saved(assignments):
+        if any(assignment.pk is None for assignment in assignments):
+            raise ValueError('Role assignments must be saved before they can be synchronized')
+
+    @staticmethod
+    def _load_assignment_batch_instances(assignments, assignment_model, actor_field):
+        queryset = assignment_model.objects.filter(pk__in=[assignment.pk for assignment in assignments]).select_related(
+            'created_by__resource', 'content_type', 'role_definition', 'object_role', actor_field
+        )
+        return list(queryset)
+
+    @staticmethod
+    def _get_assignment_batch_items_by_pk(assignments, instances, serializer_class):
+        item_by_pk = ResourceAPIClient._serialize_assignment_instances_by_pk(instances, serializer_class)
+        missing_assignments = [assignment for assignment in assignments if assignment.pk not in item_by_pk]
+        item_by_pk.update(ResourceAPIClient._serialize_assignment_instances_by_pk(missing_assignments, serializer_class))
+        return item_by_pk
+
+    @staticmethod
+    def _serialize_assignment_batch_items(assignments, actor_type):
+        assignment_model, serializer_class = ResourceAPIClient._get_assignment_model_and_serializer(actor_type)
+        ResourceAPIClient._ensure_assignment_batch_items_are_saved(assignments)
+        actor_field = f'{actor_type}__resource'
+        instances = ResourceAPIClient._load_assignment_batch_instances(assignments, assignment_model, actor_field)
+        item_by_pk = ResourceAPIClient._get_assignment_batch_items_by_pk(assignments, instances, serializer_class)
+        return [(assignment, item_by_pk[assignment.pk]) for assignment in assignments]
+
+    def _group_assignment_instances_by_actor_type(self, assignments):
+        assignments_by_type = {}
+        for assignment in assignments:
+            actor_type = self._get_assignment_actor_type(assignment._meta.model_name)
+            assignments_by_type.setdefault(actor_type, []).append(assignment)
+        return assignments_by_type
+
+    @staticmethod
+    def _get_assignment_batch_metadata(assignment, item, system_user):
+        creator_ansible_id = item.pop('created_by_ansible_id', None)
+        if system_user is not None and assignment.created_by_id == system_user.pk:
+            creator_ansible_id = None
+
+        # Source and creator identify the batch, so carry them once in the wrapper.
+        item.pop('from_service', None)
+        if item.get('object_ansible_id') is not None:
+            item.pop('object_id', None)
+        return creator_ansible_id, item
+
+    def _group_assignment_items_by_creator(self, assignments_by_type, system_user):
+        groups = {}
+        for actor_type, actor_assignments in assignments_by_type.items():
+            for assignment, item in self._serialize_assignment_batch_items(actor_assignments, actor_type):
+                creator_ansible_id, item = self._get_assignment_batch_metadata(assignment, item, system_user)
+                creator_key = str(creator_ansible_id) if creator_ansible_id is not None else None
+                groups.setdefault((actor_type, creator_key), []).append(item)
+        return groups
+
+    def _send_assignment_batches(self, groups):
+        source = str(service_id())
+        responses = []
+        for (actor_type, creator_ansible_id), items in groups.items():
+            data = {'from_service': source, 'assignments': items}
+            if creator_ansible_id is not None:
+                data['created_by_ansible_id'] = creator_ansible_id
+            responses.append(self._make_request('post', f'role-{actor_type}-assignments/bulk-assign/', data=data))
+        return responses
+
+    def sync_assignments(self, assignments):
+        """Synchronize multiple role assignments with one request per actor/creator group."""
+        _check_rbac_installed()
+
+        assignments = list(assignments)
+        if not assignments:
+            return []
+
+        system_user = get_system_user()
+        assignments_by_type = self._group_assignment_instances_by_actor_type(assignments)
+        groups = self._group_assignment_items_by_creator(assignments_by_type, system_user)
+        return self._send_assignment_batches(groups)
+
+    def sync_unassignments(self, operations):
+        """Synchronize multiple role removals with one request per actor type."""
+        _check_rbac_installed()
+        operations = list(operations)
+        if not operations:
+            return []
+
+        groups = {}
+        for role_definition, actor, content_object in operations:
+            actor_type = self._get_assignment_actor_type(actor._meta.model_name)
+            item = {
+                'role_definition': role_definition.name,
+                f'{actor_type}_ansible_id': str(actor.resource.ansible_id),
+            }
+
+            if content_object is None:
+                item['object_id'] = None
+            else:
+                ct_cls = apps.get_model('dab_rbac', 'DABContentType')
+                content_type = ct_cls.objects.get_for_model(content_object)
+                if content_type.service == 'shared':
+                    item['object_ansible_id'] = str(content_object.resource.ansible_id)
+                else:
+                    item['object_id'] = str(content_object.pk)
+
+            groups.setdefault(actor_type, []).append(item)
+
+        source = str(service_id())
+        return [
+            self._make_request(
+                'post',
+                f'role-{actor_type}-assignments/bulk-unassign/',
+                data={'from_service': source, 'assignments': items},
+            )
+            for actor_type, items in groups.items()
+        ]
 
     def sync_object_deletion(self, content_object):
         """Sync object deletion to Gateway for cleanup of all related role assignments"""
