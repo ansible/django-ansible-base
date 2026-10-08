@@ -944,6 +944,11 @@ class TestValidateFreeText:
         with pytest.raises(ValidationError):
             validate_free_text(value)
 
+    def test_rejects_jinja_after_inner_brace_blocks_earlier_opener(self):
+        """``{{{{}a{{b}}`` must reject ``{{b}}`` even when an earlier ``}}`` inner contains ``}``."""
+        with pytest.raises(ValidationError):
+            validate_free_text("{{{{}a{{b}}")
+
     def test_accepts_large_unclosed_jinja_openers(self):
         """Many unclosed {{ must not monopolize CPU (AAP-95828)."""
         payload = "{{" * 80_000

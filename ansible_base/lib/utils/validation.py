@@ -102,6 +102,50 @@ def _injection_inner_clear(text: str, inner_start: int, close_at: int, forbidden
     return forbidden_at == -1 or forbidden_at >= close_at, forbidden_at
 
 
+def _injection_pair_at_single(
+    text: str,
+    inner_start: int,
+    closer: str,
+    forbidden_in_inner: str,
+    close_search: int,
+    forbidden_at: int,
+) -> tuple[bool, int, int]:
+    n = len(text)
+    j = max(close_search, inner_start)
+    while j < n and text[j] != closer[0]:
+        j += 1
+    next_close = j if j < n else n
+    if j >= n or j <= inner_start:
+        return False, next_close, forbidden_at
+    clear, forbidden_at = _injection_inner_clear(text, inner_start, j, forbidden_in_inner, forbidden_at)
+    if clear:
+        return True, j, forbidden_at
+    return False, next_close, forbidden_at
+
+
+def _injection_pair_at_multi(
+    text: str,
+    inner_start: int,
+    closer: str,
+    forbidden_in_inner: str,
+    close_search: int,
+    forbidden_at: int,
+) -> tuple[bool, int, int]:
+    n = len(text)
+    close_len = len(closer)
+    j = max(close_search, inner_start)
+    while j < n and text[j] != closer[0]:
+        j += 1
+    next_close = (j + 1) if j < n else n
+    if j + close_len > n or text[j : j + close_len] != closer or j <= inner_start:
+        return False, next_close, forbidden_at
+    clear, forbidden_at = _injection_inner_clear(text, inner_start, j, forbidden_in_inner, forbidden_at)
+    if clear:
+        return True, j + close_len, forbidden_at
+    # Keep ``j`` so a later opener can match this ``}}`` (e.g. ``{{{{}a{{b}}`` → ``{{b}}``).
+    return False, j, forbidden_at
+
+
 def _injection_pair_at(
     text: str,
     inner_start: int,
@@ -111,28 +155,9 @@ def _injection_pair_at(
     forbidden_at: int,
 ) -> tuple[bool, int, int]:
     """Check one opener for a valid pair; return match flag and monotonic scan cursors."""
-    n = len(text)
-    close_len = len(closer)
-    j = max(close_search, inner_start)
-    if close_len == 1:
-        while j < n and text[j] != closer[0]:
-            j += 1
-        next_close = j if j < n else n
-        if j >= n or j <= inner_start:
-            return False, next_close, forbidden_at
-        clear, forbidden_at = _injection_inner_clear(text, inner_start, j, forbidden_in_inner, forbidden_at)
-        if clear:
-            return True, j, forbidden_at
-        return False, next_close, forbidden_at
-    while j < n and text[j] != closer[0]:
-        j += 1
-    next_close = (j + 1) if j < n else n
-    if j + close_len > n or text[j : j + close_len] != closer or j <= inner_start:
-        return False, next_close, forbidden_at
-    clear, forbidden_at = _injection_inner_clear(text, inner_start, j, forbidden_in_inner, forbidden_at)
-    if clear:
-        return True, j + close_len, forbidden_at
-    return False, next_close, forbidden_at
+    if len(closer) == 1:
+        return _injection_pair_at_single(text, inner_start, closer, forbidden_in_inner, close_search, forbidden_at)
+    return _injection_pair_at_multi(text, inner_start, closer, forbidden_in_inner, close_search, forbidden_at)
 
 
 def _injection_pair_forward(text: str, opener: str, closer: str, forbidden_in_inner: str) -> bool:
