@@ -32,8 +32,8 @@ def test_lookahead_cache_is_shared_across_roles(rando, organization, org_inv_rd,
         Inventory.objects.create(name='inv-new', organization=organization)
 
     org_role = ObjectRole.objects.get(role_definition=org_inv_rd, object_id=organization.pk)
-    # once for itself as a member of to_update, once memoised through the team member roles
-    assert calls.count(org_role.pk) == 2
+    # the created-object path computes each relevant role's expected evaluations exactly once
+    assert calls.count(org_role.pk) == 1
 
     after_create = _evaluation_rows()
     recompute_all_role_evaluations()
