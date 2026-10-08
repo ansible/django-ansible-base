@@ -3,7 +3,6 @@ from collections import namedtuple
 from typing import Optional
 
 from django.apps import apps
-from django.db.models import F
 
 from ansible_base.lib.utils.apps import is_rbac_installed
 from ansible_base.lib.utils.models import get_system_user
@@ -225,10 +224,8 @@ class ResourceAPIClient(BaseServiceClient):
 
     @staticmethod
     def _load_assignment_batch_instances(assignments, assignment_model, actor_field):
-        queryset = (
-            assignment_model.objects.filter(pk__in=[assignment.pk for assignment in assignments])
-            .select_related('created_by__resource', 'content_type', 'role_definition', 'object_role', actor_field)
-            .annotate(_object_ansible_id_annotation=F('resource__ansible_id'))
+        queryset = assignment_model.objects.filter(pk__in=[assignment.pk for assignment in assignments]).select_related(
+            'created_by__resource', 'content_type', 'role_definition', 'object_role', actor_field
         )
         return list(queryset)
 
