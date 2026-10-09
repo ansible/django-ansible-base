@@ -384,6 +384,9 @@ class EvaluationUpdates:
     def __init__(self):
         self.to_delete: set[tuple[int, type]] = set()
         self.to_add: list = []
+        # Memo of expected evaluations for team-held roles, shared by every
+        # ObjectRole collected in this recompute (look-ahead mode only).
+        self.lookahead_cache: dict = {}
 
     def collect(self, object_role, types_prefetch, evaluations_prefetch=None, object_pk=None, object_ct_id=None, target_parents=None):
         role_to_delete, role_to_add = object_role.needed_cache_updates(
@@ -392,6 +395,7 @@ class EvaluationUpdates:
             object_pk=object_pk,
             object_ct_id=object_ct_id,
             target_parents=target_parents,
+            lookahead_cache=self.lookahead_cache if object_pk is not None else None,
         )
         if role_to_delete:
             logger.debug('Removing %d object-permissions from ObjectRole(pk=%s)', len(role_to_delete), object_role.pk)
