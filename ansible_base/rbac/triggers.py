@@ -19,6 +19,7 @@ from ansible_base.rbac.caching import (
     object_roles_for_parents,
     recompute_all_role_evaluations,
     recompute_role_evaluations,
+    recompute_role_evaluations_for_created,
     team_ids_from_role_target,
 )
 from ansible_base.rbac.models import ObjectRole, RoleDefinition, get_evaluation_model
@@ -321,27 +322,34 @@ def get_parent_ids(instance) -> list[tuple[Model, Union[int, UUID]]]:
     return []
 
 
-def post_save_update_obj_permissions(instance, object_pk=None, object_ct_id=None):
+def _get_parent_gfks_for_update(instance):
+    """Return the parent GFKs to recompute for this object and, on a move, the roles that granted on it before."""
+    parent_gfks = get_parent_ids(instance)
+    if not hasattr(instance, '__rbac_original_parent_id'):
+        return parent_gfks, set()
+
+    original_parent_id = instance.__rbac_original_parent_id
+    delattr(instance, '__rbac_original_parent_id')
+    current_parent_id = getattr(instance, f'{permission_registry.get_parent_fd_name(instance)}_id')
+    if original_parent_id is None or original_parent_id == current_parent_id:
+        return parent_gfks, set()
+
+    parent_cls = permission_registry.get_parent_model(instance)
+    parent_ct = permission_registry.content_type_model.objects.get_for_model(parent_cls)
+    parent_gfks.append((parent_ct, original_parent_id))
+    # Roles on the old parent's own parents (e.g. a namespace's organization) granted on this
+    # object too. Rather than walk the old chain, which needs the old parent to still exist
+    # (it may be deleted concurrently), recompute every role that holds a cached evaluation
+    # for this object; any that no longer applies loses it.
+    obj_ct = permission_registry.content_type_model.objects.get_for_model(instance)
+    cached_role_ids = get_evaluation_model(instance).objects.filter(content_type_id=obj_ct.id, object_id=instance.pk).values('role_id')
+    return parent_gfks, set(ObjectRole.objects.filter(id__in=cached_role_ids))
+
+
+def post_save_update_obj_permissions(instance, object_pk=None, object_ct_id=None, created=False):
     "Utility method shared by multiple signals"
     # Account for organization roles (and other parent objects), new and old
-    parent_gfks = get_parent_ids(instance)
-
-    roles_granting_before_move = set()
-    if hasattr(instance, '__rbac_original_parent_id'):
-        original_parent_id = instance.__rbac_original_parent_id
-        delattr(instance, '__rbac_original_parent_id')
-        current_parent_id = getattr(instance, f'{permission_registry.get_parent_fd_name(instance)}_id')
-        if original_parent_id is not None and original_parent_id != current_parent_id:
-            parent_cls = permission_registry.get_parent_model(instance)
-            parent_ct = permission_registry.content_type_model.objects.get_for_model(parent_cls)
-            parent_gfks.append((parent_ct, original_parent_id))
-            # Roles on the old parent's own parents (e.g. a namespace's organization) granted on this
-            # object too. Rather than walk the old chain, which needs the old parent to still exist
-            # (it may be deleted concurrently), recompute every role that holds a cached evaluation
-            # for this object; any that no longer applies loses it.
-            obj_ct = permission_registry.content_type_model.objects.get_for_model(instance)
-            cached_role_ids = get_evaluation_model(instance).objects.filter(content_type_id=obj_ct.id, object_id=instance.pk).values('role_id')
-            roles_granting_before_move = set(ObjectRole.objects.filter(id__in=cached_role_ids))
+    parent_gfks, roles_granting_before_move = _get_parent_gfks_for_update(instance)
 
     if parent_gfks:
         to_update = object_roles_for_parents(set(parent_gfks))
@@ -358,7 +366,10 @@ def post_save_update_obj_permissions(instance, object_pk=None, object_ct_id=None
         target_parents = None
         if object_pk is not None:
             target_parents = [(parent_ct.id, parent_id) for parent_ct, parent_id in parent_gfks]
-        recompute_role_evaluations(to_update, object_pk=object_pk, object_ct_id=object_ct_id, target_parents=target_parents)
+        if created and object_pk is not None:
+            recompute_role_evaluations_for_created(to_update, object_pk=object_pk, object_ct_id=object_ct_id, target_parents=target_parents)
+        else:
+            recompute_role_evaluations(to_update, object_pk=object_pk, object_ct_id=object_ct_id, target_parents=target_parents)
 
 
 def rbac_pre_save_identify_changes(instance, *args, **kwargs):
@@ -394,7 +405,7 @@ def rbac_post_save_update_evaluations(instance, created, *args, **kwargs):
         if defer_rbac_state.active:
             defer_rbac_state.created_instances.append((instance, instance.pk, obj_ct_id))
             return
-        post_save_update_obj_permissions(instance, object_pk=instance.pk, object_ct_id=obj_ct_id)
+        post_save_update_obj_permissions(instance, object_pk=instance.pk, object_ct_id=obj_ct_id, created=True)
         return
 
     # The parent object can not have changed if update_fields was given and did not list that field
