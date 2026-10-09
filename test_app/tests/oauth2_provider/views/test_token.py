@@ -11,6 +11,7 @@ from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.lib.utils.hashing import hash_string
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.oauth2_provider.models import OAuth2AccessToken, OAuth2RefreshToken
+from ansible_base.oauth2_provider.serializers.application import OAuth2ApplicationSerializer
 
 
 @pytest.mark.django_db
@@ -220,6 +221,23 @@ def test_oauth2_application_token_summary_fields(admin_api_client, oauth2_admin_
     assert response.status_code == 200
     assert response.data['summary_fields']['tokens']['count'] == 1
     assert response.data['summary_fields']['tokens']['results'][0] == {'id': oauth2_admin_access_token[0].pk, 'scope': 'write', 'token': ENCRYPTED_STRING}
+
+
+@pytest.mark.django_db
+def test_oauth2_application_token_summary_limits_sample_but_reports_total_count(admin_api_client, oauth2_application):
+    application = oauth2_application[0]
+    token_url = get_relative_url('token-list')
+
+    for _ in range(11):
+        response = admin_api_client.post(token_url, {'application': application.pk})
+        assert response.status_code == 201, response.data
+
+    response = admin_api_client.get(get_relative_url('application-detail', kwargs={'pk': application.pk}))
+
+    assert response.status_code == 200
+    tokens = response.data['summary_fields']['tokens']
+    assert tokens['count'] == 11
+    assert len(tokens['results']) == 10
 
 
 @pytest.mark.django_db
@@ -467,3 +485,20 @@ def test_oauth2_token_scope_validator(user_api_client, given, error):
     assert response.status_code == 400 if error else 201
     if error:
         assert error in str(response.data['scope'][0])
+
+
+@pytest.mark.django_db
+def test_oauth2_application_token_summary_fallback(
+    oauth2_application,
+    oauth2_admin_access_token,
+):
+    application = oauth2_application[0]
+
+    summary = OAuth2ApplicationSerializer()._summary_field_tokens(application)
+
+    assert summary['count'] == 1
+    assert summary['results'][0] == {
+        'id': oauth2_admin_access_token[0].pk,
+        'scope': 'write',
+        'token': ENCRYPTED_STRING,
+    }

@@ -34,3 +34,20 @@ def test_get_or_build_user(username, ldap_authenticator):
         assert get_or_create_authenticator_user.called
         assert username.lower() in get_or_create_authenticator_user.call_args.kwargs['uid']
         assert username not in get_or_create_authenticator_user.call_args.kwargs['uid']
+
+
+@pytest.mark.django_db
+def test_get_or_build_user_uses_first_ldap_email(ldap_authenticator):
+    with mock.patch(
+        'ansible_base.authentication.utils.authentication.get_or_create_authenticator_user', return_value=(None, None, None)
+    ) as get_or_create_authenticator_user:
+        importlib.reload(ldap)
+        plugin = ldap.AuthenticatorPlugin(database_instance=ldap_authenticator)
+        ldap_object = MagicMock()
+        ldap_object.settings.USER_ATTR_MAP = {'email': 'mail'}
+        ldap_object.attrs.data.get.return_value = 'first@example.com'
+
+        plugin.get_or_build_user('Timmy', ldap_object)
+
+        assert get_or_create_authenticator_user.call_args.kwargs['email'] == 'first@example.com'
+        ldap_object.attrs.data.get.assert_called_once_with('mail', '')
