@@ -86,7 +86,135 @@ _HANDLER_URI_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Source pattern for Tier 2 OPTIONS hints (metadata.build_tier2_frontend_pattern);
+# server-side enforcement uses _contains_injection_pattern(), not _INJECTION_RE.search().
 _INJECTION_RE = re.compile(r'[$]\([^)]+\)|[$]\{[^}]+\}' + r'|\{\{[^}]+\}\}|\{%[^%]+%\}')
+
+
+def _forbidden_index_from(text: str, start: int, needle: str, cached: int) -> int:
+    """First index of ``needle`` at or after ``start``, reusing ``cached`` when still in range."""
+    if cached >= start:
+        return cached
+    return text.find(needle, start)
+
+
+def _injection_inner_clear(text: str, inner_start: int, close_at: int, forbidden: str, forbidden_at: int) -> tuple[bool, int]:
+    """True when ``[inner_start, close_at)`` contains no ``forbidden`` (legacy [^X]+ semantics)."""
+    forbidden_at = _forbidden_index_from(text, inner_start, forbidden, forbidden_at)
+    return forbidden_at == -1 or forbidden_at >= close_at, forbidden_at
+
+
+def _injection_pair_at_single(
+    text: str,
+    inner_start: int,
+    closer: str,
+    forbidden_in_inner: str,
+    close_search: int,
+    forbidden_at: int,
+) -> tuple[bool, int, int]:
+    """Try to close an opener with a single-character closer (e.g. ``)`` or ``}``).
+
+    Scans forward from ``max(close_search, inner_start)`` for the closer character.
+    Returns whether a valid non-empty inner span was found, plus updated scan cursors.
+    """
+    text_len = len(text)
+    close_index = max(close_search, inner_start)
+    while close_index < text_len and text[close_index] != closer[0]:
+        close_index += 1
+    next_close_search = close_index if close_index < text_len else text_len
+    if close_index >= text_len or close_index <= inner_start:
+        return False, next_close_search, forbidden_at
+    clear, forbidden_at = _injection_inner_clear(text, inner_start, close_index, forbidden_in_inner, forbidden_at)
+    if clear:
+        return True, close_index, forbidden_at
+    return False, next_close_search, forbidden_at
+
+
+def _injection_pair_at_multi(
+    text: str,
+    inner_start: int,
+    closer: str,
+    forbidden_in_inner: str,
+    close_search: int,
+    forbidden_at: int,
+) -> tuple[bool, int, int]:
+    """Try to close an opener with a multi-character closer (e.g. ``}}`` or ``%}``).
+
+    Scans forward for a full closer match. When the inner span contains a forbidden
+    character, the close cursor stays at the candidate so a later opener can reuse it.
+    """
+    text_len = len(text)
+    close_len = len(closer)
+    close_index = max(close_search, inner_start)
+    while close_index < text_len and text[close_index] != closer[0]:
+        close_index += 1
+    next_close_search = (close_index + 1) if close_index < text_len else text_len
+    if close_index + close_len > text_len or text[close_index : close_index + close_len] != closer or close_index <= inner_start:
+        return False, next_close_search, forbidden_at
+    clear, forbidden_at = _injection_inner_clear(text, inner_start, close_index, forbidden_in_inner, forbidden_at)
+    if clear:
+        return True, close_index + close_len, forbidden_at
+    # Keep close_index so a later opener can match this ``}}`` (e.g. ``{{{{}a{{b}}`` → ``{{b}}``).
+    return False, close_index, forbidden_at
+
+
+def _injection_pair_at(
+    text: str,
+    inner_start: int,
+    closer: str,
+    forbidden_in_inner: str,
+    close_search: int,
+    forbidden_at: int,
+) -> tuple[bool, int, int]:
+    """Check one opener for a valid pair; return match flag and monotonic scan cursors."""
+    if len(closer) == 1:
+        return _injection_pair_at_single(text, inner_start, closer, forbidden_in_inner, close_search, forbidden_at)
+    return _injection_pair_at_multi(text, inner_start, closer, forbidden_in_inner, close_search, forbidden_at)
+
+
+def _injection_pair_forward(text: str, opener: str, closer: str, forbidden_in_inner: str) -> bool:
+    """Match opener/closer pairs with the same inner rules as _INJECTION_RE, without regex backtracking.
+
+    Single forward pass from each ``opener``; inner text must be non-empty and must not
+    contain ``forbidden_in_inner`` (mirrors [^X]+ in the legacy pattern). Returns early
+    when either delimiter is absent (e.g. unclosed ``{{`` or ``)`` without ``$(``).
+    """
+    if closer not in text or opener not in text:
+        return False
+    text_len = len(text)
+    open_len = len(opener)
+    opener_index = 0
+    close_search = 0
+    forbidden_at = -1
+    while opener_index <= text_len - open_len:
+        if text[opener_index : opener_index + open_len] != opener:
+            opener_index += 1
+            continue
+        inner_start = opener_index + open_len
+        if inner_start >= text_len:
+            return False
+        matched, close_search, forbidden_at = _injection_pair_at(text, inner_start, closer, forbidden_in_inner, close_search, forbidden_at)
+        if matched:
+            return True
+        opener_index += open_len
+    return False
+
+
+def _contains_injection_pattern(text: str) -> bool:
+    """Return True when text contains shell or template injection delimiters.
+
+    Implements _INJECTION_RE semantics with linear scans. The compiled _INJECTION_RE is
+    retained for client-side pattern hints only.
+    """
+    if _injection_pair_forward(text, '$(', ')', ')'):
+        return True
+    if _injection_pair_forward(text, '${', '}', '}'):
+        return True
+    if _injection_pair_forward(text, '{{', '}}', '}'):
+        return True
+    if _injection_pair_forward(text, '{%', '%}', '%'):
+        return True
+    return False
 
 
 def _decoded_variants(value, max_depth=3):
@@ -169,7 +297,7 @@ def validate_free_text(value):
         uri_check = re.sub(r'[\t\n\r]', '', v)
         if _HANDLER_URI_RE.search(uri_check):
             raise ValidationError(_("This field can't include HTML tags, script markup, or unsafe URI schemes."))
-        if _INJECTION_RE.search(v):
+        if _contains_injection_pattern(v):
             raise ValidationError(_("This field can't include shell or template syntax."))
 
 
