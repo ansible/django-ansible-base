@@ -719,8 +719,8 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
         pytest.param(
             {"email": {"equals": "foo@example.com"}, "join_condition": "and"},
             {"email": ["bar@example.com", "foo@example.com"]},
-            claims.TriggerResult.SKIP,
-            id="user attribute is list, one match, explicit 'and', negative",
+            claims.TriggerResult.ALLOW,
+            id="user attribute is list, one match, explicit 'and', positive",
         ),
         pytest.param(
             {"email": {"equals": "foo@example.com"}, "join_condition": "and"},
@@ -848,6 +848,32 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
             {"cn": ["ldap_org_admin"], "employeeType": ["manager"]},
             claims.TriggerResult.ALLOW,
             id="all attribute required by 'and' condition should result in allow",
+        ),
+        pytest.param(
+            {
+                "cn": {"contains": "ldap"},
+                "employeeType": {"contains": "manager"},
+                "join_condition": "and",
+            },
+            {"cn": ["ldap_admin"], "employeeType": ["manager", "executor"]},
+            claims.TriggerResult.ALLOW,
+            id="regression_any_semantics_and_across_attrs_positive",
+        ),
+        pytest.param(
+            {
+                "cn": {"contains": "ldap"},
+                "employeeType": {"contains": "manager"},
+                "join_condition": "and",
+            },
+            {"cn": ["ldap_admin"], "employeeType": ["executor"]},
+            claims.TriggerResult.SKIP,
+            id="regression_any_semantics_and_across_attrs_negative",
+        ),
+        pytest.param(
+            {"cn": {"contains": "ldap"}, "employeeType": {"contains": "manager"}, "join_condition": "or"},
+            {"cn": ["zzz"], "employeeType": ["manager", "executor"]},
+            claims.TriggerResult.ALLOW,
+            id="regression_any_semantics_or_across_attrs_positive_one_side",
         ),
     ],
 )
@@ -2918,12 +2944,12 @@ class TestProcessUserValueInOperatorCorrectness:
     def test_in_multi_value_partial_match_and_join(self):
         tc = {'groups': {'in': ['admin']}}
         result = claims._process_user_value(None, tc, ['user', 'admin'], 'and', 'groups', 1, 't')
-        assert result is False
+        assert result is True
 
-    def test_in_empty_user_value_returns_none(self):
+    def test_in_empty_user_value_returns_false(self):
         tc = {'groups': {'in': ['admin']}}
         result = claims._process_user_value(None, tc, [], 'or', 'groups', 1, 't')
-        assert result is None
+        assert result is False
 
     def test_in_case_insensitive(self):
         tc = {'groups': {'in': ['admin']}}
@@ -2959,10 +2985,10 @@ class TestProcessUserValueInOperatorCorrectness:
         assert result is True
 
     def test_in_partial_match_and_join(self):
-        """With 'and' join, partial match (some values in trigger) must return False."""
+        """With ANY semantics, partial match (any value in trigger) returns True."""
         tc = {'groups': {'in': ['admin', 'editor']}}
         result = claims._process_user_value(None, tc, ['admin', 'viewer'], 'and', 'groups', 1, 't')
-        assert result is False
+        assert result is True
 
     def test_in_many_groups_single_trigger_no_match(self):
         """33 user groups, trigger has 1 non-matching value."""
@@ -2993,17 +3019,17 @@ class TestEarlyExitForOtherOperators:
         # Should have logged a, b, target — then stopped (3 not 5)
         assert len(value_logs) == 3, f"Expected early exit after 3 values, got {len(value_logs)} log lines"
 
-    def test_equals_early_exit_and_join(self, caplog):
-        """With 'and' join, first mismatch should stop iteration."""
+    def test_equals_any_semantics_and_join(self, caplog):
+        """With ANY semantics, first match should stop iteration regardless of join_condition."""
         values = ['target', 'wrong', 'target', 'target']
         tc = {'attr': {'equals': 'target'}}
 
         with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.utils.claims'):
             result = claims._process_user_value(None, tc, values, 'and', 'attr', 1, 'exit-test')
 
-        assert result is False
+        assert result is True
         value_logs = [r for r in caplog.records if 'value [' in r.getMessage() and 'Map [1]' in r.getMessage()]
-        assert len(value_logs) == 2, f"Expected early exit after 2 values, got {len(value_logs)} log lines"
+        assert len(value_logs) == 1, f"Expected early exit after 1 value (first match), got {len(value_logs)} log lines"
 
     def test_contains_early_exit_or_join(self, caplog):
         """With 'or' join, first match should stop iteration."""
@@ -3041,17 +3067,17 @@ class TestEarlyExitForOtherOperators:
         value_logs = [r for r in caplog.records if 'value [' in r.getMessage() and 'Map [1]' in r.getMessage()]
         assert len(value_logs) == 2, f"Expected early exit after 2 values, got {len(value_logs)} log lines"
 
-    def test_matches_early_exit_and_join(self, caplog):
-        """With 'and' join, first regex mismatch should stop iteration."""
+    def test_matches_any_semantics_and_join(self, caplog):
+        """With ANY semantics, first regex match should stop iteration regardless of join_condition."""
         values = ['admin-1', 'not-admin', 'admin-2']
         tc = {'attr': {'matches': r'^admin-.*'}}
 
         with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.utils.claims'):
             result = claims._process_user_value(None, tc, values, 'and', 'attr', 1, 'exit-test')
 
-        assert result is False
+        assert result is True
         value_logs = [r for r in caplog.records if 'value [' in r.getMessage() and 'Map [1]' in r.getMessage()]
-        assert len(value_logs) == 2, f"Expected early exit after 2 values, got {len(value_logs)} log lines"
+        assert len(value_logs) == 1, f"Expected early exit after 1 value (first match), got {len(value_logs)} log lines"
 
 
 class TestProcessUserValueEdgeCases:
