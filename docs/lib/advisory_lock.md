@@ -33,3 +33,40 @@ is the choice of the programmer in the specific case.
 In this case, the `return` would be okay in the situation where `my_task` is idempotent,
 and there is a "fallback" schedule in case a call was missed.
 The blocking/non-blocking choices are very dependent on the specific design and situation.
+
+## Debugging Advisory Locks
+
+For debugging purposes, several utility functions are available to inspect active advisory locks:
+
+### Get Active Advisory Locks
+
+```python
+from ansible_base.lib.utils.db import get_active_advisory_locks
+
+# Get all active advisory locks
+active_locks = get_active_advisory_locks()
+for lock in active_locks:
+    print(f"Lock ID: {lock['objid']}, PID: {lock['pid']}")
+```
+
+### Convert String to Lock ID
+
+```python
+from ansible_base.lib.utils.db import string_to_advisory_lock_id
+
+# Convert a string to the corresponding advisory lock ID
+lock_id = string_to_advisory_lock_id('my_task_lock')
+print(f"Lock ID for 'my_task_lock': {lock_id}")
+```
+
+### Convert Lock ID to Debug Info
+
+```python
+from ansible_base.lib.utils.db import advisory_lock_id_to_debug_info
+
+# Get debug information for a specific lock ID
+debug_info = advisory_lock_id_to_debug_info(lock_id)
+print(f"Original string: {debug_info}")
+```
+
+These debugging utilities are particularly useful when troubleshooting stuck locks or understanding which processes are holding specific advisory locks in a PostgreSQL database.
