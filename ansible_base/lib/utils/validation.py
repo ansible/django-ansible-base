@@ -110,17 +110,22 @@ def _injection_pair_at_single(
     close_search: int,
     forbidden_at: int,
 ) -> tuple[bool, int, int]:
-    n = len(text)
-    j = max(close_search, inner_start)
-    while j < n and text[j] != closer[0]:
-        j += 1
-    next_close = j if j < n else n
-    if j >= n or j <= inner_start:
-        return False, next_close, forbidden_at
-    clear, forbidden_at = _injection_inner_clear(text, inner_start, j, forbidden_in_inner, forbidden_at)
+    """Try to close an opener with a single-character closer (e.g. ``)`` or ``}``).
+
+    Scans forward from ``max(close_search, inner_start)`` for the closer character.
+    Returns whether a valid non-empty inner span was found, plus updated scan cursors.
+    """
+    text_len = len(text)
+    close_index = max(close_search, inner_start)
+    while close_index < text_len and text[close_index] != closer[0]:
+        close_index += 1
+    next_close_search = close_index if close_index < text_len else text_len
+    if close_index >= text_len or close_index <= inner_start:
+        return False, next_close_search, forbidden_at
+    clear, forbidden_at = _injection_inner_clear(text, inner_start, close_index, forbidden_in_inner, forbidden_at)
     if clear:
-        return True, j, forbidden_at
-    return False, next_close, forbidden_at
+        return True, close_index, forbidden_at
+    return False, next_close_search, forbidden_at
 
 
 def _injection_pair_at_multi(
@@ -131,19 +136,24 @@ def _injection_pair_at_multi(
     close_search: int,
     forbidden_at: int,
 ) -> tuple[bool, int, int]:
-    n = len(text)
+    """Try to close an opener with a multi-character closer (e.g. ``}}`` or ``%}``).
+
+    Scans forward for a full closer match. When the inner span contains a forbidden
+    character, the close cursor stays at the candidate so a later opener can reuse it.
+    """
+    text_len = len(text)
     close_len = len(closer)
-    j = max(close_search, inner_start)
-    while j < n and text[j] != closer[0]:
-        j += 1
-    next_close = (j + 1) if j < n else n
-    if j + close_len > n or text[j : j + close_len] != closer or j <= inner_start:
-        return False, next_close, forbidden_at
-    clear, forbidden_at = _injection_inner_clear(text, inner_start, j, forbidden_in_inner, forbidden_at)
+    close_index = max(close_search, inner_start)
+    while close_index < text_len and text[close_index] != closer[0]:
+        close_index += 1
+    next_close_search = (close_index + 1) if close_index < text_len else text_len
+    if close_index + close_len > text_len or text[close_index : close_index + close_len] != closer or close_index <= inner_start:
+        return False, next_close_search, forbidden_at
+    clear, forbidden_at = _injection_inner_clear(text, inner_start, close_index, forbidden_in_inner, forbidden_at)
     if clear:
-        return True, j + close_len, forbidden_at
-    # Keep ``j`` so a later opener can match this ``}}`` (e.g. ``{{{{}a{{b}}`` → ``{{b}}``).
-    return False, j, forbidden_at
+        return True, close_index + close_len, forbidden_at
+    # Keep close_index so a later opener can match this ``}}`` (e.g. ``{{{{}a{{b}}`` → ``{{b}}``).
+    return False, close_index, forbidden_at
 
 
 def _injection_pair_at(
@@ -169,22 +179,22 @@ def _injection_pair_forward(text: str, opener: str, closer: str, forbidden_in_in
     """
     if closer not in text or opener not in text:
         return False
-    n = len(text)
+    text_len = len(text)
     open_len = len(opener)
-    i = 0
+    opener_index = 0
     close_search = 0
     forbidden_at = -1
-    while i <= n - open_len:
-        if text[i : i + open_len] != opener:
-            i += 1
+    while opener_index <= text_len - open_len:
+        if text[opener_index : opener_index + open_len] != opener:
+            opener_index += 1
             continue
-        inner_start = i + open_len
-        if inner_start >= n:
+        inner_start = opener_index + open_len
+        if inner_start >= text_len:
             return False
         matched, close_search, forbidden_at = _injection_pair_at(text, inner_start, closer, forbidden_in_inner, close_search, forbidden_at)
         if matched:
             return True
-        i += open_len
+        opener_index += open_len
     return False
 
 
