@@ -326,18 +326,28 @@ def post_save_update_obj_permissions(instance, object_pk=None, object_ct_id=None
     # Account for organization roles (and other parent objects), new and old
     parent_gfks = get_parent_ids(instance)
 
+    roles_granting_before_move = set()
     if hasattr(instance, '__rbac_original_parent_id'):
-        parent_cls = permission_registry.get_parent_model(instance)
-        parent_ct = permission_registry.content_type_model.objects.get_for_model(parent_cls)
-        parent_obj = parent_cls(pk=instance.__rbac_original_parent_id)
-        parent_gfks += get_parent_ids(parent_obj)
-        parent_gfks.append((parent_ct, instance.__rbac_original_parent_id))
+        original_parent_id = instance.__rbac_original_parent_id
         delattr(instance, '__rbac_original_parent_id')
+        current_parent_id = getattr(instance, f'{permission_registry.get_parent_fd_name(instance)}_id')
+        if original_parent_id is not None and original_parent_id != current_parent_id:
+            parent_cls = permission_registry.get_parent_model(instance)
+            parent_ct = permission_registry.content_type_model.objects.get_for_model(parent_cls)
+            parent_gfks.append((parent_ct, original_parent_id))
+            # Roles on the old parent's own parents (e.g. a namespace's organization) granted on this
+            # object too. Rather than walk the old chain, which needs the old parent to still exist
+            # (it may be deleted concurrently), recompute every role that holds a cached evaluation
+            # for this object; any that no longer applies loses it.
+            obj_ct = permission_registry.content_type_model.objects.get_for_model(instance)
+            cached_role_ids = get_evaluation_model(instance).objects.filter(content_type_id=obj_ct.id, object_id=instance.pk).values('role_id')
+            roles_granting_before_move = set(ObjectRole.objects.filter(id__in=cached_role_ids))
 
     if parent_gfks:
         to_update = object_roles_for_parents(set(parent_gfks))
     else:
         to_update = set()
+    to_update |= roles_granting_before_move
 
     # If the actual object changed (created or modified) was a team, any org role
     # that has member_team needs to be updated, and any parent teams that have that role
