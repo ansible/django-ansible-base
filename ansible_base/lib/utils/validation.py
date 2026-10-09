@@ -86,6 +86,8 @@ _HANDLER_URI_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Source pattern for Tier 2 OPTIONS hints (metadata.build_tier2_frontend_pattern);
+# server-side enforcement uses _contains_injection_pattern(), not _INJECTION_RE.search().
 _INJECTION_RE = re.compile(r'[$]\([^)]+\)|[$]\{[^}]+\}' + r'|\{\{[^}]+\}\}|\{%[^%]+%\}')
 
 
