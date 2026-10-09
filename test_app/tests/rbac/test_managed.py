@@ -11,8 +11,8 @@ from ansible_base.rbac.validators import validate_permissions_for_model
 def test_courtesy_roles_pass_validation():
     """Because these use migration apps, we can not use normal model code, so we validate in tests"""
     for template_name, cls in managed_role_templates.items():
-        if '_base' in template_name:
-            continue  # abstract, not intended to be used
+        if '_base' in template_name or template_name == 'custom':
+            continue  # abstract templates and the configuration-only custom template need overrides
         constructor = cls()
         perm_list = []
         for str_perm in constructor.get_permissions(apps):
@@ -48,6 +48,73 @@ def test_create_all_managed_roles():
     "This is a method that may be called in migrations, etc."
     assert not RoleDefinition.objects.filter(name='Cow Mooer').exists()
     permission_registry.create_managed_roles(apps)
+
+
+@pytest.mark.django_db
+def test_custom_managed_role_template_uses_explicit_configuration():
+    from ansible_base.rbac.managed import get_managed_role_constructors
+
+    constructor = get_managed_role_constructors(
+        apps,
+        {
+            'dashboard_viewer': {
+                'shortname': 'custom',
+                'name': 'Dashboard Viewer',
+                'description': 'Can view the dashboard',
+                'model_name': 'test_app.Organization',
+                'permission_list': ['view_organization'],
+            }
+        },
+    )['dashboard_viewer']
+
+    role, created = constructor.get_or_create(apps)
+
+    assert created
+    assert role.managed
+    assert role.content_type == permission_registry.content_type_model.objects.get_for_model(apps.get_model('test_app', 'Organization'))
+    assert set(role.permissions.values_list('codename', flat=True)) == {'view_organization'}
+
+
+@pytest.mark.django_db
+def test_managed_role_sync_preserves_unmanaged_role_name_collision(monkeypatch):
+    """A managed role must not rewrite a customer's unmanaged role with the same name."""
+    from ansible_base.rbac.managed import ManagedRoleConstructor, ManagedRoleNameConflict
+
+    organization_model = apps.get_model('test_app', 'Organization')
+    content_type = permission_registry.content_type_model.objects.get_for_model(organization_model)
+    custom_role = RoleDefinition.objects.create(
+        name='Dashboard Viewer',
+        description='Customer-defined role',
+        content_type=content_type,
+        managed=False,
+    )
+    custom_permission = DABPermission.objects.get(codename='change_organization')
+    custom_role.permissions.add(custom_permission)
+
+    monkeypatch.setattr(
+        permission_registry,
+        '_managed_roles',
+        {
+            'dashboard_viewer': ManagedRoleConstructor(
+                {
+                    'name': 'Dashboard Viewer',
+                    'description': 'Managed dashboard viewer role',
+                    'model_name': 'test_app.Organization',
+                    'permission_list': ['view_organization'],
+                }
+            )
+        },
+    )
+
+    with pytest.raises(ManagedRoleNameConflict, match='Dashboard Viewer'):
+        _ = RoleDefinition.objects.managed.dashboard_viewer
+
+    created_roles = permission_registry.create_managed_roles(apps, update_perms=True)
+
+    custom_role.refresh_from_db()
+    assert not custom_role.managed
+    assert set(custom_role.permissions.values_list('codename', flat=True)) == {'change_organization'}
+    assert created_roles == []
 
 
 @pytest.mark.django_db

@@ -9,7 +9,11 @@ from django.db.models.base import ModelBase  # post_migrate may call with phony 
 from django.db.models.signals import post_delete, post_init, post_migrate, post_save, pre_save
 from django.utils.functional import cached_property
 
-from ansible_base.rbac.managed import ManagedRoleConstructor, get_managed_role_constructors
+from ansible_base.rbac.managed import (
+    ManagedRoleConstructor,
+    ManagedRoleNameConflict,
+    get_managed_role_constructors,
+)
 
 from .remote import RemoteObject
 
@@ -113,8 +117,12 @@ class PermissionRegistry:
             raise RuntimeError('Cannot create managed roles before apps are ready')
         ret = []
         for managed_role in self._managed_roles.values():
-            rd, created = managed_role.get_or_create(apps)
-            if update_perms and (not created):
+            try:
+                rd, created = managed_role.get_or_create(apps)
+            except ManagedRoleNameConflict as exc:
+                logger.warning('%s', exc)
+                continue
+            if update_perms and not created:
                 managed_role.refresh_permissions(rd, apps)
             ret.append((rd, created))
         return ret
