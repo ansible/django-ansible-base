@@ -1,9 +1,8 @@
 # Django
+from ansible_base.oauth2_provider.serializers import OAuth2TokenSerializer
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.management.base import BaseCommand, CommandError
-
-from ansible_base.oauth2_provider.serializers import OAuth2TokenSerializer
 
 User = get_user_model()
 
@@ -31,5 +30,6 @@ class Command(BaseCommand):
                 self.user = user
 
         serializer_obj.context['request'] = FakeRequest()
+        serializer_obj.context['creating_pat_from_management_command'] = True
         serializer_obj.create(config)
         self.stdout.write(serializer_obj.unencrypted_token)
