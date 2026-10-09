@@ -54,6 +54,8 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
     rule_responses = []
     # Assume we will have access
     access_allowed = True
+    # Cache of role lookups so each role is only queried once
+    role_cache: dict = {}
 
     # debug tracking ID
     tracking_id = str(uuid4())
@@ -132,7 +134,11 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
                 expanded_team = expanded_values.get('team', None)
                 expanded_role = expanded_values.get('role', None)
 
-                if (role_errors := check_role_type(map_type=auth_map.map_type, role=expanded_role, team=expanded_team, org=expanded_organization)) != {}:
+                if (
+                    role_errors := check_role_type(
+                        map_type=auth_map.map_type, role=expanded_role, team=expanded_team, org=expanded_organization, role_cache=role_cache
+                    )
+                ) != {}:
                     logger.info(
                         f"[{tracking_id}] Map type {auth_map.map_type} of rule {auth_map.name} had an invalid role type and will be skipped {role_errors}"
                     )
