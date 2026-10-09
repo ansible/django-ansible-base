@@ -182,3 +182,25 @@ class ServiceRoleTeamAssignmentSerializer(BaseAssignmentSerializer):
         model = RoleTeamAssignment
         fields = assignment_common_fields + ('team_ansible_id',)
         validators = []  # DRF can't auto-generate validators for partial UniqueConstraints with aliased fields
+
+
+class ServiceRoleUserAssignmentRequestSerializer(serializers.Serializer):
+    """OpenAPI request contract for service-index user assignment actions."""
+
+    role_definition = serializers.CharField()
+    user_ansible_id = serializers.UUIDField()
+    created_by_ansible_id = serializers.UUIDField(required=False, allow_null=True)
+    object_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    object_ansible_id = serializers.UUIDField(required=False, allow_null=True)
+    parent_reference = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+
+class ServiceRoleTeamAssignmentRequestSerializer(serializers.Serializer):
+    """OpenAPI request contract for service-index team assignment actions."""
+
+    role_definition = serializers.CharField()
+    team_ansible_id = serializers.UUIDField()
+    created_by_ansible_id = serializers.UUIDField(required=False, allow_null=True)
+    object_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    object_ansible_id = serializers.UUIDField(required=False, allow_null=True)
+    parent_reference = serializers.CharField(required=False, allow_blank=True, allow_null=True)
