@@ -6,6 +6,7 @@ from django.test import override_settings
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.views.ui_auth import generate_ui_auth_data
+from ansible_base.authentication.models import Authenticator
 
 
 @pytest.mark.django_db
@@ -108,3 +109,16 @@ def test_generate_ui_auth_data_managed_cloud(is_cloud):
 def test_generate_ui_auth_data_managed_cloud_no_setting():
     result = generate_ui_auth_data()
     assert result['managed_cloud_install'] is False
+
+@pytest.mark.django_db
+@mock.patch("ansible_base.authentication.views.ui_auth.logger")
+@mock.patch("ansible_base.authentication.views.ui_auth.Authenticator.objects.filter")
+def test_generate_ui_auth_data_ignore_api_auth(filter, logger):
+    # Create a fake api auth authenticator
+    api_auth_authenticator = Authenticator(name='api_auth_authenticator', category='api_auth')
+    filter.return_value = [api_auth_authenticator]
+    generate_ui_auth_data()
+    # Ensure that the error logger was never called about not knowing how to handle api auth
+    logger.error.assert_not_called()
+    # Ensure the trace logger was called
+    logger.trace.assert_called_with("Ignoring API auth authenticator api_auth_authenticator because it is not needed for UI support")
