@@ -139,10 +139,12 @@ class ServiceRoleUserAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
             .annotate(_object_ansible_id_annotation=F('resource__ansible_id'))
         )
 
+    @extend_schema_if_available(request=service_serializers.ServiceRoleUserAssignmentRequestSerializer)
     @action(detail=False, methods=['post'], url_path='assign')
     def assign(self, request):
         return self._assign(request)
 
+    @extend_schema_if_available(request=service_serializers.ServiceRoleUserAssignmentRequestSerializer)
     @action(detail=False, methods=['post'], url_path='unassign')
     def unassign(self, request):
         return self._unassign(request)
@@ -167,10 +169,12 @@ class ServiceRoleTeamAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
             .annotate(_object_ansible_id_annotation=F('resource__ansible_id'))
         )
 
+    @extend_schema_if_available(request=service_serializers.ServiceRoleTeamAssignmentRequestSerializer)
     @action(detail=False, methods=['post'], url_path='assign')
     def assign(self, request):
         return self._assign(request)
 
+    @extend_schema_if_available(request=service_serializers.ServiceRoleTeamAssignmentRequestSerializer)
     @action(detail=False, methods=['post'], url_path='unassign')
     def unassign(self, request):
         return self._unassign(request)

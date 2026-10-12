@@ -250,3 +250,55 @@ def test_assignable_scope_parameter_is_optional(assignable_scope_parameter):
 def test_assignable_scope_parameter_documents_supported_scopes(assignable_scope_parameter):
     description = assignable_scope_parameter['description']
     assert all(scope in description for scope in RoleDefinition.ASSIGNABLE_SCOPES)
+
+
+def test_service_assignment_action_request_schemas(admin_api_client):
+    """Service-index assignment actions document request-only fields."""
+    response = admin_api_client.get('/api/v1/docs/schema/')
+    assert response.status_code == 200
+
+    expected = {
+        '/api/v1/service-index/role-user-assignments/assign/': (
+            'user_ansible_id',
+            'ServiceRoleUserAssignmentRequest',
+            'ServiceRoleUserAssignment',
+        ),
+        '/api/v1/service-index/role-user-assignments/unassign/': (
+            'user_ansible_id',
+            'ServiceRoleUserAssignmentRequest',
+            'ServiceRoleUserAssignment',
+        ),
+        '/api/v1/service-index/role-team-assignments/assign/': (
+            'team_ansible_id',
+            'ServiceRoleTeamAssignmentRequest',
+            'ServiceRoleTeamAssignment',
+        ),
+        '/api/v1/service-index/role-team-assignments/unassign/': (
+            'team_ansible_id',
+            'ServiceRoleTeamAssignmentRequest',
+            'ServiceRoleTeamAssignment',
+        ),
+    }
+
+    schema = response.data
+    for path, (actor_field, request_component, response_component) in expected.items():
+        operation = schema['paths'][path]['post']
+        request_schema = operation['requestBody']['content']['application/json']['schema']
+
+        assert request_schema == {'$ref': f'#/components/schemas/{request_component}'}
+        component = schema['components']['schemas'][request_component]
+        assert set(component['required']) == {'role_definition', actor_field}
+        assert actor_field in component['properties']
+        assert 'role_definition' in component['properties']
+        assert 'object_id' in component['properties']
+        assert 'object_ansible_id' in component['properties']
+        assert 'parent_reference' in component['properties']
+        assert 'created_by_ansible_id' in component['properties']
+        assert 'created_by_ansible_id' not in component['required']
+        assert 'id' not in component['properties']
+        assert 'created' not in component['properties']
+        assert 'content_type' not in component['properties']
+
+        response_properties = schema['components']['schemas'][response_component]['properties']
+        assert 'id' in response_properties
+        assert 'created' in response_properties
