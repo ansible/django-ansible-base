@@ -6,7 +6,7 @@ from typing import NamedTuple, Union, cast
 
 from django.apps import apps as django_apps
 from django.conf import settings
-from django.db import connection, models
+from django.db import models
 from django.db.models import Q
 from django.db.models.signals import post_save
 
@@ -49,7 +49,7 @@ def _resolve_content_object(obj: models.Model | RemoteObject) -> tuple[DABConten
     if isinstance(obj, RemoteObject):
         return cast(DABContentType, obj.content_type), str(obj.object_id), str(obj.parent_reference) if obj.parent_reference else ''
     ct = cast(DABContentType, DABContentType.objects.get_for_model(obj))
-    object_id = str(obj._meta.pk.get_db_prep_value(obj.pk, connection))
+    object_id = str(obj._meta.pk.to_python(obj.pk))
     parent_field_name = permission_registry.get_parent_fd_name(type(obj))
     if parent_field_name:
         parent_id = getattr(obj, f'{parent_field_name}_id', None)
