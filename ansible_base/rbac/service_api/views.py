@@ -141,10 +141,12 @@ class ServiceRoleUserAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     def get_queryset(self):
         return RoleUserAssignment.objects.select_related('object_role').prefetch_related('user__resource__content_type', *prefetch_related)
 
+    @extend_schema_if_available(request=service_serializers.ServiceRoleUserAssignmentRequestSerializer)
     @action(detail=False, methods=['post'], url_path='assign')
     def assign(self, request):
         return self._assign(request)
 
+    @extend_schema_if_available(request=service_serializers.ServiceRoleUserAssignmentRequestSerializer)
     @action(detail=False, methods=['post'], url_path='unassign')
     def unassign(self, request):
         return self._unassign(request)
@@ -165,10 +167,12 @@ class ServiceRoleTeamAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
     def get_queryset(self):
         return RoleTeamAssignment.objects.select_related('object_role').prefetch_related('team__resource__content_type', *prefetch_related)
 
+    @extend_schema_if_available(request=service_serializers.ServiceRoleTeamAssignmentRequestSerializer)
     @action(detail=False, methods=['post'], url_path='assign')
     def assign(self, request):
         return self._assign(request)
 
+    @extend_schema_if_available(request=service_serializers.ServiceRoleTeamAssignmentRequestSerializer)
     @action(detail=False, methods=['post'], url_path='unassign')
     def unassign(self, request):
         return self._unassign(request)
