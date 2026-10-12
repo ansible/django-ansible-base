@@ -1,4 +1,4 @@
-from typing import NamedTuple, Optional, Union
+from typing import NamedTuple
 
 from crum import impersonate
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -74,7 +74,7 @@ class BatchPermissionTriple(NamedTuple):
 
     role_definition: RoleDefinition
     actor: models.Model
-    content_object: Optional[Union[models.Model, RemoteObject]]
+    content_object: models.Model | RemoteObject | None
 
 
 class BaseSerivceRoleAssignmentViewSet(
