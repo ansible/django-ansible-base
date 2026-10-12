@@ -13,7 +13,7 @@ from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.backfill import backfill_object_ansible_id
 from ansible_base.rbac.models import DABContentType, DABPermission, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.resource_registry.models import Resource
-from test_app.models import Inventory, Organization, Team, User
+from test_app.models import Inventory, Organization, Team, User, UUIDModel
 
 
 @pytest.mark.django_db
@@ -282,6 +282,60 @@ def test_bulk_assign_team_roles_is_idempotent(admin_api_client, team, inv_rd, in
     assert first.data == {'created': 1, 'existing': 0}
     assert second.status_code == 200, second.data
     assert second.data == {'created': 0, 'existing': 1}
+
+
+@pytest.mark.django_db
+def test_bulk_assign_and_unassign_are_idempotent_for_local_uuid_objects(admin_api_client, rando, organization):
+    from ansible_base.rbac import permission_registry
+
+    uuid_role = RoleDefinition.objects.create_from_permissions(
+        name='local-uuid-batch-role',
+        permissions=['view_uuidmodel'],
+        content_type=permission_registry.content_type_model.objects.get_for_model(UUIDModel),
+    )
+    target = UUIDModel.objects.create(organization=organization)
+    data = {
+        'from_service': str(uuid4()),
+        'assignments': [{'role_definition': uuid_role.name, 'user_ansible_id': str(rando.resource.ansible_id), 'object_id': str(target.pk)}],
+    }
+
+    first = admin_api_client.post(get_relative_url('serviceuserassignment-bulk-assign'), data=data, format='json')
+    second = admin_api_client.post(get_relative_url('serviceuserassignment-bulk-assign'), data=data, format='json')
+    removal = admin_api_client.post(get_relative_url('serviceuserassignment-bulk-unassign'), data=data, format='json')
+
+    assert first.status_code == 200, first.data
+    assert first.data == {'created': 1, 'existing': 0}
+    assert second.status_code == 200, second.data
+    assert second.data == {'created': 0, 'existing': 1}
+    assert removal.status_code == 200, removal.data
+    assert removal.data == {'deleted': 1, 'missing': 0}
+    assert not RoleUserAssignment.objects.filter(user=rando, role_definition=uuid_role, object_id=str(target.pk)).exists()
+
+
+@pytest.mark.django_db
+def test_unassign_locks_assignments_in_global_primary_key_order(rando, inv_rd, inventory):
+    from ansible_base.rbac.service_api.views import BatchPermissionTriple, ServiceRoleUserAssignmentViewSet
+
+    other_role = RoleDefinition.objects.create_from_permissions(
+        name='bulk-lock-order-inventory-viewer',
+        permissions=['view_inventory'],
+        content_type=inv_rd.content_type,
+    )
+    first_role, second_role = sorted((inv_rd, other_role), key=lambda role: role.pk)
+    second_assignment = second_role.give_permission(rando, inventory)
+    first_assignment = first_role.give_permission(rando, inventory)
+    assert second_assignment.pk < first_assignment.pk
+
+    view = ServiceRoleUserAssignmentViewSet()
+    view.batch_lookup_chunk_size = 1
+    triples = [
+        BatchPermissionTriple(first_role, rando, inventory),
+        BatchPermissionTriple(second_role, rando, inventory),
+    ]
+
+    assignments = view._find_existing_batch_assignments(triples, for_update=True)
+
+    assert [assignment.pk for assignment in assignments] == sorted((first_assignment.pk, second_assignment.pk))
 
 
 @pytest.mark.django_db

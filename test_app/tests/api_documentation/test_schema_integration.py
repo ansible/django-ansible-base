@@ -185,6 +185,8 @@ def test_bulk_role_assignment_actions_document_batch_requests_and_count_response
         assignment_schema = resolve_schema(request_schema['properties']['assignments']['items'])
         assert actor_field in assignment_schema['properties']
         assert not {'from_service', 'created_by_ansible_id'} & set(assignment_schema['properties'])
+        assert 'parent_reference' in assignment_schema['properties']
+        assert not assignment_schema['properties']['parent_reference'].get('readOnly', False)
 
         response_schema = resolve_schema(operation['responses']['200']['content']['application/json']['schema'])
         assert response_fields <= set(response_schema['properties'])

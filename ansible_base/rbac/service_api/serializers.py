@@ -233,6 +233,7 @@ class ServiceRoleUserAssignmentBatchItemSerializer(ServiceRoleUserAssignmentSeri
 
     created_by_ansible_id = None
     from_service = None
+    parent_reference = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     class Meta(ServiceRoleUserAssignmentSerializer.Meta):
         fields = tuple(field for field in ServiceRoleUserAssignmentSerializer.Meta.fields if field not in ('created_by_ansible_id', 'from_service'))
@@ -243,6 +244,7 @@ class ServiceRoleTeamAssignmentBatchItemSerializer(ServiceRoleTeamAssignmentSeri
 
     created_by_ansible_id = None
     from_service = None
+    parent_reference = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     class Meta(ServiceRoleTeamAssignmentSerializer.Meta):
         fields = tuple(field for field in ServiceRoleTeamAssignmentSerializer.Meta.fields if field not in ('created_by_ansible_id', 'from_service'))

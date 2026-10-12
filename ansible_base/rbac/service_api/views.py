@@ -203,7 +203,7 @@ class BaseSerivceRoleAssignmentViewSet(
             object_id = str(content_object.object_id)
         else:
             content_type_id = role_definition.content_type_id
-            object_id = str(content_object.pk)
+            object_id = str(content_object._meta.pk.get_db_prep_value(content_object.pk, connection))
         return role_definition.pk, actor.pk, content_type_id, object_id
 
     def _assignment_key_from_instance(self, assignment):
@@ -216,7 +216,21 @@ class BaseSerivceRoleAssignmentViewSet(
         )
 
     def _find_existing_batch_assignments(self, triples, for_update=False):
-        """Find matching assignments in bounded query chunks, optionally locking rows."""
+        """Find matching assignments in chunks, locking in one global primary-key order."""
+        if for_update:
+            candidates = self._find_existing_batch_assignments(triples)
+            candidate_pks = sorted({assignment.pk for assignment in candidates})
+            lock_kwargs = {'of': ('self',)} if connection.features.has_select_for_update_of else {}
+            locked_assignments = []
+            for offset in range(0, len(candidate_pks), self.batch_lookup_chunk_size):
+                pks = candidate_pks[offset : offset + self.batch_lookup_chunk_size]
+                queryset = self.get_queryset().filter(pk__in=pks).select_for_update(**lock_kwargs).order_by('pk')
+                locked_assignments.extend(queryset)
+
+            # Revalidate the locked rows against the request keys after the unlocked lookup.
+            requested_keys = {self._assignment_key(triple.role_definition, triple.actor, triple.content_object) for triple in triples}
+            return [assignment for assignment in locked_assignments if self._assignment_key_from_instance(assignment) in requested_keys]
+
         assignments = []
         for offset in range(0, len(triples), self.batch_lookup_chunk_size):
             query = Q()
@@ -230,11 +244,7 @@ class BaseSerivceRoleAssignmentViewSet(
                     content_type_id=content_type_id,
                     object_id=object_id,
                 )
-            queryset = self.get_queryset().filter(query)
-            if for_update:
-                lock_kwargs = {'of': ('self',)} if connection.features.has_select_for_update_of else {}
-                queryset = queryset.select_for_update(**lock_kwargs).order_by('pk')
-            assignments.extend(queryset)
+            assignments.extend(self.get_queryset().filter(query))
         return assignments
 
     def _get_new_batch_triples(self, triples):
