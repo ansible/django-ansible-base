@@ -385,10 +385,10 @@ def give_assignments(
     fire_signals_on_create: bool = True,
     ignore_conflicts: bool = True,
 ) -> list[AssignmentBase]:
-    """Assign roles from already-resolved assignments (skips validation).
+    """Assign already-resolved roles and return the persisted assignments.
 
-    Lower-level alternative to bulk_give_permissions — accepts ResolvedAssignment
-    lists directly, for callers that have already resolved and validated.
+    Validation is skipped. ``ignore_conflicts`` controls whether database insert
+    conflicts are ignored or surfaced to the caller.
     """
     if not user_resolved and not team_resolved:
         return []
@@ -415,7 +415,11 @@ def bulk_give_permissions(
     fire_signals_on_create: bool = True,
     ignore_conflicts: bool = True,
 ) -> list[AssignmentBase]:
-    """Convenience API: validates triples, resolves, and delegates to give_assignments."""
+    """Validate permission triples, create their assignments, and return persisted rows.
+
+    ``ignore_conflicts`` defaults to ignoring insert conflicts; callers that need to
+    distinguish their writes can disable it and handle integrity conflicts.
+    """
     if not user_permissions and not team_permissions:
         return []
 

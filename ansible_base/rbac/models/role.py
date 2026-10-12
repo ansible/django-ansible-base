@@ -268,12 +268,17 @@ class RoleDefinition(CommonModel):
         return reduce(operator.or_, conditions)
 
     def give_global_permission(self, actor, return_created=False):
+        """Grant a global role, optionally returning ``(assignment, created)``.
+
+        ``created`` is false when the assignment already existed.
+        """
         return self.give_or_remove_global_permission(actor, giving=True, return_created=return_created)
 
     def remove_global_permission(self, actor):
         return self.give_or_remove_global_permission(actor, giving=False)
 
     def _get_global_assignment_details(self, actor, giving):
+        """Return the assignment model and lookup fields for a user or team."""
         if actor._meta.model_name == 'user':
             if giving and (not settings.ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES):
                 raise ValidationError('Global roles are not enabled for users')
@@ -291,6 +296,7 @@ class RoleDefinition(CommonModel):
 
     @staticmethod
     def _clear_global_permission_cache(actor):
+        """Invalidate cached global permissions affected by an assignment change."""
         if actor._meta.model_name == 'user':
             if hasattr(actor, '_singleton_permissions'):
                 delattr(actor, '_singleton_permissions')
@@ -302,6 +308,10 @@ class RoleDefinition(CommonModel):
             bound_singleton_permissions._team_clear_signal = True
 
     def give_or_remove_global_permission(self, actor, giving=True, return_created=False):
+        """Create or remove a global assignment and optionally report its insert result.
+
+        For grants, ``return_created`` selects an ``(assignment, created)`` result.
+        """
         if giving and (self.content_type is not None):
             raise ValidationError('Role definition content type must be null to assign globally')
 

@@ -1,6 +1,8 @@
+from typing import NamedTuple, Optional, Union
+
 from crum import impersonate
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import IntegrityError, connection, transaction
+from django.db import IntegrityError, connection, models, transaction
 from django.db.models import Q
 from rest_framework import permissions, serializers, status, viewsets
 from rest_framework.decorators import action
@@ -19,6 +21,7 @@ from ansible_base.rest_filters.rest_framework.ansible_id_backend import (
 from ..models import (
     DABContentType,
     DABPermission,
+    RoleDefinition,
     RoleTeamAssignment,
     RoleUserAssignment,
 )
@@ -56,6 +59,22 @@ class RolePermissionTypeViewSet(
 
 
 prefetch_related = ('created_by__resource', 'content_type', 'role_definition', 'content_object', 'object_role')
+
+
+# Bound database work if strict bulk inserts repeatedly report integrity conflicts.
+# This count includes the initial create attempt.
+MAX_BATCH_ASSIGNMENT_CREATE_ATTEMPTS = 5
+
+
+class BatchPermissionTriple(NamedTuple):
+    """Describe one batch permission as a role, its actor, and optional target object.
+
+    A missing target object represents a global assignment.
+    """
+
+    role_definition: RoleDefinition
+    actor: models.Model
+    content_object: Optional[Union[models.Model, RemoteObject]]
 
 
 class BaseSerivceRoleAssignmentViewSet(
@@ -126,6 +145,7 @@ class BaseSerivceRoleAssignmentViewSet(
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     def _validate_batch(self, request):
+        """Validate wrapper metadata and apply it to each assignment item."""
         batch_serializer = self.batch_serializer_class(data=request.data, context=self.get_serializer_context())
         batch_serializer.is_valid(raise_exception=True)
 
@@ -141,6 +161,7 @@ class BaseSerivceRoleAssignmentViewSet(
 
     @staticmethod
     def _get_content_object(role_definition, validated_data):
+        """Resolve a target locally, or represent it as a remote object."""
         if role_definition.content_type_id is None:
             return None
 
@@ -162,6 +183,7 @@ class BaseSerivceRoleAssignmentViewSet(
             raise serializers.ValidationError({'object_id': 'Invalid primary key for this object type.'}) from exc
 
     def _get_permission_triples(self, assignment_data, request_user, check_object_permission=True):
+        """Build role/actor/object triples and check access to object-scoped roles."""
         triples = []
         for item in assignment_data:
             role_definition = item['role_definition']
@@ -169,10 +191,11 @@ class BaseSerivceRoleAssignmentViewSet(
             content_object = self._get_content_object(role_definition, item)
             if check_object_permission and content_object is not None:
                 check_content_obj_permission(request_user, content_object)
-            triples.append((role_definition, actor, content_object))
+            triples.append(BatchPermissionTriple(role_definition, actor, content_object))
         return triples
 
     def _assignment_key(self, role_definition, actor, content_object):
+        """Return a normalized identity key for local, remote, or global assignments."""
         if content_object is None:
             return role_definition.pk, actor.pk, None, None
         if isinstance(content_object, RemoteObject):
@@ -184,6 +207,7 @@ class BaseSerivceRoleAssignmentViewSet(
         return role_definition.pk, actor.pk, content_type_id, object_id
 
     def _assignment_key_from_instance(self, assignment):
+        """Build an assignment identity key from a persisted assignment."""
         return (
             assignment.role_definition_id,
             getattr(assignment, f'{self.assignment_actor_field}_id'),
@@ -192,11 +216,14 @@ class BaseSerivceRoleAssignmentViewSet(
         )
 
     def _find_existing_batch_assignments(self, triples, for_update=False):
+        """Find matching assignments in bounded query chunks, optionally locking rows."""
         assignments = []
         for offset in range(0, len(triples), self.batch_lookup_chunk_size):
             query = Q()
-            for role_definition, actor, content_object in triples[offset : offset + self.batch_lookup_chunk_size]:
-                _role_id, _actor_id, content_type_id, object_id = self._assignment_key(role_definition, actor, content_object)
+            for triple in triples[offset : offset + self.batch_lookup_chunk_size]:
+                role_definition = triple.role_definition
+                actor = triple.actor
+                _role_id, _actor_id, content_type_id, object_id = self._assignment_key(role_definition, actor, triple.content_object)
                 query |= Q(
                     role_definition_id=role_definition.pk,
                     **{f'{self.assignment_actor_field}_id': actor.pk},
@@ -211,23 +238,32 @@ class BaseSerivceRoleAssignmentViewSet(
         return assignments
 
     def _get_new_batch_triples(self, triples):
+        """Return only request triples without a persisted assignment."""
         existing = self._find_existing_batch_assignments(triples)
         existing_keys = {self._assignment_key_from_instance(assignment) for assignment in existing}
-        return [triple for triple in triples if self._assignment_key(*triple) not in existing_keys]
+        return [triple for triple in triples if self._assignment_key(triple.role_definition, triple.actor, triple.content_object) not in existing_keys]
 
     def _get_unique_batch_triples(self, assignment_data, request_user):
+        """Remove duplicate role/actor/object requests while preserving input order."""
         triples_by_key = {}
         for triple in self._get_permission_triples(assignment_data, request_user):
-            triples_by_key.setdefault(self._assignment_key(*triple), triple)
+            key = self._assignment_key(triple.role_definition, triple.actor, triple.content_object)
+            triples_by_key.setdefault(key, triple)
         return list(triples_by_key.values())
 
     def _bulk_give_object_assignments(self, triples):
+        """Create object-scoped assignments for the current actor type."""
         if self.assignment_actor_field == 'user':
             return bulk_give_permissions(user_permissions=triples, ignore_conflicts=False)
         return bulk_give_permissions(team_permissions=triples, ignore_conflicts=False)
 
     def _create_object_batch_assignments(self, pending_triples):
-        for _ in range(5):
+        """Create object assignments, recovering from concurrent duplicate inserts.
+
+        The named limit bounds total database attempts, including the initial insert,
+        so persistent integrity conflicts cannot cause unbounded recovery work.
+        """
+        for _ in range(MAX_BATCH_ASSIGNMENT_CREATE_ATTEMPTS):
             if not pending_triples:
                 return []
             try:
@@ -243,22 +279,24 @@ class BaseSerivceRoleAssignmentViewSet(
         return []
 
     def _give_global_batch_assignments(self, global_triples):
+        """Create global assignments and return only those inserted by this request."""
         assignments = []
-        for role_definition, actor, _content_object in global_triples:
-            assignment, created = role_definition.give_global_permission(actor, return_created=True)
+        for triple in global_triples:
+            assignment, created = triple.role_definition.give_global_permission(triple.actor, return_created=True)
             if created and assignment is not None:
                 assignments.append(assignment)
         return assignments
 
     def _bulk_assign(self, request):
+        """Create new assignments from a batch request and synchronize them remotely."""
         source, creator, assignment_data = self._validate_batch(request)
         triples = self._get_unique_batch_triples(assignment_data, request.user)
 
         assignments = []
         with transaction.atomic():
             new_triples = self._get_new_batch_triples(triples)
-            pending_object_triples = [triple for triple in new_triples if triple[2] is not None]
-            global_triples = [triple for triple in new_triples if triple[2] is None]
+            pending_object_triples = [triple for triple in new_triples if triple.content_object is not None]
+            global_triples = [triple for triple in new_triples if triple.content_object is None]
 
             with impersonate(creator):
                 assignments = self._create_object_batch_assignments(pending_object_triples)
@@ -270,13 +308,17 @@ class BaseSerivceRoleAssignmentViewSet(
         return Response({'created': len(assignments), 'existing': len(triples) - len(assignments)}, status=status.HTTP_200_OK)
 
     def _bulk_unassign(self, request):
+        """Remove existing assignments from a batch request and sync each removal."""
         source, _creator, assignment_data = self._validate_batch(request)
         triples_by_key = {}
         for triple in self._get_permission_triples(assignment_data, request.user, check_object_permission=False):
-            triples_by_key.setdefault(self._assignment_key(*triple), triple)
+            key = self._assignment_key(triple.role_definition, triple.actor, triple.content_object)
+            triples_by_key.setdefault(key, triple)
         triples = sorted(
             triples_by_key.values(),
-            key=lambda triple: tuple('' if part is None else str(part) for part in self._assignment_key(*triple)),
+            key=lambda triple: tuple(
+                '' if part is None else str(part) for part in self._assignment_key(triple.role_definition, triple.actor, triple.content_object)
+            ),
         )
 
         with transaction.atomic():
@@ -346,6 +388,7 @@ class ServiceRoleUserAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
         serializer_class=service_serializers.ServiceRoleUserAssignmentBatchSerializer,
     )
     def bulk_assign(self, request):
+        """Assign multiple user roles from one service-index request."""
         return self._bulk_assign(request)
 
     @extend_schema_if_available(request=service_serializers.ServiceRoleUserAssignmentRequestSerializer)
@@ -364,6 +407,7 @@ class ServiceRoleUserAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
         serializer_class=service_serializers.ServiceRoleUserAssignmentBatchSerializer,
     )
     def bulk_unassign(self, request):
+        """Remove multiple user roles from one service-index request."""
         return self._bulk_unassign(request)
 
 
@@ -405,6 +449,7 @@ class ServiceRoleTeamAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
         serializer_class=service_serializers.ServiceRoleTeamAssignmentBatchSerializer,
     )
     def bulk_assign(self, request):
+        """Assign multiple team roles from one service-index request."""
         return self._bulk_assign(request)
 
     @extend_schema_if_available(
@@ -418,6 +463,7 @@ class ServiceRoleTeamAssignmentViewSet(BaseSerivceRoleAssignmentViewSet):
         serializer_class=service_serializers.ServiceRoleTeamAssignmentBatchSerializer,
     )
     def bulk_unassign(self, request):
+        """Remove multiple team roles from one service-index request."""
         return self._bulk_unassign(request)
 
 

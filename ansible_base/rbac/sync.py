@@ -53,6 +53,7 @@ def maybe_reverse_sync_assignment(assignment):
 
 
 def maybe_reverse_sync_assignments(assignments):
+    """Reverse-sync eligible assignments together in one resource-client call."""
     assignments = [assignment for assignment in assignments if reverse_sync_enabled_all_conditions(assignment)]
     if not assignments:
         return

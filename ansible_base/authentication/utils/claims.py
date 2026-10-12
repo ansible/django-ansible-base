@@ -858,6 +858,7 @@ class ReconcileUser:
             maybe_reverse_sync_assignments(assignments_to_sync)
 
     def _apply_permission(self, object_with_status, role_name) -> Optional[models.Model]:
+        """Apply one cached permission change and return newly granted assignments."""
         status = object_with_status['status']
         obj = object_with_status['object']
 
@@ -889,6 +890,7 @@ class ReconcileUser:
         role_definition: CommonModel,
         obj: AbstractOrganization | AbstractTeam | None = None,
     ) -> RoleUserAssignment | RoleTeamAssignment:
+        """Grant a role to this user and return its assignment for reverse sync."""
         if obj:
             logger.info(
                 _("Assigning role '{rd}' to user '{username}' in '{object}").format(

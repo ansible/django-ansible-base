@@ -124,6 +124,7 @@ class BaseAssignmentSerializer(serializers.ModelSerializer):
         return super().validate(attrs)
 
     def to_internal_value(self, data):
+        """Retain each nested item's input for per-item field validation."""
         # DRF's ListSerializer reuses its child serializer without setting
         # child.initial_data. Retain each item's input so nested batch
         # validation handles parent_reference the same way as single writes.
@@ -228,6 +229,8 @@ class ServiceRoleTeamAssignmentRequestSerializer(serializers.Serializer):
 
 
 class ServiceRoleUserAssignmentBatchItemSerializer(ServiceRoleUserAssignmentSerializer):
+    """Serialize a user assignment without batch-level metadata."""
+
     created_by_ansible_id = None
     from_service = None
 
@@ -236,6 +239,8 @@ class ServiceRoleUserAssignmentBatchItemSerializer(ServiceRoleUserAssignmentSeri
 
 
 class ServiceRoleTeamAssignmentBatchItemSerializer(ServiceRoleTeamAssignmentSerializer):
+    """Serialize a team assignment without batch-level metadata."""
+
     created_by_ansible_id = None
     from_service = None
 
@@ -244,16 +249,20 @@ class ServiceRoleTeamAssignmentBatchItemSerializer(ServiceRoleTeamAssignmentSeri
 
 
 class BaseAssignmentBatchSerializer(serializers.Serializer):
+    """Validate shared metadata and the actor-specific assignment items in a batch."""
+
     from_service = serializers.UUIDField()
     created_by_ansible_id = ActorAnsibleIdField(source='created_by', required=False, allow_null=True)
     assignment_serializer_class = None
 
     def get_fields(self):
+        """Use the configured actor-specific serializer for each assignment item."""
         fields = super().get_fields()
         fields['assignments'] = self.assignment_serializer_class(many=True, allow_empty=False)
         return fields
 
     def validate(self, attrs):
+        """Reject wrapper-only metadata repeated inside assignment items."""
         item_errors = {}
         for index, assignment in enumerate(self.initial_data.get('assignments', [])):
             if not isinstance(assignment, dict):
@@ -267,18 +276,26 @@ class BaseAssignmentBatchSerializer(serializers.Serializer):
 
 
 class ServiceRoleUserAssignmentBatchSerializer(BaseAssignmentBatchSerializer):
+    """Validate bulk requests containing user role assignments."""
+
     assignment_serializer_class = ServiceRoleUserAssignmentBatchItemSerializer
 
 
 class ServiceRoleTeamAssignmentBatchSerializer(BaseAssignmentBatchSerializer):
+    """Validate bulk requests containing team role assignments."""
+
     assignment_serializer_class = ServiceRoleTeamAssignmentBatchItemSerializer
 
 
 class BulkRoleAssignmentResponseSerializer(serializers.Serializer):
+    """Document the created and already-existing assignment counts."""
+
     created = serializers.IntegerField()
     existing = serializers.IntegerField()
 
 
 class BulkRoleUnassignmentResponseSerializer(serializers.Serializer):
+    """Document the deleted and missing assignment counts."""
+
     deleted = serializers.IntegerField()
     missing = serializers.IntegerField()

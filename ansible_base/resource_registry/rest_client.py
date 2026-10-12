@@ -198,6 +198,7 @@ class ResourceAPIClient(BaseServiceClient):
 
     @staticmethod
     def _get_assignment_actor_type(model_name):
+        """Map an assignment model or actor name to the service API actor type."""
         if model_name == 'roleuserassignment' or model_name == 'user':
             return 'user'
         if model_name == 'roleteamassignment' or model_name == 'team':
@@ -206,6 +207,7 @@ class ResourceAPIClient(BaseServiceClient):
 
     @staticmethod
     def _get_assignment_model_and_serializer(actor_type):
+        """Return the assignment model and serializer used for an actor type."""
         from ansible_base.rbac.models import RoleTeamAssignment, RoleUserAssignment
         from ansible_base.rbac.service_api.serializers import ServiceRoleTeamAssignmentSerializer, ServiceRoleUserAssignmentSerializer
 
@@ -215,15 +217,19 @@ class ResourceAPIClient(BaseServiceClient):
 
     @staticmethod
     def _serialize_assignment_instances_by_pk(instances, serializer_class):
-        return {instance.pk: dict(item_data) for instance, item_data in zip(instances, serializer_class(instances, many=True).data, strict=True)}
+        """Serialize assignment instances into a primary-key-indexed payload map."""
+        serialized_items = serializer_class(instances, many=True).data
+        return {instance.pk: dict(item_data) for instance, item_data in zip(instances, serialized_items, strict=True)}
 
     @staticmethod
     def _ensure_assignment_batch_items_are_saved(assignments):
+        """Reject unsaved assignments before they are serialized for synchronization."""
         if any(assignment.pk is None for assignment in assignments):
             raise ValueError('Role assignments must be saved before they can be synchronized')
 
     @staticmethod
     def _load_assignment_batch_instances(assignments, assignment_model, actor_field):
+        """Reload assignments with the related data required by their serializers."""
         queryset = assignment_model.objects.filter(pk__in=[assignment.pk for assignment in assignments]).select_related(
             'created_by__resource', 'content_type', 'role_definition', 'object_role', actor_field
         )
@@ -231,6 +237,7 @@ class ResourceAPIClient(BaseServiceClient):
 
     @staticmethod
     def _get_assignment_batch_items_by_pk(assignments, instances, serializer_class):
+        """Serialize reloaded rows and supplied assignments missing from the requery."""
         item_by_pk = ResourceAPIClient._serialize_assignment_instances_by_pk(instances, serializer_class)
         missing_assignments = [assignment for assignment in assignments if assignment.pk not in item_by_pk]
         item_by_pk.update(ResourceAPIClient._serialize_assignment_instances_by_pk(missing_assignments, serializer_class))
@@ -238,6 +245,7 @@ class ResourceAPIClient(BaseServiceClient):
 
     @staticmethod
     def _serialize_assignment_batch_items(assignments, actor_type):
+        """Serialize one actor-type batch while preserving the supplied assignment order."""
         assignment_model, serializer_class = ResourceAPIClient._get_assignment_model_and_serializer(actor_type)
         ResourceAPIClient._ensure_assignment_batch_items_are_saved(assignments)
         actor_field = f'{actor_type}__resource'
@@ -246,6 +254,7 @@ class ResourceAPIClient(BaseServiceClient):
         return [(assignment, item_by_pk[assignment.pk]) for assignment in assignments]
 
     def _group_assignment_instances_by_actor_type(self, assignments):
+        """Partition assignments into user and team batches."""
         assignments_by_type = {}
         for assignment in assignments:
             actor_type = self._get_assignment_actor_type(assignment._meta.model_name)
@@ -254,6 +263,7 @@ class ResourceAPIClient(BaseServiceClient):
 
     @staticmethod
     def _get_assignment_batch_metadata(assignment, item, system_user):
+        """Lift source and creator metadata out of an assignment item."""
         creator_ansible_id = item.pop('created_by_ansible_id', None)
         if system_user is not None and assignment.created_by_id == system_user.pk:
             creator_ansible_id = None
@@ -265,6 +275,7 @@ class ResourceAPIClient(BaseServiceClient):
         return creator_ansible_id, item
 
     def _group_assignment_items_by_creator(self, assignments_by_type, system_user):
+        """Group serialized items by actor type and non-system creator."""
         groups = {}
         for actor_type, actor_assignments in assignments_by_type.items():
             for assignment, item in self._serialize_assignment_batch_items(actor_assignments, actor_type):
@@ -274,6 +285,7 @@ class ResourceAPIClient(BaseServiceClient):
         return groups
 
     def _send_assignment_batches(self, groups):
+        """Send one bulk-assignment request for each actor/creator group."""
         source = str(service_id())
         responses = []
         for (actor_type, creator_ansible_id), items in groups.items():
