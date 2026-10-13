@@ -8,7 +8,7 @@ from uuid import UUID
 # Django
 from django.conf import settings
 from django.db import models
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.db.models.functions import Cast
 from django.db.models.query import QuerySet
 from django.db.utils import IntegrityError
@@ -759,7 +759,33 @@ class ObjectRole(ObjectRoleFields):
 
         return existing_partials
 
-    def needed_cache_updates(self, types_prefetch=None, evaluations_prefetch=None, object_pk=None, object_ct_id=None):
+    def _team_role_evaluations(self, types_prefetch, object_pk, object_ct_id, target_parents):
+        """Return the evaluations this role grants through the teams it provides membership to.
+
+        Holding this role makes the actor a member of the teams in provides_teams, so the actor
+        inherits every role those teams hold. The result is the union of the expected direct
+        permissions of those team-held roles, as (codename, content_type_id, object_id) tuples.
+
+        With object_pk and object_ct_id, each team-held role is evaluated for that look-ahead
+        object only. If target_parents is also given, only team-held roles on the look-ahead
+        object or one of its parents are visited, since no other role can grant permissions on it.
+        """
+        team_role_filter = None
+        if object_pk is not None and target_parents is not None:
+            team_role_filter = Q(content_type_id=object_ct_id, object_id=str(object_pk))
+            for parent_ct_id, parent_id in target_parents:
+                team_role_filter |= Q(content_type_id=parent_ct_id, object_id=str(parent_id))
+
+        expected_evaluations = set()
+        for team in self.provides_teams.all():
+            team_roles = team.has_roles.all()
+            if team_role_filter is not None:
+                team_roles = team_roles.filter(team_role_filter)
+            for team_role in team_roles:
+                expected_evaluations.update(team_role.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id))
+        return expected_evaluations
+
+    def needed_cache_updates(self, types_prefetch=None, evaluations_prefetch=None, object_pk=None, object_ct_id=None, target_parents=None):
         """Return (to_delete, to_add) changes needed in the RoleEvaluation table
         to make cached object-role permissions accurate for this role.
 
@@ -776,6 +802,11 @@ class ObjectRole(ObjectRoleFields):
 
         evaluations_prefetch: an EvaluationsPrefetch instance with batch-loaded
         evaluation data for this role's chunk, avoiding per-role queries.
+
+        target_parents: in look-ahead mode, the (content_type_id, object_id) pairs of
+        the look-ahead object's parent chain. When given, team-held roles are
+        filtered to those on the look-ahead object or on one of its parents, the
+        only roles that can grant evaluations on it.
         """
         if (object_pk is None) != (object_ct_id is None):
             raise ValueError('object_pk and object_ct_id must both be provided or both be None')
@@ -792,9 +823,7 @@ class ObjectRole(ObjectRoleFields):
             for team_role in evaluations_prefetch.get_team_roles(self.pk):
                 expected_evaluations.update(team_role.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id))
         else:
-            for team in self.provides_teams.all():
-                for team_role in team.has_roles.all():
-                    expected_evaluations.update(team_role.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id))
+            expected_evaluations.update(self._team_role_evaluations(types_prefetch, object_pk, object_ct_id, target_parents))
 
         self._log_partials_count(len(expected_evaluations), 'expected evaluation', self.pk)
 
