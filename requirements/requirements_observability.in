@@ -1,5 +1,5 @@
-opentelemetry-api
-opentelemetry-sdk
+opentelemetry-api>=1.39  # the SDK and API move together
+opentelemetry-sdk>=1.39  # instrument.py imports LogRecordExporter, first in 1.39
 opentelemetry-instrumentation-django
 opentelemetry-instrumentation-grpc
 opentelemetry-instrumentation-logging
