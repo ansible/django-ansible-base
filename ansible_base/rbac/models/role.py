@@ -777,6 +777,16 @@ class ObjectRole(ObjectRoleFields):
         return existing_partials
 
     def _team_role_evaluations(self, types_prefetch, object_pk, object_ct_id, target_parents):
+        """Return the evaluations this role grants through the teams it provides membership to.
+
+        Holding this role makes the actor a member of the teams in provides_teams, so the actor
+        inherits every role those teams hold. The result is the union of the expected direct
+        permissions of those team-held roles, as (codename, content_type_id, object_id) tuples.
+
+        With object_pk and object_ct_id, each team-held role is evaluated for that look-ahead
+        object only. If target_parents is also given, only team-held roles on the look-ahead
+        object or one of its parents are visited, since no other role can grant permissions on it.
+        """
         team_role_filter = None
         if object_pk is not None and target_parents is not None:
             team_role_filter = Q(content_type_id=object_ct_id, object_id=str(object_pk))
