@@ -794,7 +794,6 @@ class ObjectRole(ObjectRoleFields):
                 team_role_filter |= Q(content_type_id=parent_ct_id, object_id=str(parent_id))
 
         expected_evaluations = set()
-        # one query for the roles held by all teams this role provides membership to, not one per team
         team_roles = ObjectRole.objects.filter(teams__in=self.provides_teams.all()).distinct()
         if team_role_filter is not None:
             team_roles = team_roles.filter(team_role_filter)
