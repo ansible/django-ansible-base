@@ -10,7 +10,7 @@ from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation,
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.pipeline import bulk_give_permissions, bulk_remove_permissions
 from ansible_base.rbac.triggers import dab_post_migrate, defer_rbac_computations, post_migration_rbac_setup
-from test_app.models import Inventory, Organization, User
+from test_app.models import Inventory, Organization, Team, User
 
 
 @pytest.mark.django_db
@@ -1012,10 +1012,11 @@ class TestTeamAssignmentRecomputeScope:
     """Verify that give_permission for teams only expands descendants
     of directly affected ObjectRoles, not of ancestor roles."""
 
-    def test_descendent_expansion_excludes_ancestors(self, team, inventory, inv_rd, org_team_member_rd, organization):
-        """When assigning a team to an inventory role, descendent_roles should
-        only be called on the directly affected ObjectRole, not on the ancestor
-        ObjectRoles returned by bulk_ancestor_roles."""
+    @pytest.mark.parametrize('grants_team_membership', [False, True])
+    def test_descendent_expansion_excludes_ancestors(self, team, inventory, inv_rd, member_rd, org_team_member_rd, organization, grants_team_membership):
+        """When assigning a team a role, descendent_roles should never be called on the
+        ancestor ObjectRoles returned by bulk_ancestor_roles. For a role that does not grant
+        team membership it is not needed at all, since that role provides no teams."""
         from unittest.mock import patch as mock_patch
 
         from ansible_base.rbac.caching import bulk_ancestor_roles
@@ -1033,11 +1034,15 @@ class TestTeamAssignmentRecomputeScope:
             called_on_pks.append(self.pk)
             return original_descendent(self)
 
+        rd, obj = (member_rd, Team.objects.create(name='granted', organization=organization)) if grants_team_membership else (inv_rd, inventory)
         with mock_patch.object(ObjectRole, 'descendent_roles', tracking_descendent):
-            inv_rd.give_permission(team, inventory)
+            rd.give_permission(team, obj)
 
-        direct_role = ObjectRole.objects.get(role_definition=inv_rd, object_id=inventory.pk)
-        assert direct_role.pk in called_on_pks, "descendent_roles() must be called on the directly affected ObjectRole"
+        direct_role = ObjectRole.objects.get(role_definition=rd, object_id=obj.pk)
+        if grants_team_membership:
+            assert direct_role.pk in called_on_pks, "descendent_roles() must be called on the directly affected ObjectRole"
+        else:
+            assert called_on_pks == []
 
         for pk in called_on_pks:
             assert pk not in ancestor_pks, (

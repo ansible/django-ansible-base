@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from typing import NamedTuple, Union, cast
+from uuid import UUID
 
 from django.apps import apps as django_apps
 from django.conf import settings
@@ -12,16 +14,20 @@ from django.db.models.signals import post_save
 
 from ansible_base.lib.utils.models import current_user_or_system_user
 from ansible_base.rbac.caching import (
+    add_team_role_evaluations_to_ancestors,
     bulk_ancestor_roles,
     compute_team_member_roles,
     defer_rbac_state,
+    get_parent_ids,
     recompute_role_evaluations,
+    recompute_role_evaluations_for_object,
     team_ids_from_role_target,
 )
 from ansible_base.rbac.models.content_type import DABContentType
 from ansible_base.rbac.models.role import AssignmentBase, ObjectRole, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
 from ansible_base.rbac.permission_registry import permission_registry
-from ansible_base.rbac.remote import RemoteObject
+from ansible_base.rbac.prefetch import TypesPrefetch
+from ansible_base.rbac.remote import GenericObject, RemoteObject
 from ansible_base.rbac.resource_queries import resolve_resource_ids
 from ansible_base.rbac.validators import validate_assignment, validate_team_assignment_enabled
 
@@ -276,6 +282,30 @@ def _collect_recompute_team_ids(object_roles: Iterable[ObjectRole]) -> set[int]:
     return recompute_team_ids
 
 
+def _grants_team_membership(object_roles: Iterable[ObjectRole]) -> bool:
+    """Return True if any of these roles grants membership in a team, which changes the teams other roles provide."""
+    rd_ids = {obj_role.role_definition_id for obj_role in object_roles}
+    return RoleDefinition.objects.filter(pk__in=rd_ids, permissions__codename=permission_registry.team_permission).exists()
+
+
+def _direct_permission_targets(object_roles: Iterable[ObjectRole]) -> set[tuple[int, int | UUID]]:
+    """Return the (content_type_id, object_id) pairs that these roles grant direct permissions on."""
+    types_prefetch = TypesPrefetch.from_db()
+    targets = set()
+    for obj_role in object_roles:
+        for _, ct_id, obj_id in obj_role.expected_direct_permissions(types_prefetch):
+            targets.add((ct_id, obj_id))
+    return targets
+
+
+def _parent_chain(target: GenericObject) -> list[GenericObject]:
+    """Return the whole parent chain of target, nearest parent first. Remote objects have none."""
+    content_type = DABContentType.objects.get_for_id(target.content_type_id)
+    if content_type.is_remote:
+        return []
+    return get_parent_ids(content_type.model_class().objects.get(pk=target.pk))
+
+
 def _check_defer_guard() -> None:
     if defer_rbac_state.active and defer_rbac_state.has_deferred_data:
         raise RuntimeError(
@@ -288,17 +318,29 @@ def _recompute_after_give(
     lookup: ObjectRoleLookup,
     assignments: list[AssignmentBase],
 ) -> None:
-    """Run recomputation pass after bulk permission assignment."""
+    """Run recomputation pass after bulk permission assignment.
+
+    The assigned ObjectRoles are recomputed in full. When teams are given roles that do not grant
+    team membership, the roles providing those teams only gain the assigned roles' direct
+    permissions, so those rows are inserted rather than recomputing the providing roles in full.
+    Otherwise the providing roles and the roles below the assigned ones are recomputed in full.
+    """
     _check_defer_guard()
     recompute_team_ids = _collect_recompute_team_ids(lookup.values())
     object_roles_to_update: set[ObjectRole] = set(lookup.values())
 
-    unique_teams = {a.team for a in assignments if isinstance(a, RoleTeamAssignment)}
-    if unique_teams:
+    roles_by_pk = {obj_role.pk: obj_role for obj_role in object_roles_to_update}
+    team_roles: dict[int, set[ObjectRole]] = defaultdict(set)
+    for a in assignments:
+        if isinstance(a, RoleTeamAssignment):
+            team_roles[a.team_id].add(roles_by_pk[cast(int, a.object_role_id)])
+    add_to_ancestors = bool(team_roles) and not _grants_team_membership(set().union(*team_roles.values()))
+
+    if team_roles and not add_to_ancestors:
         direct_roles = ObjectRole.objects.filter(pk__in=[obj_role.pk for obj_role in object_roles_to_update]).prefetch_related('provides_teams__has_roles')
         for obj_role in direct_roles:
             object_roles_to_update.update(obj_role.descendent_roles())
-        object_roles_to_update.update(bulk_ancestor_roles({team.pk for team in unique_teams}))
+        object_roles_to_update.update(bulk_ancestor_roles(set(team_roles)))
 
     if recompute_team_ids:
         compute_team_member_roles(team_ids=recompute_team_ids)
@@ -307,6 +349,8 @@ def _recompute_after_give(
             'provides_teams__has_roles'
         )
         recompute_role_evaluations(roles_to_recompute)
+    if add_to_ancestors:
+        add_team_role_evaluations_to_ancestors(team_roles)
 
 
 def _find_assignments(
@@ -329,24 +373,43 @@ def _find_assignments(
 def _recompute_after_remove(
     object_role_ids: set[int],
     actor_team_ids: set[int] = frozenset(),
+    team_object_role_ids: set[int] = frozenset(),
 ) -> None:
-    """Recompute permissions, expand team ancestors, and clean up orphaned ObjectRoles."""
+    """Recompute permissions, expand team ancestors, and clean up orphaned ObjectRoles.
+
+    team_object_role_ids are the ObjectRoles whose team assignments were removed. When they do not
+    grant team membership and all of their direct permissions are on a single object, the roles
+    providing the teams in actor_team_ids can only lose permissions on that object, so only their
+    evaluations on it are recomputed. Otherwise they are recomputed in full, along
+    with the roles below the removed ones.
+    """
     _check_defer_guard()
     object_roles = set(ObjectRole.objects.filter(pk__in=object_role_ids))
     recompute_team_ids = _collect_recompute_team_ids(object_roles)
     object_roles_to_update: set[ObjectRole] = set(object_roles)
 
+    scoped_targets = None
     if actor_team_ids:
-        snapshot = list(object_roles_to_update)  # snapshot: set is mutated in the loop
-        for obj_role in snapshot:
-            object_roles_to_update.update(obj_role.descendent_roles())
-        object_roles_to_update.update(bulk_ancestor_roles(actor_team_ids))
+        team_object_roles = [obj_role for obj_role in object_roles if obj_role.pk in team_object_role_ids]
+        if team_object_roles and not _grants_team_membership(team_object_roles):
+            targets = _direct_permission_targets(team_object_roles)
+            if len(targets) <= 1:
+                scoped_targets = targets
+        if scoped_targets is None:
+            snapshot = list(object_roles_to_update)  # snapshot: set is mutated in the loop
+            for obj_role in snapshot:
+                object_roles_to_update.update(obj_role.descendent_roles())
+            object_roles_to_update.update(bulk_ancestor_roles(actor_team_ids))
 
     if recompute_team_ids:
         compute_team_member_roles(team_ids=recompute_team_ids)
     if object_roles_to_update:
         surviving_object_roles = ObjectRole.objects.filter(pk__in=[o.pk for o in object_roles_to_update])
         recompute_role_evaluations(surviving_object_roles)
+    if scoped_targets:
+        (object_ct_id, object_pk) = scoped_targets.pop()
+        target = GenericObject(object_ct_id, object_pk)
+        recompute_role_evaluations_for_object(bulk_ancestor_roles(actor_team_ids), look_ahead=target, target_parents=_parent_chain(target))
 
     ObjectRole.objects.filter(id__in=object_role_ids, users__isnull=True, teams__isnull=True).delete()
 
@@ -376,7 +439,7 @@ def remove_assignments(
     if team_assignments:
         RoleTeamAssignment.objects.filter(pk__in=[a.pk for a in team_assignments]).delete()
 
-    _recompute_after_remove(object_role_ids, actor_team_ids)
+    _recompute_after_remove(object_role_ids, actor_team_ids, {a.object_role_id for a in team_assignments})
 
 
 def give_assignments(
