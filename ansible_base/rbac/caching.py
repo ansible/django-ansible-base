@@ -76,6 +76,52 @@ def bulk_ancestor_roles(team_pks: Iterable[int]) -> set['ObjectRole']:
     return set(ObjectRole.objects.filter(permission_partials__in=ancestor_evals))
 
 
+def add_team_role_evaluations_to_ancestors(team_roles: dict[int, Iterable['ObjectRole']], types_prefetch: Optional[TypesPrefetch] = None) -> None:
+    """Add the direct permissions of roles newly given to teams to the roles that provide those teams.
+
+    team_roles maps a team id to the ObjectRoles just assigned to that team.
+
+    A role that grants membership in a team holds its own direct permissions plus the direct
+    permissions of every role held by the teams it provides. Giving a team one more role can
+    therefore only add that role's direct permissions to each providing role, so the missing
+    rows are inserted instead of recomputing the providing roles in full. Only valid when the
+    given roles do not themselves grant team membership, since that changes which teams are provided.
+    """
+    if types_prefetch is None:
+        types_prefetch = TypesPrefetch.from_db()
+
+    updates = EvaluationUpdates()
+    for team_id, object_roles in team_roles.items():
+        granted = set()
+        for object_role in object_roles:
+            granted.update(object_role.expected_direct_permissions(types_prefetch))
+        if not granted:
+            continue
+        ancestor_roles = bulk_ancestor_roles({team_id})
+        if not ancestor_roles:
+            continue
+
+        ancestor_pks = [role.pk for role in ancestor_roles]
+        content_type_ids = {ct_id for _, ct_id, _ in granted}
+        existing = set()
+        for model, id_type in ((RoleEvaluation, int), (RoleEvaluationUUID, UUID)):
+            object_ids = {obj_id for _, _, obj_id in granted if isinstance(obj_id, id_type)}
+            if object_ids:
+                existing.update(
+                    model.objects.filter(role_id__in=ancestor_pks, content_type_id__in=content_type_ids, object_id__in=object_ids).values_list(
+                        'role_id', 'codename', 'content_type_id', 'object_id'
+                    )
+                )
+
+        for role in ancestor_roles:
+            for codename, ct_id, obj_id in granted:
+                key = (role.pk, codename, ct_id, obj_id)
+                if key not in existing:
+                    existing.add(key)
+                    updates.to_add.append(RoleEvaluation(codename=codename, content_type_id=ct_id, object_id=obj_id, role=role))
+    updates.apply()
+
+
 def cleanup_deleted_team_roles(team_pks: set[int]) -> tuple[set['ObjectRole'], set[int]]:
     """Remove ObjectRoles and evaluations for deleted teams. Called by defer_rbac_computations flush."""
     ancestor_roles = bulk_ancestor_roles(team_pks)
