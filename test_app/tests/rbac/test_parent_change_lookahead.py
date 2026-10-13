@@ -7,9 +7,9 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from ansible_base.rbac.caching import recompute_all_role_evaluations
-from ansible_base.rbac.models import ObjectRole, RoleEvaluation
+from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation
 from ansible_base.rbac.permission_registry import permission_registry
-from test_app.models import Inventory, Organization, Team
+from test_app.models import CollectionImport, Inventory, Namespace, Organization, Team
 
 
 def _inv_ct_id():
@@ -39,8 +39,9 @@ def _setup(rando, org_inv_rd, member_rd, n_teams, n_other_inventories):
 
 
 @pytest.mark.django_db
-def test_parent_change_rows_match_full_recompute(rando, org_inv_rd, member_rd):
-    org_a, org_b, inv = _setup(rando, org_inv_rd, member_rd, 3, 4)
+@pytest.mark.parametrize('n_teams,n_other_inventories', [(1, 0), (1, 4), (3, 4)])
+def test_parent_change_rows_match_full_recompute(rando, org_inv_rd, member_rd, n_teams, n_other_inventories):
+    org_a, org_b, inv = _setup(rando, org_inv_rd, member_rd, n_teams, n_other_inventories)
     role_a = ObjectRole.objects.get(role_definition=org_inv_rd, object_id=org_a.pk)
     role_b = ObjectRole.objects.get(role_definition=org_inv_rd, object_id=org_b.pk)
     inv.organization = org_b
@@ -57,9 +58,6 @@ def test_parent_change_rows_match_full_recompute(rando, org_inv_rd, member_rd):
 @pytest.mark.django_db
 def test_parent_change_of_object_with_children_still_moves_children(rando, organization, team, member_rd):
     """A namespace has collections under it; moving the namespace must move their rows too (full path)."""
-    from ansible_base.rbac.models import RoleDefinition
-    from test_app.models import CollectionImport, Namespace
-
     other_org = Organization.objects.create(name='other')
     rd = RoleDefinition.objects.create_from_permissions(
         permissions=['view_organization', 'view_namespace', 'view_collectionimport', 'change_collectionimport'],
