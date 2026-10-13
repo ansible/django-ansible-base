@@ -7,9 +7,9 @@ from uuid import UUID
 
 # Django
 from django.conf import settings
-from django.db import models
+from django.db import connections, models
 from django.db.models import Count
-from django.db.models.functions import Cast
+from django.db.models.functions import Cast, Replace
 from django.db.models.query import QuerySet
 from django.db.utils import IntegrityError
 from django.utils.translation import gettext_lazy as _
@@ -405,12 +405,15 @@ class ObjectRoleFields(models.Model):
             **eval_cls._actor_role_filter(user),
             content_type_id=models.OuterRef('content_type_id'),
         )
+        outer_object_id = models.OuterRef('object_id')
+        if eval_cls is RoleEvaluationUUID and not connections[permission_qs.db].features.has_native_uuid_field:
+            outer_object_id = Replace(outer_object_id, models.Value('-'), models.Value(''))
         # alias() keeps the Cast in WHERE only (not SELECT), enabling a semi-join point lookup
         obj_filter = models.Exists(
             permission_qs.alias(
                 _obj_id_text=Cast('object_id', output_field=object_id_field),
             ).filter(
-                _obj_id_text=models.OuterRef('object_id'),
+                _obj_id_text=outer_object_id,
             )
         )
 
