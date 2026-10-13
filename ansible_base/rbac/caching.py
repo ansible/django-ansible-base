@@ -471,8 +471,7 @@ def recompute_role_evaluations(
     updates = EvaluationUpdates()
     if object_pk is None:
         # Full recompute of these roles: batch-load existing evaluations and team
-        # roles per chunk, the same way recompute_all_role_evaluations does, instead
-        # of one query per role and one per team.
+        # roles per chunk, the same way recompute_all_role_evaluations does.
         roles = list(object_roles)
         for start in range(0, len(roles), RECOMPUTE_CHUNK_SIZE):
             chunk = roles[start : start + RECOMPUTE_CHUNK_SIZE]
