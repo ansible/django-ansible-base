@@ -91,7 +91,7 @@ class OAuth2TokenSerializer(CleanTextMixin, CommonModelSerializer):
         ):
             log_auth_event(f"User {current_user} attempted to create a PAT, but PAT creation is disabled system-wide")
             raise ValidationError(
-                {'detail': _('Local Personal Access Token creation is disabled in the settings, ask your administrator to enable this if needed')}
+                {'detail': _('Local Personal Access Token creation is disabled in the Platform Settings, ask your administrator to enable this if needed')}
             )
 
         validated_data['token'] = generate_token()
