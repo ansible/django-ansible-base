@@ -114,7 +114,7 @@ def test_generate_ui_auth_data_managed_cloud_no_setting():
 @pytest.mark.parametrize(
     ('category', 'log_method', 'message'),
     [
-        ('api_auth', 'trace', 'Ignoring API auth authenticator test_authenticator because it is not needed for UI support'),
+        ('api_auth', 'debug', 'Ignoring API auth authenticator test_authenticator because it is not needed for UI support'),
         ('unsupported', 'error', "Don't know how to handle authenticator of type test.unknown"),
     ],
 )
