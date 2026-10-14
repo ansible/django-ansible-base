@@ -3,6 +3,7 @@ import logging
 import threading
 from collections import defaultdict
 from collections.abc import Iterable
+from itertools import islice
 from typing import Optional, Union
 from uuid import UUID
 
@@ -472,9 +473,8 @@ def recompute_role_evaluations(
     if object_pk is None:
         # Full recompute of these roles: batch-load existing evaluations and team
         # roles per chunk, the same way recompute_all_role_evaluations does.
-        roles = list(object_roles)
-        for start in range(0, len(roles), RECOMPUTE_CHUNK_SIZE):
-            chunk = roles[start : start + RECOMPUTE_CHUNK_SIZE]
+        roles = iter(object_roles)
+        while chunk := list(islice(roles, RECOMPUTE_CHUNK_SIZE)):
             evaluations_prefetch = EvaluationsPrefetch.from_roles(chunk)
             for object_role in chunk:
                 updates.collect(object_role, types_prefetch, evaluations_prefetch, target_parents=target_parents)

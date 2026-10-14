@@ -1,10 +1,13 @@
 """full recomputes of a role set (e.g. after a parent change) use the chunked prefetch."""
 
+from unittest import mock
+
 import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
-from ansible_base.rbac.caching import recompute_all_role_evaluations
+from ansible_base.rbac import caching
+from ansible_base.rbac.caching import recompute_all_role_evaluations, recompute_role_evaluations
 from ansible_base.rbac.models import ObjectRole, RoleEvaluation
 from ansible_base.rbac.permission_registry import permission_registry
 from test_app.models import Inventory, Organization, Team
@@ -66,3 +69,30 @@ def test_parent_change_query_count_does_not_grow_with_roles(rando, org_inv_rd, m
         counts[n_teams] = len(ctx.captured_queries)
     # the 8-team org has 4x the affected roles; batched loading must not scale the query count 4x
     assert counts[8] < 2 * counts[2], counts
+
+
+@pytest.mark.django_db
+def test_role_set_is_consumed_one_chunk_at_a_time(rando, org_inv_rd):
+    """Roles are taken from the iterable per chunk instead of being loaded all at once."""
+    orgs = [Organization.objects.create(name=f'chunk-{i}') for i in range(5)]
+    for org in orgs:
+        org_inv_rd.give_permission(rando, org)
+    roles = list(ObjectRole.objects.filter(role_definition=org_inv_rd))
+    consumed = []
+
+    def role_stream():
+        for role in roles:
+            consumed.append(role.pk)
+            yield role
+
+    seen_before_chunk = []
+    real_from_roles = caching.EvaluationsPrefetch.from_roles
+
+    def from_roles(chunk):
+        seen_before_chunk.append((len(chunk), len(consumed)))
+        return real_from_roles(chunk)
+
+    with mock.patch.object(caching, 'RECOMPUTE_CHUNK_SIZE', 2), mock.patch.object(caching.EvaluationsPrefetch, 'from_roles', side_effect=from_roles):
+        recompute_role_evaluations(role_stream())
+
+    assert seen_before_chunk == [(2, 2), (2, 4), (1, 5)]
