@@ -880,9 +880,17 @@ class ReconcileUser:
             logger.info(_("Assigning role '{rd}' to user '{username}'").format(rd=role_definition.name, username=self.user.username))
 
         if obj:
-            role_definition.give_permission(self.user, obj)
+            assignment = role_definition.give_permission(self.user, obj)
         else:
-            role_definition.give_global_permission(self.user)
+            assignment = role_definition.give_global_permission(self.user)
+
+        # Sync assignment to resource server immediately (AAP-94168)
+        # Without this, authenticator mapping permissions wait for periodic resource_sync (2-5+ minutes)
+        # Direct grants via API already sync in BaseAssignmentViewSet.perform_create()
+        from ansible_base.rbac.sync import maybe_reverse_sync_assignment
+
+        if assignment:
+            maybe_reverse_sync_assignment(assignment)
 
     def _remove_permission(self, role_definition: CommonModel, obj: Union[AbstractOrganization, AbstractTeam, None] = None) -> None:
         if obj:
@@ -901,6 +909,12 @@ class ReconcileUser:
             role_definition.remove_permission(self.user, obj)
         else:
             role_definition.remove_global_permission(self.user)
+
+        # Sync unassignment to resource server immediately (AAP-94168)
+        # Ensures consistency with assignment sync above
+        from ansible_base.rbac.sync import maybe_reverse_sync_unassignment
+
+        maybe_reverse_sync_unassignment(role_definition, self.user, obj)
 
 
 class RoleUserAssignmentsCache:
