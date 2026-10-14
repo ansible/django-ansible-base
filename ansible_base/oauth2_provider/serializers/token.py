@@ -11,6 +11,7 @@ from oauthlib.oauth2 import AccessDeniedError
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.serializers import SerializerMethodField
 
+from ansible_base.lib.logging import log_auth_event
 from ansible_base.lib.serializers.common import CommonModelSerializer
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.lib.utils.settings import get_setting
@@ -82,6 +83,16 @@ class OAuth2TokenSerializer(CommonModelSerializer):
 
     def create(self, validated_data):
         current_user = get_current_user()
+        if (
+            validated_data.get('application') is None
+            and not get_setting('allow_local_pat_creation', True)
+            and not self.context.get('creating_pat_from_management_command', False)
+        ):
+            log_auth_event(f"User {current_user} attempted to create a PAT, but PAT creation is disabled system-wide")
+            raise ValidationError(
+                {'detail': _('Local Personal Access Token creation is disabled in the settings, ask your administrator to enable this if needed')}
+            )
+
         validated_data['token'] = generate_token()
         expires_delta = get_setting('OAUTH2_PROVIDER', {}).get('ACCESS_TOKEN_EXPIRE_SECONDS', 0)
         if expires_delta == 0:
