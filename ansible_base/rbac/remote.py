@@ -71,7 +71,7 @@ class GenericObject:
     the recompute, which narrows the work to evaluations on that one object.
     """
 
-    def __init__(self, content_type_id: int, object_id: Union[int, uuid.UUID, str]):
+    def __init__(self, content_type_id: int, object_id: int | uuid.UUID | str):
         self.content_type_id = content_type_id
         self.object_id = object_id
 

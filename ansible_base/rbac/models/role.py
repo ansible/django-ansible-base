@@ -672,7 +672,57 @@ class ObjectRole(ObjectRoleFields):
 
         return (eval_ct, child_model, filter_path)
 
-    def expected_direct_permissions(self, types_prefetch, look_ahead: Optional[GenericObject] = None) -> set[tuple[str, int, Union[int, UUID]]]:
+    def _native_object_id(self, role_content_type) -> int | UUID:
+        """ObjectRole.object_id is stored as text; return it as the model's own pk type."""
+        if role_content_type.is_remote:
+            return StandInPK(role_content_type).to_python(self.object_id)
+        return role_content_type.model_class()._meta.pk.to_python(self.object_id)
+
+    def _grants_on_own_object(self, permission) -> bool:
+        """Whether this permission is cached as an evaluation on the role's own object.
+
+        That is the case for the role's own model, and for permissions on child models
+        when they are add permissions or ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS is set.
+        """
+        if permission.content_type_id == self.content_type_id:
+            return True
+        return is_add_perm(permission.codename) or settings.ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS
+
+    @staticmethod
+    def _child_ids(permission, eval_ct, child_model, filter_path, object_id, types_prefetch, look_ahead) -> list:
+        """Ids of the eval_ct children of the role's object.
+
+        Remote children are found through the ObjectRoles that reference the role's object
+        as their parent. With look_ahead the query is narrowed to that one object in SQL,
+        instead of fetching every child id of the parent (which for an organization can be
+        tens of thousands of rows).
+        """
+        permission_model = types_prefetch.get_content_type(permission.content_type_id).model_class()
+        if issubclass(permission_model, RemoteObject):
+            qs = ObjectRole.objects.filter(parent_reference=object_id, content_type=eval_ct)
+            if look_ahead:
+                qs = qs.filter(object_id=str(look_ahead.pk))
+            return list(qs.values_list(Cast('object_id', output_field=permission_model._meta.pk.django_field()), flat=True).distinct())
+        qs = child_model.objects.filter(**{filter_path: object_id})
+        if look_ahead:
+            qs = qs.filter(pk=look_ahead.pk)
+        return list(qs.values_list('pk', flat=True))
+
+    def _child_evaluations(self, permission, role_content_type, object_id, types_prefetch, look_ahead, cached_id_lists) -> set:
+        """Evaluations this permission confers on child objects of the role's object.
+
+        Child types that don't match the look-ahead object are skipped. Child id lists are
+        cached per content type in cached_id_lists, since fetching the children of an
+        organization is performance sensitive and several permissions share a child type.
+        """
+        eval_ct, child_model, filter_path = self.get_child_filters(permission, role_content_type, types_prefetch)
+        if not eval_ct or (look_ahead and eval_ct != look_ahead.content_type_id):
+            return set()
+        if eval_ct not in cached_id_lists:
+            cached_id_lists[eval_ct] = self._child_ids(permission, eval_ct, child_model, filter_path, object_id, types_prefetch, look_ahead)
+        return {(permission.codename, eval_ct, child_id) for child_id in cached_id_lists[eval_ct] if not look_ahead or child_id == look_ahead.pk}
+
+    def expected_direct_permissions(self, types_prefetch, look_ahead: GenericObject | None = None) -> set[tuple[str, int, int | UUID]]:
         """The expected permissions that holding this ObjectRole confers to the holder
 
         This is given in the form of tuples, which represent RoleEvaluation entries.
@@ -682,77 +732,22 @@ class ObjectRole(ObjectRoleFields):
 
         With a look_ahead object, child content types that don't match it are
         skipped entirely and matching id lists are narrowed to its single pk,
-        avoiding large querysets.
+        avoiding large querysets. Evaluations on the role's own object are only
+        included when that object is the look-ahead object; otherwise a role like
+        "JobTemplate Execute on JT 42", reached through a team, would contribute
+        evaluations for JT 42 while JT 43 is being computed.
         """
         expected_evaluations = set()
-        cached_id_lists = {}
+        cached_id_lists: dict = {}
         role_content_type = types_prefetch.get_content_type(self.content_type_id)
-        role_model = role_content_type.model_class()
-        if role_content_type.is_remote:
-            pk_field = StandInPK(role_content_type)  # remote, mock, field
-            object_id = pk_field.to_python(self.object_id)
-        else:
-            # ObjectRole.object_id is stored as text, we convert it to the model pk native type
-            object_id = role_model._meta.pk.to_python(self.object_id)
-        # When filtering to a look-ahead object, skip evaluations for the role's
-        # own content type (e.g. organization) if it doesn't match the target.
-        skip_role_ct = bool(look_ahead) and self.content_type_id != look_ahead.content_type_id
-
-        # When looking ahead to a specific object, evaluations on the role's own
-        # object are only relevant if that object *is* the look-ahead object.
-        # Otherwise a role like "JobTemplate Execute on JT 42", reached through a
-        # team, would contribute evaluations for JT 42 while we are computing JT 43.
-        own_object_is_target = not look_ahead or object_id == look_ahead.pk
+        object_id = self._native_object_id(role_content_type)
+        own_object_is_target = not look_ahead or (self.content_type_id == look_ahead.content_type_id and object_id == look_ahead.pk)
 
         for permission in types_prefetch.permissions_for_object_role(self):
-
-            # direct object permission
-            if permission.content_type_id == self.content_type_id:
-                if not skip_role_ct and own_object_is_target:
-                    expected_evaluations.add((permission.codename, self.content_type_id, object_id))
-                continue
-
-            # Add evaluation for the parent object, usually only for add permission
-            if not skip_role_ct and own_object_is_target and (is_add_perm(permission.codename) or settings.ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS):
+            if own_object_is_target and self._grants_on_own_object(permission):
                 expected_evaluations.add((permission.codename, self.content_type_id, object_id))
-
-            # Add evaluations for child objects, where this role gives permission to child objects
-            eval_ct, child_model, filter_path = self.get_child_filters(permission, role_content_type, types_prefetch)
-            if not eval_ct:
-                continue
-
-            # Skip child types that don't match the look-ahead object
-            if look_ahead and eval_ct != look_ahead.content_type_id:
-                continue
-
-            # fetching child objects of an organization is very performance sensitive
-            # for multiple permissions of same type, make sure to only do query once
-            id_list = []
-            if eval_ct in cached_id_lists:
-                id_list = cached_id_lists[eval_ct]
-            else:
-                permission_content_type = types_prefetch.get_content_type(permission.content_type_id)
-                permission_model = permission_content_type.model_class()
-                if issubclass(permission_model, RemoteObject):
-                    # Build id_list from ObjectRole objects if it is remote object
-                    remote_qs = ObjectRole.objects.filter(parent_reference=object_id, content_type=eval_ct)
-                    if look_ahead:
-                        remote_qs = remote_qs.filter(object_id=str(look_ahead.pk))
-                    id_list = remote_qs.values_list(Cast('object_id', output_field=permission_model._meta.pk.django_field()), flat=True).distinct()
-                else:
-                    child_qs = child_model.objects.filter(**{filter_path: object_id})
-                    if look_ahead:
-                        # Look-ahead: we only care whether the target object is a child of this
-                        # role's object. Filter in SQL instead of fetching every child id of the
-                        # parent (which for an organization can be tens of thousands of rows).
-                        child_qs = child_qs.filter(pk=look_ahead.pk)
-                    id_list = child_qs.values_list('pk', flat=True)
-                cached_id_lists[eval_ct] = list(id_list)
-
-            for id in id_list:
-                if look_ahead and id != look_ahead.pk:
-                    continue
-                expected_evaluations.add((permission.codename, eval_ct, id))
+            if permission.content_type_id != self.content_type_id:
+                expected_evaluations |= self._child_evaluations(permission, role_content_type, object_id, types_prefetch, look_ahead, cached_id_lists)
         return expected_evaluations
 
     @staticmethod
@@ -767,7 +762,7 @@ class ObjectRole(ObjectRoleFields):
 
     def _load_existing_partials(
         self,
-        look_ahead: Optional[GenericObject],
+        look_ahead: GenericObject | None,
         evaluations_prefetch: Optional['EvaluationsPrefetch'],
     ) -> dict[tuple[str, int, Union[int, UUID]], int]:
         existing_partials = {}
@@ -828,9 +823,9 @@ class ObjectRole(ObjectRoleFields):
         self,
         types_prefetch=None,
         evaluations_prefetch=None,
-        look_ahead: Optional[GenericObject] = None,
-        target_parents: Optional[Iterable[GenericObject]] = None,
-        lookahead_cache: Optional[dict] = None,
+        look_ahead: GenericObject | None = None,
+        target_parents: Iterable[GenericObject] | None = None,
+        lookahead_cache: dict | None = None,
     ):
         """Return (to_delete, to_add) changes needed in the RoleEvaluation table
         to make cached object-role permissions accurate for this role.
