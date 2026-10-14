@@ -1,8 +1,9 @@
 # Django
-from ansible_base.oauth2_provider.serializers import OAuth2TokenSerializer
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.management.base import BaseCommand, CommandError
+
+from ansible_base.oauth2_provider.serializers import OAuth2TokenSerializer
 
 User = get_user_model()
 
