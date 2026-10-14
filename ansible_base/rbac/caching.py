@@ -447,8 +447,8 @@ class EvaluationUpdates:
 def recompute_role_evaluations(
     object_roles: Iterable[ObjectRole],
     types_prefetch: Optional[TypesPrefetch] = None,
-    look_ahead: Optional[GenericObject] = None,
-    target_parents: Optional[Iterable[GenericObject]] = None,
+    look_ahead: GenericObject | None = None,
+    target_parents: Iterable[GenericObject] | None = None,
 ) -> None:
     """Recompute RoleEvaluation entries for a specific set of ObjectRoles.
 
