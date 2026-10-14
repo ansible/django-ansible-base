@@ -72,14 +72,12 @@ QUERY_COUNT_CASES = [
         'serviceuserassignment-list',
         {},
         20,
-        marks=pytest.mark.xfail(reason="AAP-92628 N+1 GenericForeignKey prefetch; 37q vs public equivalent's 13q, cutoff 20", strict=True),
         id='service_user_assignment_list',
     ),
     pytest.param(
         'serviceteamassignment-list',
         {},
         20,
-        marks=pytest.mark.xfail(reason="AAP-92628 N+1 GenericForeignKey prefetch; 45q vs public equivalent's 14q, cutoff 20", strict=True),
         id='service_team_assignment_list',
     ),
 ]

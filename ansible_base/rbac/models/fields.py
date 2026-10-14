@@ -3,7 +3,7 @@ from django.core import checks
 from django.core.exceptions import FieldDoesNotExist, ObjectDoesNotExist
 from django.db import models
 
-from ..remote import RemoteObject, get_local_resource_prefix
+from ..remote import RemoteObject
 from .content_type import DABContentType
 
 
@@ -97,8 +97,7 @@ class FederatedForeignKey(DjangoGenericForeignKey):
         # Handle prefetch_related cache issue for remote objects
         if ct_id is not None:
             ct = self.get_content_type(id=ct_id)
-            local_prefix = get_local_resource_prefix()
-            if ct.service not in (local_prefix, "shared"):
+            if ct.is_remote:
                 # Remote object incorrectly cached as None - don't use cache
                 return False
 
@@ -120,8 +119,7 @@ class FederatedForeignKey(DjangoGenericForeignKey):
             return None
 
         ct = self.get_content_type(id=ct_id)
-        local_prefix = get_local_resource_prefix()
-        if ct.service == local_prefix or ct.service == "shared":
+        if not ct.is_remote:
             return self._fetch_local_object(ct, pk_val)
         else:
             return ct.get_object_for_this_type(pk=pk_val)
