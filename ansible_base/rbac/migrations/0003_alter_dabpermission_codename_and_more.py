@@ -37,7 +37,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='objectrole',
             name='object_id',
-            field=models.TextField(help_text='The database primary key of the subject of permission assignments.'),
+            field=models.CharField(help_text='The database primary key of the subject of permission assignments.', max_length=450),
         ),
         migrations.AlterField(
             model_name='roledefinition',
@@ -52,7 +52,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='roledefinition',
             name='name',
-            field=models.TextField(db_index=True, help_text='The name of this role.', unique=True),
+            field=models.CharField(db_index=True, help_text='The name of this role.', max_length=450, unique=True),
         ),
         migrations.AlterField(
             model_name='roleevaluation',

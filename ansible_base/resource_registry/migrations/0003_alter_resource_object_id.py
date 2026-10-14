@@ -13,6 +13,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='resource',
             name='object_id',
-            field=models.TextField(db_index=True),
+            field=models.CharField(db_index=True, max_length=450),
         ),
     ]

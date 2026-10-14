@@ -46,7 +46,7 @@ class Migration(migrations.Migration):
             name='Resource',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('object_id', models.TextField()),
+                ('object_id', models.CharField(max_length=450)),
                 ('service_id', models.CharField(default="00000000", max_length=8)),
                 ('resource_id', models.UUIDField(db_index=True, default=uuid.uuid4, unique=True)),
                 ('name', models.CharField(max_length=512, null=True)),

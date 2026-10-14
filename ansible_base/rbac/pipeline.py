@@ -131,6 +131,28 @@ def _lookup_object_roles(resolved: list[ResolvedAssignment]) -> ObjectRoleLookup
     return lookup
 
 
+def _bulk_create_ignore_conflicts(model: type[models.Model], objects: list[models.Model], unique_fields: tuple[str, ...]) -> None:
+    """Create rows while tolerating duplicates on backends without bulk conflict support."""
+    if not objects:
+        return
+
+    if connection.features.supports_ignore_conflicts:
+        model.objects.bulk_create(objects, ignore_conflicts=True)
+        return
+
+    # mssql-django does not implement bulk_create(ignore_conflicts=True).
+    # get_or_create retains the unique-constraint race handling needed by this
+    # idempotent assignment pipeline, at the cost of one query per row.
+    for obj in objects:
+        lookup = {field: getattr(obj, field) for field in unique_fields}
+        defaults = {
+            field.name: getattr(obj, field.name)
+            for field in model._meta.concrete_fields
+            if not field.primary_key and field.name not in unique_fields and field.attname not in unique_fields
+        }
+        model.objects.get_or_create(**lookup, defaults=defaults)
+
+
 def _ensure_object_roles(requested_assignments: list[ResolvedAssignment]) -> ObjectRoleLookup:
     """Look up existing ObjectRoles, create any that are missing, and return the full lookup."""
     object_ids_by_rd: dict[int, tuple[int, set[str]]] = {}
@@ -151,7 +173,8 @@ def _ensure_object_roles(requested_assignments: list[ResolvedAssignment]) -> Obj
             lookup[(rd_id, obj_role.object_id)] = obj_role
         missing = [oid for oid in object_ids if (rd_id, oid) not in lookup]
         if missing:
-            ObjectRole.objects.bulk_create(
+            _bulk_create_ignore_conflicts(
+                ObjectRole,
                 [
                     ObjectRole(
                         role_definition_id=rd_id,
@@ -161,7 +184,7 @@ def _ensure_object_roles(requested_assignments: list[ResolvedAssignment]) -> Obj
                     )
                     for oid in missing
                 ],
-                ignore_conflicts=True,
+                ("role_definition_id", "content_type_id", "object_id"),
             )
             # Re-fetch to get PKs — bulk_create(ignore_conflicts=True) doesn't populate them.
             # unique_together on (role_definition, content_type, object_id) guarantees one row per oid.
@@ -226,7 +249,7 @@ def _create_assignments(
     if user_assignments:
         pair_q = _pair_filter(user_assignments, 'user')
         existing_user_pks = set(RoleUserAssignment.objects.filter(pair_q).values_list('pk', flat=True))
-        RoleUserAssignment.objects.bulk_create(user_assignments, ignore_conflicts=True)
+        _bulk_create_ignore_conflicts(RoleUserAssignment, user_assignments, ("user_id", "object_role_id"))
         db_users = list(RoleUserAssignment.objects.filter(pair_q))
         all_assignments.extend(db_users)
         if fire_signals_on_create:
@@ -251,7 +274,7 @@ def _create_assignments(
     if team_assignments:
         pair_q = _pair_filter(team_assignments, 'team')
         existing_team_pks = set(RoleTeamAssignment.objects.filter(pair_q).values_list('pk', flat=True))
-        RoleTeamAssignment.objects.bulk_create(team_assignments, ignore_conflicts=True)
+        _bulk_create_ignore_conflicts(RoleTeamAssignment, team_assignments, ("team_id", "object_role_id"))
         db_teams = list(RoleTeamAssignment.objects.filter(pair_q))
         all_assignments.extend(db_teams)
         if fire_signals_on_create:

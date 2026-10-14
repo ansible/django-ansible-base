@@ -7,7 +7,7 @@ from typing import Optional, Union
 from uuid import UUID
 
 from django.conf import settings
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Q
 from django.db.utils import IntegrityError
 
@@ -362,7 +362,7 @@ def _safe_bulk_create_evaluations(model, evaluations, ignore_conflicts):
         return
     try:
         with transaction.atomic():
-            model.objects.bulk_create(evaluations, ignore_conflicts=ignore_conflicts)
+            _bulk_create_evaluations(model, evaluations, ignore_conflicts)
     except IntegrityError as exc:
         if not _is_stale_objectrole_fk(exc):
             raise
@@ -371,11 +371,27 @@ def _safe_bulk_create_evaluations(model, evaluations, ignore_conflicts):
         if evaluations:
             try:
                 with transaction.atomic():
-                    model.objects.bulk_create(evaluations, ignore_conflicts=ignore_conflicts)
+                    _bulk_create_evaluations(model, evaluations, ignore_conflicts)
             except IntegrityError as exc:
                 if not _is_stale_objectrole_fk(exc):
                     raise
                 logger.warning('Persistent IntegrityError in bulk_create for %s, will be corrected on next recompute', model.__name__)
+
+
+def _bulk_create_evaluations(model, evaluations, ignore_conflicts):
+    if ignore_conflicts and not connection.features.supports_ignore_conflicts:
+        # SQL Server's Django backend does not implement bulk conflict ignoring.
+        # The unique constraint makes get_or_create safe when concurrent
+        # recomputations insert the same cached evaluation.
+        for evaluation in evaluations:
+            model.objects.get_or_create(
+                object_id=evaluation.object_id,
+                content_type_id=evaluation.content_type_id,
+                codename=evaluation.codename,
+                role_id=evaluation.role_id,
+            )
+    else:
+        model.objects.bulk_create(evaluations, ignore_conflicts=ignore_conflicts)
 
 
 class EvaluationUpdates:
