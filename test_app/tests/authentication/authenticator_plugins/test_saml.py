@@ -6,6 +6,7 @@ from django.conf import settings
 from django.test.utils import override_settings
 from onelogin.saml2.settings import OneLogin_Saml2_Settings
 from social_core.backends.saml import SAMLAuth, SAMLIdentityProvider
+from social_core.exceptions import AuthMissingParameter
 
 from ansible_base.authentication.authenticator_plugins.saml import AuthenticatorPlugin
 from ansible_base.authentication.session import SessionAuthentication
@@ -61,6 +62,72 @@ def test_saml_auth_successful(authenticate, unauthenticated_api_client, saml_aut
     url = get_relative_url(authenticated_test_page)
     response = client.get(url)
     assert response.status_code == 200
+
+
+def test_saml_missing_configured_email_is_optional():
+    configuration = {
+        "ENABLED_IDPS": {
+            idp_string: {
+                "attr_email": "email",
+                "attr_username": "username",
+                "attr_user_permanent_id": "name_id",
+            }
+        }
+    }
+    plugin = AuthenticatorPlugin(database_instance=SimpleNamespace(configuration=configuration, slug="test-saml"))
+
+    details = plugin.get_user_details(
+        {
+            "idp_name": idp_string,
+            "attributes": {"username": "same-user", "name_id": "saml-user"},
+        }
+    )
+
+    assert details["username"] == "same-user"
+    assert details["email"] is None
+
+
+def test_saml_configured_email_is_returned_when_present():
+    configuration = {
+        "ENABLED_IDPS": {
+            idp_string: {
+                "attr_email": "email",
+                "attr_username": "username",
+                "attr_user_permanent_id": "name_id",
+            }
+        }
+    }
+    plugin = AuthenticatorPlugin(database_instance=SimpleNamespace(configuration=configuration, slug="test-saml"))
+
+    details = plugin.get_user_details(
+        {
+            "idp_name": idp_string,
+            "attributes": {"username": "same-user", "name_id": "saml-user", "email": "user@example.com"},
+        }
+    )
+
+    assert details["email"] == "user@example.com"
+
+
+def test_saml_missing_configured_non_email_attribute_still_fails():
+    configuration = {
+        "ENABLED_IDPS": {
+            idp_string: {
+                "attr_email": "email",
+                "attr_username": "username",
+                "attr_user_permanent_id": "name_id",
+            }
+        }
+    }
+    plugin = AuthenticatorPlugin(database_instance=SimpleNamespace(configuration=configuration, slug="test-saml"))
+
+    with pytest.raises(AuthMissingParameter, match=r"Missing needed parameter username \(configured by attr_username\)"):
+        plugin.get_user_details(
+            {
+                "idp_name": idp_string,
+                "attributes": {"name_id": "saml-user"},
+            }
+        )
 
 
 @pytest.mark.parametrize(
