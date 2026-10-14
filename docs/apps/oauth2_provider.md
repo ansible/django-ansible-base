@@ -354,6 +354,10 @@ endpoint.  Personal access tokens can be identified by the `application` field b
 > Note: Users can only see the token or refresh-token _value_ at the time of creation ONLY.  
 
 #### Using OAuth2 Token System for Personal Access Tokens (PAT)
+Local PAT creation through the API is enabled by default. Set `allow_local_pat_creation`
+to `False` to block API creation of tokens without an application. Application tokens
+and PATs created with the `create_oauth2_token` management command remain available.
+
 The most common usage of OAuth2 is authenticating users. The `token` field of a token is used
 as part of the HTTP authentication header, in the format `Authorization: Bearer <token field value>`.  This _Bearer_
 token can be obtained by doing a curl to the `/o/token/` endpoint. For example:  
