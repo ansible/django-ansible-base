@@ -86,11 +86,11 @@ class OAuth2TokenSerializer(CleanTextMixin, CommonModelSerializer):
         current_user = get_current_user()
         if (
             validated_data.get('application') is None
-            and get_setting('disable_local_pat_creation', True)
+            and get_setting('disable_local_pat_creation', False)
             and not self.context.get('creating_pat_from_management_command', False)
         ):
-            log_auth_event(f"User {current_user} attempted to create a PAT, but PAT creation is disabled system-wide")
-            raise ValidationError({'error':_('Local pat creation is disabled.')})
+            log_auth_event(f"User {current_user} attempted to create a PAT but they are disabled")
+            raise ValidationError({'non_field_errors': [_('Local PAT creation is disabled.')]})
 
         validated_data['token'] = generate_token()
         expires_delta = get_setting('OAUTH2_PROVIDER', {}).get('ACCESS_TOKEN_EXPIRE_SECONDS', 0)

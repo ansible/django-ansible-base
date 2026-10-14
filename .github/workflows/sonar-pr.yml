@@ -48,6 +48,7 @@ jobs:
           show-progress: false
           allow-unsafe-pr-checkout: true
           persist-credentials: false
+          fetch-depth: 0
 
       # Download all individual coverage artifacts from CI workflow
       - name: Download coverage artifacts
@@ -154,6 +155,8 @@ jobs:
           show-progress: false
           allow-unsafe-pr-checkout: true
           persist-credentials: false
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
 
       # Download all individual coverage artifacts from CI workflow (optional for branch pushes)
       - name: Download coverage artifacts

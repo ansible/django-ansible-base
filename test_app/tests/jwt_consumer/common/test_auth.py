@@ -393,13 +393,19 @@ class TestJWTCommonAuth:
             with expected_log(claims_logger, log_level, log_substring):
                 save_user_claims(authentication.user, objects, object_roles, [])
 
-    def test_apply_rbac_permissions_org_duplicate_name_error(self, expected_log, admin_user, organization, organization_admin_role):
+    def test_apply_rbac_permissions_org_duplicate_name_natural_key_fallback(self, expected_log, admin_user, organization, organization_admin_role):
+        """When claims arrive with a different ansible_id for an existing org,
+        the natural-key fallback finds the org and assigns permissions instead
+        of raising IntegrityError (AAP-95186)."""
         authentication = JWTCommonAuth()
         authentication.user = admin_user
         objects = {'organization': [{'ansible_id': str(uuid4()), 'name': organization.name}]}
         object_roles = {"Organization Admin": {'content_type': 'organization', 'objects': [0]}}
-        with expected_log(claims_logger, "warning", "Got integrity error"):
+        with expected_log(claims_logger, "warning", "Got integrity error", assert_not_called=True):
             save_user_claims(authentication.user, objects, object_roles, [])
+        assert RoleUserAssignment.objects.filter(
+            user=admin_user, role_definition=organization_admin_role
+        ).exists(), "Org role assignment should succeed via natural-key fallback"
 
     def test_apply_rbac_permissions_removed_when_removed_from_jwt(self, admin_user, organization, organization_admin_role):
         # Make sure we have a System Auditor role

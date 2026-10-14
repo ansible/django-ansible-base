@@ -1,5 +1,7 @@
 import logging
+import operator
 from collections.abc import Iterable
+from functools import reduce
 from typing import TYPE_CHECKING, Optional, Type, Union
 from uuid import UUID
 
@@ -19,6 +21,7 @@ from rest_framework.exceptions import ValidationError
 from ansible_base.lib.abstract_models.common import CommonModel, ImmutableCommonModel
 
 # ansible_base RBAC logic imports
+from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 from ansible_base.lib.utils.models import is_add_perm
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.sync import maybe_reverse_sync_assignment
@@ -225,6 +228,45 @@ class RoleDefinition(CommonModel):
             managed_str = ', managed=True'
         return f'RoleDefinition(pk={self.id}, name={self.name}{managed_str})'
 
+    # See assignable_scope_q() below for what each of these scopes means.
+    ASSIGNABLE_SCOPE_SYSTEM = 'system'
+    ASSIGNABLE_SCOPE_ORGANIZATION = 'organization'
+    ASSIGNABLE_SCOPE_TEAM = 'team'
+    ASSIGNABLE_SCOPES = (ASSIGNABLE_SCOPE_SYSTEM, ASSIGNABLE_SCOPE_ORGANIZATION, ASSIGNABLE_SCOPE_TEAM)
+
+    @classmethod
+    def assignable_scope_q(cls, scopes: Iterable[str]) -> models.Q:
+        """A Q object matching every RoleDefinition whose scope is one of `scopes`.
+
+        A role's scope is 'system' if it has no content type, or 'organization'/
+        'team' if its content type is (a subclass of) the organization/team
+        model; anything else is resource-scoped and excluded. Raises ValueError
+        if `scopes` contains a value not in ASSIGNABLE_SCOPES. An empty `scopes`
+        matches no roles.
+        """
+        scopes = set(scopes)
+        if unknown := scopes - set(cls.ASSIGNABLE_SCOPES):
+            raise ValueError(f"Unknown scope(s): {', '.join(sorted(unknown))}. Valid scopes are: {', '.join(cls.ASSIGNABLE_SCOPES)}")
+
+        conditions = []
+        if cls.ASSIGNABLE_SCOPE_SYSTEM in scopes:
+            conditions.append(models.Q(content_type__isnull=True))
+
+        wanted_models = []
+        if cls.ASSIGNABLE_SCOPE_ORGANIZATION in scopes:
+            wanted_models.append(get_organization_model())
+        if cls.ASSIGNABLE_SCOPE_TEAM in scopes:
+            wanted_models.append(get_team_model())
+        wanted_models = tuple(wanted_models)
+        if wanted_models:
+            candidate_models = [model for model in permission_registry.all_registered_models if issubclass(model, wanted_models)]
+            eligible_ct_ids = [ct.id for ct in DABContentType.objects.get_for_models(*candidate_models).values()]
+            conditions.append(models.Q(content_type_id__in=eligible_ct_ids))
+
+        if not conditions:
+            return models.Q(pk__in=[])
+        return reduce(operator.or_, conditions)
+
     def give_global_permission(self, actor):
         return self.give_or_remove_global_permission(actor, giving=True)
 
@@ -415,11 +457,16 @@ class AssignmentBase(ImmutableCommonModel, ObjectRoleFields, _AuditableBase):
     object_id = models.TextField(
         null=True, blank=True, help_text=_('The primary key of the object this assignment applies to; null value indicates system-wide assignment.')
     )
+    object_ansible_id = models.UUIDField(
+        null=True,
+        blank=True,
+        help_text=_('Cached ansible_id of the resource this assignment applies to.'),
+    )
     content_type = models.ForeignKey(DABContentType, on_delete=models.CASCADE, null=True, help_text=_("The content type this applies to."))
 
     # object_role is internal, and not shown in serializer
     # content_type does not have a link, and ResourceType will be used in lieu sometime
-    ignore_relations = ['content_type', 'object_role', 'resource']
+    ignore_relations = ['content_type', 'object_role']
 
     class Meta:
         app_label = 'dab_rbac'
@@ -634,16 +681,22 @@ class ObjectRole(ObjectRoleFields):
         # own content type (e.g. organization) if it doesn't match the target.
         skip_role_ct = object_ct_id is not None and self.content_type_id != object_ct_id
 
+        # When looking ahead to a specific object, evaluations on the role's own
+        # object are only relevant if that object *is* the look-ahead object.
+        # Otherwise a role like "JobTemplate Execute on JT 42", reached through a
+        # team, would contribute evaluations for JT 42 while we are computing JT 43.
+        own_object_is_target = object_pk is None or object_id == object_pk
+
         for permission in types_prefetch.permissions_for_object_role(self):
 
             # direct object permission
             if permission.content_type_id == self.content_type_id:
-                if not skip_role_ct:
+                if not skip_role_ct and own_object_is_target:
                     expected_evaluations.add((permission.codename, self.content_type_id, object_id))
                 continue
 
             # Add evaluation for the parent object, usually only for add permission
-            if not skip_role_ct and (is_add_perm(permission.codename) or settings.ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS):
+            if not skip_role_ct and own_object_is_target and (is_add_perm(permission.codename) or settings.ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS):
                 expected_evaluations.add((permission.codename, self.content_type_id, object_id))
 
             # Add evaluations for child objects, where this role gives permission to child objects
@@ -665,13 +718,18 @@ class ObjectRole(ObjectRoleFields):
                 permission_model = permission_content_type.model_class()
                 if issubclass(permission_model, RemoteObject):
                     # Build id_list from ObjectRole objects if it is remote object
-                    id_list = (
-                        ObjectRole.objects.filter(parent_reference=object_id, content_type=eval_ct)
-                        .values_list(Cast('object_id', output_field=permission_model._meta.pk.django_field()), flat=True)
-                        .distinct()
-                    )
+                    remote_qs = ObjectRole.objects.filter(parent_reference=object_id, content_type=eval_ct)
+                    if object_pk is not None:
+                        remote_qs = remote_qs.filter(object_id=str(object_pk))
+                    id_list = remote_qs.values_list(Cast('object_id', output_field=permission_model._meta.pk.django_field()), flat=True).distinct()
                 else:
-                    id_list = child_model.objects.filter(**{filter_path: object_id}).values_list('pk', flat=True)
+                    child_qs = child_model.objects.filter(**{filter_path: object_id})
+                    if object_pk is not None:
+                        # Look-ahead: we only care whether the target object is a child of this
+                        # role's object. Filter in SQL instead of fetching every child id of the
+                        # parent (which for an organization can be tens of thousands of rows).
+                        child_qs = child_qs.filter(pk=object_pk)
+                    id_list = child_qs.values_list('pk', flat=True)
                 cached_id_lists[eval_ct] = list(id_list)
 
             for id in id_list:

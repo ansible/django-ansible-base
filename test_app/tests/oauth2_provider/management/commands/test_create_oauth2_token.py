@@ -5,14 +5,15 @@ import string
 from io import StringIO
 
 import pytest
-from ansible_base.lib.utils.hashing import hash_string
-from ansible_base.lib.utils.response import get_relative_url
-from ansible_base.oauth2_provider.models import OAuth2AccessToken
 
 # Django
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.core.management.base import CommandError
+
+from ansible_base.lib.utils.hashing import hash_string
+from ansible_base.lib.utils.response import get_relative_url
+from ansible_base.oauth2_provider.models import OAuth2AccessToken
 
 User = get_user_model()
 

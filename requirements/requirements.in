@@ -2,7 +2,7 @@
 # Only generic requirements for django-ansible-base (or the common feature) should be listed here.
 # if you are add a new feature which requires dependencies they should be in a separate requirements_<feature>.in file
 #
-cryptography<47  # Avoid unreviewed major-version jumps; bump deliberately in its own change
+cryptography  # Imported by core utils (lib/utils/encryption.py, lib/utils/validation.py); version cap lives in requirements_authentication.in
 Django>=5,<6.0
 djangorestframework<3.16 # problem with OAuth2Application.organization null handling
 django-crum
