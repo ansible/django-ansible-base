@@ -24,6 +24,7 @@ from ansible_base.rbac.caching import (
 )
 from ansible_base.rbac.models import ObjectRole, RoleDefinition, get_evaluation_model
 from ansible_base.rbac.permission_registry import permission_registry
+from ansible_base.rbac.remote import GenericObject
 from ansible_base.rbac.validators import validate_team_assignment_enabled
 
 logger = logging.getLogger('ansible_base.rbac.triggers')
@@ -346,8 +347,12 @@ def _get_parent_gfks_for_update(instance):
     return parent_gfks, set(ObjectRole.objects.filter(id__in=cached_role_ids))
 
 
-def post_save_update_obj_permissions(instance, object_pk=None, object_ct_id=None, created=False):
-    "Utility method shared by multiple signals"
+def post_save_update_obj_permissions(instance, look_ahead: bool = False):
+    """Utility method shared by multiple signals
+
+    With look_ahead, the recompute is narrowed to evaluations on this instance,
+    which is correct when the instance was just created and nothing else changed.
+    """
     # Account for organization roles (and other parent objects), new and old
     parent_gfks, roles_granting_before_move = _get_parent_gfks_for_update(instance)
 
@@ -363,13 +368,13 @@ def post_save_update_obj_permissions(instance, object_pk=None, object_ct_id=None
         compute_team_member_roles(team_ids=[instance.id])
 
     if to_update:
-        target_parents = None
-        if object_pk is not None:
+        if look_ahead:
+            obj_ct = permission_registry.content_type_model.objects.get_for_model(instance)
+            target = GenericObject(obj_ct.id, instance.pk)
             target_parents = [(parent_ct.id, parent_id) for parent_ct, parent_id in parent_gfks]
-        if created and object_pk is not None:
-            recompute_role_evaluations_for_created(to_update, object_pk=object_pk, object_ct_id=object_ct_id, target_parents=target_parents)
+            recompute_role_evaluations_for_created(to_update, look_ahead=target, target_parents=target_parents)
         else:
-            recompute_role_evaluations(to_update, object_pk=object_pk, object_ct_id=object_ct_id, target_parents=target_parents)
+            recompute_role_evaluations(to_update)
 
 
 def rbac_pre_save_identify_changes(instance, *args, **kwargs):
@@ -405,7 +410,7 @@ def rbac_post_save_update_evaluations(instance, created, *args, **kwargs):
         if defer_rbac_state.active:
             defer_rbac_state.created_instances.append((instance, instance.pk, obj_ct_id))
             return
-        post_save_update_obj_permissions(instance, object_pk=instance.pk, object_ct_id=obj_ct_id, created=True)
+        post_save_update_obj_permissions(instance, look_ahead=True)
         return
 
     # The parent object can not have changed if update_fields was given and did not list that field
