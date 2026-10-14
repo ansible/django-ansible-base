@@ -85,7 +85,7 @@ def generate_ui_auth_data():
                 logger.error(f"There is an enabled authenticator id {authenticator.id} whose plugin is not working {authenticator.type}")
         elif authenticator.category == 'api_auth':
             # API auth is not needed for UI support so we can just ignore them here
-            logger.trace(f"Ignoring API auth authenticator {authenticator.name} because it is not needed for UI support")
+            logger.debug(f"Ignoring API auth authenticator {authenticator.name} because it is not needed for UI support")
         else:
             logger.error(f"Don't know how to handle authenticator of type {authenticator.type}")
 
