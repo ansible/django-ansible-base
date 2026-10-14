@@ -72,7 +72,7 @@ class Resource(models.Model):
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, related_name="resources", help_text=_("The content type for this resource."))
 
     # this has to accommodate integer and UUID object IDs
-    object_id = models.TextField(null=False, db_index=True, help_text=_("The object id for this resource."))
+    object_id = models.CharField(max_length=450, null=False, db_index=True, help_text=_("The object id for this resource."))
     content_object = GenericForeignKey('content_type', 'object_id')
 
     service_id = models.UUIDField(

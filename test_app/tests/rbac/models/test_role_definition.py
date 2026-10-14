@@ -5,9 +5,28 @@ from django.db.utils import IntegrityError
 from rest_framework.exceptions import ValidationError
 
 from ansible_base.rbac import permission_registry
-from ansible_base.rbac.models import DABContentType, DABPermission, ObjectRole, RoleDefinition, RoleEvaluation
+from ansible_base.rbac.models import DABContentType, DABPermission, ObjectRole, RoleDefinition, RoleEvaluation, RoleEvaluationUUID
 from ansible_base.rbac.validators import validate_permissions_for_model
+from ansible_base.resource_registry.models import Resource
 from test_app.models import ExampleEvent, Inventory, Organization, Team
+
+
+@pytest.mark.parametrize(
+    ('model', 'field_name', 'max_length'),
+    [
+        (RoleDefinition, 'name', 450),
+        (ObjectRole, 'object_id', 450),
+        (ObjectRole, 'parent_reference', 450),
+        (RoleEvaluation, 'codename', 100),
+        (RoleEvaluationUUID, 'codename', 100),
+        (Resource, 'object_id', 450),
+    ],
+)
+def test_indexed_text_fields_are_bounded_for_sql_server(model, field_name, max_length):
+    field = model._meta.get_field(field_name)
+
+    assert field.get_internal_type() == 'CharField'
+    assert field.max_length == max_length
 
 
 @pytest.mark.django_db

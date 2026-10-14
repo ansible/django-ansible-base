@@ -34,7 +34,7 @@ class Migration(migrations.Migration):
             name='RoleDefinition',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.TextField(db_index=True, unique=True)),
+                ('name', models.CharField(db_index=True, max_length=450, unique=True)),
                 ('description', models.TextField(blank=True)),
                 ('managed', models.BooleanField(default=False, editable=False)),
                 ('permissions', models.ManyToManyField(related_name='role_definitions', to='dab_rbac.DABPermission')),
@@ -147,7 +147,7 @@ class Migration(migrations.Migration):
             name='ObjectRole',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('object_id', models.TextField(null=False)),
+                ('object_id', models.CharField(max_length=450, null=False)),
                 ('content_type', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='contenttypes.contenttype')),
                 ('provides_teams', models.ManyToManyField(
                     help_text='Users who have this role obtain member access to these teams, and inherit all their permissions',
@@ -197,7 +197,7 @@ class Migration(migrations.Migration):
             name='RoleEvaluation',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('codename', models.TextField(help_text='The name of the permission, giving the action and the model, from the Django Permission model')),
+                ('codename', models.CharField(help_text='The name of the permission, giving the action and the model, from the Django Permission model.', max_length=100)),
                 ('content_type_id', models.PositiveIntegerField()),
                 ('object_id', models.PositiveIntegerField(null=False)),
             ],
@@ -249,7 +249,7 @@ class Migration(migrations.Migration):
             name='RoleEvaluationUUID',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('codename', models.TextField(help_text='The name of the permission, giving the action and the model, from the Django Permission model')),
+                ('codename', models.CharField(help_text='The name of the permission, giving the action and the model, from the Django Permission model.', max_length=100)),
                 ('content_type_id', models.PositiveIntegerField()),
                 ('object_id', models.UUIDField()),
                 ('role', models.ForeignKey(

@@ -59,7 +59,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='objectrole',
             name='parent_reference',
-            field=models.TextField(blank=True, db_index=True, help_text='The ansible_id or object_id of the parent resource.'),
+            field=models.CharField(blank=True, db_index=True, help_text='The ansible_id or object_id of the parent resource.', max_length=450),
         ),
         # Add new fields with a temporary name
         migrations.AddField(

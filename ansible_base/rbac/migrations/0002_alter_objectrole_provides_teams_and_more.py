@@ -63,7 +63,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='roleevaluation',
             name='codename',
-            field=models.TextField(help_text='The name of the permission, giving the action and the model, from the Django Permission model.'),
+            field=models.CharField(help_text='The name of the permission, giving the action and the model, from the Django Permission model.', max_length=100),
         ),
         migrations.AlterField(
             model_name='roleevaluation',
@@ -73,7 +73,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='roleevaluationuuid',
             name='codename',
-            field=models.TextField(help_text='The name of the permission, giving the action and the model, from the Django Permission model.'),
+            field=models.CharField(help_text='The name of the permission, giving the action and the model, from the Django Permission model.', max_length=100),
         ),
         migrations.AlterField(
             model_name='roleevaluationuuid',

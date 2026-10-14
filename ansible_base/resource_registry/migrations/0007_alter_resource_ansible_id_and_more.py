@@ -37,7 +37,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='resource',
             name='object_id',
-            field=models.TextField(db_index=True, help_text='The object id for this resource.'),
+            field=models.CharField(db_index=True, help_text='The object id for this resource.', max_length=450),
         ),
         migrations.AlterField(
             model_name='resource',
