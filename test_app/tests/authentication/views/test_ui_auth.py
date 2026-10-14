@@ -5,8 +5,8 @@ from django.conf import settings
 from django.test import override_settings
 from rest_framework.serializers import ValidationError
 
-from ansible_base.authentication.views.ui_auth import generate_ui_auth_data
 from ansible_base.authentication.models import Authenticator
+from ansible_base.authentication.views.ui_auth import generate_ui_auth_data
 
 
 @pytest.mark.django_db
@@ -110,15 +110,24 @@ def test_generate_ui_auth_data_managed_cloud_no_setting():
     result = generate_ui_auth_data()
     assert result['managed_cloud_install'] is False
 
+
+@pytest.mark.parametrize(
+    ('category', 'log_method', 'message'),
+    [
+        ('api_auth', 'trace', 'Ignoring API auth authenticator test_authenticator because it is not needed for UI support'),
+        ('unsupported', 'error', "Don't know how to handle authenticator of type test.unknown"),
+    ],
+)
 @pytest.mark.django_db
 @mock.patch("ansible_base.authentication.views.ui_auth.logger")
 @mock.patch("ansible_base.authentication.views.ui_auth.Authenticator.objects.filter")
-def test_generate_ui_auth_data_ignore_api_auth(filter, logger):
-    # Create a fake api auth authenticator
-    api_auth_authenticator = Authenticator(name='api_auth_authenticator', category='api_auth')
-    filter.return_value = [api_auth_authenticator]
-    generate_ui_auth_data()
-    # Ensure that the error logger was never called about not knowing how to handle api auth
-    logger.error.assert_not_called()
-    # Ensure the trace logger was called
-    logger.trace.assert_called_with("Ignoring API auth authenticator api_auth_authenticator because it is not needed for UI support")
+def test_generate_ui_auth_data_handles_non_ui_authenticators(authenticator_filter, logger, category, log_method, message):
+    authenticator_filter.return_value = [Authenticator(name='test_authenticator', category=category, type='test.unknown')]
+
+    response = generate_ui_auth_data()
+
+    assert response['passwords'] == []
+    assert response['ssos'] == []
+    assert response['show_login_form'] is False
+    getattr(logger, log_method).assert_called_once_with(message)
+    getattr(logger, 'error' if log_method == 'trace' else 'trace').assert_not_called()

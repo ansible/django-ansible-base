@@ -86,7 +86,6 @@ def generate_ui_auth_data():
         elif authenticator.category == 'api_auth':
             # API auth is not needed for UI support so we can just ignore them here
             logger.trace(f"Ignoring API auth authenticator {authenticator.name} because it is not needed for UI support")
-            continue
         else:
             logger.error(f"Don't know how to handle authenticator of type {authenticator.type}")
 
