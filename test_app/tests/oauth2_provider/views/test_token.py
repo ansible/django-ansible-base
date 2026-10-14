@@ -145,10 +145,7 @@ def test_oauth2_pat_creation_respects_allow_local_pat_creation_setting(user_api_
     assert response.status_code == status
     assert OAuth2AccessToken.objects.count() == int(status == 201)
     if status == 400:
-        assert (
-            response.data['detail']
-            == 'Local Personal Access Token creation is disabled in the Platform Settings, ask your administrator to enable this if needed'
-        )
+        assert response.data['detail'] == 'Local Personal Access Token creation is disabled in the settings, ask your administrator to enable this if needed'
         assert f"User {user} attempted to create a PAT, but PAT creation is disabled system-wide" in caplog.text
 
 
