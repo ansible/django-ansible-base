@@ -111,7 +111,7 @@ def test_oauth2_pat_create_and_list(request, client_fixture, user_fixture, setti
     """
     client = request.getfixturevalue(client_fixture)
     user = request.getfixturevalue(user_fixture)
-    settings.disable_local_pat_creation = False
+    settings.allow_local_pat_creation = True
     url = get_relative_url('token-list')
     response = client.post(url, data={'scope': 'read'})
     assert response.status_code == 201
@@ -125,19 +125,19 @@ def test_oauth2_pat_create_and_list(request, client_fixture, user_fixture, setti
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    ('disable_local_pat_creation', 'status'),
+    ('allow_local_pat_creation', 'status'),
     [
         pytest.param(None, 201, id='default-enabled'),
-        pytest.param(False, 201, id='enabled'),
-        pytest.param(True, 400, id='disabled'),
+        pytest.param(True, 201, id='enabled'),
+        pytest.param(False, 400, id='disabled'),
     ],
 )
-def test_oauth2_pat_creation_respects_disable_local_pat_creation_setting(user_api_client, user, settings, caplog, disable_local_pat_creation, status):
-    if disable_local_pat_creation is None:
-        if hasattr(settings, 'disable_local_pat_creation'):
-            del settings.disable_local_pat_creation
+def test_oauth2_pat_creation_respects_allow_local_pat_creation_setting(user_api_client, user, settings, caplog, allow_local_pat_creation, status):
+    if allow_local_pat_creation is None:
+        if hasattr(settings, 'allow_local_pat_creation'):
+            del settings.allow_local_pat_creation
     else:
-        settings.disable_local_pat_creation = disable_local_pat_creation
+        settings.allow_local_pat_creation = allow_local_pat_creation
 
     with caplog.at_level(logging.INFO, logger='ansible_base.auth_audit'):
         response = user_api_client.post(get_relative_url('token-list'), {'scope': 'read'})
@@ -145,8 +145,11 @@ def test_oauth2_pat_creation_respects_disable_local_pat_creation_setting(user_ap
     assert response.status_code == status
     assert OAuth2AccessToken.objects.count() == int(status == 201)
     if status == 400:
-        assert 'Local PAT creation is disabled.' in response.data['non_field_errors']
-        assert f"User {user} attempted to create a PAT but they are disabled" in caplog.text
+        assert (
+            response.data['detail']
+            == 'Local Personal Access Token creation is disabled in the Platform Settings, ask your administrator to enable this if needed'
+        )
+        assert f"User {user} attempted to create a PAT, but PAT creation is disabled system-wide" in caplog.text
 
 
 @pytest.mark.django_db
@@ -181,7 +184,7 @@ def test_oauth2_pat_creation_no_default_scope(oauth2_application, admin_api_clie
     """
     Tests that the default scope is overriden
     """
-    settings.disable_local_pat_creation = True
+    settings.allow_local_pat_creation = False
     url = get_relative_url('token-list')
     response = admin_api_client.post(
         url,

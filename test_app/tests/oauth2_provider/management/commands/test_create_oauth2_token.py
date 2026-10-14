@@ -38,7 +38,7 @@ class TestOAuth2CreateCommand:
             assert 'The user does not exist.' in str(excinfo.value)
 
     def test_correct_user(self, random_user, unauthenticated_api_client, settings):
-        settings.disable_local_pat_creation = True
+        settings.allow_local_pat_creation = False
         user_username = random_user.username
         with StringIO() as out:
             arg = '--user=' + user_username

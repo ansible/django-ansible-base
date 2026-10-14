@@ -328,7 +328,7 @@ def test_oauth2_pat_create(request, org_member_rd, org_admin_rd, user, random_us
      - I am a user.  But I can only create a PAT for myself.
     """
 
-    settings.disable_local_pat_creation = False
+    settings.allow_local_pat_creation = True
     url = get_relative_url("token-list")
 
     # Create PAT
