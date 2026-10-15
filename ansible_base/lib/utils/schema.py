@@ -6,26 +6,39 @@ This module provides optional decorators and schema classes that gracefully hand
 class DeprecationAutoSchemaMixin:
     """
     Mixin that adds deprecation support to drf-spectacular AutoSchema.
+
+    Checks three levels for deprecation metadata:
+    1. The specific action method (e.g., create, update) — set by @deprecated on a method
+    2. The view instance
+    3. The view class (e.g., deprecated = True or class-level @deprecated)
     """
+
+    def _get_action_method(self):
+        """Resolve the handler method for the current schema operation."""
+        action = getattr(self.view, 'action', None) or self.method.lower()
+        return getattr(self.view.__class__, action, None)
+
     def is_deprecated(self):
-        """
-        Return True if this operation should be marked as deprecated.
-        """
         view_class = self.view.__class__
+        action_method = self._get_action_method()
         return (
-            getattr(self.view, 'deprecated', False)
+            bool(getattr(action_method, 'deprecation', None))
+            or getattr(self.view, 'deprecated', False)
             or getattr(view_class, 'deprecated', False)
             or bool(getattr(self.view, 'deprecation', None))
             or bool(getattr(view_class, 'deprecation', None))
         )
 
     def get_extensions(self):
-        """
-        Add x-api-deprecated-detail extension with the actual deprecation message.
-        """
         extensions = super().get_extensions()
-        view_class = self.view.__class__
-        deprecation = getattr(self.view, 'deprecation', None) or getattr(view_class, 'deprecation', None)
+
+        action_method = self._get_action_method()
+        deprecation = getattr(action_method, 'deprecation', None)
+
+        if not deprecation:
+            view_class = self.view.__class__
+            deprecation = getattr(self.view, 'deprecation', None) or getattr(view_class, 'deprecation', None)
+
         if deprecation and deprecation.get('detail'):
             extensions['x-api-deprecated-detail'] = deprecation['detail']
 
