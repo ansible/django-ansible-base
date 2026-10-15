@@ -65,6 +65,31 @@ def test_sync_object_deletion_success(inventory, enable_reverse_sync):  # noqa: 
                 assert data['resource_type'] == expected_resource_type
 
 
+def test_maybe_reverse_sync_assignments_filters_and_batches():
+    from ansible_base.rbac.sync import maybe_reverse_sync_assignments
+
+    first, second = MagicMock(), MagicMock()
+    with (
+        patch('ansible_base.rbac.sync.reverse_sync_enabled_all_conditions', side_effect=[True, False]),
+        patch('ansible_base.resource_registry.utils.sync_to_resource_server.get_current_user_resource_client') as get_client,
+    ):
+        maybe_reverse_sync_assignments([first, second])
+
+    get_client.return_value.sync_assignments.assert_called_once_with([first])
+
+
+def test_maybe_reverse_sync_assignments_skips_empty_filtered_batch():
+    from ansible_base.rbac.sync import maybe_reverse_sync_assignments
+
+    with (
+        patch('ansible_base.rbac.sync.reverse_sync_enabled_all_conditions', return_value=False),
+        patch('ansible_base.resource_registry.utils.sync_to_resource_server.get_current_user_resource_client') as get_client,
+    ):
+        maybe_reverse_sync_assignments([MagicMock()])
+
+    get_client.assert_not_called()
+
+
 @pytest.mark.django_db
 def test_sync_object_deletion_gateway_unavailable(inventory, enable_reverse_sync):  # noqa: F811
     """
