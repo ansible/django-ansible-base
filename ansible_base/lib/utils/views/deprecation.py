@@ -1,5 +1,7 @@
 import functools
 
+_DEPRECATED_FIELD_REGISTRY = {}
+
 
 class DeprecationSerializerMixin:
     """
@@ -20,6 +22,11 @@ class DeprecationSerializerMixin:
     """
 
     deprecated_fields = {}
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if cls.deprecated_fields:
+            _DEPRECATED_FIELD_REGISTRY[cls] = dict(cls.deprecated_fields)
 
     def _check_deprecated_fields(self):
         initial_data = getattr(self, 'initial_data', {})
@@ -124,7 +131,13 @@ def _apply_to_class(cls, detail):
     for method_name in _DRF_ACTION_METHODS:
         method = getattr(cls, method_name, None)
         if method is not None:
-            setattr(cls, method_name, schema_decorator(method))
+            # Wrap in a trivial copy so extend_schema's in-place annotation
+            # doesn't poison the shared parent-class method for every other viewset.
+            @functools.wraps(method)
+            def _wrapper(*args, _orig=method, **kwargs):
+                return _orig(*args, **kwargs)
+
+            setattr(cls, method_name, schema_decorator(_wrapper))
 
     return cls
 
