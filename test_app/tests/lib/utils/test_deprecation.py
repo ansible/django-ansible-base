@@ -2,10 +2,18 @@ import pytest
 from django.http.response import HttpResponseBase
 from django.test import override_settings
 from django.test.client import RequestFactory
+from rest_framework import serializers
 from rest_framework.response import Response
+from rest_framework.test import APIRequestFactory
 from rest_framework.views import APIView
 
-from ansible_base.lib.utils.views.deprecation import deprecated, mark_deprecated
+from ansible_base.lib.utils.views.deprecation import (
+    DeprecatedFieldsViewMixin,
+    DeprecatedQueryParamsViewMixin,
+    DeprecationSerializerMixin,
+    deprecated,
+    mark_deprecated,
+)
 
 
 class TestMarkDeprecated:
@@ -39,12 +47,70 @@ class TestMarkDeprecated:
 
         assert response['X-API-Deprecated-Detail'] == 'Endpoint is deprecated.'
 
+    def test_distinct_detail_that_is_a_substring_is_not_deduplicated(self):
+        response = self._make_response()
+        mark_deprecated(response, 'Endpoint is deprecated.')
+        mark_deprecated(response, 'deprecated.')
+
+        assert response['X-API-Deprecated-Detail'] == 'Endpoint is deprecated. deprecated.'
+
     def test_x_api_deprecated_is_idempotent(self):
         response = self._make_response()
         mark_deprecated(response, 'First.')
         mark_deprecated(response, 'Second.')
 
         assert response['X-API-Deprecated'] == 'true'
+
+
+class TestDeprecatedSerializerFields:
+    def test_deprecated_input_field_emits_response_headers(self):
+        class PayloadSerializer(DeprecationSerializerMixin, serializers.Serializer):
+            legacy_name = serializers.CharField(required=False)
+            current_name = serializers.CharField(required=False)
+            deprecated_fields = {
+                'legacy_name': 'legacy_name is deprecated. Use current_name instead.',
+            }
+
+        class PayloadView(DeprecatedFieldsViewMixin, APIView):
+            def post(self, request):
+                serializer = PayloadSerializer(data=request.data, context={'view': self})
+                serializer.is_valid(raise_exception=True)
+                return Response(serializer.validated_data)
+
+        factory = APIRequestFactory()
+        legacy_response = PayloadView.as_view()(
+            factory.post('/', {'legacy_name': 'old'}, format='json')
+        )
+        current_response = PayloadView.as_view()(
+            factory.post('/', {'current_name': 'new'}, format='json')
+        )
+
+        assert legacy_response['X-API-Deprecated'] == 'true'
+        assert legacy_response['X-API-Deprecated-Detail'] == (
+            'legacy_name is deprecated. Use current_name instead.'
+        )
+        assert 'X-API-Deprecated' not in current_response
+
+
+class TestDeprecatedQueryParams:
+    def test_deprecated_query_parameter_emits_headers_only_when_present(self):
+        class MyView(DeprecatedQueryParamsViewMixin, APIView):
+            deprecated_query_params = {
+                'legacy_format': 'legacy_format is deprecated. Use format=v2 instead.',
+            }
+
+            def get(self, request):
+                return Response({'ok': True})
+
+        factory = APIRequestFactory()
+        legacy_response = MyView.as_view()(factory.get('/?legacy_format=v1'))
+        current_response = MyView.as_view()(factory.get('/?format=v2'))
+
+        assert legacy_response['X-API-Deprecated'] == 'true'
+        assert legacy_response['X-API-Deprecated-Detail'] == (
+            'legacy_format is deprecated. Use format=v2 instead.'
+        )
+        assert 'X-API-Deprecated' not in current_response
 
 
 class TestDeprecatedDecoratorMethod:
@@ -90,5 +156,4 @@ class TestDeprecatedDecoratorClass:
 
         assert hasattr(MyView, 'deprecation')
         assert MyView.deprecation == {'detail': 'This view is deprecated.'}
-
 

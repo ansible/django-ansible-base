@@ -66,7 +66,12 @@ def mark_deprecated(response, detail: str) -> None:
     response['X-API-Deprecated'] = 'true'
     existing_detail = response.get('X-API-Deprecated-Detail', '')
     if existing_detail:
-        if detail in existing_detail:
+        if (
+            existing_detail == detail
+            or existing_detail.startswith(f'{detail} ')
+            or f'. {detail} ' in existing_detail
+            or existing_detail.endswith(f'. {detail}')
+        ):
             return
         response['X-API-Deprecated-Detail'] = f'{existing_detail} {detail}'
     else:
