@@ -44,7 +44,7 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
     )
 
     ALLOWED_ALGORITHMS = ListField(
-        help_text=_("Allowed JWT signing algorithms for this provider. Only asymmetric algorithms are permitted (RS*/ES*/PS*/EdDSA); 'none' and HS* are rejected."),
+        help_text=_("Allowed JWT signing algorithms (asymmetric only: RS*/ES*/PS*/EdDSA). 'none' and HS* are rejected."),
         default=["RS256"],
         allow_null=False,
         allow_empty=False,
