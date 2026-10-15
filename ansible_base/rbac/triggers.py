@@ -1,7 +1,6 @@
 import logging
 from contextlib import contextmanager
-from typing import Generator, Optional, Union
-from uuid import UUID
+from typing import Generator, Optional
 
 from django.db import connection
 from django.db.models import Model
@@ -182,9 +181,9 @@ def defer_rbac_computations() -> Generator[None, None, None]:
         _reset_and_flush_deferred_rbac(suppress_flush_errors=False)
 
 
-def _process_created_instances(created_instances) -> tuple[set[tuple], set[int]]:
-    """Extract parent GFKs and team IDs from deferred created instances."""
-    all_parent_gfks: set[tuple] = set()
+def _process_created_instances(created_instances) -> tuple[set[GenericObject], set[int]]:
+    """Extract parent objects and team IDs from deferred created instances."""
+    all_parent_gfks: set[GenericObject] = set()
     team_ids: set[int] = set()
     for instance, _, _ in created_instances:
         parent_gfks = get_parent_ids(instance)
@@ -303,7 +302,8 @@ def rbac_post_init_set_original_parent(sender, instance, **kwargs):
     instance.__rbac_original_parent_id = getattr(instance, parent_id_name)
 
 
-def get_parent_ids(instance) -> list[tuple[Model, Union[int, UUID]]]:
+def get_parent_ids(instance) -> list[GenericObject]:
+    """Return the instance's whole parent chain, nearest parent first."""
     parent_field_name = permission_registry.get_parent_fd_name(instance)
     if not parent_field_name:
         return []
@@ -314,12 +314,12 @@ def get_parent_ids(instance) -> list[tuple[Model, Union[int, UUID]]]:
         parent_obj = getattr(instance, parent_field_name)
         if parent_obj:
             parent_ct = permission_registry.content_type_model.objects.get_for_model(parent_cls)
-            return [(parent_ct, parent_obj.pk)] + get_parent_ids(parent_obj)
+            return [GenericObject(parent_ct.id, parent_obj.pk)] + get_parent_ids(parent_obj)
     else:
         parent_id = getattr(instance, f'{parent_field_name}_id')
         if parent_id:
             parent_ct = permission_registry.content_type_model.objects.get_for_model(parent_cls)
-            return [(parent_ct, parent_id)]
+            return [GenericObject(parent_ct.id, parent_id)]
     return []
 
 
@@ -337,7 +337,7 @@ def _get_parent_gfks_for_update(instance):
 
     parent_cls = permission_registry.get_parent_model(instance)
     parent_ct = permission_registry.content_type_model.objects.get_for_model(parent_cls)
-    parent_gfks.append((parent_ct, original_parent_id))
+    parent_gfks.append(GenericObject(parent_ct.id, original_parent_id))
     # Roles on the old parent's own parents (e.g. a namespace's organization) granted on this
     # object too. Rather than walk the old chain, which needs the old parent to still exist
     # (it may be deleted concurrently), recompute every role that holds a cached evaluation
@@ -371,8 +371,7 @@ def post_save_update_obj_permissions(instance, look_ahead: bool = False):
         if look_ahead:
             obj_ct = permission_registry.content_type_model.objects.get_for_model(instance)
             target = GenericObject(obj_ct.id, instance.pk)
-            target_parents = [(parent_ct.id, parent_id) for parent_ct, parent_id in parent_gfks]
-            recompute_role_evaluations_for_created(to_update, look_ahead=target, target_parents=target_parents)
+            recompute_role_evaluations_for_created(to_update, look_ahead=target, target_parents=parent_gfks)
         else:
             recompute_role_evaluations(to_update)
 

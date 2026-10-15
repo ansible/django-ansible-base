@@ -5,7 +5,7 @@ import pytest
 from ansible_base.rbac import triggers
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.remote import GenericObject, RemoteObject
-from test_app.models import Inventory, Organization
+from test_app.models import CollectionImport, Inventory, Namespace, Organization
 
 
 @pytest.mark.django_db
@@ -26,3 +26,15 @@ def test_created_object_look_ahead_passes_parent_chain(rando, organization, org_
     content_types = permission_registry.content_type_model.objects
     assert spy.call_args.kwargs['look_ahead'] == GenericObject(content_types.get_for_model(Inventory).id, inv.pk)
     assert spy.call_args.kwargs['target_parents'] == [GenericObject(content_types.get_for_model(Organization).id, organization.pk)]
+
+
+@pytest.mark.django_db
+def test_parent_ids_are_generic_objects_nearest_first(organization):
+    content_types = permission_registry.content_type_model.objects
+    namespace = Namespace.objects.create(name='ns', organization=organization)
+    collection = CollectionImport.objects.create(name='col', namespace=namespace)
+    assert triggers.get_parent_ids(collection) == [
+        GenericObject(content_types.get_for_model(Namespace).id, namespace.pk),
+        GenericObject(content_types.get_for_model(Organization).id, organization.pk),
+    ]
+    assert triggers.get_parent_ids(organization) == []

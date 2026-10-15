@@ -115,9 +115,9 @@ def cleanup_orphaned_object_roles() -> int:
     return deleted_count
 
 
-def object_roles_for_parents(parent_gfks: set[tuple]) -> set['ObjectRole']:
+def object_roles_for_parents(parent_gfks: set[GenericObject]) -> set['ObjectRole']:
     """Return ObjectRoles affected by created objects via their parent chain. Called by defer_rbac_computations flush."""
-    q_exprs = [Q(content_type=parent_ct, object_id=parent_id) for parent_ct, parent_id in parent_gfks]
+    q_exprs = [Q(content_type_id=parent.content_type_id, object_id=parent.pk) for parent in parent_gfks]
     q_filter = q_exprs[0]
     for next_q in q_exprs[1:]:
         q_filter |= next_q
@@ -589,7 +589,7 @@ def _collect_created_role_updates(
 def recompute_role_evaluations_for_created(
     object_roles: Iterable[ObjectRole],
     look_ahead: GenericObject,
-    target_parents: Iterable[tuple[int, int | UUID]],
+    target_parents: Iterable[GenericObject],
     types_prefetch: Optional[TypesPrefetch] = None,
 ) -> None:
     """Recompute RoleEvaluation entries for a single, just-created object.
@@ -616,7 +616,7 @@ def recompute_role_evaluations_for_created(
     object_pk = look_ahead.pk
     object_ct_id = look_ahead.content_type_id
     object_id_str = str(object_pk)
-    parent_keys = {(ct_id, str(parent_id)) for ct_id, parent_id in target_parents}
+    parent_keys = {(parent.content_type_id, str(parent.pk)) for parent in target_parents}
     direct_keys = parent_keys | {(object_ct_id, object_id_str)}
 
     role_to_teams, team_ids = _created_role_teams(role_pks)
