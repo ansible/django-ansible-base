@@ -44,9 +44,7 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
     )
 
     ALLOWED_ALGORITHMS = ListField(
-        help_text=_(
-            "Allowed JWT signing algorithms for this provider. " "Only asymmetric algorithms are permitted (RS*/ES*/PS*/EdDSA); " "'none' and HS* are rejected."
-        ),
+        help_text=_("Allowed JWT signing algorithms for this provider. Only asymmetric algorithms are permitted (RS*/ES*/PS*/EdDSA); 'none' and HS* are rejected."),
         default=["RS256"],
         allow_null=False,
         allow_empty=False,
@@ -149,6 +147,18 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         return attrs
 
 
+def _scalar_claim_uid(value) -> str | None:
+    """Return a uid string for scalar claim values; skip None and non-scalars."""
+    if value is None or isinstance(value, (dict, list, tuple, set)):
+        return None
+    if isinstance(value, str):
+        value = value.strip()
+        return value or None
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    return None
+
+
 def resolve_uid_from_claims(claims: dict, claim_list: list) -> str | None:
     """
     Resolve an external identity from token claims using CLAIM_LIST order.
@@ -164,18 +174,9 @@ def resolve_uid_from_claims(claims: dict, claim_list: list) -> str | None:
     for claim_name in claim_list:
         if claim_name not in claims:
             continue
-        value = claims[claim_name]
-        if value is None:
-            continue
-        if isinstance(value, (dict, list, tuple, set)):
-            continue
-        if isinstance(value, str):
-            value = value.strip()
-            if not value:
-                continue
-            return value
-        if isinstance(value, (int, float, bool)):
-            return str(value)
+        uid = _scalar_claim_uid(claims[claim_name])
+        if uid is not None:
+            return uid
 
     return None
 
