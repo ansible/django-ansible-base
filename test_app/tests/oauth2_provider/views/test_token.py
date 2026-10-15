@@ -2,8 +2,10 @@ import base64
 import hashlib
 import json
 import time
+from datetime import timedelta
 
 import pytest
+from django.test import override_settings
 from django.utils.http import urlencode
 
 from ansible_base.authentication.models import AuthenticatorUser
@@ -467,3 +469,236 @@ def test_oauth2_token_scope_validator(user_api_client, given, error):
     assert response.status_code == 400 if error else 201
     if error:
         assert error in str(response.data['scope'][0])
+
+
+def _assert_ttl_delta(token_pk, expected_seconds, tolerance=10):
+    """Assert that (expires - created) of the token with `token_pk` is within `tolerance` seconds of `expected_seconds`."""
+    token = OAuth2AccessToken.objects.get(pk=token_pk)
+    delta = (token.expires - token.created).total_seconds()
+    assert abs(delta - expected_seconds) <= tolerance, f"Expected delta ~{expected_seconds}s, got {delta}s"
+
+
+@pytest.mark.django_db
+def test_oauth2_token_ttl_omitted_uses_platform_default(user_api_client, settings):
+    """
+    Regression: omitting `ttl` preserves the existing behavior, the access token
+    lifetime is `ACCESS_TOKEN_EXPIRE_SECONDS`.
+    """
+    settings.OAUTH2_PROVIDER = {
+        **settings.OAUTH2_PROVIDER,
+        'ACCESS_TOKEN_EXPIRE_SECONDS': 3600,
+    }
+    url = get_relative_url('token-list')
+    response = user_api_client.post(url, {'scope': 'read'})
+    assert response.status_code == 201, response.data
+    _assert_ttl_delta(response.data['id'], 3600)
+
+
+@pytest.mark.django_db
+def test_oauth2_token_ttl_shorten(user_api_client, settings):
+    """
+    A `ttl` below the platform default shortens the access token lifetime.
+    """
+    settings.OAUTH2_PROVIDER = {
+        **settings.OAUTH2_PROVIDER,
+        'ACCESS_TOKEN_EXPIRE_SECONDS': 3600,
+    }
+    url = get_relative_url('token-list')
+    response = user_api_client.post(url, {'scope': 'read', 'ttl': 1800})
+    assert response.status_code == 201, response.data
+    # `ttl` is write-only and must never be echoed in the response
+    assert 'ttl' not in response.data
+    _assert_ttl_delta(response.data['id'], 1800)
+
+
+@pytest.mark.django_db
+def test_oauth2_token_ttl_equal_to_platform_default(user_api_client, settings):
+    """
+    A `ttl` equal to the platform default is accepted.
+    """
+    settings.OAUTH2_PROVIDER = {
+        **settings.OAUTH2_PROVIDER,
+        'ACCESS_TOKEN_EXPIRE_SECONDS': 3600,
+    }
+    url = get_relative_url('token-list')
+    response = user_api_client.post(url, {'scope': 'read', 'ttl': 3600})
+    assert response.status_code == 201, response.data
+    _assert_ttl_delta(response.data['id'], 3600)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('client_fixture', ['user_api_client', 'admin_api_client'])
+def test_oauth2_token_ttl_above_platform_default(request, client_fixture, settings):
+    """
+    A `ttl` above the platform default is rejected for both regular users and admins.
+    """
+    client = request.getfixturevalue(client_fixture)
+    settings.OAUTH2_PROVIDER = {
+        **settings.OAUTH2_PROVIDER,
+        'ACCESS_TOKEN_EXPIRE_SECONDS': 3600,
+    }
+    url = get_relative_url('token-list')
+    response = client.post(url, {'scope': 'read', 'ttl': 7200})
+    assert response.status_code == 400, response.data
+    assert 'must not exceed the platform default of 3600' in str(response.data['ttl'][0])
+
+
+@pytest.mark.django_db
+def test_oauth2_token_ttl_negative(user_api_client, settings):
+    """
+    `ttl` must be a non-negative integer (min_value=0).
+    """
+    settings.OAUTH2_PROVIDER = {
+        **settings.OAUTH2_PROVIDER,
+        'ACCESS_TOKEN_EXPIRE_SECONDS': 3600,
+    }
+    url = get_relative_url('token-list')
+    response = user_api_client.post(url, {'scope': 'read', 'ttl': -5})
+    assert response.status_code == 400, response.data
+
+
+@pytest.mark.django_db
+def test_oauth2_token_ttl_zero_uses_platform_default(user_api_client, settings):
+    """
+    `ttl=0` is accepted and means use the platform default's TTL.
+    """
+    settings.OAUTH2_PROVIDER = {
+        **settings.OAUTH2_PROVIDER,
+        'ACCESS_TOKEN_EXPIRE_SECONDS': 3600,
+    }
+    url = get_relative_url('token-list')
+    response = user_api_client.post(url, {'scope': 'read', 'ttl': 0})
+    assert response.status_code == 201, response.data
+    _assert_ttl_delta(response.data['id'], 3600)
+
+
+@pytest.mark.django_db
+def test_oauth2_token_ttl_with_zero_platform_default(user_api_client, settings):
+    """
+    Misconfiguration: when `ACCESS_TOKEN_EXPIRE_SECONDS` is 0, any positive `ttl` is
+    accepted and the token is valid (not already expired).
+    """
+    settings.OAUTH2_PROVIDER = {
+        **settings.OAUTH2_PROVIDER,
+        'ACCESS_TOKEN_EXPIRE_SECONDS': 0,
+    }
+    url = get_relative_url('token-list')
+    response = user_api_client.post(url, {'scope': 'read', 'ttl': 3600})
+    assert response.status_code == 201, response.data
+    _assert_ttl_delta(response.data['id'], 3600)
+
+
+@pytest.mark.django_db
+def test_oauth2_token_ttl_zero_with_zero_platform_default(user_api_client, settings):
+    """
+    `ttl=0` means "use the platform default": with a zero platform default the
+    default path applies, so the token is created already expired, same as omitting
+    teh `ttl` (the zero setting is a pre-existing misconfiguration
+    that the codebase already warns about).
+    """
+    settings.OAUTH2_PROVIDER = {
+        **settings.OAUTH2_PROVIDER,
+        'ACCESS_TOKEN_EXPIRE_SECONDS': 0,
+    }
+    url = get_relative_url('token-list')
+    response = user_api_client.post(url, {'scope': 'read', 'ttl': 0})
+    assert response.status_code == 201, response.data
+    _assert_ttl_delta(response.data['id'], 0)
+
+
+@pytest.mark.django_db
+def test_oauth2_token_ttl_app_token(oauth2_application, admin_api_client, settings):
+    """
+    The same `ttl` rules apply to application tokens.
+    """
+    settings.OAUTH2_PROVIDER = {
+        **settings.OAUTH2_PROVIDER,
+        'ACCESS_TOKEN_EXPIRE_SECONDS': 3600,
+    }
+    url = get_relative_url('token-list')
+    response = admin_api_client.post(url, {'scope': 'read', 'application': oauth2_application[0].pk, 'ttl': 1800})
+    assert response.status_code == 201, response.data
+    _assert_ttl_delta(response.data['id'], 1800)
+    # A refresh token is still created for app tokens
+    assert OAuth2RefreshToken.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_oauth2_token_ttl_does_not_affect_refresh_token(oauth2_application, admin_api_client, settings):
+    """
+    `ttl` only governs the access token; the refresh token is still governed by
+    `REFRESH_TOKEN_EXPIRE_SECONDS`.
+    """
+    settings.OAUTH2_PROVIDER = {
+        **settings.OAUTH2_PROVIDER,
+        'ACCESS_TOKEN_EXPIRE_SECONDS': 3600,
+        'REFRESH_TOKEN_EXPIRE_SECONDS': 7200,
+    }
+    url = get_relative_url('token-list')
+    response = admin_api_client.post(url, {'scope': 'read', 'application': oauth2_application[0].pk, 'ttl': 1800})
+    assert response.status_code == 201, response.data
+    access_token = OAuth2AccessToken.objects.get(pk=response.data['id'])
+    refresh_token = OAuth2RefreshToken.objects.get(access_token=access_token)
+    # The access token lifetime is governed by `ttl`
+    _assert_ttl_delta(access_token.pk, 1800)
+    # The refresh token is not stamped with the `ttl`; its effective expiry is
+    # `created + REFRESH_TOKEN_EXPIRE_SECONDS` (see TokenView.create_token_response),
+    # i.e. governed by the platform setting, not by `ttl`
+    effective_refresh_expiry = refresh_token.created + timedelta(seconds=7200)
+    assert effective_refresh_expiry > access_token.expires
+
+
+@pytest.mark.django_db
+def test_oauth2_grant_flow_unaffected_by_ttl(oauth2_application_password, user, unauthenticated_api_client, settings):
+    """
+    The `/o/token/` grant flow is unaffected by `ttl`; `expires_in` still equals
+    `ACCESS_TOKEN_EXPIRE_SECONDS`.
+
+    Note: django-oauth-toolkit caches its settings and the view's `OAuthLibCore`
+    (which bakes `token_expires_in` in at construction), so `override_settings`
+    (which triggers the `setting_changed` signal) plus
+    `ALWAYS_RELOAD_OAUTHLIB_CORE` are used instead of mutating the dict.
+    """
+    with override_settings(
+        OAUTH2_PROVIDER={
+            **settings.OAUTH2_PROVIDER,
+            'ACCESS_TOKEN_EXPIRE_SECONDS': 3600,
+            'ALWAYS_RELOAD_OAUTHLIB_CORE': True,
+        }
+    ):
+        app = oauth2_application_password[0]
+        secret = oauth2_application_password[1]
+        url = get_relative_url('oauth2_provider:token')
+        data = {
+            'grant_type': 'password',
+            'username': user.username,
+            'password': 'password',
+            'scope': 'read',
+        }
+        resp = unauthenticated_api_client.post(
+            url,
+            data=urlencode(data),
+            content_type='application/x-www-form-urlencoded',
+            headers={'Authorization': 'Basic ' + base64.b64encode(f"{app.client_id}:{secret}".encode()).decode()},
+        )
+        assert resp.status_code == 201, resp.content
+        assert resp.json()['expires_in'] == 3600
+
+
+@pytest.mark.django_db
+def test_oauth2_token_ttl_rejected_on_update(oauth2_admin_access_token, admin_api_client, admin_user, settings):
+    """
+    `ttl` can only be set at token creation; PATCH/PUT with `ttl` is rejected.
+    """
+    settings.OAUTH2_PROVIDER = {
+        **settings.OAUTH2_PROVIDER,
+        'ACCESS_TOKEN_EXPIRE_SECONDS': 3600,
+    }
+    url = get_relative_url('token-detail', kwargs={'pk': oauth2_admin_access_token[0].pk})
+    response = admin_api_client.patch(url, {'ttl': 1800})
+    assert response.status_code == 400, response.data
+    assert 'can only be set at token creation' in str(response.data['ttl'][0])
+
+    response = admin_api_client.put(url, {'user': admin_user.pk, 'ttl': 1800})
+    assert response.status_code == 400, response.data
+    assert 'can only be set at token creation' in str(response.data['ttl'][0])
