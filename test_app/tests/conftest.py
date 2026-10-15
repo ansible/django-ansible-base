@@ -352,6 +352,38 @@ def oidc_authenticator(oidc_configuration):
 
 
 @pytest.fixture
+def external_oauth_configuration():
+    return {
+        "ISSUER_URL": "https://login.example.com/tenant/v2.0",
+        "JWKS_URI": "https://login.example.com/tenant/discovery/v2.0/keys",
+        "ALLOWED_ALGORITHMS": ["RS256"],
+        "AUDIENCE": "api://aap-example",
+        "JWKS_CACHE_TIMEOUT": 3600,
+        "CLAIM_LIST": ["email", "azp"],
+        "GROUPS_CLAIM": "groups",
+        "USERINFO_URL": "",
+        "OIDC_ENDPOINT": "",
+        "VERIFY_SSL": True,
+    }
+
+
+@pytest.fixture
+def external_oauth_authenticator(external_oauth_configuration):
+    from ansible_base.authentication.models import Authenticator
+
+    authenticator = Authenticator.objects.create(
+        name="Test External OAuth Authenticator",
+        enabled=True,
+        create_objects=True,
+        remove_users=True,
+        type="ansible_base.authentication.authenticator_plugins.external_oauth",
+        configuration=external_oauth_configuration,
+    )
+    yield authenticator
+    delete_authenticator(authenticator)
+
+
+@pytest.fixture
 def tacacs_configuration():
     return {
         "PORT": 49,
