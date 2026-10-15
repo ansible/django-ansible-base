@@ -1,34 +1,18 @@
 import logging
 
 import jwt
-from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.utils.translation import gettext_lazy as _
-from jwt.algorithms import get_default_algorithms
 from jwt.exceptions import PyJWTError
 from social_core.backends.open_id_connect import OpenIdConnectAuth
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.social_auth import SocialAuthMixin, SocialAuthValidateCallbackMixin
 from ansible_base.lib.serializers.fields import BooleanField, CharField, ChoiceField, DictField, IntegerField, ListField, URLField
+from ansible_base.lib.serializers.validators import JWTAlgorithmListFieldValidator
 from ansible_base.lib.utils.settings import get_setting
 
-logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.oidc')
-
-
-DEFAULT_ALGORITHMS = get_default_algorithms()
-
-
-class JWTAlgorithmListFieldValidator:
-
-    allowed_values = list(DEFAULT_ALGORITHMS.keys())
-
-    def __call__(self, value):
-        if not all(item in self.allowed_values for item in value):
-            raise ValidationError(
-                _('%(value)s contains items not in the allowed list: %(allowed_values)s'),
-                params={'value': value, 'allowed_values': self.allowed_values},
-            )
+logger = logging.getLogger("ansible_base.authentication.authenticator_plugins.oidc")
 
 
 class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
@@ -41,26 +25,26 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
     OIDC_ENDPOINT = URLField(
         help_text=_("The URL for your OIDC provider including the path up to /.well-known/openid-configuration."),
         allow_null=False,
-        ui_field_label=_('OIDC Provider URL'),
+        ui_field_label=_("OIDC Provider URL"),
     )
 
     VERIFY_SSL = BooleanField(
         help_text=_("Verify the OIDC provider ssl certificate."),
         default=True,
         allow_null=False,
-        ui_field_label=_('Verify OIDC Provider Certificate'),
+        ui_field_label=_("Verify OIDC Provider Certificate"),
     )
 
     KEY = CharField(
         help_text=_("The OIDC key (Client ID) from your IDP. Will also be used as the 'audience' for JWT decoding."),
         allow_null=False,
-        ui_field_label=_('OIDC Key'),
+        ui_field_label=_("OIDC Key"),
     )
 
     SECRET = CharField(
         help_text=_("'The OIDC secret (Client Secret) from your IDP."),
         allow_null=True,
-        ui_field_label=_('OIDC Secret'),
+        ui_field_label=_("OIDC Secret"),
     )
 
     #################################
@@ -79,7 +63,7 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
         default="POST",
         allow_null=True,
         required=False,
-        choices=['GET', 'PUT', 'POST', 'PATCH', 'DELETE'],
+        choices=["GET", "PUT", "POST", "PATCH", "DELETE"],
         ui_field_label=_("Access Token Method"),
     )
 
@@ -119,7 +103,7 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
         default=600,
         allow_null=True,
         validators=[MinValueValidator(0)],
-        ui_field_label=_('OIDC Token Max Age'),
+        ui_field_label=_("OIDC Token Max Age"),
     )
 
     JWT_ALGORITHMS = ListField(
@@ -127,14 +111,14 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
         default=OpenIdConnectAuth.JWT_ALGORITHMS,
         allow_null=True,
         validators=[JWTAlgorithmListFieldValidator()],
-        ui_field_label=_('OIDC JWT Algorithm(s)'),
+        ui_field_label=_("OIDC JWT Algorithm(s)"),
     )
 
     JWT_DECODE_OPTIONS = DictField(
         help_text=_("OIDC JWT decoding options for token validation and processing."),
         default=None,
         allow_null=True,
-        ui_field_label=_('OIDC JWT Decode Options.'),
+        ui_field_label=_("OIDC JWT Decode Options."),
     )
 
     JWKS_URI = URLField(
@@ -148,7 +132,7 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
         help_text=_("The public key from your IDP. Only necessary if using keycloak for OIDC."),
         required=False,
         allow_null=True,
-        ui_field_label=_('OIDC Public Key'),
+        ui_field_label=_("OIDC Public Key"),
     )
 
     REDIRECT_STATE = BooleanField(
@@ -162,7 +146,7 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
         help_text=_("The HTTP method to be used when revoking an access token. Typically 'POST' or 'GET'."),
         default="GET",
         allow_null=True,
-        choices=['GET', 'PUT', 'POST', 'PATCH', 'DELETE'],
+        choices=["GET", "PUT", "POST", "PATCH", "DELETE"],
         ui_field_label=_("Revoke Token Method"),
     )
 
@@ -184,7 +168,7 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
         help_text=_('The authorization scope for users. Defaults to ["openid", "profile", "email"].'),
         required=False,
         allow_null=False,
-        ui_field_label=_('List of OAuth2 Scope(s)'),
+        ui_field_label=_("List of OAuth2 Scope(s)"),
         default=["openid", "profile", "email"],
     )
 
@@ -224,14 +208,14 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Open
     type = "open_id_connect"
     logger = logger
     category = "sso"
-    configuration_encrypted_fields = ['SECRET']
+    configuration_encrypted_fields = ["SECRET"]
 
     @property
     def groups_claim(self):
-        return self.setting('GROUPS_CLAIM')
+        return self.setting("GROUPS_CLAIM")
 
     def extra_data(self, user, uid, response, details, pipeline_kwargs):
-        for perm in ["is_superuser", get_setting('ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG')]:
+        for perm in ["is_superuser", get_setting("ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG")]:
             if perm in response:
                 pipeline_kwargs["social"].extra_data[perm] = response[perm]
         data = super().extra_data(user, uid, response, details, pipeline_kwargs)
