@@ -9,7 +9,7 @@ from rest_framework.serializers import ValidationError
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.lib.serializers.fields import BooleanField, CharField, IntegerField, ListField, URLField
 
-logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.external_oauth')
+logger = logging.getLogger("ansible_base.authentication.authenticator_plugins.external_oauth")
 
 DEFAULT_ALGORITHMS = get_default_algorithms()
 
@@ -20,8 +20,8 @@ class JWTAlgorithmListFieldValidator:
     def __call__(self, value):
         if not all(item in self.allowed_values for item in value):
             raise DjangoValidationError(
-                _('%(value)s contains items not in the allowed list: %(allowed_values)s'),
-                params={'value': value, 'allowed_values': self.allowed_values},
+                _("%(value)s contains items not in the allowed list: %(allowed_values)s"),
+                params={"value": value, "allowed_values": self.allowed_values},
             )
 
 
@@ -31,20 +31,20 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
     ISSUER_URL = URLField(
         help_text=_("Provider issuer URL. Must match the 'iss' claim in validated JWT tokens."),
         allow_null=False,
-        ui_field_label=_('Issuer URL'),
+        ui_field_label=_("Issuer URL"),
     )
 
     JWKS_URI = URLField(
         help_text=_(
             "Provider JWKS endpoint used to verify JWT signatures. "
             "Either JWKS_URI or OIDC_ENDPOINT must be provided. "
-            "When OIDC_ENDPOINT is provided, JWKS_URI may be auto-populated from discovery."
+            "OIDC discovery can later auto-populate this field from OIDC_ENDPOINT."
         ),
         required=False,
         allow_blank=True,
         allow_null=True,
         default="",
-        ui_field_label=_('JWKS URI'),
+        ui_field_label=_("JWKS URI"),
     )
 
     ALLOWED_ALGORITHMS = ListField(
@@ -53,16 +53,16 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         allow_null=False,
         allow_empty=False,
         validators=[JWTAlgorithmListFieldValidator()],
-        ui_field_label=_('Allowed Algorithms'),
+        ui_field_label=_("Allowed Algorithms"),
     )
 
     AUDIENCE = CharField(
-        help_text=_("Expected 'aud' claim value. Strongly recommended. " "When empty, audience validation is skipped."),
+        help_text=_("Expected 'aud' claim value. Strongly recommended. When empty, audience validation is skipped."),
         required=False,
         allow_blank=True,
         allow_null=True,
         default="",
-        ui_field_label=_('Audience'),
+        ui_field_label=_("Audience"),
     )
 
     JWKS_CACHE_TIMEOUT = IntegerField(
@@ -70,7 +70,7 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         default=3600,
         allow_null=False,
         validators=[MinValueValidator(60)],
-        ui_field_label=_('JWKS Cache Timeout'),
+        ui_field_label=_("JWKS Cache Timeout"),
     )
 
     CLAIM_LIST = ListField(
@@ -78,12 +78,12 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
             "Ordered JWT claim keys used to resolve the external identity "
             "(AuthenticatorUser.uid). No assumed default — configure explicitly. "
             "The first claim present in the token wins. "
-            "Example for Entra ID: [\"email\", \"azp\"] (human users and service principals)."
+            'Example for Entra ID: ["email", "azp"] (human users and service principals).'
         ),
         required=True,
         allow_null=False,
         allow_empty=False,
-        ui_field_label=_('Claim List'),
+        ui_field_label=_("Claim List"),
     )
 
     GROUPS_CLAIM = CharField(
@@ -92,58 +92,59 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         allow_blank=True,
         allow_null=True,
         default="groups",
-        ui_field_label=_('Groups Claim'),
+        ui_field_label=_("Groups Claim"),
     )
 
     USERINFO_URL = URLField(
-        help_text=_("Optional UserInfo endpoint fetched after JWT validation to retrieve " "supplementary claims (for example group memberships)."),
+        help_text=_("Optional UserInfo endpoint fetched after JWT validation to retrieve supplementary claims (for example group memberships)."),
         required=False,
         allow_blank=True,
         allow_null=True,
         default="",
-        ui_field_label=_('UserInfo URL'),
+        ui_field_label=_("UserInfo URL"),
     )
 
     OIDC_ENDPOINT = URLField(
         help_text=_(
-            "Base URL for OIDC auto-discovery. Appends /.well-known/openid-configuration "
-            "to auto-populate JWKS_URI (and USERINFO_URL when present). "
-            "Either JWKS_URI or OIDC_ENDPOINT must be provided. Fetched at save time only."
+            "Base URL for OIDC auto-discovery (/.well-known/openid-configuration). "
+            "Either JWKS_URI or OIDC_ENDPOINT must be provided. "
+            "Save-time discovery to populate JWKS_URI/USERINFO_URL is a follow-up; "
+            "this field is accepted now so configs can be stored ahead of that work."
         ),
         required=False,
         allow_blank=True,
         allow_null=True,
         default="",
-        ui_field_label=_('OIDC Discovery Endpoint'),
+        ui_field_label=_("OIDC Discovery Endpoint"),
     )
 
     VERIFY_SSL = BooleanField(
         help_text=_("Verify the OAuth provider SSL certificate for outbound requests (JWKS, OIDC discovery, UserInfo)."),
         default=True,
         allow_null=False,
-        ui_field_label=_('Verify SSL Certificate'),
+        ui_field_label=_("Verify SSL Certificate"),
     )
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
-        jwks_uri = attrs.get('JWKS_URI') or ''
-        oidc_endpoint = attrs.get('OIDC_ENDPOINT') or ''
+        jwks_uri = attrs.get("JWKS_URI") or ""
+        oidc_endpoint = attrs.get("OIDC_ENDPOINT") or ""
 
         if not jwks_uri and not oidc_endpoint:
             raise ValidationError(
                 {
-                    'JWKS_URI': _("Either JWKS_URI or OIDC_ENDPOINT must be provided."),
-                    'OIDC_ENDPOINT': _("Either JWKS_URI or OIDC_ENDPOINT must be provided."),
+                    "JWKS_URI": _("Either JWKS_URI or OIDC_ENDPOINT must be provided."),
+                    "OIDC_ENDPOINT": _("Either JWKS_URI or OIDC_ENDPOINT must be provided."),
                 }
             )
 
-        claim_list = attrs.get('CLAIM_LIST') or []
+        claim_list = attrs.get("CLAIM_LIST") or []
         invalid_claims = [claim for claim in claim_list if not isinstance(claim, str) or not claim.strip()]
         if invalid_claims:
-            raise ValidationError({'CLAIM_LIST': _("CLAIM_LIST entries must be non-empty strings.")})
+            raise ValidationError({"CLAIM_LIST": _("CLAIM_LIST entries must be non-empty strings.")})
 
         # Normalize whitespace while preserving declared order.
-        attrs['CLAIM_LIST'] = [claim.strip() for claim in claim_list]
+        attrs["CLAIM_LIST"] = [claim.strip() for claim in claim_list]
         return attrs
 
 

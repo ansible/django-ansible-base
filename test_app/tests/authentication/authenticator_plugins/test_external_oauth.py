@@ -110,7 +110,7 @@ def test_external_oauth_invalid_configuration(admin_api_client, external_oauth_c
 
 @pytest.mark.django_db
 def test_external_oauth_oidc_endpoint_without_jwks_uri_allowed(admin_api_client, external_oauth_configuration):
-    """OIDC discovery population is AAP-66482; schema must accept OIDC_ENDPOINT alone."""
+    """OIDC discovery population is follow-up work; schema must accept OIDC_ENDPOINT alone."""
     config = deepcopy(external_oauth_configuration)
     config["JWKS_URI"] = ""
     config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
@@ -122,7 +122,7 @@ def test_external_oauth_oidc_endpoint_without_jwks_uri_allowed(admin_api_client,
 
 @pytest.mark.django_db
 def test_external_oauth_enable_disable_toggle_preserves_configuration(admin_api_client, external_oauth_configuration):
-    """TC-12 (config persistence): disable/enable without deleting configuration."""
+    """Disable/enable must preserve configuration without requiring recreate."""
     url = get_relative_url("authenticator-list")
     create_response = admin_api_client.post(
         url,
