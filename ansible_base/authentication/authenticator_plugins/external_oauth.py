@@ -6,7 +6,7 @@ from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.lib.serializers.fields import BooleanField, CharField, IntegerField, ListField, URLField
-from ansible_base.lib.serializers.validators import ASYMMETRIC_JWT_ALGORITHMS, JWTAlgorithmListFieldValidator
+from ansible_base.lib.serializers.validators import JWTAlgorithmListFieldValidator, asymmetric_jwt_algorithms
 
 logger = logging.getLogger("ansible_base.authentication.authenticator_plugins.external_oauth")
 
@@ -50,7 +50,7 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         default=["RS256"],
         allow_null=False,
         allow_empty=False,
-        validators=[JWTAlgorithmListFieldValidator(allowed_values=ASYMMETRIC_JWT_ALGORITHMS)],
+        validators=[JWTAlgorithmListFieldValidator(allowed_values=asymmetric_jwt_algorithms)],
         ui_field_label=_("Allowed Algorithms"),
     )
 
