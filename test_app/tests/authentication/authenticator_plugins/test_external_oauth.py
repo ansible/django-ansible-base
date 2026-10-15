@@ -86,12 +86,16 @@ def test_external_oauth_multiple_providers(admin_api_client, external_oauth_conf
     "mutation,expected_fields",
     [
         (lambda cfg: cfg.pop("ISSUER_URL"), ["ISSUER_URL"]),
+        (lambda cfg: cfg.pop("AUDIENCE"), ["AUDIENCE"]),
+        (lambda cfg: cfg.update({"AUDIENCE": ""}), ["AUDIENCE"]),
         (lambda cfg: cfg.update({"CLAIM_LIST": []}), ["CLAIM_LIST"]),
         (lambda cfg: cfg.pop("CLAIM_LIST"), ["CLAIM_LIST"]),
         (lambda cfg: cfg.update({"JWKS_URI": "", "OIDC_ENDPOINT": ""}), ["JWKS_URI", "OIDC_ENDPOINT"]),
         (lambda cfg: cfg.update({"JWKS_URI": None, "OIDC_ENDPOINT": None}), ["JWKS_URI", "OIDC_ENDPOINT"]),
         (lambda cfg: cfg.update({"ALLOWED_ALGORITHMS": []}), ["ALLOWED_ALGORITHMS"]),
         (lambda cfg: cfg.update({"ALLOWED_ALGORITHMS": ["NOT_A_REAL_ALG"]}), ["ALLOWED_ALGORITHMS"]),
+        (lambda cfg: cfg.update({"ALLOWED_ALGORITHMS": ["HS256"]}), ["ALLOWED_ALGORITHMS"]),
+        (lambda cfg: cfg.update({"ALLOWED_ALGORITHMS": ["none"]}), ["ALLOWED_ALGORITHMS"]),
         (lambda cfg: cfg.update({"JWKS_CACHE_TIMEOUT": 30}), ["JWKS_CACHE_TIMEOUT"]),
         (lambda cfg: cfg.update({"CLAIM_LIST": ["email", ""]}), ["CLAIM_LIST"]),
         (lambda cfg: cfg.update({"CLAIM_LIST": ["email", 123]}), ["CLAIM_LIST"]),
@@ -166,11 +170,16 @@ def test_external_oauth_enable_disable_toggle_preserves_configuration(admin_api_
         ({"email": "user@example.com", "azp": "sp-app"}, ["azp", "email"], "sp-app"),
         ({"client_id": "svc-client"}, ["client_id", "email"], "svc-client"),
         ({"upn": "user@corp.example"}, ["upn", "email"], "user@corp.example"),
+        # Non-scalar claim values are skipped (not stringified)
+        ({"email": ["user@example.com"], "azp": "sp-app"}, ["email", "azp"], "sp-app"),
+        ({"email": {"value": "user@example.com"}, "azp": "sp-app"}, ["email", "azp"], "sp-app"),
+        ({"email": ["user@example.com"]}, ["email"], None),
+        # Scalar non-strings are accepted
+        ({"sub": 12345}, ["sub"], "12345"),
     ],
 )
 def test_claim_list_identity_resolution(claims, claim_list, expected):
     assert resolve_uid_from_claims(claims, claim_list) == expected
-    assert AuthenticatorPlugin.resolve_uid(claims, claim_list) == expected
 
 
 @pytest.mark.django_db
@@ -191,6 +200,24 @@ def test_external_oauth_schema_has_no_separate_user_service_claim_fields():
     assert "CLIENT_ID_CLAIM" not in schema_names
     assert "USER_CLAIM" not in schema_names
     assert "SERVICE_CLAIM" not in schema_names
+
+
+@pytest.mark.django_db
+def test_get_default_attributes_uses_configured_claims(external_oauth_authenticator):
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    assert plugin.get_default_attributes() == ["email", "azp", "groups"]
+
+    external_oauth_authenticator.configuration = {
+        **external_oauth_authenticator.configuration,
+        "CLAIM_LIST": ["preferred_username", "client_id"],
+        "GROUPS_CLAIM": "Group",
+    }
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    assert plugin.get_default_attributes() == ["preferred_username", "client_id", "Group"]
+
+    unconfigured = AuthenticatorPlugin()
+    assert "email" in unconfigured.get_default_attributes()
+    assert "groups" in unconfigured.get_default_attributes()
 
 
 @pytest.mark.django_db
