@@ -174,12 +174,31 @@ def test_external_oauth_enable_disable_toggle_preserves_configuration(admin_api_
         ({"email": ["user@example.com"], "azp": "sp-app"}, ["email", "azp"], "sp-app"),
         ({"email": {"value": "user@example.com"}, "azp": "sp-app"}, ["email", "azp"], "sp-app"),
         ({"email": ["user@example.com"]}, ["email"], None),
-        # Scalar non-strings are accepted
+        # Integers are accepted; bool/float are not (bool is an int subclass)
         ({"sub": 12345}, ["sub"], "12345"),
+        ({"sub": True, "azp": "sp-app"}, ["sub", "azp"], "sp-app"),
+        ({"sub": 1.5, "azp": "sp-app"}, ["sub", "azp"], "sp-app"),
+        ({"sub": False}, ["sub"], None),
     ],
 )
 def test_claim_list_identity_resolution(claims, claim_list, expected):
     assert resolve_uid_from_claims(claims, claim_list) == expected
+
+
+@pytest.mark.django_db
+def test_external_oauth_validate_accumulates_object_errors(admin_api_client, external_oauth_configuration):
+    """Endpoint-pair and CLAIM_LIST errors should be returned together."""
+    config = deepcopy(external_oauth_configuration)
+    config["JWKS_URI"] = ""
+    config["OIDC_ENDPOINT"] = ""
+    config["CLAIM_LIST"] = ["email", ""]
+    url = get_relative_url("authenticator-list")
+    response = admin_api_client.post(url, data=_authenticator_payload("Accumulated Errors", config), format="json")
+    assert response.status_code == 400, response.data
+    error_payload = response.data.get("configuration", response.data)
+    assert "JWKS_URI" in error_payload or "JWKS_URI" in response.data
+    assert "OIDC_ENDPOINT" in error_payload or "OIDC_ENDPOINT" in response.data
+    assert "CLAIM_LIST" in error_payload or "CLAIM_LIST" in response.data
 
 
 @pytest.mark.django_db

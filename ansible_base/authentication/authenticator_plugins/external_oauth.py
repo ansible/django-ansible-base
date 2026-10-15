@@ -44,7 +44,7 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
     )
 
     ALLOWED_ALGORITHMS = ListField(
-        help_text=_("Allowed JWT signing algorithms (asymmetric only: RS*/ES*/PS*/EdDSA). 'none' and HS* are rejected."),
+        help_text=_("Allowed JWT signing algorithms. Asymmetric algorithms only; 'none' and HMAC (HS*) are rejected."),
         default=["RS256"],
         allow_null=False,
         allow_empty=False,
@@ -62,12 +62,17 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_("Audience"),
     )
 
+    # Min 60 / default 3600 come from the ANSTRAT-1611 P1 configuration schema.
     JWKS_CACHE_TIMEOUT = IntegerField(
-        help_text=_("JWKS cache duration in seconds. Minimum 60."),
+        help_text=_(
+            "How long to cache JWKS keys, in seconds. Minimum 60 to avoid hammering the "
+            "provider's JWKS endpoint. No maximum — longer TTLs are fine for stable IdPs; "
+            "token validation refreshes keys on signature failure so rotation still works."
+        ),
         default=3600,
         allow_null=False,
         validators=[MinValueValidator(60)],
-        ui_field_label=_("JWKS Cache Timeout"),
+        ui_field_label=_("JWKS Cache Timeout (seconds)"),
     )
 
     CLAIM_LIST = ListField(
@@ -126,21 +131,22 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        errors = {}
         jwks_uri = attrs.get("JWKS_URI") or ""
         oidc_endpoint = attrs.get("OIDC_ENDPOINT") or ""
 
         if not jwks_uri and not oidc_endpoint:
-            raise ValidationError(
-                {
-                    "JWKS_URI": _("Either JWKS_URI or OIDC_ENDPOINT must be provided."),
-                    "OIDC_ENDPOINT": _("Either JWKS_URI or OIDC_ENDPOINT must be provided."),
-                }
-            )
+            message = _("Either JWKS_URI or OIDC_ENDPOINT must be provided.")
+            errors["JWKS_URI"] = message
+            errors["OIDC_ENDPOINT"] = message
 
         claim_list = attrs.get("CLAIM_LIST") or []
         invalid_claims = [claim for claim in claim_list if not isinstance(claim, str) or not claim.strip()]
         if invalid_claims:
-            raise ValidationError({"CLAIM_LIST": _("CLAIM_LIST entries must be non-empty strings.")})
+            errors["CLAIM_LIST"] = _("CLAIM_LIST entries must be non-empty strings.")
+
+        if errors:
+            raise ValidationError(errors)
 
         # Normalize whitespace while preserving declared order.
         attrs["CLAIM_LIST"] = [claim.strip() for claim in claim_list]
@@ -148,13 +154,16 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
 
 
 def _scalar_claim_uid(value) -> str | None:
-    """Return a uid string for scalar claim values; skip None and non-scalars."""
-    if value is None or isinstance(value, (dict, list, tuple, set)):
+    """Return a uid for string/int claim values; skip bool, float, and non-scalars.
+
+    bool is checked before int because bool is an int subclass in Python.
+    """
+    if value is None or isinstance(value, (bool, float, dict, list, tuple, set)):
         return None
     if isinstance(value, str):
         value = value.strip()
         return value or None
-    if isinstance(value, (int, float, bool)):
+    if isinstance(value, int):
         return str(value)
     return None
 
@@ -163,10 +172,10 @@ def resolve_uid_from_claims(claims: dict, claim_list: list) -> str | None:
     """
     Resolve an external identity from token claims using CLAIM_LIST order.
 
-    The first present, non-empty scalar claim value wins. Supports both human-user
-    claim shapes (email, sub, preferred_username, upn) and service-principal
-    shapes (azp, client_id) in a single ordered list. Non-scalar values (list/dict)
-    are skipped as misconfiguration rather than coerced into a uid.
+    The first present, non-empty string or integer claim value wins. Supports both
+    human-user claim shapes (email, sub, preferred_username, upn) and service-principal
+    shapes (azp, client_id) in a single ordered list. Bool, float, and non-scalar
+    values (list/dict) are skipped rather than coerced into a uid.
     """
     if not claims or not claim_list:
         return None
