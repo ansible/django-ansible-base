@@ -5,6 +5,15 @@ These tests verify that the schema endpoint is accessible and that x-ai-descript
 fields are properly included in the generated OpenAPI spec for MCP (Model Context Protocol) server tools.
 """
 
+from django.urls import path
+from drf_spectacular.generators import SchemaGenerator
+from rest_framework import serializers
+from rest_framework.generics import GenericAPIView
+from rest_framework.response import Response
+
+from ansible_base.lib.utils import schema as schema_utils
+from ansible_base.lib.utils.views.deprecation import DeprecationSerializerMixin, deprecated
+
 
 def test_openapi_schema_endpoint_accessible(admin_api_client):
     """Test that the OpenAPI schema endpoint is accessible and returns valid schema."""
@@ -189,4 +198,75 @@ def test_role_user_assignment_create_schema(admin_api_client):
     assert 'object_id' in object_requirement['properties']
     assert 'object_ansible_id' in object_requirement['properties']
 
+
+def test_deprecated_operation_schema_includes_deprecation_detail():
+    detail = 'This operation is deprecated. Use the replacement instead.'
+
+    class OperationSerializer(serializers.Serializer):
+        value = serializers.CharField()
+
+    class DeprecatedOperationView(GenericAPIView):
+        serializer_class = OperationSerializer
+
+        @deprecated(detail=detail)
+        def get(self, request):
+            return Response({'value': 'deprecated'})
+
+    class CurrentOperationView(GenericAPIView):
+        serializer_class = OperationSerializer
+
+        def get(self, request):
+            return Response({'value': 'current'})
+
+    generator = SchemaGenerator(
+        patterns=[
+            path('deprecated-operation/', DeprecatedOperationView.as_view()),
+            path('current-operation/', CurrentOperationView.as_view()),
+        ]
+    )
+    schema = generator.get_schema(public=True)
+
+    deprecated_operation = schema['paths']['/deprecated-operation/']['get']
+    assert deprecated_operation['deprecated'] is True
+    assert deprecated_operation['x-api-deprecated-detail'] == detail
+
+    current_operation = schema['paths']['/current-operation/']['get']
+    assert current_operation.get('deprecated', False) is False
+    assert 'x-api-deprecated-detail' not in current_operation
+
+
+def test_deprecated_field_detail_hook_only_marks_deprecated_fields(monkeypatch):
+    detail = 'legacy_name is deprecated. Use current_name instead.'
+    monkeypatch.setattr(schema_utils, '_DEPRECATED_FIELD_REGISTRY', {})
+
+    class ExampleSerializer(DeprecationSerializerMixin, serializers.Serializer):
+        legacy_name = serializers.CharField(required=False)
+        legacy_alias = serializers.CharField(required=False)
+        current_name = serializers.CharField(required=False)
+        deprecated_fields = {
+            'legacy_name': detail,
+            'legacy_alias': 'legacy_alias is deprecated.',
+        }
+
+    result = {
+        'components': {
+            'schemas': {
+                'Example': {
+                    'properties': {
+                        'legacy_name': {'type': 'string', 'deprecated': True},
+                        'legacy_alias': {'type': 'string'},
+                        'current_name': {'type': 'string'},
+                    }
+                }
+            }
+        }
+    }
+
+    returned = schema_utils.deprecated_fields_detail_hook(result, None)
+    properties = result['components']['schemas']['Example']['properties']
+
+    assert returned is result
+    assert properties['legacy_name']['x-api-deprecated-detail'] == detail
+    assert 'x-api-deprecated-detail' not in properties['legacy_alias']
+    assert 'x-api-deprecated-detail' not in properties['current_name']
 
