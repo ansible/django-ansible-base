@@ -475,6 +475,12 @@ def recompute_role_evaluations(
 
 
 def _created_role_teams(role_pks: list[int]) -> tuple[dict[int, set[int]], set[int]]:
+    """Map each role in role_pks to the teams it provides membership to.
+
+    These are the roles being recomputed (e.g. a team's member role). Returns
+    (role_pk -> team_ids, union of all team_ids) via a single query on the
+    provides_teams through table.
+    """
     role_to_teams: dict[int, set[int]] = defaultdict(set)
     through = ObjectRole.provides_teams.through
     for role_pk, team_id in through.objects.filter(objectrole_id__in=role_pks).values_list('objectrole_id', 'team_id'):
@@ -483,6 +489,13 @@ def _created_role_teams(role_pks: list[int]) -> tuple[dict[int, set[int]], set[i
 
 
 def _created_team_roles(team_ids: set[int], object_ct_id: int, parent_keys: set[tuple[int, str]]) -> tuple[dict[int, ObjectRole], dict[int, set[int]]]:
+    """Load the roles held by team_ids that can grant on the created object.
+
+    The inverse direction of _created_role_teams: given teams, find the roles
+    assigned *to* those teams, limited to roles on the object itself or on one
+    of its parents (parent_keys). Returns (role_pk -> ObjectRole,
+    team_id -> held role_pks).
+    """
     team_roles_by_pk: dict[int, ObjectRole] = {}
     team_to_role_pks: dict[int, set[int]] = defaultdict(set)
     if not team_ids:
@@ -504,6 +517,11 @@ def _created_team_roles(team_ids: set[int], object_ct_id: int, parent_keys: set[
 
 
 def _created_existing_evaluations(role_pks: list[int], object_pk: int | UUID, object_ct_id: int) -> dict[int, dict]:
+    """Load the RoleEvaluation rows that already exist for the created object.
+
+    Returns role_pk -> {(codename, content_type_id, object_id): evaluation_id},
+    reading from RoleEvaluationUUID when the object is UUID-keyed.
+    """
     evaluation_model = RoleEvaluationUUID if isinstance(object_pk, UUID) else RoleEvaluation
     existing: dict[int, dict] = defaultdict(dict)
     for eval_id, role_pk, codename, ct_id, obj_id in evaluation_model.objects.filter(
@@ -526,6 +544,15 @@ def _collect_created_role_updates(
     existing: dict[int, dict],
     updates: EvaluationUpdates,
 ) -> None:
+    """Diff one role's expected evaluations on the created object against existing ones.
+
+    A role's expected set is the union of its own direct permissions (only when
+    its object is the created object or a parent of it) and the permissions of
+    every team-held role reached through the teams it provides membership to.
+    Missing rows are queued on updates.to_add, stale rows on updates.to_delete.
+    expected_by_role_pk memoizes per-role results across calls.
+    """
+
     def expected_for(expected_role: ObjectRole) -> set:
         if expected_role.pk not in expected_by_role_pk:
             expected_by_role_pk[expected_role.pk] = expected_role.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id)

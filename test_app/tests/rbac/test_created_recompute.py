@@ -4,9 +4,10 @@ import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
-from ansible_base.rbac.caching import recompute_all_role_evaluations
+from ansible_base.rbac.caching import recompute_all_role_evaluations, recompute_role_evaluations_for_created
 from ansible_base.rbac.models import ObjectRole, RoleEvaluation
 from ansible_base.rbac.permission_registry import permission_registry
+from ansible_base.rbac.triggers import object_roles_for_parents
 from test_app.models import Inventory, Organization, Team
 
 
@@ -20,10 +21,6 @@ def _org_ct_id():
 
 def _evaluation_rows():
     return set(RoleEvaluation.objects.values_list("role_id", "codename", "content_type_id", "object_id"))
-
-
-from ansible_base.rbac.caching import recompute_role_evaluations_for_created  # noqa: E402
-from ansible_base.rbac.triggers import object_roles_for_parents  # noqa: E402
 
 
 def _build_org(rando, org_inv_rd, inv_rd, member_rd, name, n_teams):

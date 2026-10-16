@@ -3,9 +3,9 @@
 import pytest
 
 from ansible_base.rbac.caching import recompute_all_role_evaluations
-from ansible_base.rbac.models import ObjectRole, RoleEvaluation
+from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation
 from ansible_base.rbac.permission_registry import permission_registry
-from test_app.models import Inventory, Organization, Team
+from test_app.models import CollectionImport, Inventory, Namespace, Organization, Team, UUIDModel
 
 
 def _inv_ct_id():
@@ -18,10 +18,6 @@ def _org_ct_id():
 
 def _evaluation_rows():
     return set(RoleEvaluation.objects.values_list("role_id", "codename", "content_type_id", "object_id"))
-
-
-from ansible_base.rbac.models import RoleDefinition  # noqa: E402
-from test_app.models import CollectionImport, Namespace, UUIDModel  # noqa: E402
 
 
 def _org_rd(name, permissions):
