@@ -109,6 +109,33 @@ def test_saml_configured_email_is_returned_when_present():
     assert details["email"] == "user@example.com"
 
 
+def test_saml_configured_custom_email_mapping_is_preserved():
+    configuration = {
+        "ENABLED_IDPS": {
+            idp_string: {
+                "attr_email": "mail_alias",
+                "attr_username": "username",
+                "attr_user_permanent_id": "name_id",
+            }
+        }
+    }
+    plugin = AuthenticatorPlugin(database_instance=SimpleNamespace(configuration=configuration, slug="test-saml"))
+
+    details = plugin.get_user_details(
+        {
+            "idp_name": idp_string,
+            "attributes": {
+                "username": ["same-user"],
+                "name_id": "saml-user",
+                "mail_alias": ["mapped@example.com"],
+                "email": ["default@example.com"],
+            },
+        }
+    )
+
+    assert details["email"] == "mapped@example.com"
+
+
 def test_saml_missing_configured_non_email_attribute_still_fails():
     configuration = {
         "ENABLED_IDPS": {
