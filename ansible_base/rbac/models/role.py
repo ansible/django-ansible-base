@@ -267,16 +267,18 @@ class RoleDefinition(CommonModel):
             return models.Q(pk__in=[])
         return reduce(operator.or_, conditions)
 
-    def give_global_permission(self, actor):
-        return self.give_or_remove_global_permission(actor, giving=True)
+    def give_global_permission(self, actor, return_created=False):
+        """Grant a global role, optionally returning ``(assignment, created)``.
+
+        ``created`` is false when the assignment already existed.
+        """
+        return self.give_or_remove_global_permission(actor, giving=True, return_created=return_created)
 
     def remove_global_permission(self, actor):
         return self.give_or_remove_global_permission(actor, giving=False)
 
-    def give_or_remove_global_permission(self, actor, giving=True):
-        if giving and (self.content_type is not None):
-            raise ValidationError('Role definition content type must be null to assign globally')
-
+    def _get_global_assignment_details(self, actor, giving):
+        """Return the assignment model and lookup fields for a user or team."""
         if actor._meta.model_name == 'user':
             if giving and (not settings.ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES):
                 raise ValidationError('Global roles are not enabled for users')
@@ -290,14 +292,11 @@ class RoleDefinition(CommonModel):
         else:
             raise RuntimeError(f'Cannot {giving and "give" or "remove"} permission for {actor}, must be a user or team')
 
-        if giving:
-            assignment, _ = cls.objects.get_or_create(**kwargs)
-        else:
-            assignment = cls.objects.filter(**kwargs).first()
-            if assignment:
-                assignment.delete()
+        return cls, kwargs
 
-        # Clear any cached permissions
+    @staticmethod
+    def _clear_global_permission_cache(actor):
+        """Invalidate cached global permissions affected by an assignment change."""
         if actor._meta.model_name == 'user':
             if hasattr(actor, '_singleton_permissions'):
                 delattr(actor, '_singleton_permissions')
@@ -308,6 +307,26 @@ class RoleDefinition(CommonModel):
 
             bound_singleton_permissions._team_clear_signal = True
 
+    def give_or_remove_global_permission(self, actor, giving=True, return_created=False):
+        """Create or remove a global assignment and optionally report its insert result.
+
+        For grants, ``return_created`` selects an ``(assignment, created)`` result.
+        """
+        if giving and (self.content_type is not None):
+            raise ValidationError('Role definition content type must be null to assign globally')
+
+        cls, kwargs = self._get_global_assignment_details(actor, giving)
+        created = False
+        if giving:
+            assignment, created = cls.objects.get_or_create(**kwargs)
+        else:
+            assignment = cls.objects.filter(**kwargs).first()
+            if assignment:
+                assignment.delete()
+
+        self._clear_global_permission_cache(actor)
+        if return_created:
+            return assignment, created
         return assignment
 
     def give_permission(self, actor, content_object):
@@ -776,7 +795,7 @@ class ObjectRole(ObjectRoleFields):
 
         return existing_partials
 
-    def _team_role_evaluations(self, types_prefetch, object_pk, object_ct_id, target_parents):
+    def _team_role_evaluations(self, types_prefetch, object_pk, object_ct_id, target_parents, lookahead_cache=None):
         """Return the evaluations this role grants through the teams it provides membership to.
 
         Holding this role makes the actor a member of the teams in provides_teams, so the actor
@@ -798,10 +817,18 @@ class ObjectRole(ObjectRoleFields):
         if team_role_filter is not None:
             team_roles = team_roles.filter(team_role_filter)
         for team_role in team_roles:
-            expected_evaluations.update(team_role.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id))
+            if lookahead_cache is not None and team_role.pk in lookahead_cache:
+                expected_evaluations.update(lookahead_cache[team_role.pk])
+                continue
+            team_role_expected = team_role.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id)
+            if lookahead_cache is not None:
+                lookahead_cache[team_role.pk] = team_role_expected
+            expected_evaluations.update(team_role_expected)
         return expected_evaluations
 
-    def needed_cache_updates(self, types_prefetch=None, evaluations_prefetch=None, object_pk=None, object_ct_id=None, target_parents=None):
+    def needed_cache_updates(
+        self, types_prefetch=None, evaluations_prefetch=None, object_pk=None, object_ct_id=None, target_parents=None, lookahead_cache=None
+    ):
         """Return (to_delete, to_add) changes needed in the RoleEvaluation table
         to make cached object-role permissions accurate for this role.
 
@@ -823,6 +850,10 @@ class ObjectRole(ObjectRoleFields):
         the look-ahead object's parent chain. When given, team-held roles are
         filtered to those on the look-ahead object or on one of its parents, the
         only roles that can grant evaluations on it.
+
+        lookahead_cache: optional dict shared across one recompute, memoising the
+        expected evaluations of team-held roles by ObjectRole pk. The same
+        organization role is typically reached through many teams; compute it once.
         """
         if (object_pk is None) != (object_ct_id is None):
             raise ValueError('object_pk and object_ct_id must both be provided or both be None')
@@ -839,7 +870,7 @@ class ObjectRole(ObjectRoleFields):
             for team_role in evaluations_prefetch.get_team_roles(self.pk):
                 expected_evaluations.update(team_role.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id))
         else:
-            expected_evaluations.update(self._team_role_evaluations(types_prefetch, object_pk, object_ct_id, target_parents))
+            expected_evaluations.update(self._team_role_evaluations(types_prefetch, object_pk, object_ct_id, target_parents, lookahead_cache))
 
         self._log_partials_count(len(expected_evaluations), 'expected evaluation', self.pk)
 
