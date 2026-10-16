@@ -11,7 +11,15 @@ import sys
 
 import pytest
 from django.conf import settings
+from django.urls import path as url_path
+from drf_spectacular.generators import SchemaGenerator
+from rest_framework import serializers
+from rest_framework.generics import GenericAPIView
+from rest_framework.response import Response
 
+from ansible_base.lib.utils import schema as schema_utils
+from ansible_base.lib.utils.views import deprecation as deprecation_utils
+from ansible_base.lib.utils.views.deprecation import DeprecationSerializerMixin, deprecated
 from ansible_base.rbac.api.views import RoleDefinitionViewSet
 from ansible_base.rbac.models import RoleDefinition
 from ansible_base.rest_filters.rest_framework.role_definition_backend import RoleDefinitionScopeFilterBackend
@@ -230,6 +238,84 @@ def test_role_user_assignment_create_schema(admin_api_client):
     assert 'properties' in object_requirement
     assert 'object_id' in object_requirement['properties']
     assert 'object_ansible_id' in object_requirement['properties']
+
+
+def test_deprecated_operation_schema_includes_deprecation_detail():
+    detail = 'This operation is deprecated. Use the replacement instead.'
+
+    class OperationSerializer(serializers.Serializer):
+        value = serializers.CharField()
+
+    class DeprecatedOperationView(GenericAPIView):
+        serializer_class = OperationSerializer
+
+        @deprecated(detail=detail)
+        def get(self, request):
+            return Response({'value': 'deprecated'})
+
+    class CurrentOperationView(GenericAPIView):
+        serializer_class = OperationSerializer
+
+        def get(self, request):
+            return Response({'value': 'current'})
+
+    generator = SchemaGenerator(
+        patterns=[
+            url_path('deprecated-operation/', DeprecatedOperationView.as_view()),
+            url_path('current-operation/', CurrentOperationView.as_view()),
+        ]
+    )
+    schema = generator.get_schema(public=True)
+
+    deprecated_operation = schema['paths']['/deprecated-operation/']['get']
+    assert deprecated_operation['deprecated'] is True
+    assert deprecated_operation['x-api-deprecated-detail'] == detail
+
+    current_operation = schema['paths']['/current-operation/']['get']
+    assert current_operation.get('deprecated', False) is False
+    assert 'x-api-deprecated-detail' not in current_operation
+
+
+def test_deprecated_field_detail_hook_supports_split_request_components(monkeypatch):
+    detail = 'legacy_name is deprecated. Use current_name instead.'
+    monkeypatch.setattr(deprecation_utils, '_DEPRECATED_FIELD_REGISTRY', {})
+
+    class ExampleSerializer(DeprecationSerializerMixin, serializers.Serializer):
+        legacy_name = serializers.CharField(required=False)
+        legacy_alias = serializers.CharField(required=False)
+        current_name = serializers.CharField(required=False)
+        deprecated_fields = {
+            'legacy_name': detail,
+            'legacy_alias': 'legacy_alias is deprecated.',
+        }
+
+    component_names = ('Example', 'ExampleRequest', 'PatchedExampleRequest', 'Unrelated')
+    result = {
+        'components': {
+            'schemas': {
+                component_name: {
+                    'properties': {
+                        'legacy_name': {'type': 'string', 'deprecated': True},
+                        'legacy_alias': {'type': 'string'},
+                        'current_name': {'type': 'string'},
+                    }
+                }
+                for component_name in component_names
+            }
+        }
+    }
+
+    returned = schema_utils.deprecated_fields_detail_hook(result, None)
+
+    assert returned is result
+    for component_name in component_names[:-1]:
+        properties = result['components']['schemas'][component_name]['properties']
+        assert properties['legacy_name']['x-api-deprecated-detail'] == detail
+        assert 'x-api-deprecated-detail' not in properties['legacy_alias']
+        assert 'x-api-deprecated-detail' not in properties['current_name']
+
+    unrelated_properties = result['components']['schemas']['Unrelated']['properties']
+    assert 'x-api-deprecated-detail' not in unrelated_properties['legacy_name']
 
 
 def test_role_definition_viewset_includes_scope_filter_backend():
