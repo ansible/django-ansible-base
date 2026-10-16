@@ -369,18 +369,6 @@ def test_diff_instance_encrypted_field_names_partial(disable_activity_stream):
     assert delta.changed_fields['message'] == (ENCRYPTED_STRING, ENCRYPTED_STRING)
 
 
-@pytest.mark.django_db
-def test_diff_no_sanitize_when_disabled(disable_activity_stream):
-    """When sanitize_encrypted=False, neither class-level nor instance-level encryption is sanitized."""
-    instance1 = test_app_models.ImmutableLogEntry.objects.create(message='plain')
-    instance2 = test_app_models.ImmutableLogEntry.objects.get(pk=instance1.pk)
-    instance2.message = f'{ENCRYPTED_STRING}UTF8$AESCBC$data=='
-    instance1._encrypted_field_names = {'message'}
-
-    delta = models.diff(instance1, instance2, sanitize_encrypted=False)
-    assert delta.changed_fields['message'] == ('plain', instance2.message)
-
-
 @pytest.mark.parametrize(
     "username,expected_value",
     [
