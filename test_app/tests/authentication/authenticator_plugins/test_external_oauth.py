@@ -417,6 +417,7 @@ def test_oidc_discovery_invalid_json(admin_api_client, external_oauth_configurat
     assert "Unable to reach" not in message
     assert any("invalid JSON" in record.message and "not-json{" in record.message for record in caplog.records)
 
+
 @pytest.mark.django_db
 def test_oidc_discovery_missing_jwks_uri(admin_api_client, external_oauth_configuration):
     config = deepcopy(external_oauth_configuration)

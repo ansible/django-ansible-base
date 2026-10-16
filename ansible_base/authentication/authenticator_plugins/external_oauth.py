@@ -49,9 +49,7 @@ def _validate_discovered_url(value: str, field_name: str) -> str:
     try:
         validate_url(value, schemes=["https", "http"], allow_plain_hostname=True)
     except ValidationError as exc:
-        raise ValidationError(
-            {"OIDC_ENDPOINT": _("OIDC discovery returned an invalid %(field)s.") % {"field": field_name}}
-        ) from exc
+        raise ValidationError({"OIDC_ENDPOINT": _("OIDC discovery returned an invalid %(field)s.") % {"field": field_name}}) from exc
     return value
 
 
@@ -75,9 +73,7 @@ def fetch_oidc_discovery(oidc_endpoint: str, verify_ssl: bool = True) -> dict:
         # Strict OIDC discovery responses are HTTP 200 (not other 2xx).
         if response.status_code != 200:
             logger.warning("OIDC discovery HTTP error for %s: status %s", url, response.status_code)
-            raise ValidationError(
-                {"OIDC_ENDPOINT": _("Unable to fetch OIDC discovery document: HTTP %(status)s.") % {"status": response.status_code}}
-            )
+            raise ValidationError({"OIDC_ENDPOINT": _("Unable to fetch OIDC discovery document: HTTP %(status)s.") % {"status": response.status_code}})
         document = response.json()
     except requests.exceptions.Timeout as exc:
         logger.warning("OIDC discovery timed out for %s: %s", url, exc)
