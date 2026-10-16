@@ -61,6 +61,17 @@ class TestMarkDeprecated:
 
 
 class TestDeprecatedSerializerFields:
+    def test_empty_input_does_not_add_deprecation_warnings(self):
+        class PayloadSerializer(DeprecationSerializerMixin, serializers.Serializer):
+            legacy_name = serializers.CharField(required=False)
+            deprecated_fields = {'legacy_name': 'legacy_name is deprecated.'}
+
+        view = APIView()
+        serializer = PayloadSerializer(data={}, context={'view': view})
+
+        assert serializer.is_valid()
+        assert not hasattr(view, '_deprecated_field_warnings')
+
     def test_deprecated_input_field_emits_response_headers(self):
         class PayloadSerializer(DeprecationSerializerMixin, serializers.Serializer):
             legacy_name = serializers.CharField(required=False)
@@ -149,3 +160,13 @@ class TestDeprecatedDecoratorClass:
 
         assert hasattr(MyView, 'deprecation')
         assert MyView.deprecation == {'detail': 'This view is deprecated.'}
+
+    def test_class_decorator_wraps_and_preserves_action_methods(self):
+        @deprecated(detail='This view is deprecated.')
+        class MyView(APIView):
+            def list(self, request):
+                return Response({'ok': True})
+
+        response = MyView().list(RequestFactory().get('/'))
+
+        assert response.data == {'ok': True}

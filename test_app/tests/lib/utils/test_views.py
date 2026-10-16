@@ -99,6 +99,15 @@ def test_ansible_base_view_deprecated_view(view_with_headers, mock_request, defa
     assert response["Warning"] == "This resource has been deprecated and will be removed in a future release."
 
 
+def test_ansible_base_view_uses_custom_deprecation_detail(view_with_headers, mock_request):
+    view_with_headers.deprecation = {'detail': 'Use the replacement endpoint instead.'}
+    response = view_with_headers.finalize_response(mock_request, HttpResponseBase())
+
+    assert response['X-API-Deprecated'] == 'true'
+    assert response['X-API-Deprecated-Detail'] == 'Use the replacement endpoint instead.'
+    assert 'Warning' not in response
+
+
 def test_ansible_base_view_deprecated_view_warning_header_override(mock_request):
     initial_response = HttpResponseBase()
     view = DeprecatedViewWithWarningHeaderOverride()

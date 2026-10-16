@@ -60,23 +60,25 @@ class AnsibleBaseView(APIView):
             time_elapsed = time.time() - self.time_started
             response['X-API-Time'] = '%0.3fs' % time_elapsed
 
+        self._add_deprecation_headers(response)
+
+        return response
+
+    def _add_deprecation_headers(self, response):
         deprecation = getattr(self, 'deprecation', None)
-        if deprecation or getattr(self, 'deprecated', False):
-            from ansible_base.lib.utils.views.deprecation import mark_deprecated
+        is_deprecated = getattr(self, 'deprecated', False)
+        if not deprecation and not is_deprecated:
+            return
 
-            if deprecation:
-                detail = deprecation['detail']
-            else:
-                detail = 'This resource has been deprecated and will be removed in a future release.'
+        from ansible_base.lib.utils.views.deprecation import mark_deprecated
 
-            mark_deprecated(response, detail)
+        detail = deprecation['detail'] if deprecation else 'This resource has been deprecated and will be removed in a future release.'
+        mark_deprecated(response, detail)
 
-        if getattr(self, 'deprecated', False):
+        if is_deprecated:
             response['Warning'] = getattr(
                 self, 'deprecation_warning_header_override', _('This resource has been deprecated and will be removed in a future release.')
             )
-
-        return response
 
     def dispatch(self, request, *args, **kwargs):
         # We wrap DELETE requests with deferral context managers so that

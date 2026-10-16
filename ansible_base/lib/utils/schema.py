@@ -60,6 +60,39 @@ def _get_autoschema_base():
         return None
 
 
+def _get_serializer_ref_name(serializer_cls):
+    ref_name = getattr(getattr(serializer_cls, 'Meta', None), 'ref_name', None)
+    if ref_name:
+        return ref_name
+
+    serializer_name = serializer_cls.__name__
+    if serializer_name.endswith('Serializer'):
+        return serializer_name[: -len('Serializer')]
+    return serializer_name
+
+
+def _build_deprecated_fields_by_component(registry):
+    fields_by_component = {}
+    for serializer_cls, fields in registry.items():
+        ref_name = _get_serializer_ref_name(serializer_cls)
+        for component_name in (
+            ref_name,
+            f'Patched{ref_name}',
+            f'{ref_name}Request',
+            f'Patched{ref_name}Request',
+        ):
+            fields_by_component[component_name] = fields
+    return fields_by_component
+
+
+def _add_deprecated_field_details(schema, fields):
+    properties = schema.get('properties', {})
+    for field_name, detail in fields.items():
+        property_schema = properties.get(field_name, {})
+        if property_schema.get('deprecated'):
+            property_schema['x-api-deprecated-detail'] = detail
+
+
 class _MissingAutoSchema:
     """Placeholder base that preserves the optional drf-spectacular dependency."""
 
@@ -83,7 +116,7 @@ class DABAutoSchema(DeprecationAutoSchemaMixin, _AutoSchemaBase):
     pass
 
 
-def deprecated_fields_detail_hook(result, generator, **kwargs):
+def deprecated_fields_detail_hook(result, _generator, **kwargs):
     """
     drf-spectacular postprocessing hook that adds x-api-deprecated-detail
     to individual field schemas based on DeprecationSerializerMixin.deprecated_fields.
@@ -96,29 +129,12 @@ def deprecated_fields_detail_hook(result, generator, **kwargs):
     if not _DEPRECATED_FIELD_REGISTRY:
         return result
 
-    ref_map = {}
-    for serializer_cls, fields in _DEPRECATED_FIELD_REGISTRY.items():
-        ref_name = getattr(getattr(serializer_cls, 'Meta', None), 'ref_name', None)
-        if not ref_name:
-            name = serializer_cls.__name__
-            ref_name = name[: -len('Serializer')] if name.endswith('Serializer') else name
-        ref_map[ref_name] = fields
-
+    fields_by_component = _build_deprecated_fields_by_component(_DEPRECATED_FIELD_REGISTRY)
     schemas = result.get('components', {}).get('schemas', {})
     for component_name, schema in schemas.items():
-        for ref_name, fields in ref_map.items():
-            matching_component_names = {
-                ref_name,
-                f'Patched{ref_name}',
-                f'{ref_name}Request',
-                f'Patched{ref_name}Request',
-            }
-            if component_name not in matching_component_names:
-                continue
-            properties = schema.get('properties', {})
-            for field_name, detail in fields.items():
-                if field_name in properties and properties[field_name].get('deprecated'):
-                    properties[field_name]['x-api-deprecated-detail'] = detail
+        fields = fields_by_component.get(component_name)
+        if fields:
+            _add_deprecated_field_details(schema, fields)
 
     return result
 

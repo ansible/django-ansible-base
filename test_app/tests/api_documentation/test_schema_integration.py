@@ -289,7 +289,7 @@ def test_deprecated_field_detail_hook_supports_split_request_components(monkeypa
             'legacy_alias': 'legacy_alias is deprecated.',
         }
 
-    component_names = ('Example', 'ExampleRequest', 'PatchedExampleRequest')
+    component_names = ('Example', 'ExampleRequest', 'PatchedExampleRequest', 'Unrelated')
     result = {
         'components': {
             'schemas': {
@@ -308,11 +308,14 @@ def test_deprecated_field_detail_hook_supports_split_request_components(monkeypa
     returned = schema_utils.deprecated_fields_detail_hook(result, None)
 
     assert returned is result
-    for component_name in component_names:
+    for component_name in component_names[:-1]:
         properties = result['components']['schemas'][component_name]['properties']
         assert properties['legacy_name']['x-api-deprecated-detail'] == detail
         assert 'x-api-deprecated-detail' not in properties['legacy_alias']
         assert 'x-api-deprecated-detail' not in properties['current_name']
+
+    unrelated_properties = result['components']['schemas']['Unrelated']['properties']
+    assert 'x-api-deprecated-detail' not in unrelated_properties['legacy_name']
 
 
 def test_role_definition_viewset_includes_scope_filter_backend():
