@@ -401,6 +401,7 @@ def rbac_post_save_update_evaluations(instance, created, *args, **kwargs):
     # If child object is created and parent object has existing ObjectRoles
     # evaluations for the parent object roles need to be added
     if created:
+        instance.__rbac_original_parent_id = getattr(instance, f'{parent_field_name}_id')
         obj_ct_id = permission_registry.content_type_model.objects.get_for_model(instance).id
         if defer_rbac_state.active:
             defer_rbac_state.created_instances.append((instance, instance.pk, obj_ct_id))
