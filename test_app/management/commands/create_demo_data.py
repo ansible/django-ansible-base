@@ -155,13 +155,13 @@ class Command(BaseCommand):
             admin = User.objects.get(username='admin')
         except User.DoesNotExist:
             raise CommandError('Must create admin user before create_demo_data')
-        (awx, _) = Organization.objects.get_or_create(name='AWX_community')
-        (galaxy, _) = Organization.objects.get_or_create(name='Galaxy_community')
+        awx, _ = Organization.objects.get_or_create(name='AWX_community')
+        galaxy, _ = Organization.objects.get_or_create(name='Galaxy_community')
 
-        (spud, _) = User.objects.get_or_create(username='angry_spud')
-        (team_member, _) = User.objects.get_or_create(username='team_member')
-        (bull_bot, _) = User.objects.get_or_create(username='ansibullbot')
-        (admin, _) = User.objects.get_or_create(username='admin')
+        spud, _ = User.objects.get_or_create(username='angry_spud')
+        team_member, _ = User.objects.get_or_create(username='team_member')
+        bull_bot, _ = User.objects.get_or_create(username='ansibullbot')
+        admin, _ = User.objects.get_or_create(username='admin')
         spud.set_password('password')
         spud.save()
         with impersonate(spud):
@@ -171,7 +171,7 @@ class Command(BaseCommand):
                 name='foo', defaults={'testing1': 'should not show this value!!', 'testing2': 'this value should also not be shown!'}
             )
             operator_stuff, _ = Organization.objects.get_or_create(name='Operator_community')
-            (db_authenticator, _) = Authenticator.objects.get_or_create(
+            db_authenticator, _ = Authenticator.objects.get_or_create(
                 name='Local Database Authenticator',
                 defaults={
                     'enabled': True,

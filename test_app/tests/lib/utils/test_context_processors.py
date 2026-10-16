@@ -36,9 +36,7 @@ class TestContextProcessors:
         result = version(request)
 
         assert result['deprecated'] is True
-        assert result['deprecated_message'] == (
-            'This resource has been deprecated and will be removed in a future release.'
-        )
+        assert result['deprecated_message'] == ('This resource has been deprecated and will be removed in a future release.')
 
     def test_version_with_non_deprecated_view(self):
         view = Mock()

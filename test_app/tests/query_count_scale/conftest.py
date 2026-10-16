@@ -1,7 +1,7 @@
 """Shared fixtures for the query-count-at-scale test suite.
 
 Runs as its own CI job (`py312-query-count-scale` tox env) in parallel with
-the main tox matrix, so it adds no runtime there (AAP-88856/AAP-88875).
+the main tox matrix, so it adds no runtime there.
 
 Two differences from the rest of `test_app/tests/`:
 1. One large dataset is seeded once per session (`_seed_large_dataset`),
@@ -18,12 +18,8 @@ None of these fixtures are `autouse` (that would run them for every test
 must request them explicitly, or a fixture that depends on them (e.g.
 `session_admin_api_client`).
 
-The small `_seed_oauth_*`/`_seed_authenticator_maps` fixtures below are each
-~30 cheap single-row `.create()` calls (no signals/permission recompute) --
-negligible against the CI time budget.
-
-See AAP-88874 for context, AAP-88876 for the query-count-cutoff tests that
-consume this dataset.
+See `test_list_query_count.py` for the query-count-sweep tests that consume
+this dataset.
 """
 
 from datetime import datetime, timezone
@@ -41,7 +37,7 @@ from test_app.models import Organization
 
 @pytest.fixture(scope='session')
 def _unblocked_db(request, django_db_blocker, django_db_use_migrations, django_db_keepdb, django_db_createdb):
-    """Keep DB access unblocked for the whole session (AAP-88875).
+    """Keep DB access unblocked for the whole session.
 
     Calls Django's `setup_databases()`/`teardown_databases()` directly --
     what pytest-django's `django_db_setup` does internally -- since that
@@ -80,7 +76,7 @@ def _unblocked_db(request, django_db_blocker, django_db_use_migrations, django_d
 
 @pytest.fixture(scope='session')
 def _seed_large_dataset(_unblocked_db):
-    """Seed a large, broad dataset once for the whole session (AAP-88875).
+    """Seed a large, broad dataset once for the whole session.
 
     Calls `create_large()` rather than the full `create_demo_data` command
     (which also enables its own local authenticator, colliding with
@@ -90,8 +86,7 @@ def _seed_large_dataset(_unblocked_db):
 
     Idempotent (validates all expected counts match DEMO_DATA_COUNTS before
     skipping) -- safe to rerun with `--reuse-db`. Wrapped in transaction.atomic()
-    so partial writes roll back on failure. ~13s locally for ~150 orgs/380 users/
-    2,000 assignments, comfortably under CI's ~1 minute budget.
+    so partial writes roll back on failure.
     """
     from django.contrib.auth import get_user_model
 
@@ -112,7 +107,7 @@ def _seed_large_dataset(_unblocked_db):
     }
 
     # Fail loudly (not silently skip) if DEMO_DATA_COUNTS ever gains a key with no
-    # corresponding count check above -- same bug class this fixed for `credential`.
+    # corresponding count check above.
     missing = expected.keys() - actual_counts.keys()
     assert not missing, (
         f"DEMO_DATA_COUNTS has keys with no corresponding count check in _seed_large_dataset: "
@@ -130,52 +125,91 @@ def _seed_large_dataset(_unblocked_db):
 
 @pytest.fixture(scope='session')
 def _seed_oauth_applications(_seed_large_dataset):
-    """Seed 30 OAuth2 applications once per session (AAP-88874) -- `create_large()`
-    doesn't create any, so `application-list` needs its own data. Idempotent:
-    no-ops if `large_app_`-prefixed rows already exist.
+    """Seed 110 OAuth2 applications once per session -- `create_large()`
+    doesn't create any, so `application-list` needs its own data.
+
+    110 (not 30): the page_size sweep needs more than 100 rows so
+    page_size=100 actually returns more than page_size=10.
+
+    Checked by count, not `.exists()` (a stale `--reuse-db` run with the old
+    30 rows would otherwise never reseed), and uses `get_or_create` (not
+    `.create()`) to avoid the `(name, organization)` unique constraint when
+    re-running against that partially-seeded data.
     """
-    if not OAuth2Application.objects.filter(name__startswith='large_app_').exists():
+    if OAuth2Application.objects.filter(name__startswith='large_app_').count() < 110:
         org = Organization.objects.filter(name__startswith='large_').first()
-        for i in range(30):
-            OAuth2Application.objects.create(
+        for i in range(110):
+            OAuth2Application.objects.get_or_create(
                 name=f'large_app_{i}',
-                description='Seeded for query-count-scale coverage (AAP-88874)',
-                redirect_uris='https://example.com/callback',
-                authorization_grant_type='authorization-code',
-                client_type='confidential',
                 organization=org,
+                defaults=dict(
+                    description='Seeded for query-count-scale coverage',
+                    redirect_uris='https://example.com/callback',
+                    authorization_grant_type='authorization-code',
+                    client_type='confidential',
+                ),
             )
 
 
 @pytest.fixture(scope='session')
 def _seed_oauth_tokens(_seed_large_dataset, session_admin_user):
-    """Seed 30 OAuth2 access tokens once per session (AAP-88874) -- needed for
-    `token-list`. Idempotent: no-ops if `large_token_`-prefixed rows exist.
+    """Seed 110 OAuth2 access tokens once per session -- needed for
+    `token-list`. 110 (not 30), checked by count, and `get_or_create`-based --
+    see `_seed_oauth_applications` docstring for why.
     """
-    if not OAuth2AccessToken.objects.filter(description__startswith='large_token_').exists():
-        for i in range(30):
-            OAuth2AccessToken.objects.create(
-                user=session_admin_user,
-                token=generate_token(),
-                scope='read write',
-                expires=datetime(2088, 1, 1, tzinfo=timezone.utc),
+    if OAuth2AccessToken.objects.filter(description__startswith='large_token_').count() < 110:
+        for i in range(110):
+            OAuth2AccessToken.objects.get_or_create(
                 description=f'large_token_{i}',
+                defaults=dict(
+                    user=session_admin_user,
+                    token=generate_token(),
+                    scope='read write',
+                    expires=datetime(2088, 1, 1, tzinfo=timezone.utc),
+                ),
             )
 
 
 @pytest.fixture(scope='session')
 def _seed_authenticator_maps(_seed_large_dataset, session_local_authenticator):
-    """Seed 30 authenticator maps once per session (AAP-88874) -- needed for
-    `authenticatormap-list`. Idempotent: no-ops if `large_map_`-prefixed rows exist.
+    """Seed 110 authenticator maps once per session -- needed for
+    `authenticatormap-list`. 110 (not 30), checked by count, and
+    `get_or_create`-based -- see `_seed_oauth_applications` docstring for why.
     """
     from ansible_base.authentication.models import AuthenticatorMap
 
-    if not AuthenticatorMap.objects.filter(name__startswith='large_map_').exists():
-        for i in range(30):
-            AuthenticatorMap.objects.create(
+    if AuthenticatorMap.objects.filter(name__startswith='large_map_').count() < 110:
+        for i in range(110):
+            AuthenticatorMap.objects.get_or_create(
                 name=f'large_map_{i}',
-                authenticator=session_local_authenticator,
-                map_type='allow',
+                defaults=dict(authenticator=session_local_authenticator, map_type='allow'),
+            )
+
+
+@pytest.fixture(scope='session')
+def _seed_authenticators(_seed_large_dataset):
+    """Seed 15 extra `local`-type Authenticators once per session for
+    `authenticator-list`'s page_size sweep -- without this, the dataset's
+    only Authenticator is the one used to log in, so every page size would
+    return the same 1 row.
+
+    15 (not 110): Authenticators are low-cardinality in practice (a handful,
+    not hundreds), so this just needs enough rows to show flat-vs-growing
+    query counts, not to hit literal page_size=100.
+    """
+    from ansible_base.authentication.models import Authenticator
+
+    if Authenticator.objects.filter(name__startswith='large_authenticator_').count() < 15:
+        for i in range(15):
+            Authenticator.objects.get_or_create(
+                name=f'large_authenticator_{i}',
+                defaults=dict(
+                    enabled=True,
+                    create_objects=True,
+                    remove_users=False,
+                    type='ansible_base.authentication.authenticator_plugins.local',
+                    configuration={},
+                ),
             )
 
 

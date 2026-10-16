@@ -5,6 +5,12 @@ These tests verify that the schema endpoint is accessible and that x-ai-descript
 fields are properly included in the generated OpenAPI spec for MCP (Model Context Protocol) server tools.
 """
 
+import os
+import subprocess
+import sys
+
+import pytest
+from django.conf import settings
 from django.urls import path
 from drf_spectacular.generators import SchemaGenerator
 from rest_framework import serializers
@@ -14,6 +20,9 @@ from rest_framework.response import Response
 from ansible_base.lib.utils import schema as schema_utils
 from ansible_base.lib.utils.views import deprecation as deprecation_utils
 from ansible_base.lib.utils.views.deprecation import DeprecationSerializerMixin, deprecated
+from ansible_base.rbac.api.views import RoleDefinitionViewSet
+from ansible_base.rbac.models import RoleDefinition
+from ansible_base.rest_filters.rest_framework.role_definition_backend import RoleDefinitionScopeFilterBackend
 
 
 def test_openapi_schema_endpoint_accessible(admin_api_client):
@@ -160,6 +169,37 @@ def test_openapi_schema_unauthenticated_access(unauthenticated_api_client):
         assert 'openapi' in schema
 
 
+def test_bulk_role_assignment_actions_document_batch_requests_and_count_responses(admin_api_client):
+    response = admin_api_client.get('/api/v1/docs/schema/')
+    assert response.status_code == 200, response.data
+    schema = response.data
+
+    def resolve_schema(schema_fragment):
+        while '$ref' in schema_fragment:
+            component_name = schema_fragment['$ref'].rsplit('/', 1)[-1]
+            schema_fragment = schema['components']['schemas'][component_name]
+        return schema_fragment
+
+    actions = (
+        ('role-user-assignments', 'bulk-assign', 'user_ansible_id', {'created', 'existing'}),
+        ('role-user-assignments', 'bulk-unassign', 'user_ansible_id', {'deleted', 'missing'}),
+        ('role-team-assignments', 'bulk-assign', 'team_ansible_id', {'created', 'existing'}),
+        ('role-team-assignments', 'bulk-unassign', 'team_ansible_id', {'deleted', 'missing'}),
+    )
+    for resource, action, actor_field, response_fields in actions:
+        operation = schema['paths'][f'/api/v1/service-index/{resource}/{action}/']['post']
+        request_schema = resolve_schema(operation['requestBody']['content']['application/json']['schema'])
+        assert {'from_service', 'created_by_ansible_id', 'assignments'} <= set(request_schema['properties'])
+        assignment_schema = resolve_schema(request_schema['properties']['assignments']['items'])
+        assert actor_field in assignment_schema['properties']
+        assert not {'from_service', 'created_by_ansible_id'} & set(assignment_schema['properties'])
+        assert 'parent_reference' in assignment_schema['properties']
+        assert not assignment_schema['properties']['parent_reference'].get('readOnly', False)
+
+        response_schema = resolve_schema(operation['responses']['200']['content']['application/json']['schema'])
+        assert response_fields <= set(response_schema['properties'])
+
+
 def test_role_user_assignment_create_schema(admin_api_client):
     """
     Test that RoleUserAssignmentViewSet's create operation has proper schema documentation.
@@ -273,3 +313,106 @@ def test_deprecated_field_detail_hook_supports_split_request_components(monkeypa
         assert properties['legacy_name']['x-api-deprecated-detail'] == detail
         assert 'x-api-deprecated-detail' not in properties['legacy_alias']
         assert 'x-api-deprecated-detail' not in properties['current_name']
+
+
+def test_role_definition_viewset_includes_scope_filter_backend():
+    """RoleDefinitionViewSet must apply RoleDefinitionScopeFilterBackend for assignable_scope filtering to take effect."""
+    assert RoleDefinitionScopeFilterBackend in RoleDefinitionViewSet.filter_backends
+
+
+def test_role_definition_scope_filter_extension_is_discovered_by_spectacular():
+    """App startup must register the scope filter extension in a clean process."""
+    code = '''
+import django
+
+django.setup()
+
+from drf_spectacular.extensions import OpenApiFilterExtension
+from ansible_base.rest_filters.rest_framework.role_definition_backend import RoleDefinitionScopeFilterBackend
+
+extension = OpenApiFilterExtension.get_match(RoleDefinitionScopeFilterBackend())
+assert extension is not None, "RoleDefinitionScopeFilterBackend extension was not registered"
+assert extension.target_class is RoleDefinitionScopeFilterBackend
+'''
+    result = subprocess.run(
+        [sys.executable, '-c', code],
+        capture_output=True,
+        text=True,
+        env={**os.environ, 'DJANGO_SETTINGS_MODULE': settings.SETTINGS_MODULE},
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.fixture
+def assignable_scope_parameter(admin_api_client):
+    """The assignable_scope OpenAPI parameter for the role_definitions list (GET) operation."""
+    response = admin_api_client.get('/api/v1/docs/schema/')
+    operation = response.data['paths']['/api/v1/role_definitions/']['get']
+    parameters = {param['name']: param for param in operation['parameters']}
+    return parameters['assignable_scope']
+
+
+def test_assignable_scope_parameter_is_query_parameter(assignable_scope_parameter):
+    assert assignable_scope_parameter['in'] == 'query'
+
+
+def test_assignable_scope_parameter_is_optional(assignable_scope_parameter):
+    # OpenAPI omits 'required' entirely for optional parameters, defaulting to false
+    assert assignable_scope_parameter.get('required', False) is False
+
+
+def test_assignable_scope_parameter_documents_supported_scopes(assignable_scope_parameter):
+    description = assignable_scope_parameter['description']
+    assert all(scope in description for scope in RoleDefinition.ASSIGNABLE_SCOPES)
+
+
+def test_service_assignment_action_request_schemas(admin_api_client):
+    """Service-index assignment actions document request-only fields."""
+    response = admin_api_client.get('/api/v1/docs/schema/')
+    assert response.status_code == 200
+
+    expected = {
+        '/api/v1/service-index/role-user-assignments/assign/': (
+            'user_ansible_id',
+            'ServiceRoleUserAssignmentRequest',
+            'ServiceRoleUserAssignment',
+        ),
+        '/api/v1/service-index/role-user-assignments/unassign/': (
+            'user_ansible_id',
+            'ServiceRoleUserAssignmentRequest',
+            'ServiceRoleUserAssignment',
+        ),
+        '/api/v1/service-index/role-team-assignments/assign/': (
+            'team_ansible_id',
+            'ServiceRoleTeamAssignmentRequest',
+            'ServiceRoleTeamAssignment',
+        ),
+        '/api/v1/service-index/role-team-assignments/unassign/': (
+            'team_ansible_id',
+            'ServiceRoleTeamAssignmentRequest',
+            'ServiceRoleTeamAssignment',
+        ),
+    }
+
+    schema = response.data
+    for path, (actor_field, request_component, response_component) in expected.items():
+        operation = schema['paths'][path]['post']
+        request_schema = operation['requestBody']['content']['application/json']['schema']
+
+        assert request_schema == {'$ref': f'#/components/schemas/{request_component}'}
+        component = schema['components']['schemas'][request_component]
+        assert set(component['required']) == {'role_definition', actor_field}
+        assert actor_field in component['properties']
+        assert 'role_definition' in component['properties']
+        assert 'object_id' in component['properties']
+        assert 'object_ansible_id' in component['properties']
+        assert 'parent_reference' in component['properties']
+        assert 'created_by_ansible_id' in component['properties']
+        assert 'created_by_ansible_id' not in component['required']
+        assert 'id' not in component['properties']
+        assert 'created' not in component['properties']
+        assert 'content_type' not in component['properties']
+
+        response_properties = schema['components']['schemas'][response_component]['properties']
+        assert 'id' in response_properties
+        assert 'created' in response_properties

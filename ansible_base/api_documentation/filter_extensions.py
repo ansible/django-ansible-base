@@ -1,10 +1,15 @@
+from django.apps import apps
 from drf_spectacular.extensions import OpenApiFilterExtension
 from drf_spectacular.plumbing import build_parameter_type
 from drf_spectacular.utils import OpenApiParameter
 
-from ansible_base.rest_filters.rest_framework.field_lookup_backend import FieldLookupBackend
+from ansible_base.rest_filters.rest_framework.field_lookup_backend import (
+    FieldLookupBackend,
+)
 from ansible_base.rest_filters.rest_framework.order_backend import OrderByBackend
-from ansible_base.rest_filters.rest_framework.type_filter_backend import TypeFilterBackend
+from ansible_base.rest_filters.rest_framework.type_filter_backend import (
+    TypeFilterBackend,
+)
 
 
 class FieldLookupBackendExtension(OpenApiFilterExtension):
@@ -112,6 +117,37 @@ class FieldLookupBackendExtension(OpenApiFilterExtension):
     def _create_role_level_parameter(self):
         """Create the role_level parameter for RBAC."""
         return self._create_parameter('role_level', 'Filter by role level for RBAC')
+
+
+if apps.is_installed('ansible_base.rbac'):
+    from ansible_base.rbac.models import RoleDefinition
+    from ansible_base.rest_filters.rest_framework.role_definition_backend import (
+        RoleDefinitionScopeFilterBackend,
+    )
+
+    class RoleDefinitionScopeFilterBackendExtension(OpenApiFilterExtension):
+        target_class = RoleDefinitionScopeFilterBackend
+
+        def get_schema_operation_parameters(self, auto_schema, *args, **kwargs):
+            """
+            Generate OpenAPI parameters for RoleDefinitionScopeFilterBackend.
+
+            This filter backend narrows the role_definition list to roles usable
+            without a specific target object (system, organization, or team scoped).
+            """
+            return [
+                build_parameter_type(
+                    name='assignable_scope',
+                    schema={'type': 'string'},
+                    location=OpenApiParameter.QUERY,
+                    required=False,
+                    description=(
+                        'Filter to roles usable without a specific target object. '
+                        f'Comma-separated values from: {", ".join(RoleDefinition.ASSIGNABLE_SCOPES)}. '
+                        'Without this parameter, all role definitions are returned.'
+                    ),
+                )
+            ]
 
 
 class TypeFilterBackendExtension(OpenApiFilterExtension):

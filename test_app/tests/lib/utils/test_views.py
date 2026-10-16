@@ -85,6 +85,10 @@ class DeprecatedView(AnsibleBaseView):
     headers = {}
 
 
+class DeprecatedViewWithWarningHeaderOverride(DeprecatedView):
+    deprecation_warning_header_override = "POST has been removed from this endpoint."
+
+
 def test_ansible_base_view_deprecated_view(view_with_headers, mock_request, default_headers):
     initial_response = HttpResponseBase()
     view = DeprecatedView()
@@ -92,6 +96,14 @@ def test_ansible_base_view_deprecated_view(view_with_headers, mock_request, defa
     assert 'Warning' in response
     assert response['X-API-Deprecated'] == 'true'
     assert 'deprecated' in response['X-API-Deprecated-Detail'].lower()
+    assert response["Warning"] == "This resource has been deprecated and will be removed in a future release."
+
+
+def test_ansible_base_view_deprecated_view_warning_header_override(mock_request):
+    initial_response = HttpResponseBase()
+    view = DeprecatedViewWithWarningHeaderOverride()
+    response = view.finalize_response(mock_request, initial_response)
+    assert response["Warning"] == view.deprecation_warning_header_override
 
 
 def test_ansible_base_view_time_header(view_with_headers, mock_request):

@@ -96,7 +96,7 @@ class GoogleOAuth2Configuration(BaseAuthenticatorConfiguration):
     )
 
 
-class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, GoogleOAuth2, AbstractAuthenticatorPlugin):
+class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, GoogleOAuth2, AbstractAuthenticatorPlugin):  # type: ignore[override]
     configuration_class = GoogleOAuth2Configuration
     type = "google_oauth2"
     logger = logger

@@ -1,3 +1,4 @@
+import importlib
 import logging
 from unittest.mock import MagicMock, patch
 
@@ -5,7 +6,8 @@ from opentelemetry import trace
 from opentelemetry._logs import get_logger_provider
 from opentelemetry.sdk._logs import LoggingHandler
 
-from ansible_base.observability.instrument import _attach_handler_to_non_propagating_loggers, _instrument_psycopg
+from ansible_base.observability import instrument
+from ansible_base.observability.instrument import _attach_handler_to_non_propagating_loggers, _instrument_grpc_server, _instrument_psycopg
 
 
 def test_spans_emitted(otel_memory_exporters):
@@ -81,3 +83,24 @@ def test_instrument_psycopg_warns_when_neither_found(caplog):
         with caplog.at_level(logging.WARNING, logger='ansible_base.observability.instrument'):
             _instrument_psycopg()
     assert any("psycopg2 nor psycopg found" in r.message for r in caplog.records)
+
+
+def test_instrument_grpc_server_when_installed():
+    mock_instrumentor = MagicMock()
+    with patch.dict('sys.modules', {'opentelemetry.instrumentation.grpc': MagicMock(GrpcInstrumentorServer=mock_instrumentor)}):
+        _instrument_grpc_server()
+    mock_instrumentor.return_value.instrument.assert_called_once()
+
+
+def test_instrument_grpc_server_skipped_when_not_installed(caplog):
+    with patch.dict('sys.modules', {'opentelemetry.instrumentation.grpc': None}):
+        with caplog.at_level(logging.INFO, logger='ansible_base.observability.instrument'):
+            _instrument_grpc_server()
+    assert any("opentelemetry-instrumentation-grpc not found" in r.message for r in caplog.records)
+
+
+def test_observability_imports_without_grpc_instrumentation():
+    """A service without gRPC (no opentelemetry-instrumentation-grpc installed) can import the package."""
+    with patch.dict('sys.modules', {'opentelemetry.instrumentation.grpc': None}):
+        reloaded = importlib.reload(instrument)
+    assert hasattr(reloaded, 'setup_observability')
