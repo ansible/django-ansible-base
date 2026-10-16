@@ -39,11 +39,11 @@ def fetch_oidc_discovery(oidc_endpoint: str, verify_ssl: bool = True) -> dict:
     Raises ValidationError keyed on OIDC_ENDPOINT for network, JSON, or content failures.
     """
     url = oidc_discovery_url(oidc_endpoint)
-    context = ssl.create_default_context()
-    if not verify_ssl:
-        # Intentional: VERIFY_SSL=false is an admin opt-out for private/lab IdPs (P1).
-        context.check_hostname = False  # NOSONAR
-        context.verify_mode = ssl.CERT_NONE  # NOSONAR
+    if verify_ssl:
+        context = ssl.create_default_context()
+    else:
+        # VERIFY_SSL=false: admin opt-out for private/lab IdPs (ANSTRAT-1611 P1).
+        context = ssl._create_unverified_context()  # NOSONAR
 
     try:
         request = urllib.request.Request(url, headers={"Accept": "application/json"})

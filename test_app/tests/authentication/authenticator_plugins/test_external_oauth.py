@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError, URLError
 
 import pytest
-
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.authenticator_plugins.external_oauth import (
