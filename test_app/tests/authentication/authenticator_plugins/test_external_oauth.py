@@ -1,10 +1,16 @@
 from copy import deepcopy
+from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
+from django.test import override_settings
+from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.authenticator_plugins.external_oauth import (
     AuthenticatorPlugin,
     ExternalOAuthConfiguration,
+    apply_oidc_discovery,
+    oidc_discovery_url,
     resolve_uid_from_claims,
 )
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin, get_authenticator_plugins
@@ -12,6 +18,38 @@ from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.utils.response import get_relative_url
 
 PLUGIN_TYPE = "ansible_base.authentication.authenticator_plugins.external_oauth"
+DISCOVERY_MODULE = "ansible_base.authentication.authenticator_plugins.external_oauth"
+
+
+def _discovery_document(**overrides):
+    document = {
+        "issuer": "https://login.example.com/tenant/v2.0",
+        "jwks_uri": "https://login.example.com/tenant/discovery/v2.0/keys",
+        "userinfo_endpoint": "https://login.example.com/tenant/openid/userinfo",
+    }
+    document.update(overrides)
+    return document
+
+
+def _mock_requests_get(payload, expected_verify=None, status_code=200, expected_timeout=None, text=None):
+    """Return a side_effect for requests.get that yields a JSON response."""
+
+    def _get(url, headers=None, timeout=None, verify=True):
+        if expected_verify is not None:
+            assert verify is expected_verify
+        if expected_timeout is not None:
+            assert timeout == expected_timeout
+        response = MagicMock()
+        response.status_code = status_code
+        if isinstance(payload, (bytes, bytearray)):
+            response.text = text if text is not None else payload.decode(errors="replace")
+            response.json.side_effect = requests.exceptions.JSONDecodeError("Expecting value", response.text, 0)
+        else:
+            response.json.return_value = payload
+            response.text = text if text is not None else ("" if payload is None else str(payload))
+        return response
+
+    return _get
 
 
 def _authenticator_payload(name, configuration, enabled=True):
@@ -110,18 +148,6 @@ def test_external_oauth_invalid_configuration(admin_api_client, external_oauth_c
     assert response.status_code == 400, response.data
     for field in expected_fields:
         assert field in response.data or field in response.data.get("configuration", response.data)
-
-
-@pytest.mark.django_db
-def test_external_oauth_oidc_endpoint_without_jwks_uri_allowed(admin_api_client, external_oauth_configuration):
-    """OIDC discovery population is follow-up work; schema must accept OIDC_ENDPOINT alone."""
-    config = deepcopy(external_oauth_configuration)
-    config["JWKS_URI"] = ""
-    config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
-    url = get_relative_url("authenticator-list")
-    response = admin_api_client.post(url, data=_authenticator_payload("OIDC Endpoint Only", config), format="json")
-    assert response.status_code == 201, response.data
-    assert response.data["configuration"]["OIDC_ENDPOINT"] == config["OIDC_ENDPOINT"]
 
 
 @pytest.mark.django_db
@@ -270,3 +296,299 @@ def test_api_auth_not_presented_as_login_choice(external_oauth_authenticator, lo
     assert external_oauth_authenticator.name not in password_names
     assert external_oauth_authenticator.name not in sso_names
     assert local_authenticator.name in password_names
+
+
+@pytest.mark.django_db
+def test_oidc_discovery_populates_jwks_and_userinfo(admin_api_client, external_oauth_configuration):
+    config = deepcopy(external_oauth_configuration)
+    config["JWKS_URI"] = ""
+    config["USERINFO_URL"] = ""
+    config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
+    document = _discovery_document()
+
+    with patch(f"{DISCOVERY_MODULE}.requests.get", side_effect=_mock_requests_get(document)) as mock_get:
+        response = admin_api_client.post(
+            get_relative_url("authenticator-list"),
+            data=_authenticator_payload("Discovered External OAuth", config),
+            format="json",
+        )
+
+    assert response.status_code == 201, response.data
+    assert response.data["configuration"]["JWKS_URI"] == document["jwks_uri"]
+    assert response.data["configuration"]["USERINFO_URL"] == document["userinfo_endpoint"]
+    assert response.data["configuration"]["OIDC_ENDPOINT"] == config["OIDC_ENDPOINT"]
+    assert mock_get.call_args.args[0] == oidc_discovery_url(config["OIDC_ENDPOINT"])
+
+
+@pytest.mark.django_db
+def test_oidc_discovery_missing_userinfo_still_populates_jwks(admin_api_client, external_oauth_configuration):
+    config = deepcopy(external_oauth_configuration)
+    config["JWKS_URI"] = ""
+    config["USERINFO_URL"] = "https://manual.example.com/userinfo"
+    config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
+    document = _discovery_document()
+    document.pop("userinfo_endpoint")
+
+    with patch(f"{DISCOVERY_MODULE}.requests.get", side_effect=_mock_requests_get(document)):
+        response = admin_api_client.post(
+            get_relative_url("authenticator-list"),
+            data=_authenticator_payload("Discovery Without UserInfo", config),
+            format="json",
+        )
+
+    assert response.status_code == 201, response.data
+    assert response.data["configuration"]["JWKS_URI"] == document["jwks_uri"]
+    # Manual USERINFO_URL is preserved when discovery omits userinfo_endpoint.
+    assert response.data["configuration"]["USERINFO_URL"] == config["USERINFO_URL"]
+
+
+@pytest.mark.django_db
+def test_oidc_discovery_takes_precedence_over_manual_jwks(admin_api_client, external_oauth_configuration):
+    config = deepcopy(external_oauth_configuration)
+    config["JWKS_URI"] = "https://manual.example.com/keys"
+    config["USERINFO_URL"] = "https://manual.example.com/userinfo"
+    config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
+    document = _discovery_document(
+        jwks_uri="https://discovered.example.com/keys",
+        userinfo_endpoint="https://discovered.example.com/userinfo",
+    )
+
+    with patch(f"{DISCOVERY_MODULE}.requests.get", side_effect=_mock_requests_get(document)):
+        response = admin_api_client.post(
+            get_relative_url("authenticator-list"),
+            data=_authenticator_payload("Discovery Precedence", config),
+            format="json",
+        )
+
+    assert response.status_code == 201, response.data
+    assert response.data["configuration"]["JWKS_URI"] == "https://discovered.example.com/keys"
+    assert response.data["configuration"]["USERINFO_URL"] == "https://discovered.example.com/userinfo"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "side_effect,expected_substring",
+    [
+        (requests.exceptions.ConnectionError("connection refused"), "Unable to reach"),
+        (_mock_requests_get({"jwks_uri": "https://x"}, status_code=500), "HTTP 500"),
+        (_mock_requests_get({"jwks_uri": "https://x"}, status_code=204), "HTTP 204"),
+    ],
+)
+def test_oidc_discovery_network_errors(admin_api_client, external_oauth_configuration, side_effect, expected_substring):
+    config = deepcopy(external_oauth_configuration)
+    config["JWKS_URI"] = ""
+    config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
+
+    with patch(f"{DISCOVERY_MODULE}.requests.get", side_effect=side_effect):
+        response = admin_api_client.post(
+            get_relative_url("authenticator-list"),
+            data=_authenticator_payload("Discovery Network Error", config),
+            format="json",
+        )
+
+    assert response.status_code == 400, response.data
+    error_payload = response.data.get("configuration", response.data)
+    assert "OIDC_ENDPOINT" in error_payload or "OIDC_ENDPOINT" in response.data
+    message = str(error_payload.get("OIDC_ENDPOINT") or response.data.get("OIDC_ENDPOINT"))
+    assert expected_substring in message
+
+
+@pytest.mark.django_db
+def test_oidc_discovery_invalid_json(admin_api_client, external_oauth_configuration, caplog):
+    config = deepcopy(external_oauth_configuration)
+    config["JWKS_URI"] = ""
+    config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
+
+    with caplog.at_level("DEBUG", logger=DISCOVERY_MODULE):
+        with patch(
+            f"{DISCOVERY_MODULE}.requests.get",
+            side_effect=_mock_requests_get(b"not-json{", text="not-json{"),
+        ):
+            response = admin_api_client.post(
+                get_relative_url("authenticator-list"),
+                data=_authenticator_payload("Discovery Invalid JSON", config),
+                format="json",
+            )
+
+    assert response.status_code == 400, response.data
+    error_payload = response.data.get("configuration", response.data)
+    message = str(error_payload.get("OIDC_ENDPOINT") or response.data.get("OIDC_ENDPOINT"))
+    assert "not valid JSON" in message
+    assert "Unable to reach" not in message
+    assert any("invalid JSON" in record.message and "not-json{" in record.message for record in caplog.records)
+
+
+@pytest.mark.django_db
+def test_oidc_discovery_missing_jwks_uri(admin_api_client, external_oauth_configuration):
+    config = deepcopy(external_oauth_configuration)
+    config["JWKS_URI"] = ""
+    config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
+    document = _discovery_document()
+    document.pop("jwks_uri")
+
+    with patch(f"{DISCOVERY_MODULE}.requests.get", side_effect=_mock_requests_get(document)):
+        response = admin_api_client.post(
+            get_relative_url("authenticator-list"),
+            data=_authenticator_payload("Discovery Missing JWKS", config),
+            format="json",
+        )
+
+    assert response.status_code == 400, response.data
+    error_payload = response.data.get("configuration", response.data)
+    assert "OIDC_ENDPOINT" in error_payload or "OIDC_ENDPOINT" in response.data
+
+
+@pytest.mark.django_db
+def test_oidc_discovery_respects_verify_ssl_false(admin_api_client, external_oauth_configuration):
+    config = deepcopy(external_oauth_configuration)
+    config["JWKS_URI"] = ""
+    config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
+    config["VERIFY_SSL"] = False
+    document = _discovery_document()
+
+    with patch(
+        f"{DISCOVERY_MODULE}.requests.get",
+        side_effect=_mock_requests_get(document, expected_verify=False),
+    ):
+        response = admin_api_client.post(
+            get_relative_url("authenticator-list"),
+            data=_authenticator_payload("Discovery Insecure SSL", config),
+            format="json",
+        )
+
+    assert response.status_code == 201, response.data
+    assert response.data["configuration"]["JWKS_URI"] == document["jwks_uri"]
+
+
+@pytest.mark.django_db
+def test_oidc_discovery_timeout(admin_api_client, external_oauth_configuration):
+    config = deepcopy(external_oauth_configuration)
+    config["JWKS_URI"] = ""
+    config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
+
+    with patch(f"{DISCOVERY_MODULE}.requests.get", side_effect=requests.exceptions.Timeout("timed out")):
+        response = admin_api_client.post(
+            get_relative_url("authenticator-list"),
+            data=_authenticator_payload("Discovery Timeout", config),
+            format="json",
+        )
+
+    assert response.status_code == 400, response.data
+    error_payload = response.data.get("configuration", response.data)
+    message = str(error_payload.get("OIDC_ENDPOINT") or response.data.get("OIDC_ENDPOINT"))
+    assert "timed out" in message.lower()
+
+
+@pytest.mark.django_db
+def test_oidc_discovery_non_object_json(admin_api_client, external_oauth_configuration, caplog):
+    config = deepcopy(external_oauth_configuration)
+    config["JWKS_URI"] = ""
+    config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
+
+    with caplog.at_level("DEBUG", logger=DISCOVERY_MODULE):
+        with patch(f"{DISCOVERY_MODULE}.requests.get", side_effect=_mock_requests_get([{"jwks_uri": "x"}])):
+            response = admin_api_client.post(
+                get_relative_url("authenticator-list"),
+                data=_authenticator_payload("Discovery Non Object JSON", config),
+                format="json",
+            )
+
+    assert response.status_code == 400, response.data
+    error_payload = response.data.get("configuration", response.data)
+    message = str(error_payload.get("OIDC_ENDPOINT") or response.data.get("OIDC_ENDPOINT"))
+    assert "JSON object" in message
+    assert any("type=list" in record.message for record in caplog.records)
+
+
+@pytest.mark.django_db
+def test_oidc_discovery_rejects_invalid_discovered_jwks_uri(admin_api_client, external_oauth_configuration):
+    config = deepcopy(external_oauth_configuration)
+    config["JWKS_URI"] = ""
+    config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
+    document = _discovery_document(jwks_uri="not a url")
+
+    with patch(f"{DISCOVERY_MODULE}.requests.get", side_effect=_mock_requests_get(document)):
+        response = admin_api_client.post(
+            get_relative_url("authenticator-list"),
+            data=_authenticator_payload("Discovery Invalid JWKS URL", config),
+            format="json",
+        )
+
+    assert response.status_code == 400, response.data
+    error_payload = response.data.get("configuration", response.data)
+    message = str(error_payload.get("OIDC_ENDPOINT") or response.data.get("OIDC_ENDPOINT"))
+    assert "invalid jwks_uri" in message
+
+
+@pytest.mark.django_db
+def test_oidc_discovery_overwrites_manual_values_on_update(admin_api_client, external_oauth_configuration):
+    """While OIDC_ENDPOINT remains set, every save re-runs discovery and overwrites JWKS/UserInfo."""
+    config = deepcopy(external_oauth_configuration)
+    config["JWKS_URI"] = ""
+    config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
+    initial_document = _discovery_document(
+        jwks_uri="https://discovered.example.com/keys-v1",
+        userinfo_endpoint="https://discovered.example.com/userinfo-v1",
+    )
+
+    with patch(f"{DISCOVERY_MODULE}.requests.get", side_effect=_mock_requests_get(initial_document)):
+        create_response = admin_api_client.post(
+            get_relative_url("authenticator-list"),
+            data=_authenticator_payload("Discovery Ownership", config),
+            format="json",
+        )
+    assert create_response.status_code == 201, create_response.data
+    authenticator_id = create_response.data["id"]
+
+    updated_config = deepcopy(create_response.data["configuration"])
+    updated_config["JWKS_URI"] = "https://manual.example.com/keys"
+    updated_config["USERINFO_URL"] = "https://manual.example.com/userinfo"
+    refreshed_document = _discovery_document(
+        jwks_uri="https://discovered.example.com/keys-v2",
+        userinfo_endpoint="https://discovered.example.com/userinfo-v2",
+    )
+
+    with patch(f"{DISCOVERY_MODULE}.requests.get", side_effect=_mock_requests_get(refreshed_document)):
+        update_response = admin_api_client.patch(
+            get_relative_url("authenticator-detail", kwargs={"pk": authenticator_id}),
+            data={"configuration": updated_config},
+            format="json",
+        )
+
+    assert update_response.status_code == 200, update_response.data
+    assert update_response.data["configuration"]["JWKS_URI"] == "https://discovered.example.com/keys-v2"
+    assert update_response.data["configuration"]["USERINFO_URL"] == "https://discovered.example.com/userinfo-v2"
+
+
+@pytest.mark.django_db
+@override_settings(ANSIBLE_BASE_EXTERNAL_OAUTH_DISCOVERY_TIMEOUT=12)
+def test_oidc_discovery_uses_configured_timeout(admin_api_client, external_oauth_configuration):
+    config = deepcopy(external_oauth_configuration)
+    config["JWKS_URI"] = ""
+    config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
+    document = _discovery_document()
+
+    with patch(
+        f"{DISCOVERY_MODULE}.requests.get",
+        side_effect=_mock_requests_get(document, expected_timeout=12),
+    ):
+        response = admin_api_client.post(
+            get_relative_url("authenticator-list"),
+            data=_authenticator_payload("Discovery Timeout Setting", config),
+            format="json",
+        )
+
+    assert response.status_code == 201, response.data
+
+
+def test_apply_oidc_discovery_noop_without_endpoint():
+    attrs = {"JWKS_URI": "https://manual.example.com/keys", "OIDC_ENDPOINT": ""}
+    assert apply_oidc_discovery(attrs) is attrs
+    assert attrs["JWKS_URI"] == "https://manual.example.com/keys"
+
+
+def test_apply_oidc_discovery_rejects_empty_jwks_uri():
+    with patch(f"{DISCOVERY_MODULE}.fetch_oidc_discovery", return_value={"jwks_uri": "   "}):
+        with pytest.raises(ValidationError) as exc_info:
+            apply_oidc_discovery({"OIDC_ENDPOINT": "https://login.example.com/tenant/v2.0"})
+    assert "OIDC_ENDPOINT" in exc_info.value.detail
