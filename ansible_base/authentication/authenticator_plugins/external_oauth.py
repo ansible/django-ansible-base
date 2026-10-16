@@ -41,8 +41,9 @@ def fetch_oidc_discovery(oidc_endpoint: str, verify_ssl: bool = True) -> dict:
     url = oidc_discovery_url(oidc_endpoint)
     context = ssl.create_default_context()
     if not verify_ssl:
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
+        # Intentional: VERIFY_SSL=false is an admin opt-out for private/lab IdPs (P1).
+        context.check_hostname = False  # NOSONAR
+        context.verify_mode = ssl.CERT_NONE  # NOSONAR
 
     try:
         request = urllib.request.Request(url, headers={"Accept": "application/json"})

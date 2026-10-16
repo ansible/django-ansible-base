@@ -7,9 +7,12 @@ from urllib.error import HTTPError, URLError
 
 import pytest
 
+from rest_framework.serializers import ValidationError
+
 from ansible_base.authentication.authenticator_plugins.external_oauth import (
     AuthenticatorPlugin,
     ExternalOAuthConfiguration,
+    apply_oidc_discovery,
     oidc_discovery_url,
     resolve_uid_from_claims,
 )
@@ -455,3 +458,54 @@ def test_oidc_discovery_respects_verify_ssl_false(admin_api_client, external_oau
 
     assert response.status_code == 201, response.data
     assert response.data["configuration"]["JWKS_URI"] == document["jwks_uri"]
+
+
+@pytest.mark.django_db
+def test_oidc_discovery_timeout(admin_api_client, external_oauth_configuration):
+    config = deepcopy(external_oauth_configuration)
+    config["JWKS_URI"] = ""
+    config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
+
+    with patch(f"{DISCOVERY_MODULE}.urllib.request.urlopen", side_effect=TimeoutError("timed out")):
+        response = admin_api_client.post(
+            get_relative_url("authenticator-list"),
+            data=_authenticator_payload("Discovery Timeout", config),
+            format="json",
+        )
+
+    assert response.status_code == 400, response.data
+    error_payload = response.data.get("configuration", response.data)
+    message = str(error_payload.get("OIDC_ENDPOINT") or response.data.get("OIDC_ENDPOINT"))
+    assert "timed out" in message.lower()
+
+
+@pytest.mark.django_db
+def test_oidc_discovery_non_object_json(admin_api_client, external_oauth_configuration):
+    config = deepcopy(external_oauth_configuration)
+    config["JWKS_URI"] = ""
+    config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
+
+    with patch(f"{DISCOVERY_MODULE}.urllib.request.urlopen", side_effect=_mock_urlopen_json([{"jwks_uri": "x"}])):
+        response = admin_api_client.post(
+            get_relative_url("authenticator-list"),
+            data=_authenticator_payload("Discovery Non Object JSON", config),
+            format="json",
+        )
+
+    assert response.status_code == 400, response.data
+    error_payload = response.data.get("configuration", response.data)
+    message = str(error_payload.get("OIDC_ENDPOINT") or response.data.get("OIDC_ENDPOINT"))
+    assert "JSON object" in message
+
+
+def test_apply_oidc_discovery_noop_without_endpoint():
+    attrs = {"JWKS_URI": "https://manual.example.com/keys", "OIDC_ENDPOINT": ""}
+    assert apply_oidc_discovery(attrs) is attrs
+    assert attrs["JWKS_URI"] == "https://manual.example.com/keys"
+
+
+def test_apply_oidc_discovery_rejects_empty_jwks_uri():
+    with patch(f"{DISCOVERY_MODULE}.fetch_oidc_discovery", return_value={"jwks_uri": "   "}):
+        with pytest.raises(ValidationError) as exc_info:
+            apply_oidc_discovery({"OIDC_ENDPOINT": "https://login.example.com/tenant/v2.0"})
+    assert "OIDC_ENDPOINT" in exc_info.value.detail
