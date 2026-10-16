@@ -101,7 +101,13 @@ def deprecated_fields_detail_hook(result, generator, **kwargs):
     schemas = result.get('components', {}).get('schemas', {})
     for component_name, schema in schemas.items():
         for ref_name, fields in ref_map.items():
-            if component_name != ref_name and component_name != f'Patched{ref_name}':
+            matching_component_names = {
+                ref_name,
+                f'Patched{ref_name}',
+                f'{ref_name}Request',
+                f'Patched{ref_name}Request',
+            }
+            if component_name not in matching_component_names:
                 continue
             properties = schema.get('properties', {})
             for field_name, detail in fields.items():

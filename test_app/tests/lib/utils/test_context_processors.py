@@ -61,7 +61,8 @@ class TestContextProcessors:
 
     def test_version_with_deprecation_dict_missing_detail_key(self):
         view = Mock()
-        view.deprecation = {}
+        view.deprecation = {'reason': 'deprecated'}
+        view.deprecated = False
         request = Mock()
         request.parser_context = {'view': view}
 
@@ -87,4 +88,3 @@ class TestContextProcessors:
         result = version(request)
 
         assert result['api_version'] == '2.5.1'
-

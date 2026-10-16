@@ -12,6 +12,7 @@ from rest_framework.generics import GenericAPIView
 from rest_framework.response import Response
 
 from ansible_base.lib.utils import schema as schema_utils
+from ansible_base.lib.utils.views import deprecation as deprecation_utils
 from ansible_base.lib.utils.views.deprecation import DeprecationSerializerMixin, deprecated
 
 
@@ -235,9 +236,9 @@ def test_deprecated_operation_schema_includes_deprecation_detail():
     assert 'x-api-deprecated-detail' not in current_operation
 
 
-def test_deprecated_field_detail_hook_only_marks_deprecated_fields(monkeypatch):
+def test_deprecated_field_detail_hook_supports_split_request_components(monkeypatch):
     detail = 'legacy_name is deprecated. Use current_name instead.'
-    monkeypatch.setattr(schema_utils, '_DEPRECATED_FIELD_REGISTRY', {})
+    monkeypatch.setattr(deprecation_utils, '_DEPRECATED_FIELD_REGISTRY', {})
 
     class ExampleSerializer(DeprecationSerializerMixin, serializers.Serializer):
         legacy_name = serializers.CharField(required=False)
@@ -248,25 +249,27 @@ def test_deprecated_field_detail_hook_only_marks_deprecated_fields(monkeypatch):
             'legacy_alias': 'legacy_alias is deprecated.',
         }
 
+    component_names = ('Example', 'ExampleRequest', 'PatchedExampleRequest')
     result = {
         'components': {
             'schemas': {
-                'Example': {
+                component_name: {
                     'properties': {
                         'legacy_name': {'type': 'string', 'deprecated': True},
                         'legacy_alias': {'type': 'string'},
                         'current_name': {'type': 'string'},
                     }
                 }
+                for component_name in component_names
             }
         }
     }
 
     returned = schema_utils.deprecated_fields_detail_hook(result, None)
-    properties = result['components']['schemas']['Example']['properties']
 
     assert returned is result
-    assert properties['legacy_name']['x-api-deprecated-detail'] == detail
-    assert 'x-api-deprecated-detail' not in properties['legacy_alias']
-    assert 'x-api-deprecated-detail' not in properties['current_name']
-
+    for component_name in component_names:
+        properties = result['components']['schemas'][component_name]['properties']
+        assert properties['legacy_name']['x-api-deprecated-detail'] == detail
+        assert 'x-api-deprecated-detail' not in properties['legacy_alias']
+        assert 'x-api-deprecated-detail' not in properties['current_name']

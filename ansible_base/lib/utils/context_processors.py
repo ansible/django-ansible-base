@@ -9,7 +9,7 @@ def _check_deprecation(view):
     deprecation = getattr(view, 'deprecation', None)
     if deprecation:
         return deprecation
-    
+
     if getattr(view, 'deprecated', False):
         return {
             'detail': 'This resource has been deprecated and will be removed in a future release.',

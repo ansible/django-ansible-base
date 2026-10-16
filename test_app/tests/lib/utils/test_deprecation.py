@@ -72,6 +72,9 @@ class TestDeprecatedSerializerFields:
             }
 
         class PayloadView(DeprecatedFieldsViewMixin, APIView):
+            authentication_classes = []
+            permission_classes = []
+
             def post(self, request):
                 serializer = PayloadSerializer(data=request.data, context={'view': self})
                 serializer.is_valid(raise_exception=True)
@@ -156,4 +159,3 @@ class TestDeprecatedDecoratorClass:
 
         assert hasattr(MyView, 'deprecation')
         assert MyView.deprecation == {'detail': 'This view is deprecated.'}
-
