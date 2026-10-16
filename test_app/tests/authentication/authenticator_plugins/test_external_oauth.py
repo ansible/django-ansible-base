@@ -1,11 +1,8 @@
-import json
-import ssl
 from copy import deepcopy
-from io import BytesIO
 from unittest.mock import MagicMock, patch
-from urllib.error import HTTPError, URLError
 
 import pytest
+import requests
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.authenticator_plugins.external_oauth import (
@@ -33,20 +30,28 @@ def _discovery_document(**overrides):
     return document
 
 
-def _mock_urlopen_json(payload, expected_context=None):
-    raw = payload if isinstance(payload, (bytes, bytearray)) else json.dumps(payload).encode()
-    response = MagicMock()
-    response.read.return_value = raw
-    response.__enter__.return_value = response
-    response.__exit__.return_value = False
+def _mock_requests_get(payload, expected_verify=None):
+    """Return a side_effect for requests.get that yields a successful JSON response."""
 
-    def _urlopen(_request, context=None, timeout=None):
-        if expected_context is not None:
-            assert context is not None
-            assert context.verify_mode == expected_context
+    def _get(url, headers=None, timeout=None, verify=True):
+        if expected_verify is not None:
+            assert verify is expected_verify
+        response = MagicMock()
+        response.raise_for_status.return_value = None
+        if isinstance(payload, (bytes, bytearray)):
+            # Invalid JSON body — response.json() raises ValueError
+            response.json.side_effect = ValueError("No JSON object could be decoded")
+        else:
+            response.json.return_value = payload
         return response
 
-    return _urlopen
+    return _get
+
+
+def _http_error(status_code=500):
+    response = MagicMock()
+    response.status_code = status_code
+    return requests.exceptions.HTTPError(response=response)
 
 
 def _authenticator_payload(name, configuration, enabled=True):
@@ -303,7 +308,7 @@ def test_oidc_discovery_populates_jwks_and_userinfo(admin_api_client, external_o
     config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
     document = _discovery_document()
 
-    with patch(f"{DISCOVERY_MODULE}.urllib.request.urlopen", side_effect=_mock_urlopen_json(document)) as mock_urlopen:
+    with patch(f"{DISCOVERY_MODULE}.requests.get", side_effect=_mock_requests_get(document)) as mock_get:
         response = admin_api_client.post(
             get_relative_url("authenticator-list"),
             data=_authenticator_payload("Discovered External OAuth", config),
@@ -314,8 +319,7 @@ def test_oidc_discovery_populates_jwks_and_userinfo(admin_api_client, external_o
     assert response.data["configuration"]["JWKS_URI"] == document["jwks_uri"]
     assert response.data["configuration"]["USERINFO_URL"] == document["userinfo_endpoint"]
     assert response.data["configuration"]["OIDC_ENDPOINT"] == config["OIDC_ENDPOINT"]
-    request = mock_urlopen.call_args.args[0]
-    assert request.full_url == oidc_discovery_url(config["OIDC_ENDPOINT"])
+    assert mock_get.call_args.args[0] == oidc_discovery_url(config["OIDC_ENDPOINT"])
 
 
 @pytest.mark.django_db
@@ -327,7 +331,7 @@ def test_oidc_discovery_missing_userinfo_still_populates_jwks(admin_api_client, 
     document = _discovery_document()
     document.pop("userinfo_endpoint")
 
-    with patch(f"{DISCOVERY_MODULE}.urllib.request.urlopen", side_effect=_mock_urlopen_json(document)):
+    with patch(f"{DISCOVERY_MODULE}.requests.get", side_effect=_mock_requests_get(document)):
         response = admin_api_client.post(
             get_relative_url("authenticator-list"),
             data=_authenticator_payload("Discovery Without UserInfo", config),
@@ -351,7 +355,7 @@ def test_oidc_discovery_takes_precedence_over_manual_jwks(admin_api_client, exte
         userinfo_endpoint="https://discovered.example.com/userinfo",
     )
 
-    with patch(f"{DISCOVERY_MODULE}.urllib.request.urlopen", side_effect=_mock_urlopen_json(document)):
+    with patch(f"{DISCOVERY_MODULE}.requests.get", side_effect=_mock_requests_get(document)):
         response = admin_api_client.post(
             get_relative_url("authenticator-list"),
             data=_authenticator_payload("Discovery Precedence", config),
@@ -367,17 +371,8 @@ def test_oidc_discovery_takes_precedence_over_manual_jwks(admin_api_client, exte
 @pytest.mark.parametrize(
     "side_effect,expected_substring",
     [
-        (URLError("connection refused"), "Unable to reach"),
-        (
-            HTTPError(
-                url="https://login.example.com/tenant/v2.0/.well-known/openid-configuration",
-                code=500,
-                msg="Server Error",
-                hdrs=None,
-                fp=BytesIO(b""),
-            ),
-            "HTTP 500",
-        ),
+        (requests.exceptions.ConnectionError("connection refused"), "Unable to reach"),
+        (_http_error(500), "HTTP 500"),
     ],
 )
 def test_oidc_discovery_network_errors(admin_api_client, external_oauth_configuration, side_effect, expected_substring):
@@ -385,7 +380,7 @@ def test_oidc_discovery_network_errors(admin_api_client, external_oauth_configur
     config["JWKS_URI"] = ""
     config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
 
-    with patch(f"{DISCOVERY_MODULE}.urllib.request.urlopen", side_effect=side_effect):
+    with patch(f"{DISCOVERY_MODULE}.requests.get", side_effect=side_effect):
         response = admin_api_client.post(
             get_relative_url("authenticator-list"),
             data=_authenticator_payload("Discovery Network Error", config),
@@ -405,7 +400,7 @@ def test_oidc_discovery_invalid_json(admin_api_client, external_oauth_configurat
     config["JWKS_URI"] = ""
     config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
 
-    with patch(f"{DISCOVERY_MODULE}.urllib.request.urlopen", side_effect=_mock_urlopen_json(b"not-json{")):
+    with patch(f"{DISCOVERY_MODULE}.requests.get", side_effect=_mock_requests_get(b"not-json{")):
         response = admin_api_client.post(
             get_relative_url("authenticator-list"),
             data=_authenticator_payload("Discovery Invalid JSON", config),
@@ -425,7 +420,7 @@ def test_oidc_discovery_missing_jwks_uri(admin_api_client, external_oauth_config
     document = _discovery_document()
     document.pop("jwks_uri")
 
-    with patch(f"{DISCOVERY_MODULE}.urllib.request.urlopen", side_effect=_mock_urlopen_json(document)):
+    with patch(f"{DISCOVERY_MODULE}.requests.get", side_effect=_mock_requests_get(document)):
         response = admin_api_client.post(
             get_relative_url("authenticator-list"),
             data=_authenticator_payload("Discovery Missing JWKS", config),
@@ -446,8 +441,8 @@ def test_oidc_discovery_respects_verify_ssl_false(admin_api_client, external_oau
     document = _discovery_document()
 
     with patch(
-        f"{DISCOVERY_MODULE}.urllib.request.urlopen",
-        side_effect=_mock_urlopen_json(document, expected_context=ssl.CERT_NONE),
+        f"{DISCOVERY_MODULE}.requests.get",
+        side_effect=_mock_requests_get(document, expected_verify=False),
     ):
         response = admin_api_client.post(
             get_relative_url("authenticator-list"),
@@ -465,7 +460,7 @@ def test_oidc_discovery_timeout(admin_api_client, external_oauth_configuration):
     config["JWKS_URI"] = ""
     config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
 
-    with patch(f"{DISCOVERY_MODULE}.urllib.request.urlopen", side_effect=TimeoutError("timed out")):
+    with patch(f"{DISCOVERY_MODULE}.requests.get", side_effect=requests.exceptions.Timeout("timed out")):
         response = admin_api_client.post(
             get_relative_url("authenticator-list"),
             data=_authenticator_payload("Discovery Timeout", config),
@@ -484,7 +479,7 @@ def test_oidc_discovery_non_object_json(admin_api_client, external_oauth_configu
     config["JWKS_URI"] = ""
     config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
 
-    with patch(f"{DISCOVERY_MODULE}.urllib.request.urlopen", side_effect=_mock_urlopen_json([{"jwks_uri": "x"}])):
+    with patch(f"{DISCOVERY_MODULE}.requests.get", side_effect=_mock_requests_get([{"jwks_uri": "x"}])):
         response = admin_api_client.post(
             get_relative_url("authenticator-list"),
             data=_authenticator_payload("Discovery Non Object JSON", config),

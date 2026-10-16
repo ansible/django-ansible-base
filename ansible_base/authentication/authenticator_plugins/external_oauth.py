@@ -1,9 +1,6 @@
-import json
 import logging
-import ssl
-import urllib.error
-import urllib.request
 
+import requests
 from django.core.validators import MinValueValidator
 from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import ValidationError
@@ -39,29 +36,27 @@ def fetch_oidc_discovery(oidc_endpoint: str, verify_ssl: bool = True) -> dict:
     Raises ValidationError keyed on OIDC_ENDPOINT for network, JSON, or content failures.
     """
     url = oidc_discovery_url(oidc_endpoint)
-    if verify_ssl:
-        context = ssl.create_default_context()
-    else:
-        # VERIFY_SSL=false: admin opt-out for private/lab IdPs (ANSTRAT-1611 P1).
-        context = ssl._create_unverified_context()  # NOSONAR
 
     try:
-        request = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(request, context=context, timeout=OIDC_DISCOVERY_TIMEOUT_SECONDS) as response:
-            raw = response.read()
-    except urllib.error.HTTPError as exc:
-        logger.warning("OIDC discovery HTTP error for %s: %s", url, exc)
-        raise ValidationError({"OIDC_ENDPOINT": _("Unable to fetch OIDC discovery document: HTTP %(status)s.") % {"status": exc.code}}) from exc
-    except urllib.error.URLError as exc:
-        logger.warning("OIDC discovery network error for %s: %s", url, exc)
-        raise ValidationError({"OIDC_ENDPOINT": _("Unable to reach OIDC discovery endpoint.")}) from exc
-    except TimeoutError as exc:
+        response = requests.get(
+            url,
+            headers={"Accept": "application/json"},
+            timeout=OIDC_DISCOVERY_TIMEOUT_SECONDS,
+            verify=verify_ssl,
+        )
+        response.raise_for_status()
+        document = response.json()
+    except requests.exceptions.Timeout as exc:
         logger.warning("OIDC discovery timed out for %s: %s", url, exc)
         raise ValidationError({"OIDC_ENDPOINT": _("OIDC discovery request timed out.")}) from exc
-
-    try:
-        document = json.loads(raw)
-    except (TypeError, json.JSONDecodeError) as exc:
+    except requests.exceptions.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else "unknown"
+        logger.warning("OIDC discovery HTTP error for %s: %s", url, exc)
+        raise ValidationError({"OIDC_ENDPOINT": _("Unable to fetch OIDC discovery document: HTTP %(status)s.") % {"status": status}}) from exc
+    except requests.exceptions.RequestException as exc:
+        logger.warning("OIDC discovery network error for %s: %s", url, exc)
+        raise ValidationError({"OIDC_ENDPOINT": _("Unable to reach OIDC discovery endpoint.")}) from exc
+    except ValueError as exc:
         raise ValidationError({"OIDC_ENDPOINT": _("OIDC discovery document is not valid JSON.")}) from exc
 
     if not isinstance(document, dict):
