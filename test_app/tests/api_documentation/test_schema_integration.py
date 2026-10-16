@@ -11,7 +11,7 @@ import sys
 
 import pytest
 from django.conf import settings
-from django.urls import path
+from django.urls import path as url_path
 from drf_spectacular.generators import SchemaGenerator
 from rest_framework import serializers
 from rest_framework.generics import GenericAPIView
@@ -261,8 +261,8 @@ def test_deprecated_operation_schema_includes_deprecation_detail():
 
     generator = SchemaGenerator(
         patterns=[
-            path('deprecated-operation/', DeprecatedOperationView.as_view()),
-            path('current-operation/', CurrentOperationView.as_view()),
+            url_path('deprecated-operation/', DeprecatedOperationView.as_view()),
+            url_path('current-operation/', CurrentOperationView.as_view()),
         ]
     )
     schema = generator.get_schema(public=True)

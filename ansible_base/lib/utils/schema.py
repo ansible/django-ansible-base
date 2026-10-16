@@ -2,6 +2,8 @@
 This module provides optional decorators and schema classes that gracefully handle missing dependencies.
 """
 
+from typing import TYPE_CHECKING
+
 
 class DeprecationAutoSchemaMixin:
     """
@@ -52,29 +54,33 @@ def _get_autoschema_base():
     """
     try:
         from drf_spectacular.openapi import AutoSchema
+
         return AutoSchema
     except ImportError:
         return None
 
 
-# Conditionally define DABAutoSchema only if drf-spectacular is available
-_AutoSchemaBase = _get_autoschema_base()
+class _MissingAutoSchema:
+    """Placeholder base that preserves the optional drf-spectacular dependency."""
 
-if _AutoSchemaBase is not None:
-    class DABAutoSchema(DeprecationAutoSchemaMixin, _AutoSchemaBase):
-        """
-        AutoSchema with DAB deprecation support built-in.
-        This is a ready-to-use schema class for services that don't need
-        custom schema logic.
-        """
-        pass
+    def __init__(self, *args, **kwargs):
+        raise ImportError("DABAutoSchema requires drf-spectacular to be installed. Install it with: pip install drf-spectacular")
 
+
+if TYPE_CHECKING:
+    from drf_spectacular.openapi import AutoSchema as _AutoSchemaBase
 else:
-    class DABAutoSchema:
-        """Placeholder when drf-spectacular is not installed."""
+    _AutoSchemaBase = _get_autoschema_base() or _MissingAutoSchema
 
-        def __init__(self, *args, **kwargs):
-            raise ImportError("DABAutoSchema requires drf-spectacular to be installed. Install it with: pip install drf-spectacular")
+
+class DABAutoSchema(DeprecationAutoSchemaMixin, _AutoSchemaBase):
+    """
+    AutoSchema with DAB deprecation support built-in.
+    This is a ready-to-use schema class for services that don't need
+    custom schema logic.
+    """
+
+    pass
 
 
 def deprecated_fields_detail_hook(result, generator, **kwargs):
@@ -95,7 +101,7 @@ def deprecated_fields_detail_hook(result, generator, **kwargs):
         ref_name = getattr(getattr(serializer_cls, 'Meta', None), 'ref_name', None)
         if not ref_name:
             name = serializer_cls.__name__
-            ref_name = name[:-len('Serializer')] if name.endswith('Serializer') else name
+            ref_name = name[: -len('Serializer')] if name.endswith('Serializer') else name
         ref_map[ref_name] = fields
 
     schemas = result.get('components', {}).get('schemas', {})

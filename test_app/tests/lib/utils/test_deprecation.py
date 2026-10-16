@@ -1,6 +1,4 @@
-import pytest
 from django.http.response import HttpResponseBase
-from django.test import override_settings
 from django.test.client import RequestFactory
 from rest_framework import serializers
 from rest_framework.response import Response
@@ -81,17 +79,11 @@ class TestDeprecatedSerializerFields:
                 return Response(serializer.validated_data)
 
         factory = APIRequestFactory()
-        legacy_response = PayloadView.as_view()(
-            factory.post('/', {'legacy_name': 'old'}, format='json')
-        )
-        current_response = PayloadView.as_view()(
-            factory.post('/', {'current_name': 'new'}, format='json')
-        )
+        legacy_response = PayloadView.as_view()(factory.post('/', {'legacy_name': 'old'}, format='json'))
+        current_response = PayloadView.as_view()(factory.post('/', {'current_name': 'new'}, format='json'))
 
         assert legacy_response['X-API-Deprecated'] == 'true'
-        assert legacy_response['X-API-Deprecated-Detail'] == (
-            'legacy_name is deprecated. Use current_name instead.'
-        )
+        assert legacy_response['X-API-Deprecated-Detail'] == ('legacy_name is deprecated. Use current_name instead.')
         assert 'X-API-Deprecated' not in current_response
 
 
@@ -110,9 +102,7 @@ class TestDeprecatedQueryParams:
         current_response = MyView.as_view()(factory.get('/?format=v2'))
 
         assert legacy_response['X-API-Deprecated'] == 'true'
-        assert legacy_response['X-API-Deprecated-Detail'] == (
-            'legacy_format is deprecated. Use format=v2 instead.'
-        )
+        assert legacy_response['X-API-Deprecated-Detail'] == ('legacy_format is deprecated. Use format=v2 instead.')
         assert 'X-API-Deprecated' not in current_response
 
 

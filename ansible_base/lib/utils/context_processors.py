@@ -1,4 +1,4 @@
-from ansible_base.lib.utils.settings import get_function_from_setting, get_setting
+from ansible_base.lib.utils.settings import get_function_from_setting
 
 
 def _check_deprecation(view):

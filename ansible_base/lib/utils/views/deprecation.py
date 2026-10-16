@@ -170,6 +170,7 @@ def deprecated(detail: str):
     """
     Decorator that marks a view method or class as deprecated.
     """
+
     def decorator(target):
         if isinstance(target, type):
             return _apply_to_class(target, detail)
