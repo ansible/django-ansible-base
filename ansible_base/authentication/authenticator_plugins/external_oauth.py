@@ -1,4 +1,8 @@
+import json
 import logging
+import ssl
+import urllib.error
+import urllib.request
 
 from django.core.validators import MinValueValidator
 from django.utils.translation import gettext_lazy as _
@@ -10,6 +14,9 @@ from ansible_base.lib.serializers.validators import JWTAlgorithmListFieldValidat
 
 logger = logging.getLogger("ansible_base.authentication.authenticator_plugins.external_oauth")
 
+OIDC_DISCOVERY_PATH = "/.well-known/openid-configuration"
+OIDC_DISCOVERY_TIMEOUT_SECONDS = 30
+
 _BASELINE_ATTRIBUTES = [
     "email",
     "preferred_username",
@@ -19,6 +26,74 @@ _BASELINE_ATTRIBUTES = [
     "client_id",
     "groups",
 ]
+
+
+def oidc_discovery_url(oidc_endpoint: str) -> str:
+    return f"{oidc_endpoint.rstrip('/')}{OIDC_DISCOVERY_PATH}"
+
+
+def fetch_oidc_discovery(oidc_endpoint: str, verify_ssl: bool = True) -> dict:
+    """
+    Fetch the OIDC discovery document at save time.
+
+    Raises ValidationError keyed on OIDC_ENDPOINT for network, JSON, or content failures.
+    """
+    url = oidc_discovery_url(oidc_endpoint)
+    context = ssl.create_default_context()
+    if not verify_ssl:
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+
+    try:
+        request = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(request, context=context, timeout=OIDC_DISCOVERY_TIMEOUT_SECONDS) as response:
+            raw = response.read()
+    except urllib.error.HTTPError as exc:
+        logger.warning("OIDC discovery HTTP error for %s: %s", url, exc)
+        raise ValidationError({"OIDC_ENDPOINT": _("Unable to fetch OIDC discovery document: HTTP %(status)s.") % {"status": exc.code}}) from exc
+    except urllib.error.URLError as exc:
+        logger.warning("OIDC discovery network error for %s: %s", url, exc)
+        raise ValidationError({"OIDC_ENDPOINT": _("Unable to reach OIDC discovery endpoint.")}) from exc
+    except TimeoutError as exc:
+        logger.warning("OIDC discovery timed out for %s: %s", url, exc)
+        raise ValidationError({"OIDC_ENDPOINT": _("OIDC discovery request timed out.")}) from exc
+
+    try:
+        document = json.loads(raw)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise ValidationError({"OIDC_ENDPOINT": _("OIDC discovery document is not valid JSON.")}) from exc
+
+    if not isinstance(document, dict):
+        raise ValidationError({"OIDC_ENDPOINT": _("OIDC discovery document must be a JSON object.")})
+
+    return document
+
+
+def apply_oidc_discovery(attrs: dict) -> dict:
+    """
+    When OIDC_ENDPOINT is set, fetch discovery and populate JWKS_URI / USERINFO_URL.
+
+    OIDC_ENDPOINT takes precedence over any manually provided JWKS_URI or USERINFO_URL.
+    Missing userinfo_endpoint is allowed; missing jwks_uri is a validation error.
+    """
+    oidc_endpoint = attrs.get("OIDC_ENDPOINT") or ""
+    if not oidc_endpoint:
+        return attrs
+
+    verify_ssl = attrs.get("VERIFY_SSL", True)
+    document = fetch_oidc_discovery(oidc_endpoint, verify_ssl=bool(verify_ssl))
+
+    jwks_uri = document.get("jwks_uri")
+    if not isinstance(jwks_uri, str) or not jwks_uri.strip():
+        raise ValidationError({"OIDC_ENDPOINT": _("OIDC discovery document is missing jwks_uri.")})
+
+    attrs["JWKS_URI"] = jwks_uri.strip()
+
+    userinfo_endpoint = document.get("userinfo_endpoint")
+    if isinstance(userinfo_endpoint, str) and userinfo_endpoint.strip():
+        attrs["USERINFO_URL"] = userinfo_endpoint.strip()
+
+    return attrs
 
 
 class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
@@ -34,7 +109,7 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         help_text=_(
             "Provider JWKS endpoint used to verify JWT signatures. "
             "Either JWKS_URI or OIDC_ENDPOINT must be provided. "
-            "OIDC discovery can later auto-populate this field from OIDC_ENDPOINT."
+            "When OIDC_ENDPOINT is set, JWKS_URI is auto-populated from discovery at save time."
         ),
         required=False,
         allow_blank=True,
@@ -100,7 +175,10 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
     )
 
     USERINFO_URL = URLField(
-        help_text=_("Optional UserInfo endpoint fetched after JWT validation to retrieve supplementary claims (for example group memberships)."),
+        help_text=_(
+            "Optional UserInfo endpoint fetched after JWT validation to retrieve supplementary claims "
+            "(for example group memberships). Auto-populated from OIDC discovery when present."
+        ),
         required=False,
         allow_blank=True,
         allow_null=True,
@@ -110,10 +188,9 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
 
     OIDC_ENDPOINT = URLField(
         help_text=_(
-            "Base URL for OIDC auto-discovery (/.well-known/openid-configuration). "
-            "Either JWKS_URI or OIDC_ENDPOINT must be provided. "
-            "Save-time discovery to populate JWKS_URI/USERINFO_URL is a follow-up; "
-            "this field is accepted now so configs can be stored ahead of that work."
+            "Base URL for OIDC auto-discovery. At save time, fetches /.well-known/openid-configuration "
+            "to populate JWKS_URI (required in the document) and USERINFO_URL when present. "
+            "Either JWKS_URI or OIDC_ENDPOINT must be provided. Not used at runtime."
         ),
         required=False,
         allow_blank=True,
@@ -148,8 +225,12 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         if errors:
             raise ValidationError(errors)
 
-        # Normalize whitespace while preserving declared order.
         attrs["CLAIM_LIST"] = [claim.strip() for claim in claim_list]
+
+        if oidc_endpoint:
+            # OIDC_ENDPOINT takes precedence: discovery overwrites JWKS_URI / USERINFO_URL.
+            attrs = apply_oidc_discovery(attrs)
+
         return attrs
 
 
