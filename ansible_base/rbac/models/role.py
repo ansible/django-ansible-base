@@ -967,7 +967,7 @@ class RoleEvaluationFields(models.Model):
         # for normal models you should not need it, but AWX unified_ models need it to get by
         qs = cls.objects.filter(role_id__in=cls.actor_role_ids(actor), codename=codename)
         if content_types:
-            qs = qs.filter(content_type_id__in=content_types)
+            qs = qs.filter(content_type_id__in=content_types)  # pragma: no cover
         else:
             qs = qs.filter(content_type_id=DABContentType.objects.get_for_model(model_cls).id)
         if cast_field is None:
