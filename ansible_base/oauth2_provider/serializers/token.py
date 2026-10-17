@@ -8,6 +8,7 @@ from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from oauthlib.common import generate_token
 from oauthlib.oauth2 import AccessDeniedError
+from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.serializers import SerializerMethodField
 
@@ -23,13 +24,23 @@ logger = logging.getLogger("ansible_base.oauth2_provider.serializers.token")
 
 class OAuth2TokenSerializer(CleanTextMixin, CommonModelSerializer):
     refresh_token = SerializerMethodField()
+    ttl = serializers.IntegerField(
+        required=False,
+        allow_null=False,
+        min_value=0,
+        write_only=True,
+        help_text=_(
+            "Optional lifetime of the access token in seconds since creation. Must not exceed the platform's default "
+            "(OAUTH2_PROVIDER.ACCESS_TOKEN_EXPIRE_SECONDS). A value of 0 uses the platform default."
+        ),
+    )
 
     unencrypted_token = None  # Only used in POST so we can return the token in the response
     unencrypted_refresh_token = None  # Only used in POST so we can return the refresh token in the response
 
     class Meta:
         model = OAuth2AccessToken
-        fields = CommonModelSerializer.Meta.fields + [x.name for x in OAuth2AccessToken._meta.concrete_fields] + ['refresh_token']
+        fields = CommonModelSerializer.Meta.fields + [x.name for x in OAuth2AccessToken._meta.concrete_fields] + ['refresh_token', 'ttl']
         # The source_refresh_token and id_token are the concrete field but we change them to just token and refresh_token
         # We wrap these in a try for when we need to make the initial models
         try:
@@ -81,12 +92,22 @@ class OAuth2TokenSerializer(CleanTextMixin, CommonModelSerializer):
             raise ValidationError(_('Must be a simple space-separated string with allowed scopes {}.').format(SCOPES))
         return value
 
+    def validate_ttl(self, value):
+        if self.instance is not None:
+            raise ValidationError(_('TTL can only be set at token creation.'))
+        platform_default = get_setting('OAUTH2_PROVIDER', {}).get('ACCESS_TOKEN_EXPIRE_SECONDS', 0)
+        if platform_default > 0 and value > platform_default:
+            raise ValidationError(_('TTL must not exceed the platform default of %(default)s seconds.') % {'default': platform_default})
+        return value
+
     def create(self, validated_data):
         current_user = get_current_user()
         validated_data['token'] = generate_token()
-        expires_delta = get_setting('OAUTH2_PROVIDER', {}).get('ACCESS_TOKEN_EXPIRE_SECONDS', 0)
-        if expires_delta == 0:
-            logger.warning("OAUTH2_PROVIDER.ACCESS_TOKEN_EXPIRE_SECONDS was set to 0, creating token that has already expired")
+        expires_delta = validated_data.pop('ttl', 0)
+        if not expires_delta:
+            expires_delta = get_setting('OAUTH2_PROVIDER', {}).get('ACCESS_TOKEN_EXPIRE_SECONDS', 0)
+            if expires_delta == 0:
+                logger.warning("OAUTH2_PROVIDER.ACCESS_TOKEN_EXPIRE_SECONDS was set to 0, creating token that has already expired")
         validated_data['expires'] = now() + timedelta(seconds=expires_delta)
         validated_data['user'] = self.context['request'].user
         self.unencrypted_token = validated_data.get('token')  # Before it is hashed
