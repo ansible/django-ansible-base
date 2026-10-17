@@ -9,6 +9,7 @@ from onelogin.saml2.settings import OneLogin_Saml2_Settings
 from rest_framework.serializers import ValidationError
 from rest_framework.views import View
 from social_core.backends.saml import SAMLAuth, SAMLIdentityProvider
+from social_core.exceptions import AuthMissingParameter
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
@@ -290,6 +291,19 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAML
             request_info["https"] = "on"
 
         return OneLogin_Saml2_Auth(request_info, config)
+
+    def get_user_details(self, response):
+        try:
+            return super().get_user_details(response)
+        except AuthMissingParameter as error:
+            if not error.parameter.endswith(" (configured by attr_email)"):
+                raise
+
+            idp_name = response["idp_name"]
+            idp = self.get_idp(idp_name)
+            idp_configuration = {key: value for key, value in idp.conf.items() if key != "attr_email"}
+            optional_email_idp = SAMLIdentityProvider(self, idp_name, **idp_configuration)
+            return optional_email_idp.get_user_details(response["attributes"])
 
     def add_related_fields(self, request, authenticator):
         return {"metadata": get_relative_url('authenticator-metadata', kwargs={'pk': authenticator.id})}
