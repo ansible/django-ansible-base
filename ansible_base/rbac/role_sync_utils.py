@@ -107,9 +107,7 @@ def get_content_object(role_definition, assignment_tuple: AssignmentTuple) -> An
     try:
         object_pk = model._meta.pk.to_python(identifier)
     except (TypeError, ValueError, ValidationError) as exc:
-        raise ValueError(
-            f"Could not resolve {identifier!r} as a Resource ansible_id or a primary key for {model._meta.label}"
-        ) from exc
+        raise ValueError(f"Could not resolve {identifier!r} as a Resource ansible_id or a primary key for {model._meta.label}") from exc
 
     return model.objects.get(pk=object_pk)
 
