@@ -4,7 +4,6 @@ import asyncio
 import csv
 import logging
 import time
-import uuid as _uuid_mod
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
@@ -129,7 +128,9 @@ class RemoteAssignmentFetcher:
         """
         from ansible_base.rbac.models.role import RoleDefinition
 
-        self.local_role_names: set[str] = set(RoleDefinition.objects.values_list('name', flat=True))
+        role_definitions = RoleDefinition.objects.select_related('content_type').filter(name__isnull=False)
+        self.local_role_definitions = {role_definition.name: role_definition for role_definition in role_definitions}
+        self.local_role_names = set(self.local_role_definitions)
 
         users_ok = self._paginate(self.api_client.list_user_assignments, 'user_ansible_id', 'user')
         if not users_ok:
@@ -147,30 +148,23 @@ class RemoteAssignmentFetcher:
                 continue
             object_ansible_id = assignment.get('object_ansible_id')
             ansible_id_or_pk = object_ansible_id or assignment.get('object_id')
-            if not object_ansible_id and ansible_id_or_pk:
-                # ansible_id_or_pk came from object_id.  Non-registered models send their PK
-                # here.  If the value is UUID-format it is almost certainly corrupted Gateway data
-                # (e.g. a RoleDefinition UUID placed in the namespace PK field).  Proceeding
-                # would raise ValueError in get_content_object and silently delete the matching
-                # local assignment.
-                # Note: this guard assumes non-registered RBAC targets use integer PKs.  If a
-                # UUID-PK non-registered model is ever added, this check will need to be made
-                # model-aware (e.g. by inspecting model._meta.pk type for the role's content type).
+            role_definition = self.local_role_definitions[role_name]
+            if not object_ansible_id and ansible_id_or_pk and role_definition.content_type:
                 try:
-                    _uuid_mod.UUID(str(ansible_id_or_pk))
+                    role_definition.content_type.model_class()._meta.pk.to_python(ansible_id_or_pk)
+                except (TypeError, ValueError, ValidationError) as exc:
                     actor_id = assignment.get(actor_id_key)
                     logger.warning(
-                        "Skipping remote %s assignment (actor=%s, role=%s): object_id %r is a UUID "
-                        "but integer PK was expected — possible Gateway data corruption.",
+                        "Skipping remote %s assignment (actor=%s, role=%s): object_id %r is invalid "
+                        "for the target content type — possible Gateway data corruption: %s",
                         assignment_type,
                         actor_id,
                         role_name,
                         ansible_id_or_pk,
+                        exc,
                     )
                     self._protected_pairs.add((str(actor_id), role_name, assignment_type))
                     continue
-                except (ValueError, AttributeError):
-                    pass
             self.assignments.add(
                 AssignmentTuple(
                     actor_ansible_id=assignment[actor_id_key],

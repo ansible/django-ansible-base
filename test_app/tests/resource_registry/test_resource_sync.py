@@ -1593,7 +1593,14 @@ def test_paginate_skips_corrupted_uuid_object_id():
     corrupted_actor = str(uuid4())
     valid_actor = str(uuid4())
     role_name = 'galaxy.collection_publisher'
-    RoleDefinition.objects.create(name=role_name, managed=True)
+    from ansible_base.rbac.models import DABContentType
+    from test_app.models import Inventory
+
+    RoleDefinition.objects.create(
+        name=role_name,
+        content_type=DABContentType.objects.get_for_model(Inventory),
+        managed=True,
+    )
 
     api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
     api_client.list_user_assignments.return_value = _mock_response(
@@ -1628,6 +1635,45 @@ def test_paginate_skips_corrupted_uuid_object_id():
     surviving = next(iter(result.assignments))
     assert surviving.actor_ansible_id == valid_actor
     assert surviving.ansible_id_or_pk == '42'
+
+
+@pytest.mark.django_db
+def test_paginate_accepts_valid_uuid_primary_key():
+    """Valid UUID primary keys are not mistaken for corrupted integer IDs."""
+    role_name = 'UUID Model Admin'
+    from ansible_base.rbac.models import DABContentType
+    from test_app.models import UUIDModel
+
+    RoleDefinition.objects.create(
+        name=role_name,
+        content_type=DABContentType.objects.get_for_model(UUIDModel),
+        managed=True,
+    )
+    actor_id = str(uuid4())
+    object_id = str(uuid4())
+    api_client = mock.Mock(spec=['list_user_assignments', 'list_team_assignments'])
+    api_client.list_user_assignments.return_value = _mock_response(
+        body={
+            'results': [
+                {
+                    'user_ansible_id': actor_id,
+                    'object_ansible_id': None,
+                    'object_id': object_id,
+                    'role_definition': role_name,
+                },
+            ],
+            'next': None,
+        }
+    )
+    api_client.list_team_assignments.return_value = _mock_response()
+
+    result = RemoteAssignmentFetcher(api_client).fetch()
+
+    assert result.is_complete is True
+    assert result.protected_pairs == frozenset()
+    assert result.assignments == {
+        AssignmentTuple(actor_id, object_id, role_name, 'user'),
+    }
 
 
 @pytest.mark.django_db

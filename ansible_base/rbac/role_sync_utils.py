@@ -87,22 +87,29 @@ def get_content_object(role_definition, assignment_tuple: AssignmentTuple) -> An
         raise RuntimeError("get_content_object requires ansible_base.rbac to be installed")
     if role_definition.content_type is None:
         raise ValueError("get_content_object requires a role_definition with a content_type")
-    model = role_definition.content_type.model_class()
-    if _is_resource_registered(model):
-        expected_ct = role_definition.content_type
+    identifier = assignment_tuple.ansible_id_or_pk
+    expected_ct = role_definition.content_type
+    model = expected_ct.model_class()
+    if expected_ct.model in ('organization', 'team') or _is_resource_registered(model):
         try:
-            # ansible_id is a UUIDField; integer PKs ("123") raise ValueError at
-            # evaluation time, so catch that and fall through to the PK lookup.
-            resource = Resource.objects.filter(
-                ansible_id=assignment_tuple.ansible_id_or_pk,
+            object_resource = Resource.objects.get(
+                ansible_id=identifier,
                 content_type__app_label=expected_ct.app_label,
                 content_type__model=expected_ct.model,
-            ).first()
-        except (ValueError, AttributeError, ValidationError):
-            resource = None
-        if resource is not None:
-            return resource.content_object
-    return model.objects.get(pk=assignment_tuple.ansible_id_or_pk)
+            )
+        except (Resource.DoesNotExist, ValueError, ValidationError):
+            pass
+        else:
+            return object_resource.content_object
+
+    try:
+        object_pk = model._meta.pk.to_python(identifier)
+    except (TypeError, ValueError, ValidationError) as exc:
+        raise ValueError(
+            f"Could not resolve {identifier!r} as a Resource ansible_id or a primary key for {model._meta.label}"
+        ) from exc
+
+    return model.objects.get(pk=object_pk)
 
 
 def _bulk_resolve_actor_ansible_ids(assignments: list, actor_attr: str) -> dict[str, str]:
@@ -259,7 +266,7 @@ def delete_local_assignment(assignment_tuple: AssignmentTuple) -> bool:
     from ansible_base.rbac.models.role import RoleDefinition
 
     try:
-        role_definition = RoleDefinition.objects.prefetch_related('content_type').get(name=assignment_tuple.role_definition_name)
+        role_definition = RoleDefinition.objects.get(name=assignment_tuple.role_definition_name)
 
         resource = Resource.objects.get(ansible_id=assignment_tuple.actor_ansible_id)
         actor = resource.content_object
@@ -286,7 +293,7 @@ def create_local_assignment(assignment_tuple: AssignmentTuple) -> bool:
     from ansible_base.rbac.models.role import RoleDefinition
 
     try:
-        role_definition = RoleDefinition.objects.prefetch_related('content_type').get(name=assignment_tuple.role_definition_name)
+        role_definition = RoleDefinition.objects.get(name=assignment_tuple.role_definition_name)
 
         resource = Resource.objects.get(ansible_id=assignment_tuple.actor_ansible_id)
         actor = resource.content_object
