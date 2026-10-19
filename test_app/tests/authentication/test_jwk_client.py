@@ -39,16 +39,11 @@ def test_cached_jwk_client_caches_signing_key_by_uri_and_kid():
     from_dict.assert_called_once_with(signing_key._jwk_data)
 
 
-def test_cached_jwk_client_delegates_tokens_without_a_kid():
+def test_cached_jwk_client_rejects_tokens_without_a_kid():
     client = CachedJWKClient("https://issuer.example.com/keys")
     token = jwt.encode({"sub": "subject"}, "not-used", algorithm="HS256")
-    signing_key = Mock()
-    with patch(
-        "ansible_base.authentication.jwk_client.PyJWKClient.get_signing_key_from_jwt",
-        return_value=signing_key,
-    ) as get_signing_key:
-        assert client.get_signing_key_from_jwt(token) is signing_key
-    get_signing_key.assert_called_once_with(token)
+    with pytest.raises(PyJWKClientError, match="missing kid"):
+        client.get_signing_key_from_jwt(token)
 
 
 def test_cached_jwk_client_discards_invalid_cached_jwk_and_refetches():
@@ -68,6 +63,25 @@ def test_cached_jwk_client_discards_invalid_cached_jwk_and_refetches():
     get_signing_key.assert_called_once_with(token)
 
 
+def test_cached_jwk_client_reuses_jwk_set_across_instances():
+    first_client = CachedJWKClient("https://issuer.example.com/keys")
+    second_client = CachedJWKClient("https://issuer.example.com/keys")
+    jwk_set = Mock()
+    document = {"keys": []}
+
+    with patch(
+        "ansible_base.authentication.jwk_client.PyJWKClient.fetch_data",
+        return_value=document,
+    ) as fetch_data, patch(
+        "ansible_base.authentication.jwk_client.PyJWKSet.from_dict",
+        return_value=jwk_set,
+    ):
+        assert first_client.get_jwk_set() is jwk_set
+        assert second_client.get_jwk_set() is jwk_set
+
+    fetch_data.assert_called_once_with()
+
+
 def test_cached_jwk_client_refreshes_once_for_unknown_kid():
     client = CachedJWKClient("https://issuer.example.com/keys")
     refreshed_key = Mock()
@@ -80,8 +94,8 @@ def test_cached_jwk_client_refreshes_once_for_unknown_kid():
 
 def test_cached_jwk_client_throttles_repeated_unknown_kid_refreshes():
     client = CachedJWKClient("https://issuer.example.com/keys")
-    with patch.object(client, "get_signing_keys", return_value=[]), patch.object(client, "match_kid", return_value=None):
-        with pytest.raises(PyJWKClientError, match="missing"):
-            client.get_signing_key("missing")
+    with patch.object(client, "get_signing_keys", return_value=[]), patch.object(client, "match_kid", return_value=None), patch.object(
+        client, "get_jwk_set", side_effect=PyJWKClientError("refresh is already in progress")
+    ):
         with pytest.raises(PyJWKClientError, match="missing"):
             client.get_signing_key("missing")

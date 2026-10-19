@@ -1,6 +1,8 @@
 from unittest.mock import Mock, patch
 
+import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from ansible_base.authentication.authenticator_plugins.external_oauth import AuthenticatorPlugin
 
@@ -43,6 +45,7 @@ def test_external_oauth_plugin_validates_token_and_updates_claims(external_oauth
         algorithms=external_oauth_authenticator.configuration["ALLOWED_ALGORITHMS"],
         audience=external_oauth_authenticator.configuration["AUDIENCE"],
         issuer=external_oauth_authenticator.configuration["ISSUER_URL"],
+        options={"require": ["exp"]},
     )
     get_or_create.assert_called_once_with(
         uid="user@example.com",
@@ -85,6 +88,49 @@ def test_external_oauth_plugin_rejects_invalid_jwt_claims(external_oauth_authent
     ):
         jwk_client.return_value.get_signing_key_from_jwt.return_value = Mock(key="public-key")
         assert plugin.authenticate(token="token") is None
+
+
+@pytest.mark.django_db
+def test_external_oauth_plugin_retries_once_after_invalid_signature(external_oauth_authenticator):
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    initial_key = Mock(key="old-key")
+    refreshed_key = Mock(key="new-key")
+    claims = {"sub": "subject", "groups": []}
+    with patch(
+        "ansible_base.authentication.authenticator_plugins.external_oauth.CachedJWKClient"
+    ) as jwk_client, patch(
+        "ansible_base.authentication.authenticator_plugins.external_oauth.decode",
+        side_effect=[jwt.InvalidSignatureError("old key"), claims],
+    ) as decode_token, patch(
+        "ansible_base.authentication.authenticator_plugins.external_oauth.get_or_create_authenticator_user",
+        return_value=(Mock(is_active=False), Mock(), False),
+    ):
+        jwk_client.return_value.get_signing_key_from_jwt.return_value = initial_key
+        jwk_client.return_value.refresh_signing_key_from_jwt.return_value = refreshed_key
+        assert plugin.authenticate(token="token") is None
+
+    jwk_client.return_value.refresh_signing_key_from_jwt.assert_called_once_with("token")
+    assert decode_token.call_args_list[1].kwargs["key"] == refreshed_key.key
+
+
+@pytest.mark.django_db
+def test_external_oauth_plugin_requires_expiration_claim(external_oauth_authenticator):
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = jwt.encode(
+        {
+            "iss": external_oauth_authenticator.configuration["ISSUER_URL"],
+            "aud": external_oauth_authenticator.configuration["AUDIENCE"],
+            "sub": "subject",
+        },
+        private_key,
+        algorithm="RS256",
+    )
+    with patch(
+        "ansible_base.authentication.authenticator_plugins.external_oauth.CachedJWKClient"
+    ) as jwk_client:
+        jwk_client.return_value.get_signing_key_from_jwt.return_value = Mock(key=private_key.public_key())
+        assert plugin.authenticate(token=token) is None
 
 
 @pytest.mark.django_db

@@ -1,7 +1,8 @@
 import hashlib
+from typing import Any
 
 from django.core.cache import cache
-from jwt import PyJWK, PyJWKClient, get_unverified_header
+from jwt import PyJWK, PyJWKClient, PyJWKSet, get_unverified_header
 from jwt.exceptions import PyJWKClientError, PyJWKError
 
 
@@ -10,18 +11,59 @@ class CachedJWKClient(PyJWKClient):
 
     forced_refresh_cooldown = 30
 
-    def __init__(self, uri, **kwargs):
+    def __init__(self, uri: str, **kwargs: Any) -> None:
+        """Initialize a client whose shared cache namespace is derived from its URI."""
         super().__init__(uri, **kwargs)
         self.cache_timeout = kwargs.get("lifespan", 300)
         self._cache_namespace = hashlib.sha256(uri.encode()).hexdigest()
 
-    def get_signing_key_from_jwt(self, token):
+    @property
+    def _jwk_set_cache_key(self) -> str:
+        """Return the shared cache key for this provider's complete JWKS document."""
+        return f"external_oauth_jwk_set:{self._cache_namespace}"
+
+    @property
+    def _refresh_lock_key(self) -> str:
+        """Return the cooldown key that throttles forced key-set refreshes."""
+        return f"external_oauth_jwks_refresh:{self._cache_namespace}"
+
+    @property
+    def _fetch_lock_key(self) -> str:
+        """Return the short-lived lock used while one request fetches a JWKS document."""
+        return f"external_oauth_jwks_fetch:{self._cache_namespace}"
+
+    def _signing_key_cache_key(self, kid: str) -> str:
+        """Return a cache key that safely scopes an individual signing key to this URI."""
+        cache_identifier = hashlib.sha256(kid.encode()).hexdigest()
+        return f"external_oauth_jwk:{self._cache_namespace}:{cache_identifier}"
+
+    def get_jwk_set(self, refresh: bool = False) -> PyJWKSet:
+        """Return this provider's cached JWKS, fetching it once when absent or forced to refresh."""
+        jwk_set = None if refresh else cache.get(self._jwk_set_cache_key)
+        if jwk_set is None:
+            if refresh and not cache.add(self._refresh_lock_key, True, timeout=self.forced_refresh_cooldown):
+                raise PyJWKClientError("JWKS refresh is already in progress")
+            if not cache.add(self._fetch_lock_key, True, timeout=self.forced_refresh_cooldown):
+                raise PyJWKClientError("JWKS fetch is already in progress")
+            try:
+                jwk_set = None if refresh else cache.get(self._jwk_set_cache_key)
+                if jwk_set is None:
+                    jwk_set = super().fetch_data()
+                    cache.set(self._jwk_set_cache_key, jwk_set, timeout=self.cache_timeout)
+            finally:
+                cache.delete(self._fetch_lock_key)
+
+        if not isinstance(jwk_set, dict):
+            raise PyJWKClientError("The JWKS endpoint did not return a JSON object")
+        return PyJWKSet.from_dict(jwk_set)
+
+    def get_signing_key_from_jwt(self, token: str) -> PyJWK:
+        """Return a cached signing key for a JWT, rejecting tokens without a key identifier."""
         kid = get_unverified_header(token).get("kid")
         if not kid:
-            return super().get_signing_key_from_jwt(token)
+            raise PyJWKClientError("JWT header is missing kid")
 
-        cache_identifier = hashlib.sha256(kid.encode()).hexdigest()
-        cache_key = f"external_oauth_jwk:{self._cache_namespace}:{cache_identifier}"
+        cache_key = self._signing_key_cache_key(kid)
         cached_jwk = cache.get(cache_key)
         if cached_jwk is not None:
             try:
@@ -35,15 +77,26 @@ class CachedJWKClient(PyJWKClient):
         cache.set(cache_key, signing_key._jwk_data, timeout=self.cache_timeout)
         return signing_key
 
-    def get_signing_key(self, kid):
+    def refresh_signing_key_from_jwt(self, token: str) -> PyJWK:
+        """Evict a JWT's cached key and resolve it again from a freshly fetched JWKS."""
+        kid = get_unverified_header(token).get("kid")
+        if not kid:
+            raise PyJWKClientError("JWT header is missing kid")
+
+        cache.delete(self._signing_key_cache_key(kid))
+        signing_keys = self.get_signing_keys(refresh=True)
+        signing_key = self.match_kid(signing_keys, kid)
+        if not signing_key:
+            raise PyJWKClientError(f"Unable to find a signing key that matches: {kid}")
+        cache.set(self._signing_key_cache_key(kid), signing_key._jwk_data, timeout=self.cache_timeout)
+        return signing_key
+
+    def get_signing_key(self, kid: str) -> PyJWK:
+        """Resolve a signing key, retrying once with a forced JWKS refresh for an unknown key ID."""
         signing_keys = self.get_signing_keys()
         signing_key = self.match_kid(signing_keys, kid)
         if signing_key:
             return signing_key
-
-        refresh_key = f"external_oauth_jwks_refresh:{self._cache_namespace}"
-        if not cache.add(refresh_key, True, timeout=self.forced_refresh_cooldown):
-            raise PyJWKClientError(f"Unable to find a signing key that matches: {kid}")
 
         signing_keys = self.get_signing_keys(refresh=True)
         signing_key = self.match_kid(signing_keys, kid)

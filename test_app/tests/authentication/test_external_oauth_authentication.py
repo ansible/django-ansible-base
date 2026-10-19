@@ -5,6 +5,7 @@ import pytest
 from django.test import RequestFactory
 
 from ansible_base.authentication.external_oauth_authentication import ExternalOAuthAuthentication
+from ansible_base.authentication.models import Authenticator
 
 
 def _request(token=None, scheme="Bearer"):
@@ -109,3 +110,34 @@ def test_external_oauth_authentication_skips_unloadable_plugin(external_oauth_au
         side_effect=ImportError("unavailable"),
     ):
         assert ExternalOAuthAuthentication().authenticate(_request(token)) is None
+
+
+@pytest.mark.django_db
+def test_external_oauth_authentication_continues_after_plugin_failure(external_oauth_authenticator):
+    second = Authenticator.objects.create(
+        name="Second external OAuth authenticator",
+        enabled=True,
+        type=external_oauth_authenticator.type,
+        configuration=external_oauth_authenticator.configuration,
+        order=external_oauth_authenticator.order + 1,
+    )
+    token = _token(
+        external_oauth_authenticator.configuration["ISSUER_URL"],
+        external_oauth_authenticator.configuration["AUDIENCE"],
+    )
+    rejected_plugin = Mock()
+    rejected_plugin.authenticate.side_effect = RuntimeError("bad plugin")
+    user = Mock(username="external-user")
+    accepted_plugin = Mock()
+    accepted_plugin.authenticate.return_value = user
+    plugin_class = Mock(side_effect=[rejected_plugin, accepted_plugin])
+
+    with patch(
+        "ansible_base.authentication.external_oauth_authentication.get_authenticator_class",
+        return_value=plugin_class,
+    ):
+        assert ExternalOAuthAuthentication().authenticate(_request(token)) == (user, token)
+
+    rejected_plugin.authenticate.assert_called_once()
+    accepted_plugin.authenticate.assert_called_once()
+    second.delete()

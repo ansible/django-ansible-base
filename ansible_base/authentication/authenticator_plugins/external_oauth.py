@@ -1,10 +1,12 @@
 import logging
 import ssl
+from typing import Any
 
 import requests
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils.translation import gettext_lazy as _
 from jwt import decode
+from jwt.exceptions import InvalidSignatureError
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
@@ -37,14 +39,17 @@ _BASELINE_ATTRIBUTES = [
 
 
 def oidc_discovery_url(oidc_endpoint: str) -> str:
+    """Build the well-known discovery URL from a provider's configured endpoint."""
     return f"{oidc_endpoint.rstrip('/')}{OIDC_DISCOVERY_PATH}"
 
 
-def _discovery_timeout():
+def _discovery_timeout() -> int:
+    """Return the configured bounded timeout for save-time OIDC discovery requests."""
     return get_setting(OIDC_DISCOVERY_TIMEOUT_SETTING, OIDC_DISCOVERY_TIMEOUT_DEFAULT)
 
 
 def _bounded_body_for_log(text: str) -> str:
+    """Limit response bodies included in debug logs so malformed responses cannot flood logs."""
     if len(text) <= OIDC_DISCOVERY_LOG_BODY_MAX:
         return text
     return f"{text[:OIDC_DISCOVERY_LOG_BODY_MAX]}... (truncated)"
@@ -54,13 +59,13 @@ def _validate_discovered_url(value: str, field_name: str) -> str:
     """Run discovered endpoint URLs through the same validation as URLField."""
     value = value.strip()
     try:
-        validate_url(value, schemes=["https", "http"], allow_plain_hostname=True)
+        validate_url(value, schemes=["https"], allow_plain_hostname=False)
     except ValidationError as exc:
         raise ValidationError({"OIDC_ENDPOINT": _("OIDC discovery returned an invalid %(field)s.") % {"field": field_name}}) from exc
     return value
 
 
-def fetch_oidc_discovery(oidc_endpoint: str, verify_ssl: bool = True) -> dict:
+def fetch_oidc_discovery(oidc_endpoint: str, verify_ssl: bool = True) -> dict[str, Any]:
     """
     Fetch the OIDC discovery document at save time.
 
@@ -105,7 +110,7 @@ def fetch_oidc_discovery(oidc_endpoint: str, verify_ssl: bool = True) -> dict:
     return document
 
 
-def apply_oidc_discovery(attrs: dict) -> dict:
+def apply_oidc_discovery(attrs: dict[str, Any]) -> dict[str, Any]:
     """
     When OIDC_ENDPOINT is set, fetch discovery and populate JWKS_URI / USERINFO_URL.
 
@@ -152,6 +157,8 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         allow_blank=True,
         allow_null=True,
         default="",
+        schemes=["https"],
+        allow_plain_hostname=False,
         ui_field_label=_("JWKS URI"),
     )
 
@@ -229,6 +236,8 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         allow_blank=True,
         allow_null=True,
         default="",
+        schemes=["https"],
+        allow_plain_hostname=False,
         ui_field_label=_("UserInfo URL"),
     )
 
@@ -244,6 +253,8 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         allow_blank=True,
         allow_null=True,
         default="",
+        schemes=["https"],
+        allow_plain_hostname=False,
         ui_field_label=_("OIDC Discovery Endpoint"),
     )
 
@@ -254,7 +265,8 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_("Verify SSL Certificate"),
     )
 
-    def validate(self, attrs):
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        """Validate the configuration and populate discovery-owned endpoint values when enabled."""
         attrs = super().validate(attrs)
         errors = {}
         jwks_uri = attrs.get("JWKS_URI") or ""
@@ -282,7 +294,7 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         return attrs
 
 
-def _scalar_claim_uid(value) -> str | None:
+def _scalar_claim_uid(value: Any) -> str | None:
     """Return a uid for string/int claim values; skip bool, float, and non-scalars.
 
     bool is checked before int because bool is an int subclass in Python.
@@ -297,7 +309,7 @@ def _scalar_claim_uid(value) -> str | None:
     return None
 
 
-def resolve_uid_from_claims(claims: dict, claim_list: list) -> str | None:
+def resolve_uid_from_claims(claims: dict[str, Any], claim_list: list[str]) -> str | None:
     """
     Resolve an external identity from token claims using CLAIM_LIST order.
 
@@ -326,10 +338,11 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
     logger = logger
     configuration_encrypted_fields = []
 
-    def get_login_url(self, authenticator):
+    def get_login_url(self, authenticator: Any) -> None:
+        """Return no login URL because bearer authentication has no browser redirect flow."""
         return None
 
-    def get_default_attributes(self):
+    def get_default_attributes(self) -> list[str]:
         """Attributes available for authenticator maps.
 
         Prefer the configured CLAIM_LIST + GROUPS_CLAIM when a database instance
@@ -348,7 +361,8 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
             attrs.append(groups_claim.strip())
         return attrs or list(_BASELINE_ATTRIBUTES)
 
-    def authenticate(self, request=None, *, token: str | None = None, **kwargs):
+    def authenticate(self, request: Any = None, *, token: str | None = None, **kwargs: Any) -> Any | None:
+        """Validate a bearer token, provision its identity, and apply authenticator maps."""
         if token is None or self.database_instance is None:
             logger.debug("External OAuth token is None or database instance is None")
             return None
@@ -364,17 +378,20 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
 
         ssl_context = None
         if not configuration["VERIFY_SSL"]:
+            # This is retained for local development against self-signed IdPs;
+            # production endpoints are still constrained to HTTPS by schema validation.
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
 
         try:
-            signing_key = CachedJWKClient(
+            jwk_client = CachedJWKClient(
                 jwks_uri,
                 lifespan=configuration["JWKS_CACHE_TIMEOUT"],
                 timeout=configuration["JWKS_URL_TIMEOUT"],
                 ssl_context=ssl_context,
-            ).get_signing_key_from_jwt(token)
+            )
+            signing_key = jwk_client.get_signing_key_from_jwt(token)
         except Exception as exc:
             logger.warning(f"{self.database_instance.name} Failed to get signing key from token: {exc}")
             return None
@@ -386,8 +403,25 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
                 algorithms=configuration["ALLOWED_ALGORITHMS"],
                 audience=configuration["AUDIENCE"],
                 issuer=configuration["ISSUER_URL"],
+                options={"require": ["exp"]},
             )
             logger.debug(f"{self.database_instance.name} token decrypted!")
+        except InvalidSignatureError:
+            try:
+                # A provider can rotate a key while retaining its kid. Evict the
+                # old key and retry exactly once with a freshly fetched JWKS.
+                signing_key = jwk_client.refresh_signing_key_from_jwt(token)
+                claims = decode(
+                    token,
+                    key=signing_key.key,
+                    algorithms=configuration["ALLOWED_ALGORITHMS"],
+                    audience=configuration["AUDIENCE"],
+                    issuer=configuration["ISSUER_URL"],
+                    options={"require": ["exp"]},
+                )
+            except Exception as exc:
+                logger.warning(f"{self.database_instance.name} External OAuth token validation failed after key refresh: {exc}")
+                return None
         except Exception as exc:
             logger.warning(f"{self.database_instance.name} External OAuth token validation failed: {exc}")
             return None

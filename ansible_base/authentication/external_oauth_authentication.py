@@ -1,5 +1,7 @@
 import logging
+from typing import Any
 
+from django.http import HttpRequest
 from jwt import decode
 from jwt.exceptions import PyJWTError
 from rest_framework.authentication import BaseAuthentication
@@ -8,10 +10,14 @@ from ansible_base.authentication.authenticator_plugins.utils import get_authenti
 from ansible_base.authentication.models import Authenticator
 
 logger = logging.getLogger("ansible_base.authentication.external_oauth_authentication")
+EXTERNAL_OAUTH_AUTHENTICATOR_TYPE = "ansible_base.authentication.authenticator_plugins.external_oauth"
 
 
 class ExternalOAuthAuthentication(BaseAuthentication):
-    def authenticate(self, request):
+    """Authenticate bearer tokens using configured external OAuth authenticators."""
+
+    def authenticate(self, request: HttpRequest) -> tuple[Any, str] | None:
+        """Select candidate authenticators from unverified routing claims, then validate the token."""
         logger.debug("Authenticating with ExternalOAuthAuthentication")
 
         authorization = request.headers.get("Authorization")
@@ -26,13 +32,11 @@ class ExternalOAuthAuthentication(BaseAuthentication):
             return None
 
         try:
-            # These claims only identify a preconfigured authenticator. They
-            # are trusted only after the signature and claims are verified.
+            # These claims only select a preconfigured authenticator; the
+            # selected plugin validates them cryptographically before use.
             payload = decode(token, options={"verify_signature": False})
             issuer = payload.get("iss", None)
-            logger.debug(f"Issuer: {issuer}")
             audience = payload.get("aud", None)
-            logger.debug(f"Audience: {audience}")
         except (KeyError, PyJWTError, ValueError, TypeError) as e:
             logger.debug(f"External OAuth token could not be parsed: {e}")
             return None
@@ -51,9 +55,12 @@ class ExternalOAuthAuthentication(BaseAuthentication):
             logger.debug("External OAuth token audience is not a string or list of strings")
             return None
 
+        # The database filter avoids creating plugins or fetching JWKS data for
+        # providers that cannot validate this issuer/audience combination.
         matching_authenticators = Authenticator.objects.filter(
             enabled=True,
             category="api_auth",
+            type=EXTERNAL_OAUTH_AUTHENTICATOR_TYPE,
             configuration__ISSUER_URL=issuer,
             configuration__AUDIENCE__in=audiences,
         ).order_by("order")
@@ -64,13 +71,13 @@ class ExternalOAuthAuthentication(BaseAuthentication):
             return None
         for authenticator in matching_authenticators:
             try:
+                # Each request gets a plugin bound to the current database row,
+                # avoiding mutable process-local authenticator state.
                 plugin = get_authenticator_class(authenticator.type)(database_instance=authenticator)
-            except ImportError as e:
-                logger.error("Got an import error while getting the authenticator class: %s", e)
+                user = plugin.authenticate(request, token=token)
+            except Exception:
+                logger.exception("External OAuth authenticator %s failed", authenticator.name)
                 continue
-
-            logger.debug(f"Calling authenticate on authenticator: {authenticator.name}")
-            user = plugin.authenticate(request, token=token)
 
             if user is not None:
                 logger.debug(f"Authentication successful with authenticator: {authenticator.name}: {user.username}")
