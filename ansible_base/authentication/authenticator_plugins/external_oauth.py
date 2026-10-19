@@ -1,13 +1,20 @@
 import logging
+import ssl
 
 import requests
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils.translation import gettext_lazy as _
+from jwt import decode
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
+from ansible_base.authentication.jwk_client import CachedJWKClient
+from ansible_base.authentication.utils.authentication import get_or_create_authenticator_user
+from ansible_base.authentication.utils.claims import update_user_claims
+from ansible_base.authentication.utils.user import normalize_and_get_email
 from ansible_base.lib.serializers.fields import BooleanField, CharField, IntegerField, ListField, URLField
 from ansible_base.lib.serializers.validators import JWTAlgorithmListFieldValidator, asymmetric_jwt_algorithms
+from ansible_base.lib.utils.models import is_system_user
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.validation import validate_url
 
@@ -146,6 +153,14 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         allow_null=True,
         default="",
         ui_field_label=_("JWKS URI"),
+    )
+
+    JWKS_URL_TIMEOUT = IntegerField(
+        help_text=_("Timeout for JWKS URL requests in seconds."),
+        default=30,
+        allow_null=False,
+        validators=[MinValueValidator(1), MaxValueValidator(300)],
+        ui_field_label=_("JWKS URL Timeout"),
     )
 
     ALLOWED_ALGORITHMS = ListField(
@@ -332,3 +347,78 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         if isinstance(groups_claim, str) and groups_claim.strip() and groups_claim not in attrs:
             attrs.append(groups_claim.strip())
         return attrs or list(_BASELINE_ATTRIBUTES)
+
+    def authenticate(self, request=None, *, token: str | None = None, **kwargs):
+        if token is None or self.database_instance is None:
+            logger.debug("External OAuth token is None or database instance is None")
+            return None
+
+        logger.debug(f"Attempting to authenticate with external OAuth authenticator {self.database_instance.name}")
+
+        configuration = self.database_instance.configuration
+        logger.debug(f"Validating external OAuth token against authenticator {self.database_instance.name}")
+        jwks_uri = configuration["JWKS_URI"]
+        if not jwks_uri:
+            logger.error(f"External OAuth authenticator {self.database_instance.name} has no configured JWKS URI")
+            return None
+
+        ssl_context = None
+        if not configuration["VERIFY_SSL"]:
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+        try:
+            signing_key = CachedJWKClient(
+                jwks_uri,
+                lifespan=configuration["JWKS_CACHE_TIMEOUT"],
+                timeout=configuration["JWKS_URL_TIMEOUT"],
+                ssl_context=ssl_context,
+            ).get_signing_key_from_jwt(token)
+        except Exception as exc:
+            logger.warning(f"{self.database_instance.name} Failed to get signing key from token: {exc}")
+            return None
+
+        try:
+            claims = decode(
+                token,
+                key=signing_key.key,
+                algorithms=configuration["ALLOWED_ALGORITHMS"],
+                audience=configuration["AUDIENCE"],
+                issuer=configuration["ISSUER_URL"],
+            )
+            logger.debug(f"{self.database_instance.name} token decrypted!")
+        except Exception as exc:
+            logger.warning(f"{self.database_instance.name} External OAuth token validation failed: {exc}")
+            return None
+
+        uid = resolve_uid_from_claims(claims, configuration["CLAIM_LIST"])
+        if uid is None:
+            logger.debug(f"External OAuth token did not contain a configured identity claim for authenticator {self.database_instance.name}")
+            return None
+
+        email = normalize_and_get_email(claims.get("email")) or ""
+        user_details = {"email": email}
+        try:
+            user, _authenticator_user, _created = get_or_create_authenticator_user(
+                uid=uid,
+                email=email,
+                authenticator=self.database_instance,
+                user_details=user_details,
+                extra_data=claims,
+            )
+        except Exception as exc:
+            logger.warning(f"Unable to provision external OAuth identity for authenticator {self.database_instance.name}: {exc}")
+            return None
+
+        if user is None or not user.is_active or is_system_user(user):
+            logger.debug(f"External OAuth identity maps to an ineligible user for authenticator {self.database_instance.name}")
+            return None
+
+        groups = claims.get(configuration["GROUPS_CLAIM"], [])
+        if not isinstance(groups, list):
+            groups = []
+        groups = [group for group in groups if isinstance(group, str)]
+
+        logger.debug(f"{self.database_instance.name} Returning call from update user claims")
+        return update_user_claims(user, self.database_instance, groups, attrs=claims)

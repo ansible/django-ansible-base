@@ -134,6 +134,8 @@ def test_external_oauth_multiple_providers(admin_api_client, external_oauth_conf
         (lambda cfg: cfg.update({"ALLOWED_ALGORITHMS": ["NOT_A_REAL_ALG"]}), ["ALLOWED_ALGORITHMS"]),
         (lambda cfg: cfg.update({"ALLOWED_ALGORITHMS": ["HS256"]}), ["ALLOWED_ALGORITHMS"]),
         (lambda cfg: cfg.update({"ALLOWED_ALGORITHMS": ["none"]}), ["ALLOWED_ALGORITHMS"]),
+        (lambda cfg: cfg.update({"JWKS_URL_TIMEOUT": 0}), ["JWKS_URL_TIMEOUT"]),
+        (lambda cfg: cfg.update({"JWKS_URL_TIMEOUT": 301}), ["JWKS_URL_TIMEOUT"]),
         (lambda cfg: cfg.update({"JWKS_CACHE_TIMEOUT": 30}), ["JWKS_CACHE_TIMEOUT"]),
         (lambda cfg: cfg.update({"CLAIM_LIST": ["email", ""]}), ["CLAIM_LIST"]),
         (lambda cfg: cfg.update({"CLAIM_LIST": ["email", 123]}), ["CLAIM_LIST"]),
