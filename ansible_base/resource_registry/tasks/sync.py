@@ -128,6 +128,8 @@ class RemoteAssignmentFetcher:
         """
         from ansible_base.rbac.models.role import RoleDefinition
 
+        # Keep each target content type so object_id fallbacks can be validated
+        # against the target model's actual primary-key type.
         role_definitions = RoleDefinition.objects.select_related('content_type').filter(name__isnull=False)
         self.local_role_definitions = {role_definition.name: role_definition for role_definition in role_definitions}
         self.local_role_names = set(self.local_role_definitions)
@@ -150,6 +152,8 @@ class RemoteAssignmentFetcher:
             ansible_id_or_pk = object_ansible_id or assignment.get('object_id')
             role_definition = self.local_role_definitions[role_name]
             if not object_ansible_id and ansible_id_or_pk and role_definition.content_type:
+                # Legacy remote rows may omit object_ansible_id. Validate the
+                # object_id fallback by model type so UUID primary keys remain valid.
                 try:
                     role_definition.content_type.model_class()._meta.pk.to_python(ansible_id_or_pk)
                 except (TypeError, ValueError, ValidationError) as exc:
@@ -163,6 +167,8 @@ class RemoteAssignmentFetcher:
                         ansible_id_or_pk,
                         exc,
                     )
+                    # The skipped row is not a real revocation; protect its
+                    # matching local assignment during this reconciliation.
                     self._protected_pairs.add((str(actor_id), role_name, assignment_type))
                     continue
             self.assignments.add(

@@ -90,6 +90,8 @@ def get_content_object(role_definition, assignment_tuple: AssignmentTuple) -> An
     identifier = assignment_tuple.ansible_id_or_pk
     expected_ct = role_definition.content_type
     model = expected_ct.model_class()
+    # Assignment identifiers can be Resource ansible_ids or local primary keys.
+    # Resolve the Resource first, then validate the PK before querying the model.
     if expected_ct.model in ('organization', 'team') or _is_resource_registered(model):
         try:
             object_resource = Resource.objects.get(
