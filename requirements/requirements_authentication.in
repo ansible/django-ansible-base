@@ -1,6 +1,7 @@
 social-auth-app-django==5.4.1
 social-auth-core<=4.5.4
 tabulate
+requests  # OIDC discovery HTTP client for external_oauth (also used via social-auth-core)
 
 # These should eventually be split out when the authentications move into their own repo
 
