@@ -58,7 +58,6 @@ PAGE_SIZE_SWEEP_CASES = [
         'authenticatormap-list',
         {},
         {},
-        marks=pytest.mark.xfail(reason="N+1 in AuthenticatorMapViewSet", strict=True),
         id='authenticator_map_list',
     ),
     pytest.param(
