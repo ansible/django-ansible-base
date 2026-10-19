@@ -9,9 +9,11 @@ from ansible_base.authentication.utils.authenticator_map import _EXPANSION_FIELD
 from ansible_base.authentication.utils.trigger_definition import TRIGGER_DEFINITION
 from ansible_base.lib.serializers.common import NamedCommonModelSerializer
 from ansible_base.lib.serializers.fields import JSONField
-from ansible_base.lib.serializers.mixins import CleanTextMixin
+from ansible_base.lib.serializers.mixins import CleanTextMixin, _INCOMPLETE_VALIDATION_MSG
+from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.string import is_empty
 from ansible_base.lib.utils.typing import TranslatedString
+from ansible_base.lib.utils.validation import validate_free_text
 
 logger = logging.getLogger('ansible_base.authentication.serializers.authenticator_map')
 
@@ -69,6 +71,60 @@ class AuthenticatorMapSerializer(CleanTextMixin, NamedCommonModelSerializer):
         if field_name in _EXPANSION_FIELDS and has_expansion(value):
             return
         super()._run_text_validator(field_name, value, errors)
+
+    def _validate_json_fields(self, field_names, attrs, errors):
+        super()._validate_json_fields(field_names, attrs, errors)
+        if 'triggers' not in field_names:
+            return
+        triggers = attrs.get('triggers')
+        if triggers is None:
+            return
+        attr_key_errors = self._validate_trigger_attribute_name_keys(triggers)
+        if not attr_key_errors:
+            return
+        triggers_errors = errors.get('triggers')
+        if triggers_errors is None:
+            errors['triggers'] = attr_key_errors
+        elif isinstance(triggers_errors, dict):
+            triggers_errors.update(attr_key_errors)
+        else:
+            errors['triggers'] = attr_key_errors
+
+    def _validate_trigger_attribute_name_keys(self, triggers: dict) -> dict:
+        """Tier 2 validation for user-defined attribute names under triggers.attributes.
+
+        CleanTextMixin's JSON walk validates string values only; attribute names are
+        stored as dict keys. Grandfather unchanged key names on update.
+        """
+        if not isinstance(triggers, dict):
+            return {}
+        attributes = triggers.get('attributes')
+        if not isinstance(attributes, dict):
+            return {}
+
+        stored_attributes = {}
+        if self.instance and isinstance(self.instance.triggers, dict):
+            stored = self.instance.triggers.get('attributes')
+            if isinstance(stored, dict):
+                stored_attributes = stored
+
+        key_errors = {}
+        for attr_name in attributes:
+            if attr_name == 'join_condition' or not isinstance(attr_name, str):
+                continue
+            if attr_name in stored_attributes:
+                continue
+            error_key = f'attributes.{attr_name}'
+            try:
+                validate_free_text(attr_name)
+            except ValidationError as exc:
+                key_errors[error_key] = exc.detail
+                self._log_validation_failure(f'triggers.{error_key}', exc.detail)
+            except Exception:
+                logger.exception("Unexpected error validating trigger attribute name '%s'", attr_name)
+                if get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False):
+                    key_errors[error_key] = [_INCOMPLETE_VALIDATION_MSG]
+        return key_errors
 
     def validate_role_data(self, map_type: Optional[str], role: Optional[str], org: Optional[str], team: Optional[str]) -> dict[str, TranslatedString]:
         # If the role field has an expansion in it we can only check this role at runtime

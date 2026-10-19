@@ -420,6 +420,13 @@ the normal Tier 2 free-text check like any other field. The `name`
 field on `AuthenticatorMap` is not gated at all and always receives Tier 1
 validation.
 
+`triggers.attributes` uses dynamic JSON object keys for IdP attribute names.
+CleanTextMixin's JSON traversal does not validate those key strings; when
+enhanced input validation is enabled,
+`AuthenticatorMapSerializer._validate_trigger_attribute_name_keys()` applies
+Tier 2 (`validate_free_text`) to each attribute name except `join_condition`,
+grandfathering key names that already exist on the stored map.
+
 ## Error reporting
 
 When multiple fields fail validation, all errors are collected and returned in a

@@ -11,6 +11,7 @@ from ansible_base.lib.utils.response import get_relative_url
 
 DANGEROUS_NAME = '<script>alert(1)</script>'
 DANGEROUS_TEXT = '$(rm -rf /)'
+DANGEROUS_TEMPLATE = '{{malicious}}'
 GITHUB_ORG_TYPE = 'ansible_base.authentication.authenticator_plugins.github_org'
 
 pytestmark = pytest.mark.django_db
@@ -235,3 +236,72 @@ class TestAuthenticatorMapCleanText:
         response = admin_api_client.patch(url, data={'name': DANGEROUS_NAME}, format='json')
         assert response.status_code == 400
         assert 'name' in response.data
+
+    def test_rejects_dangerous_template_in_attribute_value(self, admin_api_client, local_authenticator):
+        url = get_relative_url('authenticatormap-list')
+        data = {
+            'name': 'Attr value rule',
+            'authenticator': local_authenticator.id,
+            'map_type': 'is_superuser',
+            'triggers': {'attributes': {'email': {'contains': DANGEROUS_TEMPLATE}}},
+            'order': 1,
+        }
+        response = admin_api_client.post(url, data=data, format='json')
+        assert response.status_code == 400
+        assert 'triggers' in response.data
+
+    def test_rejects_dangerous_template_in_attribute_name(self, admin_api_client, local_authenticator):
+        url = get_relative_url('authenticatormap-list')
+        data = {
+            'name': 'Attr name rule',
+            'authenticator': local_authenticator.id,
+            'map_type': 'is_superuser',
+            'triggers': {'attributes': {DANGEROUS_TEMPLATE: {'contains': 'benign'}}},
+            'order': 2,
+        }
+        response = admin_api_client.post(url, data=data, format='json')
+        assert response.status_code == 400
+        assert 'triggers' in response.data
+        assert f'attributes.{DANGEROUS_TEMPLATE}' in response.data['triggers']
+
+    def test_grandfather_unchanged_attribute_name_on_update(self, admin_api_client, local_authenticator):
+        auth_map = AuthenticatorMap.objects.create(
+            name='Grandfather attr key',
+            authenticator=local_authenticator,
+            map_type='is_superuser',
+            triggers={'attributes': {DANGEROUS_TEMPLATE: {'contains': 'ok'}}},
+            order=3,
+        )
+        url = get_relative_url('authenticatormap-detail', kwargs={'pk': auth_map.pk})
+        response = admin_api_client.patch(
+            url,
+            data={
+                'triggers': {'attributes': {DANGEROUS_TEMPLATE: {'contains': 'still-ok'}}},
+            },
+            format='json',
+        )
+        assert response.status_code == 200
+
+    def test_rejects_new_dangerous_attribute_name_on_update(self, admin_api_client, local_authenticator):
+        auth_map = AuthenticatorMap.objects.create(
+            name='New attr key on update',
+            authenticator=local_authenticator,
+            map_type='is_superuser',
+            triggers={'attributes': {'email': {'contains': '@example.com'}}},
+            order=4,
+        )
+        url = get_relative_url('authenticatormap-detail', kwargs={'pk': auth_map.pk})
+        response = admin_api_client.patch(
+            url,
+            data={
+                'triggers': {
+                    'attributes': {
+                        'email': {'contains': '@example.com'},
+                        DANGEROUS_TEMPLATE: {'contains': 'x'},
+                    },
+                },
+            },
+            format='json',
+        )
+        assert response.status_code == 400
+        assert f'attributes.{DANGEROUS_TEMPLATE}' in response.data['triggers']
