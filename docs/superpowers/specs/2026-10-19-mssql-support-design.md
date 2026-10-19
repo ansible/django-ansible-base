@@ -2,34 +2,119 @@
 
 **Date:** 2026-10-19  
 **Status:** Design Approved  
-**JIRA:** AAP-96550  
-**Related:** ansible/metrics-service#477 (reference implementation)
+**JIRA:** TBD (placeholder - ticket coming today)  
+**Initiative:** [ANSTRAT-1887](https://redhat.atlassian.net/browse/ANSTRAT-1887) - Microsoft SQL Server Database Support - Technology Preview  
+**Related:** ansible/metrics-service#477 (reference implementation), [SDP](../../../handbook/The%20Ansible%20Engineering%20Handbook/System-Design-Plans/ANSTRAT-1887-MS-SQL-Server-Database-Support---Technology-Preview.md)
 
 ## Overview
 
-Add MS SQL Server 2019+ support to django-ansible-base following the proven metrics-service pattern: parallel `mssql_migrations/` directories for all 10 DAB apps, runtime migration selection based on `DATABASES['default']['ENGINE']`, database-specific implementations for PostgreSQL-only features (advisory locks, pg_notify), and a separate docker-compose setup for MS SQL development.
+Add MS SQL Server 2025 (17.x) support to django-ansible-base as part of the **Technology Preview** for ANSTRAT-1887. This enables AAP components (Controller, Gateway, EDA, Metrics, Lightspeed) to use customer-provided, Windows-based Microsoft SQL Server instead of PostgreSQL. 
+
+Implementation follows the proven metrics-service pattern: parallel `mssql_migrations/` directories for all 10 DAB apps, runtime migration selection based on `DATABASES['default']['ENGINE']`, database-specific implementations for PostgreSQL-only features (advisory locks, pg_notify), and a separate docker-compose setup for MS SQL development.
+
+**Technology Preview Scope:**
+- Fresh installations only (no upgrades, migrations, backups, or restores)
+- Development and validation focused on core AAP functionality
+- Full multi-node validation, performance/scale testing deferred to GA (ANSTRAT-1238)
 
 ## Goals
 
-1. Enable django-ansible-base to run on MS SQL Server 2019+ for AAP components (controller, gateway, EDA, metrics, lightspeed)
-2. Maintain backward compatibility - existing PostgreSQL deployments completely unaffected
-3. Support local MS SQL development environment
-4. Achieve feature parity between PostgreSQL and MS SQL Server (advisory locks, notifications, etc.)
+1. **Enable MS SQL Server 2025 support** for AAP components (Controller, Gateway, EDA, Metrics, Lightspeed) per ANSTRAT-1887
+2. **Maintain backward compatibility** - existing PostgreSQL deployments completely unaffected
+3. **Support fresh installations only** - migrations, upgrades, backups, and restores out of scope for Technology Preview
+4. **Replace PostgreSQL-specific features** with MS SQL equivalents (advisory locks, dispatcher notifications)
+5. **Provide development environment** for testing MS SQL Server integration
 
-## Success Criteria
+## Success Criteria (Aligned with ANSTRAT-1887)
 
-- [ ] All 10 DAB apps have squashed `mssql_migrations/` that work on MS SQL Server 2019+
-- [ ] Test app starts successfully against local MS SQL Server container
-- [ ] All tests pass on both PostgreSQL and MS SQL Server
-- [ ] PostgreSQL-specific code replaced with database-agnostic or MS SQL equivalents
+**R4 - Core Functionality:**
+- [ ] All 10 DAB apps have squashed `mssql_migrations/` that work on MS SQL Server 2025
+- [ ] Test app starts successfully against local MS SQL Server 2025 container
+- [ ] PostgreSQL-specific code replaced with MS SQL equivalents (advisory locks, notify params)
 - [ ] No changes to existing PostgreSQL migrations
-- [ ] Documentation complete for MS SQL setup and development
 
-## Non-Goals
+**R5 - Testing:**
+- [ ] All DAB unit tests pass on both PostgreSQL and MS SQL Server
+- [ ] Integration tests pass on MS SQL Server
+- [ ] ATF test suites can run against MS SQL Server (consumer app validation)
 
+**R6 - Documentation:**
+- [ ] Installation and setup documentation complete
+- [ ] Technology Preview limitations clearly documented
+- [ ] Fresh install only, no migration/upgrade support emphasized
+
+**P1 - PostgreSQL NOTIFY Replacement:**
+- [ ] `get_sql_server_notify_params()` implemented for dispatcherd Service Broker configuration
+
+## Non-Goals (Technology Preview Limitations)
+
+**Out of scope per ANSTRAT-1887:**
+- Upgrades to existing AAP installations (fresh install only)
+- PostgreSQL to MS SQL Server migrations
+- Database backend changes after installation
+- Backup and restore functionality
+- Full multi-node validation (deferred to ANSTRAT-1238 GA)
+- Performance and scale testing (deferred to GA)
+- Production-grade performance optimization (deferred to GA)
+- MS SQL Server on Linux or in containers (Windows-based only)
+- Azure SQL support (out of scope)
 - SQLite or MySQL support (out of scope)
 - Changing existing PostgreSQL migrations
 - Full Service Broker implementation in DAB (consumer apps handle dispatcherd config)
+- Hub and Portal MS SQL support (PostgreSQL only)
+
+## ANSTRAT-1887 SDP Alignment
+
+This design implements django-ansible-base support for the Technology Preview defined in [ANSTRAT-1887 SDP](../../../handbook/The%20Ansible%20Engineering%20Handbook/System-Design-Plans/ANSTRAT-1887-MS-SQL-Server-Database-Support---Technology-Preview.md).
+
+### Requirements Coverage
+
+| SDP Requirement | Design Implementation |
+|-----------------|----------------------|
+| **R1** - Install-time configuration | Migration selection via `ENGINE_MIGRATION_MAP` detects database at Django startup. Consumer apps set `DATABASES['default']['ENGINE']`. No post-install switching. |
+| **R2** - Windows-based SQL Server 2025 validation | Docker dev environment uses SQL Server 2025. Design targets 2019+ compatibility per Q1 answer. |
+| **R3** - Username/password auth with TLS/SSL | Dev environment uses basic auth. Production TLS requirements documented. `TrustServerCertificate=yes` marked as dev-only. |
+| **R4** - Core functionality (Controller/Gateway/EDA/Metrics/Lightspeed) | All 10 DAB apps covered. Advisory locks, bulk operations, and notify params implemented for both databases. |
+| **R5** - ATF testing validation | Phase 6 includes test infrastructure. Consumer apps run their ATF suites against DAB on MS SQL. |
+| **R6** - Documentation and limitations | Comprehensive docs in `docs/mssql-support.md` emphasizing fresh install only, TP limitations, no migration/upgrade support. |
+| **R7** - Support team briefing | Out of DAB scope (consumer apps handle). |
+
+### Problem Statement P1 Coverage
+
+**P1: Replace PostgreSQL notifications for task dispatch**
+
+Design implements `get_sql_server_notify_params()` helper function that:
+- Extracts MS SQL Server connection parameters from Django settings
+- Supports `SQL_SERVER_NOTIFY_DATABASES` override (parallel to `PG_NOTIFY_DATABASES`)
+- Returns pyodbc-compatible connection dict for dispatcherd Service Broker configuration
+- Consumer apps (Controller, EDA) check `connection.vendor` and call appropriate helper
+- Actual dispatcherd broker configuration happens in consumer apps, not DAB
+
+This solves P1 by providing the database connection information consumer apps need to configure dispatcherd's `sql_server` broker, replacing the `pg_notify` broker dependency.
+
+### Open Questions Addressed
+
+**Q1: Customer-provided MS SQL Server contract**
+- Design assumes SQL Server 2025 per SDP answer
+- Uses ODBC Driver 18 for SQL Server
+- Dev environment demonstrates required connection parameters
+- Production certificate validation requirements documented but not implemented (consumer app concern)
+
+**Q2: What must work across AAP components**
+- All DAB apps support MS SQL Server
+- Advisory locks preserve distributed locking semantics
+- Bulk operations maintain correctness (performance acceptable per SDP scope)
+- Migration selection ensures no PostgreSQL dependency in MS SQL mode
+
+**Q3: Evidence and limitations**
+- Phase 6 testing validates fresh install scenario
+- Documentation clearly separates TP validation from deferred GA work
+- Known limitations prominently documented
+
+**Q4: Productization conditions**
+- mssql-django and pyodbc added to DAB requirements
+- ODBC driver installation documented as prerequisite
+- Licensing/security review out of DAB scope (platform concern)
 
 ## Architecture
 
@@ -454,6 +539,12 @@ migrations.AlterField(
 **File: `docker-compose.mssql.yml`**
 ```yaml
 ---
+# MS SQL Server 2025 Developer Edition for django-ansible-base development
+# 
+# WARNING: This configuration is for DEVELOPMENT AND TESTING ONLY.
+# Production deployments must use proper TLS/SSL certificate validation per ANSTRAT-1887 R3.
+# The TrustServerCertificate setting in test_app/mssqlsettings.py bypasses certificate
+# verification and is NOT suitable for production use.
 services:
   mssql:
     image: mcr.microsoft.com/mssql/server:2025-latest
@@ -498,6 +589,11 @@ stop-mssql:
 MS SQL Server settings for test_app.
 Loaded when DB_BACKEND=mssql environment variable is set.
 
+WARNING: This configuration is for DEVELOPMENT AND TESTING ONLY.
+TrustServerCertificate=yes bypasses certificate verification and is NOT
+suitable for production use. Production deployments must use proper
+TLS/SSL certificate validation per ANSTRAT-1887 R3.
+
 Usage:
     DB_BACKEND=mssql python manage.py runserver
     DB_BACKEND=mssql ./test_app/scripts/bootstrap.sh
@@ -518,6 +614,8 @@ DATABASES = {
         "NAME": os.getenv("DB_NAME", "dab_db"),
         "OPTIONS": {
             "driver": "ODBC Driver 18 for SQL Server",
+            # WARNING: TrustServerCertificate=yes is for DEVELOPMENT ONLY
+            # Production must use proper certificate validation
             "extra_params": "TrustServerCertificate=yes",
         },
     }
