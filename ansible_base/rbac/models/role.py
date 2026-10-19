@@ -1,12 +1,14 @@
 import logging
+import operator
 from collections.abc import Iterable
+from functools import reduce
 from typing import TYPE_CHECKING, Optional, Type, Union
 from uuid import UUID
 
 # Django
 from django.conf import settings
 from django.db import models
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.db.models.functions import Cast
 from django.db.models.query import QuerySet
 from django.db.utils import IntegrityError
@@ -19,6 +21,7 @@ from rest_framework.exceptions import ValidationError
 from ansible_base.lib.abstract_models.common import CommonModel, ImmutableCommonModel
 
 # ansible_base RBAC logic imports
+from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 from ansible_base.lib.utils.models import is_add_perm
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.sync import maybe_reverse_sync_assignment
@@ -225,16 +228,57 @@ class RoleDefinition(CommonModel):
             managed_str = ', managed=True'
         return f'RoleDefinition(pk={self.id}, name={self.name}{managed_str})'
 
-    def give_global_permission(self, actor):
-        return self.give_or_remove_global_permission(actor, giving=True)
+    # See assignable_scope_q() below for what each of these scopes means.
+    ASSIGNABLE_SCOPE_SYSTEM = 'system'
+    ASSIGNABLE_SCOPE_ORGANIZATION = 'organization'
+    ASSIGNABLE_SCOPE_TEAM = 'team'
+    ASSIGNABLE_SCOPES = (ASSIGNABLE_SCOPE_SYSTEM, ASSIGNABLE_SCOPE_ORGANIZATION, ASSIGNABLE_SCOPE_TEAM)
+
+    @classmethod
+    def assignable_scope_q(cls, scopes: Iterable[str]) -> models.Q:
+        """A Q object matching every RoleDefinition whose scope is one of `scopes`.
+
+        A role's scope is 'system' if it has no content type, or 'organization'/
+        'team' if its content type is (a subclass of) the organization/team
+        model; anything else is resource-scoped and excluded. Raises ValueError
+        if `scopes` contains a value not in ASSIGNABLE_SCOPES. An empty `scopes`
+        matches no roles.
+        """
+        scopes = set(scopes)
+        if unknown := scopes - set(cls.ASSIGNABLE_SCOPES):
+            raise ValueError(f"Unknown scope(s): {', '.join(sorted(unknown))}. Valid scopes are: {', '.join(cls.ASSIGNABLE_SCOPES)}")
+
+        conditions = []
+        if cls.ASSIGNABLE_SCOPE_SYSTEM in scopes:
+            conditions.append(models.Q(content_type__isnull=True))
+
+        wanted_models = []
+        if cls.ASSIGNABLE_SCOPE_ORGANIZATION in scopes:
+            wanted_models.append(get_organization_model())
+        if cls.ASSIGNABLE_SCOPE_TEAM in scopes:
+            wanted_models.append(get_team_model())
+        wanted_models = tuple(wanted_models)
+        if wanted_models:
+            candidate_models = [model for model in permission_registry.all_registered_models if issubclass(model, wanted_models)]
+            eligible_ct_ids = [ct.id for ct in DABContentType.objects.get_for_models(*candidate_models).values()]
+            conditions.append(models.Q(content_type_id__in=eligible_ct_ids))
+
+        if not conditions:
+            return models.Q(pk__in=[])
+        return reduce(operator.or_, conditions)
+
+    def give_global_permission(self, actor, return_created=False):
+        """Grant a global role, optionally returning ``(assignment, created)``.
+
+        ``created`` is false when the assignment already existed.
+        """
+        return self.give_or_remove_global_permission(actor, giving=True, return_created=return_created)
 
     def remove_global_permission(self, actor):
         return self.give_or_remove_global_permission(actor, giving=False)
 
-    def give_or_remove_global_permission(self, actor, giving=True):
-        if giving and (self.content_type is not None):
-            raise ValidationError('Role definition content type must be null to assign globally')
-
+    def _get_global_assignment_details(self, actor, giving):
+        """Return the assignment model and lookup fields for a user or team."""
         if actor._meta.model_name == 'user':
             if giving and (not settings.ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES):
                 raise ValidationError('Global roles are not enabled for users')
@@ -248,14 +292,11 @@ class RoleDefinition(CommonModel):
         else:
             raise RuntimeError(f'Cannot {giving and "give" or "remove"} permission for {actor}, must be a user or team')
 
-        if giving:
-            assignment, _ = cls.objects.get_or_create(**kwargs)
-        else:
-            assignment = cls.objects.filter(**kwargs).first()
-            if assignment:
-                assignment.delete()
+        return cls, kwargs
 
-        # Clear any cached permissions
+    @staticmethod
+    def _clear_global_permission_cache(actor):
+        """Invalidate cached global permissions affected by an assignment change."""
         if actor._meta.model_name == 'user':
             if hasattr(actor, '_singleton_permissions'):
                 delattr(actor, '_singleton_permissions')
@@ -266,6 +307,26 @@ class RoleDefinition(CommonModel):
 
             bound_singleton_permissions._team_clear_signal = True
 
+    def give_or_remove_global_permission(self, actor, giving=True, return_created=False):
+        """Create or remove a global assignment and optionally report its insert result.
+
+        For grants, ``return_created`` selects an ``(assignment, created)`` result.
+        """
+        if giving and (self.content_type is not None):
+            raise ValidationError('Role definition content type must be null to assign globally')
+
+        cls, kwargs = self._get_global_assignment_details(actor, giving)
+        created = False
+        if giving:
+            assignment, created = cls.objects.get_or_create(**kwargs)
+        else:
+            assignment = cls.objects.filter(**kwargs).first()
+            if assignment:
+                assignment.delete()
+
+        self._clear_global_permission_cache(actor)
+        if return_created:
+            return assignment, created
         return assignment
 
     def give_permission(self, actor, content_object):
@@ -360,7 +421,7 @@ class ObjectRoleFields(models.Model):
         # NOTE: type casting is necessary in postgres but not sqlite3
         object_id_field = cls._meta.get_field('object_id')
         permission_qs = eval_cls.objects.filter(
-            **eval_cls._actor_role_filter(user),
+            role_id__in=eval_cls.actor_role_ids(user),
             content_type_id=models.OuterRef('content_type_id'),
         )
         # alias() keeps the Cast in WHERE only (not SELECT), enabling a semi-join point lookup
@@ -676,13 +737,18 @@ class ObjectRole(ObjectRoleFields):
                 permission_model = permission_content_type.model_class()
                 if issubclass(permission_model, RemoteObject):
                     # Build id_list from ObjectRole objects if it is remote object
-                    id_list = (
-                        ObjectRole.objects.filter(parent_reference=object_id, content_type=eval_ct)
-                        .values_list(Cast('object_id', output_field=permission_model._meta.pk.django_field()), flat=True)
-                        .distinct()
-                    )
+                    remote_qs = ObjectRole.objects.filter(parent_reference=object_id, content_type=eval_ct)
+                    if object_pk is not None:
+                        remote_qs = remote_qs.filter(object_id=str(object_pk))
+                    id_list = remote_qs.values_list(Cast('object_id', output_field=permission_model._meta.pk.django_field()), flat=True).distinct()
                 else:
-                    id_list = child_model.objects.filter(**{filter_path: object_id}).values_list('pk', flat=True)
+                    child_qs = child_model.objects.filter(**{filter_path: object_id})
+                    if object_pk is not None:
+                        # Look-ahead: we only care whether the target object is a child of this
+                        # role's object. Filter in SQL instead of fetching every child id of the
+                        # parent (which for an organization can be tens of thousands of rows).
+                        child_qs = child_qs.filter(pk=object_pk)
+                    id_list = child_qs.values_list('pk', flat=True)
                 cached_id_lists[eval_ct] = list(id_list)
 
             for id in id_list:
@@ -712,9 +778,10 @@ class ObjectRole(ObjectRoleFields):
         if object_pk is not None and object_ct_id is not None:
             # Look-ahead: query only the table matching the pk type, filtered
             # to the single target object.
-            partial_filter = {'object_id': object_pk, 'content_type_id': object_ct_id}
             source = self.permission_partials_uuid if isinstance(object_pk, UUID) else self.permission_partials
-            for eval_id, codename, content_type_id, object_id in source.filter(**partial_filter).values_list('id', 'codename', 'content_type_id', 'object_id'):
+            for eval_id, codename, content_type_id, object_id in source.filter(object_id=object_pk, content_type_id=object_ct_id).values_list(
+                'id', 'codename', 'content_type_id', 'object_id'
+            ):
                 existing_partials[(codename, content_type_id, object_id)] = eval_id
             self._log_partials_count(len(existing_partials), f'existing evaluation (object_pk={object_pk})', self.pk)
         elif evaluations_prefetch is not None:
@@ -729,7 +796,40 @@ class ObjectRole(ObjectRoleFields):
 
         return existing_partials
 
-    def needed_cache_updates(self, types_prefetch=None, evaluations_prefetch=None, object_pk=None, object_ct_id=None):
+    def _team_role_evaluations(self, types_prefetch, object_pk, object_ct_id, target_parents, lookahead_cache=None):
+        """Return the evaluations this role grants through the teams it provides membership to.
+
+        Holding this role makes the actor a member of the teams in provides_teams, so the actor
+        inherits every role those teams hold. The result is the union of the expected direct
+        permissions of those team-held roles, as (codename, content_type_id, object_id) tuples.
+
+        With object_pk and object_ct_id, each team-held role is evaluated for that look-ahead
+        object only. If target_parents is also given, only team-held roles on the look-ahead
+        object or one of its parents are visited, since no other role can grant permissions on it.
+        """
+        team_role_filter = None
+        if object_pk is not None and target_parents is not None:
+            team_role_filter = Q(content_type_id=object_ct_id, object_id=str(object_pk))
+            for parent_ct_id, parent_id in target_parents:
+                team_role_filter |= Q(content_type_id=parent_ct_id, object_id=str(parent_id))
+
+        expected_evaluations = set()
+        team_roles = ObjectRole.objects.filter(teams__in=self.provides_teams.all()).distinct()
+        if team_role_filter is not None:
+            team_roles = team_roles.filter(team_role_filter)
+        for team_role in team_roles:
+            if lookahead_cache is not None and team_role.pk in lookahead_cache:
+                expected_evaluations.update(lookahead_cache[team_role.pk])
+                continue
+            team_role_expected = team_role.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id)
+            if lookahead_cache is not None:
+                lookahead_cache[team_role.pk] = team_role_expected
+            expected_evaluations.update(team_role_expected)
+        return expected_evaluations
+
+    def needed_cache_updates(
+        self, types_prefetch=None, evaluations_prefetch=None, object_pk=None, object_ct_id=None, target_parents=None, lookahead_cache=None
+    ):
         """Return (to_delete, to_add) changes needed in the RoleEvaluation table
         to make cached object-role permissions accurate for this role.
 
@@ -746,6 +846,15 @@ class ObjectRole(ObjectRoleFields):
 
         evaluations_prefetch: an EvaluationsPrefetch instance with batch-loaded
         evaluation data for this role's chunk, avoiding per-role queries.
+
+        target_parents: in look-ahead mode, the (content_type_id, object_id) pairs of
+        the look-ahead object's parent chain. When given, team-held roles are
+        filtered to those on the look-ahead object or on one of its parents, the
+        only roles that can grant evaluations on it.
+
+        lookahead_cache: optional dict shared across one recompute, memoising the
+        expected evaluations of team-held roles by ObjectRole pk. The same
+        organization role is typically reached through many teams; compute it once.
         """
         if (object_pk is None) != (object_ct_id is None):
             raise ValueError('object_pk and object_ct_id must both be provided or both be None')
@@ -762,9 +871,7 @@ class ObjectRole(ObjectRoleFields):
             for team_role in evaluations_prefetch.get_team_roles(self.pk):
                 expected_evaluations.update(team_role.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id))
         else:
-            for team in self.provides_teams.all():
-                for team_role in team.has_roles.all():
-                    expected_evaluations.update(team_role.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id))
+            expected_evaluations.update(self._team_role_evaluations(types_prefetch, object_pk, object_ct_id, target_parents, lookahead_cache))
 
         self._log_partials_count(len(expected_evaluations), 'expected evaluation', self.pk)
 
@@ -829,17 +936,21 @@ class RoleEvaluationFields(models.Model):
     content_type_id = models.PositiveIntegerField(null=False, help_text=_("The related content type id."))
 
     @staticmethod
-    def _actor_role_filter(actor):
-        """Return filter kwargs that skip the objectrole table entirely.
+    def actor_role_ids(actor: models.Model) -> QuerySet:
+        """Return a queryset of ObjectRole PKs the actor is assigned to.
 
-        Uses ``role_id__in`` with a subquery on the assignment table, which
-        avoids JOINing through ``dab_rbac_objectrole``.  Both
-        ``roleevaluation.role_id`` and ``assignment.object_role_id`` reference
-        the same objectrole PK, so the intermediate table is unnecessary.
+        Queries assignment tables directly rather than going through the
+        ``has_roles`` M2M, which would add an unnecessary JOIN through
+        ``dab_rbac_objectrole``.
         """
         if actor._meta.model_name == permission_registry.user_model._meta.model_name:
-            return {'role_id__in': RoleUserAssignment.objects.filter(user_id=actor.id).values('object_role_id')}
-        return {'role_id__in': RoleTeamAssignment.objects.filter(team_id=actor.id).values('object_role_id')}
+            return RoleUserAssignment.objects.filter(user_id=actor.id).values('object_role_id')
+        return RoleTeamAssignment.objects.filter(team_id=actor.id).values('object_role_id')
+
+    @staticmethod
+    def _actor_role_filter(actor):
+        """Deprecated — use ``actor_role_ids`` instead."""
+        return {'role_id__in': RoleEvaluationFields.actor_role_ids(actor)}  # pragma: no cover
 
     @classmethod
     def accessible_ids(cls, model_cls, actor, codename: str, content_types: Optional[Iterable[int]] = None, cast_field=None) -> QuerySet:
@@ -854,12 +965,11 @@ class RoleEvaluationFields(models.Model):
         """
         # We only have a content_types exception for multiple content types for polymorphic models
         # for normal models you should not need it, but AWX unified_ models need it to get by
-        filter_kwargs = {**cls._actor_role_filter(actor), 'codename': codename}
+        qs = cls.objects.filter(role_id__in=cls.actor_role_ids(actor), codename=codename)
         if content_types:
-            filter_kwargs['content_type_id__in'] = content_types
+            qs = qs.filter(content_type_id__in=content_types)  # pragma: no cover
         else:
-            filter_kwargs['content_type_id'] = DABContentType.objects.get_for_model(model_cls).id
-        qs = cls.objects.filter(**filter_kwargs)
+            qs = qs.filter(content_type_id=DABContentType.objects.get_for_model(model_cls).id)
         if cast_field is None:
             return qs.values_list('object_id').distinct()
         else:
@@ -877,9 +987,9 @@ class RoleEvaluationFields(models.Model):
         Returns permissions that a user has to obj from object-roles,
         does not consider permissions from user flags or system-wide roles
         """
-        return cls.objects.filter(**cls._actor_role_filter(user), content_type_id=DABContentType.objects.get_for_model(obj).id, object_id=obj.id).values_list(
-            'codename', flat=True
-        )
+        return cls.objects.filter(
+            role_id__in=cls.actor_role_ids(user), content_type_id=DABContentType.objects.get_for_model(obj).id, object_id=obj.id
+        ).values_list('codename', flat=True)
 
     @classmethod
     def has_obj_perm(cls, user, obj, codename) -> bool:
@@ -888,7 +998,7 @@ class RoleEvaluationFields(models.Model):
         method on permission classes, but it is named differently to avoid unintentionally conflicting
         """
         return cls.objects.filter(
-            **cls._actor_role_filter(user), content_type_id=DABContentType.objects.get_for_model(obj).id, object_id=obj.pk, codename=codename
+            role_id__in=cls.actor_role_ids(user), content_type_id=DABContentType.objects.get_for_model(obj).id, object_id=obj.pk, codename=codename
         ).exists()
 
 

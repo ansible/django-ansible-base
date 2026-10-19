@@ -1,6 +1,7 @@
 import logging
 
 from crum import impersonate
+from django.core.exceptions import ObjectDoesNotExist
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
@@ -62,7 +63,17 @@ class DABPermissionSerializer(serializers.ModelSerializer):
 # 'id' is included so consumers can implement cursor-based pagination
 # (e.g. id__gt=<last_pk>&order_by=id) for efficient resume after
 # crashes and skip-on-reinstall in migrate_service_data.
-assignment_common_fields = ('id', 'created', 'created_by_ansible_id', 'object_id', 'object_ansible_id', 'content_type', 'role_definition', 'parent_reference')
+assignment_common_fields = (
+    'id',
+    'created',
+    'created_by_ansible_id',
+    'object_id',
+    'object_ansible_id',
+    'content_type',
+    'role_definition',
+    'parent_reference',
+    'from_service',
+)
 
 
 class BaseAssignmentSerializer(serializers.ModelSerializer):
@@ -72,11 +83,14 @@ class BaseAssignmentSerializer(serializers.ModelSerializer):
     object_ansible_id = ObjectAnsibleIdField(required=False, allow_null=True)
     object_id = serializers.CharField(allow_blank=True, required=False, allow_null=True)
     parent_reference = serializers.SerializerMethodField()
-    from_service = serializers.CharField(write_only=True)
+    from_service = serializers.CharField(write_only=True, required=False)
 
     def get_parent_reference(self, instance) -> str:
         """Read parent_reference from the prefetched object_role relation."""
-        object_role = getattr(instance, 'object_role', None)
+        try:
+            object_role = instance.object_role
+        except ObjectDoesNotExist:
+            object_role = None
         if object_role and object_role.parent_reference:
             return str(object_role.parent_reference)
         return ''
@@ -86,7 +100,7 @@ class BaseAssignmentSerializer(serializers.ModelSerializer):
 
         So this does the mutual validation to assure we have sufficient data.
         """
-        parent_reference = self.initial_data.get('parent_reference', '')
+        parent_reference = self._current_input_data.get('parent_reference', '')
         if parent_reference is None:
             parent_reference = ''
         if not isinstance(parent_reference, str):
@@ -108,6 +122,14 @@ class BaseAssignmentSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError("Can not provide either 'object_id' or 'object_ansible_id' for system role")
 
         return super().validate(attrs)
+
+    def to_internal_value(self, data):
+        """Retain each nested item's input for per-item field validation."""
+        # DRF's ListSerializer reuses its child serializer without setting
+        # child.initial_data. Retain each item's input so nested batch
+        # validation handles parent_reference the same way as single writes.
+        self._current_input_data = data
+        return super().to_internal_value(data)
 
     def find_existing_assignment(self, queryset):
         actor = self.validated_data[self.actor_field]
@@ -182,3 +204,100 @@ class ServiceRoleTeamAssignmentSerializer(BaseAssignmentSerializer):
         model = RoleTeamAssignment
         fields = assignment_common_fields + ('team_ansible_id',)
         validators = []  # DRF can't auto-generate validators for partial UniqueConstraints with aliased fields
+
+
+class ServiceRoleUserAssignmentRequestSerializer(serializers.Serializer):
+    """OpenAPI request contract for service-index user assignment actions."""
+
+    role_definition = serializers.CharField()
+    user_ansible_id = serializers.UUIDField()
+    created_by_ansible_id = serializers.UUIDField(required=False, allow_null=True)
+    object_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    object_ansible_id = serializers.UUIDField(required=False, allow_null=True)
+    parent_reference = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+
+class ServiceRoleTeamAssignmentRequestSerializer(serializers.Serializer):
+    """OpenAPI request contract for service-index team assignment actions."""
+
+    role_definition = serializers.CharField()
+    team_ansible_id = serializers.UUIDField()
+    created_by_ansible_id = serializers.UUIDField(required=False, allow_null=True)
+    object_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    object_ansible_id = serializers.UUIDField(required=False, allow_null=True)
+    parent_reference = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+
+class ServiceRoleUserAssignmentBatchItemSerializer(ServiceRoleUserAssignmentSerializer):
+    """Serialize a user assignment without batch-level metadata."""
+
+    created_by_ansible_id = None
+    from_service = None
+    parent_reference = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    class Meta(ServiceRoleUserAssignmentSerializer.Meta):
+        fields = tuple(field for field in ServiceRoleUserAssignmentSerializer.Meta.fields if field not in ('created_by_ansible_id', 'from_service'))
+
+
+class ServiceRoleTeamAssignmentBatchItemSerializer(ServiceRoleTeamAssignmentSerializer):
+    """Serialize a team assignment without batch-level metadata."""
+
+    created_by_ansible_id = None
+    from_service = None
+    parent_reference = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    class Meta(ServiceRoleTeamAssignmentSerializer.Meta):
+        fields = tuple(field for field in ServiceRoleTeamAssignmentSerializer.Meta.fields if field not in ('created_by_ansible_id', 'from_service'))
+
+
+class BaseAssignmentBatchSerializer(serializers.Serializer):
+    """Validate shared metadata and the actor-specific assignment items in a batch."""
+
+    from_service = serializers.UUIDField()
+    created_by_ansible_id = ActorAnsibleIdField(source='created_by', required=False, allow_null=True)
+    assignment_serializer_class = None
+
+    def get_fields(self):
+        """Use the configured actor-specific serializer for each assignment item."""
+        fields = super().get_fields()
+        fields['assignments'] = self.assignment_serializer_class(many=True, allow_empty=False)
+        return fields
+
+    def validate(self, attrs):
+        """Reject wrapper-only metadata repeated inside assignment items."""
+        item_errors = {}
+        for index, assignment in enumerate(self.initial_data.get('assignments', [])):
+            if not isinstance(assignment, dict):
+                continue
+            for field in ('from_service', 'created_by_ansible_id'):
+                if field in assignment:
+                    item_errors.setdefault(index, {})[field] = 'Provide this value once on the batch request.'
+        if item_errors:
+            raise serializers.ValidationError({'assignments': item_errors})
+        return attrs
+
+
+class ServiceRoleUserAssignmentBatchSerializer(BaseAssignmentBatchSerializer):
+    """Validate bulk requests containing user role assignments."""
+
+    assignment_serializer_class = ServiceRoleUserAssignmentBatchItemSerializer
+
+
+class ServiceRoleTeamAssignmentBatchSerializer(BaseAssignmentBatchSerializer):
+    """Validate bulk requests containing team role assignments."""
+
+    assignment_serializer_class = ServiceRoleTeamAssignmentBatchItemSerializer
+
+
+class BulkRoleAssignmentResponseSerializer(serializers.Serializer):
+    """Document the created and already-existing assignment counts."""
+
+    created = serializers.IntegerField()
+    existing = serializers.IntegerField()
+
+
+class BulkRoleUnassignmentResponseSerializer(serializers.Serializer):
+    """Document the deleted and missing assignment counts."""
+
+    deleted = serializers.IntegerField()
+    missing = serializers.IntegerField()
