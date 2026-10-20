@@ -1,0 +1,49 @@
+---
+# MS SQL Server 2025 Developer Edition for django-ansible-base development
+#
+# WARNING: This configuration is for DEVELOPMENT AND TESTING ONLY.
+# Production deployments must use proper TLS/SSL certificate validation per ANSTRAT-1887 R3.
+# The TrustServerCertificate setting in test_app/mssqlsettings.py bypasses certificate
+# verification and is NOT suitable for production use.
+#
+# Usage:
+#   make mssql                    # Start MS SQL Server container
+#   make stop-mssql               # Stop MS SQL Server container
+#   DB_BACKEND=mssql ./test_app/scripts/bootstrap.sh  # Run test_app with MS SQL
+#
+# Container details:
+#   - Image: mcr.microsoft.com/mssql/server:2025-latest
+#   - Container name: dab_mssql
+#   - External port: 55433 (maps to internal 1433)
+#   - SA password: YourStrong!Passw0rd
+#   - Edition: Developer (free, full-featured)
+
+services:
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2025-latest
+    container_name: dab_mssql
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "YourStrong!Passw0rd"
+      MSSQL_PID: "Developer"
+    ports:
+      - "55433:1433"
+    healthcheck:
+      # Use sqlcmd to verify SQL Server is ready to accept connections
+      # -C flag trusts server certificate (required for self-signed cert in dev)
+      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "YourStrong!Passw0rd" -C -Q "SELECT 1" -b -o /dev/null
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    volumes:
+      # Persist database files between container restarts
+      # WARNING: Data will be lost when container is removed (make stop-mssql)
+      # For true persistence, use a named volume or host directory
+      - dab_mssql_data:/var/opt/mssql
+
+volumes:
+  dab_mssql_data:
+    # Named volume for MS SQL Server data files
+    # Created automatically on first 'make mssql'
+    # Persists until explicitly removed with: docker volume rm django-ansible-base_dab_mssql_data
