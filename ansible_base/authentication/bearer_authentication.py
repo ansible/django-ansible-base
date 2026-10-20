@@ -1,5 +1,6 @@
 import logging
 from collections import OrderedDict
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, NoReturn
 
@@ -15,6 +16,26 @@ from ansible_base.lib.logging import log_auth_event, log_auth_exception
 
 logger = logging.getLogger("ansible_base.authentication.bearer_authentication")
 _REQUEST_CHALLENGE_ATTRIBUTE = "_ansible_base_bearer_authentication_challenge"
+
+
+@dataclass(frozen=True)
+class ScopedBearerToken:
+    """Verified non-local Bearer credential metadata exposed to DRF permissions."""
+
+    scopes: frozenset[str]
+
+    @property
+    def scope(self) -> str:
+        """Expose the same space-delimited scope shape as local OAuth2 tokens."""
+        return " ".join(sorted(self.scopes))
+
+
+@dataclass(frozen=True)
+class BearerAuthenticationResult:
+    """Allow API authenticators to return a user and safe request-auth metadata."""
+
+    user: AbstractBaseUser
+    auth: Any
 
 
 class BearerTokenValidationError(Exception):
@@ -96,9 +117,9 @@ class BearerAuthentication(BaseAuthentication):
         if auth_scheme == "bearer":
             # API authenticator plugins determine whether they own a token. The
             # dispatcher intentionally does not assume Bearer tokens are JWTs.
-            user, first_failure = self._authenticate_api_plugins(request, token)
+            user, auth, first_failure = self._authenticate_api_plugins(request, token)
             if user is not None:
-                return user, token
+                return user, auth
 
         # ``Token`` is a documented compatibility form for local OAuth2
         # clients. Local OAuth2 is also the final standard-Bearer handler, so a
@@ -127,12 +148,12 @@ class BearerAuthentication(BaseAuthentication):
             self._raise_failure(request)
         return auth_scheme, token
 
-    def _authenticate_api_plugins(self, request: HttpRequest, token: str) -> tuple[AbstractBaseUser | None, BearerTokenValidationError | None]:
+    def _authenticate_api_plugins(self, request: HttpRequest, token: str) -> tuple[AbstractBaseUser | None, Any | None, BearerTokenValidationError | None]:
         """Try API plugins and preserve the first expected failure for a final 401."""
         first_failure = None
         for authenticator_id, authenticator in self._api_authentication_backends().items():
             try:
-                user = authenticator.authenticate(request, token=token)
+                result = authenticator.authenticate(request, token=token)
             except BearerTokenValidationError as exc:
                 # An expected failure from a matching plugin does not stop later
                 # providers from authenticating an overlapping token.
@@ -144,11 +165,18 @@ class BearerAuthentication(BaseAuthentication):
                 log_auth_exception(f'API authenticator with ID "{authenticator_id}" raised an exception')
                 continue
 
+            if isinstance(result, BearerAuthenticationResult):
+                user, auth = result.user, result.auth
+            else:
+                # Existing plugins return only a user. Preserve their request
+                # auth value until they opt into the richer result contract.
+                user, auth = result, token
+
             if user is not None:
                 log_auth_event(f'User {user.username} authenticated with API authenticator with ID "{authenticator_id}"')
-                return user, first_failure
+                return user, auth, first_failure
 
-        return None, first_failure
+        return None, None, first_failure
 
     def authenticate_header(self, request: HttpRequest) -> str:
         """Return the OAuth2-provided Bearer challenge for rejected Bearer credentials."""

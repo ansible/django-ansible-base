@@ -1,4 +1,5 @@
 from collections import OrderedDict
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
@@ -11,10 +12,13 @@ from rest_framework.views import APIView
 from ansible_base.authentication.bearer_authentication import (
     BearerAuthentication,
     BearerAuthenticationFailed,
+    BearerAuthenticationResult,
     BearerTokenValidationError,
+    ScopedBearerToken,
     get_api_authentication_backends,
 )
 from ansible_base.authentication.models import Authenticator
+from ansible_base.authentication.permissions import ReadWriteScopePermission
 from ansible_base.authentication.session import SessionAuthentication
 
 
@@ -108,6 +112,42 @@ def test_bearer_authentication_returns_and_audits_api_authenticator_success():
 
     local_authenticate.assert_not_called()
     log_auth_event.assert_called_once_with('User external-user authenticated with API authenticator with ID "17"')
+
+
+@pytest.mark.django_db
+def test_bearer_authentication_preserves_plugin_scope_context():
+    """A scope-aware plugin controls DRF's request.auth without retaining the secret."""
+    user = Mock(username="external-user")
+    auth = ScopedBearerToken(scopes=frozenset({"read"}))
+    plugin = Mock()
+    plugin.authenticate.return_value = BearerAuthenticationResult(user=user, auth=auth)
+
+    with (
+        patch.object(BearerAuthentication, "_api_authentication_backends", return_value=OrderedDict([(17, plugin)])),
+        patch.object(BearerAuthentication, "_authenticate_local_oauth") as local_authenticate,
+    ):
+        assert BearerAuthentication().authenticate(_request("opaque-token")) == (user, auth)
+
+    local_authenticate.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "method,scopes,allowed",
+    [
+        ("GET", {"read"}, True),
+        ("POST", {"read"}, False),
+        ("GET", {"write"}, True),
+        ("POST", {"write"}, True),
+    ],
+)
+def test_read_write_scope_permission_enforces_scoped_credentials(method, scopes, allowed):
+    """Read is the minimum high-level scope and write implies read."""
+    request = SimpleNamespace(
+        method=method,
+        auth=ScopedBearerToken(scopes=frozenset(scopes)),
+        user=SimpleNamespace(is_authenticated=True),
+    )
+    assert ReadWriteScopePermission().has_permission(request, Mock()) is allowed
 
 
 @pytest.mark.django_db

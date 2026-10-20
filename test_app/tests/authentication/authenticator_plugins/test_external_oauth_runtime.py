@@ -74,7 +74,10 @@ def test_external_oauth_plugin_validates_token_and_updates_claims(external_oauth
         ) as update_claims,
     ):
         jwk_client.return_value.get_signing_key_from_jwt.return_value = signing_key
-        assert plugin.authenticate(token=token) == user
+        result = plugin.authenticate(token=token)
+
+    assert result.user == user
+    assert result.auth.scopes == frozenset({"read"})
 
     jwk_client.assert_called_once_with(
         external_oauth_authenticator.configuration["JWKS_URI"],
@@ -112,6 +115,21 @@ def test_external_oauth_plugin_defaults_missing_clock_skew_for_existing_configur
         AuthenticatorPlugin._decode_validated_token("token", signing_key, configuration)
 
     assert decode_token.call_args.kwargs["leeway"] == 0
+
+
+@pytest.mark.parametrize(
+    "claims,expected_scopes",
+    [
+        ({}, {"read"}),
+        ({"scope": "profile email"}, {"read"}),
+        ({"scope": "read"}, {"read"}),
+        ({"scope": "write"}, {"read", "write"}),
+        ({"scope": ["profile", "write"]}, {"read", "write"}),
+    ],
+)
+def test_external_oauth_plugin_defaults_verified_tokens_to_read_scope(claims, expected_scopes):
+    """Only high-level scopes affect API authorization; valid tokens default to read."""
+    assert AuthenticatorPlugin._read_write_scopes(claims) == frozenset(expected_scopes)
 
 
 @pytest.mark.django_db
@@ -205,8 +223,9 @@ def test_external_oauth_plugin_uses_first_usable_claim_list_value_for_uid(extern
         patch("ansible_base.authentication.authenticator_plugins.external_oauth.update_user_claims", return_value=user),
     ):
         jwk_client.return_value.get_signing_key_from_jwt.return_value = Mock(key="public-key")
-        assert plugin.authenticate(token="token") == user
+        result = plugin.authenticate(token="token")
 
+    assert result.user == user
     assert get_or_create.call_args.kwargs["uid"] == "first-claim-wins"
 
 
@@ -240,8 +259,9 @@ def test_external_oauth_plugin_maps_azp_service_principal_through_user_claims(ex
         ) as update_claims,
     ):
         jwk_client.return_value.get_signing_key_from_jwt.return_value = Mock(key="public-key")
-        assert plugin.authenticate(token="token") == user
+        result = plugin.authenticate(token="token")
 
+    assert result.user == user
     assert get_or_create.call_args.kwargs["uid"] == "gateway-service"
     update_claims.assert_called_once_with(user, external_oauth_authenticator, ["service-accounts"], attrs=claims)
 

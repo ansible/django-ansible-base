@@ -12,7 +12,7 @@ from jwt.exceptions import ExpiredSignatureError, InvalidSignatureError, PyJWKCl
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
-from ansible_base.authentication.bearer_authentication import BearerTokenValidationError
+from ansible_base.authentication.bearer_authentication import BearerAuthenticationResult, BearerTokenValidationError, ScopedBearerToken
 from ansible_base.authentication.jwk_client import CachedJWKClient
 from ansible_base.authentication.utils.authentication import get_or_create_authenticator_user
 from ansible_base.authentication.utils.claims import update_user_claims
@@ -457,7 +457,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
             leeway=configuration.get("JWT_CLOCK_SKEW_TOLERANCE_SECONDS", 0),
         )
 
-    def authenticate(self, request: Any = None, *, token: str | None = None, **kwargs: Any) -> AbstractBaseUser | None:
+    def authenticate(self, request: Any = None, *, token: str | None = None, **kwargs: Any) -> BearerAuthenticationResult | None:
         """Validate a bearer token, provision its identity, and apply authenticator maps."""
         # The common authenticator interface supplies the request, but bearer
         # token validation uses only the credential passed by the dispatcher.
@@ -482,7 +482,26 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         jwk_client = self._build_jwk_client(jwks_uri, configuration)
         signing_key = self._signing_key_for_token(jwk_client, token)
         claims = self._validated_claims(token, signing_key, jwk_client, configuration)
-        return self._user_from_claims(claims, configuration)
+        user = self._user_from_claims(claims, configuration)
+        if user is None:
+            return None
+        return BearerAuthenticationResult(user=user, auth=ScopedBearerToken(scopes=self._read_write_scopes(claims)))
+
+    @staticmethod
+    def _read_write_scopes(claims: dict[str, Any]) -> frozenset[str]:
+        """Extract verified read/write scopes, defaulting valid external tokens to read."""
+        claimed_scopes = claims.get("scope", "")
+        if isinstance(claimed_scopes, str):
+            scopes = set(claimed_scopes.split())
+        elif isinstance(claimed_scopes, list):
+            scopes = {scope for scope in claimed_scopes if isinstance(scope, str)}
+        else:
+            scopes = set()
+
+        scopes.intersection_update({"read", "write"})
+        if "write" in scopes:
+            scopes.add("read")
+        return frozenset(scopes or {"read"})
 
     def _build_jwk_client(self, jwks_uri: str, configuration: dict[str, Any]) -> CachedJWKClient:
         """Create a JWKS client using the provider's explicit TLS and timeout settings."""
