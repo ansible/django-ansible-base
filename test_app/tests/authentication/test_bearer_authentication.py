@@ -15,6 +15,7 @@ from ansible_base.authentication.bearer_authentication import (
     get_api_authentication_backends,
 )
 from ansible_base.authentication.models import Authenticator
+from ansible_base.authentication.session import SessionAuthentication
 
 
 def _request(token: str | None = None, scheme: str = "Bearer"):
@@ -32,6 +33,12 @@ class _BearerProtectedView(APIView):
     def get(self, request):
         """Return a response only after the configured authentication succeeds."""
         return Response()
+
+
+class _SessionThenBearerProtectedView(_BearerProtectedView):
+    """Mirror authentication-enabled applications, where SessionAuthentication is first."""
+
+    authentication_classes = [SessionAuthentication, BearerAuthentication]
 
 
 @pytest.fixture(autouse=True)
@@ -262,6 +269,22 @@ def test_bearer_authentication_exposes_safe_challenge_in_drf_response():
 
     assert response.status_code == 401
     assert response["WWW-Authenticate"] == 'Bearer realm="api", error="invalid_token", error_description="The access token expired"'
+
+
+@pytest.mark.django_db
+def test_bearer_authentication_exposes_rfc6750_challenge_when_session_authentication_is_first():
+    """DRF uses the first authenticator's header, which must preserve a Bearer challenge."""
+    plugin = Mock()
+    plugin.authenticate.side_effect = BearerTokenValidationError()
+
+    with (
+        patch.object(BearerAuthentication, "_api_authentication_backends", return_value=OrderedDict([(17, plugin)])),
+        patch.object(BearerAuthentication, "_authenticate_local_oauth", return_value=None),
+    ):
+        response = _SessionThenBearerProtectedView.as_view()(_request("malformed-token"))
+
+    assert response.status_code == 401
+    assert response["WWW-Authenticate"] == 'Bearer realm="api", error="invalid_token"'
 
 
 @pytest.mark.django_db
