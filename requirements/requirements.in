@@ -11,3 +11,7 @@ sqlparse>=0.5.2 # https://github.com/ansible/django-ansible-base/security/depend
 dynaconf>=3.2.10,<4.0.0  # Dynaconf 4.0.0 is expected to be a major release with breaking changes
 nh3
 regex
+
+# MS SQL Server support (ANSTRAT-1887)
+mssql-django>=1.4
+pyodbc>=5.0.0
