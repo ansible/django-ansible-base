@@ -49,17 +49,46 @@ else
     set -e
 fi
 
-MAX_ATTEMPTS=10
+MAX_ATTEMPTS=30
+
+# Database-specific connection check
+function check_db_connection {
+    if [[ "$DB_BACKEND" == "mssql" ]]; then
+        # MS SQL Server - use pyodbc directly to avoid Django setup issues
+        python3 -c "
+import pyodbc
+import os
+try:
+    conn = pyodbc.connect(
+        'DRIVER={ODBC Driver 18 for SQL Server};'
+        'SERVER=' + os.getenv('DB_HOST', '127.0.0.1') + ',' + str(os.getenv('DB_PORT', '55433')) + ';'
+        'DATABASE=master;'
+        'UID=' + os.getenv('DB_USER', 'sa') + ';'
+        'PWD=' + os.getenv('DB_PASSWORD', 'YourStrong!Passw0rd') + ';'
+        'TrustServerCertificate=yes;'
+    )
+    conn.close()
+    exit(0)
+except Exception:
+    exit(1)
+" > /dev/null 2>&1
+    else
+        # PostgreSQL - use Django connection check
+        python3 manage.py shell -c 'import django; django.db.connection.ensure_connection()' > /dev/null 2>&1
+    fi
+}
 
 for i in $(seq 1 $MAX_ATTEMPTS); do
     echo "Waiting for database to come up ($i/$MAX_ATTEMPTS)"
-    if python3 manage.py shell -c 'import django; django.db.connection.ensure_connection()' > /dev/null 2>&1; then
+    if check_db_connection; then
+        echo "Database is ready!"
         break
     elif [[ $i -eq $MAX_ATTEMPTS ]]; then
-        echo "Database never came up"
+        echo "Database never came up after $MAX_ATTEMPTS attempts"
+        echo "Check container logs: docker logs $CONTAINER_NAME"
         exit 1
     fi
-    sleep 1
+    sleep 2
 done
 
 admin_password='admin'
