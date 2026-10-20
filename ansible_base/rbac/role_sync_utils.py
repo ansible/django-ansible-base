@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ValidationError
 from django.db.models import Q
 
 from ansible_base.lib.utils.apps import is_rbac_installed
@@ -86,11 +87,29 @@ def get_content_object(role_definition, assignment_tuple: AssignmentTuple) -> An
         raise RuntimeError("get_content_object requires ansible_base.rbac to be installed")
     if role_definition.content_type is None:
         raise ValueError("get_content_object requires a role_definition with a content_type")
-    model = role_definition.content_type.model_class()
-    if _is_resource_registered(model):
-        object_resource = Resource.objects.get(ansible_id=assignment_tuple.ansible_id_or_pk)
-        return object_resource.content_object
-    return model.objects.get(pk=assignment_tuple.ansible_id_or_pk)
+    identifier = assignment_tuple.ansible_id_or_pk
+    expected_ct = role_definition.content_type
+    model = expected_ct.model_class()
+    # Assignment identifiers can be Resource ansible_ids or local primary keys.
+    # Resolve the Resource first, then validate the PK before querying the model.
+    if expected_ct.model in ('organization', 'team') or _is_resource_registered(model):
+        try:
+            object_resource = Resource.objects.get(
+                ansible_id=identifier,
+                content_type__app_label=expected_ct.app_label,
+                content_type__model=expected_ct.model,
+            )
+        except (Resource.DoesNotExist, ValueError, ValidationError):
+            pass
+        else:
+            return object_resource.content_object
+
+    try:
+        object_pk = model._meta.pk.to_python(identifier)
+    except (TypeError, ValueError, ValidationError) as exc:
+        raise ValueError(f"Could not resolve {identifier!r} as a Resource ansible_id or a primary key for {model._meta.label}") from exc
+
+    return model.objects.get(pk=object_pk)
 
 
 def _bulk_resolve_actor_ansible_ids(assignments: list, actor_attr: str) -> dict[str, str]:
