@@ -44,6 +44,11 @@ def _authenticator_plugins_response_schema():
                     'type': 'object',
                     'properties': {
                         'type': {'type': 'string'},
+                        'display_name': {
+                            'type': 'string',
+                            'nullable': True,
+                            'description': 'Human-readable authenticator type label for UIs.',
+                        },
                         'documentation_url': {'type': 'string', 'nullable': True},
                         'configuration_schema': {
                             'type': 'array',
@@ -81,8 +86,16 @@ class AuthenticatorPluginView(AnsibleBaseDjangoAppApiView):
                 config = klass.configuration_class()
                 config_schema = config.get_configuration_schema()
                 _inject_validation_patterns(config_schema, config, klass.configuration_encrypted_fields)
+                display_name = getattr(klass, "display_name", "") or ""
+                if display_name:
+                    display_name = str(display_name)
                 resp['authenticators'].append(
-                    {"type": p, "configuration_schema": config_schema, "documentation_url": getattr(config, "documentation_url", None)}
+                    {
+                        "type": p,
+                        "display_name": display_name or None,
+                        "configuration_schema": config_schema,
+                        "documentation_url": getattr(config, "documentation_url", None),
+                    }
                 )
             except ImportError as ie:
                 # If we got an import error its already logged and we can move on

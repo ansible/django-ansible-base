@@ -390,6 +390,7 @@ def resolve_uid_from_claims(claims: dict[str, Any], claim_list: list[str]) -> st
 class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
     configuration_class = ExternalOAuthConfiguration
     type = "external_oauth"
+    display_name = _("External OAuth API Bearer Token")
     category = "api_auth"
     logger = logger
     configuration_encrypted_fields = []

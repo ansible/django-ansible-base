@@ -63,6 +63,9 @@ class AbstractAuthenticatorPlugin:
 
     configuration_class = BaseAuthenticatorConfiguration
     configuration_encrypted_fields = []
+    # Optional human-readable label for UIs (exposed by AuthenticatorPluginView).
+    # Prefer gettext_lazy so Gateway can translate via Accept-Language.
+    display_name = ""
 
     def __init__(self, database_instance=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
