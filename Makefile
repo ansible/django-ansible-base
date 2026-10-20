@@ -74,7 +74,15 @@ stop-postgres:
 #  -q, --quiet: Suppress the pull output
 # Container: dab_mssql, Port: 55433, SA password: YourStrong!Passw0rd
 mssql:
-	docker start dab_mssql || $(DOCKER_COMPOSE) -f docker-compose.mssql.yml up -d mssql --quiet-pull
+	@if docker ps -q -f name=dab_mssql | grep -q .; then \
+		echo "dab_mssql container is already running"; \
+	elif docker ps -aq -f name=dab_mssql | grep -q .; then \
+		echo "Starting existing dab_mssql container"; \
+		docker start dab_mssql; \
+	else \
+		echo "Creating new dab_mssql container"; \
+		$(DOCKER_COMPOSE) -f docker-compose.mssql.yml up -d mssql --quiet-pull; \
+	fi
 
 ## Stops the MS SQL Server container started with 'make mssql'
 stop-mssql:
