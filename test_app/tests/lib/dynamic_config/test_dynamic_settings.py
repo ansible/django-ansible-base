@@ -53,6 +53,7 @@ def test_authentication_with_backends():
     # This also tests some other "happy paths"
     assert 'ansible_base.authentication.middleware.AuthenticatorBackendMiddleware' in updated_settings['MIDDLEWARE']
     assert 'ansible_base.authentication.session.SessionAuthentication' in updated_settings['REST_FRAMEWORK']['DEFAULT_AUTHENTICATION_CLASSES']
+    assert 'ansible_base.authentication.bearer_authentication.BearerAuthentication' in updated_settings['REST_FRAMEWORK']['DEFAULT_AUTHENTICATION_CLASSES']
     assert 'ansible_base.authentication.authenticator_plugins' in updated_settings['ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES']
     assert 'SOCIAL_AUTH_LOGIN_REDIRECT_URL' in updated_settings
 

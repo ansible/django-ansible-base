@@ -179,9 +179,14 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
                     middleware.append(mw)
 
         drf_authentication_class = 'ansible_base.authentication.session.SessionAuthentication'
+        bearer_authentication_class = 'ansible_base.authentication.bearer_authentication.BearerAuthentication'
         rest_framework.setdefault('DEFAULT_AUTHENTICATION_CLASSES', [])
         if drf_authentication_class not in rest_framework['DEFAULT_AUTHENTICATION_CLASSES']:
             rest_framework['DEFAULT_AUTHENTICATION_CLASSES'].insert(0, drf_authentication_class)
+        if bearer_authentication_class not in rest_framework['DEFAULT_AUTHENTICATION_CLASSES']:
+            # BearerAuthentication dispatches configured API authenticators and
+            # optionally the local OAuth2 handler when that app is installed.
+            rest_framework['DEFAULT_AUTHENTICATION_CLASSES'].append(bearer_authentication_class)
 
         if settings.get('ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES') is None:
             dab_data['ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES'] = ["ansible_base.authentication.authenticator_plugins"]
@@ -323,16 +328,13 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         oauth2_provider['ACCESS_TOKEN_MODEL'] = DEFAULT_OAUTH2_ACCESS_TOKEN
 
         rest_framework.setdefault('DEFAULT_AUTHENTICATION_CLASSES', [])
-        # External authenticator plugins require the authentication app. Keep
-        # the standalone OAuth2 handler available to consumers that install
-        # only the OAuth2 provider app.
-        oauth2_authentication_class = (
-            'ansible_base.authentication.bearer_authentication.BearerAuthentication'
-            if 'ansible_base.authentication' in installed_apps
-            else 'ansible_base.oauth2_provider.authentication.LoggedOAuth2Authentication'
-        )
-        if oauth2_authentication_class not in rest_framework['DEFAULT_AUTHENTICATION_CLASSES']:
-            rest_framework['DEFAULT_AUTHENTICATION_CLASSES'].insert(0, oauth2_authentication_class)
+        # Applications using OAuth2 without the authentication app retain the
+        # standalone handler. Authentication-enabled applications receive the
+        # generic Bearer dispatcher above instead.
+        if 'ansible_base.authentication' not in installed_apps:
+            oauth2_authentication_class = 'ansible_base.oauth2_provider.authentication.LoggedOAuth2Authentication'
+            if oauth2_authentication_class not in rest_framework['DEFAULT_AUTHENTICATION_CLASSES']:
+                rest_framework['DEFAULT_AUTHENTICATION_CLASSES'].insert(0, oauth2_authentication_class)
 
         # OAuth2 OpenAPI schema settings (only apply when oauth2_provider is installed)
         spectacular_settings.setdefault('OAUTH2_FLOWS', ['authorizationCode', 'password'])

@@ -4,10 +4,10 @@ from typing import Any
 
 import requests
 from django.contrib.auth import get_user_model
-from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.utils.translation import gettext_lazy as _
 from jwt import decode
-from jwt.exceptions import InvalidSignatureError
+from jwt.exceptions import InvalidSignatureError, PyJWTError
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
@@ -173,10 +173,7 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
     )
 
     JWT_CLOCK_SKEW_TOLERANCE_SECONDS = IntegerField(
-        help_text=_(
-            "Number of seconds after a token's expiration to continue accepting it. "
-            "The same tolerance is applied to nbf and iat claims."
-        ),
+        help_text=_("Number of seconds after a token's expiration to continue accepting it. " "The same tolerance is applied to nbf and iat claims."),
         default=0,
         allow_null=False,
         validators=[MinValueValidator(0), MaxValueValidator(300)],
@@ -374,6 +371,40 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
             attrs.append(groups_claim.strip())
         return attrs or list(_BASELINE_ATTRIBUTES)
 
+    def _matches_token_routing_claims(self, token: str, configuration: dict[str, Any]) -> bool:
+        """Return whether unverified routing claims identify this external OAuth provider.
+
+        The dispatcher passes every Bearer token to each API authenticator.  This
+        inexpensive check lets this JWT-specific plugin decline opaque tokens and
+        tokens for other providers before it fetches JWKS data.  Issuer and
+        audience are validated again, cryptographically, below; these claims are
+        used here only to select a possible validator.
+        """
+        try:
+            payload = decode(
+                token,
+                options={
+                    "verify_signature": False,
+                    "verify_exp": False,
+                    "verify_aud": False,
+                    "verify_iss": False,
+                },
+            )
+        except (PyJWTError, TypeError, ValueError) as exc:
+            logger.debug("External OAuth token cannot be routed to an issuer: %s", exc)
+            return False
+
+        if payload.get("iss") != configuration["ISSUER_URL"]:
+            return False
+
+        audience = payload.get("aud")
+        expected_audience = configuration["AUDIENCE"]
+        if isinstance(audience, str):
+            return audience == expected_audience
+        if isinstance(audience, list):
+            return all(isinstance(value, str) for value in audience) and expected_audience in audience
+        return False
+
     def authenticate(self, request: Any = None, *, token: str | None = None, **kwargs: Any) -> User | None:
         """Validate a bearer token, provision its identity, and apply authenticator maps."""
         if token is None or self.database_instance is None:
@@ -383,6 +414,10 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         logger.debug(f"Attempting to authenticate with external OAuth authenticator {self.database_instance.name}")
 
         configuration = self.database_instance.configuration
+        if not self._matches_token_routing_claims(token, configuration):
+            logger.debug("External OAuth token does not match authenticator %s", self.database_instance.name)
+            return None
+
         logger.debug(f"Validating external OAuth token against authenticator {self.database_instance.name}")
         jwks_uri = configuration["JWKS_URI"]
         if not jwks_uri:
