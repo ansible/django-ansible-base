@@ -1,3 +1,4 @@
+import pytest
 from django.http.response import HttpResponseBase
 from django.test.client import RequestFactory
 from rest_framework import serializers
@@ -61,6 +62,10 @@ class TestMarkDeprecated:
 
 
 class TestDeprecatedSerializerFields:
+    @pytest.fixture(autouse=True)
+    def isolate_deprecated_field_registry(self, monkeypatch):
+        monkeypatch.setattr('ansible_base.lib.utils.views.deprecation._DEPRECATED_FIELD_REGISTRY', {})
+
     def test_empty_input_does_not_add_deprecation_warnings(self):
         class PayloadSerializer(DeprecationSerializerMixin, serializers.Serializer):
             legacy_name = serializers.CharField(required=False)
@@ -72,7 +77,8 @@ class TestDeprecatedSerializerFields:
         assert serializer.is_valid()
         assert not hasattr(view, '_deprecated_field_warnings')
 
-    def test_deprecated_input_field_emits_response_headers(self):
+    @pytest.mark.parametrize('many', [False, True])
+    def test_deprecated_input_field_emits_response_headers(self, many):
         class PayloadSerializer(DeprecationSerializerMixin, serializers.Serializer):
             legacy_name = serializers.CharField(required=False)
             current_name = serializers.CharField(required=False)
@@ -85,17 +91,83 @@ class TestDeprecatedSerializerFields:
             permission_classes = []
 
             def post(self, request):
+                serializer = PayloadSerializer(data=request.data, many=many, context={'view': self})
+                serializer.is_valid(raise_exception=True)
+                return Response(serializer.validated_data)
+
+        legacy_data = {'legacy_name': 'old'}
+        current_data = {'current_name': 'new'}
+        if many:
+            legacy_data = [current_data, legacy_data, legacy_data]
+            current_data = [current_data]
+
+        factory = APIRequestFactory()
+        legacy_response = PayloadView.as_view()(factory.post('/', legacy_data, format='json'))
+        current_response = PayloadView.as_view()(factory.post('/', current_data, format='json'))
+
+        assert legacy_response.status_code == 200
+        assert current_response.status_code == 200
+        assert legacy_response.data == legacy_data
+        assert current_response.data == current_data
+        assert legacy_response['X-API-Deprecated'] == 'true'
+        assert legacy_response['X-API-Deprecated-Detail'] == ('legacy_name is deprecated. Use current_name instead.')
+        assert 'X-API-Deprecated' not in current_response
+        assert 'X-API-Deprecated-Detail' not in current_response
+
+    @pytest.mark.parametrize('many', [False, True])
+    def test_nested_deprecated_field_emits_response_headers(self, many):
+        """Nested serializer children propagate warnings through the parent's view context."""
+
+        class ChildSerializer(DeprecationSerializerMixin, serializers.Serializer):
+            legacy_name = serializers.CharField(required=False)
+            current_name = serializers.CharField(required=False)
+            deprecated_fields = {'legacy_name': 'legacy_name is deprecated.'}
+
+        class PayloadSerializer(serializers.Serializer):
+            payload = ChildSerializer(many=many)
+
+        class PayloadView(DeprecatedFieldsViewMixin, APIView):
+            authentication_classes = []
+            permission_classes = []
+
+            def post(self, request):
                 serializer = PayloadSerializer(data=request.data, context={'view': self})
                 serializer.is_valid(raise_exception=True)
                 return Response(serializer.validated_data)
 
-        factory = APIRequestFactory()
-        legacy_response = PayloadView.as_view()(factory.post('/', {'legacy_name': 'old'}, format='json'))
-        current_response = PayloadView.as_view()(factory.post('/', {'current_name': 'new'}, format='json'))
+        legacy_data = {'legacy_name': 'old'}
+        current_data = {'current_name': 'new'}
+        if many:
+            legacy_data = [current_data, legacy_data, legacy_data]
+            current_data = [current_data]
 
+        factory = APIRequestFactory()
+        legacy_response = PayloadView.as_view()(factory.post('/', {'payload': legacy_data}, format='json'))
+        current_response = PayloadView.as_view()(factory.post('/', {'payload': current_data}, format='json'))
+
+        assert legacy_response.status_code == 200
+        assert current_response.status_code == 200
+        assert legacy_response.data == {'payload': legacy_data}
+        assert current_response.data == {'payload': current_data}
         assert legacy_response['X-API-Deprecated'] == 'true'
-        assert legacy_response['X-API-Deprecated-Detail'] == ('legacy_name is deprecated. Use current_name instead.')
+        assert legacy_response['X-API-Deprecated-Detail'] == 'legacy_name is deprecated.'
         assert 'X-API-Deprecated' not in current_response
+        assert 'X-API-Deprecated-Detail' not in current_response
+
+    @pytest.mark.parametrize('data', [None, [], ['legacy_name'], 'legacy_name', 1])
+    def test_non_mapping_input_is_rejected_without_deprecation_warnings(self, data):
+        """Invalid payloads reach DRF validation without creating false deprecation warnings."""
+
+        class PayloadSerializer(DeprecationSerializerMixin, serializers.Serializer):
+            legacy_name = serializers.CharField(required=False)
+            deprecated_fields = {'legacy_name': 'legacy_name is deprecated.'}
+
+        view = APIView()
+        serializer = PayloadSerializer(data=data, context={'view': view})
+
+        assert not serializer.is_valid()
+        assert serializer.errors
+        assert not hasattr(view, '_deprecated_field_warnings')
 
 
 class TestDeprecatedQueryParams:

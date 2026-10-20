@@ -1,4 +1,5 @@
 import functools
+from collections.abc import Mapping
 
 _DEPRECATED_FIELD_REGISTRY = {}
 
@@ -28,14 +29,13 @@ class DeprecationSerializerMixin:
         if cls.deprecated_fields:
             _DEPRECATED_FIELD_REGISTRY[cls] = dict(cls.deprecated_fields)
 
-    def _check_deprecated_fields(self):
-        initial_data = getattr(self, 'initial_data', {})
-        if not initial_data:
+    def _check_deprecated_fields(self, data):
+        if not isinstance(data, Mapping) or not data:
             return
 
         warnings = []
         for field_name, detail in self.deprecated_fields.items():
-            if field_name in initial_data:
+            if field_name in data:
                 warnings.append({'field': field_name, 'message': detail})
 
         if warnings:
@@ -49,7 +49,7 @@ class DeprecationSerializerMixin:
                 view._deprecated_field_warnings = existing
 
     def run_validation(self, data):
-        self._check_deprecated_fields()
+        self._check_deprecated_fields(data)
         return super().run_validation(data)
 
 

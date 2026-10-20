@@ -10,6 +10,8 @@ from ansible_base.lib.utils.settings import get_function_from_setting, get_setti
 
 logger = logging.getLogger('ansible_base.lib.utils.views.ansible_base')
 
+DEFAULT_DEPRECATION_MESSAGE = _('This resource has been deprecated and will be removed in a future release.')
+
 
 class AnsibleBaseView(APIView):
 
@@ -72,13 +74,11 @@ class AnsibleBaseView(APIView):
 
         from ansible_base.lib.utils.views.deprecation import mark_deprecated
 
-        detail = deprecation['detail'] if deprecation else 'This resource has been deprecated and will be removed in a future release.'
+        detail = deprecation['detail'] if deprecation else str(DEFAULT_DEPRECATION_MESSAGE)
         mark_deprecated(response, detail)
 
         if is_deprecated:
-            response['Warning'] = getattr(
-                self, 'deprecation_warning_header_override', _('This resource has been deprecated and will be removed in a future release.')
-            )
+            response['Warning'] = getattr(self, 'deprecation_warning_header_override', DEFAULT_DEPRECATION_MESSAGE)
 
     def dispatch(self, request, *args, **kwargs):
         # We wrap DELETE requests with deferral context managers so that
