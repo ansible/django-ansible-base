@@ -19,6 +19,6 @@ class AuthenticatorPlugin(  # type: ignore[override]
     configuration_class = GithubEnterpriseOrgConfiguration
     logger = logger
     type = "github-enterprise-org"
-    display_name = _("GitHub enterprise organization")
+    display_name = _("GitHub Enterprise Organization")
     category = "sso"
     configuration_encrypted_fields = ['SECRET']
