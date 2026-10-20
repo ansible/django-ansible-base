@@ -183,13 +183,15 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
     CLAIM_LIST = ListField(
         help_text=_(
             "Ordered JWT claim keys used to resolve the external identity. "
-            "No assumed default — configure explicitly. "
+            "No assumed default — configure explicitly (the UI starts with an empty list). "
             "The first claim present in the token wins. "
             'Example for Entra ID: ["email", "azp"] (human users and service principals).'
         ),
         required=True,
         allow_null=False,
         allow_empty=False,
+        # UI-only hint via configuration schema (DRF disallows required=True with default=).
+        initial=[],
         ui_field_label=_("Claim List"),
     )
 

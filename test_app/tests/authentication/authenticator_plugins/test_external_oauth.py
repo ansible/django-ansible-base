@@ -239,12 +239,15 @@ def test_claim_list_order_preserved_via_api(admin_api_client, external_oauth_con
 
 @pytest.mark.django_db
 def test_external_oauth_schema_has_no_separate_user_service_claim_fields():
-    schema_names = {field["name"] for field in ExternalOAuthConfiguration().get_configuration_schema()}
-    assert "CLAIM_LIST" in schema_names
-    assert "USERNAME_CLAIM" not in schema_names
-    assert "CLIENT_ID_CLAIM" not in schema_names
-    assert "USER_CLAIM" not in schema_names
-    assert "SERVICE_CLAIM" not in schema_names
+    schema = ExternalOAuthConfiguration().get_configuration_schema()
+    schema_by_name = {field["name"]: field for field in schema}
+    assert "CLAIM_LIST" in schema_by_name
+    assert schema_by_name["CLAIM_LIST"]["required"] is True
+    assert schema_by_name["CLAIM_LIST"]["default"] == []
+    assert "USERNAME_CLAIM" not in schema_by_name
+    assert "CLIENT_ID_CLAIM" not in schema_by_name
+    assert "USER_CLAIM" not in schema_by_name
+    assert "SERVICE_CLAIM" not in schema_by_name
 
 
 @pytest.mark.django_db
