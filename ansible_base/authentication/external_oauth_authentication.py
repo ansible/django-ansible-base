@@ -8,6 +8,7 @@ from rest_framework.authentication import BaseAuthentication
 
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_class
 from ansible_base.authentication.models import Authenticator
+from ansible_base.lib.logging import log_auth_event, log_auth_exception
 
 logger = logging.getLogger("ansible_base.authentication.external_oauth_authentication")
 EXTERNAL_OAUTH_AUTHENTICATOR_TYPE = "ansible_base.authentication.authenticator_plugins.external_oauth"
@@ -76,11 +77,11 @@ class ExternalOAuthAuthentication(BaseAuthentication):
                 plugin = get_authenticator_class(authenticator.type)(database_instance=authenticator)
                 user = plugin.authenticate(request, token=token)
             except Exception:
-                logger.exception("External OAuth authenticator %s failed", authenticator.name)
+                log_auth_exception(f"External OAuth authenticator {authenticator.name} failed")
                 continue
 
             if user is not None:
-                logger.debug(f"Authentication successful with authenticator: {authenticator.name}: {user.username}")
+                log_auth_event(f"User {user.username} authenticated with external OAuth authenticator {authenticator.name}")
                 return user, token
 
         logger.debug("No api_auth authenticators for the token issuer and audience could authenticate this token")

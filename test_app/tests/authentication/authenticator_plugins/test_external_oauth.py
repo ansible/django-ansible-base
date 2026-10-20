@@ -136,6 +136,8 @@ def test_external_oauth_multiple_providers(admin_api_client, external_oauth_conf
         (lambda cfg: cfg.update({"ALLOWED_ALGORITHMS": ["none"]}), ["ALLOWED_ALGORITHMS"]),
         (lambda cfg: cfg.update({"JWKS_URL_TIMEOUT": 0}), ["JWKS_URL_TIMEOUT"]),
         (lambda cfg: cfg.update({"JWKS_URL_TIMEOUT": 301}), ["JWKS_URL_TIMEOUT"]),
+        (lambda cfg: cfg.update({"JWT_CLOCK_SKEW_TOLERANCE_SECONDS": -1}), ["JWT_CLOCK_SKEW_TOLERANCE_SECONDS"]),
+        (lambda cfg: cfg.update({"JWT_CLOCK_SKEW_TOLERANCE_SECONDS": 301}), ["JWT_CLOCK_SKEW_TOLERANCE_SECONDS"]),
         (lambda cfg: cfg.update({"JWKS_CACHE_TIMEOUT": 30}), ["JWKS_CACHE_TIMEOUT"]),
         (lambda cfg: cfg.update({"JWKS_URI": "http://provider.example.com/keys"}), ["JWKS_URI"]),
         (lambda cfg: cfg.update({"OIDC_ENDPOINT": "http://provider.example.com", "JWKS_URI": ""}), ["OIDC_ENDPOINT"]),

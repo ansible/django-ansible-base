@@ -82,6 +82,57 @@ def test_cached_jwk_client_reuses_jwk_set_across_instances():
     fetch_data.assert_called_once_with()
 
 
+def test_cached_jwk_client_uses_cached_jwk_set_when_provider_is_unavailable():
+    first_client = CachedJWKClient("https://issuer.example.com/keys")
+    second_client = CachedJWKClient("https://issuer.example.com/keys")
+    jwk_set = Mock()
+    document = {"keys": []}
+
+    with patch(
+        "ansible_base.authentication.jwk_client.PyJWKClient.fetch_data",
+        side_effect=[document, PyJWKClientError("provider unavailable")],
+    ) as fetch_data, patch(
+        "ansible_base.authentication.jwk_client.PyJWKSet.from_dict",
+        return_value=jwk_set,
+    ):
+        assert first_client.get_jwk_set() is jwk_set
+        assert second_client.get_jwk_set() is jwk_set
+
+    fetch_data.assert_called_once_with()
+
+
+def test_cached_jwk_client_scopes_jwk_set_cache_by_provider_uri():
+    first_client = CachedJWKClient("https://issuer.example.com/keys-one")
+    second_client = CachedJWKClient("https://issuer.example.com/keys-two")
+    documents = [{"keys": []}, {"keys": []}]
+
+    with patch(
+        "ansible_base.authentication.jwk_client.PyJWKClient.fetch_data",
+        side_effect=documents,
+    ) as fetch_data, patch(
+        "ansible_base.authentication.jwk_client.PyJWKSet.from_dict",
+        return_value=Mock(),
+    ):
+        first_client.get_jwk_set()
+        second_client.get_jwk_set()
+
+    assert fetch_data.call_count == 2
+
+
+def test_cached_jwk_client_blocks_second_forced_refresh_during_cooldown():
+    client = CachedJWKClient("https://issuer.example.com/keys")
+    document = {"keys": []}
+    with patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data", return_value=document), patch(
+        "ansible_base.authentication.jwk_client.PyJWKSet.from_dict", return_value=Mock()
+    ) as from_dict:
+        client.get_jwk_set(refresh=True)
+        with pytest.raises(PyJWKClientError, match="refresh is already in progress"):
+            client.get_jwk_set(refresh=True)
+
+    assert client.forced_refresh_cooldown == 60
+    assert from_dict.call_count == 1
+
+
 def test_cached_jwk_client_refreshes_once_for_unknown_kid():
     client = CachedJWKClient("https://issuer.example.com/keys")
     refreshed_key = Mock()

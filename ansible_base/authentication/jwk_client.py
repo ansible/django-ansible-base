@@ -9,7 +9,7 @@ from jwt.exceptions import PyJWKClientError, PyJWKError
 class CachedJWKClient(PyJWKClient):
     """Adds a shared Django-cache layer to PyJWT's normal JWKS handling."""
 
-    forced_refresh_cooldown = 30
+    forced_refresh_cooldown = 60
 
     def __init__(self, uri: str, **kwargs: Any) -> None:
         """Initialize a client whose shared cache namespace is derived from its URI."""

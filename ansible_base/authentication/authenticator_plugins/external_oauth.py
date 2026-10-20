@@ -170,6 +170,14 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_("JWKS URL Timeout"),
     )
 
+    JWT_CLOCK_SKEW_TOLERANCE_SECONDS = IntegerField(
+        help_text=_("Allowed clock skew for JWT time claims, in seconds."),
+        default=0,
+        allow_null=False,
+        validators=[MinValueValidator(0), MaxValueValidator(300)],
+        ui_field_label=_("JWT Clock Skew Tolerance (seconds)"),
+    )
+
     ALLOWED_ALGORITHMS = ListField(
         help_text=_("Allowed JWT signing algorithms. Asymmetric algorithms only; 'none' and HMAC (HS*) are rejected."),
         default=["RS256"],
@@ -404,13 +412,20 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
                 audience=configuration["AUDIENCE"],
                 issuer=configuration["ISSUER_URL"],
                 options={"require": ["exp"]},
+                leeway=configuration["JWT_CLOCK_SKEW_TOLERANCE_SECONDS"],
             )
             logger.debug(f"{self.database_instance.name} token decrypted!")
         except InvalidSignatureError:
             try:
                 # A provider can rotate a key while retaining its kid. Evict the
                 # old key and retry exactly once with a freshly fetched JWKS.
-                signing_key = jwk_client.refresh_signing_key_from_jwt(token)
+                refreshed_signing_key = jwk_client.refresh_signing_key_from_jwt(token)
+                # Retrying the same public key cannot repair a bad signature.
+                # Avoid unnecessary crypto work after a forced refresh returns
+                # unchanged key material.
+                if refreshed_signing_key._jwk_data == signing_key._jwk_data:
+                    return None
+                signing_key = refreshed_signing_key
                 claims = decode(
                     token,
                     key=signing_key.key,
@@ -418,6 +433,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
                     audience=configuration["AUDIENCE"],
                     issuer=configuration["ISSUER_URL"],
                     options={"require": ["exp"]},
+                    leeway=configuration["JWT_CLOCK_SKEW_TOLERANCE_SECONDS"],
                 )
             except Exception as exc:
                 logger.warning(f"{self.database_instance.name} External OAuth token validation failed after key refresh: {exc}")
@@ -454,5 +470,4 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
             groups = []
         groups = [group for group in groups if isinstance(group, str)]
 
-        logger.debug(f"{self.database_instance.name} Returning call from update user claims")
         return update_user_claims(user, self.database_instance, groups, attrs=claims)

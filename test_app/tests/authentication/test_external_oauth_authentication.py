@@ -100,6 +100,26 @@ def test_external_oauth_authentication_accepts_a_matching_audience_in_a_list(ext
 
 
 @pytest.mark.django_db
+def test_external_oauth_authentication_audits_success(external_oauth_authenticator):
+    token = _token(
+        external_oauth_authenticator.configuration["ISSUER_URL"],
+        external_oauth_authenticator.configuration["AUDIENCE"],
+    )
+    user = Mock(username="external-user")
+    plugin = Mock()
+    plugin.authenticate.return_value = user
+    with patch(
+        "ansible_base.authentication.external_oauth_authentication.get_authenticator_class",
+        return_value=Mock(return_value=plugin),
+    ), patch("ansible_base.authentication.external_oauth_authentication.log_auth_event") as log_auth_event:
+        assert ExternalOAuthAuthentication().authenticate(_request(token)) == (user, token)
+
+    log_auth_event.assert_called_once_with(
+        f"User {user.username} authenticated with external OAuth authenticator {external_oauth_authenticator.name}"
+    )
+
+
+@pytest.mark.django_db
 def test_external_oauth_authentication_skips_unloadable_plugin(external_oauth_authenticator):
     token = _token(
         external_oauth_authenticator.configuration["ISSUER_URL"],
