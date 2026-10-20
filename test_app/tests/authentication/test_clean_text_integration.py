@@ -7,7 +7,7 @@ from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.models import Authenticator, AuthenticatorMap
 from ansible_base.authentication.serializers.authenticator_map import AuthenticatorMapSerializer
-from ansible_base.lib.serializers.mixins import CleanTextMixin, _INCOMPLETE_VALIDATION_MSG
+from ansible_base.lib.serializers.mixins import _INCOMPLETE_VALIDATION_MSG, CleanTextMixin
 from ansible_base.lib.utils.response import get_relative_url
 
 DANGEROUS_NAME = '<script>alert(1)</script>'
