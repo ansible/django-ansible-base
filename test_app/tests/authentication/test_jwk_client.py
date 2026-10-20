@@ -164,6 +164,34 @@ def test_cached_jwk_client_allows_every_forced_refresh_when_cooldown_is_disabled
     assert fetch_data.call_count == 2
 
 
+@pytest.mark.parametrize("configured_value", [None, -1, 86401, "60"])
+def test_cached_jwk_client_uses_default_for_invalid_refresh_cooldown(configured_value):
+    with patch("ansible_base.authentication.jwk_client.get_setting", return_value=configured_value):
+        client = CachedJWKClient("https://issuer.example.com/keys")
+
+    assert client.forced_refresh_cooldown == 60
+
+
+def test_cached_jwk_client_rejects_a_non_object_jwk_set():
+    client = CachedJWKClient("https://issuer.example.com/keys")
+    with patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data", return_value=[]):
+        with pytest.raises(PyJWKClientError, match="did not return a JSON object"):
+            client.get_jwk_set()
+
+
+def test_cached_jwk_client_refreshes_and_caches_a_signing_key():
+    client = CachedJWKClient("https://issuer.example.com/keys")
+    signing_key = Mock(_jwk_data={"kty": "RSA", "kid": "key-id"})
+
+    with (
+        patch.object(client, "get_signing_keys", return_value=[signing_key]),
+        patch.object(client, "match_kid", return_value=signing_key),
+    ):
+        assert client.refresh_signing_key_from_jwt(_token()) is signing_key
+
+    assert cache.get(client._signing_key_cache_key("key-id")) == signing_key._jwk_data
+
+
 def test_cached_jwk_client_keeps_a_cached_signing_key_when_refresh_is_in_cooldown():
     client = CachedJWKClient("https://issuer.example.com/keys")
     token = _token()

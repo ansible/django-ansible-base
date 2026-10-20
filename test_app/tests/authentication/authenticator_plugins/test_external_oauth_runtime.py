@@ -345,6 +345,59 @@ def test_external_oauth_plugin_skips_retry_when_refreshed_key_is_unchanged(exter
 
 
 @pytest.mark.django_db
+def test_external_oauth_plugin_rejects_a_matching_token_without_a_jwks_uri(external_oauth_authenticator):
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    plugin.database_instance.configuration["JWKS_URI"] = ""
+
+    with patch(
+        "ansible_base.authentication.authenticator_plugins.external_oauth.decode",
+        return_value=_routing_claims(plugin.database_instance.configuration),
+    ):
+        with pytest.raises(BearerTokenValidationError):
+            plugin.authenticate(token="token")
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("exception", "reason"),
+    [
+        (jwt.ExpiredSignatureError(), "expired"),
+        (jwt.PyJWKClientConnectionError(), "provider_unavailable"),
+        (jwt.PyJWKClientError(), "invalid"),
+    ],
+)
+def test_external_oauth_plugin_translates_key_refresh_failures(external_oauth_authenticator, exception, reason):
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    signing_key = Mock(_jwk_data={"kid": "old"})
+    jwk_client = Mock()
+    jwk_client.refresh_signing_key_from_jwt.side_effect = exception
+
+    with pytest.raises(BearerTokenValidationError) as exc_info:
+        plugin._validated_claims_after_key_refresh("token", signing_key, jwk_client, plugin.database_instance.configuration)
+
+    assert exc_info.value.reason == reason
+
+
+@pytest.mark.django_db
+def test_external_oauth_plugin_treats_non_list_groups_as_empty(external_oauth_authenticator):
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    user = Mock(is_active=True)
+    claims = {"email": "user@example.com", "sub": "subject", "groups": "operators"}
+
+    with (
+        patch(
+            "ansible_base.authentication.authenticator_plugins.external_oauth.get_or_create_authenticator_user",
+            return_value=(user, Mock(), False),
+        ),
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.is_system_user", return_value=False),
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.update_user_claims", return_value=user) as update_claims,
+    ):
+        assert plugin._user_from_claims(claims, plugin.database_instance.configuration) is user
+
+    assert update_claims.call_args.args[2] == []
+
+
+@pytest.mark.django_db
 def test_external_oauth_plugin_rejects_wrong_signing_key(external_oauth_authenticator):
     plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
     signing_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)

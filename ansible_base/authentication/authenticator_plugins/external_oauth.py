@@ -403,9 +403,9 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         used here only to select a possible validator.
         """
         try:
-            payload = decode(  # NOSONAR(S5659) -- routing selects a validator; _decode_validated_token verifies the JWT.
+            payload = decode(
                 token,
-                options={
+                options={  # NOSONAR(S5659) -- routing selects a validator; _decode_validated_token verifies the JWT.
                     "verify_signature": False,
                     "verify_exp": False,
                     "verify_aud": False,
@@ -481,7 +481,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         if not configuration["VERIFY_SSL"]:
             # This is retained for local development against self-signed IdPs;
             # production endpoints are still constrained to HTTPS by schema validation.
-            ssl_context = ssl.create_default_context()
+            ssl_context = ssl.create_default_context()  # NOSONAR(S5527) -- this context must disable hostname checks for configured local self-signed IdPs.
             ssl_context.check_hostname = False  # NOSONAR(S5527) -- required with CERT_NONE for configured local self-signed IdPs.
             ssl_context.verify_mode = ssl.CERT_NONE  # NOSONAR(S4830) -- configured local-development support for self-signed IdPs.
 
