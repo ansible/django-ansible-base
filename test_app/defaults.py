@@ -66,6 +66,8 @@ INSTALLED_APPS = [
     'ansible_base.resource_registry',
     'ansible_base.rest_pagination',
     'ansible_base.rbac',
+    # oauth2_provider (upstream library) must be before ansible_base.oauth2_provider
+    'oauth2_provider',
     'ansible_base.oauth2_provider',
     'test_app',
     'django_extensions',
