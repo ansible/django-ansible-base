@@ -179,6 +179,14 @@ def test_cached_jwk_client_rejects_a_non_object_jwk_set():
             client.get_jwk_set()
 
 
+def test_cached_jwk_client_rejects_a_second_jwk_fetch_while_the_first_is_locked():
+    client = CachedJWKClient("https://issuer.example.com/keys")
+    cache.set(client._fetch_lock_key, True, timeout=client.forced_refresh_cooldown)
+
+    with pytest.raises(PyJWKClientError, match="fetch is already in progress"):
+        client.get_jwk_set()
+
+
 def test_cached_jwk_client_refreshes_and_caches_a_signing_key():
     client = CachedJWKClient("https://issuer.example.com/keys")
     signing_key = Mock(_jwk_data={"kty": "RSA", "kid": "key-id"})
@@ -190,6 +198,14 @@ def test_cached_jwk_client_refreshes_and_caches_a_signing_key():
         assert client.refresh_signing_key_from_jwt(_token()) is signing_key
 
     assert cache.get(client._signing_key_cache_key("key-id")) == signing_key._jwk_data
+
+
+def test_cached_jwk_client_rejects_refresh_without_a_key_id():
+    client = CachedJWKClient("https://issuer.example.com/keys")
+    token = jwt.encode({"sub": "subject"}, "not-used", algorithm="HS256")
+
+    with pytest.raises(PyJWKClientError, match="missing kid"):
+        client.refresh_signing_key_from_jwt(token)
 
 
 def test_cached_jwk_client_keeps_a_cached_signing_key_when_refresh_is_in_cooldown():

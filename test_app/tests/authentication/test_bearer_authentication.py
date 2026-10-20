@@ -338,6 +338,22 @@ def test_api_authentication_cache_version_includes_disabled_authenticators(exter
     assert get_backends.call_args.args[0] == disabled.modified
 
 
+@pytest.mark.django_db
+def test_api_authentication_backends_skip_plugins_that_are_not_installed(external_oauth_authenticator):
+    """A configured plugin unavailable in this deployment cannot break Bearer dispatch."""
+    with patch(
+        "ansible_base.authentication.bearer_authentication.get_authenticator_plugin",
+        side_effect=ImportError,
+    ):
+        assert get_api_authentication_backends(external_oauth_authenticator.modified) == OrderedDict()
+
+
+def test_bearer_authentication_skips_local_oauth_when_its_optional_app_is_absent():
+    """Authentication-only deployments must not import local OAuth2 provider code."""
+    with patch.object(BearerAuthentication, "_oauth2_provider_installed", return_value=False):
+        assert BearerAuthentication()._authenticate_local_oauth(_request("token")) is None
+
+
 def test_bearer_authentication_returns_the_local_oauth_challenge():
     """Use the established local OAuth2 challenge for all rejected Bearer credentials."""
     request = _request("token")
