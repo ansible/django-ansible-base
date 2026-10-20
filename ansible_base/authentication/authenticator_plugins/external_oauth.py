@@ -416,11 +416,18 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
             logger.debug(f"External OAuth token cannot be routed to an issuer: {exc}")
             return False
 
-        if payload.get("iss") != configuration["ISSUER_URL"]:
+        # These values predate this plugin's schema migrations in some
+        # installations.  A missing required value must decline routing, never
+        # accidentally match an unverified token claim.
+        issuer_url = configuration.get("ISSUER_URL")
+        expected_audience = configuration.get("AUDIENCE")
+        if not isinstance(issuer_url, str) or not issuer_url or not isinstance(expected_audience, str) or not expected_audience:
+            return False
+
+        if payload.get("iss") != issuer_url:
             return False
 
         audience = payload.get("aud")
-        expected_audience = configuration["AUDIENCE"]
         if isinstance(audience, str):
             return audience == expected_audience
         if isinstance(audience, list):
@@ -441,9 +448,11 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         return decode(
             token,
             key=signing_key.key,
-            algorithms=configuration["ALLOWED_ALGORITHMS"],
-            audience=configuration["AUDIENCE"],
-            issuer=configuration["ISSUER_URL"],
+            # Defaults match the configuration schema so authenticators saved
+            # before optional settings were introduced remain usable.
+            algorithms=configuration.get("ALLOWED_ALGORITHMS", ["RS256"]),
+            audience=configuration.get("AUDIENCE", ""),
+            issuer=configuration.get("ISSUER_URL", ""),
             options={"require": ["exp"]},
             leeway=configuration.get("JWT_CLOCK_SKEW_TOLERANCE_SECONDS", 0),
         )
@@ -465,7 +474,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
             return None
 
         logger.debug(f"Validating external OAuth token against authenticator {self.database_instance.name}")
-        jwks_uri = configuration["JWKS_URI"]
+        jwks_uri = configuration.get("JWKS_URI", "")
         if not jwks_uri:
             logger.error(f"External OAuth authenticator {self.database_instance.name} has no configured JWKS URI")
             raise BearerTokenValidationError()
@@ -478,7 +487,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
     def _build_jwk_client(self, jwks_uri: str, configuration: dict[str, Any]) -> CachedJWKClient:
         """Create a JWKS client using the provider's explicit TLS and timeout settings."""
         ssl_context = None
-        if not configuration["VERIFY_SSL"]:
+        if not configuration.get("VERIFY_SSL", True):
             # This is retained for local development against self-signed IdPs;
             # production endpoints are still constrained to HTTPS by schema validation.
             ssl_context = ssl.create_default_context()  # NOSONAR(S5527) -- this context must disable hostname checks for configured local self-signed IdPs.
@@ -487,8 +496,8 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
 
         return CachedJWKClient(
             jwks_uri,
-            lifespan=configuration["JWKS_CACHE_TIMEOUT"],
-            timeout=configuration["JWKS_URL_TIMEOUT"],
+            lifespan=configuration.get("JWKS_CACHE_TIMEOUT", 3600),
+            timeout=configuration.get("JWKS_URL_TIMEOUT", 30),
             ssl_context=ssl_context,
         )
 
@@ -540,7 +549,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
 
     def _user_from_claims(self, claims: dict[str, Any], configuration: dict[str, Any]) -> AbstractBaseUser | None:
         """Resolve, provision, and map a verified external OAuth identity to an active user."""
-        uid = resolve_uid_from_claims(claims, configuration["CLAIM_LIST"])
+        uid = resolve_uid_from_claims(claims, configuration.get("CLAIM_LIST", []))
         if uid is None:
             logger.debug(f"External OAuth token did not contain a configured identity claim for authenticator {self.database_instance.name}")
             raise BearerTokenValidationError()
@@ -557,7 +566,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
             logger.debug(f"External OAuth identity maps to an ineligible user for authenticator {self.database_instance.name}")
             raise BearerTokenValidationError()
 
-        groups = claims.get(configuration["GROUPS_CLAIM"], [])
+        groups = claims.get(configuration.get("GROUPS_CLAIM", "groups"), [])
         if not isinstance(groups, list):
             groups = []
         groups = [group for group in groups if isinstance(group, str)]

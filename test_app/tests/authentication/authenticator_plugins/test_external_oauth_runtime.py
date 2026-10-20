@@ -115,6 +115,70 @@ def test_external_oauth_plugin_defaults_missing_clock_skew_for_existing_configur
 
 
 @pytest.mark.django_db
+def test_external_oauth_plugin_defaults_missing_optional_configuration_for_existing_configurations(external_oauth_authenticator):
+    """Legacy authenticator records use schema defaults for settings added after creation."""
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    configuration = dict(external_oauth_authenticator.configuration)
+    for setting in ("ALLOWED_ALGORITHMS", "VERIFY_SSL", "JWKS_CACHE_TIMEOUT", "JWKS_URL_TIMEOUT", "GROUPS_CLAIM"):
+        configuration.pop(setting)
+
+    signing_key = Mock(key="public-key")
+    user = Mock(is_active=True, username="external-user")
+    claims = {"email": "user@example.com", "sub": "subject", "groups": ["operators"]}
+    with (
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.decode", return_value={}) as decode_token,
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.CachedJWKClient") as jwk_client,
+        patch(
+            "ansible_base.authentication.authenticator_plugins.external_oauth.get_or_create_authenticator_user",
+            return_value=(user, Mock(), True),
+        ),
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.is_system_user", return_value=False),
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.update_user_claims", return_value=user) as update_claims,
+    ):
+        AuthenticatorPlugin._decode_validated_token("token", signing_key, configuration)
+        plugin._build_jwk_client(configuration["JWKS_URI"], configuration)
+        assert plugin._user_from_claims(claims, configuration) == user
+
+    assert decode_token.call_args.kwargs["algorithms"] == ["RS256"]
+    assert decode_token.call_args.kwargs["audience"] == configuration["AUDIENCE"]
+    assert decode_token.call_args.kwargs["issuer"] == configuration["ISSUER_URL"]
+    jwk_client.assert_called_once_with(configuration["JWKS_URI"], lifespan=3600, timeout=30, ssl_context=None)
+    update_claims.assert_called_once_with(user, external_oauth_authenticator, ["operators"], attrs=claims)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("setting", ("ISSUER_URL", "AUDIENCE"))
+def test_external_oauth_plugin_does_not_route_tokens_when_required_configuration_is_missing(external_oauth_authenticator, setting):
+    """Missing required legacy configuration cannot select this JWT validator."""
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    configuration = dict(external_oauth_authenticator.configuration)
+    configuration.pop(setting)
+
+    with patch(
+        "ansible_base.authentication.authenticator_plugins.external_oauth.decode",
+        return_value=_routing_claims(external_oauth_authenticator.configuration),
+    ):
+        assert plugin._matches_token_routing_claims("token", configuration) is False
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("setting", ("JWKS_URI", "CLAIM_LIST"))
+def test_external_oauth_plugin_rejects_missing_required_runtime_configuration(external_oauth_authenticator, setting):
+    """Missing required legacy configuration is rejected without a KeyError."""
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    configuration = dict(external_oauth_authenticator.configuration)
+    configuration.pop(setting)
+
+    if setting == "JWKS_URI":
+        plugin.database_instance.configuration = configuration
+        with patch.object(plugin, "_matches_token_routing_claims", return_value=True), pytest.raises(BearerTokenValidationError):
+            plugin.authenticate(token="token")
+    else:
+        with pytest.raises(BearerTokenValidationError):
+            plugin._user_from_claims({"email": "user@example.com"}, configuration)
+
+
+@pytest.mark.django_db
 def test_external_oauth_plugin_uses_first_usable_claim_list_value_for_uid(external_oauth_authenticator):
     """The ordered CLAIM_LIST selects the uid passed to authenticator-user provisioning."""
     plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
