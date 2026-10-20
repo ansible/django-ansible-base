@@ -136,6 +136,38 @@ def test_saml_configured_custom_email_mapping_is_preserved():
     assert details["email"] == "mapped@example.com"
 
 
+def test_saml_missing_custom_email_mapping_does_not_use_default_email_fields():
+    """
+    When the configured attr_email claim is absent, email must stay None even if
+    common default email attributes (email/mail) are present in the assertion.
+    """
+    configuration = {
+        "ENABLED_IDPS": {
+            idp_string: {
+                "attr_email": "mail_alias",
+                "attr_username": "username",
+                "attr_user_permanent_id": "name_id",
+            }
+        }
+    }
+    plugin = AuthenticatorPlugin(database_instance=SimpleNamespace(configuration=configuration, slug="test-saml"))
+
+    details = plugin.get_user_details(
+        {
+            "idp_name": idp_string,
+            "attributes": {
+                "username": ["same-user"],
+                "name_id": "saml-user",
+                "email": ["default@example.com"],
+                "mail": ["mail@example.com"],
+            },
+        }
+    )
+
+    assert details["username"] == "same-user"
+    assert details["email"] is None
+
+
 def test_saml_missing_configured_non_email_attribute_still_fails():
     configuration = {
         "ENABLED_IDPS": {

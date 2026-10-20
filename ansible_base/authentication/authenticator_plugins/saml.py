@@ -301,7 +301,8 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, SAML
 
             idp_name = response["idp_name"]
             idp = self.get_idp(idp_name)
-            idp_configuration = {key: value for key, value in idp.conf.items() if key != "attr_email"}
+            # Explicit None (not omitted): social-core 5.x otherwise falls back to EMAIL_FIELDS.
+            idp_configuration = {**idp.conf, "attr_email": None}
             optional_email_idp = SAMLIdentityProvider(self, idp_name, **idp_configuration)
             return optional_email_idp.get_user_details(response["attributes"])
 
