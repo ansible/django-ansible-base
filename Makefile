@@ -67,6 +67,20 @@ stop-postgres:
 	echo "Killing dab_postgres container"
 	$(DOCKER_COMPOSE) rm -fsv postgres
 
+## Starts an MS SQL Server container in the background if one is not running
+# MS SQL Server 2025 Developer Edition for ANSTRAT-1887 MS SQL support
+# Options:
+#  -d, --detach: run the container in background
+#  -q, --quiet: Suppress the pull output
+# Container: dab_mssql, Port: 55433, SA password: YourStrong!Passw0rd
+mssql:
+	docker start dab_mssql || $(DOCKER_COMPOSE) -f docker-compose.mssql.yml up -d mssql --quiet-pull
+
+## Stops the MS SQL Server container started with 'make mssql'
+stop-mssql:
+	echo "Killing dab_mssql container"
+	$(DOCKER_COMPOSE) -f docker-compose.mssql.yml rm -fsv mssql
+
 # Build targets
 # --------------------------------------
 

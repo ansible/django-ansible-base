@@ -2,29 +2,48 @@
 
 set -e
 
+# Detect database backend from environment (default: postgres)
+# Part of ANSTRAT-1887: MS SQL Server Database Support - Technology Preview
+DB_BACKEND=${DB_BACKEND:-postgres}
+
+# Set appropriate variables based on backend
+if [[ "$DB_BACKEND" == "mssql" ]]; then
+    CONTAINER_NAME="dab_mssql"
+    MAKE_START_TARGET="mssql"
+    MAKE_STOP_TARGET="stop-mssql"
+    export DJANGO_SETTINGS_MODULE="test_app.mssqlsettings"
+    echo "=== Using MS SQL Server backend (ANSTRAT-1887) ==="
+else
+    CONTAINER_NAME="dab_postgres"
+    MAKE_START_TARGET="postgres"
+    MAKE_STOP_TARGET="stop-postgres"
+    export DJANGO_SETTINGS_MODULE="test_app.settings"
+    echo "=== Using PostgreSQL backend (default) ==="
+fi
+
 # Always make sure we kill the database when we exit
 function cleanup {
     echo "***"
-    echo "This will delete all data in the test_app database (container)"
+    echo "This will delete all data in the test_app database (container: $CONTAINER_NAME)"
     echo "Press:"
-    echo " - Ctrl-C to cancel and leave the database running (container: dab_postgres)"
+    echo " - Ctrl-C to cancel and leave the database running"
     echo " - Enter to continue shutdown and delete the database"
     echo "***"
     read
-    make stop-postgres
+    make $MAKE_STOP_TARGET
 }
 
 trap cleanup EXIT
 
-docker_running=$(docker ps -aq -f name=dab_postgres)
+docker_running=$(docker ps -aq -f name=$CONTAINER_NAME)
 migrate_needed=1
 
 if [[ -z "${docker_running// /}" ]]
 then
-    echo "creating new postgres container"
-    make postgres
+    echo "Creating new $DB_BACKEND container: $CONTAINER_NAME"
+    make $MAKE_START_TARGET
 else
-    echo "dab_postgres container is already running, will use that container"
+    echo "$CONTAINER_NAME container is already running, will use that container"
     set +e
     python manage.py migrate --check; migrate_needed=$?
     set -e
@@ -47,7 +66,7 @@ admin_password='admin'
 
 if [[ "${migrate_needed}" -ne 0 ]]
 then
-    echo "Migrating database"
+    echo "Migrating database using ${DJANGO_SETTINGS_MODULE}"
     python3 manage.py migrate
     if [[ "${DJANGO_SUPERUSER_PASSWORD}" ]]; then
         admin_password=${DJANGO_SUPERUSER_PASSWORD}
