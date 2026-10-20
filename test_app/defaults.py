@@ -73,7 +73,9 @@ INSTALLED_APPS = [
     'ansible_base.activitystream',
     'ansible_base.help_text_check',
     'ansible_base.feature_flags',
-    'ansible_base.observability',
+    # TEMPORARY: Disabled due to protobuf dependency conflict in dev environment
+    # TODO: Re-enable when protobuf/opentelemetry dependencies are resolved
+    # 'ansible_base.observability',
 ]
 
 MIDDLEWARE = [
