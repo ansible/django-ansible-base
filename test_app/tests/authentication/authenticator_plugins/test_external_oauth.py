@@ -9,6 +9,7 @@ from rest_framework.serializers import ValidationError
 from ansible_base.authentication.authenticator_plugins.external_oauth import (
     AuthenticatorPlugin,
     ExternalOAuthConfiguration,
+    _local_oidc_issuer,
     apply_oidc_discovery,
     oidc_discovery_url,
     resolve_uid_from_claims,
@@ -61,6 +62,29 @@ def _authenticator_payload(name, configuration, enabled=True):
         "type": PLUGIN_TYPE,
         "configuration": configuration,
     }
+
+
+@pytest.mark.parametrize(
+    ("oauth2_provider", "expected"),
+    [
+        ({"OIDC_ISS_ENDPOINT": " https://gateway.example.com/o "}, "https://gateway.example.com/o"),
+        ({"OIDC_ISS_ENDPOINT": ""}, None),
+        ({"OIDC_ISS_ENDPOINT": None}, None),
+        ({}, None),
+        ([], None),
+    ],
+)
+@override_settings(INSTALLED_APPS=["ansible_base.oauth2_provider"])
+def test_local_oidc_issuer_handles_provider_configuration(oauth2_provider, expected):
+    """Only a non-empty string local issuer reserves an external OAuth issuer URL."""
+    with patch(f"{DISCOVERY_MODULE}.get_setting", return_value=oauth2_provider):
+        assert _local_oidc_issuer() == expected
+
+
+@override_settings(INSTALLED_APPS=[])
+def test_local_oidc_issuer_is_unset_without_the_optional_oauth2_provider():
+    """Authentication-only installations have no local issuer to reserve."""
+    assert _local_oidc_issuer() is None
 
 
 @pytest.mark.django_db
