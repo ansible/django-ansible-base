@@ -92,6 +92,8 @@ def _resolve_team_organization_references(
     for team in team_cls.objects.filter(resource__ansible_id__in=team_ansible_ids).values(
         'resource__ansible_id', 'organization__resource__ansible_id', 'organization__name'
     ):
+        if team['organization__resource__ansible_id'] is None:
+            continue
         team_ansible_id = str(team['resource__ansible_id'])
         org_ansible_id = str(team['organization__resource__ansible_id'])
         org_name = team['organization__name']
@@ -148,7 +150,7 @@ def _build_objects_and_roles(
 
     # Single loop: build object_arrays and object_roles
     for assignment in get_user_object_roles(user):
-        if assignment.aid is None:
+        if assignment.aid is None or assignment.resource_name is None:
             continue
 
         role_name = assignment.rd_name
