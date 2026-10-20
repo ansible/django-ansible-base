@@ -80,8 +80,11 @@ class AuthenticatorMapSerializer(CleanTextMixin, NamedCommonModelSerializer):
         if triggers is None:
             return
         attr_key_errors = self._validate_trigger_attribute_name_keys(triggers)
-        if not attr_key_errors:
-            return
+        if attr_key_errors:
+            self._merge_trigger_attribute_key_errors(errors, attr_key_errors)
+
+    @staticmethod
+    def _merge_trigger_attribute_key_errors(errors: dict, attr_key_errors: dict[str, Any]) -> None:
         triggers_errors = errors.get('triggers')
         if triggers_errors is None:
             errors['triggers'] = attr_key_errors
@@ -89,6 +92,12 @@ class AuthenticatorMapSerializer(CleanTextMixin, NamedCommonModelSerializer):
             triggers_errors.update(attr_key_errors)
         else:
             errors['triggers'] = attr_key_errors
+
+    def _stored_trigger_attributes(self) -> dict[str, Any]:
+        if not self.instance or not isinstance(self.instance.triggers, dict):
+            return {}
+        stored = self.instance.triggers.get('attributes')
+        return stored if isinstance(stored, dict) else {}
 
     def _validate_trigger_attribute_name_keys(self, triggers: dict) -> dict[str, Any]:
         """Tier 2 validation for user-defined attribute names under triggers.attributes.
@@ -102,29 +111,27 @@ class AuthenticatorMapSerializer(CleanTextMixin, NamedCommonModelSerializer):
         if not isinstance(attributes, dict):
             return {}
 
-        stored_attributes = {}
-        if self.instance and isinstance(self.instance.triggers, dict):
-            stored = self.instance.triggers.get('attributes')
-            if isinstance(stored, dict):
-                stored_attributes = stored
-
+        stored_attributes = self._stored_trigger_attributes()
         key_errors: dict[str, Any] = {}
         for attr_name in attributes:
-            if attr_name == 'join_condition' or not isinstance(attr_name, str):
-                continue
-            if attr_name in stored_attributes:
-                continue
-            error_key = f'attributes.{attr_name}'
-            try:
-                validate_free_text(attr_name)
-            except ValidationError as exc:
-                key_errors[error_key] = exc.detail
-                self._log_validation_failure(f'triggers.{error_key}', exc.detail)
-            except Exception:
-                logger.exception("Unexpected error validating trigger attribute name '%s'", attr_name)
-                if get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False):
-                    key_errors[error_key] = [_INCOMPLETE_VALIDATION_MSG]
+            self._validate_one_trigger_attribute_name_key(attr_name, stored_attributes, key_errors)
         return key_errors
+
+    def _validate_one_trigger_attribute_name_key(self, attr_name, stored_attributes: dict[str, Any], key_errors: dict[str, Any]) -> None:
+        if attr_name == 'join_condition' or not isinstance(attr_name, str):
+            return
+        if attr_name in stored_attributes:
+            return
+        error_key = f'attributes.{attr_name}'
+        try:
+            validate_free_text(attr_name)
+        except ValidationError as exc:
+            key_errors[error_key] = exc.detail
+            self._log_validation_failure(f'triggers.{error_key}', exc.detail)
+        except Exception:
+            logger.exception("Unexpected error validating trigger attribute name '%s'", attr_name)
+            if get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False):
+                key_errors[error_key] = [_INCOMPLETE_VALIDATION_MSG]
 
     def validate_role_data(self, map_type: Optional[str], role: Optional[str], org: Optional[str], team: Optional[str]) -> dict[str, TranslatedString]:
         # If the role field has an expansion in it we can only check this role at runtime
