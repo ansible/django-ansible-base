@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import ValidationError
@@ -90,7 +90,7 @@ class AuthenticatorMapSerializer(CleanTextMixin, NamedCommonModelSerializer):
         else:
             errors['triggers'] = attr_key_errors
 
-    def _validate_trigger_attribute_name_keys(self, triggers: dict) -> dict:
+    def _validate_trigger_attribute_name_keys(self, triggers: dict) -> dict[str, Any]:
         """Tier 2 validation for user-defined attribute names under triggers.attributes.
 
         CleanTextMixin's JSON walk validates string values only; attribute names are
@@ -108,7 +108,7 @@ class AuthenticatorMapSerializer(CleanTextMixin, NamedCommonModelSerializer):
             if isinstance(stored, dict):
                 stored_attributes = stored
 
-        key_errors = {}
+        key_errors: dict[str, Any] = {}
         for attr_name in attributes:
             if attr_name == 'join_condition' or not isinstance(attr_name, str):
                 continue
@@ -123,7 +123,7 @@ class AuthenticatorMapSerializer(CleanTextMixin, NamedCommonModelSerializer):
             except Exception:
                 logger.exception("Unexpected error validating trigger attribute name '%s'", attr_name)
                 if get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False):
-                    key_errors[error_key] = [str(_INCOMPLETE_VALIDATION_MSG)]
+                    key_errors[error_key] = [_INCOMPLETE_VALIDATION_MSG]
         return key_errors
 
     def validate_role_data(self, map_type: Optional[str], role: Optional[str], org: Optional[str], team: Optional[str]) -> dict[str, TranslatedString]:
