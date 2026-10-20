@@ -3,6 +3,7 @@ import ssl
 from typing import Any
 
 import requests
+from django.contrib.auth import get_user_model
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils.translation import gettext_lazy as _
 from jwt import decode
@@ -21,6 +22,7 @@ from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.validation import validate_url
 
 logger = logging.getLogger("ansible_base.authentication.authenticator_plugins.external_oauth")
+User = get_user_model()
 
 OIDC_DISCOVERY_PATH = "/.well-known/openid-configuration"
 OIDC_DISCOVERY_TIMEOUT_SETTING = "ANSIBLE_BASE_EXTERNAL_OAUTH_DISCOVERY_TIMEOUT"
@@ -171,7 +173,10 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
     )
 
     JWT_CLOCK_SKEW_TOLERANCE_SECONDS = IntegerField(
-        help_text=_("Allowed clock skew for JWT time claims, in seconds."),
+        help_text=_(
+            "Number of seconds after a token's expiration to continue accepting it. "
+            "The same tolerance is applied to nbf and iat claims."
+        ),
         default=0,
         allow_null=False,
         validators=[MinValueValidator(0), MaxValueValidator(300)],
@@ -369,7 +374,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
             attrs.append(groups_claim.strip())
         return attrs or list(_BASELINE_ATTRIBUTES)
 
-    def authenticate(self, request: Any = None, *, token: str | None = None, **kwargs: Any) -> Any | None:
+    def authenticate(self, request: Any = None, *, token: str | None = None, **kwargs: Any) -> User | None:
         """Validate a bearer token, provision its identity, and apply authenticator maps."""
         if token is None or self.database_instance is None:
             logger.debug("External OAuth token is None or database instance is None")

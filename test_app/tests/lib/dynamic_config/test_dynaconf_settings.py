@@ -54,6 +54,22 @@ def test_authentication_no_backends():
     assert 'ansible_base.authentication.backend.AnsibleBaseAuth' in settings['AUTHENTICATION_BACKENDS']
 
 
+def test_oauth2_provider_injects_unified_bearer_authentication():
+    settings = factory("", "TEST", INSTALLED_APPS=['ansible_base.authentication', 'ansible_base.oauth2_provider'])
+    authentication_classes = settings['REST_FRAMEWORK']['DEFAULT_AUTHENTICATION_CLASSES']
+
+    assert 'ansible_base.authentication.bearer_authentication.BearerAuthentication' in authentication_classes
+    assert 'ansible_base.oauth2_provider.authentication.LoggedOAuth2Authentication' not in authentication_classes
+
+
+def test_oauth2_provider_without_authentication_app_uses_local_oauth2_authentication():
+    settings = factory("", "TEST", INSTALLED_APPS=['ansible_base.oauth2_provider'])
+    authentication_classes = settings['REST_FRAMEWORK']['DEFAULT_AUTHENTICATION_CLASSES']
+
+    assert 'ansible_base.oauth2_provider.authentication.LoggedOAuth2Authentication' in authentication_classes
+    assert 'ansible_base.authentication.bearer_authentication.BearerAuthentication' not in authentication_classes
+
+
 def test_append_middleware():
     settings = factory("", "TEST", INSTALLED_APPS=['ansible_base.authentication'], REST_FRAMEWORK={}, MIDDLEWARE=['something'])
     assert 'ansible_base.authentication.middleware.AuthenticatorBackendMiddleware' == settings['MIDDLEWARE'][-1]

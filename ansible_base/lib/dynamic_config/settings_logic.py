@@ -323,7 +323,14 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         oauth2_provider['ACCESS_TOKEN_MODEL'] = DEFAULT_OAUTH2_ACCESS_TOKEN
 
         rest_framework.setdefault('DEFAULT_AUTHENTICATION_CLASSES', [])
-        oauth2_authentication_class = 'ansible_base.oauth2_provider.authentication.LoggedOAuth2Authentication'
+        # External authenticator plugins require the authentication app. Keep
+        # the standalone OAuth2 handler available to consumers that install
+        # only the OAuth2 provider app.
+        oauth2_authentication_class = (
+            'ansible_base.authentication.bearer_authentication.BearerAuthentication'
+            if 'ansible_base.authentication' in installed_apps
+            else 'ansible_base.oauth2_provider.authentication.LoggedOAuth2Authentication'
+        )
         if oauth2_authentication_class not in rest_framework['DEFAULT_AUTHENTICATION_CLASSES']:
             rest_framework['DEFAULT_AUTHENTICATION_CLASSES'].insert(0, oauth2_authentication_class)
 

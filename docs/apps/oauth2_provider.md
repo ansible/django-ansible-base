@@ -53,7 +53,8 @@ If you want to manually add the URLs without dynamic urls, see the `oauth2_provi
 Additional settings are required to enable OAuth2 for your rest endpoints.
 This will happen automatically if using [dynamic_settings](../Installation.md)
 
-To manually configure the settings in your application 
+To manually configure the settings in an application that also enables
+`ansible_base.authentication`, use the unified Bearer authenticator:
 ```
 OAUTH2_PROVIDER = {
     'ACCESS_TOKEN_EXPIRE_SECONDS': 31536000000
@@ -65,7 +66,7 @@ OAUTH2_PROVIDER = {
 
 REST_FRAMEWORK = [
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'ansible_base.oauth2_provider.authentication.LoggedOAuth2Authentication',
+        'ansible_base.authentication.bearer_authentication.BearerAuthentication',
         ...
     ]
 ]
@@ -76,6 +77,9 @@ OAUTH2_PROVIDER_ID_TOKEN_MODEL = "dab_oauth2_provider.OAuth2IDToken"
 
 ALLOW_OAUTH2_FOR_EXTERNAL_USERS = False
 ```
+
+Applications that enable only `ansible_base.oauth2_provider` can continue to
+use `ansible_base.oauth2_provider.authentication.LoggedOAuth2Authentication`.
 
 ### Runtime settings
 You may want to allow for some of the settings above to be runtime instead of hard coded. These might include the EXPIRE_SECONDS and ALLOW_OATUH2_FOR_EXTERNAL_USERS.

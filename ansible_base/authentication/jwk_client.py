@@ -12,7 +12,7 @@ class CachedJWKClient(PyJWKClient):
     forced_refresh_cooldown = 60
 
     def __init__(self, uri: str, **kwargs: Any) -> None:
-        """Initialize a client whose shared cache namespace is derived from its URI."""
+        """Override PyJWT initialization to derive the shared-cache namespace from the provider URI."""
         super().__init__(uri, **kwargs)
         self.cache_timeout = kwargs.get("lifespan", 300)
         self._cache_namespace = hashlib.sha256(uri.encode()).hexdigest()
@@ -38,7 +38,7 @@ class CachedJWKClient(PyJWKClient):
         return f"external_oauth_jwk:{self._cache_namespace}:{cache_identifier}"
 
     def get_jwk_set(self, refresh: bool = False) -> PyJWKSet:
-        """Return this provider's cached JWKS, fetching it once when absent or forced to refresh."""
+        """Override PyJWT JWKS lookup to share provider keys and refresh coordination through Django's cache."""
         jwk_set = None if refresh else cache.get(self._jwk_set_cache_key)
         if jwk_set is None:
             if refresh and not cache.add(self._refresh_lock_key, True, timeout=self.forced_refresh_cooldown):
@@ -58,7 +58,7 @@ class CachedJWKClient(PyJWKClient):
         return PyJWKSet.from_dict(jwk_set)
 
     def get_signing_key_from_jwt(self, token: str) -> PyJWK:
-        """Return a cached signing key for a JWT, rejecting tokens without a key identifier."""
+        """Override PyJWT key lookup to cache a signing key by provider URI and JWT key ID across processes."""
         kid = get_unverified_header(token).get("kid")
         if not kid:
             raise PyJWKClientError("JWT header is missing kid")
@@ -90,17 +90,3 @@ class CachedJWKClient(PyJWKClient):
             raise PyJWKClientError(f"Unable to find a signing key that matches: {kid}")
         cache.set(self._signing_key_cache_key(kid), signing_key._jwk_data, timeout=self.cache_timeout)
         return signing_key
-
-    def get_signing_key(self, kid: str) -> PyJWK:
-        """Resolve a signing key, retrying once with a forced JWKS refresh for an unknown key ID."""
-        signing_keys = self.get_signing_keys()
-        signing_key = self.match_kid(signing_keys, kid)
-        if signing_key:
-            return signing_key
-
-        signing_keys = self.get_signing_keys(refresh=True)
-        signing_key = self.match_kid(signing_keys, kid)
-        if signing_key:
-            return signing_key
-
-        raise PyJWKClientError(f"Unable to find a signing key that matches: {kid}")

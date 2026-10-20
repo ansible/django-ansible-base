@@ -133,7 +133,7 @@ def test_cached_jwk_client_blocks_second_forced_refresh_during_cooldown():
     assert from_dict.call_count == 1
 
 
-def test_cached_jwk_client_refreshes_once_for_unknown_kid():
+def test_cached_jwk_client_delegates_unknown_kid_refresh_to_pyjwt():
     client = CachedJWKClient("https://issuer.example.com/keys")
     refreshed_key = Mock()
     with patch.object(client, "get_signing_keys", side_effect=[[], [refreshed_key]]) as get_keys, patch.object(
@@ -143,10 +143,12 @@ def test_cached_jwk_client_refreshes_once_for_unknown_kid():
     assert get_keys.call_args_list[1].kwargs == {"refresh": True}
 
 
-def test_cached_jwk_client_throttles_repeated_unknown_kid_refreshes():
+def test_cached_jwk_client_rejects_unknown_kid_when_shared_refresh_is_throttled():
     client = CachedJWKClient("https://issuer.example.com/keys")
-    with patch.object(client, "get_signing_keys", return_value=[]), patch.object(client, "match_kid", return_value=None), patch.object(
-        client, "get_jwk_set", side_effect=PyJWKClientError("refresh is already in progress")
+    with patch.object(client, "match_kid", return_value=None), patch.object(
+        client,
+        "get_signing_keys",
+        side_effect=[[], PyJWKClientError("JWKS refresh is already in progress")],
     ):
-        with pytest.raises(PyJWKClientError, match="missing"):
+        with pytest.raises(PyJWKClientError, match="refresh is already in progress"):
             client.get_signing_key("missing")
