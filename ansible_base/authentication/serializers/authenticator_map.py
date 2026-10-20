@@ -123,7 +123,7 @@ class AuthenticatorMapSerializer(CleanTextMixin, NamedCommonModelSerializer):
             except Exception:
                 logger.exception("Unexpected error validating trigger attribute name '%s'", attr_name)
                 if get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False):
-                    key_errors[error_key] = [_INCOMPLETE_VALIDATION_MSG]
+                    key_errors[error_key] = [str(_INCOMPLETE_VALIDATION_MSG)]
         return key_errors
 
     def validate_role_data(self, map_type: Optional[str], role: Optional[str], org: Optional[str], team: Optional[str]) -> dict[str, TranslatedString]:
