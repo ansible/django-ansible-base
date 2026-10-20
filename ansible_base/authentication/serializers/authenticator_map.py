@@ -9,7 +9,7 @@ from ansible_base.authentication.utils.authenticator_map import _EXPANSION_FIELD
 from ansible_base.authentication.utils.trigger_definition import TRIGGER_DEFINITION
 from ansible_base.lib.serializers.common import NamedCommonModelSerializer
 from ansible_base.lib.serializers.fields import JSONField
-from ansible_base.lib.serializers.mixins import CleanTextMixin, _INCOMPLETE_VALIDATION_MSG
+from ansible_base.lib.serializers.mixins import _INCOMPLETE_VALIDATION_MSG, CleanTextMixin
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.string import is_empty
 from ansible_base.lib.utils.typing import TranslatedString
