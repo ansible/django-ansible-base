@@ -125,20 +125,150 @@ def django_pglocks_advisory_lock(lock_id, shared=False, wait=True, using=None):
         cursor.close()
 
 
+def _convert_lock_id_to_resource_name(lock_id):
+    """
+    Convert PostgreSQL-style lock ID to MS SQL Server resource name.
+
+    PostgreSQL accepts integers, tuples of integers, or strings.
+    MS SQL Server requires nvarchar resource names (max 255 chars).
+
+    Args:
+        lock_id: int, str, or tuple/list of ints
+
+    Returns:
+        str: Resource name for sp_getapplock
+    """
+    if isinstance(lock_id, str):
+        # Already a string - truncate to 255 chars if needed
+        return lock_id[:255]
+    elif isinstance(lock_id, int):
+        return f"dab_lock_{lock_id}"
+    elif isinstance(lock_id, (list, tuple)):
+        # Join tuple elements with underscore
+        return f"dab_lock_{'_'.join(str(x) for x in lock_id)}"[:255]
+    else:
+        # Fall back to hash for other types
+        pos = crc32(str(lock_id).encode("utf-8"))
+        return f"dab_lock_{pos}"
+
+
+@contextmanager
+def _mssql_advisory_lock(lock_id, shared=False, wait=True, lock_session_timeout_milliseconds=0, using=None):
+    """
+    MS SQL Server advisory lock implementation using sp_getapplock.
+
+    Args:
+        lock_id: Lock identifier (converted to resource name)
+        shared: If True, use Shared lock mode; otherwise Exclusive
+        wait: If False, fail immediately if lock unavailable
+        lock_session_timeout_milliseconds: Lock timeout in milliseconds
+        using: Django database alias
+
+    Yields:
+        bool: True if lock acquired, False if not (when wait=False)
+    """
+    if using is None:
+        using = DEFAULT_DB_ALIAS
+
+    # Convert lock ID to resource name
+    resource_name = _convert_lock_id_to_resource_name(lock_id)
+
+    # Determine lock mode
+    lock_mode = 'Shared' if shared else 'Exclusive'
+
+    # Determine timeout
+    # -1 = wait indefinitely (default)
+    # 0 = return immediately if locked
+    # >0 = wait up to N milliseconds
+    if not wait:
+        timeout = 0
+    elif lock_session_timeout_milliseconds > 0:
+        timeout = lock_session_timeout_milliseconds
+    else:
+        timeout = -1  # Wait indefinitely
+
+    cursor = connections[using].cursor()
+    acquired = False
+
+    try:
+        # sp_getapplock return values:
+        # 0 = lock granted immediately
+        # 1 = lock granted after waiting
+        # -1 = timeout
+        # -2 = canceled
+        # -3 = deadlock victim
+        # -999 = parameter validation or other error
+        cursor.execute(
+            "DECLARE @result int; EXEC @result = sp_getapplock @Resource=%s, @LockMode=%s, @LockTimeout=%s; SELECT @result",
+            [resource_name, lock_mode, timeout]
+        )
+        result = cursor.fetchone()[0]
+
+        if result >= 0:
+            # Lock acquired (0 or 1)
+            acquired = True
+        elif result == -1:
+            # Timeout - not an error if wait=False
+            if wait:
+                logger.warning(f'MS SQL advisory lock timeout for resource {resource_name}')
+            acquired = False
+        else:
+            # Other errors (-2, -3, -999)
+            raise OperationalError(f'MS SQL sp_getapplock failed with code {result} for resource {resource_name}')
+
+        yield acquired
+
+    finally:
+        if acquired:
+            # Release the lock
+            cursor.execute("EXEC sp_releaseapplock @Resource=%s", [resource_name])
+        cursor.close()
+
+
 @contextmanager
 def advisory_lock(*args, lock_session_timeout_milliseconds=0, **kwargs):
-    """Context manager that wraps the pglocks advisory lock
+    """
+    Context manager for database advisory locks.
 
-    This obtains a named lock in postgres, idenfied by the args passed in
-    usually the lock identifier is a simple string.
+    Supports PostgreSQL, MS SQL Server, and SQLite (no-op).
+    Obtains a named lock identified by the args passed in.
 
-    @param: wait If True, block until the lock is obtained
-    @param: shared Whether or not the lock is shared
-    @param: lock_session_timeout_milliseconds Postgres-level timeout
-    @param: using django database identifier
+    Args:
+        *args: Lock identifier (usually a string, int, or tuple)
+        lock_session_timeout_milliseconds: Database-level timeout in milliseconds
+        **kwargs: Additional arguments
+            - wait (bool): If True, block until lock is obtained
+            - shared (bool): If True, allow shared locks
+            - using (str): Django database alias
+
+    Yields:
+        bool: True if lock acquired, False if not (when wait=False)
+
+    Raises:
+        RuntimeError: If database vendor is not supported
+        OperationalError: If lock operation fails
+
+    Examples:
+        # Exclusive lock
+        with advisory_lock('my_lock'):
+            # Critical section
+
+        # Shared lock with timeout
+        with advisory_lock('my_lock', shared=True, lock_session_timeout_milliseconds=5000) as acquired:
+            if acquired:
+                # Lock acquired
+                pass
+
+        # Try-lock (non-blocking)
+        with advisory_lock('my_lock', wait=False) as acquired:
+            if acquired:
+                # Got the lock
+                pass
     """
     internal_error = False
+
     if connection.vendor == "postgresql":
+        # PostgreSQL implementation using pg_advisory_lock
         cur = None
         idle_in_transaction_session_timeout = None
         idle_session_timeout = None
@@ -165,8 +295,32 @@ def advisory_lock(*args, lock_session_timeout_milliseconds=0, **kwargs):
                     cur.execute("SET idle_in_transaction_session_timeout = %s", (idle_in_transaction_session_timeout,))
                     cur.execute("SET idle_session_timeout = %s", (idle_session_timeout,))
 
+    elif connection.vendor == "microsoft":
+        # MS SQL Server implementation using sp_getapplock
+        # Extract lock_id from args (first positional argument)
+        if not args:
+            raise ValueError("advisory_lock requires a lock identifier as first argument")
+        lock_id = args[0]
+
+        try:
+            with _mssql_advisory_lock(
+                lock_id,
+                shared=kwargs.get('shared', False),
+                wait=kwargs.get('wait', True),
+                lock_session_timeout_milliseconds=lock_session_timeout_milliseconds,
+                using=kwargs.get('using', None)
+            ) as internal_lock:
+                yield internal_lock
+        except OperationalError:
+            logger.info('Dropping connection due to error inside MS SQL advisory_lock')
+            connection.close_if_unusable_or_obsolete()
+            internal_error = True
+            raise
+
     elif connection.vendor == "sqlite":
+        # SQLite no-op - no distributed locking needed
         yield True
+
     else:
         raise RuntimeError(f'Advisory lock not implemented for database type {connection.vendor}')
 
