@@ -65,7 +65,7 @@ def apply_oauth2_customizations() -> None:
 
             return {'type': 'oauth2', 'flows': flows}
 
-    class StandaloneOAuth2Scheme(OAuth2Scheme):
+    class StandaloneOAuth2Scheme(OAuth2Scheme):  # NOSONAR(S5603) -- drf-spectacular registers extension subclasses at class definition.
         """Preserve OAuth2 schema support for installations without the authentication app."""
 
         target_class = LoggedOAuth2Authentication

@@ -87,42 +87,18 @@ class BearerAuthentication(BaseAuthentication):
         """Authenticate a Bearer token or reject it after every Bearer handler declines it."""
         logger.debug("Authenticating with BearerAuthentication")
 
-        authorization = request.headers.get("Authorization")
-        if not authorization:
-            logger.debug("No Authorization header found")
+        credential = self._get_bearer_credential(request)
+        if credential is None:
             return None
+        auth_scheme, token = credential
 
-        auth_type, _, token = authorization.partition(" ")
-        token = token.strip()
-        auth_scheme = auth_type.lower()
-        if auth_scheme not in {"bearer", "token"}:
-            logger.debug("Authorization header is not a Bearer credential")
-            return None
-        if not token:
-            self._raise_failure(request)
-
+        first_failure = None
         if auth_scheme == "bearer":
             # API authenticator plugins determine whether they own a token. The
             # dispatcher intentionally does not assume Bearer tokens are JWTs.
-            first_failure = None
-            for authenticator_id, authenticator in self._api_authentication_backends().items():
-                try:
-                    user = authenticator.authenticate(request, token=token)
-                except BearerTokenValidationError as exc:
-                    # An expected failure from a matching plugin does not stop
-                    # later providers from authenticating an overlapping token.
-                    # The first failure wins only if every handler declines.
-                    if first_failure is None:
-                        first_failure = exc
-                    logger.debug(f"API authenticator with ID {authenticator_id} rejected a token it owns: {exc.reason}")
-                    continue
-                except Exception:
-                    log_auth_exception(f'API authenticator with ID "{authenticator_id}" raised an exception')
-                    continue
-
-                if user is not None:
-                    log_auth_event(f'User {user.username} authenticated with API authenticator with ID "{authenticator_id}"')
-                    return user, token
+            user, first_failure = self._authenticate_api_plugins(request, token)
+            if user is not None:
+                return user, token
 
         # ``Token`` is a documented compatibility form for local OAuth2
         # clients. Local OAuth2 is also the final standard-Bearer handler, so a
@@ -132,6 +108,47 @@ class BearerAuthentication(BaseAuthentication):
             return local_oauth_result
 
         self._raise_failure(request, first_failure if auth_scheme == "bearer" else None)
+
+    def _get_bearer_credential(self, request: HttpRequest) -> tuple[str, str] | None:
+        """Return a supported authorization scheme and token, or decline another scheme."""
+        authorization = request.headers.get("Authorization")
+        if not authorization:
+            logger.debug("No Authorization header found")
+            return None
+
+        auth_type, _, token = authorization.partition(" ")
+        auth_scheme = auth_type.lower()
+        if auth_scheme not in {"bearer", "token"}:
+            logger.debug("Authorization header is not a Bearer credential")
+            return None
+
+        token = token.strip()
+        if not token:
+            self._raise_failure(request)
+        return auth_scheme, token
+
+    def _authenticate_api_plugins(self, request: HttpRequest, token: str) -> tuple[AbstractBaseUser | None, BearerTokenValidationError | None]:
+        """Try API plugins and preserve the first expected failure for a final 401."""
+        first_failure = None
+        for authenticator_id, authenticator in self._api_authentication_backends().items():
+            try:
+                user = authenticator.authenticate(request, token=token)
+            except BearerTokenValidationError as exc:
+                # An expected failure from a matching plugin does not stop later
+                # providers from authenticating an overlapping token.
+                if first_failure is None:
+                    first_failure = exc
+                logger.debug(f"API authenticator with ID {authenticator_id} rejected a token it owns: {exc.reason}")
+                continue
+            except Exception:
+                log_auth_exception(f'API authenticator with ID "{authenticator_id}" raised an exception')
+                continue
+
+            if user is not None:
+                log_auth_event(f'User {user.username} authenticated with API authenticator with ID "{authenticator_id}"')
+                return user, first_failure
+
+        return None, first_failure
 
     def authenticate_header(self, request: HttpRequest) -> str:
         """Return the OAuth2-provided Bearer challenge for rejected Bearer credentials."""

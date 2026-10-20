@@ -52,8 +52,11 @@ def test_bearer_authentication_ignores_missing_or_non_bearer_authorization(auth_
 @pytest.mark.django_db
 def test_bearer_authentication_rejects_an_empty_bearer_token():
     """A declared Bearer scheme with no credential is invalid."""
+    authenticator = BearerAuthentication()
+    request = _request("")
+
     with pytest.raises(AuthenticationFailed, match="Invalid Bearer token"):
-        BearerAuthentication().authenticate(_request(""))
+        authenticator.authenticate(request)
 
 
 @pytest.mark.django_db
@@ -71,8 +74,9 @@ def test_bearer_authentication_passes_opaque_tokens_to_api_authenticators():
         patch.object(BearerAuthentication, "_authenticate_local_oauth", return_value=None),
     ):
         request = _request("opaque-token")
+        authenticator = BearerAuthentication()
         with pytest.raises(AuthenticationFailed, match="Invalid Bearer token"):
-            BearerAuthentication().authenticate(request)
+            authenticator.authenticate(request)
 
     plugin.authenticate.assert_called_once_with(request, token="opaque-token")
 
@@ -235,8 +239,10 @@ def test_bearer_authentication_returns_safe_rfc6750_failure(reason, detail, chal
         patch.object(BearerAuthentication, "_api_authentication_backends", return_value=OrderedDict([(17, plugin)])),
         patch.object(BearerAuthentication, "_authenticate_local_oauth", return_value=None),
     ):
+        authenticator = BearerAuthentication()
+        request = _request("opaque-token")
         with pytest.raises(BearerAuthenticationFailed) as exc_info:
-            BearerAuthentication().authenticate(_request("opaque-token"))
+            authenticator.authenticate(request)
 
     assert str(exc_info.value.detail) == detail
     assert exc_info.value.auth_header == challenge
@@ -269,8 +275,10 @@ def test_bearer_authentication_audits_unexpected_plugin_exceptions_without_token
         patch.object(BearerAuthentication, "_authenticate_local_oauth", return_value=None),
         patch("ansible_base.authentication.bearer_authentication.log_auth_exception") as log_auth_exception,
     ):
+        authenticator = BearerAuthentication()
+        request = _request("untrusted token content")
         with pytest.raises(BearerAuthenticationFailed):
-            BearerAuthentication().authenticate(_request("untrusted token content"))
+            authenticator.authenticate(request)
 
     audit_message = log_auth_exception.call_args.args[0]
     assert audit_message == 'API authenticator with ID "17" raised an exception'
@@ -284,8 +292,10 @@ def test_bearer_authentication_rejects_token_when_all_handlers_decline():
         patch.object(BearerAuthentication, "_api_authentication_backends", return_value=OrderedDict()),
         patch.object(BearerAuthentication, "_authenticate_local_oauth", return_value=None),
     ):
+        authenticator = BearerAuthentication()
+        request = _request("opaque-token")
         with pytest.raises(AuthenticationFailed, match="Invalid Bearer token"):
-            BearerAuthentication().authenticate(_request("opaque-token"))
+            authenticator.authenticate(request)
 
 
 @pytest.mark.django_db
