@@ -127,9 +127,9 @@ class AuthenticatorMapSerializer(CleanTextMixin, NamedCommonModelSerializer):
             validate_free_text(attr_name)
         except ValidationError as exc:
             key_errors[error_key] = exc.detail
-            self._log_validation_failure(f'triggers.{error_key}', exc.detail)
+            self._log_validation_failure('triggers.attributes', exc.detail)
         except Exception:
-            logger.exception("Unexpected error validating trigger attribute name '%s'", attr_name)
+            logger.exception("Unexpected error validating trigger attribute name under triggers.attributes")
             if get_setting('ENHANCED_INPUT_VALIDATION_ENABLED', False):
                 key_errors[error_key] = [_INCOMPLETE_VALIDATION_MSG]
 
