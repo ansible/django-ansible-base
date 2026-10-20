@@ -1,11 +1,11 @@
 import logging
 
+from django.utils.translation import gettext_lazy as _
 from social_core.backends.github import GithubOrganizationOAuth2
 
 from ansible_base.authentication.authenticator_configurators.github import GithubOrganizationConfiguration
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin
 from ansible_base.authentication.social_auth import SocialAuthMixin, SocialAuthValidateCallbackMixin
-from django.utils.translation import gettext_lazy as _
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.github_organization')
 

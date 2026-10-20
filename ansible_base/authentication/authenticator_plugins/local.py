@@ -2,11 +2,11 @@ import logging
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
+from django.utils.translation import gettext_lazy as _
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.utils.authentication import get_or_create_authenticator_user
 from ansible_base.authentication.utils.claims import update_user_claims
-from django.utils.translation import gettext_lazy as _
 
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.local')
 
