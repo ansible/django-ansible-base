@@ -4,7 +4,7 @@ from typing import Any
 
 import requests
 from django.conf import settings
-from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AbstractBaseUser
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.utils.translation import gettext_lazy as _
 from jwt import decode
@@ -24,8 +24,6 @@ from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.validation import validate_url
 
 logger = logging.getLogger("ansible_base.authentication.authenticator_plugins.external_oauth")
-User = get_user_model()
-
 OIDC_DISCOVERY_PATH = "/.well-known/openid-configuration"
 OIDC_DISCOVERY_TIMEOUT_SETTING = "ANSIBLE_BASE_EXTERNAL_OAUTH_DISCOVERY_TIMEOUT"
 OIDC_DISCOVERY_TIMEOUT_DEFAULT = 30
@@ -450,7 +448,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
             leeway=configuration["JWT_CLOCK_SKEW_TOLERANCE_SECONDS"],
         )
 
-    def authenticate(self, request: Any = None, *, token: str | None = None, **kwargs: Any) -> User | None:
+    def authenticate(self, request: Any = None, *, token: str | None = None, **kwargs: Any) -> AbstractBaseUser | None:
         """Validate a bearer token, provision its identity, and apply authenticator maps."""
         if token is None or self.database_instance is None:
             logger.debug("External OAuth token is None or database instance is None")

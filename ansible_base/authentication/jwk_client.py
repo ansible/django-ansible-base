@@ -79,7 +79,7 @@ class CachedJWKClient(PyJWKClient):
             raise PyJWKClientError("The JWKS endpoint did not return a JSON object")
         return PyJWKSet.from_dict(jwk_set)
 
-    def get_signing_key_from_jwt(self, token: str) -> PyJWK:
+    def get_signing_key_from_jwt(self, token: str | bytes) -> PyJWK:
         """Override PyJWT key lookup to cache a signing key by provider URI and JWT key ID across processes."""
         kid = get_unverified_header(token).get("kid")
         if not kid:

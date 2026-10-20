@@ -33,9 +33,7 @@ def test_oauth2_scheme_type_is_oauth2_not_apikey():
     from ansible_base.authentication.bearer_authentication import BearerAuthentication
 
     # Intentionally access _registry to verify OAuth2Scheme is registered with expected attributes
-    oauth2_schemes = [
-        ext for ext in OpenApiAuthenticationExtension._registry if hasattr(ext, 'target_class') and ext.target_class == BearerAuthentication
-    ]
+    oauth2_schemes = [ext for ext in OpenApiAuthenticationExtension._registry if hasattr(ext, 'target_class') and ext.target_class == BearerAuthentication]
     assert len(oauth2_schemes) >= 1, "OAuth2_Authentication should be registered"
 
     # Get the first matching scheme
@@ -60,9 +58,7 @@ def test_oauth2_scheme_includes_configured_flows():
     from ansible_base.authentication.bearer_authentication import BearerAuthentication
 
     # Intentionally access _registry to verify OAuth2Scheme is registered with expected attributes
-    oauth2_schemes = [
-        ext for ext in OpenApiAuthenticationExtension._registry if hasattr(ext, 'target_class') and ext.target_class == BearerAuthentication
-    ]
+    oauth2_schemes = [ext for ext in OpenApiAuthenticationExtension._registry if hasattr(ext, 'target_class') and ext.target_class == BearerAuthentication]
     oauth2_scheme = oauth2_schemes[0](target=BearerAuthentication)
     security_def = oauth2_scheme.get_security_definition(auto_schema=MagicMock())
 

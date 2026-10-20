@@ -1,10 +1,10 @@
 import logging
 from collections import OrderedDict
 from functools import lru_cache
-from typing import Any
+from typing import Any, NoReturn
 
 from django.conf import settings
-from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AbstractBaseUser
 from django.http import HttpRequest
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
@@ -14,7 +14,6 @@ from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.logging import log_auth_event, log_auth_exception
 
 logger = logging.getLogger("ansible_base.authentication.bearer_authentication")
-User = get_user_model()
 _REQUEST_CHALLENGE_ATTRIBUTE = "_ansible_base_bearer_authentication_challenge"
 
 
@@ -84,7 +83,7 @@ def get_api_authentication_backends(last_updated: Any) -> OrderedDict[int, Any]:
 class BearerAuthentication(BaseAuthentication):
     """Dispatch standard Bearer credentials to configured API authenticators and local OAuth2."""
 
-    def authenticate(self, request: HttpRequest) -> tuple[User, Any] | None:
+    def authenticate(self, request: HttpRequest) -> tuple[AbstractBaseUser, Any] | None:
         """Authenticate a Bearer token or reject it after every Bearer handler declines it."""
         logger.debug("Authenticating with BearerAuthentication")
 
@@ -157,7 +156,7 @@ class BearerAuthentication(BaseAuthentication):
         """Return whether the optional DAB OAuth2 provider is available for Bearer fallback."""
         return "ansible_base.oauth2_provider" in settings.INSTALLED_APPS
 
-    def _authenticate_local_oauth(self, request: HttpRequest) -> tuple[User, Any] | None:
+    def _authenticate_local_oauth(self, request: HttpRequest) -> tuple[AbstractBaseUser, Any] | None:
         """Delegate to local OAuth2 only when its optional application is installed."""
         if not self._oauth2_provider_installed():
             return None
@@ -169,7 +168,7 @@ class BearerAuthentication(BaseAuthentication):
         return LoggedOAuth2Authentication().authenticate(request)
 
     @staticmethod
-    def _raise_failure(request: HttpRequest, failure: BearerTokenValidationError | None = None) -> None:
+    def _raise_failure(request: HttpRequest, failure: BearerTokenValidationError | None = None) -> NoReturn:
         """Raise a final Bearer failure and retain its challenge for DRF response handling."""
         exception = BearerAuthenticationFailed(failure)
         setattr(request, _REQUEST_CHALLENGE_ATTRIBUTE, exception.auth_header)
