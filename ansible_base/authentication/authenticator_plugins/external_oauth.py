@@ -3,6 +3,7 @@ import ssl
 from typing import Any
 
 import requests
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.utils.translation import gettext_lazy as _
@@ -39,6 +40,24 @@ _BASELINE_ATTRIBUTES = [
     "client_id",
     "groups",
 ]
+
+
+def _local_oidc_issuer() -> str | None:
+    """Return this deployment's OIDC issuer when DAB's optional provider is installed.
+
+    External OAuth is reusable outside Gateway, so it deliberately knows only
+    about DAB's optional OAuth2 provider configuration—not Gateway settings or
+    Workload Identity.  A deployment without that provider has no local issuer
+    to reserve.
+    """
+    if "ansible_base.oauth2_provider" not in settings.INSTALLED_APPS:
+        return None
+
+    oauth2_provider = get_setting("OAUTH2_PROVIDER", {})
+    if not isinstance(oauth2_provider, dict):
+        return None
+    issuer = oauth2_provider.get("OIDC_ISS_ENDPOINT")
+    return issuer.strip() if isinstance(issuer, str) and issuer.strip() else None
 
 
 def oidc_discovery_url(oidc_endpoint: str) -> str:
@@ -87,18 +106,18 @@ def fetch_oidc_discovery(oidc_endpoint: str, verify_ssl: bool = True) -> dict[st
         )
         # Strict OIDC discovery responses are HTTP 200 (not other 2xx).
         if response.status_code != 200:
-            logger.warning("OIDC discovery HTTP error for %s: status %s", url, response.status_code)
+            logger.warning(f"OIDC discovery HTTP error for {url}: status {response.status_code}")
             raise ValidationError({"OIDC_ENDPOINT": _("Unable to fetch OIDC discovery document: HTTP %(status)s.") % {"status": response.status_code}})
         document = response.json()
     except requests.exceptions.Timeout as exc:
-        logger.warning("OIDC discovery timed out for %s: %s", url, exc)
+        logger.warning(f"OIDC discovery timed out for {url}: {exc}")
         raise ValidationError({"OIDC_ENDPOINT": _("OIDC discovery request timed out.")}) from exc
     except requests.exceptions.JSONDecodeError as exc:
         body = _bounded_body_for_log(response.text if response is not None else "")
-        logger.debug("OIDC discovery invalid JSON from %s: %s; body=%s", url, exc, body)
+        logger.debug(f"OIDC discovery invalid JSON from {url}: {exc}; body={body}")
         raise ValidationError({"OIDC_ENDPOINT": _("OIDC discovery document is not valid JSON.")}) from exc
     except requests.exceptions.RequestException as exc:
-        logger.warning("OIDC discovery network error for %s: %s", url, exc)
+        logger.warning(f"OIDC discovery network error for {url}: {exc}")
         raise ValidationError({"OIDC_ENDPOINT": _("Unable to reach OIDC discovery endpoint.")}) from exc
 
     if not isinstance(document, dict):
@@ -288,6 +307,10 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
             errors["JWKS_URI"] = message
             errors["OIDC_ENDPOINT"] = message
 
+        local_issuer = _local_oidc_issuer()
+        if local_issuer and attrs.get("ISSUER_URL") == local_issuer:
+            errors["ISSUER_URL"] = _("An external OAuth issuer cannot be this deployment's local OIDC issuer.")
+
         claim_list = attrs.get("CLAIM_LIST") or []
         invalid_claims = [claim for claim in claim_list if not isinstance(claim, str) or not claim.strip()]
         if invalid_claims:
@@ -392,7 +415,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
                 },
             )
         except (PyJWTError, TypeError, ValueError) as exc:
-            logger.debug("External OAuth token cannot be routed to an issuer: %s", exc)
+            logger.debug(f"External OAuth token cannot be routed to an issuer: {exc}")
             return False
 
         if payload.get("iss") != configuration["ISSUER_URL"]:
@@ -403,8 +426,29 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         if isinstance(audience, str):
             return audience == expected_audience
         if isinstance(audience, list):
-            return all(isinstance(value, str) for value in audience) and expected_audience in audience
+            # This is routing only. PyJWT performs the authoritative claim-type
+            # and audience validation after this provider selects the token.
+            return expected_audience in audience
         return False
+
+    @staticmethod
+    def _decode_validated_token(token: str, signing_key: Any, configuration: dict[str, Any]) -> dict[str, Any]:
+        """Verify one JWT against a resolved signing key and provider configuration.
+
+        The initial validation and one key-rotation retry intentionally share
+        identical JWT requirements. Their error handling stays in
+        ``authenticate`` because key lookup and refresh failures have distinct
+        client-safe outcomes.
+        """
+        return decode(
+            token,
+            key=signing_key.key,
+            algorithms=configuration["ALLOWED_ALGORITHMS"],
+            audience=configuration["AUDIENCE"],
+            issuer=configuration["ISSUER_URL"],
+            options={"require": ["exp"]},
+            leeway=configuration["JWT_CLOCK_SKEW_TOLERANCE_SECONDS"],
+        )
 
     def authenticate(self, request: Any = None, *, token: str | None = None, **kwargs: Any) -> User | None:
         """Validate a bearer token, provision its identity, and apply authenticator maps."""
@@ -416,7 +460,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
 
         configuration = self.database_instance.configuration
         if not self._matches_token_routing_claims(token, configuration):
-            logger.debug("External OAuth token does not match authenticator %s", self.database_instance.name)
+            logger.debug(f"External OAuth token does not match authenticator {self.database_instance.name}")
             return None
 
         logger.debug(f"Validating external OAuth token against authenticator {self.database_instance.name}")
@@ -431,9 +475,10 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
             # production endpoints are still constrained to HTTPS by schema validation.
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
+            ssl_context.verify_mode = ssl.CERT_NONE  # NOSONAR: configurable local-development support for self-signed IdPs.
 
         try:
+            logger.debug(f"Fetching the signing key for external OAuth authenticator {self.database_instance.name}")
             jwk_client = CachedJWKClient(
                 jwks_uri,
                 lifespan=configuration["JWKS_CACHE_TIMEOUT"],
@@ -444,33 +489,27 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         except PyJWKClientConnectionError:
             # The provider owns this token, but no cached key was available to
             # validate it while the JWKS endpoint was unreachable.
-            logger.warning("External OAuth JWKS endpoint is unavailable for authenticator %s", self.database_instance.name)
+            logger.warning(f"External OAuth JWKS endpoint is unavailable for authenticator {self.database_instance.name}")
             raise BearerTokenValidationError("provider_unavailable") from None
         except PyJWKClientError:
             # Missing key IDs and malformed JWT headers are normal invalid-token
             # outcomes. Do not include provider exception text in logs because
             # third-party libraries can include untrusted input in it.
-            logger.debug("External OAuth signing key lookup rejected a token for authenticator %s", self.database_instance.name)
+            logger.debug(f"External OAuth signing key lookup rejected a token for authenticator {self.database_instance.name}")
             raise BearerTokenValidationError() from None
 
         try:
-            claims = decode(
-                token,
-                key=signing_key.key,
-                algorithms=configuration["ALLOWED_ALGORITHMS"],
-                audience=configuration["AUDIENCE"],
-                issuer=configuration["ISSUER_URL"],
-                options={"require": ["exp"]},
-                leeway=configuration["JWT_CLOCK_SKEW_TOLERANCE_SECONDS"],
-            )
-            logger.debug(f"{self.database_instance.name} token decrypted!")
+            logger.debug(f"Fetched signing key for external OAuth authenticator {self.database_instance.name}; validating JWT")
+            claims = self._decode_validated_token(token, signing_key, configuration)
+            logger.debug(f"External OAuth JWT validated for authenticator {self.database_instance.name}")
         except ExpiredSignatureError:
-            logger.debug("External OAuth token expired for authenticator %s", self.database_instance.name)
+            logger.debug(f"External OAuth token expired for authenticator {self.database_instance.name}")
             raise BearerTokenValidationError("expired") from None
         except InvalidSignatureError:
             try:
                 # A provider can rotate a key while retaining its kid. Evict the
                 # old key and retry exactly once with a freshly fetched JWKS.
+                logger.debug(f"External OAuth JWT signature failed for authenticator {self.database_instance.name}; refreshing signing key")
                 refreshed_signing_key = jwk_client.refresh_signing_key_from_jwt(token)
                 # Retrying the same public key cannot repair a bad signature.
                 # Avoid unnecessary crypto work after a forced refresh returns
@@ -478,26 +517,18 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
                 if refreshed_signing_key._jwk_data == signing_key._jwk_data:
                     raise BearerTokenValidationError()
                 signing_key = refreshed_signing_key
-                claims = decode(
-                    token,
-                    key=signing_key.key,
-                    algorithms=configuration["ALLOWED_ALGORITHMS"],
-                    audience=configuration["AUDIENCE"],
-                    issuer=configuration["ISSUER_URL"],
-                    options={"require": ["exp"]},
-                    leeway=configuration["JWT_CLOCK_SKEW_TOLERANCE_SECONDS"],
-                )
+                claims = self._decode_validated_token(token, signing_key, configuration)
             except ExpiredSignatureError:
-                logger.debug("External OAuth token expired after key refresh for authenticator %s", self.database_instance.name)
+                logger.debug(f"External OAuth token expired after key refresh for authenticator {self.database_instance.name}")
                 raise BearerTokenValidationError("expired") from None
             except PyJWKClientConnectionError:
-                logger.warning("External OAuth JWKS endpoint is unavailable during refresh for authenticator %s", self.database_instance.name)
+                logger.warning(f"External OAuth JWKS endpoint is unavailable during refresh for authenticator {self.database_instance.name}")
                 raise BearerTokenValidationError("provider_unavailable") from None
             except (PyJWKClientError, PyJWTError):
-                logger.debug("External OAuth token validation failed after key refresh for authenticator %s", self.database_instance.name)
+                logger.debug(f"External OAuth token validation failed after key refresh for authenticator {self.database_instance.name}")
                 raise BearerTokenValidationError() from None
         except PyJWTError:
-            logger.debug("External OAuth token validation failed for authenticator %s", self.database_instance.name)
+            logger.debug(f"External OAuth token validation failed for authenticator {self.database_instance.name}")
             raise BearerTokenValidationError() from None
 
         uid = resolve_uid_from_claims(claims, configuration["CLAIM_LIST"])

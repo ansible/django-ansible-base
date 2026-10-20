@@ -115,7 +115,7 @@ class BearerAuthentication(BaseAuthentication):
                     # The first failure wins only if every handler declines.
                     if first_failure is None:
                         first_failure = exc
-                    logger.debug("API authenticator with ID %s rejected a token it owns: %s", authenticator_id, exc.reason)
+                    logger.debug(f"API authenticator with ID {authenticator_id} rejected a token it owns: {exc.reason}")
                     continue
                 except Exception:
                     log_auth_exception(f'API authenticator with ID "{authenticator_id}" raised an exception')

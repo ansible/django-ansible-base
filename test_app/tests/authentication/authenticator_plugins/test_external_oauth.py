@@ -120,6 +120,22 @@ def test_external_oauth_multiple_providers(admin_api_client, external_oauth_conf
 
 
 @pytest.mark.django_db
+@override_settings(OAUTH2_PROVIDER={"OIDC_ISS_ENDPOINT": "https://gateway.example.com/o"})
+def test_external_oauth_rejects_the_local_oidc_issuer(admin_api_client, external_oauth_configuration):
+    """DAB reserves its own optional OIDC issuer for local token handling."""
+    config = deepcopy(external_oauth_configuration)
+    config["ISSUER_URL"] = "https://gateway.example.com/o"
+    response = admin_api_client.post(
+        get_relative_url("authenticator-list"),
+        data=_authenticator_payload("Local OIDC Collision", config),
+        format="json",
+    )
+
+    assert response.status_code == 400, response.data
+    assert "ISSUER_URL" in response.data.get("configuration", response.data)
+
+
+@pytest.mark.django_db
 @pytest.mark.parametrize(
     "mutation,expected_fields",
     [
