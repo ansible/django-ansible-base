@@ -6,6 +6,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
 from ansible_base.authentication.authenticator_plugins.external_oauth import AuthenticatorPlugin
+from ansible_base.authentication.bearer_authentication import BearerTokenValidationError
 
 
 def _claims(configuration, **overrides):
@@ -33,8 +34,15 @@ def _authenticate_signed_token(plugin, token, public_key):
             return_value=(Mock(is_active=False), Mock(), False),
         ) as get_or_create,
     ):
-        jwk_client.return_value.get_signing_key_from_jwt.return_value = Mock(key=public_key)
-        result = plugin.authenticate(token=token)
+        # A repeated key after a signature failure proves a refreshed JWKS did
+        # not change. The plugin must decline the token without retrying it.
+        signing_key = Mock(key=public_key, _jwk_data={"kid": "test-key"})
+        jwk_client.return_value.get_signing_key_from_jwt.return_value = signing_key
+        jwk_client.return_value.refresh_signing_key_from_jwt.return_value = signing_key
+        try:
+            result = plugin.authenticate(token=token)
+        except BearerTokenValidationError:
+            result = None
     return result, get_or_create
 
 
@@ -94,6 +102,74 @@ def test_external_oauth_plugin_validates_token_and_updates_claims(external_oauth
 
 
 @pytest.mark.django_db
+def test_external_oauth_plugin_uses_first_usable_claim_list_value_for_uid(external_oauth_authenticator):
+    """The ordered CLAIM_LIST selects the uid passed to authenticator-user provisioning."""
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    plugin.database_instance.configuration["CLAIM_LIST"] = ["preferred_username", "email"]
+    user = Mock(is_active=True, username="external-user")
+    claims = {
+        **_routing_claims(plugin.database_instance.configuration),
+        "preferred_username": "first-claim-wins",
+        "email": "user@example.com",
+        "groups": [],
+    }
+
+    with (
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.CachedJWKClient") as jwk_client,
+        patch(
+            "ansible_base.authentication.authenticator_plugins.external_oauth.decode",
+            side_effect=[_routing_claims(plugin.database_instance.configuration), claims],
+        ),
+        patch(
+            "ansible_base.authentication.authenticator_plugins.external_oauth.get_or_create_authenticator_user",
+            return_value=(user, Mock(), True),
+        ) as get_or_create,
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.is_system_user", return_value=False),
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.update_user_claims", return_value=user),
+    ):
+        jwk_client.return_value.get_signing_key_from_jwt.return_value = Mock(key="public-key")
+        assert plugin.authenticate(token="token") == user
+
+    assert get_or_create.call_args.kwargs["uid"] == "first-claim-wins"
+
+
+@pytest.mark.django_db
+def test_external_oauth_plugin_maps_azp_service_principal_through_user_claims(external_oauth_authenticator):
+    """An azp-first service principal provisions an identity and applies normal authenticator maps."""
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    plugin.database_instance.configuration["CLAIM_LIST"] = ["azp", "email"]
+    user = Mock(is_active=True, username="gateway-service")
+    claims = {
+        **_routing_claims(plugin.database_instance.configuration),
+        "azp": "gateway-service",
+        "email": "service@example.com",
+        "groups": ["service-accounts"],
+    }
+
+    with (
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.CachedJWKClient") as jwk_client,
+        patch(
+            "ansible_base.authentication.authenticator_plugins.external_oauth.decode",
+            side_effect=[_routing_claims(plugin.database_instance.configuration), claims],
+        ),
+        patch(
+            "ansible_base.authentication.authenticator_plugins.external_oauth.get_or_create_authenticator_user",
+            return_value=(user, Mock(), True),
+        ) as get_or_create,
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.is_system_user", return_value=False),
+        patch(
+            "ansible_base.authentication.authenticator_plugins.external_oauth.update_user_claims",
+            return_value=user,
+        ) as update_claims,
+    ):
+        jwk_client.return_value.get_signing_key_from_jwt.return_value = Mock(key="public-key")
+        assert plugin.authenticate(token="token") == user
+
+    assert get_or_create.call_args.kwargs["uid"] == "gateway-service"
+    update_claims.assert_called_once_with(user, external_oauth_authenticator, ["service-accounts"], attrs=claims)
+
+
+@pytest.mark.django_db
 @pytest.mark.parametrize(
     "token,database_instance",
     [(None, True), ("token", False)],
@@ -135,7 +211,7 @@ def test_external_oauth_plugin_skips_jwks_for_opaque_tokens(external_oauth_authe
 
 
 @pytest.mark.django_db
-def test_external_oauth_plugin_rejects_signing_key_lookup_failure(external_oauth_authenticator):
+def test_external_oauth_plugin_propagates_unexpected_signing_key_lookup_failure(external_oauth_authenticator):
     plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
     with (
         patch("ansible_base.authentication.authenticator_plugins.external_oauth.CachedJWKClient") as jwk_client,
@@ -145,7 +221,8 @@ def test_external_oauth_plugin_rejects_signing_key_lookup_failure(external_oauth
         ),
     ):
         jwk_client.return_value.get_signing_key_from_jwt.side_effect = RuntimeError("unreachable")
-        assert plugin.authenticate(token="token") is None
+        with pytest.raises(RuntimeError, match="unreachable"):
+            plugin.authenticate(token="token")
 
 
 @pytest.mark.django_db
@@ -155,11 +232,69 @@ def test_external_oauth_plugin_rejects_invalid_jwt_claims(external_oauth_authent
         patch("ansible_base.authentication.authenticator_plugins.external_oauth.CachedJWKClient") as jwk_client,
         patch(
             "ansible_base.authentication.authenticator_plugins.external_oauth.decode",
-            side_effect=[_routing_claims(external_oauth_authenticator.configuration), ValueError("invalid issuer")],
+            side_effect=[_routing_claims(external_oauth_authenticator.configuration), jwt.InvalidIssuerError("invalid issuer")],
         ),
     ):
         jwk_client.return_value.get_signing_key_from_jwt.return_value = Mock(key="public-key")
-        assert plugin.authenticate(token="token") is None
+        with pytest.raises(BearerTokenValidationError, match="Invalid Bearer token"):
+            plugin.authenticate(token="token")
+
+
+@pytest.mark.django_db
+def test_external_oauth_plugin_classifies_expired_tokens(external_oauth_authenticator):
+    """Expired JWTs communicate a safe failure category to the Bearer dispatcher."""
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    with (
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.CachedJWKClient") as jwk_client,
+        patch(
+            "ansible_base.authentication.authenticator_plugins.external_oauth.decode",
+            side_effect=[_routing_claims(external_oauth_authenticator.configuration), jwt.ExpiredSignatureError("expired")],
+        ),
+    ):
+        jwk_client.return_value.get_signing_key_from_jwt.return_value = Mock(key="public-key")
+        with pytest.raises(BearerTokenValidationError) as exc_info:
+            plugin.authenticate(token="token")
+
+    assert exc_info.value.reason == "expired"
+
+
+@pytest.mark.django_db
+def test_external_oauth_plugin_classifies_unavailable_jwks_provider(external_oauth_authenticator):
+    """An unavailable JWKS endpoint has a safe client-visible failure category."""
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    with (
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.CachedJWKClient") as jwk_client,
+        patch(
+            "ansible_base.authentication.authenticator_plugins.external_oauth.decode",
+            return_value=_routing_claims(external_oauth_authenticator.configuration),
+        ),
+    ):
+        jwk_client.return_value.get_signing_key_from_jwt.side_effect = jwt.PyJWKClientConnectionError("unavailable")
+        with pytest.raises(BearerTokenValidationError) as exc_info:
+            plugin.authenticate(token="token")
+
+    assert exc_info.value.reason == "provider_unavailable"
+
+
+@pytest.mark.django_db
+def test_external_oauth_plugin_propagates_unexpected_identity_provisioning_errors(external_oauth_authenticator):
+    """Provisioning defects bubble to the dispatcher, which records unexpected plugin exceptions."""
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    claims = {**_routing_claims(external_oauth_authenticator.configuration), "email": "user@example.com"}
+    with (
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.CachedJWKClient") as jwk_client,
+        patch(
+            "ansible_base.authentication.authenticator_plugins.external_oauth.decode",
+            side_effect=[_routing_claims(external_oauth_authenticator.configuration), claims],
+        ),
+        patch(
+            "ansible_base.authentication.authenticator_plugins.external_oauth.get_or_create_authenticator_user",
+            side_effect=RuntimeError("provisioning failure"),
+        ),
+    ):
+        jwk_client.return_value.get_signing_key_from_jwt.return_value = Mock(key="public-key")
+        with pytest.raises(RuntimeError, match="provisioning failure"):
+            plugin.authenticate(token="token")
 
 
 @pytest.mark.django_db
@@ -181,7 +316,8 @@ def test_external_oauth_plugin_retries_once_after_invalid_signature(external_oau
     ):
         jwk_client.return_value.get_signing_key_from_jwt.return_value = initial_key
         jwk_client.return_value.refresh_signing_key_from_jwt.return_value = refreshed_key
-        assert plugin.authenticate(token="token") is None
+        with pytest.raises(BearerTokenValidationError, match="Invalid Bearer token"):
+            plugin.authenticate(token="token")
 
     jwk_client.return_value.refresh_signing_key_from_jwt.assert_called_once_with("token")
     assert decode_token.call_args_list[2].kwargs["key"] == refreshed_key.key
@@ -202,7 +338,8 @@ def test_external_oauth_plugin_skips_retry_when_refreshed_key_is_unchanged(exter
     ):
         jwk_client.return_value.get_signing_key_from_jwt.return_value = signing_key
         jwk_client.return_value.refresh_signing_key_from_jwt.return_value = refreshed_key
-        assert plugin.authenticate(token="token") is None
+        with pytest.raises(BearerTokenValidationError, match="Invalid Bearer token"):
+            plugin.authenticate(token="token")
 
     assert decode_token.call_count == 2
 
@@ -295,7 +432,8 @@ def test_external_oauth_plugin_requires_expiration_claim(external_oauth_authenti
     )
     with patch("ansible_base.authentication.authenticator_plugins.external_oauth.CachedJWKClient") as jwk_client:
         jwk_client.return_value.get_signing_key_from_jwt.return_value = Mock(key=private_key.public_key())
-        assert plugin.authenticate(token=token) is None
+        with pytest.raises(BearerTokenValidationError, match="Invalid Bearer token"):
+            plugin.authenticate(token=token)
 
 
 @pytest.mark.django_db
@@ -325,4 +463,5 @@ def test_external_oauth_plugin_rejects_unusable_identity(external_oauth_authenti
         ),
     ):
         jwk_client.return_value.get_signing_key_from_jwt.return_value = Mock(key="public-key")
-        assert plugin.authenticate(token="token") is None
+        with pytest.raises(BearerTokenValidationError, match="Invalid Bearer token"):
+            plugin.authenticate(token="token")

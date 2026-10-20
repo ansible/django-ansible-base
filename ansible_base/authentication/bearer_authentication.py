@@ -15,6 +15,46 @@ from ansible_base.lib.logging import log_auth_event, log_auth_exception
 
 logger = logging.getLogger("ansible_base.authentication.bearer_authentication")
 User = get_user_model()
+_REQUEST_CHALLENGE_ATTRIBUTE = "_ansible_base_bearer_authentication_challenge"
+
+
+class BearerTokenValidationError(Exception):
+    """Describe an expected rejection from an API authenticator that owns a token.
+
+    API authenticators return ``None`` when a credential is not theirs.  Once
+    an authenticator recognizes a token, this exception retains a safe failure
+    classification while allowing the dispatcher to try later authenticators.
+    No token value or provider-supplied exception text is carried here.
+    """
+
+    _FAILURES = {
+        "invalid": ("Invalid Bearer token.", None),
+        "expired": ("Bearer token has expired.", "The access token expired"),
+        "provider_unavailable": ("Authentication service unavailable.", "Authentication service unavailable"),
+    }
+
+    def __init__(self, reason: str = "invalid") -> None:
+        """Initialize a safe, RFC 6750-compatible token rejection reason."""
+        if reason not in self._FAILURES:
+            reason = "invalid"
+        self.reason = reason
+        self.detail, self.error_description = self._FAILURES[reason]
+        super().__init__(self.detail)
+
+
+class BearerAuthenticationFailed(AuthenticationFailed):
+    """Return an RFC 6750 Bearer challenge for the final dispatcher failure."""
+
+    def __init__(self, failure: BearerTokenValidationError | None = None) -> None:
+        """Build a client-safe response from the highest-priority plugin failure."""
+        failure = failure or BearerTokenValidationError()
+        super().__init__(failure.detail, code="invalid_token")
+
+        challenge = ['Bearer realm="api"', 'error="invalid_token"']
+        if failure.error_description:
+            challenge.append(f'error_description="{failure.error_description}"')
+        # DRF uses this attribute directly when constructing a 401 response.
+        self.auth_header = ", ".join(challenge)
 
 
 @lru_cache(maxsize=1)
@@ -60,14 +100,23 @@ class BearerAuthentication(BaseAuthentication):
             logger.debug("Authorization header is not a Bearer credential")
             return None
         if not token:
-            raise AuthenticationFailed("Invalid Bearer token.")
+            self._raise_failure(request)
 
         if auth_scheme == "bearer":
             # API authenticator plugins determine whether they own a token. The
             # dispatcher intentionally does not assume Bearer tokens are JWTs.
+            first_failure = None
             for authenticator_id, authenticator in self._api_authentication_backends().items():
                 try:
                     user = authenticator.authenticate(request, token=token)
+                except BearerTokenValidationError as exc:
+                    # An expected failure from a matching plugin does not stop
+                    # later providers from authenticating an overlapping token.
+                    # The first failure wins only if every handler declines.
+                    if first_failure is None:
+                        first_failure = exc
+                    logger.debug("API authenticator with ID %s rejected a token it owns: %s", authenticator_id, exc.reason)
+                    continue
                 except Exception:
                     log_auth_exception(f'API authenticator with ID "{authenticator_id}" raised an exception')
                     continue
@@ -83,10 +132,17 @@ class BearerAuthentication(BaseAuthentication):
         if local_oauth_result is not None:
             return local_oauth_result
 
-        raise AuthenticationFailed("Invalid Bearer token.")
+        self._raise_failure(request, first_failure if auth_scheme == "bearer" else None)
 
     def authenticate_header(self, request: HttpRequest) -> str:
         """Return the OAuth2-provided Bearer challenge for rejected Bearer credentials."""
+        # APIView.handle_exception obtains the response header from this method,
+        # rather than from an AuthenticationFailed instance. Preserve a safe
+        # per-request challenge recorded by ``_raise_failure`` above.
+        challenge = getattr(request, _REQUEST_CHALLENGE_ATTRIBUTE, None)
+        if challenge:
+            return challenge
+
         if not self._oauth2_provider_installed():
             return "Bearer"
 
@@ -111,6 +167,13 @@ class BearerAuthentication(BaseAuthentication):
         from ansible_base.oauth2_provider.authentication import LoggedOAuth2Authentication
 
         return LoggedOAuth2Authentication().authenticate(request)
+
+    @staticmethod
+    def _raise_failure(request: HttpRequest, failure: BearerTokenValidationError | None = None) -> None:
+        """Raise a final Bearer failure and retain its challenge for DRF response handling."""
+        exception = BearerAuthenticationFailed(failure)
+        setattr(request, _REQUEST_CHALLENGE_ATTRIBUTE, exception.auth_header)
+        raise exception
 
     def _api_authentication_backends(self) -> OrderedDict[int, Any]:
         """Load cached API authenticators using the newest API row as the cache version."""

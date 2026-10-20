@@ -4,8 +4,16 @@ from unittest.mock import Mock, patch
 import pytest
 from django.test import RequestFactory
 from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from ansible_base.authentication.bearer_authentication import BearerAuthentication, get_api_authentication_backends
+from ansible_base.authentication.bearer_authentication import (
+    BearerAuthentication,
+    BearerAuthenticationFailed,
+    BearerTokenValidationError,
+    get_api_authentication_backends,
+)
 from ansible_base.authentication.models import Authenticator
 
 
@@ -13,6 +21,17 @@ def _request(token: str | None = None, scheme: str = "Bearer"):
     """Build a request that optionally has an Authorization credential."""
     headers = {} if token is None else {"HTTP_AUTHORIZATION": f"{scheme} {token}"}
     return RequestFactory().get("/", **headers)
+
+
+class _BearerProtectedView(APIView):
+    """Exercise DRF's authentication-error-to-response flow for Bearer challenges."""
+
+    authentication_classes = [BearerAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """Return a response only after the configured authentication succeeds."""
+        return Response()
 
 
 @pytest.fixture(autouse=True)
@@ -102,6 +121,36 @@ def test_bearer_authentication_uses_local_oauth_after_api_authenticators_decline
 
 
 @pytest.mark.django_db
+def test_bearer_authentication_tries_later_matching_external_authenticator_after_first_declines():
+    """A declined matching provider does not prevent an ordered fallback provider from authenticating."""
+    first_matching_external_authenticator = Mock()
+    first_matching_external_authenticator.authenticate.return_value = None
+    second_matching_external_authenticator = Mock()
+    user = Mock(username="external-user")
+    second_matching_external_authenticator.authenticate.return_value = user
+
+    with (
+        patch.object(
+            BearerAuthentication,
+            "_api_authentication_backends",
+            return_value=OrderedDict(
+                [
+                    (17, first_matching_external_authenticator),
+                    (42, second_matching_external_authenticator),
+                ]
+            ),
+        ),
+        patch.object(BearerAuthentication, "_authenticate_local_oauth") as local_authenticate,
+    ):
+        request = _request("external-token")
+        assert BearerAuthentication().authenticate(request) == (user, "external-token")
+
+    first_matching_external_authenticator.authenticate.assert_called_once_with(request, token="external-token")
+    second_matching_external_authenticator.authenticate.assert_called_once_with(request, token="external-token")
+    local_authenticate.assert_not_called()
+
+
+@pytest.mark.django_db
 def test_bearer_authentication_preserves_legacy_local_oauth_token_scheme():
     """The legacy Token scheme remains reserved for the local OAuth2 backend."""
     local_user = Mock(username="local-user")
@@ -134,6 +183,98 @@ def test_bearer_authentication_continues_after_api_plugin_failure():
 
     rejected_plugin.authenticate.assert_called_once()
     accepted_plugin.authenticate.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_bearer_authentication_tries_later_plugins_after_expected_token_failure():
+    """A later matching provider can authenticate after an earlier one rejects a token it owns."""
+    rejected_plugin = Mock()
+    rejected_plugin.authenticate.side_effect = BearerTokenValidationError("expired")
+    accepted_plugin = Mock()
+    user = Mock(username="external-user")
+    accepted_plugin.authenticate.return_value = user
+
+    with (
+        patch.object(
+            BearerAuthentication,
+            "_api_authentication_backends",
+            return_value=OrderedDict([(17, rejected_plugin), (42, accepted_plugin)]),
+        ),
+        patch("ansible_base.authentication.bearer_authentication.log_auth_exception") as log_auth_exception,
+    ):
+        assert BearerAuthentication().authenticate(_request("opaque-token")) == (user, "opaque-token")
+
+    rejected_plugin.authenticate.assert_called_once()
+    accepted_plugin.authenticate.assert_called_once()
+    log_auth_exception.assert_not_called()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "reason,detail,challenge",
+    [
+        ("invalid", "Invalid Bearer token.", 'Bearer realm="api", error="invalid_token"'),
+        (
+            "expired",
+            "Bearer token has expired.",
+            'Bearer realm="api", error="invalid_token", error_description="The access token expired"',
+        ),
+        (
+            "provider_unavailable",
+            "Authentication service unavailable.",
+            'Bearer realm="api", error="invalid_token", error_description="Authentication service unavailable"',
+        ),
+    ],
+)
+def test_bearer_authentication_returns_safe_rfc6750_failure(reason, detail, challenge):
+    """The final matching-plugin failure controls the 401 detail and challenge without exposing a token."""
+    plugin = Mock()
+    plugin.authenticate.side_effect = BearerTokenValidationError(reason)
+
+    with (
+        patch.object(BearerAuthentication, "_api_authentication_backends", return_value=OrderedDict([(17, plugin)])),
+        patch.object(BearerAuthentication, "_authenticate_local_oauth", return_value=None),
+    ):
+        with pytest.raises(BearerAuthenticationFailed) as exc_info:
+            BearerAuthentication().authenticate(_request("opaque-token"))
+
+    assert str(exc_info.value.detail) == detail
+    assert exc_info.value.auth_header == challenge
+
+
+@pytest.mark.django_db
+def test_bearer_authentication_exposes_safe_challenge_in_drf_response():
+    """DRF reads the per-request challenge from authenticate_header when rendering a 401."""
+    plugin = Mock()
+    plugin.authenticate.side_effect = BearerTokenValidationError("expired")
+
+    with (
+        patch.object(BearerAuthentication, "_api_authentication_backends", return_value=OrderedDict([(17, plugin)])),
+        patch.object(BearerAuthentication, "_authenticate_local_oauth", return_value=None),
+    ):
+        response = _BearerProtectedView.as_view()(_request("opaque-token"))
+
+    assert response.status_code == 401
+    assert response["WWW-Authenticate"] == 'Bearer realm="api", error="invalid_token", error_description="The access token expired"'
+
+
+@pytest.mark.django_db
+def test_bearer_authentication_audits_unexpected_plugin_exceptions_without_token_value():
+    """Unexpected plugin defects are audited while expected rejections stay out of the audit log."""
+    plugin = Mock()
+    plugin.authenticate.side_effect = RuntimeError("untrusted token content")
+
+    with (
+        patch.object(BearerAuthentication, "_api_authentication_backends", return_value=OrderedDict([(17, plugin)])),
+        patch.object(BearerAuthentication, "_authenticate_local_oauth", return_value=None),
+        patch("ansible_base.authentication.bearer_authentication.log_auth_exception") as log_auth_exception,
+    ):
+        with pytest.raises(BearerAuthenticationFailed):
+            BearerAuthentication().authenticate(_request("untrusted token content"))
+
+    audit_message = log_auth_exception.call_args.args[0]
+    assert audit_message == 'API authenticator with ID "17" raised an exception'
+    assert "untrusted token content" not in audit_message
 
 
 @pytest.mark.django_db
