@@ -445,7 +445,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
             audience=configuration["AUDIENCE"],
             issuer=configuration["ISSUER_URL"],
             options={"require": ["exp"]},
-            leeway=configuration["JWT_CLOCK_SKEW_TOLERANCE_SECONDS"],
+            leeway=configuration.get("JWT_CLOCK_SKEW_TOLERANCE_SECONDS", 0),
         )
 
     def authenticate(self, request: Any = None, *, token: str | None = None, **kwargs: Any) -> AbstractBaseUser | None:

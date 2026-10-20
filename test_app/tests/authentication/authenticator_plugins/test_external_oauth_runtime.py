@@ -102,6 +102,19 @@ def test_external_oauth_plugin_validates_token_and_updates_claims(external_oauth
 
 
 @pytest.mark.django_db
+def test_external_oauth_plugin_defaults_missing_clock_skew_for_existing_configurations(external_oauth_authenticator):
+    """Authenticators saved before this setting existed retain zero expiry grace."""
+    configuration = dict(external_oauth_authenticator.configuration)
+    configuration.pop("JWT_CLOCK_SKEW_TOLERANCE_SECONDS")
+    signing_key = Mock(key="public-key")
+
+    with patch("ansible_base.authentication.authenticator_plugins.external_oauth.decode", return_value={}) as decode_token:
+        AuthenticatorPlugin._decode_validated_token("token", signing_key, configuration)
+
+    assert decode_token.call_args.kwargs["leeway"] == 0
+
+
+@pytest.mark.django_db
 def test_external_oauth_plugin_uses_first_usable_claim_list_value_for_uid(external_oauth_authenticator):
     """The ordered CLAIM_LIST selects the uid passed to authenticator-user provisioning."""
     plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
