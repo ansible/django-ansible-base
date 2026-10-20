@@ -29,9 +29,7 @@ def _inject_validation_patterns(config_schema, config, encrypted_fields):
 
 def _display_name_from_type(plugin_type: str) -> str:
     """Fallback label from the short authenticator type (title-case each word)."""
-    short_type = plugin_type.rsplit(".", 1)[-1] if plugin_type else plugin_type
-    if not short_type:
-        return ""
+    short_type = plugin_type.rsplit(".", 1)[-1]
     return " ".join(part.capitalize() for part in short_type.split("_") if part)
 
 
