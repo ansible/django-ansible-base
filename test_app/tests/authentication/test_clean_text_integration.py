@@ -334,11 +334,14 @@ class TestAuthenticatorMapCleanText:
         serializer = AuthenticatorMapSerializer(instance=auth_map)
         assert serializer._stored_trigger_attributes() == {'email': {'contains': 'x'}}
 
-    @patch('ansible_base.authentication.serializers.authenticator_map.validate_free_text', side_effect=RuntimeError('validator crash'))
     def test_attribute_name_validation_reports_incomplete_on_unexpected_error(self, map_serializer):
-        result = map_serializer._validate_trigger_attribute_name_keys(
-            {'attributes': {'new_attr': {'contains': 'x'}}},
-        )
+        with patch(
+            'ansible_base.authentication.serializers.authenticator_map.validate_free_text',
+            side_effect=RuntimeError('validator crash'),
+        ):
+            result = map_serializer._validate_trigger_attribute_name_keys(
+                {'attributes': {'new_attr': {'contains': 'x'}}},
+            )
         assert result['attributes.new_attr'] == [_INCOMPLETE_VALIDATION_MSG]
 
     @pytest.mark.parametrize(
@@ -382,6 +385,9 @@ class TestAuthenticatorMapCleanText:
             order=6,
         )
         serializer = AuthenticatorMapSerializer(instance=auth_map)
-        assert serializer._validate_trigger_attribute_name_keys(
-            {'attributes': {DANGEROUS_TEMPLATE: {'contains': 'changed'}}},
-        ) == {}
+        assert (
+            serializer._validate_trigger_attribute_name_keys(
+                {'attributes': {DANGEROUS_TEMPLATE: {'contains': 'changed'}}},
+            )
+            == {}
+        )
