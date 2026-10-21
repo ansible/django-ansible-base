@@ -17,6 +17,7 @@ from ansible_base.authentication.views.authenticator import AuthenticatorViewSet
 from ansible_base.authentication.views.ui_auth import UIAuth
 from ansible_base.lib.utils.views.urls import get_api_view_functions
 from ansible_base.oauth2_provider.checks.permisssions_check import oauth2_permission_scope_check, view_in_app_configs
+from ansible_base.oauth2_provider.permissions import OAuth2ScopePermission
 from test_app import views
 
 urlpatterns = [
@@ -35,6 +36,11 @@ urlpatterns = [
     # Non-ApiView view
     path('/non-api-view/', SAMLMetadataView.as_view()),
 ]
+
+
+def test_oauth2_scope_permission_is_the_canonical_token_scope_permission():
+    """The legacy import path must refer to the same permission class."""
+    assert OAuth2ScopePermission is TokenScopePermission
 
 
 @pytest.fixture

@@ -293,6 +293,25 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_("Verify SSL Certificate"),
     )
 
+<<<<<<< Updated upstream
+=======
+    SCOPE_ATTRIBUTE_NAME = CharField(
+        help_text=_("Name of the attribute to use for the scope claim. Defaults to 'scope'."),
+        allow_blank=False,
+        allow_null=False,
+        default="scope",
+        ui_field_label=_("Scope Attribute Name"),
+    )
+
+    WRITE_SCOPE_NAME = CharField(
+        help_text=_("Valid tokens will have read scope by default. Name of the scope to use for the write claim. Defaults to 'write'."),
+        allow_blank=False,
+        allow_null=False,
+        default="write",
+        ui_field_label=_("Write Scope Name"),
+    )
+
+>>>>>>> Stashed changes
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         """Validate the configuration and populate discovery-owned endpoint values when enabled."""
         attrs = super().validate(attrs)
