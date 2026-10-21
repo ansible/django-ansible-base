@@ -57,8 +57,9 @@ and [Known limitations](#known-limitations)).
 Whether invalid API input is **rejected** or only **logged** is controlled by
 the Django setting `ENHANCED_INPUT_VALIDATION_ENABLED` (default `False` when
 unset). Consuming applications set it in Django settings. DAB reads the effective
-value with `ansible_base.lib.utils.settings.get_setting()`—`ANSIBLE_BASE_SETTINGS_FUNCTION`
-(if configured), then the Django setting, then the default.
+value with `ansible_base.lib.utils.settings.get_setting()`. When
+`ANSIBLE_BASE_SETTINGS_FUNCTION` is configured, its return value is used as-is
+(including `None`); otherwise DAB uses the Django setting, then the default.
 
 The table below applies only to violations detected by `CleanTextMixin` on API
 serializers (not to model field validators or other validation layers).
@@ -180,6 +181,11 @@ class MyNewModel(models.Model):
     name = models.CharField(max_length=512, validators=[validate_resource_name])
     description = models.TextField(default='', validators=[validate_free_text])
 ```
+
+Those functions raise `rest_framework.serializers.ValidationError`, which DRF
+field validation accepts when the API uses a `ModelSerializer`. For
+`Model.full_clean()` or other Django ORM paths, wrap them or convert to
+`django.core.exceptions.ValidationError`.
 
 **Implementation considerations** (not an exhaustive list):
 
