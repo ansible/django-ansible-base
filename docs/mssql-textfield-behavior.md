@@ -84,7 +84,21 @@ print(serializer.errors)
 
 DRF's `ModelSerializer` automatically inherits `max_length` from CharField model fields and adds validation.
 
-## Recommendation for Option 2 (Always Convert)
+## IMPLEMENTED: Complete Solution (Always Convert + Database-Aware Validators)
+
+**Status:** ✅ Implemented and tested
+
+We implemented a two-part solution that provides both database compatibility and excellent user experience:
+
+### Part 1: Custom SchemaEditor (Approach 4)
+Converts ALL TextFields to CharField during migration execution - see `ansible_base/backends/mssql/`
+
+### Part 2: Database-Aware Validators
+Added validators to all TextField instances that only enforce on MS SQL Server - see `ansible_base/lib/validators/mssql.py`
+
+**Result:** Users get clear API validation errors instead of cryptic database errors, and PostgreSQL remains completely unaffected.
+
+## Recommendation for Option 2 (Always Convert) - IMPLEMENTED
 
 ### Pros
 1. ✅ **Simpler code** - No conditional logic, no ALTER TABLE operations
