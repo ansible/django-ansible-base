@@ -730,6 +730,9 @@ class TestUserClaims:
         shared_test_data.roles['team_member'].give_permission(user, team_good)
         shared_test_data.roles['team_member'].give_permission(user, team_bad)
 
+        # Save team_bad's ansible_id before deleting its Resource entry
+        team_bad_ansible_id = str(team_bad.resource.ansible_id)
+
         # Delete the Resource entry for team_bad
         team_ct = CT.objects.get_for_model(team_bad)
         Resource.objects.filter(content_type=team_ct, object_id=team_bad.pk).delete()
@@ -737,12 +740,10 @@ class TestUserClaims:
         # Must not crash
         claims = get_user_claims(user)
 
-        # team_good should still be present
+        # team_good should still be present, team_bad should be excluded
         team_ansible_ids = {t['ansible_id'] for t in claims['objects']['team']}
         assert str(team_good.resource.ansible_id) in team_ansible_ids
-
-        # team_bad should be excluded (no Resource → resource_name is None)
-        assert str(team_bad.pk) not in {t.get('id', '') for t in claims['objects']['team']}
+        assert team_bad_ansible_id not in team_ansible_ids
 
         # Org assignment should be unaffected
         assert len(claims['objects']['organization']) >= 1
