@@ -6,11 +6,15 @@ are detected, enabling MS SQL Server compatibility without modifying migrations.
 """
 
 import logging
+import sys
 
 from django.db import models
 from mssql.schema import DatabaseSchemaEditor as MSSQLSchemaEditor
 
 logger = logging.getLogger('ansible_base.backends.mssql.schema')
+
+# Module-level print to confirm this module is being loaded
+print("[CUSTOM SCHEMA MODULE] ansible_base.backends.mssql.schema loaded!", file=sys.stderr)
 
 
 class DatabaseSchemaEditor(MSSQLSchemaEditor):
@@ -23,6 +27,26 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
     intercepts field SQL generation and dynamically converts problematic
     TextField definitions to CharField with appropriate max_length values.
     """
+
+    def create_model(self, model):
+        """
+        Override to convert TextField definitions before creating the table.
+        """
+        print(f"[CUSTOM SCHEMA] create_model called for {model._meta.label}", file=sys.stderr)
+
+        # Convert TextFields with constraints to CharFields before creating table
+        for field in model._meta.local_fields:
+            if isinstance(field, models.TextField) and self._field_needs_conversion(field, model):
+                print(f"[CUSTOM SCHEMA] ✓ Converting {field.name} before table creation", file=sys.stderr)
+                max_length = self._determine_max_length(field, model)
+
+                # Replace the field with a CharField
+                # We need to modify the field in-place
+                field.__class__ = models.CharField
+                field.max_length = max_length
+
+        # Call parent implementation with potentially modified fields
+        return super().create_model(model)
 
     def column_sql(self, model, field, include_default=False):
         """
@@ -37,10 +61,14 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
         When we detect these cases, we convert TextField to CharField with
         an appropriate max_length.
         """
+        print(f"[CUSTOM SCHEMA] column_sql called for {model._meta.label}.{field.name} (type: {type(field).__name__})", file=sys.stderr)
+        logger.info(f"column_sql called for {model._meta.label}.{field.name} (type: {type(field).__name__})")
+
         # Only process TextField instances
         if isinstance(field, models.TextField):
             if self._field_needs_conversion(field, model):
-                logger.debug(
+                print(f"[CUSTOM SCHEMA] ✓ Converting TextField to CharField for {model._meta.label}.{field.name}", file=sys.stderr)
+                logger.warning(
                     f"Converting TextField to CharField for {model._meta.label}.{field.name} "
                     f"(db_index={getattr(field, 'db_index', False)}, "
                     f"unique={getattr(field, 'unique', False)})"
@@ -54,8 +82,12 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
                     max_length=max_length, **self._copy_field_attrs(field)
                 )
 
+                print(f"[CUSTOM SCHEMA] → Converting to CharField(max_length={max_length})", file=sys.stderr)
+
                 # Generate SQL for CharField instead
                 return super().column_sql(model, converted_field, include_default)
+            else:
+                print(f"[CUSTOM SCHEMA] ✗ TextField {field.name} does not need conversion", file=sys.stderr)
 
         # Default behavior for all other fields and unconverted TextFields
         return super().column_sql(model, field, include_default)
