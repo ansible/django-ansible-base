@@ -118,18 +118,33 @@ def test_external_oauth_plugin_defaults_missing_clock_skew_for_existing_configur
 
 
 @pytest.mark.parametrize(
-    "claims,expected_scopes",
+    "configuration,claims,expected_scopes",
     [
-        ({}, {"read"}),
-        ({"scope": "profile email"}, {"read"}),
-        ({"scope": "read"}, {"read"}),
-        ({"scope": "write"}, {"read", "write"}),
-        ({"scope": ["profile", "write"]}, {"read", "write"}),
+        ({}, {}, {"read"}),
+        ({}, {"scope": "profile email"}, {"read"}),
+        ({}, {"scope": "write"}, {"read", "write"}),
+        ({}, {"scope": ["profile", "write"]}, {"read", "write"}),
+        (
+            {"SCOPE_ATTRIBUTE_NAME": "scp", "WRITE_SCOPE_NAME": "gateway.write"},
+            {"scp": "openid gateway.write"},
+            {"read", "write"},
+        ),
+        (
+            {"SCOPE_ATTRIBUTE_NAME": "scp", "WRITE_SCOPE_NAME": "gateway.write"},
+            {"scope": "write", "scp": "openid"},
+            {"read"},
+        ),
     ],
 )
-def test_external_oauth_plugin_defaults_verified_tokens_to_read_scope(claims, expected_scopes):
-    """Only high-level scopes affect API authorization; valid tokens default to read."""
-    assert AuthenticatorPlugin._read_write_scopes(claims) == frozenset(expected_scopes)
+@pytest.mark.django_db
+def test_external_oauth_plugin_maps_configured_token_scopes_to_read_write(
+    external_oauth_authenticator, configuration, claims, expected_scopes
+):
+    """Only the configured write scope grants write; valid tokens always grant read."""
+    external_oauth_authenticator.configuration.update(configuration)
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+
+    assert plugin._read_write_scopes(claims) == frozenset(expected_scopes)
 
 
 @pytest.mark.django_db

@@ -293,8 +293,6 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_("Verify SSL Certificate"),
     )
 
-<<<<<<< Updated upstream
-=======
     SCOPE_ATTRIBUTE_NAME = CharField(
         help_text=_("Name of the attribute to use for the scope claim. Defaults to 'scope'."),
         allow_blank=False,
@@ -311,7 +309,6 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_("Write Scope Name"),
     )
 
->>>>>>> Stashed changes
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         """Validate the configuration and populate discovery-owned endpoint values when enabled."""
         attrs = super().validate(attrs)
@@ -506,10 +503,9 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
             return None
         return BearerAuthenticationResult(user=user, auth=ScopedBearerToken(scopes=self._read_write_scopes(claims)))
 
-    @staticmethod
-    def _read_write_scopes(claims: dict[str, Any]) -> frozenset[str]:
+    def _read_write_scopes(self, claims: dict[str, Any]) -> frozenset[str]:
         """Extract verified read/write scopes, defaulting valid external tokens to read."""
-        claimed_scopes = claims.get("scope", "")
+        claimed_scopes = claims.get(self.database_instance.configuration.get("SCOPE_ATTRIBUTE_NAME", "scope"), "")
         if isinstance(claimed_scopes, str):
             scopes = set(claimed_scopes.split())
         elif isinstance(claimed_scopes, list):
@@ -517,10 +513,10 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         else:
             scopes = set()
 
-        scopes.intersection_update({"read", "write"})
-        if "write" in scopes:
-            scopes.add("read")
-        return frozenset(scopes or {"read"})
+        user_scopes = {"read"}
+        if self.database_instance.configuration.get("WRITE_SCOPE_NAME", "write") in scopes:
+            user_scopes.add("write")
+        return frozenset(user_scopes)
 
     def _build_jwk_client(self, jwks_uri: str, configuration: dict[str, Any]) -> CachedJWKClient:
         """Create a JWKS client using the provider's explicit TLS and timeout settings."""
