@@ -1,6 +1,7 @@
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 from ansible_base.lib.utils.models import is_system_user
+from ansible_base.lib.utils.settings import get_setting
 
 
 def try_add_oauth2_scope_permission(permission_classes: list):
@@ -8,9 +9,14 @@ def try_add_oauth2_scope_permission(permission_classes: list):
     Attach the provider-independent read/write scope permission.
 
     The legacy helper name remains for callers that were originally scoped to
-    local OAuth2. External Bearer credentials can now supply the same scope
-    contract without installing the OAuth2 provider application.
+    local OAuth2. Add the permission only when an authentication mechanism
+    capable of producing scoped credentials is installed.
     """
+    installed_apps = get_setting("INSTALLED_APPS", [])
+    scope_authentication_apps = {"ansible_base.authentication", "ansible_base.oauth2_provider"}
+    if scope_authentication_apps.isdisjoint(installed_apps):
+        return permission_classes
+
     from ansible_base.authentication.permissions import TokenScopePermission
 
     return [TokenScopePermission] + permission_classes
