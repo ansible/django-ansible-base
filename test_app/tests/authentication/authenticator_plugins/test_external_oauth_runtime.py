@@ -154,7 +154,13 @@ def test_external_oauth_plugin_maps_configured_token_scopes_to_read_write(extern
     external_oauth_authenticator.configuration.update(configuration)
     plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
 
-    assert plugin._read_write_scopes(claims) == frozenset(expected_scopes)
+    with patch("ansible_base.authentication.authenticator_plugins.external_oauth.logger") as logger:
+        assert plugin._read_write_scopes(claims) == frozenset(expected_scopes)
+
+    logger.debug.assert_called_once_with(
+        f"External OAuth authenticator {external_oauth_authenticator.name} mapped scope claim "
+        f"{configuration.get('SCOPE_ATTRIBUTE_NAME', 'scope')} to API scopes {sorted(expected_scopes)}"
+    )
 
 
 @pytest.mark.django_db

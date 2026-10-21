@@ -106,12 +106,14 @@ def test_bearer_authentication_returns_and_audits_api_authenticator_success():
             return_value=OrderedDict([(17, plugin)]),
         ),
         patch("ansible_base.authentication.bearer_authentication.log_auth_event") as log_auth_event,
+        patch("ansible_base.authentication.bearer_authentication.logger") as logger,
         patch.object(BearerAuthentication, "_authenticate_local_oauth") as local_authenticate,
     ):
         assert BearerAuthentication().authenticate(_request("opaque-token")) == (user, ScopedBearerToken(scopes=frozenset()))
 
     local_authenticate.assert_not_called()
     log_auth_event.assert_called_once_with('User external-user authenticated with API authenticator with ID "17"')
+    logger.warning.assert_called_once_with('API authenticator with ID "17" returned a bare user; applying empty scopes')
 
 
 @pytest.mark.django_db

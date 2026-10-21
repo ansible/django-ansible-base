@@ -513,7 +513,9 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
 
     def _read_write_scopes(self, claims: dict[str, Any]) -> frozenset[str]:
         """Extract verified read/write scopes, with write implying read."""
-        claimed_scopes = claims.get(self.database_instance.configuration.get("SCOPE_ATTRIBUTE_NAME", "scope"), "")
+        configuration = self.database_instance.configuration
+        scope_attribute_name = configuration.get("SCOPE_ATTRIBUTE_NAME", "scope")
+        claimed_scopes = claims.get(scope_attribute_name, "")
         if isinstance(claimed_scopes, str):
             scopes = set(claimed_scopes.split())
         elif isinstance(claimed_scopes, list):
@@ -522,12 +524,16 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
             scopes = set()
 
         user_scopes = set()
-        if self.database_instance.configuration.get("READ_SCOPE_NAME", "read") in scopes:
+        if configuration.get("READ_SCOPE_NAME", "read") in scopes:
             user_scopes.add("read")
-        if self.database_instance.configuration.get("WRITE_SCOPE_NAME", "write") in scopes:
+        if configuration.get("WRITE_SCOPE_NAME", "write") in scopes:
             user_scopes.update({"read", "write"})
 
-        return frozenset(user_scopes)
+        granted_scopes = frozenset(user_scopes)
+        logger.debug(
+            f"External OAuth authenticator {self.database_instance.name} mapped scope claim {scope_attribute_name} to API scopes {sorted(granted_scopes)}"
+        )
+        return granted_scopes
 
     def _build_jwk_client(self, jwks_uri: str, configuration: dict[str, Any]) -> CachedJWKClient:
         """Create a JWKS client using the provider's explicit TLS and timeout settings."""
