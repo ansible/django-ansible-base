@@ -12,7 +12,6 @@ Must be a valid string
 
 `ansible_base.lib.utils.validation.validate_url_list` this is a convince method which takes an array of urls and validates each of them using its own validate_url method.
 
-
 # Enhanced input validation
 
 The sections below document tier 1/tier 2 text rules (`CleanTextMixin`, model
@@ -50,21 +49,20 @@ marks (Zalgo).
 Prose
 like `JavaScript: …` can match unsafe-URI heuristics (documented trade-off in
 code). String values inside `JSONField` payloads use tier 2 only when validated
-through the serializer mixin (see **Grandfather behavior** under serializer-level
-validation and **Known limitations**).
+through the serializer mixin (see [Grandfather behavior](#grandfather-behavior)
+and [Known limitations](#known-limitations)).
 
-### Choosing the validation layer
+## Choosing the validation layer
 
 **Implemented path today:** DAB and consuming applications enforce these tiers on
 API traffic through `CleanTextMixin` on DRF serializers—that is what DAB ships
 and tests on existing models. Model field validators are optional guidance (not
-platform-wide today) when the same rules must also run on non-DRF paths; see
-**Model-level validation (guidance)**.
+platform-wide today); see [Model-level validation (guidance)](#model-level-validation-guidance).
 
 | Scenario | Approach |
 |----------|----------|
-| **Existing model / legacy data** | `CleanTextMixin` on API serializers (grandfathering + install-time toggle below). |
-| **New model or field** | `CleanTextMixin` for the API path (OPTIONS, `JSONField`, toggle). Optional `validate_resource_name` / `validate_free_text` on model fields only when non-DRF paths must be covered. |
+| **Existing model / legacy data** | `CleanTextMixin` on API serializers. |
+| **New model or field** | `CleanTextMixin` on API serializers; optional model field validators when non-DRF paths must enforce the same rules (details below). |
 
 ## Enforcement toggle — `ENHANCED_INPUT_VALIDATION_ENABLED`
 
@@ -87,16 +85,16 @@ This is an install-time platform setting, not a runtime DAB feature flag
 
 `validate_resource_name` and `validate_free_text` always raise when they detect a
 violation. Only `CleanTextMixin` applies the log-vs-reject policy above on API
-traffic. See **Model-level validation (guidance)** for how that differs from
-model field validators.
+traffic. See [Model-level validation (guidance)](#model-level-validation-guidance)
+for how that differs from model field validators.
 
 ## Serializer-level validation
 
 `CleanTextMixin` in `ansible_base.lib.serializers.mixins` applies tier 1/tier 2
 during DRF serializer `validate()`. It also validates strings inside
 `JSONField` payloads, supports **grandfathering** on legacy records, respects
-`ENHANCED_INPUT_VALIDATION_ENABLED` on API traffic, and enables OPTIONS pattern
-hints (below).
+`ENHANCED_INPUT_VALIDATION_ENABLED` on API traffic, and enables
+[OPTIONS pattern hints (client-side)](#options-pattern-hints-client-side).
 
 ```python
 from ansible_base.lib.serializers.mixins import CleanTextMixin
@@ -171,17 +169,11 @@ serializer field names. Nested JSON errors use sub-keys under the JSONField name
 
 ## Model-level validation (guidance)
 
-Enhanced validation on existing DAB models is implemented today through
-serializer-level validation only (`CleanTextMixin`), because upgrades must
-grandfather legacy data.
-
-The notes below are optional guidance for teams designing new models or new
-fields where legacy data is not a concern. Model field validators can be more
-robust than serializer validation alone when data must be checked on non-DRF
-paths (for example management commands, imports, or `save()` after
-`full_clean()`), because those paths do not run `CleanTextMixin`. Account for
-the considerations below during implementation; do not treat model validators as
-a required DAB pattern.
+See [Choosing the validation layer](#choosing-the-validation-layer) for
+existing vs new models. This section is optional guidance when
+`validate_resource_name` / `validate_free_text` on model fields should also cover
+non-DRF paths (management commands, imports, or `save()` after `full_clean()`).
+Do not treat model validators as a required DAB pattern.
 
 The tier functions *can* be wired as Django `Field.validators` on
 `CharField` / `TextField` columns, for example:
@@ -197,31 +189,24 @@ class MyNewModel(models.Model):
 
 **Implementation considerations** (not an exhaustive list):
 
-- **Enforcement toggle.** `validate_resource_name` and `validate_free_text`
-  are plain validators: they raise on violation. Log-vs-reject for
-  `ENHANCED_INPUT_VALIDATION_ENABLED` (see above) is implemented in
-  `CleanTextMixin`, not in these functions. DAB does not ship toggle-aware model
-  validator wrappers today.
-- **OPTIONS.** Model validators do **not** emit OPTIONS pattern hints. Hints
-  require `CleanTextMixin` on the serializer when enforcement is on (see
-  **OPTIONS pattern hints (client-side)** under serializer-level validation
-  above). There is no separate metadata hook today.
+- **Enforcement toggle.** Field validators always raise; log-vs-reject for
+  [Enforcement toggle](#enforcement-toggle-enhanced_input_validation_enabled) is
+  mixin-only. No toggle-aware model wrappers ship in DAB today.
+- **OPTIONS.** No pattern metadata from model validators; use
+  [Serializer-level validation](#serializer-level-validation) (mixin) for OPTIONS.
 - **Mixin plus model validators on the same fields.** `ModelSerializer` may run
-  model field validators during field validation and the mixin again in
-  `validate()`—DAB does not deduplicate. With enforcement off, the mixin may log
-  while model validators on the field can still return **400** on the API.
-- **Grandfathering, JSONField, non-API paths.** Unchanged from serializer-only
-  behavior: grandfathering and nested `JSONField` string checks are mixin
-  concerns; model validators only run where Django/DRF invokes them (e.g.
-  `full_clean()`, or DRF field validation when `validators=` are set on the
-  model field).
+  both field validators and the mixin on the same Char/Text value—DAB does not
+  deduplicate (see toggle caveat above).
+- **Grandfathering and JSONField.** [Grandfather behavior](#grandfather-behavior)
+  and nested `JSONField` checks are mixin-only; validators run only where
+  Django/DRF invokes them ([Known limitations](#known-limitations)).
 
 ## Known limitations
 
 These apply to the **serializer-level validation DAB ships and tests** today
 (`CleanTextMixin` on DRF serializers), not to optional model-level guidance
-above. See **Choosing the validation layer** under tier 1 and tier 2 for when to
-use the mixin vs model field validators.
+above. See [Choosing the validation layer](#choosing-the-validation-layer) for
+when to use the mixin vs model field validators.
 
 - **Serializer-path only.** The mixin runs in the serializer `validate()`
   method. ORM `create()` / `save()`, management commands, and imports do not
@@ -241,7 +226,6 @@ use the mixin vs model field validators.
   `mixins.py`).
 - **Defense in depth.** Server-side input validation does not replace output
   encoding, CSP, or other controls.
-
 
 # Validation callback for role assignment
 
