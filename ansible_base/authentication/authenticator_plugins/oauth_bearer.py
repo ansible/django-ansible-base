@@ -23,7 +23,8 @@ from ansible_base.lib.utils.models import is_system_user
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.validation import validate_url
 
-logger = logging.getLogger("ansible_base.authentication.authenticator_plugins.external_oauth")
+logger = logging.getLogger("ansible_base.authentication.authenticator_plugins.oauth_bearer")
+
 OIDC_DISCOVERY_PATH = "/.well-known/openid-configuration"
 OIDC_DISCOVERY_TIMEOUT_SETTING = "ANSIBLE_BASE_EXTERNAL_OAUTH_DISCOVERY_TIMEOUT"
 OIDC_DISCOVERY_TIMEOUT_DEFAULT = 30
@@ -158,7 +159,7 @@ def apply_oidc_discovery(attrs: dict[str, Any]) -> dict[str, Any]:
     return attrs
 
 
-class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
+class OAuthBearerConfiguration(BaseAuthenticatorConfiguration):
     documentation_url = "https://openid.net/specs/openid-connect-discovery-1_0.html"
 
     ISSUER_URL = URLField(
@@ -388,9 +389,9 @@ def resolve_uid_from_claims(claims: dict[str, Any], claim_list: list[str]) -> st
 
 
 class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
-    configuration_class = ExternalOAuthConfiguration
-    type = "external_oauth"
-    display_name = _("External OAuth API Bearer Token")
+    configuration_class = OAuthBearerConfiguration
+    type = "oauth_bearer"
+    display_name = _("OAuth Bearer Token")
     category = "api_auth"
     logger = logger
     configuration_encrypted_fields = []
