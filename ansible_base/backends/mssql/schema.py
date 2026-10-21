@@ -48,6 +48,87 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
         # Call parent implementation with potentially modified fields
         return super().create_model(model)
 
+    def add_index(self, model, index):
+        """
+        Override to convert TextFields to CharFields before adding index.
+
+        MS SQL Server cannot create indexes on nvarchar(max) columns.
+        Check all fields in the index and convert any TextFields to CharFields.
+        Also ALTER the existing column if it was already created.
+        """
+        print(f"[CUSTOM SCHEMA] add_index called for {model._meta.label}, index: {index.name}", file=sys.stderr)
+
+        # Get the fields being indexed
+        for field_name in index.fields:
+            # Handle F() expressions and plain field names
+            if hasattr(field_name, 'name'):
+                field_name = field_name.name
+
+            # Remove leading - for descending order
+            field_name = field_name.lstrip('-')
+
+            try:
+                field = model._meta.get_field(field_name)
+                if isinstance(field, models.TextField):
+                    print(f"[CUSTOM SCHEMA] ✓ Converting TextField {field.name} to CharField before adding index", file=sys.stderr)
+                    max_length = self._determine_max_length(field, model)
+
+                    # Execute raw SQL to ALTER the column type
+                    # This is simpler than using alter_field() which tries to manage indexes
+                    table_name = model._meta.db_table
+                    column_name = field.column
+                    null_clause = "NULL" if field.null else "NOT NULL"
+
+                    sql = f"ALTER TABLE [{table_name}] ALTER COLUMN [{column_name}] nvarchar({max_length}) {null_clause}"
+                    print(f"[CUSTOM SCHEMA] → Executing: {sql}", file=sys.stderr)
+
+                    self.execute(sql)
+
+                    # Update the field definition for future operations
+                    field.__class__ = models.CharField
+                    field.max_length = max_length
+            except Exception as e:
+                print(f"[CUSTOM SCHEMA] Error converting field {field_name}: {e}", file=sys.stderr)
+
+        return super().add_index(model, index)
+
+    def add_constraint(self, model, constraint):
+        """
+        Override to convert TextFields to CharFields before adding constraint.
+
+        MS SQL Server cannot create unique constraints on nvarchar(max) columns.
+        Check all fields in the constraint and convert any TextFields to CharFields.
+        Also ALTER the existing column if it was already created.
+        """
+        print(f"[CUSTOM SCHEMA] add_constraint called for {model._meta.label}, constraint: {constraint.name}", file=sys.stderr)
+
+        # Only handle UniqueConstraints
+        if isinstance(constraint, models.UniqueConstraint):
+            for field_name in constraint.fields:
+                try:
+                    field = model._meta.get_field(field_name)
+                    if isinstance(field, models.TextField):
+                        print(f"[CUSTOM SCHEMA] ✓ Converting TextField {field.name} to CharField before adding constraint", file=sys.stderr)
+                        max_length = self._determine_max_length(field, model)
+
+                        # Execute raw SQL to ALTER the column type
+                        table_name = model._meta.db_table
+                        column_name = field.column
+                        null_clause = "NULL" if field.null else "NOT NULL"
+
+                        sql = f"ALTER TABLE [{table_name}] ALTER COLUMN [{column_name}] nvarchar({max_length}) {null_clause}"
+                        print(f"[CUSTOM SCHEMA] → Executing: {sql}", file=sys.stderr)
+
+                        self.execute(sql)
+
+                        # Update the field definition for future operations
+                        field.__class__ = models.CharField
+                        field.max_length = max_length
+                except Exception as e:
+                    print(f"[CUSTOM SCHEMA] Error converting field {field_name}: {e}", file=sys.stderr)
+
+        return super().add_constraint(model, constraint)
+
     def column_sql(self, model, field, include_default=False):
         """
         Override to intercept TextField with constraints.

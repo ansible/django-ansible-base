@@ -115,12 +115,14 @@ REST_FRAMEWORK = {
 
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.postgresql",
+        "ENGINE": "ansible_base.backends.mssql",
         "HOST": os.getenv("DB_HOST", "127.0.0.1"),
-        "PORT": os.getenv("DB_PORT", 55432),
-        "USER": os.getenv("DB_USER", "dab"),
-        "PASSWORD": os.getenv("DB_PASSWORD", "dabing"),
+        "PORT": os.getenv("DB_PORT", 1433),
+        "USER": os.getenv("DB_USER", "sa"),
+        "PASSWORD": os.getenv("DB_PASSWORD", "Password1234!"),
         "NAME": os.getenv("DB_NAME", "dab_db"),
+        "OPTIONS":  {"driver": 'ODBC Driver 18 for SQL Server', "extra_params": "Encrypt=yes;TrustServerCertificate=yes"}
+
     }
 }
 
