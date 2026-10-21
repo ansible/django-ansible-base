@@ -56,8 +56,9 @@ and [Known limitations](#known-limitations)).
 
 Whether invalid API input is **rejected** or only **logged** is controlled by
 the Django setting `ENHANCED_INPUT_VALIDATION_ENABLED` (default `False` when
-unset). Consuming applications set it in Django settings; DAB reads it with
-`ansible_base.lib.utils.settings.get_setting`.
+unset). Consuming applications set it in Django settings. DAB reads the effective
+value with `ansible_base.lib.utils.settings.get_setting()`—`ANSIBLE_BASE_SETTINGS_FUNCTION`
+(if configured), then the Django setting, then the default.
 
 The table below applies only to violations detected by `CleanTextMixin` on API
 serializers (not to model field validators or other validation layers).
@@ -121,14 +122,16 @@ platform UIs—can use that metadata for client-side validation before submit.
 `validate_resource_name` and `validate_free_text` remain the server enforcement
 boundary; OPTIONS patterns are best-effort (especially tier 2).
 
-OPTIONS hints appear when:
+OPTIONS hints appear when all of the following hold:
 
 1. The view’s serializer subclasses `CleanTextMixin`.
 2. The Django setting `ENHANCED_INPUT_VALIDATION_ENABLED` is `True`.
+3. DRF metadata is `ansible_base.lib.metadata.CleanTextMetadata` (DAB’s default
+   `REST_FRAMEWORK['DEFAULT_METADATA_CLASS']`; a custom metadata class skips injection).
+4. The serializer field maps to a model `CharField` or `TextField` that is not in
+   `excluded_fields`.
 
-DAB configures `REST_FRAMEWORK['DEFAULT_METADATA_CLASS']` to
-`ansible_base.lib.metadata.CleanTextMetadata`, which injects patterns when those
-conditions hold. Model field validators do not emit OPTIONS metadata.
+Model field validators do not emit OPTIONS metadata.
 
 ### Customization
 
@@ -151,9 +154,11 @@ changing authenticator plugins—not this document.
 
 Error shape: how validation failures are returned on API requests.
 
-Multiple field failures are aggregated into one `ValidationError` keyed by
-serializer field names. Nested JSON errors use sub-keys under the JSONField name
-(see tests in `test_app/tests/lib/serializers/test_clean_text_mixin.py`).
+When enforcement raises, multiple failures are aggregated into one
+`ValidationError`. Text field errors use serializer field names (including when
+`source=` renames the attribute). JSON errors use the **model** JSON column name
+as the top-level key, with nested paths beneath it—even if the serializer field
+is renamed (see tests in `test_app/tests/lib/serializers/test_clean_text_mixin.py`).
 
 ## Model-level validation (guidance)
 
@@ -207,11 +212,13 @@ above.
   `get_internal_type()` is `CharField` or `TextField`. `SlugField` and
   `GenericIPAddressField` are skipped; `URLField` is not (it still reports
   `CharField`). See `_classify_fields()` in `mixins.py`.
-- **JSON depth cap.** String values inside `JSONField` data are validated with
-  tier 2 while recursion depth is below 10. At depth 10 and deeper, nested
-  values are not scanned; when `ENHANCED_INPUT_VALIDATION_ENABLED` is true, the
-  API returns a generic incomplete-validation error for that branch (see
-  `_MAX_JSON_DEPTH` in `mixins.py`).
+- **JSON depth cap.** String leaves inside `JSONField` data are validated with
+  tier 2 when traversal reaches them (including a string at depth 10). The cap
+  applies when **entering** a nested `dict` or `list`: at depth 10 and deeper,
+  that container and its descendants are not scanned; when
+  `ENHANCED_INPUT_VALIDATION_ENABLED` is true, the API returns a generic
+  incomplete-validation error for that branch (see `_MAX_JSON_DEPTH` in
+  `mixins.py` and `test_value_at_max_json_depth_is_validated`).
 - **Defense in depth.** Server-side input validation does not replace output
   encoding, CSP, or other controls.
 
