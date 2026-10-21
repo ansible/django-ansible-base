@@ -123,6 +123,45 @@ def test_external_oauth_create_update_delete_via_api(admin_api_client, external_
 
 
 @pytest.mark.django_db
+def test_external_oauth_allows_https_container_service_jwks_url(admin_api_client, external_oauth_configuration):
+    """HTTPS JWKS endpoints may use a single-label container service hostname."""
+    config = deepcopy(external_oauth_configuration)
+    config["JWKS_URI"] = "https://keycloak:8443/auth/realms/gateway/protocol/openid-connect/certs"
+
+    response = admin_api_client.post(
+        get_relative_url("authenticator-list"),
+        data=_authenticator_payload("Container Keycloak", config),
+        format="json",
+    )
+
+    assert response.status_code == 201, response.data
+    assert response.data["configuration"]["JWKS_URI"] == config["JWKS_URI"]
+
+
+@pytest.mark.django_db
+def test_external_oauth_discovery_allows_https_container_service_urls(admin_api_client, external_oauth_configuration):
+    """Discovery accepts HTTPS endpoints served through a container service hostname."""
+    config = deepcopy(external_oauth_configuration)
+    config.update(
+        {
+            "JWKS_URI": "",
+            "OIDC_ENDPOINT": "https://keycloak:8443/auth/realms/gateway",
+        }
+    )
+    jwks_uri = "https://keycloak:8443/auth/realms/gateway/protocol/openid-connect/certs"
+
+    with patch(f"{DISCOVERY_MODULE}.requests.get", side_effect=_mock_requests_get(_discovery_document(jwks_uri=jwks_uri))):
+        response = admin_api_client.post(
+            get_relative_url("authenticator-list"),
+            data=_authenticator_payload("Discovered Container Keycloak", config),
+            format="json",
+        )
+
+    assert response.status_code == 201, response.data
+    assert response.data["configuration"]["JWKS_URI"] == jwks_uri
+
+
+@pytest.mark.django_db
 def test_external_oauth_multiple_providers(admin_api_client, external_oauth_configuration):
     url = get_relative_url("authenticator-list")
     first = deepcopy(external_oauth_configuration)

@@ -79,7 +79,7 @@ def _validate_discovered_url(value: str, field_name: str) -> str:
     """Run discovered endpoint URLs through the same validation as URLField."""
     value = value.strip()
     try:
-        validate_url(value, schemes=["https"], allow_plain_hostname=False)
+        validate_url(value, schemes=["https"], allow_plain_hostname=True)
     except ValidationError as exc:
         raise ValidationError({"OIDC_ENDPOINT": _("OIDC discovery returned an invalid %(field)s.") % {"field": field_name}}) from exc
     return value
@@ -178,7 +178,7 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         allow_null=True,
         default="",
         schemes=["https"],
-        allow_plain_hostname=False,
+        allow_plain_hostname=True,
         ui_field_label=_("JWKS URI"),
     )
 
@@ -265,7 +265,7 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         allow_null=True,
         default="",
         schemes=["https"],
-        allow_plain_hostname=False,
+        allow_plain_hostname=True,
         ui_field_label=_("UserInfo URL"),
     )
 
@@ -282,7 +282,7 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         allow_null=True,
         default="",
         schemes=["https"],
-        allow_plain_hostname=False,
+        allow_plain_hostname=True,
         ui_field_label=_("OIDC Discovery Endpoint"),
     )
 
