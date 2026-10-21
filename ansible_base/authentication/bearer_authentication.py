@@ -172,7 +172,14 @@ class BearerAuthentication(BaseAuthentication):
                 # credential through request.auth, and give the compatibility
                 # path no scopes until the plugin adopts the richer contract.
                 user, auth = result, ScopedBearerToken(scopes=frozenset())
+            elif result is not None:
+                # Existing plugins return only a user. Do not expose the raw
+                # credential through request.auth, and give the compatibility
+                # path no scopes until the plugin adopts the richer contract.
+                user, auth = result, ScopedBearerToken(scopes=frozenset())
                 logger.warning(f'API authenticator with ID "{authenticator_id}" returned a bare user; applying empty scopes')
+            else:
+                user, auth = None, None
 
             if user is not None:
                 log_auth_event(f'User {user.username} authenticated with API authenticator with ID "{authenticator_id}"')
