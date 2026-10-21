@@ -137,9 +137,7 @@ def test_external_oauth_plugin_defaults_missing_clock_skew_for_existing_configur
     ],
 )
 @pytest.mark.django_db
-def test_external_oauth_plugin_maps_configured_token_scopes_to_read_write(
-    external_oauth_authenticator, configuration, claims, expected_scopes
-):
+def test_external_oauth_plugin_maps_configured_token_scopes_to_read_write(external_oauth_authenticator, configuration, claims, expected_scopes):
     """Only the configured write scope grants write; valid tokens always grant read."""
     external_oauth_authenticator.configuration.update(configuration)
     plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
