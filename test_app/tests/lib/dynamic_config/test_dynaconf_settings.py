@@ -55,12 +55,13 @@ def test_authentication_no_backends():
     assert 'ansible_base.authentication.backend.AnsibleBaseAuth' in settings['AUTHENTICATION_BACKENDS']
 
 
-def test_oauth2_provider_injects_unified_bearer_authentication():
+def test_oauth2_provider_injects_unified_bearer_authentication_before_legacy_oauth_fallback():
     settings = factory("", "TEST", INSTALLED_APPS=['ansible_base.authentication', 'ansible_base.oauth2_provider'])
     authentication_classes = settings['REST_FRAMEWORK']['DEFAULT_AUTHENTICATION_CLASSES']
 
-    assert 'ansible_base.authentication.bearer_authentication.BearerAuthentication' in authentication_classes
-    assert 'ansible_base.oauth2_provider.authentication.LoggedOAuth2Authentication' not in authentication_classes
+    bearer_authentication = 'ansible_base.authentication.bearer_authentication.BearerAuthentication'
+    local_oauth_authentication = 'ansible_base.oauth2_provider.authentication.LoggedOAuth2Authentication'
+    assert authentication_classes.index(bearer_authentication) < authentication_classes.index(local_oauth_authentication)
 
 
 def test_oauth2_provider_without_authentication_app_uses_local_oauth2_authentication():

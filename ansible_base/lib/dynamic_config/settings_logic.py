@@ -328,12 +328,15 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         oauth2_provider['ACCESS_TOKEN_MODEL'] = DEFAULT_OAUTH2_ACCESS_TOKEN
 
         rest_framework.setdefault('DEFAULT_AUTHENTICATION_CLASSES', [])
-        # Applications using OAuth2 without the authentication app retain the
-        # standalone handler. Authentication-enabled applications receive the
-        # generic Bearer dispatcher above instead.
-        if 'ansible_base.authentication' not in installed_apps:
-            oauth2_authentication_class = 'ansible_base.oauth2_provider.authentication.LoggedOAuth2Authentication'
-            if oauth2_authentication_class not in rest_framework['DEFAULT_AUTHENTICATION_CLASSES']:
+        # Keep the legacy OAuth2 handler available as a fallback. When the
+        # authentication app is installed, BearerAuthentication is registered
+        # first and owns standard Bearer credentials; this fallback preserves
+        # legacy OAuth2 integrations that use a different credential shape.
+        oauth2_authentication_class = 'ansible_base.oauth2_provider.authentication.LoggedOAuth2Authentication'
+        if oauth2_authentication_class not in rest_framework['DEFAULT_AUTHENTICATION_CLASSES']:
+            if 'ansible_base.authentication' in installed_apps:
+                rest_framework['DEFAULT_AUTHENTICATION_CLASSES'].append(oauth2_authentication_class)
+            else:
                 rest_framework['DEFAULT_AUTHENTICATION_CLASSES'].insert(0, oauth2_authentication_class)
 
         # OAuth2 OpenAPI schema settings (only apply when oauth2_provider is installed)
