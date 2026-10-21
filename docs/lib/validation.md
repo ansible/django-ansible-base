@@ -52,24 +52,11 @@ code). String values inside `JSONField` payloads use tier 2 only when validated
 through the serializer mixin (see [Grandfather behavior](#grandfather-behavior)
 and [Known limitations](#known-limitations)).
 
-## Choosing the validation layer
-
-**Implemented path today:** DAB and consuming applications enforce these tiers on
-API traffic through `CleanTextMixin` on DRF serializers—that is what DAB ships
-and tests on existing models. Model field validators are optional guidance (not
-platform-wide today); see [Model-level validation (guidance)](#model-level-validation-guidance).
-
-| Scenario | Approach |
-|----------|----------|
-| **Existing model / legacy data** | `CleanTextMixin` on API serializers. |
-| **New model or field** | `CleanTextMixin` on API serializers; optional model field validators when non-DRF paths must enforce the same rules (details below). |
-
 ## Enforcement toggle — `ENHANCED_INPUT_VALIDATION_ENABLED`
 
 Whether invalid API input is **rejected** or only **logged** is controlled by
-the platform install-time setting `ENHANCED_INPUT_VALIDATION_ENABLED` (default
-`False` when unset). It is applied when the platform is installed or
-reinstalled—not a value operators change at runtime. DAB reads it with
+the Django setting `ENHANCED_INPUT_VALIDATION_ENABLED` (default `False` when
+unset). Consuming applications set it in Django settings; DAB reads it with
 `ansible_base.lib.utils.settings.get_setting`.
 
 The table below applies only to violations detected by `CleanTextMixin` on API
@@ -83,8 +70,7 @@ serializers (not to model field validators or other validation layers).
 When enforcement is off, logs still record violations so operators can see what
 would be rejected before turning enforcement on.
 
-This is an install-time platform setting, not a runtime DAB feature flag
-(`ansible_base.feature_flags`).
+This is a Django setting, not a DAB feature flag (`ansible_base.feature_flags`).
 
 `validate_resource_name` and `validate_free_text` always raise when they detect a
 violation. Only `CleanTextMixin` applies the log-vs-reject policy above on API
@@ -93,7 +79,10 @@ for how that differs from model field validators.
 
 ## Serializer-level validation
 
-`CleanTextMixin` in `ansible_base.lib.serializers.mixins` applies tier 1/tier 2
+DAB applies tier 1/tier 2 on API traffic through `CleanTextMixin` on DRF
+serializers—that is what DAB ships and tests on existing models.
+
+`CleanTextMixin` in `ansible_base.lib.serializers.mixins` applies the tiers
 during DRF serializer `validate()`. It also validates strings inside
 `JSONField` payloads, supports **grandfathering** on legacy records, respects
 `ENHANCED_INPUT_VALIDATION_ENABLED` on API traffic, and enables
@@ -124,26 +113,22 @@ updates validate only keys present in the body.
 
 ### OPTIONS pattern hints (client-side)
 
-Client metadata: optional tier 1/tier 2 pattern hints on DRF `OPTIONS` when
-enforcement is on.
+`CleanTextMixin` gives you API write enforcement (above) and also advertises
+the same tier 1/tier 2 rules in a structured form on DRF
+`OPTIONS` responses (`pattern`, `patternDescription`, `flags`, and tier 1
+`normalize` on Char/Text fields). Clients that issue `OPTIONS` requests—including
+platform UIs—can use that metadata for client-side validation before submit.
+`validate_resource_name` and `validate_free_text` remain the server enforcement
+boundary; OPTIONS patterns are best-effort (especially tier 2).
 
-**What.** For API views whose serializer subclasses `CleanTextMixin`, DRF
-`OPTIONS` responses can include extra metadata on `CharField` / `TextField`
-serializer fields: `pattern`, `patternDescription`, `flags`, and (tier 1 only)
-`normalize`. UIs use these for early feedback before submit.
+OPTIONS hints appear when:
 
-**Why.** Same tier 1/tier 2 rules as the server, exposed to clients without
-hard-coding regex in each app. Patterns are **best-effort** (especially tier 2);
-`validate_resource_name` and `validate_free_text` remain the enforcement
-boundary—see comments on `build_tier2_frontend_pattern()` in
-`ansible_base.lib.metadata`.
+1. The view’s serializer subclasses `CleanTextMixin`.
+2. The Django setting `ENHANCED_INPUT_VALIDATION_ENABLED` is `True`.
 
-**How.** When `ENHANCED_INPUT_VALIDATION_ENABLED` is on, `CleanTextMetadata`
-(typically `REST_FRAMEWORK['DEFAULT_METADATA_CLASS']` from DAB settings) calls
-`inject_clean_text_patterns()` for each field on a `CleanTextMixin` serializer.
-Model field validators do not emit OPTIONS metadata. OpenAPI may also document
-pattern fields via `ansible_base.lib.schemas.clean_text_patterns` and
-Spectacular postprocessing hooks—same intent, different surface.
+DAB configures `REST_FRAMEWORK['DEFAULT_METADATA_CLASS']` to
+`ansible_base.lib.metadata.CleanTextMetadata`, which injects patterns when those
+conditions hold. Model field validators do not emit OPTIONS metadata.
 
 ### Customization
 
@@ -172,11 +157,12 @@ serializer field names. Nested JSON errors use sub-keys under the JSONField name
 
 ## Model-level validation (guidance)
 
-See [Choosing the validation layer](#choosing-the-validation-layer) for
-existing vs new models. This section is optional guidance when
-`validate_resource_name` / `validate_free_text` on model fields should also cover
-non-DRF paths (management commands, imports, or `save()` after `full_clean()`).
-Do not treat model validators as a required DAB pattern.
+The validators behind `CleanTextMixin` (`validate_resource_name`,
+`validate_free_text`) can also be attached directly to model `CharField` /
+`TextField` columns. That is optional guidance—not a required DAB pattern—when
+the same rules must run on non-DRF paths (management commands, imports, or
+`save()` after `full_clean()`). Tradeoffs (toggle, OPTIONS, grandfathering,
+duplicate checks with the mixin) are below.
 
 The tier functions *can* be wired as Django `Field.validators` on
 `CharField` / `TextField` columns, for example:
@@ -208,8 +194,7 @@ class MyNewModel(models.Model):
 
 These apply to the **serializer-level validation DAB ships and tests** today
 (`CleanTextMixin` on DRF serializers), not to optional model-level guidance
-above. See [Choosing the validation layer](#choosing-the-validation-layer) for
-when to use the mixin vs model field validators.
+above.
 
 - **Serializer-path only.** The mixin runs in the serializer `validate()`
   method. ORM `create()` / `save()`, management commands, and imports do not
