@@ -7,6 +7,7 @@ from oauth2_provider.generators import generate_client_secret
 from ansible_base.lib.abstract_models.common import NamedCommonModel
 from ansible_base.lib.utils.models import prevent_search
 from ansible_base.lib.utils.response import get_relative_url
+from ansible_base.lib.validators.mssql import validate_mssql_description
 
 activitystream = object
 if 'ansible_base.activitystream' in settings.INSTALLED_APPS:
@@ -49,6 +50,7 @@ class OAuth2Application(NamedCommonModel, oauth2_models.AbstractApplication, act
     description = models.TextField(
         default='',
         blank=True,
+        validators=[validate_mssql_description],
         help_text=_("A description of this application."),
     )
     organization = models.ForeignKey(

@@ -28,6 +28,9 @@ from ansible_base.rbac.sync import maybe_reverse_sync_assignment
 from ansible_base.rbac.validators import validate_permissions_for_model
 from ansible_base.resource_registry.fields import AnsibleResourceField
 
+# MS SQL Server validators
+from ansible_base.lib.validators.mssql import validate_mssql_codename, validate_mssql_description, validate_mssql_object_id
+
 from ..remote import GenericObject, RemoteObject, StandInPK
 from .content_type import DABContentType
 from .fields import FederatedForeignKey
@@ -203,7 +206,7 @@ class RoleDefinition(CommonModel):
         verbose_name_plural = _('role_definition')
 
     name = models.TextField(db_index=True, unique=True, help_text=_("The name of this role."))
-    description = models.TextField(blank=True, help_text=_("A description of this role."))
+    description = models.TextField(blank=True, validators=[validate_mssql_description], help_text=_("A description of this role."))
     managed = models.BooleanField(
         default=False, editable=False, help_text=_("Is this role managed by the system (not changeable by the users).")
     )  # pulp definition of Role uses locked
@@ -412,7 +415,7 @@ class ObjectRoleFields(models.Model):
         on_delete=models.CASCADE,
         help_text=_("The content type of the subject of permission assignments. Duplicated from related RoleDefinition."),
     )
-    object_id = models.TextField(null=False, help_text=_("The database primary key of the subject of permission assignments."))
+    object_id = models.TextField(null=False, validators=[validate_mssql_object_id], help_text=_("The database primary key of the subject of permission assignments."))
     content_object = FederatedForeignKey('content_type', 'object_id')
 
     @classmethod
@@ -474,7 +477,7 @@ class AssignmentBase(ImmutableCommonModel, ObjectRoleFields, _AuditableBase):
         'dab_rbac.ObjectRole', on_delete=models.CASCADE, editable=False, null=True, help_text=_("A roll-up of the fields (role_definition, content_type).")
     )
     object_id = models.TextField(
-        null=True, blank=True, help_text=_('The primary key of the object this assignment applies to; null value indicates system-wide assignment.')
+        null=True, blank=True, validators=[validate_mssql_object_id], help_text=_('The primary key of the object this assignment applies to; null value indicates system-wide assignment.')
     )
     object_ansible_id = models.UUIDField(
         null=True,
@@ -606,7 +609,7 @@ class ObjectRole(ObjectRoleFields):
         help_text=_("Teams or groups who have access to the permissions defined by this object role."),
     )
     # Only for remote models
-    parent_reference = models.TextField(blank=True, db_index=True, help_text=_("The ansible_id or object_id of the parent resource."))
+    parent_reference = models.TextField(blank=True, db_index=True, validators=[validate_mssql_object_id], help_text=_("The ansible_id or object_id of the parent resource."))
     # COMPUTED DATA
     provides_teams = models.ManyToManyField(
         settings.ANSIBLE_BASE_TEAM_MODEL,
@@ -880,7 +883,7 @@ class RoleEvaluationFields(models.Model):
             raise RuntimeError(f'{self._meta.model_name} model is immutable and only used internally')
         return super().save(*args, **kwargs)
 
-    codename = models.TextField(null=False, help_text=_("The name of the permission, giving the action and the model, from the Django Permission model."))
+    codename = models.TextField(null=False, validators=[validate_mssql_codename], help_text=_("The name of the permission, giving the action and the model, from the Django Permission model."))
     # NOTE: we do not form object_id and content_type into a content_object, following from AWX practice
     # this can be relaxed as we have comparative performance testing to confirm doing so does not affect permissions
     content_type_id = models.PositiveIntegerField(null=False, help_text=_("The related content type id."))
