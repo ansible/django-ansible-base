@@ -51,7 +51,6 @@ PAGE_SIZE_SWEEP_CASES = [
         'token-list',
         {},
         {},
-        marks=pytest.mark.xfail(reason="N+1 in OAuth2TokenViewSet", strict=True),
         id='token_list',
     ),
     pytest.param(
