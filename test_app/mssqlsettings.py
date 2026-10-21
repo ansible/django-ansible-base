@@ -42,7 +42,8 @@ DYNACONF.set(
     "DATABASES",
     {
         "default": {
-            "ENGINE": "mssql",
+            # Use custom backend with TextField-to-CharField conversion
+            "ENGINE": "ansible_base.backends.mssql",
             "HOST": os.getenv("DB_HOST", "127.0.0.1"),
             "PORT": int(os.getenv("DB_PORT", 55433)),
             "USER": os.getenv("DB_USER", "sa"),
