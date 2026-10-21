@@ -43,10 +43,19 @@ class AuthenticatorMapMetadata(CleanTextMetadata):
         actions = super().determine_actions(request, view)
         if not validation_enabled():
             return actions
-        for field_info in actions.values():
-            # Don't clobber real serializer fields if one ever gains these names.
-            for name in _TRIGGER_ATTRIBUTE_FIELD_NAMES:
-                field_info.setdefault(name, self._tier2_field_info(name.capitalize()))
+        # Inject on create (POST) only. On update, AuthenticatorMapSerializer
+        # grandfathers attribute names that are already stored on the map, so a
+        # name predating validation stays valid as long as it is unchanged. A
+        # static OPTIONS pattern can't express that per-instance exception, so
+        # applying it to the PUT action would wrongly block edits to maps that
+        # still carry a legacy name. Newly entered names remain enforced
+        # server-side on update. See AAP-98256.
+        post_action = actions.get('POST')
+        if post_action is None:
+            return actions
+        # Don't clobber real serializer fields if one ever gains these names.
+        for name in _TRIGGER_ATTRIBUTE_FIELD_NAMES:
+            post_action.setdefault(name, self._tier2_field_info(name.capitalize()))
         return actions
 
 

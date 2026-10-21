@@ -414,16 +414,29 @@ class TestAuthenticatorMapOptionsTriggerMetadata:
     client-side validation hint. See AAP-98256.
     """
 
-    @pytest.mark.parametrize('method', ['POST', 'PUT'])
     @pytest.mark.parametrize('field_name', ['attribute', 'value'])
-    def test_injects_tier2_pattern_for_trigger_fields(self, method, field_name):
+    def test_injects_tier2_pattern_into_post_action(self, field_name):
         build_tier2_frontend_pattern.cache_clear()
         actions = _determine_actions({'POST': {}, 'PUT': {}})
-        field = actions[method][field_name]
+        field = actions['POST'][field_name]
         assert field['pattern'] == build_tier2_frontend_pattern()
         assert field['patternDescription'] == TIER2_PATTERN_DESCRIPTION
         assert field['flags'] == 'i'
         assert field['label'] == field_name.capitalize()
+
+    def test_skips_put_action_to_preserve_grandfathered_names(self):
+        # On update the serializer grandfathers stored attribute names, so the
+        # static OPTIONS pattern must NOT be injected into PUT -- otherwise an edit
+        # to a map carrying a legacy name would be blocked client-side. See AAP-98256.
+        actions = _determine_actions({'POST': {}, 'PUT': {}})
+        assert 'attribute' not in actions['PUT']
+        assert 'value' not in actions['PUT']
+
+    def test_no_post_action_is_a_noop(self):
+        # OPTIONS without a POST action (e.g. caller lacks create permission) must
+        # not raise -- there is simply nothing to inject into.
+        actions = _determine_actions({'PUT': {}})
+        assert actions == {'PUT': {}}
 
     def test_does_not_clobber_existing_fields(self):
         # setdefault must not overwrite a genuine serializer field that happens to
