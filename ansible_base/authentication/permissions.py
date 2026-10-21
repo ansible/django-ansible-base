@@ -5,7 +5,7 @@ from typing import Any
 from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthenticated
 
 
-class ReadWriteScopePermission(BasePermission):
+class TokenScopePermission(BasePermission):
     """Require read for safe requests and write for unsafe scoped credentials.
 
     Authentication mechanisms without a scope-bearing ``request.auth`` object

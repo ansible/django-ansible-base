@@ -11,9 +11,9 @@ def try_add_oauth2_scope_permission(permission_classes: list):
     local OAuth2. External Bearer credentials can now supply the same scope
     contract without installing the OAuth2 provider application.
     """
-    from ansible_base.authentication.permissions import ReadWriteScopePermission
+    from ansible_base.authentication.permissions import TokenScopePermission
 
-    return [ReadWriteScopePermission] + permission_classes
+    return [TokenScopePermission] + permission_classes
 
 
 def check_service_token_auth(request, view):

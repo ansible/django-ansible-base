@@ -18,7 +18,7 @@ from ansible_base.authentication.bearer_authentication import (
     get_api_authentication_backends,
 )
 from ansible_base.authentication.models import Authenticator
-from ansible_base.authentication.permissions import ReadWriteScopePermission
+from ansible_base.authentication.permissions import TokenScopePermission
 from ansible_base.authentication.session import SessionAuthentication
 
 
@@ -140,14 +140,14 @@ def test_bearer_authentication_preserves_plugin_scope_context():
         ("POST", {"write"}, True),
     ],
 )
-def test_read_write_scope_permission_enforces_scoped_credentials(method, scopes, allowed):
+def test_token_scope_permission_enforces_scoped_credentials(method, scopes, allowed):
     """Read is the minimum high-level scope and write implies read."""
     request = SimpleNamespace(
         method=method,
         auth=ScopedBearerToken(scopes=frozenset(scopes)),
         user=SimpleNamespace(is_authenticated=True),
     )
-    assert ReadWriteScopePermission().has_permission(request, Mock()) is allowed
+    assert TokenScopePermission().has_permission(request, Mock()) is allowed
 
 
 @pytest.mark.django_db
