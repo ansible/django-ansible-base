@@ -168,9 +168,10 @@ class BearerAuthentication(BaseAuthentication):
             if isinstance(result, BearerAuthenticationResult):
                 user, auth = result.user, result.auth
             else:
-                # Existing plugins return only a user. Preserve their request
-                # auth value until they opt into the richer result contract.
-                user, auth = result, token
+                # Existing plugins return only a user. Do not expose the raw
+                # credential through request.auth, and give the compatibility
+                # path no scopes until the plugin adopts the richer contract.
+                user, auth = result, ScopedBearerToken(scopes=frozenset())
 
             if user is not None:
                 log_auth_event(f'User {user.username} authenticated with API authenticator with ID "{authenticator_id}"')

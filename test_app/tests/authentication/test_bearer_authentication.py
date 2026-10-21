@@ -108,7 +108,7 @@ def test_bearer_authentication_returns_and_audits_api_authenticator_success():
         patch("ansible_base.authentication.bearer_authentication.log_auth_event") as log_auth_event,
         patch.object(BearerAuthentication, "_authenticate_local_oauth") as local_authenticate,
     ):
-        assert BearerAuthentication().authenticate(_request("opaque-token")) == (user, "opaque-token")
+        assert BearerAuthentication().authenticate(_request("opaque-token")) == (user, ScopedBearerToken(scopes=frozenset()))
 
     local_authenticate.assert_not_called()
     log_auth_event.assert_called_once_with('User external-user authenticated with API authenticator with ID "17"')
@@ -134,6 +134,8 @@ def test_bearer_authentication_preserves_plugin_scope_context():
 @pytest.mark.parametrize(
     "method,scopes,allowed",
     [
+        ("GET", set(), False),
+        ("POST", set(), False),
         ("GET", {"read"}, True),
         ("POST", {"read"}, False),
         ("GET", {"write"}, True),
@@ -194,7 +196,7 @@ def test_bearer_authentication_tries_later_matching_external_authenticator_after
         patch.object(BearerAuthentication, "_authenticate_local_oauth") as local_authenticate,
     ):
         request = _request("external-token")
-        assert BearerAuthentication().authenticate(request) == (user, "external-token")
+        assert BearerAuthentication().authenticate(request) == (user, ScopedBearerToken(scopes=frozenset()))
 
     first_matching_external_authenticator.authenticate.assert_called_once_with(request, token="external-token")
     second_matching_external_authenticator.authenticate.assert_called_once_with(request, token="external-token")
@@ -230,7 +232,7 @@ def test_bearer_authentication_continues_after_api_plugin_failure():
         "_api_authentication_backends",
         return_value=OrderedDict([(17, rejected_plugin), (42, accepted_plugin)]),
     ):
-        assert BearerAuthentication().authenticate(_request("opaque-token")) == (user, "opaque-token")
+        assert BearerAuthentication().authenticate(_request("opaque-token")) == (user, ScopedBearerToken(scopes=frozenset()))
 
     rejected_plugin.authenticate.assert_called_once()
     accepted_plugin.authenticate.assert_called_once()
@@ -253,7 +255,7 @@ def test_bearer_authentication_tries_later_plugins_after_expected_token_failure(
         ),
         patch("ansible_base.authentication.bearer_authentication.log_auth_exception") as log_auth_exception,
     ):
-        assert BearerAuthentication().authenticate(_request("opaque-token")) == (user, "opaque-token")
+        assert BearerAuthentication().authenticate(_request("opaque-token")) == (user, ScopedBearerToken(scopes=frozenset()))
 
     rejected_plugin.authenticate.assert_called_once()
     accepted_plugin.authenticate.assert_called_once()
