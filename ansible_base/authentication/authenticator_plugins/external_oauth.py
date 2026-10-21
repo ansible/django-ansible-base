@@ -309,6 +309,14 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_("Write Scope Name"),
     )
 
+    READ_SCOPE_NAME = CharField(
+        help_text=_("Name of the scope to use for the read claim. Defaults to 'read'."),
+        allow_blank=False,
+        allow_null=False,
+        default="read",
+        ui_field_label=_("Read Scope Name"),
+    )
+
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         """Validate the configuration and populate discovery-owned endpoint values when enabled."""
         attrs = super().validate(attrs)
@@ -504,7 +512,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         return BearerAuthenticationResult(user=user, auth=ScopedBearerToken(scopes=self._read_write_scopes(claims)))
 
     def _read_write_scopes(self, claims: dict[str, Any]) -> frozenset[str]:
-        """Extract verified read/write scopes, defaulting valid external tokens to read."""
+        """Extract verified read/write scopes, with write implying read."""
         claimed_scopes = claims.get(self.database_instance.configuration.get("SCOPE_ATTRIBUTE_NAME", "scope"), "")
         if isinstance(claimed_scopes, str):
             scopes = set(claimed_scopes.split())
@@ -513,9 +521,12 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         else:
             scopes = set()
 
-        user_scopes = {"read"}
+        user_scopes = set()
+        if self.database_instance.configuration.get("READ_SCOPE_NAME", "read") in scopes:
+            user_scopes.add("read")
         if self.database_instance.configuration.get("WRITE_SCOPE_NAME", "write") in scopes:
-            user_scopes.add("write")
+            user_scopes.update({"read", "write"})
+
         return frozenset(user_scopes)
 
     def _build_jwk_client(self, jwks_uri: str, configuration: dict[str, Any]) -> CachedJWKClient:

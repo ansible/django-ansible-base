@@ -52,7 +52,13 @@ def test_external_oauth_plugin_validates_token_and_updates_claims(external_oauth
     token = "signed-token"
     signing_key = Mock(key="public-key")
     user = Mock(is_active=True, username="external-user")
-    claims = {**_routing_claims(external_oauth_authenticator.configuration), "email": "user@example.com", "sub": "subject", "groups": ["operators", 3]}
+    claims = {
+        **_routing_claims(external_oauth_authenticator.configuration),
+        "email": "user@example.com",
+        "sub": "subject",
+        "groups": ["operators", 3],
+        "scope": "read",
+    }
 
     with (
         patch("ansible_base.authentication.authenticator_plugins.external_oauth.CachedJWKClient") as jwk_client,
@@ -120,25 +126,31 @@ def test_external_oauth_plugin_defaults_missing_clock_skew_for_existing_configur
 @pytest.mark.parametrize(
     "configuration,claims,expected_scopes",
     [
-        ({}, {}, {"read"}),
-        ({}, {"scope": "profile email"}, {"read"}),
+        ({}, {}, set()),
+        ({}, {"scope": "profile email"}, set()),
+        ({}, {"scope": "read"}, {"read"}),
         ({}, {"scope": "write"}, {"read", "write"}),
         ({}, {"scope": ["profile", "write"]}, {"read", "write"}),
         (
-            {"SCOPE_ATTRIBUTE_NAME": "scp", "WRITE_SCOPE_NAME": "gateway.write"},
+            {"SCOPE_ATTRIBUTE_NAME": "scp", "READ_SCOPE_NAME": "gateway.read", "WRITE_SCOPE_NAME": "gateway.write"},
+            {"scp": "openid gateway.read"},
+            {"read"},
+        ),
+        (
+            {"SCOPE_ATTRIBUTE_NAME": "scp", "READ_SCOPE_NAME": "gateway.read", "WRITE_SCOPE_NAME": "gateway.write"},
             {"scp": "openid gateway.write"},
             {"read", "write"},
         ),
         (
             {"SCOPE_ATTRIBUTE_NAME": "scp", "WRITE_SCOPE_NAME": "gateway.write"},
             {"scope": "write", "scp": "openid"},
-            {"read"},
+            set(),
         ),
     ],
 )
 @pytest.mark.django_db
 def test_external_oauth_plugin_maps_configured_token_scopes_to_read_write(external_oauth_authenticator, configuration, claims, expected_scopes):
-    """Only the configured write scope grants write; valid tokens always grant read."""
+    """Only configured read/write token scopes grant authorization; write implies read."""
     external_oauth_authenticator.configuration.update(configuration)
     plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
 
