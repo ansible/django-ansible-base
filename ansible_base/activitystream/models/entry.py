@@ -8,6 +8,7 @@ from django.utils.translation import gettext_lazy as _
 
 from ansible_base.lib.abstract_models import ImmutableCommonModel
 from ansible_base.lib.utils.response import get_relative_url
+from ansible_base.lib.validators.mssql import validate_mssql_object_id
 
 
 class Entry(ImmutableCommonModel):
@@ -33,7 +34,7 @@ class Entry(ImmutableCommonModel):
     ]
 
     content_type = models.ForeignKey(ContentType, on_delete=models.DO_NOTHING, help_text=_("The content type which was changed in this entry."))
-    object_id = models.TextField(null=True, blank=True, help_text=_("The object id which was modified in this entry."))
+    object_id = models.TextField(null=True, blank=True, validators=[validate_mssql_object_id], help_text=_("The object id which was modified in this entry."))
     content_object = GenericForeignKey('content_type', 'object_id')
     operation = models.CharField(
         max_length=12, choices=OPERATION_CHOICES, help_text=_("The type of change recorded by the entry (i.e. create/update/delete/etc).")
@@ -52,6 +53,7 @@ class Entry(ImmutableCommonModel):
     related_object_id = models.TextField(
         null=True,
         blank=True,
+        validators=[validate_mssql_object_id],
         help_text=_("The object id of the related model if this entry is for an many to many (M2M) change."),
     )
     related_content_object = GenericForeignKey('related_content_type', 'related_object_id')
