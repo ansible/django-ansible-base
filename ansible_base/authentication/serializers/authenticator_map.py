@@ -73,6 +73,7 @@ class AuthenticatorMapSerializer(CleanTextMixin, NamedCommonModelSerializer):
         super()._run_text_validator(field_name, value, errors)
 
     def _validate_json_fields(self, field_names, attrs, errors):
+        """Run CleanText JSON validation, then Tier 2 checks on attribute trigger names."""
         super()._validate_json_fields(field_names, attrs, errors)
         if 'triggers' not in field_names:
             return
@@ -85,6 +86,7 @@ class AuthenticatorMapSerializer(CleanTextMixin, NamedCommonModelSerializer):
 
     @staticmethod
     def _merge_trigger_attribute_key_errors(errors: dict, attr_key_errors: dict[str, Any]) -> None:
+        """Combine attribute-name validation errors with existing ``triggers`` errors."""
         triggers_errors = errors.get('triggers')
         if triggers_errors is None:
             errors['triggers'] = attr_key_errors
@@ -94,6 +96,7 @@ class AuthenticatorMapSerializer(CleanTextMixin, NamedCommonModelSerializer):
             errors['triggers'] = attr_key_errors
 
     def _stored_trigger_attributes(self) -> dict[str, Any]:
+        """Return stored ``triggers.attributes`` for grandfathering attribute names on update."""
         if not self.instance or not isinstance(self.instance.triggers, dict):
             return {}
         stored = self.instance.triggers.get('attributes')
@@ -118,6 +121,7 @@ class AuthenticatorMapSerializer(CleanTextMixin, NamedCommonModelSerializer):
         return key_errors
 
     def _validate_one_trigger_attribute_name_key(self, attr_name, stored_attributes: dict[str, Any], key_errors: dict[str, Any]) -> None:
+        """Apply Tier 2 to one attribute name unless it is ``join_condition`` or already stored."""
         if attr_name == 'join_condition' or not isinstance(attr_name, str):
             return
         if attr_name in stored_attributes:
