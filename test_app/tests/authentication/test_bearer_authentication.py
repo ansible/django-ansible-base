@@ -168,11 +168,13 @@ def test_bearer_authentication_uses_local_oauth_after_api_authenticators_decline
             "_api_authentication_backends",
             return_value=OrderedDict([(17, plugin)]),
         ),
+        patch("ansible_base.authentication.bearer_authentication.logger") as logger,
         patch.object(BearerAuthentication, "_authenticate_local_oauth", return_value=(local_user, local_token)) as local_authenticate,
     ):
         assert BearerAuthentication().authenticate(_request("opaque-token")) == (local_user, local_token)
 
     local_authenticate.assert_called_once()
+    logger.warning.assert_not_called()
 
 
 @pytest.mark.django_db

@@ -167,11 +167,6 @@ class BearerAuthentication(BaseAuthentication):
 
             if isinstance(result, BearerAuthenticationResult):
                 user, auth = result.user, result.auth
-            else:
-                # Existing plugins return only a user. Do not expose the raw
-                # credential through request.auth, and give the compatibility
-                # path no scopes until the plugin adopts the richer contract.
-                user, auth = result, ScopedBearerToken(scopes=frozenset())
             elif result is not None:
                 # Existing plugins return only a user. Do not expose the raw
                 # credential through request.auth, and give the compatibility
