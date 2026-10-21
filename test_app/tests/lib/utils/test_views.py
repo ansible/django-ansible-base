@@ -51,7 +51,7 @@ def test_ansible_base_view_with_no_settings(view_with_headers, mock_request, def
 )
 def test_try_add_oauth2_scope_permission_requires_a_scope_authentication_app(monkeypatch, installed_apps, adds_scope_permission):
     """Only add scope enforcement when an installed app can issue scoped tokens."""
-    from ansible_base.authentication.permissions import TokenScopePermission
+    from ansible_base.lib.permissions import TokenScopePermission
 
     original_permissions = [APIView]
     monkeypatch.setattr("ansible_base.lib.utils.views.permissions.get_setting", lambda *_: installed_apps)

@@ -1,5 +1,6 @@
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
+from ansible_base.lib.permissions import TokenScopePermission
 from ansible_base.lib.utils.models import is_system_user
 from ansible_base.lib.utils.settings import get_setting
 
@@ -16,8 +17,6 @@ def try_add_oauth2_scope_permission(permission_classes: list):
     scope_authentication_apps = {"ansible_base.authentication", "ansible_base.oauth2_provider"}
     if scope_authentication_apps.isdisjoint(installed_apps):
         return permission_classes
-
-    from ansible_base.authentication.permissions import TokenScopePermission
 
     return [TokenScopePermission] + permission_classes
 

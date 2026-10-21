@@ -1,4 +1,4 @@
-from ansible_base.authentication.permissions import TokenScopePermission
+from ansible_base.lib.permissions import TokenScopePermission
 
 # Retain the old import path while making local OAuth2 and external Bearer
 # callers share one class object. This also lets applications that patch the

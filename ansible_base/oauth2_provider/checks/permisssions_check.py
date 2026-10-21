@@ -6,7 +6,7 @@ from django.core.checks import CheckMessage, Debug, Error, Warning
 from rest_framework.permissions import AllowAny, OperandHolder, OperationHolderMixin, SingleOperandHolder
 from rest_framework.views import APIView
 
-from ansible_base.authentication.permissions import TokenScopePermission
+from ansible_base.lib.permissions import TokenScopePermission
 from ansible_base.lib.utils.views.urls import get_api_view_functions
 
 
