@@ -72,10 +72,13 @@ the platform install-time setting `ENHANCED_INPUT_VALIDATION_ENABLED` (default
 reinstalled—not a value operators change at runtime. DAB reads it with
 `ansible_base.lib.utils.settings.get_setting`.
 
+The table below applies only to violations detected by `CleanTextMixin` on API
+serializers (not to model field validators or other validation layers).
+
 | Value | Behavior |
 |-------|----------|
-| `False` (default) | Checks run; violations are logged at WARNING; requests are not rejected. |
-| `True` | Same checks; invalid input raises `ValidationError`. |
+| `False` (default) | Mixin checks run; violations are logged at WARNING; the request is not rejected for mixin findings. |
+| `True` | Same mixin checks; mixin findings raise `ValidationError`. |
 
 When enforcement is off, logs still record violations so operators can see what
 would be rejected before turning enforcement on.
@@ -190,7 +193,7 @@ class MyNewModel(models.Model):
 **Implementation considerations** (not an exhaustive list):
 
 - **Enforcement toggle.** Field validators always raise; log-vs-reject for
-  [Enforcement toggle](#enforcement-toggle-enhanced_input_validation_enabled) is
+  [Enforcement toggle](#enforcement-toggle--enhanced_input_validation_enabled) is
   mixin-only. No toggle-aware model wrappers ship in DAB today.
 - **OPTIONS.** No pattern metadata from model validators; use
   [Serializer-level validation](#serializer-level-validation) (mixin) for OPTIONS.
@@ -220,10 +223,10 @@ when to use the mixin vs model field validators.
   `GenericIPAddressField` are skipped; `URLField` is not (it still reports
   `CharField`). See `_classify_fields()` in `mixins.py`.
 - **JSON depth cap.** String values inside `JSONField` data are validated with
-  tier 2, recursively up to depth 10. Deeper nesting is not scanned; when
-  `ENHANCED_INPUT_VALIDATION_ENABLED` is true, the API returns a generic
-  incomplete-validation error for that branch (see `_MAX_JSON_DEPTH` in
-  `mixins.py`).
+  tier 2 while recursion depth is below 10. At depth 10 and deeper, nested
+  values are not scanned; when `ENHANCED_INPUT_VALIDATION_ENABLED` is true, the
+  API returns a generic incomplete-validation error for that branch (see
+  `_MAX_JSON_DEPTH` in `mixins.py`).
 - **Defense in depth.** Server-side input validation does not replace output
   encoding, CSP, or other controls.
 
