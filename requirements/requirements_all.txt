@@ -255,7 +255,7 @@ wrapt==2.1.2
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-dbapi
     #   opentelemetry-instrumentation-grpc
-xmlsec==1.3.16
+xmlsec==1.3.13
     # via
     #   -r requirements/requirements_authentication.in
     #   python3-saml
