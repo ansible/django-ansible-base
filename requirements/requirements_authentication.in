@@ -15,7 +15,7 @@ ldap-filter
 python3-saml
 tacacs_plus
 
-xmlsec==1.3.13  # Required for python 3.12, pinned for compatibility with ubi9 base image
+xmlsec==1.3.16  # cp312 manylinux wheels; 1.3.13 sdist fails against newer libxmlsec1 (Soap11/12Ns)
 lxml==5.3.0     # Required for python 3.12, pinned for compatibility with ubi9 base image
 
 # RADIUS Authenticator Plugin
