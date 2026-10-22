@@ -2,6 +2,7 @@ import pytest
 from django.test import override_settings
 
 from ansible_base.lib.utils.response import get_relative_url
+from ansible_base.rbac.models import DABContentType, RoleDefinition
 from test_app.models import Organization, Team, User
 
 
@@ -183,6 +184,133 @@ class TestRoleBasedAssignment:
         response = user_api_client.post(url, data=data)
         assert response.status_code == 201, response.data
         assert rando.has_obj_perm(organization, 'member')
+
+    @override_settings(ALLOW_LOCAL_ASSIGNING_JWT_ROLES=True, ANSIBLE_BASE_ALLOW_CUSTOM_TEAM_ROLES=True)
+    @pytest.mark.parametrize(
+        'holder_has_view_team, cache_parent_permissions, expect_success',
+        [
+            pytest.param(True, False, True, id='has-perm-no-cache'),
+            pytest.param(True, True, True, id='has-perm-with-cache'),
+            pytest.param(False, False, False, id='no-perm-blocked'),
+        ],
+    )
+    def test_escalation_check_with_child_model_permissions(
+        self, user, user_api_client, organization, holder_has_view_team, cache_parent_permissions, expect_success
+    ):
+        """The escalation check must correctly resolve child-model permissions (like view_team)
+        that are included in org-scoped roles. A user holding an org role that includes view_team
+        should be able to assign another org role that also includes view_team. A user whose
+        org role does NOT include view_team should be blocked from assigning a role that does.
+
+        When ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS is True, child-model permissions get
+        RoleEvaluation entries on the parent object, so has_obj_perm can find them directly.
+        When False (default), the escalation check must still resolve them correctly."""
+        org_ct = DABContentType.objects.get_for_model(Organization)
+
+        holder_perms = ['change_organization', 'view_organization']
+        if holder_has_view_team:
+            holder_perms.append('view_team')
+
+        with override_settings(ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS=cache_parent_permissions):
+            holder_rd = RoleDefinition.objects.create_from_permissions(name='custom-org-holder', permissions=holder_perms, content_type=org_ct)
+
+            assignee_rd = RoleDefinition.objects.create_from_permissions(
+                name='custom-org-assignee', permissions=['view_organization', 'view_team'], content_type=org_ct
+            )
+
+            holder_rd.give_permission(user, organization)
+            rando = User.objects.create(username='rando')
+            url = get_relative_url('roleuserassignment-list')
+            data = {'role_definition': assignee_rd.id, 'object_id': organization.id, 'user': rando.id}
+
+            response = user_api_client.post(url, data=data)
+            if expect_success:
+                assert response.status_code == 201, response.data
+            else:
+                assert response.status_code == 403, response.data
+
+    @override_settings(ALLOW_LOCAL_ASSIGNING_JWT_ROLES=True, ANSIBLE_BASE_ALLOW_CUSTOM_TEAM_ROLES=True)
+    @pytest.mark.parametrize(
+        'team_role_has_view_team, expect_success',
+        [
+            pytest.param(True, True, id='team-has-perm'),
+            pytest.param(False, False, id='team-no-perm'),
+        ],
+    )
+    def test_escalation_check_with_team_inherited_permissions(self, user, user_api_client, organization, member_rd, team_role_has_view_team, expect_success):
+        """Same escalation check, but the user's permissions come from team membership
+        rather than a direct role assignment. The user is a member of a team, and the team
+        has a role on the org. The escalation check must traverse team inheritance."""
+        org_ct = DABContentType.objects.get_for_model(Organization)
+
+        team_perms = ['change_organization', 'view_organization']
+        if team_role_has_view_team:
+            team_perms.append('view_team')
+        team_rd = RoleDefinition.objects.create_from_permissions(name='custom-org-team-role', permissions=team_perms, content_type=org_ct)
+
+        assignee_rd = RoleDefinition.objects.create_from_permissions(
+            name='custom-org-assignee-via-team', permissions=['view_organization', 'view_team'], content_type=org_ct
+        )
+
+        team = Team.objects.create(name='holder-team', organization=organization)
+        team_rd.give_permission(team, organization)
+        member_rd.give_permission(user, team)
+
+        rando = User.objects.create(username='rando')
+        url = get_relative_url('roleuserassignment-list')
+        data = {'role_definition': assignee_rd.id, 'object_id': organization.id, 'user': rando.id}
+
+        response = user_api_client.post(url, data=data)
+        if expect_success:
+            assert response.status_code == 201, response.data
+        else:
+            assert response.status_code == 403, response.data
+
+    @override_settings(
+        ALLOW_LOCAL_ASSIGNING_JWT_ROLES=True,
+        ANSIBLE_BASE_ALLOW_CUSTOM_TEAM_ROLES=True,
+        ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES=True,
+    )
+    def test_escalation_check_with_global_role(self, user, user_api_client, organization):
+        """A user holding a global (content_type=None) role that includes the needed
+        permissions should be able to assign an org-scoped role containing those same
+        permissions, even though the permissions were not granted at the object level."""
+        org_ct = DABContentType.objects.get_for_model(Organization)
+
+        global_rd = RoleDefinition.objects.create_from_permissions(
+            name='global-with-view-team',
+            permissions=['change_organization', 'view_organization', 'view_team'],
+            content_type=None,
+        )
+
+        assignee_rd = RoleDefinition.objects.create_from_permissions(
+            name='custom-org-assignee-via-global', permissions=['view_organization', 'view_team'], content_type=org_ct
+        )
+
+        global_rd.give_global_permission(user)
+
+        rando = User.objects.create(username='rando')
+        url = get_relative_url('roleuserassignment-list')
+        data = {'role_definition': assignee_rd.id, 'object_id': organization.id, 'user': rando.id}
+
+        response = user_api_client.post(url, data=data)
+        assert response.status_code == 201, response.data
+
+    @override_settings(ALLOW_LOCAL_ASSIGNING_JWT_ROLES=True)
+    def test_escalation_check_with_parent_object_permissions(self, user, user_api_client, organization, org_admin_rd, member_rd):
+        """An org admin assigns the Team Member role on a team within their org.
+        The org admin's permissions come from an ObjectRole on the organization,
+        not on the team itself. The escalation check must recognize that the org
+        admin holds member_team and view_team via their org-scoped role."""
+        team = Team.objects.create(name='test-team', organization=organization)
+        org_admin_rd.give_permission(user, organization)
+
+        rando = User.objects.create(username='rando')
+        url = get_relative_url('roleuserassignment-list')
+        data = {'role_definition': member_rd.id, 'object_id': team.id, 'user': rando.id}
+
+        response = user_api_client.post(url, data=data)
+        assert response.status_code == 201, response.data
 
     @override_settings(ALLOW_LOCAL_ASSIGNING_JWT_ROLES=True)
     def test_team_admins_can_add_children(self, user, user_api_client, organization, inventory, inv_rd, admin_rd, member_rd):
