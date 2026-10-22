@@ -105,22 +105,6 @@ class BadModel(Model):
     test_field = CharField()
 
 
-def get_app_config_actual_models(app_name):
-    class mock_app_config:
-        def __init__(self, app_name):
-            self.app_name = app_name
-
-        def get_models(self):
-            if app_name == 'good':
-                return [GoodModel]
-            elif app_name == 'bad':
-                return [BadModel]
-            else:
-                return [GoodModel, BadModel]
-
-    return mock_app_config(app_name)
-
-
 @pytest.mark.parametrize(
     'test_type',
     [
@@ -131,12 +115,11 @@ def get_app_config_actual_models(app_name):
 def test_models(test_type):
     out = StringIO()
     err = StringIO()
+    models = [GoodModel] if test_type == 'good' else [BadModel]
 
-    with mock.patch.dict('ansible_base.help_text_check.management.commands.help_text_check.apps.app_configs', {test_type: []}):
-        with mock.patch('ansible_base.help_text_check.management.commands.help_text_check.apps.get_app_config') as get_app_config:
-            get_app_config.side_effect = get_app_config_actual_models
-            with pytest.raises(SystemExit) as pytest_wrapped_e:
-                call_command('help_text_check', applications=test_type, stdout=out, stderr=err)
+    with mock.patch('ansible_base.help_text_check.management.commands.help_text_check.Command.get_models', return_value=models):
+        with pytest.raises(SystemExit) as pytest_wrapped_e:
+            call_command('help_text_check', applications=test_type, stdout=out, stderr=err)
 
     if test_type == 'good':
         assert pytest_wrapped_e.value.code == 0

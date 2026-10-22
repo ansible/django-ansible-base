@@ -9,6 +9,7 @@ from rest_framework.serializers import ValidationError
 from ansible_base.authentication.authenticator_plugins.external_oauth import (
     AuthenticatorPlugin,
     ExternalOAuthConfiguration,
+    _local_oidc_issuer,
     apply_oidc_discovery,
     oidc_discovery_url,
     resolve_uid_from_claims,
@@ -63,6 +64,29 @@ def _authenticator_payload(name, configuration, enabled=True):
     }
 
 
+@pytest.mark.parametrize(
+    ("oauth2_provider", "expected"),
+    [
+        ({"OIDC_ISS_ENDPOINT": " https://gateway.example.com/o "}, "https://gateway.example.com/o"),
+        ({"OIDC_ISS_ENDPOINT": ""}, None),
+        ({"OIDC_ISS_ENDPOINT": None}, None),
+        ({}, None),
+        ([], None),
+    ],
+)
+@override_settings(INSTALLED_APPS=["ansible_base.oauth2_provider"])
+def test_local_oidc_issuer_handles_provider_configuration(oauth2_provider, expected):
+    """Only a non-empty string local issuer reserves an external OAuth issuer URL."""
+    with patch(f"{DISCOVERY_MODULE}.get_setting", return_value=oauth2_provider):
+        assert _local_oidc_issuer() == expected
+
+
+@override_settings(INSTALLED_APPS=[])
+def test_local_oidc_issuer_is_unset_without_the_optional_oauth2_provider():
+    """Authentication-only installations have no local issuer to reserve."""
+    assert _local_oidc_issuer() is None
+
+
 @pytest.mark.django_db
 def test_external_oauth_plugin_registered():
     assert PLUGIN_TYPE in get_authenticator_plugins()
@@ -99,6 +123,45 @@ def test_external_oauth_create_update_delete_via_api(admin_api_client, external_
 
 
 @pytest.mark.django_db
+def test_external_oauth_allows_https_container_service_jwks_url(admin_api_client, external_oauth_configuration):
+    """HTTPS JWKS endpoints may use a single-label container service hostname."""
+    config = deepcopy(external_oauth_configuration)
+    config["JWKS_URI"] = "https://keycloak:8443/auth/realms/gateway/protocol/openid-connect/certs"
+
+    response = admin_api_client.post(
+        get_relative_url("authenticator-list"),
+        data=_authenticator_payload("Container Keycloak", config),
+        format="json",
+    )
+
+    assert response.status_code == 201, response.data
+    assert response.data["configuration"]["JWKS_URI"] == config["JWKS_URI"]
+
+
+@pytest.mark.django_db
+def test_external_oauth_discovery_allows_https_container_service_urls(admin_api_client, external_oauth_configuration):
+    """Discovery accepts HTTPS endpoints served through a container service hostname."""
+    config = deepcopy(external_oauth_configuration)
+    config.update(
+        {
+            "JWKS_URI": "",
+            "OIDC_ENDPOINT": "https://keycloak:8443/auth/realms/gateway",
+        }
+    )
+    jwks_uri = "https://keycloak:8443/auth/realms/gateway/protocol/openid-connect/certs"
+
+    with patch(f"{DISCOVERY_MODULE}.requests.get", side_effect=_mock_requests_get(_discovery_document(jwks_uri=jwks_uri))):
+        response = admin_api_client.post(
+            get_relative_url("authenticator-list"),
+            data=_authenticator_payload("Discovered Container Keycloak", config),
+            format="json",
+        )
+
+    assert response.status_code == 201, response.data
+    assert response.data["configuration"]["JWKS_URI"] == jwks_uri
+
+
+@pytest.mark.django_db
 def test_external_oauth_multiple_providers(admin_api_client, external_oauth_configuration):
     url = get_relative_url("authenticator-list")
     first = deepcopy(external_oauth_configuration)
@@ -120,6 +183,22 @@ def test_external_oauth_multiple_providers(admin_api_client, external_oauth_conf
 
 
 @pytest.mark.django_db
+@override_settings(OAUTH2_PROVIDER={"OIDC_ISS_ENDPOINT": "https://gateway.example.com/o"})
+def test_external_oauth_rejects_the_local_oidc_issuer(admin_api_client, external_oauth_configuration):
+    """DAB reserves its own optional OIDC issuer for local token handling."""
+    config = deepcopy(external_oauth_configuration)
+    config["ISSUER_URL"] = "https://gateway.example.com/o"
+    response = admin_api_client.post(
+        get_relative_url("authenticator-list"),
+        data=_authenticator_payload("Local OIDC Collision", config),
+        format="json",
+    )
+
+    assert response.status_code == 400, response.data
+    assert "ISSUER_URL" in response.data.get("configuration", response.data)
+
+
+@pytest.mark.django_db
 @pytest.mark.parametrize(
     "mutation,expected_fields",
     [
@@ -134,7 +213,13 @@ def test_external_oauth_multiple_providers(admin_api_client, external_oauth_conf
         (lambda cfg: cfg.update({"ALLOWED_ALGORITHMS": ["NOT_A_REAL_ALG"]}), ["ALLOWED_ALGORITHMS"]),
         (lambda cfg: cfg.update({"ALLOWED_ALGORITHMS": ["HS256"]}), ["ALLOWED_ALGORITHMS"]),
         (lambda cfg: cfg.update({"ALLOWED_ALGORITHMS": ["none"]}), ["ALLOWED_ALGORITHMS"]),
+        (lambda cfg: cfg.update({"JWKS_URL_TIMEOUT": 0}), ["JWKS_URL_TIMEOUT"]),
+        (lambda cfg: cfg.update({"JWKS_URL_TIMEOUT": 301}), ["JWKS_URL_TIMEOUT"]),
+        (lambda cfg: cfg.update({"JWT_CLOCK_SKEW_TOLERANCE_SECONDS": -1}), ["JWT_CLOCK_SKEW_TOLERANCE_SECONDS"]),
+        (lambda cfg: cfg.update({"JWT_CLOCK_SKEW_TOLERANCE_SECONDS": 301}), ["JWT_CLOCK_SKEW_TOLERANCE_SECONDS"]),
         (lambda cfg: cfg.update({"JWKS_CACHE_TIMEOUT": 30}), ["JWKS_CACHE_TIMEOUT"]),
+        (lambda cfg: cfg.update({"JWKS_URI": "http://provider.example.com/keys"}), ["JWKS_URI"]),
+        (lambda cfg: cfg.update({"OIDC_ENDPOINT": "http://provider.example.com", "JWKS_URI": ""}), ["OIDC_ENDPOINT"]),
         (lambda cfg: cfg.update({"CLAIM_LIST": ["email", ""]}), ["CLAIM_LIST"]),
         (lambda cfg: cfg.update({"CLAIM_LIST": ["email", 123]}), ["CLAIM_LIST"]),
         (lambda cfg: cfg.update({"not_a_real_field": "nope"}), ["not_a_real_field"]),

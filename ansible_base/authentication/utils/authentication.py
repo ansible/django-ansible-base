@@ -267,7 +267,9 @@ def determine_username_from_uid(
         exact_match = AuthenticatorUser.objects.filter(uid=uid, provider=authenticator)
     if exact_match.exists():
         new_username = exact_match.first().user.username
-        logger.info(f"Authenticator {authenticator.name} already authenticated {uid} as {new_username}")
+        # Reusing an existing provider-to-user link is the normal successful
+        # request path, so it should not create production log noise.
+        logger.debug(f"Authenticator {authenticator.name} already authenticated {uid} as {new_username}")
         return new_username
 
     logger.debug(f"Authentication merge strategy is {merge_strategy}")
