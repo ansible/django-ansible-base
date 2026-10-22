@@ -1,12 +1,14 @@
+import warnings
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
 import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric import ec, rsa
-
+import requests
 from ansible_base.authentication.authenticator_plugins.external_oauth import AuthenticatorPlugin
 from ansible_base.authentication.bearer_authentication import BearerTokenValidationError
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
+from urllib3.exceptions import InsecureRequestWarning
 
 
 def _claims(configuration, **overrides):
@@ -102,9 +104,9 @@ def test_external_oauth_plugin_validates_token_and_updates_claims(external_oauth
     }
     get_or_create.assert_called_once_with(
         uid="user@example.com",
-        email="user@example.com",
+        email=None,
         authenticator=external_oauth_authenticator,
-        user_details={"email": "user@example.com"},
+        user_details={},
         extra_data=claims,
     )
     update_claims.assert_called_once_with(user, external_oauth_authenticator, ["operators"], attrs=claims)
@@ -186,13 +188,130 @@ def test_external_oauth_plugin_defaults_missing_optional_configuration_for_exist
     ):
         AuthenticatorPlugin._decode_validated_token("token", signing_key, configuration)
         plugin._build_jwk_client(configuration["JWKS_URI"], configuration)
-        assert plugin._user_from_claims(claims, configuration) == user
+        assert plugin._user_from_claims(claims, claims, None, configuration) == user
 
     assert decode_token.call_args.kwargs["algorithms"] == ["RS256"]
     assert decode_token.call_args.kwargs["audience"] == configuration["AUDIENCE"]
     assert decode_token.call_args.kwargs["issuer"] == configuration["ISSUER_URL"]
     jwk_client.assert_called_once_with(configuration["JWKS_URI"], lifespan=3600, timeout=30, ssl_context=None)
     update_claims.assert_called_once_with(user, external_oauth_authenticator, ["operators"], attrs=claims)
+
+
+@pytest.mark.django_db
+def test_external_oauth_plugin_fetches_userinfo_with_original_bearer_token(external_oauth_authenticator):
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    configuration = plugin.database_instance.configuration
+    configuration.update({"USERINFO_URL": "https://login.example.com/userinfo", "USERINFO_URL_TIMEOUT": 12, "VERIFY_SSL": False})
+    response = Mock(status_code=200, headers={"Content-Type": "application/json"})
+    response.json.return_value = {"sub": "subject", "email": "profile@example.com", "groups": ["operators"]}
+
+    with patch("ansible_base.authentication.authenticator_plugins.external_oauth.requests.get", return_value=response) as get:
+        claims = plugin._fetch_userinfo_claims("original-access-token", {"sub": "subject"}, Mock(), configuration)
+
+    assert claims == response.json.return_value
+    get.assert_called_once_with(
+        "https://login.example.com/userinfo",
+        headers={"Accept": "application/json, application/jwt", "Authorization": "Bearer original-access-token"},
+        timeout=12,
+        verify=False,
+    )
+
+
+@pytest.mark.django_db
+def test_external_oauth_plugin_silences_expected_insecure_userinfo_warning(external_oauth_authenticator):
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    configuration = plugin.database_instance.configuration
+    configuration.update({"USERINFO_URL": "https://login.example.com/userinfo", "VERIFY_SSL": False})
+    response = Mock(status_code=200, headers={"Content-Type": "application/json"})
+    response.json.return_value = {"sub": "subject"}
+
+    def response_with_tls_warning(*args, **kwargs):
+        warnings.warn("certificate verification disabled", InsecureRequestWarning)
+        return response
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with patch(
+            "ansible_base.authentication.authenticator_plugins.external_oauth.requests.get",
+            side_effect=response_with_tls_warning,
+        ):
+            assert plugin._fetch_userinfo_claims("token", {"sub": "subject"}, Mock(), configuration) == {"sub": "subject"}
+
+    assert not [warning for warning in caught if issubclass(warning.category, InsecureRequestWarning)]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("side_effect", "return_value"),
+    [
+        (requests.exceptions.Timeout("timed out"), None),
+        (None, Mock(status_code=503, headers={"Content-Type": "application/json"})),
+    ],
+)
+def test_external_oauth_plugin_treats_userinfo_failures_as_optional(external_oauth_authenticator, side_effect, return_value):
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    configuration = plugin.database_instance.configuration
+    configuration["USERINFO_URL"] = "https://login.example.com/userinfo"
+
+    with (
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.requests.get", side_effect=side_effect, return_value=return_value),
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.logger") as logger,
+    ):
+        assert plugin._fetch_userinfo_claims("token", {"sub": "subject"}, Mock(), configuration) is None
+
+    logger.warning.assert_called_once()
+    assert plugin.database_instance.name in logger.warning.call_args.args
+    assert configuration["USERINFO_URL"] in logger.warning.call_args.args
+
+
+@pytest.mark.django_db
+def test_external_oauth_plugin_rejects_userinfo_for_another_subject(external_oauth_authenticator):
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    configuration = plugin.database_instance.configuration
+    configuration["USERINFO_URL"] = "https://login.example.com/userinfo"
+    response = Mock(status_code=200, headers={"Content-Type": "application/json"})
+    response.json.return_value = {"sub": "another-subject", "email": "profile@example.com"}
+
+    with patch("ansible_base.authentication.authenticator_plugins.external_oauth.requests.get", return_value=response):
+        assert plugin._fetch_userinfo_claims("token", {"sub": "subject"}, Mock(), configuration) is None
+
+
+@pytest.mark.django_db
+def test_external_oauth_plugin_preserves_validated_jwt_authority(external_oauth_authenticator):
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    jwt_claims = {"sub": "subject", "scope": "read", "email": "token@example.com"}
+    userinfo_claims = {"sub": "subject", "scope": "write", "email": "profile@example.com", "groups": ["operators"]}
+
+    assert plugin._merge_claims(jwt_claims, userinfo_claims) == {
+        "sub": "subject",
+        "scope": "read",
+        "email": "profile@example.com",
+        "groups": ["operators"],
+    }
+
+
+@pytest.mark.django_db
+def test_external_oauth_plugin_updates_configured_profile_fields(external_oauth_authenticator):
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    user = Mock(email="old@example.com", first_name="Old", last_name="Name")
+    authenticator_user = Mock(email="old@example.com")
+    configuration = {
+        "EMAIL_FIELD_FROM_USERINFO": "mail",
+        "FIRST_NAME_FIELD_FROM_USERINFO": "given_name",
+        "LAST_NAME_FIELD_FROM_USERINFO": "family_name",
+    }
+
+    plugin._update_userinfo_profile(
+        user,
+        authenticator_user,
+        {"mail": "Profile@Example.com", "given_name": "Profile", "family_name": "User"},
+        configuration,
+    )
+
+    assert (user.email, user.first_name, user.last_name) == ("profile@example.com", "Profile", "User")
+    user.save.assert_called_once_with(update_fields=["email", "first_name", "last_name"])
+    assert authenticator_user.email == "profile@example.com"
+    authenticator_user.save.assert_called_once_with(update_fields=["email"])
 
 
 @pytest.mark.django_db
@@ -224,7 +343,7 @@ def test_external_oauth_plugin_rejects_missing_required_runtime_configuration(ex
             plugin.authenticate(token="token")
     else:
         with pytest.raises(BearerTokenValidationError):
-            plugin._user_from_claims({"email": "user@example.com"}, configuration)
+            plugin._user_from_claims({"email": "user@example.com"}, {"email": "user@example.com"}, None, configuration)
 
 
 @pytest.mark.django_db
@@ -520,7 +639,7 @@ def test_external_oauth_plugin_treats_non_list_groups_as_empty(external_oauth_au
         patch("ansible_base.authentication.authenticator_plugins.external_oauth.is_system_user", return_value=False),
         patch("ansible_base.authentication.authenticator_plugins.external_oauth.update_user_claims", return_value=user) as update_claims,
     ):
-        assert plugin._user_from_claims(claims, plugin.database_instance.configuration) is user
+        assert plugin._user_from_claims(claims, claims, None, plugin.database_instance.configuration) is user
 
     assert update_claims.call_args.args[2] == []
 

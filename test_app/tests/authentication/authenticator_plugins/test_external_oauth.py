@@ -3,9 +3,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
-from django.test import override_settings
-from rest_framework.serializers import ValidationError
-
 from ansible_base.authentication.authenticator_plugins.external_oauth import (
     AuthenticatorPlugin,
     ExternalOAuthConfiguration,
@@ -17,6 +14,8 @@ from ansible_base.authentication.authenticator_plugins.external_oauth import (
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin, get_authenticator_plugins
 from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.utils.response import get_relative_url
+from django.test import override_settings
+from rest_framework.serializers import ValidationError
 
 PLUGIN_TYPE = "ansible_base.authentication.authenticator_plugins.external_oauth"
 DISCOVERY_MODULE = "ansible_base.authentication.authenticator_plugins.external_oauth"
@@ -215,6 +214,8 @@ def test_external_oauth_rejects_the_local_oidc_issuer(admin_api_client, external
         (lambda cfg: cfg.update({"ALLOWED_ALGORITHMS": ["none"]}), ["ALLOWED_ALGORITHMS"]),
         (lambda cfg: cfg.update({"JWKS_URL_TIMEOUT": 0}), ["JWKS_URL_TIMEOUT"]),
         (lambda cfg: cfg.update({"JWKS_URL_TIMEOUT": 301}), ["JWKS_URL_TIMEOUT"]),
+        (lambda cfg: cfg.update({"USERINFO_URL_TIMEOUT": 0}), ["USERINFO_URL_TIMEOUT"]),
+        (lambda cfg: cfg.update({"USERINFO_URL_TIMEOUT": 301}), ["USERINFO_URL_TIMEOUT"]),
         (lambda cfg: cfg.update({"JWT_CLOCK_SKEW_TOLERANCE_SECONDS": -1}), ["JWT_CLOCK_SKEW_TOLERANCE_SECONDS"]),
         (lambda cfg: cfg.update({"JWT_CLOCK_SKEW_TOLERANCE_SECONDS": 301}), ["JWT_CLOCK_SKEW_TOLERANCE_SECONDS"]),
         (lambda cfg: cfg.update({"JWKS_CACHE_TIMEOUT": 30}), ["JWKS_CACHE_TIMEOUT"]),

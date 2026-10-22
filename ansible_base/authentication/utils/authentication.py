@@ -2,6 +2,10 @@ import importlib
 import logging
 from typing import List, Optional, Tuple, Union
 
+from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_class
+from ansible_base.authentication.models import Authenticator, AuthenticatorUser
+from ansible_base.authentication.social_auth import AuthenticatorStorage, AuthenticatorStrategy
+from ansible_base.authentication.utils.user import normalize_and_get_email
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractUser
@@ -9,11 +13,6 @@ from django.db.models import Q
 from django.utils.translation import gettext as _
 from social_core.exceptions import AuthException
 from social_core.pipeline.user import get_username
-
-from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_class
-from ansible_base.authentication.models import Authenticator, AuthenticatorUser
-from ansible_base.authentication.social_auth import AuthenticatorStorage, AuthenticatorStrategy
-from ansible_base.authentication.utils.user import normalize_and_get_email
 
 logger = logging.getLogger('ansible_base.authentication.utils.authentication')
 
@@ -303,7 +302,7 @@ def _validate_username_for_new_user(username: str, authenticator: Authenticator)
 
 
 def get_or_create_authenticator_user(
-    uid: str, email: str, authenticator: Authenticator, user_details: dict = dict, extra_data: dict = dict
+    uid: str, email: str | None, authenticator: Authenticator, user_details: dict = dict, extra_data: dict = dict
 ) -> Tuple[Optional[AbstractUser], Optional[AuthenticatorUser], Optional[bool]]:
     """
     Create the user object in the database along with it's associated AuthenticatorUser class.
@@ -335,8 +334,11 @@ def get_or_create_authenticator_user(
     try:
         auth_user = AuthenticatorUser.objects.get(uid=uid, provider=authenticator)
         auth_user.extra_data = extra_data
-        auth_user.email = email
-        auth_user.save()
+        if email is not None:
+            auth_user.email = email
+            auth_user.save()
+        else:
+            auth_user.save(update_fields=["extra_data"])
         created = False
     except AuthenticatorUser.DoesNotExist:
         # If the AuthenticatorUser doesn't exist, validate the username before creating a new one.
@@ -353,7 +355,7 @@ def get_or_create_authenticator_user(
     if created is None:
         auth_user, created = AuthenticatorUser.objects.get_or_create(
             user=local_user,
-            email=email,
+            email=email or "",
             uid=uid,
             provider=authenticator,
             defaults={'extra_data': extra_data},
