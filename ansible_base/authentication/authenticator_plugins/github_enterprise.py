@@ -1,5 +1,6 @@
 import logging
 
+from django.utils.translation import gettext_lazy as _
 from social_core.backends.github_enterprise import GithubEnterpriseOAuth2
 
 from ansible_base.authentication.authenticator_configurators.github import GithubEnterpriseConfiguration
@@ -13,5 +14,6 @@ class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, Gith
     configuration_class = GithubEnterpriseConfiguration
     logger = logger
     type = "github-enterprise"
+    display_name = _("GitHub Enterprise")
     category = "sso"
     configuration_encrypted_fields = ['SECRET']

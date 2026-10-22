@@ -7,7 +7,7 @@ from jwt.exceptions import PyJWKClientError, PyJWKError
 
 from ansible_base.lib.utils.settings import get_setting
 
-JWKS_REFRESH_COOLDOWN_SETTING = "external_oauth_jwks_refresh_cooldown_seconds"
+JWKS_REFRESH_COOLDOWN_SETTING = "jwks_refresh_cooldown_seconds"
 DEFAULT_JWKS_REFRESH_COOLDOWN_SECONDS = 60
 MAX_JWKS_REFRESH_COOLDOWN_SECONDS = 86400
 
@@ -40,22 +40,22 @@ class CachedJWKClient(PyJWKClient):
     @property
     def _jwk_set_cache_key(self) -> str:
         """Return the shared cache key for this provider's complete JWKS document."""
-        return f"external_oauth_jwk_set:{self._cache_namespace}"
+        return f"jwk_set:{self._cache_namespace}"
 
     @property
     def _refresh_lock_key(self) -> str:
         """Return the cooldown key that throttles forced key-set refreshes."""
-        return f"external_oauth_jwks_refresh:{self._cache_namespace}"
+        return f"jwks_refresh:{self._cache_namespace}"
 
     @property
     def _fetch_lock_key(self) -> str:
         """Return the short-lived lock used while one request fetches a JWKS document."""
-        return f"external_oauth_jwks_fetch:{self._cache_namespace}"
+        return f"jwks_fetch:{self._cache_namespace}"
 
     def _signing_key_cache_key(self, kid: str) -> str:
         """Return a cache key that safely scopes an individual signing key to this URI."""
         cache_identifier = hashlib.sha256(kid.encode()).hexdigest()
-        return f"external_oauth_jwk:{self._cache_namespace}:{cache_identifier}"
+        return f"jwk:{self._cache_namespace}:{cache_identifier}"
 
     def get_jwk_set(self, refresh: bool = False) -> PyJWKSet:
         """Override PyJWT JWKS lookup to share provider keys and refresh coordination through Django's cache."""
