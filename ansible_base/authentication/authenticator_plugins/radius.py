@@ -65,7 +65,7 @@ class RADIUSConfiguration(BaseAuthenticatorConfiguration):
 class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
     configuration_class = RADIUSConfiguration
     type = "RADIUS"
-    display_name = _("Radius")
+    display_name = _("RADIUS")
     category = "password"
     configuration_encrypted_fields = ["SECRET"]
 
