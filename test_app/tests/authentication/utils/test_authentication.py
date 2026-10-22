@@ -82,8 +82,9 @@ class TestAuthenticationUtilsAuthentication:
             AuthenticatorUser.objects.create(uid=random_user.username, user=random_user, provider=local_authenticator)
         elif related_authenticator in ['ldap', 'multiple']:
             AuthenticatorUser.objects.create(uid=random_user.username, user=random_user, provider=ldap_authenticator)
-        # Use different log levels based on the scenario
-        log_level = 'warning' if related_authenticator == 'ldap' else 'info'
+        # Existing authenticator links are a routine request path; only a
+        # conflicting provider association deserves warning-level logging.
+        log_level = 'warning' if related_authenticator == 'ldap' else 'debug' if related_authenticator else 'info'
         with expected_log(self.logger, log_level, info_message):
             new_username = authentication.determine_username_from_uid(uid=uid, email="", authenticator=local_authenticator)
             if expected_username:

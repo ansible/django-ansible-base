@@ -16,7 +16,7 @@ def get_authentication_backends(last_updated):
     # last_updated is primarily here as a cache busting mechanism
     authentication_backends = OrderedDict()
 
-    for database_authenticator in Authenticator.objects.filter(enabled=True).order_by('order'):
+    for database_authenticator in Authenticator.objects.filter(enabled=True).exclude(category="api_auth").order_by('order'):
         try:
             authentication_backends[database_authenticator.id] = get_authenticator_plugin(database_authenticator.type)
         except ImportError:
@@ -34,7 +34,7 @@ class AnsibleBaseAuth(ModelBackend):
 
         # Query the database for the most recently last modified timestamp.
         # This will be used as a cache key for the cached function get_authentication_backends below
-        last_modified_item = Authenticator.objects.values("modified").order_by("-modified").first()
+        last_modified_item = Authenticator.objects.exclude(category="api_auth").values("modified").order_by("-modified").first()
         last_modified = None if last_modified_item is None else last_modified_item.get('modified')
 
         for authenticator_id, authenticator_object in get_authentication_backends(last_modified).items():
