@@ -4,9 +4,11 @@ from unittest import mock
 
 import pytest
 from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from ansible_base.authentication.models import AuthenticatorMap, AuthenticatorUser
 from ansible_base.authentication.utils import claims
+from ansible_base.rbac.models import RoleDefinition
 from test_app.tests.authentication.conftest import ORG_ADMIN_ROLE_NAME, ORG_MEMBER_ROLE_NAME, SYSTEM_ROLE_NAME, TEAM_ADMIN_ROLE_NAME, TEAM_MEMBER_ROLE_NAME
 
 
@@ -3118,3 +3120,82 @@ class TestCreateClaimsQueryCount:
 
         with django_assert_num_queries(1):
             claims.create_claims(local_authenticator, 'testuser', {'email': 'test@example.com'}, [])
+
+    @staticmethod
+    def _role_maps(authenticator, map_type, role_names, count, revoke):
+        AuthenticatorMap.objects.filter(authenticator=authenticator).delete()
+        for index in range(count):
+            AuthenticatorMap.objects.create(
+                name=f"map {index}",
+                authenticator=authenticator,
+                map_type=map_type,
+                role=role_names[index % len(role_names)],
+                organization="testorg" if map_type == "team" else f"org {index}",
+                team=f"team {index}" if map_type == "team" else None,
+                triggers={"groups": {"has_or": [f"group {index}"]}},
+                revoke=revoke,
+                order=index,
+            )
+
+    @staticmethod
+    def _count_queries(authenticator, groups):
+        with CaptureQueriesContext(connection) as captured:
+            result = claims.create_claims(authenticator, "username", {}, groups)
+        role_queries = [query for query in captured.captured_queries if RoleDefinition._meta.db_table in query["sql"]]
+        return result, len(captured.captured_queries), len(role_queries)
+
+    @pytest.mark.parametrize(
+        "map_type, revoke, groups, granted",
+        [
+            pytest.param("team", True, [], 0, id="team maps, revoke, user matches no map"),
+            pytest.param("team", True, ["group 0", "group 1"], 2, id="team maps, revoke, user matches some maps"),
+            pytest.param("team", False, [f"group {index}" for index in range(30)], 30, id="team maps, no revoke, user matches every map"),
+            pytest.param("organization", True, [], 0, id="organization maps, revoke, user matches no map"),
+        ],
+    )
+    def test_role_queries_do_not_grow_with_maps(self, local_authenticator, member_rd, org_member_rd, map_type, revoke, groups, granted):
+        """With revoke a map the user does not match is denied, not skipped, so its role is checked too."""
+        role = member_rd.name if map_type == "team" else org_member_rd.name
+        self._role_maps(local_authenticator, map_type, [role], 3, revoke)
+        _, few_maps_queries, few_maps_role_queries = self._count_queries(local_authenticator, groups)
+
+        self._role_maps(local_authenticator, map_type, [role], 30, revoke)
+        result, many_maps_queries, many_maps_role_queries = self._count_queries(local_authenticator, groups)
+
+        assert few_maps_role_queries == 1
+        assert many_maps_role_queries == 1
+        assert many_maps_queries <= few_maps_queries
+        if map_type == "team":
+            memberships = result["claims"]["team_membership"]["testorg"]
+        else:
+            memberships = result["claims"]["organization_membership"]
+        assert len(memberships) == 30
+        assert list(memberships.values()).count(True) == granted
+
+    def test_expanded_roles_are_queried_once_each(self, local_authenticator, member_rd, admin_rd):
+        """A map whose role is expanded from an attribute names several roles; each is queried once."""
+        self._role_maps(local_authenticator, "team", ["{% for_attr_value(roles) %}"], 10, True)
+        attributes = {"roles": [member_rd.name, admin_rd.name, "Role that does not exist"]}
+
+        with CaptureQueriesContext(connection) as captured:
+            result = claims.create_claims(local_authenticator, "username", attributes, [])
+
+        role_queries = [query for query in captured.captured_queries if RoleDefinition._meta.db_table in query["sql"]]
+        # the two roles that exist are queried once each; the role that does not exist is not cached, so every map queries it
+        assert len(role_queries) == 2 + 10
+        teams = result["claims"]["rbac_roles"]["organizations"]["testorg"]["teams"]
+        assert len(teams) == 10
+        assert teams["team 0"]["roles"] == {member_rd.name: False, admin_rd.name: False}
+
+    def test_each_role_is_queried_once(self, local_authenticator, member_rd, admin_rd):
+        """Each role is queried once per create_claims call; a role that does not exist is queried by every map that names it."""
+        self._role_maps(local_authenticator, "team", [member_rd.name, admin_rd.name, "Role that does not exist"], 21, True)
+
+        result, _, role_queries = self._count_queries(local_authenticator, [])
+
+        assert role_queries == 2 + 7
+        teams = result["claims"]["rbac_roles"]["organizations"]["testorg"]["teams"]
+        assert len(teams) == 14
+        assert teams["team 0"]["roles"] == {member_rd.name: False}
+        assert teams["team 1"]["roles"] == {admin_rd.name: False}
+        assert "team 2" not in teams
