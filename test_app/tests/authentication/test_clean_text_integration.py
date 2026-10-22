@@ -1,16 +1,18 @@
 """Tests that CleanTextMixin is correctly wired to DAB authentication serializers."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.models import Authenticator, AuthenticatorMap
 from ansible_base.authentication.serializers.authenticator_map import AuthenticatorMapSerializer
+from ansible_base.lib.serializers.mixins import _INCOMPLETE_VALIDATION_MSG, CleanTextMixin
 from ansible_base.lib.utils.response import get_relative_url
 
 DANGEROUS_NAME = '<script>alert(1)</script>'
 DANGEROUS_TEXT = '$(rm -rf /)'
+DANGEROUS_TEMPLATE = '{{malicious}}'
 GITHUB_ORG_TYPE = 'ansible_base.authentication.authenticator_plugins.github_org'
 
 pytestmark = pytest.mark.django_db
@@ -235,3 +237,157 @@ class TestAuthenticatorMapCleanText:
         response = admin_api_client.patch(url, data={'name': DANGEROUS_NAME}, format='json')
         assert response.status_code == 400
         assert 'name' in response.data
+
+    def test_rejects_dangerous_template_in_attribute_value(self, admin_api_client, local_authenticator):
+        url = get_relative_url('authenticatormap-list')
+        data = {
+            'name': 'Attr value rule',
+            'authenticator': local_authenticator.id,
+            'map_type': 'is_superuser',
+            'triggers': {'attributes': {'email': {'contains': DANGEROUS_TEMPLATE}}},
+            'order': 1,
+        }
+        response = admin_api_client.post(url, data=data, format='json')
+        assert response.status_code == 400
+        assert 'triggers' in response.data
+
+    def test_rejects_dangerous_template_in_attribute_name(self, admin_api_client, local_authenticator):
+        url = get_relative_url('authenticatormap-list')
+        data = {
+            'name': 'Attr name rule',
+            'authenticator': local_authenticator.id,
+            'map_type': 'is_superuser',
+            'triggers': {'attributes': {DANGEROUS_TEMPLATE: {'contains': 'benign'}}},
+            'order': 2,
+        }
+        response = admin_api_client.post(url, data=data, format='json')
+        assert response.status_code == 400
+        assert 'triggers' in response.data
+        assert f'attributes.{DANGEROUS_TEMPLATE}' in response.data['triggers']
+
+    def test_grandfather_unchanged_attribute_name_on_update(self, admin_api_client, local_authenticator):
+        auth_map = AuthenticatorMap.objects.create(
+            name='Grandfather attr key',
+            authenticator=local_authenticator,
+            map_type='is_superuser',
+            triggers={'attributes': {DANGEROUS_TEMPLATE: {'contains': 'ok'}}},
+            order=3,
+        )
+        url = get_relative_url('authenticatormap-detail', kwargs={'pk': auth_map.pk})
+        response = admin_api_client.patch(
+            url,
+            data={
+                'triggers': {'attributes': {DANGEROUS_TEMPLATE: {'contains': 'still-ok'}}},
+            },
+            format='json',
+        )
+        assert response.status_code == 200
+
+    def test_rejects_new_dangerous_attribute_name_on_update(self, admin_api_client, local_authenticator):
+        auth_map = AuthenticatorMap.objects.create(
+            name='New attr key on update',
+            authenticator=local_authenticator,
+            map_type='is_superuser',
+            triggers={'attributes': {'email': {'contains': '@example.com'}}},
+            order=4,
+        )
+        url = get_relative_url('authenticatormap-detail', kwargs={'pk': auth_map.pk})
+        response = admin_api_client.patch(
+            url,
+            data={
+                'triggers': {
+                    'attributes': {
+                        'email': {'contains': '@example.com'},
+                        DANGEROUS_TEMPLATE: {'contains': 'x'},
+                    },
+                },
+            },
+            format='json',
+        )
+        assert response.status_code == 400
+        assert f'attributes.{DANGEROUS_TEMPLATE}' in response.data['triggers']
+
+    @pytest.mark.parametrize(
+        'triggers',
+        [
+            'not-a-dict',
+            {'groups': {'has_or': []}},
+            {'attributes': 'not-a-dict'},
+        ],
+        ids=['non_dict_triggers', 'no_attributes', 'non_dict_attributes'],
+    )
+    def test_attribute_name_validation_noop_for_non_attribute_triggers(self, map_serializer, triggers):
+        assert map_serializer._validate_trigger_attribute_name_keys(triggers) == {}
+
+    def test_attribute_name_validation_skips_join_condition(self, map_serializer):
+        triggers = {'attributes': {'join_condition': 'and', 'email': {'contains': 'x'}}}
+        assert map_serializer._validate_trigger_attribute_name_keys(triggers) == {}
+
+    def test_stored_trigger_attributes_from_instance(self, local_authenticator):
+        auth_map = AuthenticatorMap.objects.create(
+            name='Stored attrs',
+            authenticator=local_authenticator,
+            map_type='is_superuser',
+            triggers={'attributes': {'email': {'contains': 'x'}}},
+            order=5,
+        )
+        serializer = AuthenticatorMapSerializer(instance=auth_map)
+        assert serializer._stored_trigger_attributes() == {'email': {'contains': 'x'}}
+
+    def test_attribute_name_validation_reports_incomplete_on_unexpected_error(self, map_serializer):
+        with patch(
+            'ansible_base.authentication.serializers.authenticator_map.validate_free_text',
+            side_effect=RuntimeError('validator crash'),
+        ):
+            result = map_serializer._validate_trigger_attribute_name_keys(
+                {'attributes': {'new_attr': {'contains': 'x'}}},
+            )
+        assert result['attributes.new_attr'] == [_INCOMPLETE_VALIDATION_MSG]
+
+    @pytest.mark.parametrize(
+        'initial_triggers_errors,expect_merged',
+        [
+            (None, False),
+            ({'attributes.email.contains': ['bad value']}, True),
+            (['non-dict'], False),
+        ],
+        ids=['set_triggers_errors', 'merge_dict_errors', 'replace_non_dict_errors'],
+    )
+    def test_merge_trigger_attribute_key_errors(self, initial_triggers_errors, expect_merged):
+        attr_key_errors = {f'attributes.{DANGEROUS_TEMPLATE}': ['blocked']}
+        errors = {}
+        if initial_triggers_errors is not None:
+            errors['triggers'] = initial_triggers_errors
+        AuthenticatorMapSerializer._merge_trigger_attribute_key_errors(errors, attr_key_errors)
+        assert f'attributes.{DANGEROUS_TEMPLATE}' in errors['triggers']
+        if expect_merged:
+            assert 'attributes.email.contains' in errors['triggers']
+
+    def test_validate_json_fields_merges_attribute_name_errors(self, map_serializer):
+        attrs = {'triggers': {'attributes': {DANGEROUS_TEMPLATE: {'contains': 'ok'}}}}
+        errors = {'triggers': {'attributes.email.contains': ['existing']}}
+        with patch.object(CleanTextMixin, '_validate_json_fields', return_value=None):
+            map_serializer._validate_json_fields(['triggers'], attrs, errors)
+        assert f'attributes.{DANGEROUS_TEMPLATE}' in errors['triggers']
+        assert 'attributes.email.contains' in errors['triggers']
+
+    def test_validate_json_fields_skips_without_triggers_field(self, map_serializer):
+        errors = {}
+        map_serializer._validate_json_fields(['name'], {'name': 'x'}, errors)
+        assert errors == {}
+
+    def test_grandfather_attribute_name_via_stored_attributes(self, local_authenticator):
+        auth_map = AuthenticatorMap.objects.create(
+            name='Grandfather via helper',
+            authenticator=local_authenticator,
+            map_type='is_superuser',
+            triggers={'attributes': {DANGEROUS_TEMPLATE: {'contains': 'ok'}}},
+            order=6,
+        )
+        serializer = AuthenticatorMapSerializer(instance=auth_map)
+        assert (
+            serializer._validate_trigger_attribute_name_keys(
+                {'attributes': {DANGEROUS_TEMPLATE: {'contains': 'changed'}}},
+            )
+            == {}
+        )
