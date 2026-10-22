@@ -26,16 +26,21 @@ tox will automatically create/start and stop/destroy the postgres container.  If
 
 ### Running tests with MS SQL Server
 
-To run tests against MS SQL Server instead of PostgreSQL:
+To run tests against MS SQL Server instead of PostgreSQL, use the dedicated MS SQL test environments:
 
 1. Start the MS SQL Server container:
    ```bash
    make mssql
    ```
 
-2. Run tox with the `DB_BACKEND` environment variable:
+2. Run the MS SQL tox environments:
    ```bash
-   DB_BACKEND=mssql tox -e py312
+   # Run all MS SQL tests
+   tox -m mssql
+   
+   # Or run specific MS SQL environments
+   tox -e py312-mssql           # Full test suite
+   tox -e py312-mssql-check     # Django checks and migration validation
    ```
 
 3. When finished, stop and clean up the container:
@@ -43,9 +48,11 @@ To run tests against MS SQL Server instead of PostgreSQL:
    make stop-mssql
    ```
 
-The `DB_BACKEND` environment variable works with all tox test environments (py312, py312-check, py312-in-files, py312-query-count-scale). When not set, tests default to PostgreSQL.
+**Available MS SQL environments:**
+- `py312-mssql` - Full test suite with MS SQL Server
+- `py312-mssql-check` - Django system checks and migration validation
 
-**Note:** The MS SQL Server container must be running and the database initialized before running tests. The `make mssql` command handles both setup steps automatically.
+**Note:** The MS SQL environments do not auto-start a database container. You must run `make mssql` first to start MS SQL Server. The regular environments (`py312`, `py312-check`, etc.) auto-start PostgreSQL via docker and should not be used with `DB_BACKEND=mssql`.
 
 ## Checking code coverage locally
 
