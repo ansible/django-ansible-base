@@ -165,12 +165,12 @@ legacy_tox_ini = """
     docker = db
 
     # MS SQL Server test environments
-    # These environments expect MS SQL Server to be running (via `make mssql`)
-    # and do not auto-start the PostgreSQL docker container.
+    # Auto-start MS SQL Server container via docker (similar to PostgreSQL environments)
 
     [testenv:py312-mssql]
     setenv =
         DB_BACKEND = mssql
+    docker = mssql-db
 
     [testenv:py312-mssql-check]
     deps =
@@ -181,11 +181,17 @@ legacy_tox_ini = """
     commands =
         python3 manage.py check
         python3 manage.py makemigrations --check
+    docker = mssql-db
 
     [docker:db]
     dockerfile = {toxinidir}/tools/dev_postgres/Dockerfile
     expose =
         DB_PORT=5432/tcp
+
+    [docker:mssql-db]
+    dockerfile = {toxinidir}/tools/dev_mssql/Dockerfile
+    expose =
+        DB_PORT=1433/tcp
 
     [testenv:flake8]
     deps =
