@@ -35,7 +35,9 @@ def actors_for_role_assignment(request_user, actor_cls) -> QuerySet:
         return actor_cls.objects.none()
     if resource_admins_can_assign_unrestricted_actors():
         return actor_cls.objects.all()
-    if actor_cls._meta.model_name == 'user':
+    # Compare against the registered user model, not the literal model_name
+    # "user", so custom user models with a different name still work.
+    if actor_cls._meta.concrete_model == permission_registry.user_model._meta.concrete_model:
         return visible_users(request_user)
     return visible_teams(request_user)
 
