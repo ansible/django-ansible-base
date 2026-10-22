@@ -356,6 +356,8 @@ def external_oauth_configuration():
     return {
         "ISSUER_URL": "https://login.example.com/tenant/v2.0",
         "JWKS_URI": "https://login.example.com/tenant/discovery/v2.0/keys",
+        "JWKS_URL_TIMEOUT": 30,
+        "JWT_CLOCK_SKEW_TOLERANCE_SECONDS": 0,
         "ALLOWED_ALGORITHMS": ["RS256"],
         "AUDIENCE": "api://aap-example",
         "JWKS_CACHE_TIMEOUT": 3600,

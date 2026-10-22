@@ -58,9 +58,11 @@ def create_claims(authenticator: Authenticator, username: str, attrs: dict, grou
     # debug tracking ID
     tracking_id = str(uuid4())
 
-    logger.info(f"[{tracking_id}] Creating mapping for user {username} through authenticator {authenticator.name}")
-    logger.debug(f"[{tracking_id}] {username}'s groups: {groups}")
-    logger.debug(f"[{tracking_id}] {username}'s attrs: {attrs}")
+    # Evaluating maps occurs for every successful authentication. Do not emit
+    # routine request activity at INFO or expose claim values in debug logs.
+    logger.debug(f"[{tracking_id}] Evaluating maps for user {username} through authenticator {authenticator.name}")
+    logger.debug(f"[{tracking_id}] {username} has {len(groups)} group(s)")
+    logger.debug(f"[{tracking_id}] {username}'s claim keys: {sorted(attrs)}")
 
     # load the maps (materialize to avoid extra count() query)
     maps = list(AuthenticatorMap.objects.filter(authenticator=authenticator.pk).order_by("order"))
@@ -753,7 +755,8 @@ def create_organizations_and_teams(results) -> None:
 class ReconcileUser:
     @classmethod
     def reconcile_user_claims(cls, user: AbstractUser, authenticator_user: AuthenticatorUser) -> None:
-        logger.info("Reconciling user claims")
+        # Reconciliation is normal per-request work, not an operational event.
+        logger.debug("Reconciling user claims")
 
         claims = getattr(user, 'claims', authenticator_user.claims)
 

@@ -1,8 +1,8 @@
 """
 Unit tests for api_documentation customizations.
 
-Tests the OAuth2 security scheme customization that allows the
-LoggedOAuth2Authentication to leverage the OAuth2 customization settings.
+Tests the OAuth2 security scheme customization that allows
+BearerAuthentication to leverage the OAuth2 customization settings.
 These change allow the OAuth2Authentication securityScheme to be listed as
 'oauth2' instead of 'apiKey'.
 """
@@ -35,12 +35,10 @@ def test_oauth2_scheme_type_is_oauth2_not_apikey():
     """
     from drf_spectacular.extensions import OpenApiAuthenticationExtension
 
-    from ansible_base.oauth2_provider.authentication import LoggedOAuth2Authentication
+    from ansible_base.authentication.bearer_authentication import BearerAuthentication
 
     # Intentionally access _registry to verify OAuth2Scheme is registered with expected attributes
-    oauth2_schemes = [
-        ext for ext in OpenApiAuthenticationExtension._registry if hasattr(ext, 'target_class') and ext.target_class == LoggedOAuth2Authentication
-    ]
+    oauth2_schemes = [ext for ext in OpenApiAuthenticationExtension._registry if hasattr(ext, 'target_class') and ext.target_class == BearerAuthentication]
     assert len(oauth2_schemes) >= 1, "OAuth2_Authentication should be registered"
 
     # Get the first matching scheme
@@ -48,7 +46,7 @@ def test_oauth2_scheme_type_is_oauth2_not_apikey():
     assert oauth2_scheme_cls.name == 'OAuth2_Authentication'
 
     # Instantiate and get security definition
-    oauth2_scheme = oauth2_scheme_cls(target=LoggedOAuth2Authentication)
+    oauth2_scheme = oauth2_scheme_cls(target=BearerAuthentication)
     # Use MagicMock for auto_schema parameter
     security_def = oauth2_scheme.get_security_definition(auto_schema=MagicMock())
 
@@ -62,13 +60,11 @@ def test_oauth2_scheme_includes_configured_flows():
     from django.conf import settings
     from drf_spectacular.extensions import OpenApiAuthenticationExtension
 
-    from ansible_base.oauth2_provider.authentication import LoggedOAuth2Authentication
+    from ansible_base.authentication.bearer_authentication import BearerAuthentication
 
     # Intentionally access _registry to verify OAuth2Scheme is registered with expected attributes
-    oauth2_schemes = [
-        ext for ext in OpenApiAuthenticationExtension._registry if hasattr(ext, 'target_class') and ext.target_class == LoggedOAuth2Authentication
-    ]
-    oauth2_scheme = oauth2_schemes[0](target=LoggedOAuth2Authentication)
+    oauth2_schemes = [ext for ext in OpenApiAuthenticationExtension._registry if hasattr(ext, 'target_class') and ext.target_class == BearerAuthentication]
+    oauth2_scheme = oauth2_schemes[0](target=BearerAuthentication)
     security_def = oauth2_scheme.get_security_definition(auto_schema=MagicMock())
 
     flows = security_def['flows']
@@ -83,3 +79,15 @@ def test_oauth2_scheme_includes_configured_flows():
             assert 'authorizationUrl' in flows[flow_type]
         if flow_type in ('password', 'clientCredentials', 'authorizationCode'):
             assert 'tokenUrl' in flows[flow_type]
+
+
+def test_oauth2_scheme_preserves_standalone_oauth2_authentication():
+    from drf_spectacular.extensions import OpenApiAuthenticationExtension
+
+    from ansible_base.oauth2_provider.authentication import LoggedOAuth2Authentication
+
+    oauth2_schemes = [
+        ext for ext in OpenApiAuthenticationExtension._registry if hasattr(ext, 'target_class') and ext.target_class == LoggedOAuth2Authentication
+    ]
+
+    assert len(oauth2_schemes) >= 1, "OAuth2_Authentication should be registered for standalone OAuth2"

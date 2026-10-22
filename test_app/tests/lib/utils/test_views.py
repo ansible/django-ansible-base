@@ -12,6 +12,7 @@ from rest_framework.views import APIView
 
 from ansible_base.authentication.views.authenticator import AuthenticatorViewSet
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
+from ansible_base.lib.utils.views.permissions import try_add_oauth2_scope_permission
 
 
 @pytest.fixture
@@ -38,6 +39,29 @@ def test_ansible_base_view_with_no_settings(view_with_headers, mock_request, def
     initial_response = HttpResponseBase()
     response = view_with_headers.finalize_response(mock_request, initial_response)
     assert response.headers == default_headers
+
+
+@pytest.mark.parametrize(
+    "installed_apps,adds_scope_permission",
+    [
+        ([], False),
+        (["ansible_base.authentication"], True),
+        (["ansible_base.oauth2_provider"], True),
+    ],
+)
+def test_try_add_oauth2_scope_permission_requires_a_scope_authentication_app(monkeypatch, installed_apps, adds_scope_permission):
+    """Only add scope enforcement when an installed app can issue scoped tokens."""
+    from ansible_base.lib.permissions import TokenScopePermission
+
+    original_permissions = [APIView]
+    monkeypatch.setattr("ansible_base.lib.utils.views.permissions.get_setting", lambda *_: installed_apps)
+
+    result = try_add_oauth2_scope_permission(original_permissions)
+
+    if adds_scope_permission:
+        assert result == [TokenScopePermission, APIView]
+    else:
+        assert result is original_permissions
 
 
 class DummyView(APIView):

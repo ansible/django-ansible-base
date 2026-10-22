@@ -12,20 +12,23 @@ from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
 
 from ansible_base.authentication.authenticator_plugins.saml import SAMLMetadataView
+from ansible_base.authentication.permissions import TokenScopePermission as AuthenticationTokenScopePermission
 from ansible_base.authentication.views.authenticator import AuthenticatorViewSet
 from ansible_base.authentication.views.ui_auth import UIAuth
+from ansible_base.lib.permissions import TokenScopePermission
 from ansible_base.lib.utils.views.urls import get_api_view_functions
 from ansible_base.oauth2_provider.checks.permisssions_check import oauth2_permission_scope_check, view_in_app_configs
+from ansible_base.oauth2_provider.permissions import OAuth2ScopePermission
 from test_app import views
 
 urlpatterns = [
-    # APIView without OAuth2ScopePermission (needs patch)
+    # APIView without TokenScopePermission (needs patch)
     path('api/users/', views.UserViewSet.as_view({"get": "list"}), name='user-view'),
-    # APIView with OAuth2ScopePermission (happy path)
+    # APIView with a legacy OAuth2ScopePermission wrapper (happy path)
     path('api/teams/', views.TeamViewSet.as_view({"get": "list"}), name='team-list'),
     # APIView with binary Operands (Needs patch)
     path('api/authenticators/', AuthenticatorViewSet.as_view({"get": "list"}), name="authenticator-list"),
-    # APIView with inverted OAuth2ScopePermission (need patch)
+    # APIView with inverted TokenScopePermission (need patch)
     path('api/organizations/', views.OrganizationViewSet.as_view({"get": "list"}), name="organization-list"),
     # Ignored view (ignored in settings.py)
     path('/docs/', SpectacularSwaggerView.as_view()),
@@ -34,6 +37,12 @@ urlpatterns = [
     # Non-ApiView view
     path('/non-api-view/', SAMLMetadataView.as_view()),
 ]
+
+
+def test_oauth2_scope_permission_is_the_canonical_token_scope_permission():
+    """Both app-level compatibility paths refer to the neutral permission class."""
+    assert OAuth2ScopePermission is TokenScopePermission
+    assert AuthenticationTokenScopePermission is TokenScopePermission
 
 
 @pytest.fixture
@@ -46,20 +55,16 @@ def missing_permissions_view_class():
 
 @pytest.fixture
 def inverted_permissions_view_class():
-    from ansible_base.oauth2_provider.permissions import OAuth2ScopePermission
-
     PatchedOrganizationViewSet = copy.deepcopy(views.OrganizationViewSet)
-    PatchedOrganizationViewSet.permission_classes = [~OAuth2ScopePermission]
+    PatchedOrganizationViewSet.permission_classes = [~TokenScopePermission]
     with mock.patch("test_app.views.OrganizationViewSet", PatchedOrganizationViewSet):
         yield PatchedOrganizationViewSet
 
 
 @pytest.fixture
 def nested_permissions_view_class():
-    from ansible_base.oauth2_provider.permissions import OAuth2ScopePermission
-
     PatchedAuthenticatorViewSet = copy.deepcopy(AuthenticatorViewSet)
-    PatchedAuthenticatorViewSet.permission_classes = [OAuth2ScopePermission & AllowAny]
+    PatchedAuthenticatorViewSet.permission_classes = [TokenScopePermission & AllowAny]
     with mock.patch("ansible_base.authentication.views.authenticator.AuthenticatorViewSet", PatchedAuthenticatorViewSet):
         yield PatchedAuthenticatorViewSet
 
@@ -82,22 +87,22 @@ class TestOAuth2PermissionsCheck:
     ):
         expected_messages = [
             Debug(
-                "Found OAuth2ScopePermission permission_class",
+                "Found TokenScopePermission permission_class",
                 id="ansible_base.oauth2_provider.D02",
                 obj=nested_permissions_view_class,
             ),
             Debug(
-                "Found OAuth2ScopePermission permission_class",
+                "Found TokenScopePermission permission_class",
                 id="ansible_base.oauth2_provider.D02",
                 obj=views.TeamViewSet,
             ),
             Warning(
-                "~ (not) operand used on OAuth2ScopePermission, probably a bad idea.",
+                "~ (not) operand used on TokenScopePermission, probably a bad idea.",
                 id="ansible_base.oauth2_provider.W001",
                 obj=inverted_permissions_view_class,
             ),
             Error(
-                "View class has no valid usage of OAuth2ScopePermission",
+                "View class has no valid usage of TokenScopePermission",
                 id="ansible_base.oauth2_provider.E002",
                 obj=missing_permissions_view_class,
             ),
@@ -107,7 +112,7 @@ class TestOAuth2PermissionsCheck:
                 obj=SpectacularSwaggerView,
             ),
             Debug(
-                "View object is fully permissive, OAuth2ScopePermission is not required",
+                "View object is fully permissive, TokenScopePermission is not required",
                 obj=UIAuth,
                 id="ansible_base.oauth2_provider.D04",
             ),

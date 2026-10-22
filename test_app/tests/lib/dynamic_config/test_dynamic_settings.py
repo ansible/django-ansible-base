@@ -53,6 +53,7 @@ def test_authentication_with_backends():
     # This also tests some other "happy paths"
     assert 'ansible_base.authentication.middleware.AuthenticatorBackendMiddleware' in updated_settings['MIDDLEWARE']
     assert 'ansible_base.authentication.session.SessionAuthentication' in updated_settings['REST_FRAMEWORK']['DEFAULT_AUTHENTICATION_CLASSES']
+    assert 'ansible_base.authentication.bearer_authentication.BearerAuthentication' in updated_settings['REST_FRAMEWORK']['DEFAULT_AUTHENTICATION_CLASSES']
     assert 'ansible_base.authentication.authenticator_plugins' in updated_settings['ANSIBLE_BASE_AUTHENTICATOR_CLASS_PREFIXES']
     assert 'SOCIAL_AUTH_LOGIN_REDIRECT_URL' in updated_settings
 
@@ -65,6 +66,33 @@ def test_authentication_no_backends():
     )
     updated_settings = get_updated_settings(additional_config)
     assert 'ansible_base.authentication.backend.AnsibleBaseAuth' in updated_settings['AUTHENTICATION_BACKENDS']
+
+
+def test_oauth2_provider_injects_unified_bearer_authentication_before_legacy_oauth_fallback():
+    additional_config = dedent(
+        '''
+        INSTALLED_APPS = ['ansible_base.authentication', 'ansible_base.oauth2_provider']
+    '''
+    )
+    updated_settings = get_updated_settings(additional_config)
+    authentication_classes = updated_settings['REST_FRAMEWORK']['DEFAULT_AUTHENTICATION_CLASSES']
+
+    bearer_authentication = 'ansible_base.authentication.bearer_authentication.BearerAuthentication'
+    local_oauth_authentication = 'ansible_base.oauth2_provider.authentication.LoggedOAuth2Authentication'
+    assert authentication_classes.index(bearer_authentication) < authentication_classes.index(local_oauth_authentication)
+
+
+def test_oauth2_provider_without_authentication_app_uses_local_oauth2_authentication():
+    additional_config = dedent(
+        '''
+        INSTALLED_APPS = ['ansible_base.oauth2_provider']
+    '''
+    )
+    updated_settings = get_updated_settings(additional_config)
+    authentication_classes = updated_settings['REST_FRAMEWORK']['DEFAULT_AUTHENTICATION_CLASSES']
+
+    assert 'ansible_base.oauth2_provider.authentication.LoggedOAuth2Authentication' in authentication_classes
+    assert 'ansible_base.authentication.bearer_authentication.BearerAuthentication' not in authentication_classes
 
 
 def test_append_middleware():

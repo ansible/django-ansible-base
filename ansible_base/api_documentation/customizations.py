@@ -35,6 +35,7 @@ def apply_oauth2_customizations() -> None:
         from drf_spectacular.openapi import AutoSchema
         from drf_spectacular.settings import spectacular_settings
 
+        from ansible_base.authentication.bearer_authentication import BearerAuthentication
         from ansible_base.oauth2_provider.authentication import LoggedOAuth2Authentication
 
     except ImportError:
@@ -42,14 +43,14 @@ def apply_oauth2_customizations() -> None:
         return
 
     class OAuth2Scheme(OpenApiAuthenticationExtension):
-        """OAuth2 authentication scheme for LoggedOAuth2Authentication
+        """OAuth2 authentication scheme for the unified Bearer authenticator.
 
         We must define a custom OpenApiAuthenticationExtension subclass, as
         drf-spectacular's built-in OAuth2 extension only targets the base OAuth2Authentication class
         Reads configuration from SPECTACULAR_SETTINGS OAUTH2_* keys.
         """
 
-        target_class = LoggedOAuth2Authentication
+        target_class = BearerAuthentication
         name = 'OAuth2_Authentication'
         priority = 1  # Needed to prevent built-in extensions overwriting the definition
 
@@ -66,3 +67,8 @@ def apply_oauth2_customizations() -> None:
                 flows[flow_type]['scopes'] = spectacular_settings.OAUTH2_SCOPES or {}
 
             return {'type': 'oauth2', 'flows': flows}
+
+    class StandaloneOAuth2Scheme(OAuth2Scheme):  # NOSONAR(S5603) -- drf-spectacular registers extension subclasses at class definition.
+        """Preserve OAuth2 schema support for installations without the authentication app."""
+
+        target_class = LoggedOAuth2Authentication
