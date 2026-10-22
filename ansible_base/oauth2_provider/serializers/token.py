@@ -13,6 +13,7 @@ from rest_framework.serializers import SerializerMethodField
 
 from ansible_base.lib.logging import log_auth_event
 from ansible_base.lib.serializers.common import CommonModelSerializer
+from ansible_base.lib.serializers.mixins import CleanTextMixin
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.oauth2_provider.models import OAuth2AccessToken, OAuth2RefreshToken
@@ -21,7 +22,7 @@ from ansible_base.oauth2_provider.models.access_token import SCOPES
 logger = logging.getLogger("ansible_base.oauth2_provider.serializers.token")
 
 
-class OAuth2TokenSerializer(CommonModelSerializer):
+class OAuth2TokenSerializer(CleanTextMixin, CommonModelSerializer):
     refresh_token = SerializerMethodField()
 
     unencrypted_token = None  # Only used in POST so we can return the token in the response

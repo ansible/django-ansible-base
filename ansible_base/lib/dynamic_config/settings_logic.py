@@ -23,6 +23,8 @@ DEFAULT_SPECTACULAR_SETTINGS = {
     ],
     'POSTPROCESSING_HOOKS': [
         'ansible_base.api_documentation.postprocessing_hooks.add_x_ai_description',
+        # Declares optional CleanText pattern fields in components.schemas (OpenAPI).
+        'ansible_base.api_documentation.clean_text_schema_hooks.inject_clean_text_pattern_components',
     ],
 }
 DEFAULT_ANSIBLE_BASE_AUTH = "ansible_base.authentication.backend.AnsibleBaseAuth"
@@ -82,7 +84,7 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
 
     installed_apps: list = copy(settings["INSTALLED_APPS"])
     middleware: list = copy(settings["MIDDLEWARE"])
-    rest_framework: dict = copy(settings["REST_FRAMEWORK"])
+    rest_framework: dict = copy(settings["REST_FRAMEWORK"]) if isinstance(settings["REST_FRAMEWORK"], dict) else {}
 
     oauth2_provider: dict = copy(settings.get("OAUTH2_PROVIDER", {}))
     templates: list = copy(settings.get("TEMPLATES", []))
@@ -118,6 +120,9 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
             'assignment',  # for RoleAssignmentFilterBackend, assignment filtering
         )
 
+    if settings.get('ENHANCED_INPUT_VALIDATION_ENABLED') is None:
+        dab_data['ENHANCED_INPUT_VALIDATION_ENABLED'] = False
+
     # SPECTACULAR SETTINGS
     if 'ansible_base.api_documentation' in installed_apps:
         rest_framework.setdefault('DEFAULT_SCHEMA_CLASS', 'drf_spectacular.openapi.AutoSchema')
@@ -129,6 +134,14 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
             if key not in spectacular_settings:
                 spectacular_settings[key] = value
 
+        # Ensure CleanText OpenAPI components are registered even when a service
+        # overrides POSTPROCESSING_HOOKS (common in Controller/Gateway).
+        _clean_text_hook = 'ansible_base.api_documentation.clean_text_schema_hooks.inject_clean_text_pattern_components'
+        hooks = list(spectacular_settings.get('POSTPROCESSING_HOOKS', []))
+        if _clean_text_hook not in hooks:
+            hooks.append(_clean_text_hook)
+            spectacular_settings['POSTPROCESSING_HOOKS'] = hooks
+
     # General, factual, constant of all filters that ansible_base.rest_filters ships
     dab_data['ANSIBLE_BASE_ALL_REST_FILTERS'] = (
         'ansible_base.rest_filters.rest_framework.type_filter_backend.TypeFilterBackend',
@@ -136,6 +149,8 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         'rest_framework.filters.SearchFilter',
         'ansible_base.rest_filters.rest_framework.order_backend.OrderByBackend',
     )
+    rest_framework.setdefault('DEFAULT_METADATA_CLASS', 'ansible_base.lib.metadata.CleanTextMetadata')
+
     if 'ansible_base.rest_filters' in installed_apps:
         rest_framework['DEFAULT_FILTER_BACKENDS'] = dab_data['ANSIBLE_BASE_ALL_REST_FILTERS']
     else:
