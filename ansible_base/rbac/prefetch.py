@@ -70,25 +70,28 @@ class TypesPrefetch:
             is_add_perm(permission.codename) and self._parent_content_type_id(permission.content_type_id, parent_ct_cache) == object_ct_id
         )
 
+    def _role_definition_grants_on_type(self, rd_id: int, object_ct_id: int, parent_ct_cache: dict[int, int | None]) -> bool:
+        # A role definition on this type can emit evaluations on its own object from child
+        # permissions (add_*, or any of them with ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS),
+        # see ObjectRole.expected_direct_permissions, so it always qualifies.
+        if self._role_definitions[rd_id].content_type_id == object_ct_id:
+            return True
+        return any(self._permission_grants_on_type(self._permissions[perm_id], object_ct_id, parent_ct_cache) for perm_id in self._rd_permissions[rd_id])
+
     def role_definition_ids_granting(self, object_ct_id: int) -> set[int]:
         """Ids of role definitions that can produce an evaluation on an object of type object_ct_id.
 
-        A role definition qualifies if it has a permission on that type, or an
-        add-permission on a child type of it (the grandchild case in
-        ObjectRole.get_child_filters). Anything else can be skipped in look-ahead
-        mode without being loaded or evaluated. Cached per instance.
+        A role definition qualifies if its own content type is that type, if it
+        has a permission on that type, or if it has an add-permission on a child
+        type of it (the grandchild case in ObjectRole.get_child_filters). Anything
+        else can be skipped in look-ahead mode without being loaded or evaluated.
+        Cached per instance.
         """
         if object_ct_id in self._granting_rd_ids:
             return self._granting_rd_ids[object_ct_id]
         parent_ct_cache: dict[int, int | None] = {}
 
-        result: set[int] = set()
-        for rd_id, perm_ids in self._rd_permissions.items():
-            for perm_id in perm_ids:
-                perm = self._permissions[perm_id]
-                if self._permission_grants_on_type(perm, object_ct_id, parent_ct_cache):
-                    result.add(rd_id)
-                    break
+        result = {rd_id for rd_id in self._rd_permissions if self._role_definition_grants_on_type(rd_id, object_ct_id, parent_ct_cache)}
         self._granting_rd_ids[object_ct_id] = result
         return result
 
