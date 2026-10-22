@@ -215,6 +215,8 @@ def test_oauth_bearer_rejects_the_local_oidc_issuer(admin_api_client, oauth_bear
         (lambda cfg: cfg.update({"ALLOWED_ALGORITHMS": ["none"]}), ["ALLOWED_ALGORITHMS"]),
         (lambda cfg: cfg.update({"JWKS_URL_TIMEOUT": 0}), ["JWKS_URL_TIMEOUT"]),
         (lambda cfg: cfg.update({"JWKS_URL_TIMEOUT": 301}), ["JWKS_URL_TIMEOUT"]),
+        (lambda cfg: cfg.update({"USERINFO_URL_TIMEOUT": 0}), ["USERINFO_URL_TIMEOUT"]),
+        (lambda cfg: cfg.update({"USERINFO_URL_TIMEOUT": 301}), ["USERINFO_URL_TIMEOUT"]),
         (lambda cfg: cfg.update({"JWT_CLOCK_SKEW_TOLERANCE_SECONDS": -1}), ["JWT_CLOCK_SKEW_TOLERANCE_SECONDS"]),
         (lambda cfg: cfg.update({"JWT_CLOCK_SKEW_TOLERANCE_SECONDS": 301}), ["JWT_CLOCK_SKEW_TOLERANCE_SECONDS"]),
         (lambda cfg: cfg.update({"JWKS_CACHE_TIMEOUT": 30}), ["JWKS_CACHE_TIMEOUT"]),
