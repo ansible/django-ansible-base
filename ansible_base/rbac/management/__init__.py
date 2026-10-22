@@ -5,6 +5,7 @@ from collections import defaultdict
 from django.apps import apps as global_apps
 from django.db import DEFAULT_DB_ALIAS, connection, router
 
+from ansible_base.lib.utils.db import bulk_create_db_safe
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.remote import get_resource_prefix
 
@@ -127,7 +128,7 @@ def sync_dab_permissions(verbosity=2, using=DEFAULT_DB_ALIAS, apps=global_apps):
             permission.api_slug = f'{ct.service}.{codename}'
             perms.append(permission)
 
-    Permission.objects.using(using).bulk_create(perms)
+    bulk_create_db_safe(Permission, perms, ignore_conflicts=False, using=using)
 
     # This is all just for nice logging
     perms_by_model_name = defaultdict(list)

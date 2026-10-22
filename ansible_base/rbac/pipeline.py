@@ -10,6 +10,7 @@ from django.db import connection, models
 from django.db.models import Q
 from django.db.models.signals import post_save
 
+from ansible_base.lib.utils.db import bulk_create_db_safe
 from ansible_base.lib.utils.models import current_user_or_system_user
 from ansible_base.rbac.caching import (
     bulk_ancestor_roles,
@@ -151,7 +152,8 @@ def _ensure_object_roles(requested_assignments: list[ResolvedAssignment]) -> Obj
             lookup[(rd_id, obj_role.object_id)] = obj_role
         missing = [oid for oid in object_ids if (rd_id, oid) not in lookup]
         if missing:
-            ObjectRole.objects.bulk_create(
+            bulk_create_db_safe(
+                ObjectRole,
                 [
                     ObjectRole(
                         role_definition_id=rd_id,
@@ -161,7 +163,6 @@ def _ensure_object_roles(requested_assignments: list[ResolvedAssignment]) -> Obj
                     )
                     for oid in missing
                 ],
-                ignore_conflicts=True,
             )
             # Re-fetch to get PKs — bulk_create(ignore_conflicts=True) doesn't populate them.
             # unique_together on (role_definition, content_type, object_id) guarantees one row per oid.
@@ -227,7 +228,7 @@ def _create_assignments(
     if user_assignments:
         pair_q = _pair_filter(user_assignments, 'user')
         existing_user_pks = set(RoleUserAssignment.objects.filter(pair_q).values_list('pk', flat=True))
-        RoleUserAssignment.objects.bulk_create(user_assignments, ignore_conflicts=ignore_conflicts)
+        bulk_create_db_safe(RoleUserAssignment, user_assignments, ignore_conflicts=ignore_conflicts)
         db_users = list(RoleUserAssignment.objects.filter(pair_q))
         all_assignments.extend(db_users)
         if fire_signals_on_create:
@@ -252,7 +253,7 @@ def _create_assignments(
     if team_assignments:
         pair_q = _pair_filter(team_assignments, 'team')
         existing_team_pks = set(RoleTeamAssignment.objects.filter(pair_q).values_list('pk', flat=True))
-        RoleTeamAssignment.objects.bulk_create(team_assignments, ignore_conflicts=ignore_conflicts)
+        bulk_create_db_safe(RoleTeamAssignment, team_assignments, ignore_conflicts=ignore_conflicts)
         db_teams = list(RoleTeamAssignment.objects.filter(pair_q))
         all_assignments.extend(db_teams)
         if fire_signals_on_create:

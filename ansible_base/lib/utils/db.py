@@ -6,7 +6,7 @@ from zlib import crc32
 
 import psycopg
 from django.conf import settings
-from django.db import DEFAULT_DB_ALIAS, OperationalError, connection, connections, transaction
+from django.db import DEFAULT_DB_ALIAS, IntegrityError, OperationalError, connection, connections, transaction
 from django.db.backends.postgresql.base import DatabaseWrapper as PsycopgDatabaseWrapper
 from django.db.migrations.executor import MigrationExecutor
 
@@ -455,3 +455,68 @@ def get_sql_server_notify_params(alias: str = DEFAULT_DB_ALIAS, **extra_options)
         params.update(settings_dict['OPTIONS'])
 
     return params
+
+
+def bulk_create_db_safe(model_class, objects, ignore_conflicts=True, using=None):
+    """
+    Database-safe bulk_create that works on both PostgreSQL and MS SQL Server.
+
+    Use this instead of Model.objects.bulk_create() when using ignore_conflicts,
+    as MS SQL Server doesn't support native conflict ignoring.
+
+    PostgreSQL: Uses native ignore_conflicts support (no behavior change)
+    MS SQL Server: Tries bulk create first (fast), falls back to one-by-one only on actual conflicts
+
+    Args:
+        model_class: Model class to create objects for
+        objects: List of model instances to create
+        ignore_conflicts: If True, ignore conflicts. If False, let them raise (default: True)
+        using: Database alias to use (optional)
+
+    Returns:
+        List of created objects (may be empty if all conflicts ignored)
+
+    Example:
+        # Instead of:
+        # MyModel.objects.bulk_create(items, ignore_conflicts=True)
+
+        # Use:
+        bulk_create_db_safe(MyModel, items, ignore_conflicts=True)
+
+        # With database alias:
+        bulk_create_db_safe(MyModel, items, using='replica')
+    """
+    # Get the manager, optionally with database alias
+    manager = model_class.objects.using(using) if using else model_class.objects
+
+    # Get connection for the specified database
+    db_connection = connections[using] if using else connection
+
+    # If ignore_conflicts is False, just use standard bulk_create
+    if not ignore_conflicts:
+        return manager.bulk_create(objects, ignore_conflicts=False)
+
+    # Handle ignore_conflicts=True
+    if db_connection.features.supports_ignore_conflicts:
+        # PostgreSQL: use native support (no behavior change)
+        return manager.bulk_create(objects, ignore_conflicts=True)
+    else:
+        # MS SQL: doesn't support ignore_conflicts
+        # Try bulk first (fast path), fall back only on conflict
+        try:
+            return manager.bulk_create(objects)
+        except IntegrityError:
+            # Rare - only on race condition, fall back to one-by-one
+            logger.warning(
+                f"Conflict during bulk_create for {model_class.__name__}, "
+                "falling back to one-by-one"
+            )
+            created = []
+            for obj in objects:
+                try:
+                    obj.save(using=using)
+                    created.append(obj)
+                except IntegrityError:
+                    # Ignore this conflict
+                    pass
+            return created

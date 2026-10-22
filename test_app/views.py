@@ -13,6 +13,7 @@ from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
+from ansible_base.lib.utils.db import bulk_create_db_safe
 from ansible_base.lib.utils.response import get_fully_qualified_url
 from ansible_base.lib.utils.views.ansible_base import AnsibleBaseView
 from ansible_base.oauth2_provider.permissions import OAuth2ScopePermission
@@ -368,7 +369,7 @@ def org_delete_populate(request, format=None):
                 team = models.Team.objects.create(name=f'{ORG_DELETE_PREFIX}-team-{i}', organization=org)
                 teams.append(team)
             usernames = [f'{ORG_DELETE_PREFIX}-user-t{i}-u{j}' for i in range(n_teams) for j in range(users_per_team)]
-            User.objects.bulk_create([User(username=u) for u in usernames], ignore_conflicts=True)
+            bulk_create_db_safe(User, [User(username=u) for u in usernames], ignore_conflicts=True)
             all_users = list(User.objects.filter(username__in=usernames))
             total_users = len(all_users)
             inventories = []

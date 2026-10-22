@@ -38,12 +38,12 @@ services:
       start_period: 10s
     volumes:
       # Persist database files between container restarts
-      # WARNING: Data will be lost when container is removed (make stop-mssql)
-      # For true persistence, use a named volume or host directory
+      # Volume is automatically removed when running 'make stop-mssql' (ensures fresh DB)
+      # This prevents migration cache issues during development
       - dab_mssql_data:/var/opt/mssql
 
 volumes:
   dab_mssql_data:
     # Named volume for MS SQL Server data files
-    # Created automatically on first 'make mssql'
-    # Persists until explicitly removed with: docker volume rm django-ansible-base_dab_mssql_data
+    # Created automatically on 'make mssql'
+    # Removed automatically on 'make stop-mssql' (down -v flag removes volumes)
