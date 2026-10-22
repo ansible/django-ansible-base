@@ -383,7 +383,7 @@ def test_api_authentication_backends_cache_and_refresh_configuration(oauth_beare
         get_plugin.assert_called_once_with(oauth_bearer_authenticator.type)
         plugin.update_if_needed.assert_called_once_with(oauth_bearer_authenticator)
 
-        oauth_bearer_authenticator.name = "Updated external OAuth authenticator"
+        oauth_bearer_authenticator.name = "Updated OAuth Bearer authenticator"
         oauth_bearer_authenticator.save()
         get_api_authentication_backends(oauth_bearer_authenticator.modified)
 

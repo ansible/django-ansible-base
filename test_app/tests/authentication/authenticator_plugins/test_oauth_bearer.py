@@ -76,7 +76,7 @@ def _authenticator_payload(name, configuration, enabled=True):
 )
 @override_settings(INSTALLED_APPS=["ansible_base.oauth2_provider"])
 def test_local_oidc_issuer_handles_provider_configuration(oauth2_provider, expected):
-    """Only a non-empty string local issuer reserves an external OAuth issuer URL."""
+    """Only a non-empty string local issuer reserves an OAuth Bearer issuer URL."""
     with patch(f"{DISCOVERY_MODULE}.get_setting", return_value=oauth2_provider):
         assert _local_oidc_issuer() == expected
 
@@ -229,7 +229,7 @@ def test_oauth_bearer_invalid_configuration(admin_api_client, oauth_bearer_confi
     config = deepcopy(oauth_bearer_configuration)
     mutation(config)
     url = get_relative_url("authenticator-list")
-    response = admin_api_client.post(url, data=_authenticator_payload("Invalid External OAuth", config), format="json")
+    response = admin_api_client.post(url, data=_authenticator_payload("Invalid OAuth Bearer", config), format="json")
     assert response.status_code == 400, response.data
     for field in expected_fields:
         assert field in response.data or field in response.data.get("configuration", response.data)
@@ -394,7 +394,7 @@ def test_oidc_discovery_populates_jwks_and_userinfo(admin_api_client, oauth_bear
     with patch(f"{DISCOVERY_MODULE}.requests.get", side_effect=_mock_requests_get(document)) as mock_get:
         response = admin_api_client.post(
             get_relative_url("authenticator-list"),
-            data=_authenticator_payload("Discovered External OAuth", config),
+            data=_authenticator_payload("Discovered OAuth Bearer", config),
             format="json",
         )
 
@@ -646,7 +646,7 @@ def test_oidc_discovery_overwrites_manual_values_on_update(admin_api_client, oau
 
 
 @pytest.mark.django_db
-@override_settings(ANSIBLE_BASE_EXTERNAL_OAUTH_DISCOVERY_TIMEOUT=12)
+@override_settings(ANSIBLE_BASE_OAUTH_BEARER_DISCOVERY_TIMEOUT=12)
 def test_oidc_discovery_uses_configured_timeout(admin_api_client, oauth_bearer_configuration):
     config = deepcopy(oauth_bearer_configuration)
     config["JWKS_URI"] = ""

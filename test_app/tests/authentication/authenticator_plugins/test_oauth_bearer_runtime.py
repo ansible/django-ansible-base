@@ -158,7 +158,7 @@ def test_oauth_bearer_plugin_maps_configured_token_scopes_to_read_write(oauth_be
         assert plugin._read_write_scopes(claims) == frozenset(expected_scopes)
 
     logger.debug.assert_called_once_with(
-        f"External OAuth authenticator {oauth_bearer_authenticator.name} mapped scope claim "
+        f"OAuth Bearer authenticator {oauth_bearer_authenticator.name} mapped scope claim "
         f"{configuration.get('SCOPE_ATTRIBUTE_NAME', 'scope')} to API scopes {sorted(expected_scopes)}"
     )
 
