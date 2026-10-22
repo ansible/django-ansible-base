@@ -3,6 +3,8 @@ import logging
 
 from django.db import models
 
+from ansible_base.lib.utils.db import bulk_create_db_safe
+
 logger = logging.getLogger(__name__)
 
 # This method has moved, and this is put here temporarily to make branch management easier
@@ -35,7 +37,7 @@ def give_permissions(apps, rd, users=(), teams=(), object_id=None, content_type_
             RoleUserAssignment(object_role=object_role, user=user, **object_role_fields)
             for user in users
         ]
-        RoleUserAssignment.objects.bulk_create(user_assignments, ignore_conflicts=True)
+        bulk_create_db_safe(RoleUserAssignment, user_assignments)
     if teams:
         RoleTeamAssignment = apps.get_model('dab_rbac', 'RoleTeamAssignment')
         # AWX has trouble getting the team object, conditionally accept team id list
@@ -49,7 +51,7 @@ def give_permissions(apps, rd, users=(), teams=(), object_id=None, content_type_
                 RoleTeamAssignment(object_role=object_role, team_id=team_id, **object_role_fields)
                 for team_id in teams
             ]
-        RoleTeamAssignment.objects.bulk_create(team_assignments, ignore_conflicts=True)
+        bulk_create_db_safe(RoleTeamAssignment, team_assignments)
 
 
 def cleanup_orphaned_permissions(apps):

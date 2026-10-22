@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Dict, Generator, Optional, Set, Tuple, Ty
 from django.db import connection
 
 from ansible_base.lib.logging import log_auth_event
+from ansible_base.lib.utils.db import bulk_create_db_safe
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import AbstractUser
@@ -63,7 +64,7 @@ def _flush_deferred_activity_stream(entries: list, audit_lines: list[str]) -> No
             if entry.created_by is None:
                 entry.created_by = user
 
-        Entry.objects.bulk_create(entries)
+        bulk_create_db_safe(Entry, entries, ignore_conflicts=False)
         logger.debug('Bulk-created %d deferred activity stream entries', len(entries))
 
     if audit_lines:
@@ -315,7 +316,7 @@ def _store_activitystream_m2m(
         )
         entries.append(entry)
 
-    Entry.objects.bulk_create(entries)
+    bulk_create_db_safe(Entry, entries, ignore_conflicts=False)
 
 
 # post_save

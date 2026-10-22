@@ -23,6 +23,7 @@ import logging
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Count
 
+from ansible_base.lib.utils.db import bulk_create_db_safe
 from ansible_base.resource_registry.models import Resource, ResourceType, init_resource_from_object
 
 logger = logging.getLogger("ansible_base.resource_registry.fix_stale_ansible_ids")
@@ -175,11 +176,11 @@ class Command(BaseCommand):
         for obj in model_cls.objects.filter(pk__in=coerced_pks).iterator(chunk_size=500):
             batch.append(init_resource_from_object(obj, resource_type=rt, resource_config=resource_config))
             if len(batch) >= 500:  # pragma: no cover
-                Resource.objects.bulk_create(batch, ignore_conflicts=True)
+                bulk_create_db_safe(Resource, batch)
                 created += len(batch)
                 batch.clear()
         if batch:
-            Resource.objects.bulk_create(batch, ignore_conflicts=True)
+            bulk_create_db_safe(Resource, batch)
             created += len(batch)
         return created
 

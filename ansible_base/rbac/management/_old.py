@@ -4,6 +4,7 @@ from django.apps import apps as global_apps
 from django.contrib.contenttypes.management import create_contenttypes
 from django.db import DEFAULT_DB_ALIAS, router
 
+from ansible_base.lib.utils.db import bulk_create_db_safe
 from ansible_base.rbac import permission_registry
 
 logger = logging.getLogger(__name__)
@@ -86,6 +87,6 @@ def create_dab_permissions(app_config, verbosity=2, interactive=True, using=DEFA
             permission.content_type = ct
             perms.append(permission)
 
-    Permission.objects.using(using).bulk_create(perms)
+    bulk_create_db_safe(Permission, perms, ignore_conflicts=False, using=using)
     for perm in perms:
         logger.debug("Adding permission '%s'" % perm)

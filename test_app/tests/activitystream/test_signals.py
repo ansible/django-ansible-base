@@ -8,6 +8,7 @@ import ansible_base.activitystream.signals as signals
 from ansible_base.activitystream import no_activity_stream
 from ansible_base.activitystream.models import Entry
 from ansible_base.activitystream.models.entry import AuditableModel
+from ansible_base.lib.utils.db import bulk_create_db_safe
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from test_app.models import Animal, City, SecretColor
 
@@ -135,7 +136,7 @@ def test_activitystream_m2m_forward_bulk(django_assert_max_num_queries, django_u
     """
     # Create a bunch of users
     user_objs = [django_user_model(username=str(i)) for i in range(100)]
-    users = django_user_model.objects.bulk_create(user_objs)
+    users = bulk_create_db_safe(django_user_model, user_objs, ignore_conflicts=False)
 
     # Setting this to 20 in case some real queries are added in the future.
     # Really as long as it's less than 100 it means we're doing the right thing.
@@ -171,7 +172,7 @@ def test_activitystream_m2m_reverse_bulk(django_assert_max_num_queries, django_u
     """
     # Create a bunch of animals
     animal_objs = [Animal(name=str(i)) for i in range(100)]
-    animals = Animal.objects.bulk_create(animal_objs)
+    animals = bulk_create_db_safe(Animal, animal_objs, ignore_conflicts=False)
 
     # Setting this to 20 in case some real queries are added in the future.
     # Really as long as it's less than 100 it means we're doing the right thing.

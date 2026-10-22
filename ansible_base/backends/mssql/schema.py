@@ -6,15 +6,11 @@ are detected, enabling MS SQL Server compatibility without modifying migrations.
 """
 
 import logging
-import sys
 
 from django.db import models
 from mssql.schema import DatabaseSchemaEditor as MSSQLSchemaEditor
 
 logger = logging.getLogger('ansible_base.backends.mssql.schema')
-
-# Module-level print to confirm this module is being loaded
-print("[CUSTOM SCHEMA MODULE] ansible_base.backends.mssql.schema loaded!", file=sys.stderr)
 
 
 class DatabaseSchemaEditor(MSSQLSchemaEditor):
@@ -32,12 +28,9 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
         """
         Override to convert TextField definitions before creating the table.
         """
-        print(f"[CUSTOM SCHEMA] create_model called for {model._meta.label}", file=sys.stderr)
-
         # Convert TextFields with constraints to CharFields before creating table
         for field in model._meta.local_fields:
             if isinstance(field, models.TextField) and self._field_needs_conversion(field, model):
-                print(f"[CUSTOM SCHEMA] ✓ Converting {field.name} before table creation", file=sys.stderr)
                 max_length = self._determine_max_length(field, model)
 
                 # Replace the field with a CharField
@@ -53,11 +46,10 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
         Override to convert TextFields to CharFields before adding index.
 
         MS SQL Server cannot create indexes on nvarchar(max) columns.
-        Check all fields in the index and convert any TextFields to CharFields.
-        Also ALTER the existing column if it was already created.
-        """
-        print(f"[CUSTOM SCHEMA] add_index called for {model._meta.label}, index: {index.name}", file=sys.stderr)
 
+        Note: If table was created via create_model(), the column is already
+        the correct type. We only need to ALTER if the table existed beforehand.
+        """
         # Get the fields being indexed
         for field_name in index.fields:
             # Handle F() expressions and plain field names
@@ -70,25 +62,26 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
             try:
                 field = model._meta.get_field(field_name)
                 if isinstance(field, models.TextField):
-                    print(f"[CUSTOM SCHEMA] ✓ Converting TextField {field.name} to CharField before adding index", file=sys.stderr)
-                    max_length = self._determine_max_length(field, model)
-
-                    # Execute raw SQL to ALTER the column type
-                    # This is simpler than using alter_field() which tries to manage indexes
+                    # Check if column already exists and what type it is
                     table_name = model._meta.db_table
                     column_name = field.column
-                    null_clause = "NULL" if field.null else "NOT NULL"
 
-                    sql = f"ALTER TABLE [{table_name}] ALTER COLUMN [{column_name}] nvarchar({max_length}) {null_clause}"
-                    print(f"[CUSTOM SCHEMA] → Executing: {sql}", file=sys.stderr)
+                    # Query the actual column type
+                    column_type = self._get_column_type(table_name, column_name)
 
-                    self.execute(sql)
+                    if column_type and 'max' in column_type.lower():
+                        # Column exists as nvarchar(max), needs conversion
+                        max_length = self._determine_max_length(field, model)
+                        null_clause = "NULL" if field.null else "NOT NULL"
 
-                    # Update the field definition for future operations
-                    field.__class__ = models.CharField
-                    field.max_length = max_length
-            except Exception as e:
-                print(f"[CUSTOM SCHEMA] Error converting field {field_name}: {e}", file=sys.stderr)
+                        sql = f"ALTER TABLE [{table_name}] ALTER COLUMN [{column_name}] nvarchar({max_length}) {null_clause}"
+                        self.execute(sql)
+
+                        # Update the field definition for future operations
+                        field.__class__ = models.CharField
+                        field.max_length = max_length
+            except Exception:
+                pass
 
         return super().add_index(model, index)
 
@@ -97,35 +90,36 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
         Override to convert TextFields to CharFields before adding constraint.
 
         MS SQL Server cannot create unique constraints on nvarchar(max) columns.
-        Check all fields in the constraint and convert any TextFields to CharFields.
-        Also ALTER the existing column if it was already created.
-        """
-        print(f"[CUSTOM SCHEMA] add_constraint called for {model._meta.label}, constraint: {constraint.name}", file=sys.stderr)
 
+        Note: If table was created via create_model(), the column is already
+        the correct type. We only need to ALTER if the table existed beforehand.
+        """
         # Only handle UniqueConstraints
         if isinstance(constraint, models.UniqueConstraint):
             for field_name in constraint.fields:
                 try:
                     field = model._meta.get_field(field_name)
                     if isinstance(field, models.TextField):
-                        print(f"[CUSTOM SCHEMA] ✓ Converting TextField {field.name} to CharField before adding constraint", file=sys.stderr)
-                        max_length = self._determine_max_length(field, model)
-
-                        # Execute raw SQL to ALTER the column type
+                        # Check if column already exists and what type it is
                         table_name = model._meta.db_table
                         column_name = field.column
-                        null_clause = "NULL" if field.null else "NOT NULL"
 
-                        sql = f"ALTER TABLE [{table_name}] ALTER COLUMN [{column_name}] nvarchar({max_length}) {null_clause}"
-                        print(f"[CUSTOM SCHEMA] → Executing: {sql}", file=sys.stderr)
+                        # Query the actual column type
+                        column_type = self._get_column_type(table_name, column_name)
 
-                        self.execute(sql)
+                        if column_type and 'max' in column_type.lower():
+                            # Column exists as nvarchar(max), needs conversion
+                            max_length = self._determine_max_length(field, model)
+                            null_clause = "NULL" if field.null else "NOT NULL"
 
-                        # Update the field definition for future operations
-                        field.__class__ = models.CharField
-                        field.max_length = max_length
-                except Exception as e:
-                    print(f"[CUSTOM SCHEMA] Error converting field {field_name}: {e}", file=sys.stderr)
+                            sql = f"ALTER TABLE [{table_name}] ALTER COLUMN [{column_name}] nvarchar({max_length}) {null_clause}"
+                            self.execute(sql)
+
+                            # Update the field definition for future operations
+                            field.__class__ = models.CharField
+                            field.max_length = max_length
+                except Exception:
+                    pass
 
         return super().add_constraint(model, constraint)
 
@@ -142,13 +136,9 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
         When we detect these cases, we convert TextField to CharField with
         an appropriate max_length.
         """
-        print(f"[CUSTOM SCHEMA] column_sql called for {model._meta.label}.{field.name} (type: {type(field).__name__})", file=sys.stderr)
-        logger.info(f"column_sql called for {model._meta.label}.{field.name} (type: {type(field).__name__})")
-
         # Only process TextField instances
         if isinstance(field, models.TextField):
             if self._field_needs_conversion(field, model):
-                print(f"[CUSTOM SCHEMA] ✓ Converting TextField to CharField for {model._meta.label}.{field.name}", file=sys.stderr)
                 logger.warning(
                     f"Converting TextField to CharField for {model._meta.label}.{field.name} "
                     f"(db_index={getattr(field, 'db_index', False)}, "
@@ -163,15 +153,38 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
                     max_length=max_length, **self._copy_field_attrs(field)
                 )
 
-                print(f"[CUSTOM SCHEMA] → Converting to CharField(max_length={max_length})", file=sys.stderr)
-
                 # Generate SQL for CharField instead
                 return super().column_sql(model, converted_field, include_default)
-            else:
-                print(f"[CUSTOM SCHEMA] ✗ TextField {field.name} does not need conversion", file=sys.stderr)
 
         # Default behavior for all other fields and unconverted TextFields
         return super().column_sql(model, field, include_default)
+
+    def _get_column_type(self, table_name, column_name):
+        """
+        Query the actual column type from the database.
+
+        Returns column type string like 'nvarchar(450)' or 'nvarchar(max)', or None if column doesn't exist.
+        """
+        try:
+            with self.connection.cursor() as cursor:
+                # Use %s placeholders with tuple for parameters
+                cursor.execute("""
+                    SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_NAME = %s AND COLUMN_NAME = %s
+                """, (table_name, column_name))
+                row = cursor.fetchone()
+                if row:
+                    data_type, max_length = row
+                    if max_length == -1:
+                        return f"{data_type}(max)"
+                    elif max_length:
+                        return f"{data_type}({max_length})"
+                    else:
+                        return data_type
+                return None
+        except Exception:
+            return None
 
     def _field_needs_conversion(self, field, model):
         """
@@ -186,11 +199,9 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
         """
         # Check direct field attributes
         if getattr(field, 'db_index', False):
-            logger.debug(f"Field {field.name} needs conversion: db_index=True")
             return True
 
         if getattr(field, 'unique', False):
-            logger.debug(f"Field {field.name} needs conversion: unique=True")
             return True
 
         # Check model Meta constraints and indexes
@@ -198,7 +209,6 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
             # Check legacy unique_together
             for unique_fields in getattr(model._meta, 'unique_together', []):
                 if field.name in unique_fields:
-                    logger.debug(f"Field {field.name} needs conversion: in unique_together")
                     return True
 
             # Check UniqueConstraint in Meta.constraints
@@ -207,7 +217,6 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
                     # Handle both field names and F() expressions
                     constraint_fields = getattr(constraint, 'fields', [])
                     if field.name in constraint_fields:
-                        logger.debug(f"Field {field.name} needs conversion: in UniqueConstraint")
                         return True
 
             # Check indexes in Meta.indexes
@@ -215,7 +224,6 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
                 # Handle both field names and F() expressions
                 index_fields = getattr(index, 'fields', [])
                 if field.name in index_fields:
-                    logger.debug(f"Field {field.name} needs conversion: in Index")
                     return True
 
         return False
@@ -251,7 +259,6 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
             return 64
 
         # Default: MS SQL index limit (safe for all constrained TextFields)
-        logger.debug(f"Using default max_length=450 for {model._meta.label}.{field.name}")
         return 450
 
     def _copy_field_attrs(self, field):

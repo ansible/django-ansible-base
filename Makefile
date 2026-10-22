@@ -82,12 +82,16 @@ mssql:
 	else \
 		echo "Creating new dab_mssql container"; \
 		$(DOCKER_COMPOSE) -f docker-compose.mssql.yml up -d mssql --quiet-pull; \
+		echo "Waiting for SQL Server to be healthy..."; \
+		timeout 60 bash -c 'until docker exec dab_mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "YourStrong!Passw0rd" -C -Q "SELECT 1" -b > /dev/null 2>&1; do sleep 1; done' && echo "✓ SQL Server is ready"; \
+		echo "Creating dab_db database..."; \
+		docker exec dab_mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "YourStrong!Passw0rd" -C -Q "IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = 'dab_db') CREATE DATABASE dab_db" -b && echo "✓ dab_db database ready"; \
 	fi
 
-## Stops the MS SQL Server container started with 'make mssql'
+## Stops the MS SQL Server container and removes data volume (fresh DB on next start)
 stop-mssql:
-	echo "Killing dab_mssql container"
-	$(DOCKER_COMPOSE) -f docker-compose.mssql.yml rm -fsv mssql
+	echo "Stopping dab_mssql container and removing data volume"
+	$(DOCKER_COMPOSE) -f docker-compose.mssql.yml down -v
 
 # Build targets
 # --------------------------------------

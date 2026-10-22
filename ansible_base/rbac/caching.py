@@ -12,6 +12,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.db.utils import IntegrityError
 
+from ansible_base.lib.utils.db import bulk_create_db_safe
 from ansible_base.rbac.models import ObjectRole, RoleEvaluation, RoleEvaluationUUID, get_evaluation_model
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.prefetch import EvaluationsPrefetch, TypesPrefetch
@@ -364,7 +365,7 @@ def _safe_bulk_create_evaluations(model, evaluations, ignore_conflicts):
         return
     try:
         with transaction.atomic():
-            model.objects.bulk_create(evaluations, ignore_conflicts=ignore_conflicts)
+            bulk_create_db_safe(model, evaluations, ignore_conflicts=ignore_conflicts)
     except IntegrityError as exc:
         if not _is_stale_objectrole_fk(exc):
             raise
@@ -373,7 +374,7 @@ def _safe_bulk_create_evaluations(model, evaluations, ignore_conflicts):
         if evaluations:
             try:
                 with transaction.atomic():
-                    model.objects.bulk_create(evaluations, ignore_conflicts=ignore_conflicts)
+                    bulk_create_db_safe(model, evaluations, ignore_conflicts=ignore_conflicts)
             except IntegrityError as exc:
                 if not _is_stale_objectrole_fk(exc):
                     raise
