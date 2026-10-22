@@ -1,8 +1,9 @@
 """in look-ahead mode, team-held roles whose definition cannot grant on the object type are skipped."""
 
 import pytest
+from django.test.utils import override_settings
 
-from ansible_base.rbac.caching import recompute_all_role_evaluations
+from ansible_base.rbac.caching import recompute_all_role_evaluations, recompute_role_evaluations, recompute_role_evaluations_for_created
 from ansible_base.rbac.models import ObjectRole, RoleEvaluation
 from ansible_base.rbac.permission_registry import permission_registry
 from test_app.models import Inventory, Organization
@@ -119,3 +120,57 @@ def test_grandchild_add_permission_still_granted(rando, organization, team, memb
     member_role = ObjectRole.objects.get(role_definition=member_rd, object_id=team.pk)
     ns_ct = permission_registry.content_type_model.objects.get_for_model(Namespace).id
     assert RoleEvaluation.objects.filter(role=member_role, content_type_id=ns_ct, object_id=ns.pk, codename='add_collectionimport').exists()
+
+
+def _assert_lookahead_on_org_keeps_rows(member_role, organization, recompute):
+    """A look-ahead recompute targeting the organization must not drop any row of a full recompute."""
+    recompute_all_role_evaluations()
+    before = _evaluation_rows()
+    recompute([member_role], object_pk=organization.pk, object_ct_id=_org_ct_id(), target_parents=[])
+    assert _evaluation_rows() == before
+
+
+LOOKAHEAD_RECOMPUTES = [
+    pytest.param(recompute_role_evaluations, id='recompute_role_evaluations'),
+    pytest.param(recompute_role_evaluations_for_created, id='recompute_role_evaluations_for_created'),
+]
+
+
+@pytest.mark.django_db
+def test_role_definition_ids_granting_own_type_with_only_grandchild_add():
+    """An Organization role with only add_collectionimport still emits ('add_collectionimport', org_ct, org.pk)."""
+    add_ci_only_rd = _org_rd('org-add-ci-only', ['add_collectionimport'])
+    tp = TypesPrefetch.from_db()
+    assert add_ci_only_rd.id in tp.role_definition_ids_granting(_org_ct_id())
+
+
+@pytest.mark.django_db
+@override_settings(ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS=True)
+def test_role_definition_ids_granting_own_type_with_cached_parent_permissions():
+    """With parent permission caching, an Organization role with only view_inventory emits ('view_inventory', org_ct, org.pk)."""
+    view_inv_only_rd = _org_rd('org-view-inv-only', ['view_inventory'])
+    tp = TypesPrefetch.from_db()
+    assert view_inv_only_rd.id in tp.role_definition_ids_granting(_org_ct_id())
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('recompute', LOOKAHEAD_RECOMPUTES)
+def test_lookahead_on_org_keeps_grandchild_add_evaluation(rando, organization, team, member_rd, recompute):
+    add_ci_only_rd = _org_rd('org-add-ci-only', ['add_collectionimport'])
+    add_ci_only_rd.give_permission(team, organization)
+    member_rd.give_permission(rando, team)
+    member_role = ObjectRole.objects.get(role_definition=member_rd, object_id=team.pk)
+    _assert_lookahead_on_org_keeps_rows(member_role, organization, recompute)
+    assert RoleEvaluation.objects.filter(role=member_role, codename='add_collectionimport', content_type_id=_org_ct_id(), object_id=organization.pk).exists()
+
+
+@pytest.mark.django_db
+@override_settings(ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS=True)
+@pytest.mark.parametrize('recompute', LOOKAHEAD_RECOMPUTES)
+def test_lookahead_on_org_keeps_cached_parent_evaluation(rando, organization, team, member_rd, recompute):
+    view_inv_only_rd = _org_rd('org-view-inv-only', ['view_inventory'])
+    view_inv_only_rd.give_permission(team, organization)
+    member_rd.give_permission(rando, team)
+    member_role = ObjectRole.objects.get(role_definition=member_rd, object_id=team.pk)
+    _assert_lookahead_on_org_keeps_rows(member_role, organization, recompute)
+    assert RoleEvaluation.objects.filter(role=member_role, codename='view_inventory', content_type_id=_org_ct_id(), object_id=organization.pk).exists()
