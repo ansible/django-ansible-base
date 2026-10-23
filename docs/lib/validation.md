@@ -12,34 +12,83 @@ Must be a valid string
 
 `ansible_base.lib.utils.validation.validate_url_list` this is a convince method which takes an array of urls and validates each of them using its own validate_url method.
 
+# Enhanced input validation
 
-# CleanTextMixin — text input validation for serializers
+The sections below document tier 1/tier 2 text rules (`CleanTextMixin`, model
+validators, OPTIONS hints). They are separate from the URL helpers above and
+from the role-assignment callback at the end of this page.
 
-`CleanTextMixin` is a drop-in mixin for DRF `ModelSerializer` subclasses that
-validates input and rejects violations when enforcement is enabled for unsafe characters and patterns in text fields. It applies
-two validation tiers:
+## Tier 1 and tier 2 (shared rules)
 
-| Tier | Applies to | Strategy |
-|------|-----------|----------|
-| **Tier 1** | Name-type fields (`name`, `username`, `hostname` by default) | Strict character allowlist |
-| **Tier 2** | All other `CharField` / `TextField` columns | Dangerous-pattern blocklist |
+DAB implements enhanced text validation as two tiers in
+`ansible_base.lib.utils.validation`.
 
-## Platform toggle — `ENHANCED_INPUT_VALIDATION_ENABLED`
+**Tier 1 is stricter than tier 2.** Tier 1 restricts which characters may appear
+in a value (allowlist). Tier 2 allows most characters but rejects dangerous
+patterns (blocklist). Name-type fields get tier 1 only; other text fields get
+tier 2 only. The mixin never runs both on the same field.
 
-CleanTextMixin is controlled by the install-time setting
-`ENHANCED_INPUT_VALIDATION_ENABLED` (default: `False`).
+| Tier | Typical fields | Validator | Strategy |
+|------|----------------|-----------|----------|
+| **Tier 1** | `name`, `username`, `hostname` (configurable) | `validate_resource_name` | Strict character allowlist |
+| **Tier 2** | Other model `CharField` / `TextField` columns | `validate_free_text` | Dangerous-pattern blocklist |
+
+Tier 2 checks (HTML, unsafe URI schemes, shell/template syntax, and related
+patterns) are independent of the tier 1 regex. They simply do not run on fields
+routed to tier 1.
+
+**Tier 1 behavior** — `validate_resource_name()` in `validation.py`
+(`RESOURCE_NAME_PATTERN` / `RESOURCE_NAME_RE`). On serializers, fields in
+`name_fields` (default `DEFAULT_NAME_FIELDS`) use tier 1. Beyond the allowlist:
+NFC normalization, rejection of invisible code points, and limits on combining
+marks (Zalgo).
+
+**Tier 2 behavior** — `validate_free_text()` in `validation.py` (HTML via
+`nh3`, decode passes, pattern list). All HTML tags are rejected; use
+`excluded_fields` for fields that legitimately contain HTML or template syntax.
+Prose
+like `JavaScript: …` can match unsafe-URI heuristics (documented trade-off in
+code). String values inside `JSONField` payloads use tier 2 only when validated
+through the serializer mixin (see [Grandfather behavior](#grandfather-behavior)
+and [Known limitations](#known-limitations)).
+
+## Enforcement toggle — `ENHANCED_INPUT_VALIDATION_ENABLED`
+
+Whether invalid API input is **rejected** or only **logged** is controlled by
+the Django setting `ENHANCED_INPUT_VALIDATION_ENABLED` (default `False` when
+unset). Consuming applications set it in Django settings. DAB reads the effective
+value with `ansible_base.lib.utils.settings.get_setting()`. When
+`ANSIBLE_BASE_SETTINGS_FUNCTION` is configured, its return value is used as-is
+(including `None`); otherwise DAB uses the Django setting, then the default.
+
+The table below applies only to violations detected by `CleanTextMixin` on API
+serializers (not to model field validators or other validation layers).
 
 | Value | Behavior |
 |-------|----------|
-| `False` (default) | Validation logic runs and violations are logged at WARNING level, but no `ValidationError` is raised — requests proceed normally. |
-| `True` | Full Tier 1/Tier 2 validation is enforced. Invalid input is rejected with a `ValidationError`. |
+| `False` (default) | Mixin checks run; violations are logged at WARNING; the request is not rejected for mixin findings. |
+| `True` | Same mixin checks; mixin findings raise `ValidationError`. |
 
-This setting is defined at install time and propagated to all platform
-components (Controller, EDA, Hub, Gateway). Changing it requires reinstalling
-AAP. When the toggle is off, audit logs still capture every violation, giving
-operators visibility into what would be rejected before enabling enforcement.
+When enforcement is off, logs still record violations so operators can see what
+would be rejected before turning enforcement on.
 
-## Quick start
+This is a Django setting, not a DAB feature flag (`ansible_base.feature_flags`).
+
+`validate_resource_name` and `validate_free_text` always raise when they detect a
+violation. Only `CleanTextMixin` applies the log-vs-reject policy above on API
+traffic. See [Model-level validation (guidance)](#model-level-validation-guidance)
+for how that differs from model field validators.
+
+## Serializer-level validation
+
+DAB applies tier 1/tier 2 on API traffic through `CleanTextMixin` on DRF
+serializers—that is what DAB ships and tests on existing models.
+
+`CleanTextMixin` in `ansible_base.lib.serializers.mixins` applies the tiers
+during DRF serializer `validate()`. It also validates strings inside
+`JSONField` payloads, supports **grandfathering** on legacy records, respects
+`ENHANCED_INPUT_VALIDATION_ENABLED` on API traffic, and enables
+[OPTIONS pattern hints (client-side)](#options-pattern-hints-client-side).
 
 ```python
 from ansible_base.lib.serializers.mixins import CleanTextMixin
@@ -51,409 +100,78 @@ class MyModelSerializer(CleanTextMixin, serializers.ModelSerializer):
         fields = '__all__'
 ```
 
-**MRO matters:** `CleanTextMixin` must appear *before* `ModelSerializer` (or any
-other base) in the class definition so that its `validate()` method runs first
-in the method resolution order.
-
-## How field discovery works
-
-The mixin inspects the model's `_meta.get_fields()` at validation time and
-selects fields whose `get_internal_type()` returns `"CharField"` or
-`"TextField"`. This deliberately excludes format-constrained subclasses like
-`SlugField` and `GenericIPAddressField` (which override `get_internal_type()`
-and have their own validators), while automatically catching custom free-text
-subclasses that inherit the base type. `URLField` does NOT override
-`get_internal_type()` (it inherits `"CharField"`), so URLField-backed columns
-ARE treated as free text and validated -- same as custom free-text subclasses
-such as `EncryptedTextField`.
-
-## Tier 1 — name allowlist
-
-Fields whose name appears in the `name_fields` set are validated against a
-strict regex allowlist using Unicode general categories (via the `regex`
-library):
-
-```
-^[\p{L}\p{N}_][\p{L}\p{N}\p{M}_ .@\-]{0,511}\Z
-```
-
-This permits:
-- Letters (`\p{L}`) — all Unicode letters across scripts
-- Numbers (`\p{N}`) — all Unicode digits and numerals
-- Combining marks (`\p{M}`) — accents, vowel signs, and similar diacritics
-  needed for Indic scripts and other writing systems
-- Spaces, hyphens (`-`), underscores (`_`), dots (`.`), and `@`
-- Must start with a letter, number, or underscore
-- Maximum 512 characters
+Place `CleanTextMixin` **before** `ModelSerializer` in the class list so its
+`validate()` runs in the expected MRO order.
 
-The pattern string is available as `RESOURCE_NAME_PATTERN`.  For frontend
-validation, replace the Python-specific `\Z` anchor with `$` (which behaves
-identically in JavaScript without the `m` flag):
+### Grandfather behavior
 
-```js
-/^[\p{L}\p{N}_][\p{L}\p{N}\p{M}_ .@\-]{0,511}$/u
-```
+**Goal:** avoid blocking PATCH/PUT on legacy records when only unrelated fields
+change.
 
-Values are NFC-normalized before matching so that composed and decomposed
-Unicode representations are treated identically.
+On **update**, if a submitted text or JSON string equals the stored value (with
+DRF whitespace trimming rules for Char/Text fields), validation is skipped for
+that value. On **create**, all submitted text fields are checked. Partial
+updates validate only keys present in the body.
 
-In addition to the allowlist, names are checked for:
-- **Invisible characters** (`\p{Default_Ignorable_Code_Point}`) — variation
-  selectors, zero-width spaces, soft hyphens, and similar characters that are
-  invisible but can enable spoofing attacks.
-- **Zalgo text** — five or more consecutive combining marks, which create
-  visually disruptive stacked diacritics.
+### OPTIONS pattern hints (client-side)
 
-**Error messages:**
-> Enter a valid name. Use letters, numbers, spaces, hyphens (-), underscores (_),
-> dots (.), and @. Start with a letter, number, or underscore. Max 512 characters.
+`CleanTextMixin` gives you API write enforcement (above) and also advertises
+the same tier 1/tier 2 rules in a structured form on DRF
+`OPTIONS` responses (`pattern`, `patternDescription`, `flags`, and tier 1
+`normalize` on Char/Text fields). Clients that issue `OPTIONS` requests—including
+platform UIs—can use that metadata for client-side validation before submit.
+`validate_resource_name` and `validate_free_text` remain the server enforcement
+boundary; OPTIONS patterns are best-effort (especially tier 2).
 
-> This field can't include invisible characters.
+OPTIONS hints appear when all of the following hold:
 
-> Too many combining marks.
+1. The view’s serializer subclasses `CleanTextMixin`.
+2. The Django setting `ENHANCED_INPUT_VALIDATION_ENABLED` is `True`.
+3. DRF metadata is `ansible_base.lib.metadata.CleanTextMetadata` (DAB’s default
+   `REST_FRAMEWORK['DEFAULT_METADATA_CLASS']`; a custom metadata class skips injection).
+4. The serializer field maps to a model `CharField` or `TextField` that is not in
+   `excluded_fields`.
 
-## Tier 2 — dangerous pattern blocklist
+Model field validators do not emit OPTIONS metadata.
 
-All other text fields are checked for the following categories of dangerous
-content. HTML detection uses `nh3` (a real HTML parser based on html5ever)
-rather than regex, so it cannot be evaded by tag obfuscation, unusual
-whitespace, or encoding tricks.
+### Customization
 
-Every input is also checked in HTML-entity-decoded and percent-decoded form
-(up to three decode passes) and then NFKC-normalized (which folds fullwidth
-characters like `＜` to their ASCII equivalents), so encoded payloads like
-`&#60;script&#62;` or `%3Cscript%3E` and fullwidth obfuscations like
-`ｊａｖａｓｃｒｉｐｔ：` are caught across all checks.
+Extension: which model fields and JSON sub-keys the mixin validates or skips.
 
-| Category | Detection method | Examples |
-|----------|-----------------|----------|
-| Control characters | Regex (intentionally selective range) | C0/C1 controls (except tab, LF, and CR), zero-width space, directional overrides (LRO/RLO), invisible math operators, deprecated formatting chars, BOM, interlinear annotations. Allows ZWNJ/ZWJ, bidi marks/embeddings/isolates, and soft hyphen for multilingual support. |
-| HTML tags | `nh3` parser (all tags rejected) | `<script>`, `<iframe>`, `<b>`, `<img>`, `<p>`, any HTML tag (including fullwidth `＜` variants via NFKC normalization) |
-| Unsafe URI schemes | Regex (with WHATWG-aware whitespace stripping) | `javascript:`, `vbscript:`, and `data:` URIs with all WHATWG-defined script-capable MIME types: `text/html`, `text/javascript` (incl. versioned `1.0`–`1.5`), `text/xml`, `text/ecmascript`, `text/x-javascript`, `text/x-ecmascript`, `text/jscript`, `text/livescript`, `application/javascript`, `application/xml`, `application/xhtml+xml`, `application/ecmascript`, `application/x-javascript`, `application/x-ecmascript`, `image/svg+xml`. Includes tab/LF/CR-obfuscated variants like `jav\tascript:`. |
-| Shell substitution | Regex | `$(...)`, `${...}` |
-| Template injection | Regex | `{{ }}`, `{% %}` (Jinja2 / Django template syntax) |
+Class attributes on the serializer (names are generic; a future refactor may
+move or prefix them):
 
-**All** HTML tags are rejected, not just a dangerous subset. Fields that
-legitimately contain HTML (e.g. custom login pages, Jinja2 templates) should
-be listed in `excluded_fields`.
+- `name_fields` — tier 1 field names (extend with `DEFAULT_NAME_FIELDS | {...}`).
+- `excluded_fields` — skip tier 1/2 entirely (including whole `JSONField`s).
+- `excluded_json_keys` — map of JSONField name → frozenset of sub-keys to skip
+  at any nesting depth.
 
-### Known false positive: `javascript:` / `vbscript:` in prose
+DAB ships additional exclusions for authenticators in
+`ansible_base.authentication` (for example `AuthenticatorSerializer.excluded_json_keys`
+and `AuthenticatorMapSerializer` expansion handling). See those modules when
+changing authenticator plugins—not this document.
 
-Text containing the word "JavaScript" or "VBScript" followed by a colon
-(e.g., `"This uses JavaScript: see docs for details"`) will be rejected by the
-unsafe URI scheme check. This is a known trade-off — there is no reliable
-regex-only way to distinguish prose from a URI attack in all cases, and these
-patterns are uncommon in AAP field values. The slightly overzealous check is
-preferable to introducing a potential bypass.
+### Errors
 
-**Error messages** (specific to the pattern that triggered rejection):
-> This field can't include control characters.
+Error shape: how validation failures are returned on API requests.
 
-> This field can't include HTML tags, script markup, or unsafe URI schemes.
+When enforcement raises, multiple failures are aggregated into one
+`ValidationError`. Text field errors use serializer field names (including when
+`source=` renames the attribute). JSON errors use the **model** JSON column name
+as the top-level key, with nested paths beneath it—even if the serializer field
+is renamed (see tests in `test_app/tests/lib/serializers/test_clean_text_mixin.py`).
 
-> This field can't include shell or template syntax.
+## Model-level validation (guidance)
 
-## Grandfather behavior
+The validators behind `CleanTextMixin` (`validate_resource_name`,
+`validate_free_text`) can also be attached directly to model `CharField` /
+`TextField` columns. That is optional guidance—not a required DAB pattern—when
+the same rules must run on non-DRF paths (management commands, imports, or
+`save()` after `full_clean()`). Tradeoffs (toggle, OPTIONS, grandfathering,
+duplicate checks with the mixin) are below.
 
-On **update** (when `self.instance` is set), the mixin compares each field's
-submitted value against the current stored value. If they are identical, that
-field is skipped — even if the existing value would fail validation. This
-prevents blocking edits to unrelated fields on records that pre-date the
-validation rules.
-
-On **create**, all text fields in the submitted data are validated.
-
-Partial updates (`partial=True`) only validate fields that are present in the
-request payload.
-
-## Customization
-
-### Adding service-specific name fields
-
-If your service has fields that should receive Tier 1 (allowlist) treatment
-beyond the defaults (`name`, `username`, `hostname`), extend `name_fields`:
-
-```python
-from ansible_base.lib.serializers.mixins import CleanTextMixin
-from ansible_base.lib.utils.validation import DEFAULT_NAME_FIELDS
-
-class MySerializer(CleanTextMixin, serializers.ModelSerializer):
-    name_fields = DEFAULT_NAME_FIELDS | {'display_name', 'label'}
-
-    class Meta:
-        model = MyModel
-        fields = '__all__'
-```
-
-### Excluding fields from validation
-
-Fields that legitimately contain HTML, template syntax, or other structured
-content (e.g., Jinja2 templates, custom login HTML) can be excluded:
-
-```python
-class JobTemplateSerializer(CleanTextMixin, serializers.ModelSerializer):
-    excluded_fields = frozenset({'extra_vars', 'custom_login_info'})
-
-    class Meta:
-        model = JobTemplate
-        fields = '__all__'
-```
-
-Excluded fields bypass both Tier 1 and Tier 2 validation entirely.
-
-## JSONField validation
-
-Starting with this version, `CleanTextMixin` also validates **string values
-inside JSONFields**. This catches dangerous content in credential inputs,
-notification configs, authenticator configs, and similar structured data.
-
-### How it works
-
-After the text-field loop, the mixin discovers all model fields with
-`get_internal_type() == 'JSONField'`. For each JSONField present in the
-submitted data:
-
-- **Dict values:** recursively traverses nested dicts and lists, validating
-  every string value using Tier 2 (dangerous-pattern blocklist). Non-string,
-  non-container values (integers, booleans, `None`) are skipped.
-- **List values:** recursively traverses list items — validating bare strings,
-  recursing into nested dicts, and recursing into nested lists.
-
-Recursion is capped at a depth of 10 to prevent pathological inputs from
-causing excessive processing.
-
-### Grandfathering at every nesting level
-
-On **update**, each string value is compared against the corresponding value in
-the stored data, following the same path through the nested structure. Only
-changed values are validated — unchanged values are grandfathered even if they
-contain content that would fail validation. This comparison works at every
-nesting depth, not just the top level.
-
-For model ``CharField`` / ``TextField`` serializer fields with
-``trim_whitespace=True`` (DRF default), grandfathering compares the submitted
-value to ``stored.strip()`` so ORM-seeded leading/trailing whitespace still
-matches API input after DRF normalization. The mixin resolves the serializer
-field by name or by ``source`` (for example ``description_input`` with
-``source='description'``). If no serializer field binds to the model attribute,
-or ``trim_whitespace=False``, comparison is exact only. Strings inside
-``JSONField`` values are not trimmed by DRF and always use exact comparison.
-
-For lists, grandfathering compares by index (item at position N in the
-submitted list is compared against item at position N in the stored list).
-
-### Excluding entire JSONFields
-
-Add the field name to `excluded_fields` to skip the entire JSONField:
-
-```python
-class JobTemplateSerializer(CleanTextMixin, serializers.ModelSerializer):
-    excluded_fields = frozenset({'extra_vars'})
-
-    class Meta:
-        model = JobTemplate
-        fields = '__all__'
-```
-
-### Excluding specific sub-keys
-
-Some sub-keys legitimately contain content that would trigger the blocklist
-(e.g., PEM-encoded keys, template syntax). Use `excluded_json_keys` to skip
-specific sub-keys within a JSONField:
-
-```python
-class CredentialSerializer(CleanTextMixin, serializers.ModelSerializer):
-    excluded_json_keys = {
-        'inputs': frozenset({'ssh_key_data', 'ssh_key_unlock'}),
-        'notification_configuration': frozenset({'headers'}),
-    }
-
-    class Meta:
-        model = Credential
-        fields = '__all__'
-```
-
-The mapping keys are JSONField names; the values are frozensets of sub-key
-names to skip. Excluded sub-keys are skipped at **every** nesting depth, not
-just the top level — if `ssh_key_data` is excluded, it is skipped wherever it
-appears in the JSON structure.
-
-### Error format
-
-Errors use nested dict format keyed by the JSONField name, with sub-keys
-identifying the problematic field:
-
-```json
-{
-    "inputs": {
-        "username": ["This field can't include HTML tags, ..."],
-        "host": ["This field can't include HTML tags, ..."]
-    }
-}
-```
-
-For lists, the sub-key includes the index:
-
-```json
-{
-    "links": {
-        "[1].url": ["This field can't include HTML tags, ..."]
-    }
-}
-```
-
-For nested structures, dot-separated paths identify the location:
-
-```json
-{
-    "config": {
-        "database.host": ["This field can't include HTML tags, ..."],
-        "endpoints[0].url": ["This field can't include HTML tags, ..."]
-    }
-}
-```
-
-This nested format is compatible with DRF's standard error handling and allows
-frontend form frameworks (e.g., react-hook-form) to map errors to the correct
-input fields.
-
-### Authenticator configuration exclusions
-
-`AuthenticatorSerializer` sets `excluded_json_keys` on the `configuration`
-JSONField to skip encrypted sub-keys and structured pass-through data:
-
-```python
-excluded_json_keys = MappingProxyType({
-    'configuration': frozenset({
-        'SECRET',
-        'BIND_PASSWORD',
-        'SP_PRIVATE_KEY',
-        'ADDITIONAL_UNVERIFIED_ARGS',
-    }),
-})
-```
-
-**Encrypted fields** — These sub-keys appear in each plugin's
-`configuration_encrypted_fields`. Their cleartext values (passwords, private
-keys) may legitimately contain patterns matching the Tier 2 blocklist (e.g.,
-an LDAP bind password containing `${LDAP_PASS}`). On update, the serializer's
-`to_internal_value()` replaces the `ENCRYPTED_STRING` sentinel with the stored
-value, so unchanged secrets would be grandfathered. The exclusion is needed
-for create, where cleartext values are submitted.
-
-| Key | Plugins | Content |
-|-----|---------|---------|
-| `SECRET` | GitHub (all variants), Google OAuth2, OIDC, Keycloak, AzureAD, TACACS, Radius | OAuth2 client secret or shared secret |
-| `BIND_PASSWORD` | LDAP | LDAP bind password |
-| `SP_PRIVATE_KEY` | SAML | PEM-encoded service provider private key |
-
-**Structured data (out of scope)** — `ADDITIONAL_UNVERIFIED_ARGS` is a
-JSONField on every plugin (inherited from `BaseAuthenticatorConfiguration`)
-that accepts arbitrary JSON passed directly to the authenticator without
-validation. Per the input validation scope, validation of structured data
-content (YAML/JSON) is excluded.
-
-**Keys that do NOT need exclusion:**
-
-Other structured sub-keys (`ORG_INFO`, `TECHNICAL_CONTACT`, `SUPPORT_CONTACT`,
-`SP_EXTRA`, `SECURITY_CONFIG`, `EXTRA_DATA`, `GROUP_TYPE_PARAMS`,
-`CONNECTION_OPTIONS`, `GROUP_SEARCH`, `USER_SEARCH`, `USER_ATTR_MAP`,
-`JWT_ALGORITHMS`, `JWT_DECODE_OPTIONS`, `SCOPE`) store dicts or lists, not
-top-level strings. The mixin's `_validate_json_dict()` recurses into dict and
-list values and validates any string leaf values it finds (e.g.
-`TECHNICAL_CONTACT.emailAddress`) with the same Tier 2 blocklist as top-level
-fields, so no explicit exclusion is required — legitimate values (names,
-emails, LDAP attribute names) are expected to pass Tier 2 validation without
-triggering false positives.
-
-Certificate fields (`SP_PUBLIC_CERT`, `IDP_X509_CERT`, `PUBLIC_KEY`) are
-strings but contain PEM-encoded data (base64 + headers) that does not match
-any pattern in `DANGEROUS_PATTERNS`. No exclusion needed.
-
-All remaining string sub-keys (`NAME`, `KEY`, `HOST`, `SERVER`, SAML attribute
-names, OIDC claim names, etc.) are validated by the mixin as defense-in-depth.
-Most are format-constrained by their identity provider, but they accept
-user-provided input and should be scanned for injection patterns.
-
-When adding a new authenticator plugin with new
-`configuration_encrypted_fields` entries, add the field names to
-`excluded_json_keys` on `AuthenticatorSerializer`.
-
-### AuthenticatorMap field exclusions
-
-`AuthenticatorMapSerializer` overrides `_run_text_validator()` to
-conditionally skip Tier 1/Tier 2 validation on three CharField fields —
-`organization`, `role`, and `team` — but only for values that actually use
-template expansion syntax:
-
-```python
-def _run_text_validator(self, field_name, value, errors):
-    if field_name in _EXPANSION_FIELDS and has_expansion(value):
-        return
-    super()._run_text_validator(field_name, value, errors)
-```
-
-These fields support template expansion syntax for dynamic mapping rules.
-Values like `{% for_attr_value(user_orgs) %}` and
-`Organization {% for_attr_value(member_of) %}` are valid inputs that allow
-authenticator maps to dynamically resolve organization, team, and role names
-from user attributes at authentication time. The `{% %}` pattern matches the
-Tier 2 dangerous-pattern blocklist's template injection category, so these
-values would otherwise be rejected as false positives.
-
-The gated field names match `_EXPANSION_FIELDS` defined in
-`ansible_base.authentication.utils.authenticator_map`:
-
-```python
-_EXPANSION_FIELDS = ['organization', 'role', 'team']
-```
-
-The serializer's own `validate()` method separately validates the expansion
-*syntax* of these fields via `check_expansion_syntax()` — this catches
-**malformed** expansion attempts (a value containing `{%` and `%}` that
-doesn't match the `for_attr_value(...)` shape). `_run_text_validator()`'s
-`has_expansion()` check skips CleanTextMixin validation for any value that
-contains `{% %}` syntax — including mixed values where literal content appears
-alongside expansion syntax (per the SDP scope exclusion for Jinja2 template
-fields). Purely literal (non-templated) values in these fields run through
-the normal Tier 2 free-text check like any other field. The `name`
-field on `AuthenticatorMap` is not gated at all and always receives Tier 1
-validation.
-
-## Error reporting
-
-When multiple fields fail validation, all errors are collected and returned in a
-single `ValidationError` keyed by field name:
-
-```json
-{
-    "name": ["Enter a valid resource name. ..."],
-    "description": ["This field can't include HTML tags, ..."],
-    "extra_field": ["This field can't include HTML tags, ..."]
-}
-```
-
-## Known limitations
-
-- **DRF serializers only.** The validators run in the serializer's `validate()`
-  method. Code that creates or updates records via `Model.objects.create()`,
-  `Model.save()`, or raw SQL bypasses these checks entirely. The mixin is not a
-  substitute for database-level constraints. For new models, prefer model-level
-  validators (see below).
-- **SlugField / GenericIPAddressField excluded.** These format-constrained
-  subclasses have their own validators and are intentionally skipped.
-  `URLField` is NOT excluded -- it's validated as free text (see "How field
-  discovery works" above).
-- **Defense in depth still required.** While Tier 2 uses nh3 (a real HTML
-  parser) for tag detection and decoded-variant checks for bypass prevention,
-  defense in depth (output encoding, CSP headers) is still necessary.
-
-
-# Model-level validators — recommended for new models and fields
-
-The `validate_resource_name` and `validate_free_text` functions are exported as
-public API from `ansible_base.lib.utils.validation` and can be used directly as
-Django model field validators:
+The tier functions *can* be wired as Django `Field.validators` on
+`CharField` / `TextField` columns, for example:
 
 ```python
 from django.db import models
@@ -464,32 +182,51 @@ class MyNewModel(models.Model):
     description = models.TextField(default='', validators=[validate_free_text])
 ```
 
-## Why prefer model-level validation for new fields
+Those functions raise `rest_framework.serializers.ValidationError`, which DRF
+field validation accepts when the API uses a `ModelSerializer`. For
+`Model.full_clean()` or other Django ORM paths, wrap them or convert to
+`django.core.exceptions.ValidationError`.
 
-`CleanTextMixin` operates at the serializer layer, which means it only fires on
-requests that pass through a DRF serializer. Model-level validators are
-stronger because Django's `full_clean()` runs them on **every code path**:
+**Implementation considerations** (not an exhaustive list):
 
-- API requests (via DRF serializers that call `full_clean()`)
-- Management commands
-- Bulk imports
-- Signal handlers
-- Direct ORM `save()` calls (when the caller invokes `full_clean()` first)
+- **Enforcement toggle.** Field validators always raise; log-vs-reject for
+  [Enforcement toggle](#enforcement-toggle--enhanced_input_validation_enabled) is
+  mixin-only. No toggle-aware model wrappers ship in DAB today.
+- **OPTIONS.** No pattern metadata from model validators; use
+  [Serializer-level validation](#serializer-level-validation) (mixin) for OPTIONS.
+- **Mixin plus model validators on the same fields.** `ModelSerializer` may run
+  both field validators and the mixin on the same Char/Text value—DAB does not
+  deduplicate (see toggle caveat above).
+- **Grandfathering and JSONField.** [Grandfather behavior](#grandfather-behavior)
+  and nested `JSONField` checks are mixin-only; validators run only where
+  Django/DRF invokes them ([Known limitations](#known-limitations)).
 
-This prevents unsafe data from entering the database through non-API paths — a
-gap that serializer-only validation cannot close.
+## Known limitations
 
-## When to use which approach
+These apply to the **serializer-level validation DAB ships and tests** today
+(`CleanTextMixin` on DRF serializers), not to optional model-level guidance
+above.
 
-| Scenario | Approach |
-|----------|----------|
-| **New model / new field** | Add `validators=[validate_resource_name]` or `validators=[validate_free_text]` directly on the model field. No serializer mixin needed. |
-| **Existing model with legacy data** | Use `CleanTextMixin` on the serializer. Its grandfather behavior lets existing records keep their current values while blocking new violations through the API. |
-| **Existing model, new field added** | Add the validator on the model field. The field has no legacy data, so grandfathering is not needed. |
-
-The two approaches use the same underlying validators, so the rules (Tier 1
-allowlist, Tier 2 blocklist) are identical regardless of where they run.
-
+- **Serializer-path only.** The mixin runs in the serializer `validate()`
+  method. ORM `create()` / `save()`, management commands, and imports do not
+  run it unless those paths go through a serializer that includes the mixin (or
+  you add another validation layer yourself).
+- **Grandfathering is serializer-only.** On update, unchanged field values are
+  skipped even if they would fail today's rules. Django field validators do not
+  get old-vs-new context unless you add instance-aware logic in `Model.clean()`.
+- **Field discovery caveats.** The mixin validates model columns whose
+  `get_internal_type()` is `CharField` or `TextField`. `SlugField` and
+  `GenericIPAddressField` are skipped; `URLField` is not (it still reports
+  `CharField`). See `_classify_fields()` in `mixins.py`.
+- **JSON depth cap.** String leaves inside `JSONField` data are validated with
+  tier 2 when traversal reaches them (including a string at depth 10). The cap
+  applies when **entering** a nested `dict` or `list`: at depth 10 and deeper,
+  that container and its descendants are not scanned; when
+  `ENHANCED_INPUT_VALIDATION_ENABLED` is true, the API returns a generic
+  incomplete-validation error for that branch (see `_MAX_JSON_DEPTH` in
+  `mixins.py` and `test_value_at_max_json_depth_is_validated`).
+- **Defense in depth.** Server-side input validation does not replace output
+  encoding, CSP, or other controls.
 
 # Validation callback for role assignment
 
