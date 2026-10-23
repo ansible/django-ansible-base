@@ -145,13 +145,15 @@ jobs:
           persist-credentials: false
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libsasl2-dev libldap2-dev libssl-dev libxmlsec1-dev
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libsasl2-dev libldap2-dev libssl-dev libxmlsec1-dev libxml2-dev
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
 
       - name: Install tox
+        env:
+          PIP_NO_BINARY: "lxml,xmlsec"
         run: pip install tox tox-docker requests
 
       - name: Place DAB in jewel checkout
@@ -161,19 +163,11 @@ jobs:
         working-directory: jewel
         env:
           GATEWAY_TEST_DIRS: ""
+          PIP_NO_BINARY: "lxml,xmlsec"
         run: |
           tox -e py312 \
             -x testenv:py312.docker= \
             -- --collect-only aap_gateway_api/tests/__init__.py
-
-      - name: Rebuild lxml and xmlsec from source
-        working-directory: jewel
-        run: |
-          XMLSEC_VERSION=$(.tox/py312/bin/pip freeze | grep xmlsec | sed 's:^.*=::')
-          LXML_VERSION=$(.tox/py312/bin/pip freeze | grep lxml | sed 's:^.*=::')
-          echo "Rebuilding xmlsec==${XMLSEC_VERSION} and lxml==${LXML_VERSION} from source"
-          .tox/py312/bin/pip install --no-cache-dir --no-binary lxml,xmlsec --force-reinstall \
-            lxml==${LXML_VERSION} xmlsec==${XMLSEC_VERSION}
 
       - name: Run jewel tests
         working-directory: jewel

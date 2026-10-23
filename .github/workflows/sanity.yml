@@ -27,7 +27,7 @@ jobs:
           persist-credentials: false
 
       - name: Install build requirements
-        run: sudo apt-get update && sudo apt-get install -y libsasl2-dev libldap2-dev libssl-dev libxmlsec1-dev
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libsasl2-dev libldap2-dev libssl-dev libxmlsec1-dev libxml2-dev
 
       - name: Install python 3.12
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -35,6 +35,8 @@ jobs:
           python-version: 3.12
 
       - name: Install requirements
+        env:
+          PIP_NO_BINARY: "lxml,xmlsec"
         run: pip3.12 install -r requirements/requirements_all.txt -r requirements/requirements_dev.txt
 
       - name: Run help text check
