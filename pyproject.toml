@@ -119,6 +119,8 @@ legacy_tox_ini = """
     # leaking its committed (not rolled-back) demo data into other tests' assertions.
     commands = pytest -n auto --color=yes --cov=. --cov-report=xml:coverage.xml --cov-report=html --cov-report=json --cov-branch --junit-xml=django-ansible-base-test-results.xml --ignore=test_app/tests/query_count_scale {env:ANSIBLE_BASE_PYTEST_ARGS} {env:ANSIBLE_BASE_TEST_DIRS:test_app/tests} {posargs}
     docker = db
+    setenv =
+        PIP_NO_BINARY = lxml,xmlsec
 
     [testenv:py312-check]
     deps =

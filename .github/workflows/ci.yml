@@ -39,7 +39,7 @@ jobs:
         run: dpkg -l '*pkg*conf'
 
       - name: Install build requirements
-        run: sudo apt-get update && sudo apt-get install -y libsasl2-dev libldap2-dev libssl-dev libxmlsec1-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install -y libsasl2-dev libldap2-dev libssl-dev libxmlsec1-dev pkg-config libxml2-dev
 
       - name: Probe pkg-config
         run: |
