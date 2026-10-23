@@ -7,6 +7,8 @@ from rest_framework.serializers import ValidationError
 
 from ansible_base.authentication.models import Authenticator, AuthenticatorMap
 from ansible_base.authentication.serializers.authenticator_map import AuthenticatorMapSerializer
+from ansible_base.authentication.views.authenticator_map import AuthenticatorMapMetadata
+from ansible_base.lib.metadata import TIER2_PATTERN_DESCRIPTION, build_tier2_frontend_pattern
 from ansible_base.lib.serializers.mixins import _INCOMPLETE_VALIDATION_MSG, CleanTextMixin
 from ansible_base.lib.utils.response import get_relative_url
 
@@ -391,3 +393,63 @@ class TestAuthenticatorMapCleanText:
             )
             == {}
         )
+
+
+def _determine_actions(baseline):
+    """Run AuthenticatorMapMetadata.determine_actions with its super() stubbed to
+    return ``baseline``, isolating the attribute/value injection from the DRF view,
+    serializer, and RBAC machinery (which the real registered viewset wires in)."""
+    from ansible_base.lib.metadata import CleanTextMetadata
+
+    metadata = AuthenticatorMapMetadata()
+    with patch.object(CleanTextMetadata, 'determine_actions', return_value=baseline):
+        return metadata.determine_actions(MagicMock(), MagicMock())
+
+
+class TestAuthenticatorMapOptionsTriggerMetadata:
+    """OPTIONS exposes Tier 2 patterns for the nested trigger attribute/value inputs.
+
+    inject_clean_text_patterns skips the ``triggers`` JSONField, so without the custom
+    metadata class the Attribute/Value inputs under "Based on attributes" would carry no
+    client-side validation hint. See AAP-98256.
+    """
+
+    @pytest.mark.parametrize('field_name', ['attribute', 'value'])
+    def test_injects_tier2_pattern_into_post_action(self, field_name):
+        build_tier2_frontend_pattern.cache_clear()
+        actions = _determine_actions({'POST': {}, 'PUT': {}})
+        field = actions['POST'][field_name]
+        assert field['pattern'] == build_tier2_frontend_pattern()
+        assert field['patternDescription'] == TIER2_PATTERN_DESCRIPTION
+        assert field['flags'] == 'i'
+        assert field['label'] == field_name.capitalize()
+
+    def test_skips_put_action_to_preserve_grandfathered_names(self):
+        # On update the serializer grandfathers stored attribute names, so the
+        # static OPTIONS pattern must NOT be injected into PUT -- otherwise an edit
+        # to a map carrying a legacy name would be blocked client-side. See AAP-98256.
+        actions = _determine_actions({'POST': {}, 'PUT': {}})
+        assert 'attribute' not in actions['PUT']
+        assert 'value' not in actions['PUT']
+
+    def test_no_post_action_is_a_noop(self):
+        # OPTIONS without a POST action (e.g. caller lacks create permission) must
+        # not raise -- there is simply nothing to inject into.
+        actions = _determine_actions({'PUT': {}})
+        assert actions == {'PUT': {}}
+
+    def test_does_not_clobber_existing_fields(self):
+        # setdefault must not overwrite a genuine serializer field that happens to
+        # share one of the injected names.
+        sentinel = {'type': 'string', 'label': 'Real field'}
+        actions = _determine_actions({'POST': {'attribute': sentinel}})
+        assert actions['POST']['attribute'] is sentinel
+        # The other injected field is still added alongside it.
+        assert actions['POST']['value']['patternDescription'] == TIER2_PATTERN_DESCRIPTION
+
+    def test_omits_trigger_patterns_when_validation_disabled(self, settings):
+        settings.ENHANCED_INPUT_VALIDATION_ENABLED = False
+        actions = _determine_actions({'POST': {}, 'PUT': {}})
+        for action in actions.values():
+            assert 'attribute' not in action
+            assert 'value' not in action
