@@ -240,6 +240,10 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         # For role definitions
         'ANSIBLE_BASE_ALLOW_CUSTOM_ROLES': True,
         'ANSIBLE_BASE_ALLOW_CUSTOM_TEAM_ROLES': False,
+        # When True, users who can change a resource may assign roles on it to
+        # any user/team, including actors they cannot view (other organizations).
+        # Default False preserves historical visibility filtering on assignment.
+        'ANSIBLE_BASE_RESOURCE_ADMINS_CAN_ASSIGN_UNRESTRICTED_ACTORS': False,
         # Allows managing singleton permissions
         'ANSIBLE_BASE_ALLOW_SINGLETON_USER_ROLES': False,
         'ANSIBLE_BASE_ALLOW_SINGLETON_TEAM_ROLES': False,
