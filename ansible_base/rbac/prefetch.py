@@ -5,6 +5,9 @@ from collections.abc import Iterator, Sequence
 from typing import Union
 from uuid import UUID
 
+from ansible_base.lib.utils.models import is_add_perm
+from ansible_base.rbac.permission_registry import permission_registry
+
 from .models.content_type import DABContentType
 from .models.permission import DABPermission
 from .models.role import ObjectRole, RoleDefinition, RoleEvaluation, RoleEvaluationUUID, RoleTeamAssignment
@@ -25,6 +28,7 @@ class TypesPrefetch:
         self._role_definitions: dict[int, RoleDefinition] = {}
         self._permissions: dict[int, DABPermission] = {}
         self._rd_permissions: dict[int, list[int]] = {}
+        self._granting_rd_ids: dict[int, set[int]] = {}
 
     @classmethod
     def from_db(cls) -> TypesPrefetch:
@@ -45,6 +49,60 @@ class TypesPrefetch:
         if ct_id not in self._content_types:
             self._content_types[ct_id] = DABContentType.objects.get_for_id(ct_id)
         return self._content_types[ct_id]
+
+    def _parent_content_type_id(self, perm_ct_id: int, parent_ct_cache: dict[int, int | None]) -> int | None:
+        """Content type id of the parent model for the model of perm_ct_id, or None.
+
+        Remote content types carry their parent on the row; local ones are looked
+        up through the permission registry. Models that are not registered, or
+        have no parent, give None. Results are memoized in parent_ct_cache.
+        """
+        if perm_ct_id not in parent_ct_cache:
+            perm_ct = self.get_content_type(perm_ct_id)
+            if perm_ct.is_remote:
+                parent_ct_cache[perm_ct_id] = perm_ct.parent_content_type_id
+            else:
+                try:
+                    parent_model = permission_registry.get_parent_model(perm_ct.model_class())
+                except KeyError:
+                    # permission on a model that is not in the permission registry
+                    parent_model = None
+                parent_ct_cache[perm_ct_id] = DABContentType.objects.get_for_model(parent_model).id if parent_model else None
+        return parent_ct_cache[perm_ct_id]
+
+    def _permission_grants_on_type(self, permission: DABPermission, object_ct_id: int, parent_ct_cache: dict[int, int | None]) -> bool:
+        return permission.content_type_id == object_ct_id or (
+            is_add_perm(permission.codename) and self._parent_content_type_id(permission.content_type_id, parent_ct_cache) == object_ct_id
+        )
+
+    def _role_definition_grants_on_type(self, rd_id: int, object_ct_id: int, parent_ct_cache: dict[int, int | None]) -> bool:
+        """Whether role definition rd_id can produce an evaluation on an object of type object_ct_id.
+
+        A role definition on this type always qualifies: it can emit evaluations on
+        its own object from child permissions (add_*, or any of them with
+        ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS), see ObjectRole.expected_direct_permissions.
+        Otherwise it qualifies if any of its permissions grants on the type.
+        """
+        if self._role_definitions[rd_id].content_type_id == object_ct_id:
+            return True
+        return any(self._permission_grants_on_type(self._permissions[perm_id], object_ct_id, parent_ct_cache) for perm_id in self._rd_permissions[rd_id])
+
+    def role_definition_ids_granting(self, object_ct_id: int) -> set[int]:
+        """Ids of role definitions that can produce an evaluation on an object of type object_ct_id.
+
+        A role definition qualifies if its own content type is that type, if it
+        has a permission on that type, or if it has an add-permission on a child
+        type of it (the grandchild case in ObjectRole.get_child_filters). Anything
+        else can be skipped in look-ahead mode without being loaded or evaluated.
+        Cached per instance.
+        """
+        if object_ct_id in self._granting_rd_ids:
+            return self._granting_rd_ids[object_ct_id]
+        parent_ct_cache: dict[int, int | None] = {}
+
+        result = {rd_id for rd_id in self._rd_permissions if self._role_definition_grants_on_type(rd_id, object_ct_id, parent_ct_cache)}
+        self._granting_rd_ids[object_ct_id] = result
+        return result
 
     def permissions_for_object_role(self, role: ObjectRole) -> Iterator[DABPermission]:
         if role.role_definition_id not in self._rd_permissions:
