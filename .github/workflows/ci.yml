@@ -62,6 +62,14 @@ jobs:
           echo "::remove-matcher owner=python::"  # Disable annoying annotations from setup-python
           tox --colored yes -e ${{ matrix.tests.env }}
 
+      - name: Rebuild lxml and xmlsec from source
+        run: |
+          XMLSEC_VERSION=$(.tox/${{ matrix.tests.env }}/bin/pip freeze | grep xmlsec | sed 's:^.*=::')
+          LXML_VERSION=$(.tox/${{ matrix.tests.env }}/bin/pip freeze | grep lxml | sed 's:^.*=::')
+          echo "Rebuilding xmlsec==${XMLSEC_VERSION} and lxml==${LXML_VERSION} from source"
+          .tox/${{ matrix.tests.env }}/bin/pip install --no-cache-dir --no-binary lxml,xmlsec --force-reinstall \
+            lxml==${LXML_VERSION} xmlsec==${XMLSEC_VERSION}
+
       - name: Inject PR number into coverage.xml
         if: matrix.tests.env != 'check' && hashFiles('coverage.xml') != ''
         run: sed -i '2i <!-- PR ${{ github.event.number }} -->' coverage.xml
