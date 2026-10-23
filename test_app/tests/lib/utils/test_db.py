@@ -31,7 +31,14 @@ class SkipIfSqlite:
             pytest.skip('Advisory lock is not written for sqlite')
 
 
-class TestPGNotifyConnection(SkipIfSqlite):
+class SkipIfNotPostgreSQL:
+    @pytest.fixture(autouse=True)
+    def skip_if_not_postgresql(self):
+        if connection.vendor != 'postgresql':
+            pytest.skip('PostgreSQL-specific functionality')
+
+
+class TestPGNotifyConnection(SkipIfNotPostgreSQL):
     TEST_DATABASE_DICT = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
@@ -191,7 +198,7 @@ class TestAdvisoryLock(SkipIfSqlite):
 # Special transaction=True parameter is used, because we do not want in normal test transactions
 # because dropping the connection would break the transaction context, erroring at end of test
 @pytest.mark.django_db(transaction=True)
-class TestAdvisoryLockPostgresErrors(SkipIfSqlite):
+class TestAdvisoryLockPostgresErrors(SkipIfNotPostgreSQL):
     """Tests related to connection management and the advisory_lock"""
 
     def kick_connection(self):

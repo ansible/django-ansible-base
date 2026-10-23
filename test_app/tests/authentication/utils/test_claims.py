@@ -257,9 +257,9 @@ def test_create_claims_single_map_acl(
     assert res["is_superuser"] == exp_is_superuser
     assert res["claims"] == exp_claims
 
-    if connection.vendor == 'postgresql' and local_authenticator_map.id != 1:
+    if local_authenticator_map.id != 1:
         # All of the test cases define exp_last_login_results with ID 1.
-        # But if we are running in postgres we will get sequential IDs back.
+        # But we may get sequential IDs (especially on PostgreSQL and MS SQL Server).
         # So we need to massage the exp_last_login_results to have the correct ID
         exp_last_login_map_results[0][local_authenticator_map.id] = exp_last_login_map_results[0][1]
         del exp_last_login_map_results[0][1]
