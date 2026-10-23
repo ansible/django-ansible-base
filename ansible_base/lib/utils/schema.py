@@ -21,6 +21,7 @@ class DeprecationAutoSchemaMixin:
         return getattr(self.view.__class__, action, None)
 
     def is_deprecated(self):
+        """Report deprecation from the action, view metadata, or legacy flag."""
         view_class = self.view.__class__
         action_method = self._get_action_method()
         return (
@@ -32,17 +33,18 @@ class DeprecationAutoSchemaMixin:
         )
 
     def get_extensions(self):
+        """Add the most specific deprecation detail to the existing schema extensions."""
         extensions = super().get_extensions()
 
         action_method = self._get_action_method()
-        deprecation = getattr(action_method, 'deprecation', None)
+        deprecation_metadata = getattr(action_method, 'deprecation', None)
 
-        if not deprecation:
+        if not deprecation_metadata:
             view_class = self.view.__class__
-            deprecation = getattr(self.view, 'deprecation', None) or getattr(view_class, 'deprecation', None)
+            deprecation_metadata = getattr(self.view, 'deprecation', None) or getattr(view_class, 'deprecation', None)
 
-        if deprecation and deprecation.get('detail'):
-            extensions['x-api-deprecated-detail'] = deprecation['detail']
+        if deprecation_metadata and deprecation_metadata.get('detail'):
+            extensions['x-api-deprecated-detail'] = deprecation_metadata['detail']
 
         return extensions
 
@@ -60,32 +62,8 @@ def _get_autoschema_base():
         return None
 
 
-def _get_serializer_ref_name(serializer_cls):
-    ref_name = getattr(getattr(serializer_cls, 'Meta', None), 'ref_name', None)
-    if ref_name:
-        return ref_name
-
-    serializer_name = serializer_cls.__name__
-    if serializer_name.endswith('Serializer'):
-        return serializer_name[: -len('Serializer')]
-    return serializer_name
-
-
-def _build_deprecated_fields_by_component(registry):
-    fields_by_component = {}
-    for serializer_cls, fields in registry.items():
-        ref_name = _get_serializer_ref_name(serializer_cls)
-        for component_name in (
-            ref_name,
-            f'Patched{ref_name}',
-            f'{ref_name}Request',
-            f'Patched{ref_name}Request',
-        ):
-            fields_by_component[component_name] = fields
-    return fields_by_component
-
-
 def _add_deprecated_field_details(schema, fields):
+    """Attach supplied details only to properties already marked deprecated."""
     properties = schema.get('properties', {})
     for field_name, detail in fields.items():
         property_schema = properties.get(field_name, {})
@@ -97,6 +75,7 @@ class _MissingAutoSchema:
     """Placeholder base that preserves the optional drf-spectacular dependency."""
 
     def __init__(self, *args, **kwargs):
+        """Reject schema construction when the optional drf-spectacular dependency is unavailable."""
         raise ImportError("DABAutoSchema requires drf-spectacular to be installed. Install it with: pip install drf-spectacular")
 
 
@@ -116,23 +95,31 @@ class DABAutoSchema(DeprecationAutoSchemaMixin, _AutoSchemaBase):
     pass
 
 
-def deprecated_fields_detail_hook(result, _generator, **kwargs):
+def deprecated_fields_detail_hook(result, generator, **kwargs):
     """
     drf-spectacular postprocessing hook that adds x-api-deprecated-detail
     to individual field schemas based on DeprecationSerializerMixin.deprecated_fields.
 
     Only touches fields already marked deprecated: true. Does not modify
-    descriptions or any other schema properties.
+    descriptions or any other schema properties. Uses each component's registered
+    serializer identity so same-named serializers cannot overwrite its details.
     """
     from ansible_base.lib.utils.views.deprecation import _DEPRECATED_FIELD_REGISTRY
 
     if not _DEPRECATED_FIELD_REGISTRY:
         return result
 
-    fields_by_component = _build_deprecated_fields_by_component(_DEPRECATED_FIELD_REGISTRY)
     schemas = result.get('components', {}).get('schemas', {})
     for component_name, schema in schemas.items():
-        fields = fields_by_component.get(component_name)
+        try:
+            component = generator.registry[component_name, 'schemas']
+        except KeyError:
+            # Manually appended components may not have a registered serializer.
+            continue
+
+        serializer = component.object
+        serializer_cls = serializer if isinstance(serializer, type) else type(serializer)
+        fields = _DEPRECATED_FIELD_REGISTRY.get(serializer_cls)
         if fields:
             _add_deprecated_field_details(schema, fields)
 

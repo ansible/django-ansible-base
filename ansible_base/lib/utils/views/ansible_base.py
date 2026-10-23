@@ -7,10 +7,9 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework.views import APIView
 
 from ansible_base.lib.utils.settings import get_function_from_setting, get_setting
+from ansible_base.lib.utils.views.deprecation import DEFAULT_DEPRECATION_MESSAGE, mark_deprecated
 
 logger = logging.getLogger('ansible_base.lib.utils.views.ansible_base')
-
-DEFAULT_DEPRECATION_MESSAGE = _('This resource has been deprecated and will be removed in a future release.')
 
 
 class AnsibleBaseView(APIView):
@@ -67,17 +66,16 @@ class AnsibleBaseView(APIView):
         return response
 
     def _add_deprecation_headers(self, response):
-        deprecation = getattr(self, 'deprecation', None)
-        is_deprecated = getattr(self, 'deprecated', False)
-        if not deprecation and not is_deprecated:
+        """Apply deprecation metadata while preserving legacy Warning-header behavior."""
+        deprecation_metadata = getattr(self, 'deprecation', None)
+        is_legacy_deprecated = getattr(self, 'deprecated', False)
+        if not deprecation_metadata and not is_legacy_deprecated:
             return
 
-        from ansible_base.lib.utils.views.deprecation import mark_deprecated
-
-        detail = deprecation['detail'] if deprecation else str(DEFAULT_DEPRECATION_MESSAGE)
+        detail = deprecation_metadata['detail'] if deprecation_metadata else str(DEFAULT_DEPRECATION_MESSAGE)
         mark_deprecated(response, detail)
 
-        if is_deprecated:
+        if is_legacy_deprecated:
             response['Warning'] = getattr(self, 'deprecation_warning_header_override', DEFAULT_DEPRECATION_MESSAGE)
 
     def dispatch(self, request, *args, **kwargs):

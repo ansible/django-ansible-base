@@ -33,6 +33,8 @@ class ResourceView(DeprecatedFieldsViewMixin, GenericAPIView):
 
 To mark fields deprecated in OpenAPI, annotate the serializer with `@extend_schema_serializer(deprecate_fields=[...])` and add `ansible_base.lib.utils.schema.deprecated_fields_detail_hook` to the existing drf-spectacular `POSTPROCESSING_HOOKS`. The hook adds `x-api-deprecated-detail` and supports split request components, including `ResourceRequest` and `PatchedResourceRequest`.
 
+The hook uses the actual serializer registered for each schema component, so importing another serializer with the same class name does not replace its deprecation details. If two different serializers appear in the same schema, give them distinct component names using `Meta.ref_name` or `@extend_schema_serializer(component_name=...)`; the hook does not resolve duplicate OpenAPI component names.
+
 For query parameters, use `DeprecatedQueryParamsViewMixin`:
 
 ```python

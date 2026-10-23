@@ -1,7 +1,11 @@
 import functools
 from collections.abc import Mapping
 
+from django.utils.translation import gettext_lazy as _
+
 _DEPRECATED_FIELD_REGISTRY = {}
+_DRF_ACTION_METHODS = ('list', 'create', 'retrieve', 'update', 'partial_update', 'destroy')
+DEFAULT_DEPRECATION_MESSAGE = _('This resource has been deprecated and will be removed in a future release.')
 
 
 class DeprecationSerializerMixin:
@@ -25,11 +29,13 @@ class DeprecationSerializerMixin:
     deprecated_fields = {}
 
     def __init_subclass__(cls, **kwargs):
+        """Register each subclass's deprecated fields by class identity for schema generation."""
         super().__init_subclass__(**kwargs)
         if cls.deprecated_fields:
             _DEPRECATED_FIELD_REGISTRY[cls] = dict(cls.deprecated_fields)
 
     def _check_deprecated_fields(self, data):
+        """Record warnings on the context's view for submitted deprecated fields, without duplicates."""
         if not isinstance(data, Mapping) or not data:
             return
 
@@ -42,13 +48,14 @@ class DeprecationSerializerMixin:
             view = self.context.get('view')
             if view is not None:
                 existing = getattr(view, '_deprecated_field_warnings', [])
-                seen = {w['field'] for w in existing}
-                for w in warnings:
-                    if w['field'] not in seen:
-                        existing.append(w)
+                seen = {warning['field'] for warning in existing}
+                for warning in warnings:
+                    if warning['field'] not in seen:
+                        existing.append(warning)
                 view._deprecated_field_warnings = existing
 
     def run_validation(self, data):
+        """Collect deprecation warnings from this payload before normal DRF validation."""
         self._check_deprecated_fields(data)
         return super().run_validation(data)
 
@@ -60,6 +67,7 @@ def mark_deprecated(response, detail: str) -> None:
         X-API-Deprecated: true
         X-API-Deprecated-Detail: <detail sentence(s)>
     """
+    detail = detail.strip() or str(DEFAULT_DEPRECATION_MESSAGE)
     if not detail.endswith('.'):
         detail = detail + '.'
 
@@ -93,6 +101,7 @@ class DeprecatedFieldsViewMixin:
     """
 
     def finalize_response(self, request, response, *args, **kwargs):
+        """Add response headers for deprecated fields detected during serializer validation."""
         response = super().finalize_response(request, response, *args, **kwargs)
         for warning in getattr(self, '_deprecated_field_warnings', []):
             mark_deprecated(response, detail=warning['message'])
@@ -114,14 +123,12 @@ class DeprecatedQueryParamsViewMixin:
     deprecated_query_params = {}
 
     def finalize_response(self, request, response, *args, **kwargs):
+        """Add response headers for deprecated query parameters present in the request."""
         response = super().finalize_response(request, response, *args, **kwargs)
         for param, detail in self.deprecated_query_params.items():
             if param in request.query_params:
                 mark_deprecated(response, detail=detail)
         return response
-
-
-_DRF_ACTION_METHODS = ('list', 'create', 'retrieve', 'update', 'partial_update', 'destroy')
 
 
 def _apply_to_class(cls, detail):
@@ -130,6 +137,7 @@ def _apply_to_class(cls, detail):
     """
     cls.deprecation = {"detail": detail}
 
+    # Load schema support only when applying @deprecated, not when importing the basic deprecation helpers.
     from ansible_base.lib.utils.schema import extend_schema_if_available
 
     schema_decorator = extend_schema_if_available(deprecated=True)
@@ -140,6 +148,7 @@ def _apply_to_class(cls, detail):
             # doesn't poison the shared parent-class method for every other viewset.
             @functools.wraps(method)
             def _wrapper(*args, _orig=method, **kwargs):
+                """Delegate to the original action without modifying the shared method."""
                 return _orig(*args, **kwargs)
 
             setattr(cls, method_name, schema_decorator(_wrapper))
@@ -151,10 +160,12 @@ def _apply_to_method(method, detail):
     """
     Apply deprecation metadata to a single view method.
     """
+    # Load schema support only when applying @deprecated, not when importing the basic deprecation helpers.
     from ansible_base.lib.utils.schema import extend_schema_if_available
 
     @functools.wraps(method)
     def wrapper(self, request, *args, **kwargs):
+        """Call the view method and add deprecation headers to its response."""
         response = method(self, request, *args, **kwargs)
         mark_deprecated(response, detail)
         return response
@@ -172,6 +183,7 @@ def deprecated(detail: str):
     """
 
     def decorator(target):
+        """Apply class- or method-level deprecation handling to the target."""
         if isinstance(target, type):
             return _apply_to_class(target, detail)
         return _apply_to_method(target, detail)

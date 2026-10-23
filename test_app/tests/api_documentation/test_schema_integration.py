@@ -13,6 +13,7 @@ import pytest
 from django.conf import settings
 from django.urls import path as url_path
 from drf_spectacular.generators import SchemaGenerator
+from drf_spectacular.plumbing import ResolvedComponent
 from rest_framework import serializers
 from rest_framework.generics import GenericAPIView
 from rest_framework.response import Response
@@ -241,6 +242,7 @@ def test_role_user_assignment_create_schema(admin_api_client):
 
 
 def test_deprecated_operation_schema_includes_deprecation_detail():
+    """Only the deprecated operation receives a schema deprecation flag and detail."""
     detail = 'This operation is deprecated. Use the replacement instead.'
 
     class OperationSerializer(serializers.Serializer):
@@ -251,12 +253,14 @@ def test_deprecated_operation_schema_includes_deprecation_detail():
 
         @deprecated(detail=detail)
         def get(self, request):
+            """Return a response from the deprecated operation."""
             return Response({'value': 'deprecated'})
 
     class CurrentOperationView(GenericAPIView):
         serializer_class = OperationSerializer
 
         def get(self, request):
+            """Return a response from the current operation."""
             return Response({'value': 'current'})
 
     generator = SchemaGenerator(
@@ -276,7 +280,9 @@ def test_deprecated_operation_schema_includes_deprecation_detail():
     assert 'x-api-deprecated-detail' not in current_operation
 
 
-def test_deprecated_field_detail_hook_supports_split_request_components(monkeypatch):
+@pytest.mark.parametrize('use_serializer_class', [False, True])
+def test_deprecated_field_detail_hook_supports_split_request_components(monkeypatch, use_serializer_class):
+    """Registered component variants receive details only for properties already marked deprecated."""
     detail = 'legacy_name is deprecated. Use current_name instead.'
     monkeypatch.setattr(deprecation_utils, '_DEPRECATED_FIELD_REGISTRY', {})
 
@@ -289,7 +295,7 @@ def test_deprecated_field_detail_hook_supports_split_request_components(monkeypa
             'legacy_alias': 'legacy_alias is deprecated.',
         }
 
-    component_names = ('Example', 'ExampleRequest', 'PatchedExampleRequest', 'Unrelated')
+    component_names = ('Example', 'PatchedExample', 'ExampleRequest', 'PatchedExampleRequest', 'Unrelated')
     result = {
         'components': {
             'schemas': {
@@ -305,7 +311,18 @@ def test_deprecated_field_detail_hook_supports_split_request_components(monkeypa
         }
     }
 
-    returned = schema_utils.deprecated_fields_detail_hook(result, None)
+    generator = SchemaGenerator(patterns=[])
+    for component_name in component_names[:-1]:
+        generator.registry.register(
+            ResolvedComponent(
+                name=component_name,
+                type=ResolvedComponent.SCHEMA,
+                schema=result['components']['schemas'][component_name],
+                object=ExampleSerializer if use_serializer_class else ExampleSerializer(),
+            )
+        )
+
+    returned = schema_utils.deprecated_fields_detail_hook(result=result, generator=generator)
 
     assert returned is result
     for component_name in component_names[:-1]:

@@ -109,6 +109,7 @@ def test_deprecation_default_headers_use_active_language(mock_request, language,
     default_message = 'This resource has been deprecated and will be removed in a future release.'
 
     def translate(message):
+        """Simulate translation of the default deprecation message in the active language."""
         if message == default_message and translation.get_language() == language:
             return translated_message
         return message
@@ -122,6 +123,7 @@ def test_deprecation_default_headers_use_active_language(mock_request, language,
 
 
 def test_ansible_base_view_uses_custom_deprecation_detail(view_with_headers, mock_request):
+    """Explicit metadata supplies the custom detail without emitting the legacy Warning header."""
     view_with_headers.deprecation = {'detail': 'Use the replacement endpoint instead.'}
     response = view_with_headers.finalize_response(mock_request, HttpResponseBase())
 
