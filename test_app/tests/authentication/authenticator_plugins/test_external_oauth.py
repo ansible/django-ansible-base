@@ -3,6 +3,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from django.test import override_settings
+from rest_framework.serializers import ValidationError
+
 from ansible_base.authentication.authenticator_plugins.external_oauth import (
     AuthenticatorPlugin,
     ExternalOAuthConfiguration,
@@ -14,8 +17,6 @@ from ansible_base.authentication.authenticator_plugins.external_oauth import (
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin, get_authenticator_plugins
 from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.utils.response import get_relative_url
-from django.test import override_settings
-from rest_framework.serializers import ValidationError
 
 PLUGIN_TYPE = "ansible_base.authentication.authenticator_plugins.external_oauth"
 DISCOVERY_MODULE = "ansible_base.authentication.authenticator_plugins.external_oauth"

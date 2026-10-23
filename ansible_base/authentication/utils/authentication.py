@@ -2,10 +2,6 @@ import importlib
 import logging
 from typing import List, Optional, Tuple, Union
 
-from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_class
-from ansible_base.authentication.models import Authenticator, AuthenticatorUser
-from ansible_base.authentication.social_auth import AuthenticatorStorage, AuthenticatorStrategy
-from ansible_base.authentication.utils.user import normalize_and_get_email
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractUser
@@ -13,6 +9,11 @@ from django.db.models import Q
 from django.utils.translation import gettext as _
 from social_core.exceptions import AuthException
 from social_core.pipeline.user import get_username
+
+from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_class
+from ansible_base.authentication.models import Authenticator, AuthenticatorUser
+from ansible_base.authentication.social_auth import AuthenticatorStorage, AuthenticatorStrategy
+from ansible_base.authentication.utils.user import normalize_and_get_email
 
 logger = logging.getLogger('ansible_base.authentication.utils.authentication')
 

@@ -6,12 +6,13 @@ from unittest.mock import Mock, patch
 import jwt
 import pytest
 import requests
-from ansible_base.authentication.authenticator_plugins.external_oauth import AuthenticatorPlugin
-from ansible_base.authentication.bearer_authentication import BearerTokenValidationError
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from django.conf import settings
 from django.test import override_settings
 from urllib3.exceptions import InsecureRequestWarning
+
+from ansible_base.authentication.authenticator_plugins.external_oauth import AuthenticatorPlugin
+from ansible_base.authentication.bearer_authentication import BearerTokenValidationError
 
 
 def _claims(configuration, **overrides):
