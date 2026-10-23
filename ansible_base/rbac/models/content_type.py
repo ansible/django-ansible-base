@@ -8,7 +8,12 @@ from django.db.models import Max
 from django.db.models.options import Options
 from django.utils.translation import gettext_lazy as _
 
-from ..remote import RemoteObject, get_local_resource_prefix, get_resource_prefix
+from ..remote import (
+    RemoteObject,
+    get_local_resource_prefix,
+    get_local_resource_services,
+    get_resource_prefix,
+)
 
 
 class DABContentTypeManager(django_models.Manager[django_models.Model]):
@@ -40,7 +45,7 @@ class DABContentTypeManager(django_models.Manager[django_models.Model]):
     def _get_from_cache(self, opts: Options, service: str) -> django_models.Model:
         """Return a cached ``DABContentType`` for ``opts`` and ``service``."""
         key = (service, opts.app_label, opts.model_name)
-        return self._cache[self.db][key]
+        return self._cache[self.db][key]  # type: ignore[index]
 
     def _get_opts(self, model: Union[Type[django_models.Model], django_models.Model], for_concrete_model: bool) -> Options:
         """Return the ``Options`` object for ``model``."""
@@ -109,9 +114,9 @@ class DABContentTypeManager(django_models.Manager[django_models.Model]):
                 ct = self._get_from_cache(opts, model_service)
             except KeyError:
                 needed_models[(model_service, opts.app_label)].add(opts.model_name)
-                needed_opts[(model_service, opts.app_label, opts.model_name)].append(model)
+                needed_opts[(model_service, opts.app_label, opts.model_name)].append(model)  # type: ignore[index]
             else:
-                results[model] = ct
+                results[model] = ct  # type: ignore[index]
 
         if needed_opts:
             condition = django_models.Q(
@@ -283,7 +288,7 @@ class DABContentType(django_models.Model):
 
         So it could return a Django model class or a python class.
         """
-        if self.service not in ("shared", get_local_resource_prefix()):
+        if self.is_remote:
             from ..remote import get_remote_standin_class
 
             return get_remote_standin_class(self)
@@ -331,4 +336,4 @@ class DABContentType(django_models.Model):
 
     @property
     def is_remote(self):
-        return self.service not in ('shared', get_local_resource_prefix())
+        return self.service not in get_local_resource_services()

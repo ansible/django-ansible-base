@@ -6,6 +6,7 @@ from django.conf import settings
 from django.test.utils import override_settings
 from onelogin.saml2.settings import OneLogin_Saml2_Settings
 from social_core.backends.saml import SAMLAuth, SAMLIdentityProvider
+from social_core.exceptions import AuthMissingParameter
 
 from ansible_base.authentication.authenticator_plugins.saml import AuthenticatorPlugin
 from ansible_base.authentication.session import SessionAuthentication
@@ -37,7 +38,7 @@ def get_valid_saml_security_settings(saml_configuration):
 
     saml_auth = SAMLAuth(AuthenticatorConfigTestStrategy(AuthenticatorStorage(), additional_settings=attrs))
     saml_auth.redirect_uri = attrs['CALLBACK_URL']
-    idp = SAMLIdentityProvider(idp_string, **attrs['ENABLED_IDPS'][idp_string])
+    idp = SAMLIdentityProvider(saml_auth, idp_string, **attrs['ENABLED_IDPS'][idp_string])
     config = saml_auth.generate_saml_config(idp=idp)
 
     settings = OneLogin_Saml2_Settings(settings=config)
@@ -61,6 +62,131 @@ def test_saml_auth_successful(authenticate, unauthenticated_api_client, saml_aut
     url = get_relative_url(authenticated_test_page)
     response = client.get(url)
     assert response.status_code == 200
+
+
+def test_saml_missing_configured_email_is_optional():
+    configuration = {
+        "ENABLED_IDPS": {
+            idp_string: {
+                "attr_email": "email",
+                "attr_username": "username",
+                "attr_user_permanent_id": "name_id",
+            }
+        }
+    }
+    plugin = AuthenticatorPlugin(database_instance=SimpleNamespace(configuration=configuration, slug="test-saml"))
+
+    details = plugin.get_user_details(
+        {
+            "idp_name": idp_string,
+            "attributes": {"username": "same-user", "name_id": "saml-user"},
+        }
+    )
+
+    assert details["username"] == "same-user"
+    assert details["email"] is None
+
+
+def test_saml_configured_email_is_returned_when_present():
+    configuration = {
+        "ENABLED_IDPS": {
+            idp_string: {
+                "attr_email": "email",
+                "attr_username": "username",
+                "attr_user_permanent_id": "name_id",
+            }
+        }
+    }
+    plugin = AuthenticatorPlugin(database_instance=SimpleNamespace(configuration=configuration, slug="test-saml"))
+
+    details = plugin.get_user_details(
+        {
+            "idp_name": idp_string,
+            "attributes": {"username": "same-user", "name_id": "saml-user", "email": "user@example.com"},
+        }
+    )
+
+    assert details["email"] == "user@example.com"
+
+
+def test_saml_configured_custom_email_mapping_is_preserved():
+    configuration = {
+        "ENABLED_IDPS": {
+            idp_string: {
+                "attr_email": "mail_alias",
+                "attr_username": "username",
+                "attr_user_permanent_id": "name_id",
+            }
+        }
+    }
+    plugin = AuthenticatorPlugin(database_instance=SimpleNamespace(configuration=configuration, slug="test-saml"))
+
+    details = plugin.get_user_details(
+        {
+            "idp_name": idp_string,
+            "attributes": {
+                "username": ["same-user"],
+                "name_id": "saml-user",
+                "mail_alias": ["mapped@example.com"],
+                "email": ["default@example.com"],
+            },
+        }
+    )
+
+    assert details["email"] == "mapped@example.com"
+
+
+def test_saml_missing_custom_email_mapping_does_not_use_default_email_fields():
+    """
+    When the configured attr_email claim is absent, email must stay None even if
+    common default email attributes (email/mail) are present in the assertion.
+    """
+    configuration = {
+        "ENABLED_IDPS": {
+            idp_string: {
+                "attr_email": "mail_alias",
+                "attr_username": "username",
+                "attr_user_permanent_id": "name_id",
+            }
+        }
+    }
+    plugin = AuthenticatorPlugin(database_instance=SimpleNamespace(configuration=configuration, slug="test-saml"))
+
+    details = plugin.get_user_details(
+        {
+            "idp_name": idp_string,
+            "attributes": {
+                "username": ["same-user"],
+                "name_id": "saml-user",
+                "email": ["default@example.com"],
+                "mail": ["mail@example.com"],
+            },
+        }
+    )
+
+    assert details["username"] == "same-user"
+    assert details["email"] is None
+
+
+def test_saml_missing_configured_non_email_attribute_still_fails():
+    configuration = {
+        "ENABLED_IDPS": {
+            idp_string: {
+                "attr_email": "email",
+                "attr_username": "username",
+                "attr_user_permanent_id": "name_id",
+            }
+        }
+    }
+    plugin = AuthenticatorPlugin(database_instance=SimpleNamespace(configuration=configuration, slug="test-saml"))
+
+    with pytest.raises(AuthMissingParameter, match=r"Missing needed parameter username \(configured by attr_username\)"):
+        plugin.get_user_details(
+            {
+                "idp_name": idp_string,
+                "attributes": {"name_id": "saml-user"},
+            }
+        )
 
 
 @pytest.mark.parametrize(
@@ -320,8 +446,8 @@ def test_extra_data(mockedsuper):
     rDict["attributes"][settings.ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG] = "True"
     rDict["attributes"]["Group"] = ["mygroup"]
     social = SocialUser()
-    ap.extra_data(None, None, response=rDict, social=social)
-    assert mockedsuper.called
+    ap.extra_data(None, None, rDict, {}, {"social": social})
+    mockedsuper.assert_called_once_with(None, None, rDict, {}, {"social": social})
     assert settings.ANSIBLE_BASE_SOCIAL_AUDITOR_FLAG in social.extra_data
     assert "mygroup" in rDict["Group"]
 
@@ -426,7 +552,7 @@ def test_extra_data_default_attrs(idp_fields, expected_results):
     }
     au = AuthenticatorUser()
     with mock.patch('social_core.backends.saml.SAMLAuth.extra_data', return_value={}):
-        results = ap.extra_data(None, 'IdP:gateway_admin', response, **{'social': au})
+        results = ap.extra_data(None, 'IdP:gateway_admin', response, {}, {'social': au})
         assert results == expected_results
 
 
@@ -465,7 +591,7 @@ def test_extra_data_no_group_claims_logging(caplog):
     # Set logging level to DEBUG to capture the debug message
     with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.authenticator_plugins.saml'):
         with mock.patch('social_core.backends.saml.SAMLAuth.extra_data', return_value={}):
-            results = ap.extra_data(None, 'IdP:gateway_admin', response, **{'social': au})
+            results = ap.extra_data(None, 'IdP:gateway_admin', response, {}, {'social': au})
 
     # Verify the log message was captured
     assert "Unable to get any group claims from the SAML response" in caplog.text
@@ -536,6 +662,27 @@ def test_saml_callback_url_is_acs_url(rsa_keypair_with_cert):
     authenticator_object = get_authenticator_plugin(authenticator.type)
     authenticator_object.update_if_needed(authenticator)
     assert authenticator_object.generate_saml_config()['sp']['assertionConsumerService']['url'] == callback_url
+
+
+def test_saml_get_claims_attrs_extracts_attributes_dict():
+    """SAMLAuthenticatorPlugin.get_claims_attrs() returns the inner 'attributes' dict."""
+    from ansible_base.authentication.authenticator_plugins.saml import AuthenticatorPlugin
+
+    plugin = AuthenticatorPlugin.__new__(AuthenticatorPlugin)
+    saml_response = {
+        "attributes": {"is_superuser": ["true"], "email": ["user@example.com"]},
+        "other_key": "ignored",
+    }
+    assert plugin.get_claims_attrs(saml_response) == saml_response["attributes"]
+
+
+def test_saml_get_claims_attrs_falls_back_to_response_when_no_attributes():
+    """SAMLAuthenticatorPlugin.get_claims_attrs() falls back to full response when no 'attributes' key."""
+    from ansible_base.authentication.authenticator_plugins.saml import AuthenticatorPlugin
+
+    plugin = AuthenticatorPlugin.__new__(AuthenticatorPlugin)
+    response_no_attrs = {"username": "alice", "email": "alice@example.com"}
+    assert plugin.get_claims_attrs(response_no_attrs) is response_no_attrs
 
 
 @pytest.mark.django_db

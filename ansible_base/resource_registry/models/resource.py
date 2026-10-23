@@ -88,6 +88,13 @@ class Resource(models.Model):
     # human readable name for the resource
     name = models.CharField(max_length=512, null=True, help_text=_("The name of this resource."))
 
+    @classmethod
+    def from_db(cls, db, field_names, values):
+        instance = super().from_db(db, field_names, values)
+        if 'ansible_id' in field_names:
+            instance._loaded_ansible_id = instance.ansible_id
+        return instance
+
     is_partially_migrated = models.BooleanField(
         default=False,
         help_text=_("A flag indicating that the resource has been copied into the resource server, but the service_id hasn't been updated yet."),
@@ -105,9 +112,12 @@ class Resource(models.Model):
         return resource_type_cache(self.content_type_id)
 
     class Meta:
-        unique_together = ('content_type', 'object_id')
-        indexes = [
-            models.Index(fields=["content_type", "object_id"]),
+        constraints = [
+            models.UniqueConstraint(
+                fields=["content_type", "object_id"],
+                include=["ansible_id"],
+                name="unique_resource_content_type_object_id",
+            ),
         ]
 
     def update_from_content_object(self):
@@ -201,7 +211,7 @@ class Resource(models.Model):
 
             content_object: "ResourceTypeProcessor" = processor(self.content_object)
             with no_reverse_sync():
-                (changed_data, _) = content_object.save(resource_data)
+                changed_data, _ = content_object.save(resource_data)
 
         return changed_data or changed_metadata
 

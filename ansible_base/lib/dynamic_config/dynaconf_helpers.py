@@ -19,6 +19,19 @@ from dynaconf.utils.functional import empty
 from ansible_base.lib.dynamic_config.settings_logic import get_mergeable_dab_settings
 
 
+def _dynaconf_post_hooks(settings):
+    # dynaconf 3.3.0 moved _post_hooks to __core__.config.post_hooks
+    if hasattr(settings, '__core__'):  # pragma: no cover
+        return settings.__core__.config.post_hooks
+    return settings._post_hooks
+
+
+def _dynaconf_loaded_files(settings):
+    if hasattr(settings, '__core__'):  # pragma: no cover
+        return settings.__core__.config.loaded_files
+    return settings._loaded_files
+
+
 def factory(
     module_name: str,  # name of the module that calls this function
     app_name: str,  # main app name to be used to name env_switcher and envvar_prefix
@@ -285,15 +298,15 @@ def load_python_file_with_injected_context(*paths: str, settings: Dynaconf, run_
                             loader_identifier=f"python_file_with_injected_scope:{file_path}",
                         )
                 elif key.startswith("_dynaconf_hook") and callable(value):
-                    settings._post_hooks.append(value)
+                    _dynaconf_post_hooks(settings).append(value)
 
-            settings._loaded_files.append(file_path)
+            _dynaconf_loaded_files(settings).append(file_path)
 
     if run_hooks:
         execute_instance_hooks(
             settings,
             "post",
-            [_hook for _hook in settings._post_hooks if getattr(_hook, "_dynaconf_hook", False) is True and not getattr(_hook, "_called", False)],
+            [_hook for _hook in _dynaconf_post_hooks(settings) if getattr(_hook, "_dynaconf_hook", False) is True and not getattr(_hook, "_called", False)],
         )
 
 

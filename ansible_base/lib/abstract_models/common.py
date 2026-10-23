@@ -196,11 +196,24 @@ class AbstractCommonModel(models.Model):
 
     @classmethod
     def from_db(self, db, field_names, values):
+        from cryptography.fernet import InvalidToken
+
         instance = super().from_db(db, field_names, values)
 
         for field in self.encrypted_fields:
             field_value = getattr(instance, field, None)
-            setattr(instance, field, ansible_encryption.decrypt_string(field_value))
+            try:
+                setattr(instance, field, ansible_encryption.decrypt_string(field_value))
+            except InvalidToken:
+                logger.critical(
+                    "Failed to decrypt field %r on %s (pk=%r): the SECRET_KEY may have changed. "
+                    "Restore the original SECRET_KEY that encrypted this database, then restart. "
+                    "Re-raising to prevent the model from loading with corrupted data.",
+                    field,
+                    self.__name__,
+                    getattr(instance, 'pk', None),
+                )
+                raise
 
         return instance
 
@@ -209,16 +222,24 @@ class AbstractCommonModel(models.Model):
         for field in self._meta.fields:
             if field.name in self.ignore_relations:
                 continue  # This check is beneficial before getattr to prevent some error cases
-            if isinstance(field, models.ForeignObject) and getattr(self, field.name):
-                # ignore relations on inherited django models
-                if field.name.endswith("_ptr"):
-                    continue
-                if hasattr(getattr(self, field.name), 'summary_fields'):
-                    response[field.name] = getattr(self, field.name).summary_fields()
+            # Skip non-FK fields and inherited model pointers (e.g. user_ptr)
+            if not isinstance(field, models.ForeignObject) or field.name.endswith("_ptr"):
+                continue
+            # Check the raw FK id to skip null FKs without loading the related object
+            if getattr(self, field.attname, None) is None:
+                continue
+            related_obj = getattr(self, field.name)
+            if related_obj and hasattr(related_obj, 'summary_fields'):
+                response[field.name] = related_obj.summary_fields()
         return response
 
     def related_fields(self, request):
         response = {}
+
+        namespace = None
+        if request and hasattr(request, 'resolver_match') and request.resolver_match:
+            namespace = request.resolver_match.namespace
+
         # See docs/lib/default_models.md
         # Automatically add all of the ForeignKeys for the model as related fields
         for field in self._meta.concrete_fields:
@@ -228,9 +249,21 @@ class AbstractCommonModel(models.Model):
             if not isinstance(field, models.ForeignKey) or field.name.endswith("_ptr"):
                 continue
 
-            if obj := getattr(self, field.name):
-                if related_url := get_url_for_object(obj):
-                    response[field.name] = related_url
+            # Use the raw FK id (e.g. modified_by_id) to build the URL without
+            # loading the related object from the database.
+            fk_id = getattr(self, field.attname)
+            if fk_id is not None:
+                related_model = field.related_model
+                basename = get_cls_view_basename(related_model)
+                view_name = f'{basename}-detail'
+                try:
+                    response[field.name] = get_relative_url(view_name, kwargs={'pk': fk_id})
+                except NoReverseMatch:
+                    if namespace:
+                        try:
+                            response[field.name] = get_relative_url(f'{namespace}:{view_name}', kwargs={'pk': fk_id})
+                        except NoReverseMatch:
+                            pass
 
         basename = get_cls_view_basename(self.__class__)
 
@@ -245,7 +278,13 @@ class AbstractCommonModel(models.Model):
             try:
                 response[field_name] = get_relative_url(reverse_view, kwargs={'pk': self.pk})
             except NoReverseMatch:
-                missing_relations.append(reverse_view)
+                if namespace:
+                    try:
+                        response[field_name] = get_relative_url(f'{namespace}:{reverse_view}', kwargs={'pk': self.pk})
+                    except NoReverseMatch:
+                        missing_relations.append(reverse_view)
+                else:
+                    missing_relations.append(reverse_view)
 
         if missing_relations and settings.DEBUG:
             logger.error(f"Wanted to add {', '.join(missing_relations)} for {self.__class__} but view was missing")

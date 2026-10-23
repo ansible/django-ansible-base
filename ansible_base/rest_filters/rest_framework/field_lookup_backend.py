@@ -199,7 +199,7 @@ class FieldLookupBackend(BaseFilterBackend):
                         search_filter_relation = 'AND'
                         values = reduce(lambda list1, list2: list1 + list2, [i.split(',') for i in values])
                     for value in values:
-                        search_value, new_keys, _ = self.value_to_python(queryset.model, key, force_str(value))
+                        search_value, new_keys, _distinct = self.value_to_python(queryset.model, key, force_str(value))
                         assert isinstance(new_keys, list)
                         search_filters[search_value] = new_keys
                     # by definition, search *only* joins across relations,
@@ -250,9 +250,15 @@ class FieldLookupBackend(BaseFilterBackend):
                     else:
                         args.append(Q(**{k: v}))
                 for role_name in role_filters:
-                    if not hasattr(queryset.model, 'accessible_pk_qs'):
+                    if hasattr(queryset.model, 'access_ids_qs'):
+                        try:
+                            args.append(Q(pk__in=queryset.model.access_ids_qs(request.user, role_name)))
+                        except RuntimeError as e:
+                            raise ParseError(str(e))
+                    elif hasattr(queryset.model, 'accessible_pk_qs'):
+                        args.append(Q(pk__in=queryset.model.accessible_pk_qs(request.user, role_name)))
+                    else:
                         raise ParseError(_('Cannot apply role_level filter to this list because its model does not use roles for access control.'))
-                    args.append(Q(pk__in=queryset.model.accessible_pk_qs(request.user, role_name)))
                 if or_filters:
                     q = Q()
                     for n, k, v in or_filters:

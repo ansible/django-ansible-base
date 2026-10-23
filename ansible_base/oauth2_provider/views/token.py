@@ -1,9 +1,12 @@
 import hashlib
 from datetime import timedelta
 
+from django.conf import settings
+from django.db.models import Q
 from django.utils.timezone import now
 from oauth2_provider import views as oauth_views
 from oauthlib import oauth2
+from rest_framework.permissions import SAFE_METHODS
 from rest_framework.viewsets import ModelViewSet
 
 from ansible_base.lib.utils.hashing import hash_string
@@ -75,3 +78,19 @@ class OAuth2TokenViewSet(ModelViewSet, AnsibleBaseDjangoAppApiView):
     queryset = OAuth2AccessToken.objects.all()
     serializer_class = OAuth2TokenSerializer
     permission_classes = [OAuth2ScopePermission, OAuth2TokenPermission]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        if user.is_superuser:
+            return qs
+        if self.request.method in SAFE_METHODS and getattr(user, 'is_platform_auditor', False):
+            return qs
+        q = Q(user=user)
+        if 'ansible_base.rbac' in settings.INSTALLED_APPS:
+            from ansible_base.lib.utils.auth import get_organization_model
+
+            org_cls = get_organization_model()
+            admin_org_ids = org_cls.access_ids_qs(user, 'change')
+            q |= Q(application__organization_id__in=admin_org_ids)
+        return qs.filter(q)

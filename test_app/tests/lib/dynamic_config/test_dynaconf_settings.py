@@ -9,6 +9,9 @@ from ansible_base.lib.dynamic_config import (
     toggle_feature_flags,
     validate,
 )
+from ansible_base.lib.dynamic_config.dynaconf_helpers import (
+    _dynaconf_loaded_files,
+)
 
 
 def test_swagger_disabled():
@@ -74,6 +77,11 @@ def test_filtering():
     assert 'something' in settings['REST_FRAMEWORK']
 
 
+def test_default_metadata_class():
+    settings = factory("", "TEST", INSTALLED_APPS=[])
+    assert settings['REST_FRAMEWORK']['DEFAULT_METADATA_CLASS'] == 'ansible_base.lib.metadata.CleanTextMetadata'
+
+
 def test_rbac_required_settings():
     settings = factory("", "TEST", INSTALLED_APPS=['ansible_base.rbac'])
     rbac_expected_settings = [
@@ -102,8 +110,10 @@ def test_rbac_required_settings():
         'MANAGE_ORGANIZATION_AUTH',
         'ANSIBLE_BASE_RBAC_MODEL_REGISTRY',
         'ORG_ADMINS_CAN_SEE_ALL_USERS',
+        'ALLOW_USER_USERNAME_SELF_EDIT',
     ]
     assert set(rbac_expected_settings) == set(settings.keys() & rbac_expected_settings)
+    assert settings['ALLOW_USER_USERNAME_SELF_EDIT'] is False
 
 
 def test_resource_registry_required_settings():
@@ -244,7 +254,7 @@ def test_load_python_file_with_injected_scope(tmp_path):
     settings = factory("", "TEST", settings_files=[str(defaults)])
     load_python_file_with_injected_context(str(extra_file), settings=settings)
     assert settings.COLORS == ['red', 'green', 'blue']
-    assert settings._loaded_files == [str(defaults), str(extra_file)]
+    assert _dynaconf_loaded_files(settings) == [str(defaults), str(extra_file)]
 
 
 def test_toggle_feature_flags():

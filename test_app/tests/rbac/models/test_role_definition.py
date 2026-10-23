@@ -7,7 +7,7 @@ from rest_framework.exceptions import ValidationError
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.models import DABContentType, DABPermission, ObjectRole, RoleDefinition, RoleEvaluation
 from ansible_base.rbac.validators import validate_permissions_for_model
-from test_app.models import ExampleEvent, Organization
+from test_app.models import ExampleEvent, Inventory, Organization, Team
 
 
 @pytest.mark.django_db
@@ -19,6 +19,63 @@ def test_reuse_by_permission_list():
     # Will ignore name in favor of permissions
     rd2, created = RoleDefinition.objects.get_or_create(permissions=demo_permissions, name='test-deleter-two')
     assert (not created) and (rd2 == rd1)
+
+
+@pytest.mark.django_db
+def test_reuse_by_permission_list_respects_content_type():
+    """A role scoped to one content type must not be reused for another just because
+    permission codenames match (org-cascaded permissions vs. a role scoped
+    directly to the child type)."""
+    permissions = ['view_inventory', 'change_inventory']
+    org_ct = DABContentType.objects.get_for_model(Organization)
+    inv_ct = DABContentType.objects.get_for_model(Inventory)
+
+    org_scoped_rd = RoleDefinition.objects.create_from_permissions(permissions=permissions, name='org-scoped-custom-role', content_type=org_ct)
+
+    inv_scoped_rd, created = RoleDefinition.objects.get_or_create(permissions=permissions, name='Inventory Change Compat', defaults={'content_type': inv_ct})
+
+    assert created
+    assert inv_scoped_rd != org_scoped_rd
+    assert inv_scoped_rd.content_type == inv_ct
+
+
+@pytest.mark.django_db
+def test_get_or_create_respects_content_type_id():
+    """Same as test_reuse_by_permission_list_respects_content_type, but passing
+    content_type_id instead of content_type."""
+    permissions = ['view_inventory', 'change_inventory']
+    org_ct = DABContentType.objects.get_for_model(Organization)
+    inv_ct = DABContentType.objects.get_for_model(Inventory)
+
+    org_scoped_rd = RoleDefinition.objects.create_from_permissions(permissions=permissions, name='org-scoped-custom-role-2', content_type=org_ct)
+
+    inv_scoped_rd, created = RoleDefinition.objects.get_or_create(permissions=permissions, name='Inventory Change Compat 2', content_type_id=inv_ct.id)
+
+    assert created
+    assert inv_scoped_rd != org_scoped_rd
+    assert inv_scoped_rd.content_type == inv_ct
+
+
+@pytest.mark.django_db
+def test_reuse_by_permission_list_allows_correctly_scoped_assignment(organization, team, inventory):
+    """End-to-end version of test_reuse_by_permission_list_respects_content_type: the
+    correctly-scoped role returned by get_or_create() must also be assignable via
+    give_permission() without validate_assignment() rejecting it."""
+    permissions = ['view_inventory', 'change_inventory']
+    org_ct = DABContentType.objects.get_for_model(Organization)
+    inv_ct = DABContentType.objects.get_for_model(Inventory)
+
+    RoleDefinition.objects.create_from_permissions(permissions=permissions, name='org-scoped-custom-role-3', content_type=org_ct)
+
+    inv_scoped_rd, created = RoleDefinition.objects.get_or_create(permissions=permissions, name='Inventory Change Compat 3', defaults={'content_type': inv_ct})
+    assert created
+
+    assignment = inv_scoped_rd.give_permission(team, inventory)
+
+    assert assignment is not None
+    assert assignment.role_definition == inv_scoped_rd
+    assert assignment.object_role.content_type == inv_ct
+    assert inventory in Inventory.access_qs(team, 'change')
 
 
 @pytest.mark.django_db
@@ -106,6 +163,35 @@ def test_change_role_definition_member_permission(organization, inventory, org_t
     assert [u.has_obj_perm(inventory, 'change') for u in (team_user, org_team_user)] == [False, False]
 
     # Adding it back restores them
+    member_rd.permissions.add(member_perm)
+    assert [u.has_obj_perm(inventory, 'change') for u in (team_user, org_team_user)] == [True, True]
+
+
+@pytest.mark.django_db
+def test_clear_role_definition_member_permission(organization, inventory, org_team_member_rd, member_rd, inv_rd):
+    """Clearing all permissions from a RoleDefinition that includes member_team
+    correctly breaks team membership (exercises the post_clear branch in permissions_changed)."""
+    team_user = permission_registry.user_model.objects.create(username='team-user')
+    org_team_user = permission_registry.user_model.objects.create(username='org-team-user')
+    team = permission_registry.team_model.objects.create(name='ateam', organization=organization)
+    org_team = permission_registry.team_model.objects.create(name='org-team', organization=organization)
+    in_org_team = permission_registry.team_model.objects.create(name='child-team', organization=organization)
+
+    inv_rd.give_permission(team, inventory)
+    member_rd.give_permission(team_user, team)
+
+    org_team_member_rd.give_permission(org_team, organization)
+    member_rd.give_permission(org_team_user, org_team)
+    inv_rd.give_permission(in_org_team, inventory)
+
+    assert [u.has_obj_perm(inventory, 'change') for u in (team_user, org_team_user)] == [True, True]
+
+    # Clear all permissions — triggers post_clear instead of post_remove
+    member_rd.permissions.clear()
+    assert [u.has_obj_perm(inventory, 'change') for u in (team_user, org_team_user)] == [False, False]
+
+    # Restoring the permission brings membership back
+    member_perm = permission_registry.permission_qs.get(codename='member_team')
     member_rd.permissions.add(member_perm)
     assert [u.has_obj_perm(inventory, 'change') for u in (team_user, org_team_user)] == [True, True]
 
@@ -219,3 +305,50 @@ def test_create_from_permissions_reuses_existing_name():
 
     # Verify only one RoleDefinition exists with this name
     assert RoleDefinition.objects.filter(name='collision-test-role').count() == 1
+
+
+@pytest.mark.django_db
+class TestAssignableScope:
+    """Covers RoleDefinition.assignable_scope_q(), used by the role_definition
+    list's assignable_scope filter to narrow results to roles usable without
+    a specific target object (system, organization, or team scoped)."""
+
+    @pytest.fixture
+    def system_rd(self):
+        return RoleDefinition.objects.create(name='assignable-scope-system')
+
+    @pytest.fixture
+    def org_rd(self):
+        org_ct = DABContentType.objects.get_for_model(Organization)
+        return RoleDefinition.objects.create_from_permissions(permissions=['view_organization'], name='assignable-scope-org', content_type=org_ct)
+
+    @pytest.fixture
+    def team_rd(self):
+        team_ct = DABContentType.objects.get_for_model(Team)
+        return RoleDefinition.objects.create_from_permissions(permissions=['view_team'], name='assignable-scope-team', content_type=team_ct, managed=True)
+
+    @pytest.fixture
+    def resource_rd(self):
+        inv_ct = DABContentType.objects.get_for_model(Inventory)
+        return RoleDefinition.objects.create_from_permissions(permissions=['view_inventory'], name='assignable-scope-inv', content_type=inv_ct)
+
+    @pytest.mark.parametrize('scopes', [['banana'], ['organization', 'apple'], ['system', 'team', 'orange']])
+    def test_assignable_scope_q_rejects_unknown_scope(self, scopes):
+        with pytest.raises(ValueError):
+            RoleDefinition.assignable_scope_q(scopes)
+
+    def test_assignable_scope_q_all_scopes_matches_expected_roles(self, system_rd, org_rd, team_rd, resource_rd):
+        matched = set(RoleDefinition.objects.filter(RoleDefinition.assignable_scope_q(RoleDefinition.ASSIGNABLE_SCOPES)))
+        assert system_rd in matched
+        assert org_rd in matched
+        assert team_rd in matched
+        assert resource_rd not in matched
+
+    def test_assignable_scope_q_empty_scopes_matches_no_roles(self, system_rd, org_rd, team_rd, resource_rd):
+        assert not RoleDefinition.objects.filter(RoleDefinition.assignable_scope_q([])).exists()
+
+    @pytest.mark.parametrize('scope, expected_fixture', [('system', 'system_rd'), ('organization', 'org_rd'), ('team', 'team_rd')])
+    def test_assignable_scope_q_can_be_narrowed_to_a_single_scope(self, request, system_rd, org_rd, team_rd, scope, expected_fixture):
+        expected = request.getfixturevalue(expected_fixture)
+        matched = set(RoleDefinition.objects.filter(RoleDefinition.assignable_scope_q([scope])))
+        assert matched == {expected}

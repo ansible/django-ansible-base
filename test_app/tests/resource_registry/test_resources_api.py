@@ -3,6 +3,8 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.contenttypes.models import ContentType
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from ansible_base.authentication.models import AuthenticatorUser
 from ansible_base.lib.utils.response import get_relative_url
@@ -476,3 +478,97 @@ def test_user_social_auth_exception(admin_api_client, django_user_model, saml_au
         with expected_log('ansible_base.resource_registry.utils.sso_provider.logger', 'warning', "Failed to parse server url from"):
             resp = admin_api_client.get(url)
             assert resp.status_code == 200
+
+
+@pytest.mark.django_db
+def test_resources_list_excludes_resource_data_by_default(admin_api_client, user):
+    """Test that resource_data is not included in list responses by default."""
+    url = get_relative_url("resource-list")
+    resp = admin_api_client.get(url)
+    assert resp.status_code == 200
+    for result in resp.data["results"]:
+        assert "resource_data" not in result
+
+
+@pytest.mark.django_db
+def test_resources_list_includes_resource_data_with_extra_fields(admin_api_client, user):
+    """Test that resource_data is included when extra_fields=resource_data is passed."""
+    url = get_relative_url("resource-list")
+    resp = admin_api_client.get(url, {"extra_fields": "resource_data"})
+    assert resp.status_code == 200
+    assert resp.data["count"] > 0
+    for result in resp.data["results"]:
+        assert "resource_data" in result
+
+
+@pytest.mark.django_db
+def test_resources_list_ignores_unknown_extra_fields(admin_api_client, user):
+    """Test that unknown extra_fields values are silently ignored."""
+    url = get_relative_url("resource-list")
+    resp = admin_api_client.get(url, {"extra_fields": "nonexistent_field"})
+    assert resp.status_code == 200
+    for result in resp.data["results"]:
+        assert "resource_data" not in result
+        assert "nonexistent_field" not in result
+
+
+@pytest.mark.django_db
+def test_resources_list_extra_fields_mixed_valid_and_invalid(admin_api_client, user):
+    """Test that valid extra_fields are included and unknown ones are ignored."""
+    url = get_relative_url("resource-list")
+    resp = admin_api_client.get(url, {"extra_fields": "resource_data,nonexistent_field"})
+    assert resp.status_code == 200
+    assert resp.data["count"] > 0
+    for result in resp.data["results"]:
+        assert "resource_data" in result
+        assert "nonexistent_field" not in result
+
+
+@pytest.mark.django_db
+def test_resources_list_page_size(admin_api_client, django_user_model):
+    """Test that page_size query parameter is respected."""
+    for i in range(5):
+        django_user_model.objects.create(username=f"pagesizeuser{i}")
+
+    url = get_relative_url("resource-list")
+    resp = admin_api_client.get(url, {"page_size": "3"})
+    assert resp.status_code == 200
+    assert len(resp.data["results"]) == 3
+    assert resp.data["next"] is not None
+
+
+@pytest.mark.django_db
+def test_resources_list_extra_fields_query_count(admin_api_client, django_user_model):
+    """Query count should not scale with the number of resources in the result.
+    ResourceViewSet.queryset only does select_related("content_type__resource_type"),
+    it does not prefetch content_object. When extra_fields=resource_data is passed,
+    ResourceDataField.to_representation() accesses resource.content_object per row,
+    which is a GenericForeignKey lookup that is not batched, so it costs one extra
+    query per resource in the page (N+1)."""
+    url = get_relative_url("resource-list")
+
+    for i in range(2):
+        django_user_model.objects.create(username=f"query-count-resource-user-{i}")
+
+    admin_api_client.get(url, {"extra_fields": "resource_data"})  # warm up
+    with CaptureQueriesContext(connection) as ctx_small:
+        response = admin_api_client.get(url, {"extra_fields": "resource_data"})
+    assert response.status_code == 200
+    queries_small = len(ctx_small.captured_queries)
+
+    for i in range(2, 20):
+        django_user_model.objects.create(username=f"query-count-resource-user-{i}")
+
+    admin_api_client.get(url, {"extra_fields": "resource_data"})  # warm up
+    with CaptureQueriesContext(connection) as ctx_large:
+        response = admin_api_client.get(url, {"extra_fields": "resource_data"})
+    assert response.status_code == 200
+    queries_large = len(ctx_large.captured_queries)
+
+    added_queries = queries_large - queries_small
+    assert added_queries < 5, (
+        f"Adding 18 resources increased query count by {added_queries} "
+        f"({queries_small} -> {queries_large}). "
+        f"ResourceDataField.to_representation() is doing a per-resource content_object query; "
+        f"ResourceViewSet.queryset needs prefetch_related('content_object') when extra_fields=resource_data is requested."
+    )

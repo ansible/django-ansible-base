@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 import jwt
+from crum import impersonate
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.utils import IntegrityError
@@ -177,7 +178,7 @@ class JWTCommonAuth:
                 setattr(self.user, attribute, new_value)
                 user_needs_save = True
         if user_needs_save:
-            with no_reverse_sync():
+            with no_reverse_sync(), impersonate(None):
                 logger.info(f"Saving user {self.user.username}")
                 self.user.save()
 
@@ -295,6 +296,7 @@ class JWTCommonAuth:
 
             # Process the RBAC permissions with the gateway claims
             save_user_claims(self.user, objects, object_roles, global_roles)
+            self._saved_claims = (objects, object_roles, global_roles)
 
             # Update cache with the new hash
             self.cache.cache_claims_hash(user_ansible_id, jwt_claims_hash)

@@ -1,9 +1,13 @@
+import logging
 from pathlib import Path
 from unittest import mock
 from uuid import uuid4
 
 import pytest
-from django.db.utils import Error
+import requests
+from django.db.utils import Error, IntegrityError
+from django.test import override_settings
+from requests import Response
 
 from ansible_base.lib.testing.util import StaticResourceAPIClient
 from ansible_base.lib.utils.response import get_relative_url
@@ -11,15 +15,21 @@ from ansible_base.rbac.models import RoleDefinition
 from ansible_base.resource_registry.models import Resource, ResourceType
 from ansible_base.resource_registry.models.service_identifier import service_id
 from ansible_base.resource_registry.tasks.sync import (
+    DEFAULT_SYNC_JWT_EXPIRATION,
+    DEFAULT_SYNC_PAGE_SIZE,
     AssignmentTuple,
     ManifestItem,
+    RemoteAssignmentFetcher,
     RemoteAssignmentResult,
     ResourceSyncHTTPError,
     SyncExecutor,
     _attempt_create_resource,
     _attempt_update_resource,
+    create_api_client,
+    fetch_manifest,
     get_remote_assignments,
 )
+from test_app.models import User
 
 
 @pytest.fixture(scope="function")
@@ -120,6 +130,124 @@ def test_delete_orphans(static_api_client, stdout, resource_to_delete):
     print(stdout.lines)
     assert 'Deleting 1 orphaned resources' in stdout.lines
     assert any('Deleted 1' in line for line in stdout.lines)
+
+
+def _mock_manifest_response(status_code=200, headers=None, csv_body="ansible_id,resource_hash\n"):
+    """A real requests.Response, matching how StaticResourceAPIClient builds its responses."""
+    response = Response()
+    response.status_code = status_code
+    response.encoding = "utf-8"
+    response._content = csv_body.encode("utf-8")
+    response.headers.update(headers or {})
+    response.raw = mock.Mock()
+    return response
+
+
+def _mock_manifest_api_client(manifest_response):
+    ok_metadata = Response()
+    ok_metadata.status_code = 200
+    api_client = mock.Mock()
+    api_client.get_service_metadata.return_value = ok_metadata
+    api_client.get_resource_type_manifest.return_value = manifest_response
+    return api_client
+
+
+@pytest.mark.django_db
+def test_fetch_manifest_flags_incomplete_on_count_mismatch():
+    """has_incomplete_data must be True when X-Resource-Count disagrees with the actual row count."""
+    csv_body = "ansible_id,resource_hash\n11111111-1111-1111-1111-111111111111,hash1\n"
+    response = _mock_manifest_response(headers={"X-Resource-Count": "5"}, csv_body=csv_body)
+    api_client = _mock_manifest_api_client(response)
+
+    manifest_list, has_incomplete_data = fetch_manifest("shared.user", api_client=api_client)
+
+    assert has_incomplete_data is True
+    assert len(manifest_list) == 1
+
+
+@pytest.mark.django_db
+def test_fetch_manifest_complete_when_count_matches():
+    """has_incomplete_data must be False when X-Resource-Count matches the actual row count."""
+    csv_body = "ansible_id,resource_hash\n11111111-1111-1111-1111-111111111111,hash1\n"
+    response = _mock_manifest_response(headers={"X-Resource-Count": "1"}, csv_body=csv_body)
+    api_client = _mock_manifest_api_client(response)
+
+    manifest_list, has_incomplete_data = fetch_manifest("shared.user", api_client=api_client)
+
+    assert has_incomplete_data is False
+    assert len(manifest_list) == 1
+
+
+@pytest.mark.django_db
+def test_fetch_manifest_handles_malformed_count_header(caplog):
+    """A non-numeric X-Resource-Count must not crash the sync. With no verifiable count, we can't
+    prove the manifest is complete, so it must be treated as incomplete out of caution."""
+    csv_body = "ansible_id,resource_hash\n11111111-1111-1111-1111-111111111111,hash1\n"
+    response = _mock_manifest_response(headers={"X-Resource-Count": "not-a-number"}, csv_body=csv_body)
+    api_client = _mock_manifest_api_client(response)
+    with caplog.at_level(logging.WARNING):
+        manifest_list, has_incomplete_data = fetch_manifest("shared.user", api_client=api_client)
+
+    assert has_incomplete_data is True
+    assert manifest_list == []
+
+
+@pytest.mark.django_db
+def test_fetch_manifest_missing_count_header_is_treated_as_incomplete(caplog):
+    """No X-Resource-Count header at all (e.g. an older gateway during a rolling upgrade) means we have
+    no way to verify completeness, so it must be treated as incomplete rather than assumed safe. Orphan
+    cleanup pausing until gateway is upgraded is an acceptable trade-off against the alternative of
+    silently reverting to the exact blind spot this fix exists to close."""
+    csv_body = "ansible_id,resource_hash\n11111111-1111-1111-1111-111111111111,hash1\n"
+    response = _mock_manifest_response(headers={}, csv_body=csv_body)
+    api_client = _mock_manifest_api_client(response)
+    with caplog.at_level(logging.WARNING):
+        manifest_list, has_incomplete_data = fetch_manifest("shared.user", api_client=api_client)
+
+    assert has_incomplete_data is True
+    assert manifest_list == []
+
+
+@pytest.mark.django_db
+def test_fetch_manifest_handles_interrupted_transfer():
+    """A connection error while reading the manifest body must not crash the sync run."""
+
+    class InterruptedResponse(Response):
+        @property
+        def text(self):
+            raise requests.exceptions.ConnectionError("connection reset mid-transfer")
+
+    response = InterruptedResponse()
+    response.status_code = 200
+    response.raw = mock.Mock()
+    api_client = _mock_manifest_api_client(response)
+
+    manifest_list, has_incomplete_data = fetch_manifest("shared.user", api_client=api_client)
+
+    assert manifest_list == []
+    assert has_incomplete_data is True
+
+
+@pytest.mark.django_db
+def test_sync_skips_orphan_cleanup_but_continues_when_manifest_incomplete(static_api_client, stdout):
+    """When fetch_manifest reports incomplete data, orphan cleanup must be skipped
+    but resource creation/update and retries must still proceed for the rest of the run."""
+    incomplete_manifest = [ManifestItem("97447387-8596-404f-b0d0-6429b04c8d22", str(uuid4()), None)]
+
+    with (
+        mock.patch(
+            "ansible_base.resource_registry.tasks.sync.fetch_manifest",
+            return_value=(incomplete_manifest, True),
+        ),
+        mock.patch.object(SyncExecutor, "_cleanup_orphans") as mock_cleanup,
+        mock.patch.object(SyncExecutor, "_dispatch_sync_process") as mock_dispatch,
+    ):
+        executor = SyncExecutor(api_client=static_api_client, resource_type_names=["shared.user"], stdout=stdout)
+        executor.run()
+
+    mock_cleanup.assert_not_called()
+    mock_dispatch.assert_called_once_with(incomplete_manifest)
+    assert any("is incomplete" in line for line in stdout.lines)
 
 
 @pytest.mark.django_db
@@ -446,7 +574,7 @@ def _mock_response(status_code=200, body=None):
 @pytest.mark.parametrize("failure_mode", ["http_error", "exception"])
 def test_get_remote_assignments_incomplete_on_failure(failure_mode):
     """is_complete must be False on HTTP error or exception mid-pagination."""
-    RoleDefinition.objects.managed.team_member  # ensure the role exists for filtering
+    _ = RoleDefinition.objects.managed.team_member  # ensure the role exists for filtering
     api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
     page1 = _mock_response(
         body={
@@ -543,3 +671,1051 @@ def test_get_remote_assignments_filters_unknown_roles(static_api_client):
     assert len(result.assignments) == 1
     assignment = next(iter(result.assignments))
     assert assignment.role_definition_name == local_role.name
+
+
+@pytest.mark.django_db
+def test_remote_assignment_fetcher_passes_page_size():
+    """page_size should be included in the pagination filters."""
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+    ok = _mock_response()
+    api_client.list_user_assignments.return_value = ok
+    api_client.list_team_assignments.return_value = ok
+
+    RemoteAssignmentFetcher(api_client, page_size=100).fetch()
+
+    api_client.list_user_assignments.assert_called_with(filters={'page': 1, 'page_size': 100})
+    api_client.list_team_assignments.assert_called_with(filters={'page': 1, 'page_size': 100})
+
+
+@pytest.mark.django_db
+def test_remote_assignment_fetcher_passes_service_filter_in_pagination():
+    """service_filter should be included as content_type__service in pagination filters."""
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+    ok = _mock_response()
+    api_client.list_user_assignments.return_value = ok
+    api_client.list_team_assignments.return_value = ok
+
+    RemoteAssignmentFetcher(api_client, page_size=100, service_filter='controller').fetch()
+
+    expected_filters = {'page': 1, 'page_size': 100, 'content_type__service': 'controller'}
+    api_client.list_user_assignments.assert_called_with(filters=expected_filters)
+    api_client.list_team_assignments.assert_called_with(filters=expected_filters)
+
+
+@pytest.mark.django_db
+def test_remote_assignment_fetcher_omits_service_filter_when_none():
+    """When service_filter is None, content_type__service should not be in filters."""
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+    ok = _mock_response()
+    api_client.list_user_assignments.return_value = ok
+    api_client.list_team_assignments.return_value = ok
+
+    RemoteAssignmentFetcher(api_client, page_size=100, service_filter=None).fetch()
+
+    api_client.list_user_assignments.assert_called_with(filters={'page': 1, 'page_size': 100})
+    assert 'content_type__service' not in api_client.list_user_assignments.call_args.kwargs.get(
+        'filters', api_client.list_user_assignments.call_args[1].get('filters', {})
+    )
+
+
+@pytest.mark.django_db
+def test_remote_assignment_fetcher_reads_page_size_from_settings():
+    """When page_size is not provided, it should be read from settings."""
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+    ok = _mock_response()
+    api_client.list_user_assignments.return_value = ok
+    api_client.list_team_assignments.return_value = ok
+
+    with override_settings(RESOURCE_SYNC_PAGE_SIZE=200):
+        fetcher = RemoteAssignmentFetcher(api_client)
+        assert fetcher.page_size == 200
+        fetcher.fetch()
+
+    api_client.list_user_assignments.assert_called_with(filters={'page': 1, 'page_size': 200})
+
+
+@mock.patch('ansible_base.resource_registry.tasks.sync.get_remote_assignments')
+@mock.patch('ansible_base.resource_registry.tasks.sync.get_local_assignments', return_value=set())
+@pytest.mark.django_db
+def test_sync_executor_passes_page_size(mock_local, mock_remote, static_api_client, stdout):
+    """SyncExecutor should forward page_size to get_remote_assignments."""
+    mock_remote.return_value = RemoteAssignmentResult(assignments=set(), is_complete=True)
+    executor = SyncExecutor(api_client=static_api_client, stdout=stdout, page_size=75)
+    executor._sync_assignments()
+    mock_remote.assert_called_once_with(static_api_client, page_size=75, service_filter=None)
+
+
+@mock.patch('ansible_base.resource_registry.tasks.sync.get_remote_assignments')
+@mock.patch('ansible_base.resource_registry.tasks.sync.get_local_assignments', return_value=set())
+@pytest.mark.django_db
+def test_sync_executor_passes_service_filter(mock_local, mock_remote, static_api_client, stdout):
+    """SyncExecutor should forward service_filter to get_remote_assignments and get_local_assignments."""
+    mock_remote.return_value = RemoteAssignmentResult(assignments=set(), is_complete=True)
+    executor = SyncExecutor(api_client=static_api_client, stdout=stdout, service_filter='controller')
+    executor._sync_assignments()
+    mock_remote.assert_called_once_with(static_api_client, page_size=None, service_filter='controller')
+    mock_local.assert_called_once_with(service='controller')
+
+
+@mock.patch("ansible_base.resource_registry.tasks.sync.get_resource_server_client")
+def test_create_api_client_reads_jwt_expiration(mock_get_client):
+    """create_api_client should read RESOURCE_SYNC_JWT_EXPIRATION from settings."""
+    mock_get_client.return_value = mock.Mock()
+
+    with override_settings(
+        RESOURCE_SERVICE_PATH="/api/gateway/v1/service-index/",
+        RESOURCE_SYNC_JWT_EXPIRATION=120,
+    ):
+        create_api_client()
+
+    assert mock_get_client.call_args.kwargs["jwt_expiration"] == 120
+
+
+@pytest.mark.django_db
+def test_remote_assignment_fetcher_default_page_size():
+    """When no setting is configured, page_size should fall back to DEFAULT_SYNC_PAGE_SIZE."""
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+    fetcher = RemoteAssignmentFetcher(api_client)
+    assert fetcher.page_size == DEFAULT_SYNC_PAGE_SIZE
+
+
+@mock.patch("ansible_base.resource_registry.tasks.sync.get_resource_server_client")
+def test_create_api_client_default_jwt_expiration(mock_get_client):
+    """When no setting is configured, jwt_expiration should fall back to DEFAULT_SYNC_JWT_EXPIRATION."""
+    mock_get_client.return_value = mock.Mock()
+
+    with override_settings(RESOURCE_SERVICE_PATH="/api/gateway/v1/service-index/"):
+        create_api_client()
+
+    assert mock_get_client.call_args.kwargs["jwt_expiration"] == DEFAULT_SYNC_JWT_EXPIRATION
+
+
+@pytest.mark.django_db
+def test_remote_assignment_fetcher_sends_page_size_on_all_pages():
+    """page_size should be included in filters on every page, not just the first."""
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+
+    page1 = _mock_response(body={"results": [], "next": "http://example.com/page2"})
+    page2 = _mock_response(body={"results": [], "next": None})
+    api_client.list_user_assignments.side_effect = [page1, page2]
+    api_client.list_team_assignments.return_value = _mock_response()
+
+    RemoteAssignmentFetcher(api_client, page_size=100).fetch()
+
+    user_calls = api_client.list_user_assignments.call_args_list
+    assert len(user_calls) == 2
+    assert user_calls[0] == mock.call(filters={'page': 1, 'page_size': 100})
+    assert user_calls[1] == mock.call(filters={'page': 2, 'page_size': 100})
+
+
+@pytest.mark.django_db
+def test_get_remote_assignments_handles_null_results():
+    """Regression test for AAP-74082: API returning {"results": null} should not crash.
+
+    When the RBAC query returns no matching role assignments (after the optimization
+    in commit 28d9875), the API may return {"results": null} instead of {"results": []}.
+    The code must handle null values gracefully without raising TypeError.
+    """
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+
+    # Mock API responses with null results (reproduces the bug condition)
+    null_response = _mock_response(body={"results": None, "next": None})
+    api_client.list_user_assignments.return_value = null_response
+    api_client.list_team_assignments.return_value = null_response
+
+    result = get_remote_assignments(api_client)
+
+    # Should complete successfully without TypeError
+    assert result.is_complete is True
+    assert len(result.assignments) == 0
+
+
+@pytest.mark.django_db
+def test_remote_assignment_fetcher_multi_page_with_assignments():
+    """Multi-page pagination collects assignments across pages and increments page number."""
+    from ansible_base.rbac.models import RoleDefinition
+
+    RoleDefinition.objects.create(name='MultiPageRole', managed=True)
+
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+    page1 = _mock_response(
+        body={
+            'results': [
+                {'user_ansible_id': 'u1', 'object_ansible_id': 'obj1', 'role_definition': 'MultiPageRole'},
+            ],
+            'next': 'http://example.com/page2',
+        }
+    )
+    page2 = _mock_response(
+        body={
+            'results': [
+                {'user_ansible_id': 'u2', 'object_ansible_id': 'obj2', 'role_definition': 'MultiPageRole'},
+            ],
+            'next': None,
+        }
+    )
+    api_client.list_user_assignments.side_effect = [page1, page2]
+    api_client.list_team_assignments.return_value = _mock_response()
+
+    result = RemoteAssignmentFetcher(api_client, page_size=1).fetch()
+
+    assert result.is_complete is True
+    assert len(result.assignments) == 2
+    user_calls = api_client.list_user_assignments.call_args_list
+    assert len(user_calls) == 2
+    assert user_calls[0] == mock.call(filters={'page': 1, 'page_size': 1})
+    assert user_calls[1] == mock.call(filters={'page': 2, 'page_size': 1})
+
+
+@pytest.mark.django_db
+def test_remote_assignment_fetcher_http_error_returns_incomplete():
+    """Non-200 status code marks result as incomplete with warning."""
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+    api_client.list_user_assignments.return_value = _mock_response(status_code=500)
+
+    result = RemoteAssignmentFetcher(api_client).fetch()
+
+    assert result.is_complete is False
+    assert len(result.assignments) == 0
+
+
+@pytest.mark.django_db
+def test_remote_assignment_fetcher_handles_connection_error():
+    """_paginate exception path: a network error marks the result as incomplete."""
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+    api_client.list_user_assignments.side_effect = ConnectionError("timeout")
+
+    result = RemoteAssignmentFetcher(api_client).fetch()
+
+    assert result.is_complete is False
+    assert len(result.assignments) == 0
+
+
+@pytest.mark.django_db
+def test_remote_assignment_fetcher_uses_object_id_fallback():
+    """When object_ansible_id is absent, object_id is used instead."""
+    from ansible_base.rbac.models import RoleDefinition
+
+    RoleDefinition.objects.create(name='FallbackRole', managed=True)
+
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+    api_client.list_user_assignments.return_value = _mock_response(
+        body={
+            'results': [
+                {'user_ansible_id': 'u1', 'role_definition': 'FallbackRole', 'object_id': '42'},
+            ],
+            'next': None,
+        }
+    )
+    api_client.list_team_assignments.return_value = _mock_response()
+
+    result = RemoteAssignmentFetcher(api_client).fetch()
+
+    assert result.is_complete is True
+    assert len(result.assignments) == 1
+    assignment = next(iter(result.assignments))
+    assert assignment.ansible_id_or_pk == '42'
+
+
+@pytest.mark.django_db
+def test_delete_local_assignment_exception_handling(static_api_client, stdout):
+    """Test that delete_local_assignment logs exceptions with logger.exception."""
+    from ansible_base.resource_registry.tasks.sync import delete_local_assignment
+
+    # Create an assignment tuple that will cause an exception
+    assignment_tuple = AssignmentTuple(
+        actor_ansible_id='nonexistent-user-id',
+        ansible_id_or_pk='1',
+        role_definition_name='Team Member',
+        assignment_type='user',
+    )
+
+    # Should return False and log the exception
+    result = delete_local_assignment(assignment_tuple)
+    assert result is False
+
+
+@pytest.mark.django_db
+def test_create_local_assignment_exception_handling(static_api_client, stdout):
+    """Test that create_local_assignment logs exceptions with logger.exception."""
+    from ansible_base.resource_registry.tasks.sync import create_local_assignment
+
+    # Create an assignment tuple that will cause an exception
+    assignment_tuple = AssignmentTuple(
+        actor_ansible_id='nonexistent-user-id',
+        ansible_id_or_pk='1',
+        role_definition_name='Team Member',
+        assignment_type='user',
+    )
+
+    # Should return False and log the exception
+    result = create_local_assignment(assignment_tuple)
+    assert result is False
+
+
+@pytest.mark.django_db
+def test_attempt_update_resource_conflict_exception(static_api_client, resource_to_update):
+    """Test that _attempt_update_resource conflict handler logs exceptions with logger.exception."""
+    from django.db.utils import IntegrityError
+
+    resource = Resource.objects.get(ansible_id="97447387-8596-404f-b0d0-6429b04c8d22")
+    manifest_item = ManifestItem("97447387-8596-404f-b0d0-6429b04c8d22", str(uuid4()), {})
+    resource_data = {"username": "theceo", "email": "theceo@example.com"}
+
+    # Mock update_resource to raise IntegrityError, then _handle_conflict to raise another error
+    with (
+        mock.patch.object(resource, 'update_resource', side_effect=IntegrityError("Duplicate key")),
+        mock.patch('ansible_base.resource_registry.tasks.sync._handle_conflict', side_effect=Error("Conflict handling failed")),
+    ):
+        result = _attempt_update_resource(manifest_item, resource, resource_data, static_api_client)
+        assert result.status == 'conflict'
+
+
+@pytest.mark.django_db
+def test_attempt_update_resource_error_exception(static_api_client, resource_to_update):
+    """Test that _attempt_update_resource error handler logs exceptions with logger.exception."""
+    resource = Resource.objects.get(ansible_id="97447387-8596-404f-b0d0-6429b04c8d22")
+    manifest_item = ManifestItem("97447387-8596-404f-b0d0-6429b04c8d22", str(uuid4()), {})
+    resource_data = {"username": "theceo", "email": "theceo@example.com"}
+
+    # Mock update_resource to raise Error directly (not IntegrityError)
+    with mock.patch.object(resource, 'update_resource', side_effect=Error("Database error")):
+        result = _attempt_update_resource(manifest_item, resource, resource_data, static_api_client)
+        assert result.status == 'error'
+
+
+@pytest.mark.django_db
+def test_delete_resource_exception_handling():
+    """Test that delete_resource logs exceptions with logger.exception."""
+    from ansible_base.resource_registry.tasks.sync import (
+        ResourceDeletionError,
+        delete_resource,
+    )
+
+    # Create a user (which will auto-create a Resource via signals)
+    user = User.objects.create(username='testuser', email='test@example.com')
+    resource = Resource.get_resource_for_object(user)
+
+    # Mock delete_resource to raise an Error
+    with mock.patch.object(resource, 'delete_resource', side_effect=Error("Delete failed")), pytest.raises(ResourceDeletionError):
+        delete_resource(resource)
+
+
+@override_settings(RESOURCE_JWT_USER_ID='test-user-id', RESOURCE_SERVICE_PATH='/api/v1/', RESOURCE_SYNC_JWT_EXPIRATION=120)
+@mock.patch('ansible_base.resource_registry.tasks.sync.get_resource_server_client')
+def test_create_api_client_with_jwt_user_id(mock_get_client):
+    """Test create_api_client includes jwt_user_id when set in settings."""
+    create_api_client()
+
+    mock_get_client.assert_called_once_with(
+        raise_if_bad_request=False,
+        jwt_user_id='test-user-id',
+        service_path='/api/v1/',
+        jwt_expiration=120,
+    )
+
+
+@override_settings(RESOURCE_SERVICE_PATH='')
+def test_create_api_client_missing_service_path():
+    """Test create_api_client raises ValueError when RESOURCE_SERVICE_PATH is not set."""
+    with pytest.raises(ValueError, match="RESOURCE_SERVICE_PATH is not set"):
+        create_api_client()
+
+
+@pytest.mark.django_db
+def test_get_ansible_id_or_pk_for_organization():
+    """Test get_ansible_id_or_pk returns ansible_id for organization assignments."""
+    from ansible_base.rbac.models import DABContentType, RoleDefinition
+    from ansible_base.resource_registry.tasks.sync import get_ansible_id_or_pk
+    from test_app.models import Organization, User
+
+    # Create an organization with resource
+    org = Organization.objects.create(name='Test Org')
+    org_resource = Resource.get_resource_for_object(org)
+    org_dab_ct = DABContentType.objects.get_for_model(Organization)
+
+    # Create a role definition and assignment
+    role_def = RoleDefinition.objects.create(name='Org Admin', content_type=org_dab_ct, managed=True)
+    user = User.objects.create(username='testuser', email='test@example.com')
+    assignment = role_def.give_permission(user, org)
+
+    # Test get_ansible_id_or_pk
+    result = get_ansible_id_or_pk(assignment)
+    assert result == str(org_resource.ansible_id)
+
+
+@pytest.mark.django_db
+def test_get_ansible_id_or_pk_for_team():
+    """Test get_ansible_id_or_pk returns ansible_id for team assignments."""
+    from ansible_base.rbac.models import DABContentType, RoleDefinition
+    from ansible_base.resource_registry.tasks.sync import get_ansible_id_or_pk
+    from test_app.models import Organization, Team, User
+
+    # Create a team with resource
+    org = Organization.objects.create(name='Test Org')
+    team = Team.objects.create(name='Test Team', organization=org)
+    team_resource = Resource.get_resource_for_object(team)
+    team_dab_ct = DABContentType.objects.get_for_model(Team)
+
+    # Create a role definition and assignment
+    role_def = RoleDefinition.objects.create(name='Team Admin', content_type=team_dab_ct, managed=True)
+    user = User.objects.create(username='testuser', email='test@example.com')
+    assignment = role_def.give_permission(user, team)
+
+    # Test get_ansible_id_or_pk
+    result = get_ansible_id_or_pk(assignment)
+    assert result == str(team_resource.ansible_id)
+
+
+@pytest.mark.django_db
+def test_get_ansible_id_or_pk_raises_for_missing_resource():
+    """Test get_ansible_id_or_pk raises RuntimeError when organization has no Resource."""
+    from ansible_base.rbac.models import DABContentType, RoleDefinition
+    from ansible_base.resource_registry.tasks.sync import get_ansible_id_or_pk
+    from test_app.models import Organization, User
+
+    # Create an organization
+    org = Organization.objects.create(name='Test Org')
+    org_resource = Resource.get_resource_for_object(org)
+    org_dab_ct = DABContentType.objects.get_for_model(Organization)
+    # Delete the resource to simulate missing resource
+    org_resource.delete()
+
+    # Create a role definition and assignment
+    role_def = RoleDefinition.objects.create(name='Org Admin', content_type=org_dab_ct, managed=True)
+    user = User.objects.create(username='testuser', email='test@example.com')
+    assignment = role_def.give_permission(user, org)
+
+    # Test get_ansible_id_or_pk raises
+    with pytest.raises(RuntimeError, match="organization .* was found without an associated Resource"):
+        get_ansible_id_or_pk(assignment)
+
+
+@pytest.mark.django_db
+def test_get_content_object_for_organization():
+    """Test get_content_object retrieves organization by ansible_id."""
+    from ansible_base.rbac.models import DABContentType, RoleDefinition
+    from ansible_base.resource_registry.tasks.sync import get_content_object
+    from test_app.models import Organization
+
+    # Create an organization
+    org = Organization.objects.create(name='Test Org')
+    org_resource = Resource.get_resource_for_object(org)
+
+    # Create role definition
+    role_def = RoleDefinition.objects.create(name='Org Admin', content_type=DABContentType.objects.get_for_model(Organization), managed=True)
+
+    # Create assignment tuple
+    assignment_tuple = AssignmentTuple(
+        actor_ansible_id=str(uuid4()),
+        ansible_id_or_pk=str(org_resource.ansible_id),
+        role_definition_name='Org Admin',
+        assignment_type='user',
+    )
+
+    result = get_content_object(role_def, assignment_tuple)
+    assert result == org
+
+
+@pytest.mark.django_db
+def test_get_content_object_for_team():
+    """Test get_content_object retrieves team by ansible_id."""
+    from ansible_base.rbac.models import DABContentType, RoleDefinition
+    from ansible_base.resource_registry.tasks.sync import get_content_object
+    from test_app.models import Organization, Team
+
+    # Create a team
+    org = Organization.objects.create(name='Test Org')
+    team = Team.objects.create(name='Test Team', organization=org)
+    team_resource = Resource.get_resource_for_object(team)
+
+    # Create role definition
+    role_def = RoleDefinition.objects.create(name='Team Admin', content_type=DABContentType.objects.get_for_model(Team), managed=True)
+
+    # Create assignment tuple
+    assignment_tuple = AssignmentTuple(
+        actor_ansible_id=str(uuid4()),
+        ansible_id_or_pk=str(team_resource.ansible_id),
+        role_definition_name='Team Admin',
+        assignment_type='user',
+    )
+
+    result = get_content_object(role_def, assignment_tuple)
+    assert result == team
+
+
+@pytest.mark.django_db
+def test_get_local_assignments_skips_users_without_resources():
+    """Test get_local_assignments skips user assignments when user has no Resource."""
+    from ansible_base.rbac.models import RoleDefinition
+    from ansible_base.resource_registry.tasks.sync import get_local_assignments
+
+    # Create a user with resource
+    user = User.objects.create(username='testuser', email='test@example.com')
+    user_resource = Resource.get_resource_for_object(user)
+
+    # Create a global role assignment
+    role_def = RoleDefinition.objects.create(name='Global Admin', managed=True)
+    role_def.give_global_permission(user)
+
+    # Delete the user's resource to simulate missing resource
+    user_resource.delete()
+
+    # Get local assignments - should skip the user assignment
+    assignments = get_local_assignments()
+    assert len([a for a in assignments if a.assignment_type == 'user']) == 0
+
+
+@pytest.mark.django_db
+def test_get_local_assignments_skips_teams_without_resources():
+    """Test get_local_assignments skips team assignments when team has no Resource."""
+    from ansible_base.rbac.models import RoleDefinition
+    from ansible_base.resource_registry.tasks.sync import get_local_assignments
+    from test_app.models import Organization, Team
+
+    # Create a team with resource
+    org = Organization.objects.create(name='Test Org')
+    team = Team.objects.create(name='Test Team', organization=org)
+    team_resource = Resource.get_resource_for_object(team)
+
+    # Create a global role assignment
+    role_def = RoleDefinition.objects.create(name='Global Admin', managed=True)
+    role_def.give_global_permission(team)
+
+    # Delete the team's resource to simulate missing resource
+    team_resource.delete()
+
+    # Get local assignments - should skip the team assignment
+    assignments = get_local_assignments()
+    assert len([a for a in assignments if a.assignment_type == 'team']) == 0
+
+
+@pytest.mark.django_db
+def test_get_local_assignments_with_object_scoped_user_assignment():
+    """Test get_local_assignments includes object-scoped user assignments."""
+    from ansible_base.rbac.models import DABContentType, RoleDefinition
+    from ansible_base.resource_registry.tasks.sync import get_local_assignments
+    from test_app.models import Organization, User
+
+    # Create a user and organization
+    user = User.objects.create(username='testuser', email='test@example.com')
+    user_resource = Resource.get_resource_for_object(user)
+    org = Organization.objects.create(name='Test Org')
+    org_resource = Resource.get_resource_for_object(org)
+    org_dab_ct = DABContentType.objects.get_for_model(Organization)
+
+    # Create an object-scoped role assignment
+    role_def = RoleDefinition.objects.create(name='Org Admin', content_type=org_dab_ct, managed=True)
+    role_def.give_permission(user, org)
+
+    # Get local assignments
+    assignments = get_local_assignments()
+    user_assignments = [a for a in assignments if a.assignment_type == 'user']
+
+    assert len(user_assignments) == 1
+    assert user_assignments[0].actor_ansible_id == str(user_resource.ansible_id)
+    assert user_assignments[0].ansible_id_or_pk == str(org_resource.ansible_id)
+    assert user_assignments[0].role_definition_name == 'Org Admin'
+
+
+@pytest.mark.django_db
+def test_get_local_assignments_with_object_scoped_team_assignment():
+    """Test get_local_assignments includes object-scoped team assignments."""
+    from ansible_base.rbac.models import DABContentType, RoleDefinition
+    from ansible_base.resource_registry.tasks.sync import get_local_assignments
+    from test_app.models import Organization, Team
+
+    # Create a team and organization
+    org = Organization.objects.create(name='Test Org')
+    team = Team.objects.create(name='Test Team', organization=org)
+    team_resource = Resource.get_resource_for_object(team)
+    target_org = Organization.objects.create(name='Target Org')
+    target_org_resource = Resource.get_resource_for_object(target_org)
+    target_org_dab_ct = DABContentType.objects.get_for_model(Organization)
+
+    # Create an object-scoped role assignment
+    role_def = RoleDefinition.objects.create(name='Org Admin', content_type=target_org_dab_ct, managed=True)
+    role_def.give_permission(team, target_org)
+
+    # Get local assignments
+    assignments = get_local_assignments()
+    team_assignments = [a for a in assignments if a.assignment_type == 'team']
+
+    assert len(team_assignments) == 1
+    assert team_assignments[0].actor_ansible_id == str(team_resource.ansible_id)
+    assert team_assignments[0].ansible_id_or_pk == str(target_org_resource.ansible_id)
+    assert team_assignments[0].role_definition_name == 'Org Admin'
+
+
+def test_assignment_tuple_equality_with_non_tuple():
+    """Test AssignmentTuple.__eq__ returns False for non-AssignmentTuple objects."""
+    from ansible_base.resource_registry.tasks.sync import AssignmentTuple
+
+    tuple1 = AssignmentTuple(
+        actor_ansible_id='user123',
+        ansible_id_or_pk='obj456',
+        role_definition_name='Admin',
+        assignment_type='user',
+    )
+
+    # Test with non-AssignmentTuple objects
+    assert tuple1 != "not an assignment tuple"
+    assert tuple1 != 123
+    assert tuple1 is not None
+    assert tuple1 != {'actor_ansible_id': 'user123'}
+
+
+def test_assignment_tuple_equality_comparison():
+    """Test AssignmentTuple.__eq__ field comparison for equal and unequal tuples."""
+    from ansible_base.resource_registry.tasks.sync import AssignmentTuple
+
+    tuple1 = AssignmentTuple(
+        actor_ansible_id='user123',
+        ansible_id_or_pk='obj456',
+        role_definition_name='Admin',
+        assignment_type='user',
+    )
+    tuple2 = AssignmentTuple(
+        actor_ansible_id='user123',
+        ansible_id_or_pk='obj456',
+        role_definition_name='Admin',
+        assignment_type='user',
+    )
+    tuple3 = AssignmentTuple(
+        actor_ansible_id='user999',
+        ansible_id_or_pk='obj456',
+        role_definition_name='Admin',
+        assignment_type='user',
+    )
+
+    # Test equality - should compare all fields
+    assert tuple1 == tuple2
+    # Test inequality - different actor_ansible_id
+    assert tuple1 != tuple3
+
+
+@pytest.mark.django_db
+def test_get_ansible_id_or_pk_for_non_org_team():
+    """Test get_ansible_id_or_pk returns object_id for non-org/team models."""
+    from ansible_base.rbac.models import DABContentType, RoleDefinition
+    from ansible_base.resource_registry.tasks.sync import get_ansible_id_or_pk
+    from test_app.models import Inventory, Organization
+
+    # Create inventory (not org/team)
+    org = Organization.objects.create(name='Test Org')
+    inventory = Inventory.objects.create(name='Test Inventory', organization=org)
+    inv_dab_ct = DABContentType.objects.get_for_model(Inventory)
+
+    # Create role and assignment
+    role_def = RoleDefinition.objects.create(name='Inventory Admin', content_type=inv_dab_ct, managed=True)
+
+    user = User.objects.create(username='testuser', email='test@example.com')
+    assignment = role_def.give_permission(user, inventory)
+
+    # Should return object_id (pk) instead of ansible_id
+    result = get_ansible_id_or_pk(assignment)
+    assert result == str(inventory.pk)
+
+
+@pytest.mark.django_db
+def test_get_content_object_for_non_org_team():
+    """Test get_content_object retrieves non-org/team objects by pk."""
+    from ansible_base.rbac.models import DABContentType, RoleDefinition
+    from ansible_base.resource_registry.tasks.sync import (
+        AssignmentTuple,
+        get_content_object,
+    )
+    from test_app.models import Inventory, Organization
+
+    # Create inventory
+    org = Organization.objects.create(name='Test Org')
+    inventory = Inventory.objects.create(name='Test Inventory', organization=org)
+    inv_dab_ct = DABContentType.objects.get_for_model(Inventory)
+
+    # Create role definition
+    role_def = RoleDefinition.objects.create(name='Inventory Admin', content_type=inv_dab_ct, managed=True)
+
+    # Create assignment tuple with pk (not ansible_id)
+    assignment_tuple = AssignmentTuple(
+        actor_ansible_id='user123',
+        ansible_id_or_pk=str(inventory.pk),
+        role_definition_name='Inventory Admin',
+        assignment_type='user',
+    )
+
+    result = get_content_object(role_def, assignment_tuple)
+    assert result == inventory
+
+
+@pytest.mark.django_db
+@mock.patch('ansible_base.resource_registry.tasks.sync.RemoteAssignmentFetcher._paginate')
+def test_get_remote_assignments_fails_on_user_pagination(mock_paginate):
+    """Test get_remote_assignments returns incomplete when user pagination fails."""
+    from ansible_base.resource_registry.tasks.sync import (
+        create_api_client,
+        get_remote_assignments,
+    )
+
+    # Make user pagination fail
+    mock_paginate.return_value = False
+
+    api_client = create_api_client()
+    result = get_remote_assignments(api_client)
+
+    # Should be incomplete when users_ok is False
+    assert result.is_complete is False
+    assert len(result.assignments) == 0
+
+
+@pytest.mark.django_db
+def test_create_local_assignment_with_object():
+    """Test create_local_assignment creates object-scoped assignment."""
+    from ansible_base.rbac.models import (
+        DABContentType,
+        RoleDefinition,
+        RoleUserAssignment,
+    )
+    from ansible_base.resource_registry.tasks.sync import (
+        AssignmentTuple,
+        create_local_assignment,
+    )
+    from test_app.models import Organization, User
+
+    # Create user and organization with resources
+    user = User.objects.create(username='testuser', email='test@example.com')
+    user_resource = Resource.get_resource_for_object(user)
+    org = Organization.objects.create(name='Test Org')
+    org_resource = Resource.get_resource_for_object(org)
+    org_dab_ct = DABContentType.objects.get_for_model(Organization)
+
+    # Create role definition
+    role_def = RoleDefinition.objects.create(name='Org Admin', content_type=org_dab_ct, managed=True)
+
+    # Create assignment tuple for object-scoped assignment
+    assignment_tuple = AssignmentTuple(
+        actor_ansible_id=str(user_resource.ansible_id),
+        ansible_id_or_pk=str(org_resource.ansible_id),
+        role_definition_name='Org Admin',
+        assignment_type='user',
+    )
+
+    # Create the assignment
+    result = create_local_assignment(assignment_tuple)
+
+    # Should return True and create the assignment
+    assert result is True
+    assert RoleUserAssignment.objects.filter(user=user, role_definition=role_def, object_id=org.pk).exists()
+
+
+@pytest.mark.django_db
+def test_create_local_assignment_global():
+    """Test create_local_assignment creates global assignment."""
+    from ansible_base.rbac.models import RoleDefinition, RoleUserAssignment
+    from ansible_base.resource_registry.tasks.sync import (
+        AssignmentTuple,
+        create_local_assignment,
+    )
+
+    # Create user with resource
+    user = User.objects.create(username='testuser', email='test@example.com')
+    user_resource = Resource.get_resource_for_object(user)
+
+    # Create global role definition (no content_type)
+    role_def = RoleDefinition.objects.create(name='Global Admin', managed=True)
+
+    # Create assignment tuple for global assignment (no ansible_id_or_pk)
+    assignment_tuple = AssignmentTuple(
+        actor_ansible_id=str(user_resource.ansible_id),
+        ansible_id_or_pk=None,
+        role_definition_name='Global Admin',
+        assignment_type='user',
+    )
+
+    # Create the assignment
+    result = create_local_assignment(assignment_tuple)
+
+    # Should return True and create global assignment
+    assert result is True
+    assert RoleUserAssignment.objects.filter(user=user, role_definition=role_def, object_id__isnull=True).exists()
+
+
+@pytest.mark.django_db
+def test_create_local_assignment_for_team():
+    """Test create_local_assignment creates team assignment."""
+    from ansible_base.rbac.models import (
+        DABContentType,
+        RoleDefinition,
+        RoleTeamAssignment,
+    )
+    from ansible_base.resource_registry.tasks.sync import (
+        AssignmentTuple,
+        create_local_assignment,
+    )
+    from test_app.models import Organization, Team
+
+    # Create team and organization with resources
+    org = Organization.objects.create(name='Test Org')
+    team = Team.objects.create(name='Test Team', organization=org)
+    team_resource = Resource.get_resource_for_object(team)
+    target_org = Organization.objects.create(name='Target Org')
+    target_org_resource = Resource.get_resource_for_object(target_org)
+    org_dab_ct = DABContentType.objects.get_for_model(Organization)
+
+    # Create role definition
+    role_def = RoleDefinition.objects.create(name='Org Admin', content_type=org_dab_ct, managed=True)
+
+    # Create assignment tuple for team assignment
+    assignment_tuple = AssignmentTuple(
+        actor_ansible_id=str(team_resource.ansible_id),
+        ansible_id_or_pk=str(target_org_resource.ansible_id),
+        role_definition_name='Org Admin',
+        assignment_type='team',
+    )
+
+    # Create the assignment
+    result = create_local_assignment(assignment_tuple)
+
+    # Should return True and create the team assignment
+    assert result is True
+    assert RoleTeamAssignment.objects.filter(team=team, role_definition=role_def, object_id=target_org.pk).exists()
+
+
+@pytest.mark.django_db
+def test_delete_local_assignment_with_object():
+    """Test delete_local_assignment removes object-scoped assignment."""
+    from ansible_base.rbac.models import DABContentType, RoleDefinition
+    from ansible_base.resource_registry.tasks.sync import (
+        AssignmentTuple,
+        delete_local_assignment,
+    )
+    from test_app.models import Organization, User
+
+    # Create user and organization with resources
+    user = User.objects.create(username='testuser', email='test@example.com')
+    user_resource = Resource.get_resource_for_object(user)
+    org = Organization.objects.create(name='Test Org')
+    org_resource = Resource.get_resource_for_object(org)
+    org_dab_ct = DABContentType.objects.get_for_model(Organization)
+
+    # Create role and assignment
+    role_def = RoleDefinition.objects.create(name='Org Admin', content_type=org_dab_ct, managed=True)
+    role_def.give_permission(user, org)
+
+    # Create assignment tuple for object-scoped assignment
+    assignment_tuple = AssignmentTuple(
+        actor_ansible_id=str(user_resource.ansible_id),
+        ansible_id_or_pk=str(org_resource.ansible_id),
+        role_definition_name='Org Admin',
+        assignment_type='user',
+    )
+
+    # Delete the assignment
+    result = delete_local_assignment(assignment_tuple)
+
+    # Should return True and remove the assignment
+    assert result is True
+    from ansible_base.rbac.models import RoleUserAssignment
+
+    assert not RoleUserAssignment.objects.filter(user=user, role_definition=role_def, object_id=org.pk).exists()
+
+
+@pytest.mark.django_db
+def test_delete_local_assignment_global():
+    """Test delete_local_assignment removes global assignment"""
+    from ansible_base.rbac.models import RoleDefinition
+    from ansible_base.resource_registry.tasks.sync import (
+        AssignmentTuple,
+        delete_local_assignment,
+    )
+
+    # Create user with resource
+    user = User.objects.create(username='testuser', email='test@example.com')
+    user_resource = Resource.get_resource_for_object(user)
+
+    # Create global role and assignment
+    role_def = RoleDefinition.objects.create(name='Global Admin', managed=True)
+    role_def.give_global_permission(user)
+
+    # Create assignment tuple for global assignment
+    assignment_tuple = AssignmentTuple(
+        actor_ansible_id=str(user_resource.ansible_id),
+        ansible_id_or_pk=None,
+        role_definition_name='Global Admin',
+        assignment_type='user',
+    )
+
+    # Delete the assignment
+    result = delete_local_assignment(assignment_tuple)
+
+    # Should return True and remove global assignment
+    assert result is True
+    from ansible_base.rbac.models import RoleUserAssignment
+
+    assert not RoleUserAssignment.objects.filter(user=user, role_definition=role_def, object_id__isnull=True).exists()
+
+
+@pytest.mark.django_db
+def test_cleanup_orphans_continues_after_deletion_error(admin_api_client, static_api_client, stdout):
+    """Test that _cleanup_orphans skips a failing orphan, logs it and continues deleting the rest."""
+    url = get_relative_url("resource-list")
+    for username in ("orphan_one", "orphan_two"):
+        response = admin_api_client.post(
+            url,
+            {
+                "service_id": "57592fbc-7ecb-405f-9f5f-ebad20932d38",
+                "resource_type": "shared.user",
+                "resource_data": {"username": username, "last_name": "Test", "email": f"{username}@example.com"},
+            },
+            format="json",
+        )
+        assert response.status_code == 201
+
+    with mock.patch("ansible_base.resource_registry.tasks.sync.delete_resource", side_effect=IntegrityError("FK constraint")):
+        executor = SyncExecutor(api_client=static_api_client, stdout=stdout)
+        executor.run()
+
+    error_lines = [line for line in stdout.lines if "IntegrityError" in line]
+    assert len(error_lines) == 2
+    assert User.objects.filter(username__in=["orphan_one", "orphan_two"]).count() == 2
+    assert executor.deleted_count == 0
+
+
+@pytest.mark.django_db
+def test_paginate_skips_corrupted_uuid_object_id():
+    """Assignments whose object_id is a UUID are skipped and flagged as invalid.
+
+    This guards against corrupted Gateway data where a RoleDefinition UUID ends up
+    as object_id for a namespace assignment. The corrupted assignment must be skipped
+    and the actor+role+type recorded in protected_pairs, while a valid assignment on
+    the same page is still applied.
+    """
+    corrupted_object_id = str(uuid4())
+    corrupted_actor = str(uuid4())
+    valid_actor = str(uuid4())
+    role_name = 'galaxy.collection_publisher'
+    from ansible_base.rbac.models import DABContentType
+    from test_app.models import Inventory
+
+    RoleDefinition.objects.create(
+        name=role_name,
+        content_type=DABContentType.objects.get_for_model(Inventory),
+        managed=True,
+    )
+
+    api_client = mock.Mock(spec=["list_user_assignments", "list_team_assignments"])
+    api_client.list_user_assignments.return_value = _mock_response(
+        body={
+            'results': [
+                # corrupted — object_id is a UUID
+                {
+                    'user_ansible_id': corrupted_actor,
+                    'object_ansible_id': None,
+                    'object_id': corrupted_object_id,
+                    'role_definition': role_name,
+                },
+                # valid — object_id is an integer PK
+                {
+                    'user_ansible_id': valid_actor,
+                    'object_ansible_id': None,
+                    'object_id': '42',
+                    'role_definition': role_name,
+                },
+            ],
+            'next': None,
+        }
+    )
+    api_client.list_team_assignments.return_value = _mock_response()
+
+    result = RemoteAssignmentFetcher(api_client).fetch()
+
+    assert result.is_complete is True
+    # The corrupted actor+role+type is recorded so deletions for that pair are shielded.
+    assert result.protected_pairs == frozenset([(corrupted_actor, role_name, 'user')])
+    assert len(result.assignments) == 1
+    surviving = next(iter(result.assignments))
+    assert surviving.actor_ansible_id == valid_actor
+    assert surviving.ansible_id_or_pk == '42'
+
+
+@pytest.mark.django_db
+def test_paginate_accepts_valid_uuid_primary_key():
+    """Valid UUID primary keys are not mistaken for corrupted integer IDs."""
+    role_name = 'UUID Model Admin'
+    from ansible_base.rbac.models import DABContentType
+    from test_app.models import UUIDModel
+
+    RoleDefinition.objects.create(
+        name=role_name,
+        content_type=DABContentType.objects.get_for_model(UUIDModel),
+        managed=True,
+    )
+    actor_id = str(uuid4())
+    object_id = str(uuid4())
+    api_client = mock.Mock(spec=['list_user_assignments', 'list_team_assignments'])
+    api_client.list_user_assignments.return_value = _mock_response(
+        body={
+            'results': [
+                {
+                    'user_ansible_id': actor_id,
+                    'object_ansible_id': None,
+                    'object_id': object_id,
+                    'role_definition': role_name,
+                },
+            ],
+            'next': None,
+        }
+    )
+    api_client.list_team_assignments.return_value = _mock_response()
+
+    result = RemoteAssignmentFetcher(api_client).fetch()
+
+    assert result.is_complete is True
+    assert result.protected_pairs == frozenset()
+    assert result.assignments == {
+        AssignmentTuple(actor_id, object_id, role_name, 'user'),
+    }
+
+
+@pytest.mark.django_db
+def test_sync_assignments_shields_affected_pair_but_allows_other_deletions(stdout):
+    """Only the local assignment matching a corrupted remote pair is shielded from deletion.
+
+    When object_id is a UUID for a given actor+role+type, that specific local
+    assignment is protected.  An unrelated local assignment (different actor) that
+    was genuinely revoked must still be deleted.
+    """
+    corrupted_actor = str(uuid4())
+    unrelated_actor = str(uuid4())
+    role_name = 'galaxy.collection_publisher'
+
+    # Local assignment that matches the corrupted remote pair — must NOT be deleted.
+    shielded_tuple = AssignmentTuple(
+        actor_ansible_id=corrupted_actor,
+        ansible_id_or_pk='42',
+        role_definition_name=role_name,
+        assignment_type='user',
+    )
+    # Local assignment that was genuinely revoked — must be deleted.
+    revoked_tuple = AssignmentTuple(
+        actor_ansible_id=unrelated_actor,
+        ansible_id_or_pk='99',
+        role_definition_name=role_name,
+        assignment_type='user',
+    )
+
+    remote_result = RemoteAssignmentResult(
+        assignments=set(),
+        is_complete=True,
+        protected_pairs=frozenset([(corrupted_actor, role_name, 'user')]),
+    )
+
+    with (
+        mock.patch('ansible_base.resource_registry.tasks.sync.get_remote_assignments', return_value=remote_result),
+        mock.patch('ansible_base.resource_registry.tasks.sync.get_local_assignments', return_value={shielded_tuple, revoked_tuple}),
+        mock.patch('ansible_base.resource_registry.tasks.sync.delete_local_assignment') as mock_delete,
+    ):
+        executor = SyncExecutor(api_client=mock.Mock(), sync_assignments=True)
+        executor._sync_assignments()
+
+    # Only the genuinely revoked assignment should be deleted.
+    mock_delete.assert_called_once_with(revoked_tuple)

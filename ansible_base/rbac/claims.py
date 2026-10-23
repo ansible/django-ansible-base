@@ -6,13 +6,17 @@ from typing import Optional, Tuple, Union
 
 from django.apps import apps
 from django.conf import settings
-from django.db.models import F, Model, OuterRef, QuerySet
+from django.contrib.contenttypes.models import ContentType
+from django.db import transaction
+from django.db.models import F, Model, QuerySet
 from django.db.utils import IntegrityError
 
-from ansible_base.lib.utils.auth import get_team_model
+from ansible_base.lib.utils.auth import get_organization_model, get_team_model
+from ansible_base.rbac.resource_queries import assignment_resource_annotation
 
 from .models.content_type import DABContentType
 from .models.role import RoleDefinition, RoleUserAssignment
+from .pipeline import bulk_give_permissions, remove_assignments
 
 logger = logging.getLogger(__name__)
 
@@ -47,14 +51,11 @@ def get_user_object_roles(user: Model) -> QuerySet:
             print(assignment.rd_name, assignment.aid, assignment.resource_name, assignment.content_type_id)
     """
     # Create subqueries for resource data
-    resource_cls = apps.get_model('dab_resource_registry', 'Resource')
-    ansible_id_subquery = resource_cls.objects.filter(object_id=OuterRef('object_id'), content_type=OuterRef('content_type')).values('ansible_id')
-
-    resource_name_subquery = resource_cls.objects.filter(object_id=OuterRef('object_id'), content_type=OuterRef('content_type')).values('name')
+    resource_name_subquery = assignment_resource_annotation('name')
 
     return (
         user.role_assignments.filter(content_type__isnull=False)
-        .annotate(aid=ansible_id_subquery, resource_name=resource_name_subquery, rd_name=F('role_definition__name'))
+        .annotate(aid=F('object_ansible_id'), resource_name=resource_name_subquery, rd_name=F('role_definition__name'))
         .filter(rd_name__in=settings.ANSIBLE_BASE_JWT_MANAGED_ROLES)
     )
 
@@ -147,6 +148,9 @@ def _build_objects_and_roles(
 
     # Single loop: build object_arrays and object_roles
     for assignment in get_user_object_roles(user):
+        if assignment.aid is None:
+            continue
+
         role_name = assignment.rd_name
         ansible_id = str(assignment.aid)
         resource_name = str(assignment.resource_name)
@@ -237,7 +241,7 @@ def get_user_claims(user: Model) -> dict[str, Union[list[str], dict[str, Union[s
     global_roles = _get_user_global_roles(user)
 
     # Build final claims structure
-    return {'objects': object_arrays, 'object_roles': object_roles, 'global_roles': global_roles}
+    return {'objects': object_arrays, 'object_roles': object_roles, 'global_roles': global_roles}  # type: ignore[dict-item]
 
 
 # ---- for claims saving ----
@@ -263,6 +267,54 @@ def get_role_definition(name: str) -> Optional[Model]:
     return None
 
 
+def _recover_resource_by_natural_key(resource_cls, model_cls, name, object_ansible_id, resource_type_name, extra_model_kwargs=None):
+    """Recovery path when create_resource() fails with IntegrityError.
+
+    Looks up the object by natural key, finds or creates the Resource entry,
+    and corrects a stale ansible_id if needed so subsequent calls take the fast path.
+    Returns (None, None) if the natural-key lookup finds nothing.
+    """
+    model_kwargs = {"name": name, **(extra_model_kwargs or {})}
+    existing_obj = model_cls.objects.filter(**model_kwargs).first()
+    if existing_obj is None:
+        return None, None
+    ct = ContentType.objects.get_for_model(existing_obj)
+    resource, created = resource_cls.objects.get_or_create(
+        content_type=ct,
+        object_id=existing_obj.pk,
+        defaults={'name': name, 'ansible_id': object_ansible_id},
+    )
+    if created:
+        logger.warning(f"Created missing resource entry for existing {resource_type_name} '{name}'")
+    elif str(resource.ansible_id) != str(object_ansible_id):
+        old_id = resource.ansible_id
+        resource.ansible_id = object_ansible_id
+        resource.save(update_fields=['ansible_id'])
+        logger.warning(f"Corrected ansible_id for {resource_type_name} '{name}' from {old_id} to {object_ansible_id}")
+    else:
+        logger.info(f"Found existing {resource_type_name} '{name}' by natural key with matching ansible_id")
+    return resource, existing_obj
+
+
+def _create_resource_with_recovery(resource_cls, resource_type_name, name, ansible_id, model_cls, extra_resource_kwargs=None, extra_model_kwargs=None):
+    """Create a resource via create_resource(), recovering via natural key on IntegrityError."""
+    resource_type_cls = apps.get_model('dab_resource_registry', 'ResourceType')
+    resource_kwargs = {"name": name, **(extra_resource_kwargs or {})}
+    try:
+        with transaction.atomic():
+            resource = resource_cls.create_resource(
+                resource_type_cls.objects.get(name=resource_type_name),
+                resource_kwargs,
+                ansible_id=ansible_id,
+            )
+        return resource, resource.content_object
+    except IntegrityError:
+        resource, obj = _recover_resource_by_natural_key(resource_cls, model_cls, name, ansible_id, resource_type_name, extra_model_kwargs=extra_model_kwargs)
+        if resource is None:
+            raise
+        return resource, obj
+
+
 def get_or_create_resource(objects: dict, content_type: str, data: dict) -> Tuple[Optional[Model], Optional[Model]]:
     """
     Gets or creates a resource from a content type and its default data
@@ -271,7 +323,6 @@ def get_or_create_resource(objects: dict, content_type: str, data: dict) -> Tupl
     """
     object_ansible_id = data['ansible_id']
     resource_cls = apps.get_model('dab_resource_registry', 'Resource')
-    resource_type_cls = apps.get_model('dab_resource_registry', 'ResourceType')
     try:
         resource = resource_cls.objects.get(ansible_id=object_ansible_id)
         logger.debug(f"Resource {object_ansible_id} already exists")
@@ -286,24 +337,26 @@ def get_or_create_resource(objects: dict, content_type: str, data: dict) -> Tupl
         organization_data = objects["organization"][org_id]
 
         # Now that we have the org we can build a team
-        org_resource, _ = get_or_create_resource(objects, "organization", organization_data)
+        org_resource, org_obj = get_or_create_resource(objects, "organization", organization_data)
 
-        resource = resource_cls.create_resource(
-            resource_type_cls.objects.get(name="shared.team"),
-            {"name": data["name"], "organization": org_resource.ansible_id},
-            ansible_id=data["ansible_id"],
+        return _create_resource_with_recovery(
+            resource_cls,
+            "shared.team",
+            data["name"],
+            object_ansible_id,
+            get_team_model(),
+            extra_resource_kwargs={"organization": org_resource.ansible_id},
+            extra_model_kwargs={"organization": org_obj},
         )
-
-        return resource, resource.content_object
 
     elif content_type == 'organization':
-        resource = resource_cls.create_resource(
-            resource_type_cls.objects.get(name="shared.organization"),
-            {"name": data["name"]},
-            ansible_id=data["ansible_id"],
+        return _create_resource_with_recovery(
+            resource_cls,
+            "shared.organization",
+            data["name"],
+            object_ansible_id,
+            get_organization_model(),
         )
-
-        return resource, resource.content_object
     else:
         logger.error(f"build_resource_stub does not know how to build an object of type {type}")
         return None, None
@@ -313,35 +366,36 @@ def save_user_claims(user: Model, objects: dict, object_roles: dict, global_role
     """
     Apply RBAC permissions from claims data
     """
-    role_diff = RoleUserAssignment.objects.filter(user=user, role_definition__name__in=settings.ANSIBLE_BASE_JWT_MANAGED_ROLES)
 
+    managed_roles = settings.ANSIBLE_BASE_JWT_MANAGED_ROLES
+
+    # Global roles are few (0-2 typically), keep serial
+    global_assignment_pks = set()
     for system_role_name in global_roles:
-        logger.debug(f"Processing system role {system_role_name} for {user.username}")
         rd = get_role_definition(system_role_name)
-        if rd:
-            if rd.name in settings.ANSIBLE_BASE_JWT_MANAGED_ROLES:
-                assignment = rd.give_global_permission(user)
-                role_diff = role_diff.exclude(pk=assignment.pk)
-                logger.info(f"Granted user {user.username} global role {system_role_name}")
-            else:
-                logger.error(f"Unable to grant {user.username} system level role {system_role_name} because it is not a JWT managed role")
-        else:
+        if rd is None:
             logger.error(f"Unable to grant {user.username} system level role {system_role_name} because it does not exist")
             continue
+        if rd.name not in managed_roles:
+            logger.error(f"Unable to grant {user.username} system level role {system_role_name} because it is not a JWT managed role")
+            continue
+        assignment = rd.give_global_permission(user)
+        global_assignment_pks.add(assignment.pk)
+        logger.info(f"Granting user {user.username} global role {system_role_name}")
 
-    for object_role_name in object_roles.keys():
+    # Pass 1: resolve resources (may create org/team stubs)
+    desired_permissions = []
+    for object_role_name, role_data in object_roles.items():
         rd = get_role_definition(object_role_name)
         if rd is None:
             logger.error(f"Unable to grant {user.username} object role {object_role_name} because it does not exist")
             continue
-        elif rd.name not in settings.ANSIBLE_BASE_JWT_MANAGED_ROLES:
+        if rd.name not in managed_roles:
             logger.error(f"Unable to grant {user.username} object role {object_role_name} because it is not a JWT managed role")
             continue
 
-        object_type = object_roles[object_role_name]['content_type']
-        object_indexes = object_roles[object_role_name]['objects']
-
-        for index in object_indexes:
+        object_type = role_data['content_type']
+        for index in role_data['objects']:
             object_data = objects[object_type][index]
             try:
                 resource, obj = get_or_create_resource(objects, object_type, object_data)
@@ -351,20 +405,33 @@ def save_user_claims(user: Model, objects: dict, object_roles: dict, global_role
                     "Please make sure the sync task is running to prevent this warning in the future."
                 )
                 continue
-
             if resource is not None:
-                assignment = rd.give_permission(user, obj)
-                role_diff = role_diff.exclude(pk=assignment.pk)
-                logger.info(f"Granted user {user.username} role {object_role_name} to object {obj.name} with ansible_id {object_data['ansible_id']}")
+                desired_permissions.append((rd, user, obj))
+                logger.info(f"Granting user {user.username} role {object_role_name} to object {obj.name} with ansible_id {object_data['ansible_id']}")
 
-    # Remove all permissions not authorized by the JWT
-    for role_assignment in role_diff:
-        rd = role_assignment.role_definition
-        content_object = role_assignment.content_object
-        if content_object:
-            rd.remove_permission(user, content_object)
-        else:
-            rd.remove_global_permission(user)
+    # Pass 2: bulk assign all desired permissions
+    if desired_permissions:
+        bulk_give_permissions(user_permissions=desired_permissions, fire_signals_on_create=False)
+
+    # Pass 3: remove stale assignments not in the desired set
+    desired_keys = {(rd.pk, obj.pk) for rd, _user, obj in desired_permissions}
+    stale_assignments = (
+        RoleUserAssignment.objects.filter(user=user, role_definition__name__in=managed_roles)
+        .exclude(pk__in=global_assignment_pks)
+        .select_related('role_definition')
+    )
+
+    stale_user_assignments = []
+    for assignment in stale_assignments:
+        if (assignment.role_definition_id, assignment.cache_id) not in desired_keys:
+            if not assignment.content_type_id:
+                assignment.role_definition.remove_global_permission(user)
+            else:
+                stale_user_assignments.append(assignment)
+
+    if stale_user_assignments:
+        logger.info(f"Removing {len(stale_user_assignments)} stale role assignments for user {user.username}")
+        remove_assignments(user_assignments=stale_user_assignments)
 
 
 # ---- for claims hashing ----
@@ -413,9 +480,9 @@ def get_user_claims_hashable_form(claims: dict) -> dict[str, Union[list[str], di
                     ansible_ids.append(ansible_id)
 
         # Sort ansible_ids for deterministic ordering
-        hashable_claims['object_roles'][role_name] = sorted(ansible_ids)
+        hashable_claims['object_roles'][role_name] = sorted(ansible_ids)  # type: ignore[index]
 
-    return hashable_claims
+    return hashable_claims  # type: ignore[return-value]
 
 
 def get_claims_hash(hashable_claims: dict) -> str:

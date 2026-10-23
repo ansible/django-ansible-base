@@ -40,7 +40,7 @@ class DABRedisRespectACLFlushMixin:
     At some point in the future we may also want to override flushall as well
     """
 
-    def flushdb(self, asynchronous: Optional[bool] = None, **kwargs) -> ResponseT:
+    def flushdb(self, asynchronous: Optional[bool] = None, **kwargs) -> ResponseT:  # type: ignore[return]
         if asynchronous is not None:
             logger.warning("DABRedis clients implement an ACL friendly FLUSHDB which can not be async")
 
@@ -106,6 +106,11 @@ class RedisClient(DefaultClient):
 
 
 class RedisClientGetter:
+    url: str
+    connection_settings: dict
+    mode: str
+    redis_hosts: str | None
+
     def _redis_parse_url(self) -> None:
         if self.url == '':
             # If there is no URL we have nothing to do
@@ -190,7 +195,7 @@ class RedisClientGetter:
             raise ImproperlyConfigured(_('Unable to parse redis_hosts, see logs for more details'))
 
     def __init__(self, *args, **kwargs):
-        self.url = ''
+        self.url: str = ''
 
     def get_client(self, url: str = '', **kwargs) -> Union[DABRedis, DABRedisCluster]:
         # remove our settings which are invalid to the parent classes
@@ -265,7 +270,7 @@ def get_redis_status(url: str = '', timeout: int = _DEFAULT_STATUS_TIMEOUT_SEC, 
             response['status'] = determine_cluster_node_status(response['cluster_nodes'])
             # Now our status should be STATUS_GOOD or STATUS_DEGRADED
             # There is one more check we need to do and that is if the cluster_info did not return ok we are in a bad state
-            if response['cluster_info']['cluster_state'] != _REDIS_CLUSTER_OK_STATUS:
+            if response['cluster_info']['cluster_state'] != _REDIS_CLUSTER_OK_STATUS:  # type: ignore[index]
                 response['status'] = STATUS_FAILED
     except Exception as e:
         response['status'] = STATUS_FAILED

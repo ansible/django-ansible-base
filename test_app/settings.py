@@ -5,19 +5,7 @@ Application current mode can be configured with TESTAPP_MODE environment variabl
 by default it will be development.
 """
 
-import sys
-
 from ansible_base.lib.dynamic_config import export, factory, load_envvars, load_standard_settings_files
-
-if "pytest" in sys.modules:
-    # https://github.com/agronholm/typeguard/issues/260
-    # Enable runtime type checking only for running tests
-    # must be done here because python hooks will not reliably call the
-    # typguard plugin setup before other plugins which setup Django, which loads settings.
-    # Lower in this settings file, the dynamic config imports ansible_base
-    from typeguard import install_import_hook
-
-    install_import_hook(packages=["ansible_base"])
 
 # Create a the standard DYNACONF instance which will come with DAB defaults
 # this loads the files passed to `settings_files` list

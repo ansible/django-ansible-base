@@ -17,11 +17,14 @@ DEFAULT_SPECTACULAR_SETTINGS = {
     'VERSION': 'v1',
     'SCHEMA_PATH_PREFIX': '/api/v1/',
     'COMPONENT_NO_READ_ONLY_REQUIRED': True,
+    'GET_LIB_DOC_EXCLUDES': 'ansible_base.api_documentation.customizations.get_dab_lib_doc_excludes',
     'PREPROCESSING_HOOKS': [
         'ansible_base.api_documentation.preprocessing_hooks.collect_ai_description_metadata',
     ],
     'POSTPROCESSING_HOOKS': [
         'ansible_base.api_documentation.postprocessing_hooks.add_x_ai_description',
+        # Declares optional CleanText pattern fields in components.schemas (OpenAPI).
+        'ansible_base.api_documentation.clean_text_schema_hooks.inject_clean_text_pattern_components',
     ],
 }
 DEFAULT_ANSIBLE_BASE_AUTH = "ansible_base.authentication.backend.AnsibleBaseAuth"
@@ -81,7 +84,7 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
 
     installed_apps: list = copy(settings["INSTALLED_APPS"])
     middleware: list = copy(settings["MIDDLEWARE"])
-    rest_framework: dict = copy(settings["REST_FRAMEWORK"])
+    rest_framework: dict = copy(settings["REST_FRAMEWORK"]) if isinstance(settings["REST_FRAMEWORK"], dict) else {}
 
     oauth2_provider: dict = copy(settings.get("OAUTH2_PROVIDER", {}))
     templates: list = copy(settings.get("TEMPLATES", []))
@@ -117,6 +120,9 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
             'assignment',  # for RoleAssignmentFilterBackend, assignment filtering
         )
 
+    if settings.get('ENHANCED_INPUT_VALIDATION_ENABLED') is None:
+        dab_data['ENHANCED_INPUT_VALIDATION_ENABLED'] = False
+
     # SPECTACULAR SETTINGS
     if 'ansible_base.api_documentation' in installed_apps:
         rest_framework.setdefault('DEFAULT_SCHEMA_CLASS', 'drf_spectacular.openapi.AutoSchema')
@@ -128,6 +134,14 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
             if key not in spectacular_settings:
                 spectacular_settings[key] = value
 
+        # Ensure CleanText OpenAPI components are registered even when a service
+        # overrides POSTPROCESSING_HOOKS (common in Controller/Gateway).
+        _clean_text_hook = 'ansible_base.api_documentation.clean_text_schema_hooks.inject_clean_text_pattern_components'
+        hooks = list(spectacular_settings.get('POSTPROCESSING_HOOKS', []))
+        if _clean_text_hook not in hooks:
+            hooks.append(_clean_text_hook)
+            spectacular_settings['POSTPROCESSING_HOOKS'] = hooks
+
     # General, factual, constant of all filters that ansible_base.rest_filters ships
     dab_data['ANSIBLE_BASE_ALL_REST_FILTERS'] = (
         'ansible_base.rest_filters.rest_framework.type_filter_backend.TypeFilterBackend',
@@ -135,6 +149,8 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         'rest_framework.filters.SearchFilter',
         'ansible_base.rest_filters.rest_framework.order_backend.OrderByBackend',
     )
+    rest_framework.setdefault('DEFAULT_METADATA_CLASS', 'ansible_base.lib.metadata.CleanTextMetadata')
+
     if 'ansible_base.rest_filters' in installed_apps:
         rest_framework['DEFAULT_FILTER_BACKENDS'] = dab_data['ANSIBLE_BASE_ALL_REST_FILTERS']
     else:
@@ -177,8 +193,8 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
             'social_core.pipeline.social_auth.social_user',
             'ansible_base.authentication.utils.authentication.determine_username_from_uid_social',
             'social_core.pipeline.user.create_user',
-            'ansible_base.authentication.social_auth.capture_oauth_email_pipeline',
             'social_core.pipeline.social_auth.associate_user',
+            'ansible_base.authentication.social_auth.capture_oauth_email_pipeline',
             'social_core.pipeline.social_auth.load_extra_data',
             'social_core.pipeline.user.user_details',
             'ansible_base.authentication.social_auth.create_user_claims_pipeline',
@@ -254,6 +270,8 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         # Alternative to permission_registry.register
         'ANSIBLE_BASE_RBAC_MODEL_REGISTRY': {},
         'ORG_ADMINS_CAN_SEE_ALL_USERS': True,
+        'ALLOW_USER_EMAIL_SELF_EDIT': False,
+        'ALLOW_USER_USERNAME_SELF_EDIT': False,
     }
     if DEFAULT_ANSIBLE_BASE_RBAC_APP_NAME in installed_apps:
         for key, value in rbac_defaults.items():
@@ -268,6 +286,14 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         'RESOURCE_SERVICE_PATH': "/api/gateway/v1/service-index/",
         # Disable legacy SSO by default
         'ENABLE_SERVICE_BACKED_SSO': False,
+        # Interval (in seconds) between periodic resource sync runs.
+        # Not consumed by DAB directly; read by downstream schedulers
+        'RESOURCE_SYNC_INTERVAL_SECONDS': 900,
+        # Page size for assignment pagination during resource sync (capped server-side by MAX_PAGE_SIZE).
+        # Defaults must match DEFAULT_SYNC_PAGE_SIZE / DEFAULT_SYNC_JWT_EXPIRATION in tasks/sync.py.
+        'RESOURCE_SYNC_PAGE_SIZE': 50,
+        # JWT service token lifetime in seconds for resource sync API calls
+        'RESOURCE_SYNC_JWT_EXPIRATION': 60,
     }
     if 'ansible_base.resource_registry' in installed_apps:
         for key, value in resource_registry_defaults.items():
@@ -284,6 +310,13 @@ def get_mergeable_dab_settings(settings: dict) -> dict:  # NOSONAR
         # For compat with awx, we don't require PKCE, but the new version
         # of DOT that we are using requires it by default.
         oauth2_provider.setdefault('PKCE_REQUIRED', False)
+
+        # RP-Initiated Logout (OIDC) settings
+        oauth2_provider.setdefault('OIDC_RP_INITIATED_LOGOUT_ENABLED', True)
+        oauth2_provider.setdefault('OIDC_RP_INITIATED_LOGOUT_DELETE_TOKENS', True)
+        oauth2_provider.setdefault('OIDC_RP_INITIATED_LOGOUT_STRICT_REDIRECT_URIS', True)
+        oauth2_provider.setdefault('OIDC_RP_INITIATED_LOGOUT_ALWAYS_PROMPT', False)
+        oauth2_provider.setdefault('OIDC_RP_INITIATED_LOGOUT_ACCEPT_EXPIRED_TOKENS', False)
 
         oauth2_provider['OAUTH2_BACKEND_CLASS'] = 'ansible_base.oauth2_provider.authentication.OAuthLibCore'
         oauth2_provider['APPLICATION_MODEL'] = DEFAULT_OAUTH2_APPLICATION_MODEL

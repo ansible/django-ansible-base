@@ -92,7 +92,7 @@ This is used for generating querysets and making role evaluations.
 
 This table is _not_ the source of truth for information in any way.
 You can delete the entire table, and you should be able to re-populate it
-by calling the `compute_object_role_permissions()` method.
+by calling the `recompute_all_role_evaluations()` method.
 
 Because its function is querysets and permission evaluations, it has
 class methods that serve these functions.

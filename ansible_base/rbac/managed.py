@@ -33,7 +33,7 @@ class ManagedRoleConstructor:
         return self.permission_list
 
     def get_translated_name(self) -> str:
-        return _(self.name)
+        return _(self.name)  # type: ignore[return-value]
 
     def get_content_type(self, apps):
         model = self.get_model(apps)
@@ -179,6 +179,12 @@ class OrganizationMember(OrganizationMixin, ManagedActionBase):
     name = gettext_noop("Organization Member")
     description = gettext_noop("Has member permission to a single organization")
     action = 'member_organization'
+
+    def get_permissions(self, apps) -> set[str]:
+        perms = super().get_permissions(apps)
+        team_model = apps.get_model(settings.ANSIBLE_BASE_TEAM_MODEL)
+        perms.add(f'view_{team_model._meta.model_name}')
+        return perms
 
 
 class TeamAdmin(TeamMixin, ManagedAdminBase):

@@ -156,11 +156,8 @@ def test_convert_to_seconds_invalid_default_type(invalid_default_value, expected
     """
     Test that non-integer default values log a warning with stack trace and use 10 instead.
 
-    Note: Only booleans are tested here because the project uses typeguard for runtime
-    type checking, which prevents other invalid types (str, float, list, dict, None)
-    from even reaching the function. This is the expected behavior - typeguard provides
-    the first line of defense, and our isinstance check catches booleans (which are
-    technically ints in Python but should not be accepted as defaults).
+    Note: Only booleans are tested here because bool is a subclass of int in Python,
+    so it passes isinstance(x, int) checks but should not be accepted as defaults.
 
     The stack_info=True in the logger call provides developers with a full stack trace
     showing exactly where convert_to_seconds was called with an invalid default.

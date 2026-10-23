@@ -50,9 +50,9 @@ def test_get_user_by_ansible_id_deleted_resource():
 
     # Even though user 4 can no longer be referenced by ansible_id, the others still work
     for i in range(3):
-        assert get_user_by_ansible_id(users[i].resource.ansible_id) == users[i]
-        found_user = get_user_by_ansible_id(users[i].resource.ansible_id, annotate_as='a_id')
-        assert found_user.a_id == users[i].resource.ansible_id
+        found_user = get_user_by_ansible_id(users[i].resource.ansible_id)
+        assert found_user == users[i]
+        assert found_user.resource.ansible_id == users[i].resource.ansible_id
 
 
 @pytest.mark.django_db

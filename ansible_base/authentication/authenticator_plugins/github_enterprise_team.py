@@ -9,7 +9,7 @@ from ansible_base.authentication.social_auth import SocialAuthMixin, SocialAuthV
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.github_enterprise_team')
 
 
-class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, GithubEnterpriseTeamOAuth2, AbstractAuthenticatorPlugin):
+class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, GithubEnterpriseTeamOAuth2, AbstractAuthenticatorPlugin):  # type: ignore[override]
     configuration_class = GithubEnterpriseTeamConfiguration
     logger = logger
     type = "github-enterprise-team"

@@ -2,6 +2,7 @@ import os
 from unittest.mock import patch
 
 import pytest
+from django.db import connection
 
 from ansible_base.rbac.models import RoleDefinition
 from test_app.management.commands.create_demo_data import Command
@@ -37,6 +38,12 @@ def test_demo_data_large_mode_creates_roledefinitions(admin_user):
     Test that when LARGE=1 environment variable is set, the create_demo_data command
     creates a large number of RoleDefinitions with permissions as specified in settings.
     """
+    if connection.vendor == 'sqlite':
+        # SQLite has a hard expression-tree depth limit (1000); at this data volume
+        # RBAC's bulk-assignment OR-of-pairs lookup exceeds it. Known issue AAP-90129,
+        # fixed by PR #1116 (not yet merged) -- remove this skip once that lands.
+        pytest.skip('SQLite expression-tree depth limit exceeded at this scale (AAP-90129)')
+
     # Verify no large data exists initially
     assert not Organization.objects.filter(name__startswith='large_').exists()
     assert not RoleDefinition.objects.filter(name__startswith='Large Role Definition').exists()

@@ -23,8 +23,18 @@ class OAuth2ScopePermission(BasePermission):
         if is_authenticated and request.auth and isinstance(request.auth, oauth2_models.AbstractAccessToken):
             is_oauth = True
             scopes = request.auth.scope.split()
-            if 'write' in scopes and 'read' not in scopes:
-                request.auth.scope += ' read'  # write implies read
-            token_permission = TokenHasReadWriteScope()
-            has_oauth_permission = token_permission.has_permission(request, view)
+            if "write" in scopes and "read" not in scopes:
+                # Temporarily expand scope for permission check only.
+                # Use try/finally to guarantee the original scope is restored
+                # so the model instance is never left in a mutated state (AAP-55298).
+                original_scope = request.auth.scope
+                request.auth.scope = original_scope + " read"  # write implies read
+                try:
+                    token_permission = TokenHasReadWriteScope()
+                    has_oauth_permission = token_permission.has_permission(request, view)
+                finally:
+                    request.auth.scope = original_scope
+            else:
+                token_permission = TokenHasReadWriteScope()
+                has_oauth_permission = token_permission.has_permission(request, view)
         return is_authenticated and (not is_oauth or has_oauth_permission)

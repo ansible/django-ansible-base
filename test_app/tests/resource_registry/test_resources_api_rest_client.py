@@ -1,6 +1,8 @@
 import uuid
+from unittest.mock import MagicMock, patch
 
 import pytest
+from crum import impersonate
 from requests.exceptions import HTTPError
 
 from ansible_base.authentication.models import AuthenticatorUser
@@ -147,6 +149,23 @@ def test_list_resources(resource_client, organization):
 
 
 @pytest.mark.django_db
+def test_bulk_update_resources(resource_client, organization):
+    """Test bulk_update_resources client method."""
+    resource = Resource.get_resource_for_object(organization)
+    ansible_id = str(resource.ansible_id)
+    new_service_id = str(uuid.uuid4())
+    items = [{"ansible_id": ansible_id, "new_service_id": new_service_id}]
+
+    resp = resource_client.bulk_update_resources(items)
+    assert resp.status_code == 200
+    assert resp.json()["updated"] == 1
+    assert resp.json()["errors"] == []
+
+    resource.refresh_from_db()
+    assert str(resource.service_id) == new_service_id
+
+
+@pytest.mark.django_db
 def test_get_resource_type(resource_client):
     resp = resource_client.get_resource_type("shared.organization")
 
@@ -194,7 +213,7 @@ def _assert_assignment_matches_data(assignment, data, obj, actor):
     assert 'created' in data, data
     # assert DateTimeField().to_representation(assignment.created) == data['created']  # TODO
     assert str(assignment.created_by.resource.ansible_id) == data['created_by_ansible_id']
-    assert assignment.object_id == obj.id
+    assert assignment.object_id == str(obj.id)
     assert str(assignment.object_id) == str(data['object_id'])
     if hasattr(obj, 'resource'):
         assert str(obj.resource.ansible_id) == data['object_ansible_id']
@@ -241,6 +260,105 @@ def test_sync_obj_assignment(resource_client, user, inventory, inv_rd):
     data = resp.json()
     # All the data, on the remote system, should match our original assignment
     _assert_assignment_matches_data(assignment, data, inventory, user)
+
+
+@pytest.mark.django_db
+def test_sync_assignments_lifts_shared_metadata_and_separates_actor_types(
+    resource_client, system_user, user, team, organization, inventory, org_admin_rd, inv_rd
+):
+    with impersonate(system_user):
+        user_assignment = org_admin_rd.give_permission(user, organization)
+        team_assignment = inv_rd.give_permission(team, inventory)
+
+    with patch.object(resource_client, '_make_request', return_value=MagicMock()) as make_request:
+        resource_client.sync_assignments([user_assignment, team_assignment])
+
+    requests_by_path = {call.args[1]: call.kwargs['data'] for call in make_request.call_args_list}
+    assert set(requests_by_path) == {'role-user-assignments/bulk-assign/', 'role-team-assignments/bulk-assign/'}
+    for payload in requests_by_path.values():
+        assert payload['from_service'] == str(service_id())
+        assert 'created_by_ansible_id' not in payload
+        assert len(payload['assignments']) == 1
+        assignment_data = payload['assignments'][0]
+        assert 'from_service' not in assignment_data
+        assert 'created_by_ansible_id' not in assignment_data
+
+
+@pytest.mark.django_db
+def test_sync_assignment_batches_skip_empty_inputs(resource_client):
+    with patch.object(resource_client, '_make_request') as make_request:
+        assert resource_client.sync_assignments([]) == []
+        assert resource_client.sync_unassignments([]) == []
+
+    make_request.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_sync_assignments_sends_common_creator_once(resource_client, admin_user, user, organization, org_admin_rd):
+    with impersonate(admin_user):
+        assignment = org_admin_rd.give_permission(user, organization)
+
+    with patch.object(resource_client, '_make_request', return_value=MagicMock()) as make_request:
+        resource_client.sync_assignments([assignment])
+
+    make_request.assert_called_once()
+    payload = make_request.call_args.kwargs['data']
+    assert payload['created_by_ansible_id'] == str(admin_user.resource.ansible_id)
+    assert 'created_by_ansible_id' not in payload['assignments'][0]
+
+
+@pytest.mark.django_db
+def test_sync_assignments_serializes_supplied_assignment_missing_from_database(resource_client, user, organization, org_admin_rd):
+    assignment = org_admin_rd.give_permission(user, organization)
+    org_admin_rd.remove_permission(user, organization)
+
+    with patch.object(resource_client, '_make_request', return_value=MagicMock()) as make_request:
+        resource_client.sync_assignments([assignment])
+
+    payload = make_request.call_args.kwargs['data']
+    assert payload['assignments'][0]['role_definition'] == org_admin_rd.name
+    assert payload['assignments'][0]['user_ansible_id'] == str(user.resource.ansible_id)
+    assert payload['assignments'][0]['object_ansible_id'] == str(organization.resource.ansible_id)
+
+
+@pytest.mark.django_db
+def test_sync_unassignments_groups_user_and_team_routes(resource_client, user, team, organization, org_admin_rd):
+    operations = [
+        (org_admin_rd, user, organization),
+        (org_admin_rd, team, organization),
+    ]
+
+    with patch.object(resource_client, '_make_request', return_value=MagicMock()) as make_request:
+        resource_client.sync_unassignments(operations)
+
+    requests_by_path = {call.args[1]: call.kwargs['data'] for call in make_request.call_args_list}
+    assert set(requests_by_path) == {'role-user-assignments/bulk-unassign/', 'role-team-assignments/bulk-unassign/'}
+    for payload in requests_by_path.values():
+        assert payload['from_service'] == str(service_id())
+        assert len(payload['assignments']) == 1
+        assert 'from_service' not in payload['assignments'][0]
+
+
+@pytest.mark.django_db
+def test_sync_unassignments_serializes_local_and_global_targets(resource_client, user, inventory, inv_rd):
+    global_role = RoleDefinition.objects.managed.sys_auditor
+    operations = [(inv_rd, user, inventory), (global_role, user, None)]
+
+    with patch.object(resource_client, '_make_request', return_value=MagicMock()) as make_request:
+        resource_client.sync_unassignments(operations)
+
+    make_request.assert_called_once()
+    method, path = make_request.call_args.args[:2]
+    payload = make_request.call_args.kwargs['data']
+    assert method == 'post'
+    assert path == 'role-user-assignments/bulk-unassign/'
+    assert payload['from_service'] == str(service_id())
+    assert {item['role_definition'] for item in payload['assignments']} == {inv_rd.name, global_role.name}
+    local_target = next(item for item in payload['assignments'] if item['role_definition'] == inv_rd.name)
+    global_target = next(item for item in payload['assignments'] if item['role_definition'] == global_role.name)
+    assert local_target['object_id'] == str(inventory.pk)
+    assert 'object_ansible_id' not in local_target
+    assert global_target['object_id'] is None
 
 
 @pytest.mark.django_db

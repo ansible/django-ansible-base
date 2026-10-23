@@ -26,11 +26,18 @@ LOGGING = {
             'formatter': 'simple',
             'filters': ['request_id_filter'],
         },
+        'null': {
+            '()': 'logging.NullHandler',
+        },
     },
     'loggers': {
         'ansible_base': {
             'handlers': ['console'],
             'level': 'DEBUG',
+        },
+        'opentelemetry.exporter.otlp': {
+            'handlers': ['null'],
+            'propagate': False,
         },
         '': {
             'handlers': ['console'],
@@ -66,6 +73,7 @@ INSTALLED_APPS = [
     'ansible_base.activitystream',
     'ansible_base.help_text_check',
     'ansible_base.feature_flags',
+    'ansible_base.observability',
 ]
 
 MIDDLEWARE = [
@@ -135,6 +143,20 @@ INTERNAL_IPS = [
     "127.0.0.1",
 ]
 
+DEBUG_TOOLBAR_CONFIG = {
+    'HIDE_IN_STACKTRACES': (
+        'socketserver',
+        'threading',
+        'wsgiref',
+        'debug_toolbar',
+        'django.core.handlers',
+        'django.core.servers',
+        'django.utils.decorators',
+        'django.utils.deprecation',
+        'django.utils.functional',
+    ),
+}
+
 LANGUAGE_CODE = 'en-us'
 
 TIME_ZONE = 'UTC'
@@ -143,7 +165,7 @@ USE_I18N = True
 
 USE_TZ = True
 
-DEMO_DATA_COUNTS = {'organization': 150, 'user': 379, 'team': 43, 'roledefinition': 100}
+DEMO_DATA_COUNTS = {'organization': 150, 'user': 379, 'team': 43, 'roledefinition': 100, 'inventory': 60, 'credential': 60}
 
 ANSIBLE_BASE_TEAM_MODEL = 'test_app.Team'
 ANSIBLE_BASE_ORGANIZATION_MODEL = 'test_app.Organization'
@@ -205,3 +227,6 @@ RESOURCE_SERVER_SYNC_ENABLED = False
 RENAMED_USERNAME_PREFIX = "dab:"
 
 JUST_A_TEST = 41
+
+ANSIBLE_OBSERVABILITY_BATCH_DELAY_MS = 1000
+ANSIBLE_OBSERVABILITY_CAPTURE_HEADERS = ['user-agent', 'accept-language', 'x-correlation-.*', 'x-capture-test']

@@ -1,11 +1,16 @@
 import base64
 import binascii
+import html as html_mod
+import logging
 import re
 import secrets
+import unicodedata
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse, urlunsplit
+from urllib.parse import unquote, urlparse, urlunsplit
 
+import nh3
+import regex
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -15,7 +20,285 @@ from django.core.validators import URLValidator
 from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import ValidationError
 
+logger = logging.getLogger('ansible_base.lib.utils.validation')
+
 VALID_STRING = _('Must be a valid string')
+
+DEFAULT_NAME_FIELDS = frozenset({'name', 'username', 'hostname'})
+
+
+RESOURCE_NAME_PATTERN = r'^[\p{L}\p{N}_][\p{L}\p{N}\p{M}_ .@\-]{0,511}\Z'
+RESOURCE_NAME_RE = regex.compile(RESOURCE_NAME_PATTERN)
+
+_INVISIBLE_RE = regex.compile(r'\p{Default_Ignorable_Code_Point}')
+_ZALGO_RE = regex.compile(r'\p{M}{5,}')
+_MARK_CAT_RE = regex.compile(r'\p{M}')
+
+
+def _has_dense_combining_marks(value, window=8, threshold=5):
+    """Detect dense combining marks in any window, catching interleaved Zalgo."""
+    positions = [m.start() for m in _MARK_CAT_RE.finditer(value)]
+    left = 0
+    for right in range(len(positions)):
+        while positions[right] - positions[left] >= window:
+            left += 1
+        if right - left + 1 >= threshold:
+            return True
+    return False
+
+
+# Client-side (JS-consumable) approximation of the sliding-window check above, used by
+# ansible_base.lib.metadata.build_tier1_frontend_pattern() to advertise a `pattern` in
+# DRF OPTIONS responses. It requires 5 total combining marks where each adjacent pair
+# is separated by at most one non-mark character, which also catches "interleaved"
+# Zalgo (marks broken up by base characters) that the plain _ZALGO_RE run-length check
+# above misses on its own -- e.g. "á̀b́̀ć" (3 base chars +
+# 5 marks, spanning positions 1-7, diff=6 < the window=8 used by
+# _has_dense_combining_marks() below).
+#
+# This is a bounded, ReDoS-safe *approximation*, NOT an exact port of the sliding
+# window algorithm: marks separated by 2+ non-mark characters within an 8-code-point
+# window can still slip past this pattern while still being rejected by
+# _has_dense_combining_marks() server-side. validate_resource_name() remains the
+# actual security boundary; this pattern only improves client-side UX.
+_ZALGO_INTERLEAVED_APPROX = r'\p{M}(?:[^\p{M}]?\p{M}){4}'
+
+
+CONTROL_CHARS = (
+    '['
+    '\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f'  # C0/C1 controls (tab, LF, CR allowed)
+    '\u200b'  # ZWSP (spoofing vector)
+    '\u202d\u202e'  # LRO/RLO (Trojan Source CVE-2021-42574)
+    '\u2060-\u2064'  # Invisible math operators
+    '\u206a-\u206f'  # Deprecated formatting chars
+    '\ufeff'  # BOM in middle of text
+    '\ufff9-\ufffb'  # Interlinear annotations
+    ']'
+)
+
+_CONTROL_RE = re.compile(CONTROL_CHARS)
+
+_HANDLER_URI_RE = re.compile(
+    r'\b(?:javascript|vbscript)\s*:' + r'|\bdata\s*:\s*(?:'
+    r'text/(?:html|javascript[\d.]*|xml|ecmascript|x-javascript|x-ecmascript|jscript|livescript)'
+    r'|application/(?:xhtml\+xml|javascript|xml|ecmascript|x-javascript|x-ecmascript)'
+    r'|image/svg\+xml)',
+    re.IGNORECASE,
+)
+
+# Source pattern for Tier 2 OPTIONS hints (metadata.build_tier2_frontend_pattern);
+# server-side enforcement uses _contains_injection_pattern(), not _INJECTION_RE.search().
+_INJECTION_RE = re.compile(r'[$]\([^)]+\)|[$]\{[^}]+\}' + r'|\{\{[^}]+\}\}|\{%[^%]+%\}')
+
+
+def _forbidden_index_from(text: str, start: int, needle: str, cached: int) -> int:
+    """First index of ``needle`` at or after ``start``, reusing ``cached`` when still in range."""
+    if cached >= start:
+        return cached
+    return text.find(needle, start)
+
+
+def _injection_inner_clear(text: str, inner_start: int, close_at: int, forbidden: str, forbidden_at: int) -> tuple[bool, int]:
+    """True when ``[inner_start, close_at)`` contains no ``forbidden`` (legacy [^X]+ semantics)."""
+    forbidden_at = _forbidden_index_from(text, inner_start, forbidden, forbidden_at)
+    return forbidden_at == -1 or forbidden_at >= close_at, forbidden_at
+
+
+def _injection_pair_at_single(
+    text: str,
+    inner_start: int,
+    closer: str,
+    forbidden_in_inner: str,
+    close_search: int,
+    forbidden_at: int,
+) -> tuple[bool, int, int]:
+    """Try to close an opener with a single-character closer (e.g. ``)`` or ``}``).
+
+    Scans forward from ``max(close_search, inner_start)`` for the closer character.
+    Returns whether a valid non-empty inner span was found, plus updated scan cursors.
+    """
+    text_len = len(text)
+    close_index = max(close_search, inner_start)
+    while close_index < text_len and text[close_index] != closer[0]:
+        close_index += 1
+    next_close_search = close_index if close_index < text_len else text_len
+    if close_index >= text_len or close_index <= inner_start:
+        return False, next_close_search, forbidden_at
+    clear, forbidden_at = _injection_inner_clear(text, inner_start, close_index, forbidden_in_inner, forbidden_at)
+    if clear:
+        return True, close_index, forbidden_at
+    return False, next_close_search, forbidden_at
+
+
+def _injection_pair_at_multi(
+    text: str,
+    inner_start: int,
+    closer: str,
+    forbidden_in_inner: str,
+    close_search: int,
+    forbidden_at: int,
+) -> tuple[bool, int, int]:
+    """Try to close an opener with a multi-character closer (e.g. ``}}`` or ``%}``).
+
+    Scans forward for a full closer match. When the inner span contains a forbidden
+    character, the close cursor stays at the candidate so a later opener can reuse it.
+    """
+    text_len = len(text)
+    close_len = len(closer)
+    close_index = max(close_search, inner_start)
+    while close_index < text_len and text[close_index] != closer[0]:
+        close_index += 1
+    next_close_search = (close_index + 1) if close_index < text_len else text_len
+    if close_index + close_len > text_len or text[close_index : close_index + close_len] != closer or close_index <= inner_start:
+        return False, next_close_search, forbidden_at
+    clear, forbidden_at = _injection_inner_clear(text, inner_start, close_index, forbidden_in_inner, forbidden_at)
+    if clear:
+        return True, close_index + close_len, forbidden_at
+    # Keep close_index so a later opener can match this ``}}`` (e.g. ``{{{{}a{{b}}`` → ``{{b}}``).
+    return False, close_index, forbidden_at
+
+
+def _injection_pair_at(
+    text: str,
+    inner_start: int,
+    closer: str,
+    forbidden_in_inner: str,
+    close_search: int,
+    forbidden_at: int,
+) -> tuple[bool, int, int]:
+    """Check one opener for a valid pair; return match flag and monotonic scan cursors."""
+    if len(closer) == 1:
+        return _injection_pair_at_single(text, inner_start, closer, forbidden_in_inner, close_search, forbidden_at)
+    return _injection_pair_at_multi(text, inner_start, closer, forbidden_in_inner, close_search, forbidden_at)
+
+
+def _injection_pair_forward(text: str, opener: str, closer: str, forbidden_in_inner: str) -> bool:
+    """Match opener/closer pairs with the same inner rules as _INJECTION_RE, without regex backtracking.
+
+    Single forward pass from each ``opener``; inner text must be non-empty and must not
+    contain ``forbidden_in_inner`` (mirrors [^X]+ in the legacy pattern). Returns early
+    when either delimiter is absent (e.g. unclosed ``{{`` or ``)`` without ``$(``).
+    """
+    if closer not in text or opener not in text:
+        return False
+    text_len = len(text)
+    open_len = len(opener)
+    opener_index = 0
+    close_search = 0
+    forbidden_at = -1
+    while opener_index <= text_len - open_len:
+        if text[opener_index : opener_index + open_len] != opener:
+            opener_index += 1
+            continue
+        inner_start = opener_index + open_len
+        if inner_start >= text_len:
+            return False
+        matched, close_search, forbidden_at = _injection_pair_at(text, inner_start, closer, forbidden_in_inner, close_search, forbidden_at)
+        if matched:
+            return True
+        opener_index += open_len
+    return False
+
+
+def _contains_injection_pattern(text: str) -> bool:
+    """Return True when text contains shell or template injection delimiters.
+
+    Implements _INJECTION_RE semantics with linear scans. The compiled _INJECTION_RE is
+    retained for client-side pattern hints only.
+    """
+    if _injection_pair_forward(text, '$(', ')', ')'):
+        return True
+    if _injection_pair_forward(text, '${', '}', '}'):
+        return True
+    if _injection_pair_forward(text, '{{', '}}', '}'):
+        return True
+    if _injection_pair_forward(text, '{%', '%}', '%'):
+        return True
+    return False
+
+
+def _decoded_variants(value, max_depth=3):
+    """Return the value plus successively HTML-, percent-, and NFKC-decoded
+    forms, so that entity-, URL-, or fullwidth-encoded payloads cannot bypass
+    the denylist checks."""
+    variants = [value]
+    current = value
+    for _pass in range(max_depth):
+        decoded = html_mod.unescape(unquote(current))
+        nfkc = unicodedata.normalize('NFKC', decoded)
+        collapsed = re.sub(
+            r'<\s+(script|iframe|object|embed|svg|math|form|base|meta|link|template|style)',
+            r'<\1',
+            nfkc,
+            flags=re.IGNORECASE,
+        )
+        if collapsed == current:
+            break
+        variants.append(collapsed)
+        current = collapsed
+    else:
+        logger.warning("Decode-variant loop did not converge after %d passes — input may contain deeply encoded content", max_depth)
+    return variants
+
+
+def _normalize_for_markup_compare(text):
+    """Undo the transformations nh3 applies that are *not* markup removal, so
+    only genuine tag/attribute stripping causes a mismatch: entity escaping
+    (``&`` -> ``&amp;``) and CRLF/CR -> LF newline normalization."""
+    return html_mod.unescape(text).replace('\r\n', '\n').replace('\r', '\n')
+
+
+def _contains_markup(text):
+    """True if the text contains any HTML tag. nh3 (a real HTML parser) is run
+    with ``tags=set()`` to strip every tag; if that changes the text, markup was
+    present. The cleaned output is discarded."""
+    return _normalize_for_markup_compare(nh3.clean(text, tags=set())) != _normalize_for_markup_compare(text)
+
+
+def validate_resource_name(value):
+    """Tier 1 validator: enforces strict allowlist for name-type fields."""
+    if not isinstance(value, str):
+        raise ValidationError(
+            _(
+                "Enter a valid name. Use letters, numbers, spaces, hyphens (-), underscores (_), dots (.), and @. "
+                "Start with a letter, number, or underscore. Max 512 characters."
+            )
+        )
+    value = unicodedata.normalize('NFC', value)
+    if _INVISIBLE_RE.search(value):
+        raise ValidationError(_("This field can't include invisible characters."))
+    if not RESOURCE_NAME_RE.match(value):
+        raise ValidationError(
+            _(
+                "Enter a valid name. Use letters, numbers, spaces, hyphens (-), underscores (_), dots (.), and @. "
+                "Start with a letter, number, or underscore. Max 512 characters."
+            )
+        )
+    if _ZALGO_RE.search(value) or _has_dense_combining_marks(value):
+        raise ValidationError(_("Too many combining marks."))
+
+
+def validate_free_text(value):
+    """Tier 2 validator: rejects dangerous patterns in general text fields.
+
+    Markup detection uses the nh3 sanitizer (a real parser) rather than a
+    regex, and every input is decoded first, so entity- or URL-encoded
+    payloads cannot slip through.
+    """
+    if not isinstance(value, str):
+        return
+    for v in _decoded_variants(value):
+        if _CONTROL_RE.search(v):
+            raise ValidationError(_("This field can't include control characters."))
+        if _contains_markup(v):
+            raise ValidationError(_("This field can't include HTML tags, script markup, or unsafe URI schemes."))
+        # WHATWG URL parser strips tab/LF/CR before scheme matching, so
+        # "jav\tascript:" is browser-equivalent to "javascript:".
+        uri_check = re.sub(r'[\t\n\r]', '', v)
+        if _HANDLER_URI_RE.search(uri_check):
+            raise ValidationError(_("This field can't include HTML tags, script markup, or unsafe URI schemes."))
+        if _contains_injection_pattern(v):
+            raise ValidationError(_("This field can't include shell or template syntax."))
 
 
 def validate_url_list(urls: list, schemes: list = ['https'], allow_plain_hostname: bool = False) -> None:

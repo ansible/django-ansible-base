@@ -165,6 +165,9 @@ class SocialAuthMixin:
 
         return super().start()
 
+    # social-core types BaseAuth.name as a writeable str; this override is intentionally
+    # read-only (derived from the database instance) but never reassigned at runtime, so
+    # each concrete plugin class silences mypy's "Cannot override writeable attribute" [override].
     @property
     def name(self):
         return str(self.database_instance.slug)
@@ -174,6 +177,17 @@ class SocialAuthMixin:
         Receives the user object that .authenticate returns.
         """
         return []
+
+    def get_claims_attrs(self, response):
+        """
+        Extract the attributes dict to use for authenticator map trigger evaluation.
+
+        The default implementation returns the response unchanged (suitable for OIDC
+        and other protocols where claims sit at the top level of the response).
+        Backends whose IdP wraps claims in a nested structure should override this
+        method to extract the appropriate sub-dict.
+        """
+        return response
 
     def ensure_strategy_in_args(self, args):
         if len(args) == 0:
@@ -204,6 +218,10 @@ class SocialAuthValidateCallbackMixin:
 def capture_oauth_email_pipeline(*args, backend, details, **kwargs):
     """
     Pipeline function to capture and store OAuth provider email in AuthenticatorUser.
+
+    Runs AFTER associate_user so the AuthenticatorUser record already exists.
+    Updates the email field rather than creating a new record, avoiding
+    IntegrityError when the OAuth uid differs from the Django username.
     """
     if not backend or not hasattr(backend, 'database_instance') or not backend.database_instance:
         logger.warning("No backend or database_instance found in OAuth email pipeline")
@@ -224,14 +242,20 @@ def capture_oauth_email_pipeline(*args, backend, details, **kwargs):
 
     logger.debug(f"Capturing OAuth email for user {user.username}: {email}")
 
-    # Get or update the AuthenticatorUser with the email
-    try:
-        from ansible_base.authentication.utils.authentication import get_or_create_authenticator_user
+    social = kwargs.get('social')
+    if social is None:
+        logger.warning(f"'social' key missing from pipeline kwargs for user {user.username}; falling back to DB lookup. Check SOCIAL_AUTH_PIPELINE ordering.")
+        try:
+            social = AuthenticatorUser.objects.get(uid=uid, provider=backend.database_instance)
+        except AuthenticatorUser.DoesNotExist:
+            logger.warning(f"No AuthenticatorUser found for uid={uid}, cannot store OAuth email for user {user.username}")
+            return
 
-        get_or_create_authenticator_user(
-            uid=uid, email=email, authenticator=backend.database_instance, user_details=details, extra_data=kwargs.get('response', {})
-        )
-        logger.info(f"Stored OAuth email {email} for user {user.username} from {backend.database_instance.name}")
+    try:
+        if email and social.email != email:
+            social.email = email
+            social.save(update_fields=['email'])
+            logger.info(f"Stored OAuth email for user {user.username} from {backend.database_instance.name}")
     except Exception as e:
         logger.warning(f"Failed to store OAuth email for user {user.username}: {e}")
 
@@ -254,6 +278,7 @@ def create_user_claims_pipeline(*args, backend, response, **kwargs):
 
     logger.debug(f'updating user claims with groups claim "{groups_claim}": {extra_groups}')
 
-    user = update_user_claims(kwargs["user"], backend.database_instance, backend.get_user_groups(extra_groups))
+    claims_attrs = backend.get_claims_attrs(response)
+    user = update_user_claims(kwargs["user"], backend.database_instance, backend.get_user_groups(extra_groups), attrs=claims_attrs)
     if user is None:
         return SOCIAL_AUTH_PIPELINE_FAILED_STATUS

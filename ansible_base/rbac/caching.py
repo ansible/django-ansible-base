@@ -1,17 +1,23 @@
+import gc
 import logging
+import threading
 from collections import defaultdict
-from typing import Optional
+from collections.abc import Iterable
+from typing import Optional, Union
 from uuid import UUID
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 from django.db.utils import IntegrityError
 
-from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation, RoleEvaluationUUID
+from ansible_base.rbac.models import ObjectRole, RoleEvaluation, RoleEvaluationUUID, get_evaluation_model
 from ansible_base.rbac.permission_registry import permission_registry
-from ansible_base.rbac.prefetch import TypesPrefetch
+from ansible_base.rbac.prefetch import EvaluationsPrefetch, TypesPrefetch
 
 logger = logging.getLogger('ansible_base.rbac.caching')
+
+RECOMPUTE_CHUNK_SIZE = 1000
 
 
 """
@@ -24,6 +30,99 @@ NOTE:
 This is highly dependent on the model methods ObjectRole.needed_cache_updates and expected_direct_permissions
 Those methods are what truly dictate the object-role to object-permission translation
 """
+
+
+class DeferRBACComputations(threading.local):
+    def __init__(self):
+        self.active = False
+        self.deleted_team_pks: set[int] = set()
+        self.deleted_object_pks: list[tuple[int, Union[int, UUID]]] = []
+        self.created_instances: list[tuple] = []
+
+    @property
+    def has_deferred_data(self):
+        return bool(self.deleted_team_pks or self.deleted_object_pks or self.created_instances)
+
+
+defer_rbac_state = DeferRBACComputations()
+
+
+def team_ids_from_role_target(object_role: 'ObjectRole') -> set[int]:
+    """Derive which teams a member_team ObjectRole targets from its content type.
+
+    Used only when the provides_teams relationship is not yet computed —
+    i.e. for newly created ObjectRoles or when member_team permission was
+    just added to a RoleDefinition. For existing roles where provides_teams
+    is already populated, query provides_teams directly instead.
+    """
+    if object_role.content_type_id == permission_registry.team_ct_id:
+        return {int(object_role.object_id)}
+    if object_role.content_type_id == permission_registry.org_ct_id:
+        parent_fd = permission_registry.get_parent_fd_name(permission_registry.team_model)
+        if parent_fd:
+            return set(permission_registry.team_model.objects.filter(**{f'{parent_fd}_id': int(object_role.object_id)}).values_list('id', flat=True))
+    return set()
+
+
+def bulk_ancestor_roles(team_pks: Iterable[int]) -> set['ObjectRole']:
+    """Return ObjectRoles that grant any permission to the given teams (via RoleEvaluation)."""
+    ancestor_evals = RoleEvaluation.objects.filter(
+        codename=permission_registry.team_permission,
+        object_id__in=team_pks,
+        content_type_id=permission_registry.team_ct_id,
+    )
+    return set(ObjectRole.objects.filter(permission_partials__in=ancestor_evals))
+
+
+def cleanup_deleted_team_roles(team_pks: set[int]) -> tuple[set['ObjectRole'], set[int]]:
+    """Remove ObjectRoles and evaluations for deleted teams. Called by defer_rbac_computations flush."""
+    ancestor_roles = bulk_ancestor_roles(team_pks)
+    team_ct_id = permission_registry.team_ct_id
+    RoleEvaluation.objects.filter(content_type_id=team_ct_id, object_id__in=team_pks).delete()
+    deleted_or_ids = set(ObjectRole.objects.filter(content_type_id=team_ct_id, object_id__in=team_pks).values_list('id', flat=True))
+    ObjectRole.objects.filter(id__in=deleted_or_ids).delete()
+    eval_model = get_evaluation_model(permission_registry.team_model)
+    eval_model.objects.filter(content_type_id=team_ct_id, object_id__in=team_pks).delete()
+    return ancestor_roles, deleted_or_ids
+
+
+def cleanup_deleted_object_roles(object_pks: list[tuple[int, int | UUID]]) -> set[int]:
+    """Remove ObjectRoles and evaluations for deleted objects. Called by defer_rbac_computations flush."""
+    by_ct: dict[int, set[int | UUID]] = defaultdict(set)
+    for ct_id, obj_id in object_pks:
+        by_ct[ct_id].add(obj_id)
+    deleted_or_ids: set[int] = set()
+    for ct_id, obj_ids in by_ct.items():
+        batch_ids = set(ObjectRole.objects.filter(content_type_id=ct_id, object_id__in=obj_ids).values_list('id', flat=True))
+        ObjectRole.objects.filter(id__in=batch_ids).delete()
+        deleted_or_ids.update(batch_ids)
+        uuid_ids = {oid for oid in obj_ids if isinstance(oid, UUID)}
+        int_ids = obj_ids - uuid_ids
+        if int_ids:
+            RoleEvaluation.objects.filter(content_type_id=ct_id, object_id__in=int_ids).delete()
+        if uuid_ids:
+            RoleEvaluationUUID.objects.filter(content_type_id=ct_id, object_id__in=uuid_ids).delete()
+    return deleted_or_ids
+
+
+def cleanup_orphaned_object_roles() -> int:
+    """Delete ObjectRoles with no user or team assignments."""
+    deleted_count, _ = ObjectRole.objects.filter(users__isnull=True, teams__isnull=True).delete()
+    if deleted_count:
+        logger.info('Cleaned up %d orphaned ObjectRole(s)', deleted_count)
+    return deleted_count
+
+
+def object_roles_for_parents(parent_gfks: set[tuple]) -> set['ObjectRole']:
+    """Return ObjectRoles affected by created objects via their parent chain. Called by defer_rbac_computations flush."""
+    q_exprs = [Q(content_type=parent_ct, object_id=parent_id) for parent_ct, parent_id in parent_gfks]
+    q_filter = q_exprs[0]
+    for next_q in q_exprs[1:]:
+        q_filter |= next_q
+    to_update = set(ObjectRole.objects.filter(q_filter))
+    ancestors = set(ObjectRole.objects.filter(provides_teams__has_roles__in=to_update))
+    to_update.update(ancestors)
+    return to_update
 
 
 def all_team_parents(team_id: int, team_team_parents: dict, seen: Optional[set] = None) -> set[int]:
@@ -47,6 +146,27 @@ def all_team_parents(team_id: int, team_team_parents: dict, seen: Optional[set] 
         seen.add(parent_id)
         parent_team_ids.update(all_team_parents(parent_id, team_team_parents, seen=seen))
     return parent_team_ids
+
+
+def all_team_children(team_id: int, team_team_children: dict, seen: Optional[set] = None) -> set[int]:
+    """
+    Returns child teams, and child teams of child teams, until we have them all.
+    Mirror of all_team_parents but traversing the reverse direction.
+
+    team_id: id of the team we want to get the direct and indirect children of
+    team_team_children: mapping of team id to ids of its children (reverse of team_team_parents)
+    seen: mutable set to prevent infinite recursion in the event of loops
+    """
+    child_team_ids = set()
+    if seen is None:
+        seen = set()
+    for child_id in team_team_children.get(team_id, []):
+        if child_id in seen:
+            continue
+        child_team_ids.add(child_id)
+        seen.add(child_id)
+        child_team_ids.update(all_team_children(child_id, team_team_children, seen=seen))
+    return child_team_ids
 
 
 def get_org_team_mapping() -> dict[int, list[int]]:
@@ -173,11 +293,16 @@ def _safe_m2m_add(team, to_add):
                 logger.warning('Persistent IntegrityError adding member_roles for team %s, will be corrected on next recompute', team.id)
 
 
-def compute_team_member_roles():
+def compute_team_member_roles(team_ids=None):
     """
-    Fills in the ObjectRole.provides_teams relationship for all teams.
-    This relationship is a list of teams that the role grants membership for
-    This method is always ran globally.
+    Fills in the ObjectRole.provides_teams relationship for teams.
+    This relationship is a list of teams that the role grants membership for.
+
+    Args:
+        team_ids: Optional iterable of team IDs to scope the write phase.
+            When provided, only those teams (plus their descendants in the
+            team-of-team graph) have their member_roles updated.
+            When None, all teams are updated (global recompute).
     """
     # Manually prefetch the team to org memberships
     org_team_mapping = get_org_team_mapping()
@@ -198,8 +323,22 @@ def compute_team_member_roles():
             all_member_roles[team_id].update(set(direct_member_roles.get(parent_team_id, [])))
 
     # Great! we should be done building all_member_roles which tells what roles gives team membership for all teams
-    # now at this point we save that data
-    for team in permission_registry.team_model.objects.prefetch_related('member_roles'):
+    # now at this point we save that data, optionally scoped to specific teams
+    if team_ids is not None:
+        team_ids = set(team_ids)
+        # Expand to include descendants in the team-of-team graph
+        team_team_children = defaultdict(set)
+        for child, parents in team_team_parents.items():
+            for parent in parents:
+                team_team_children[parent].add(child)
+        expanded = set(team_ids)
+        for tid in team_ids:
+            expanded.update(all_team_children(tid, team_team_children))
+        teams_qs = permission_registry.team_model.objects.filter(id__in=expanded)
+    else:
+        teams_qs = permission_registry.team_model.objects.all()
+
+    for team in teams_qs.prefetch_related('member_roles'):
         # NOTE: the .set method will not use the prefetched data, thus the messy implementation here
         existing_ids = set(r.id for r in team.member_roles.all())
         expected_ids = set(all_member_roles.get(team.id, []))
@@ -239,35 +378,43 @@ def _safe_bulk_create_evaluations(model, evaluations, ignore_conflicts):
                 logger.warning('Persistent IntegrityError in bulk_create for %s, will be corrected on next recompute', model.__name__)
 
 
-def compute_object_role_permissions(object_roles=None, types_prefetch=None):
-    """
-    Assumes the ObjectRole.provides_teams relationship is correct.
-    Makes the RoleEvaluation table correct for all specified object_roles
-    """
-    to_delete = set()
-    to_add = []
+class EvaluationUpdates:
+    """Accumulates RoleEvaluation changes across ObjectRoles, then applies them in bulk."""
 
-    if types_prefetch is None:
-        types_prefetch = TypesPrefetch.from_database(RoleDefinition)
-    if object_roles is None:
-        object_roles = ObjectRole.objects.iterator()
+    def __init__(self):
+        self.to_delete: set[tuple[int, type]] = set()
+        self.to_add: list = []
+        # Memo of expected evaluations for team-held roles, shared by every
+        # ObjectRole collected in this recompute (look-ahead mode only).
+        self.lookahead_cache: dict = {}
 
-    for object_role in object_roles:
-        role_to_delete, role_to_add = object_role.needed_cache_updates(types_prefetch=types_prefetch)
-
+    def collect(self, object_role, types_prefetch, evaluations_prefetch=None, object_pk=None, object_ct_id=None, target_parents=None):
+        role_to_delete, role_to_add = object_role.needed_cache_updates(
+            types_prefetch=types_prefetch,
+            evaluations_prefetch=evaluations_prefetch,
+            object_pk=object_pk,
+            object_ct_id=object_ct_id,
+            target_parents=target_parents,
+            lookahead_cache=self.lookahead_cache if object_pk is not None else None,
+        )
         if role_to_delete:
-            logger.debug(f'Removing {len(role_to_delete)} object-permissions from {object_role}')
-            to_delete.update(role_to_delete)
-
+            logger.debug('Removing %d object-permissions from ObjectRole(pk=%s)', len(role_to_delete), object_role.pk)
+            self.to_delete.update(role_to_delete)
         if role_to_add:
-            logger.debug(f'Adding {len(role_to_add)} object-permissions to {object_role}')
-            to_add.extend(role_to_add)
+            logger.debug('Adding %d object-permissions to ObjectRole(pk=%s)', len(role_to_add), object_role.pk)
+            self.to_add.extend(role_to_add)
 
-    if to_add:
-        logger.info(f'Adding {len(to_add)} object-permission records')
+    def apply(self):
+        self._apply_additions()
+        self._apply_deletions()
+
+    def _apply_additions(self):
+        if not self.to_add:
+            return
+        logger.info(f'Adding {len(self.to_add)} object-permission records')
         to_add_int = []
         to_add_uuid = []
-        for evaluation in to_add:
+        for evaluation in self.to_add:
             if isinstance(evaluation.object_id, int):
                 to_add_int.append(evaluation)
             elif isinstance(evaluation.object_id, UUID):
@@ -277,11 +424,13 @@ def compute_object_role_permissions(object_roles=None, types_prefetch=None):
         _safe_bulk_create_evaluations(RoleEvaluation, to_add_int, settings.ANSIBLE_BASE_EVALUATIONS_IGNORE_CONFLICTS)
         _safe_bulk_create_evaluations(RoleEvaluationUUID, to_add_uuid, settings.ANSIBLE_BASE_EVALUATIONS_IGNORE_CONFLICTS)
 
-    if to_delete:
-        logger.info(f'Deleting {len(to_delete)} object-permission records')
+    def _apply_deletions(self):
+        if not self.to_delete:
+            return
+        logger.info(f'Deleting {len(self.to_delete)} object-permission records')
         to_delete_int = []
         to_delete_uuid = []
-        for evaluation_id, evaluation_type in to_delete:
+        for evaluation_id, evaluation_type in self.to_delete:
             if evaluation_type is int:
                 to_delete_int.append(evaluation_id)
             elif evaluation_type is UUID:
@@ -292,3 +441,219 @@ def compute_object_role_permissions(object_roles=None, types_prefetch=None):
             RoleEvaluation.objects.filter(id__in=to_delete_int).delete()
         if to_delete_uuid:
             RoleEvaluationUUID.objects.filter(id__in=to_delete_uuid).delete()
+
+
+def recompute_role_evaluations(
+    object_roles: Iterable[ObjectRole],
+    types_prefetch: Optional[TypesPrefetch] = None,
+    object_pk: Optional[int | UUID] = None,
+    object_ct_id: Optional[int] = None,
+    target_parents: Optional[Iterable[tuple[int, int | UUID]]] = None,
+) -> None:
+    """Recompute RoleEvaluation entries for a specific set of ObjectRoles.
+
+    Compares expected evaluations (derived from ObjectRole and RoleDefinition
+    data) against existing RoleEvaluation rows, then bulk-creates missing
+    entries and bulk-deletes stale ones.
+
+    When object_pk and object_ct_id are provided, the scope is narrowed to
+    a single target object (used by post_save signals for look-ahead).
+    target_parents, the (content_type_id, object_id) parent chain of that
+    object, additionally lets team-held roles be filtered to the ones that
+    can grant evaluations on it.
+    """
+    if types_prefetch is None:
+        types_prefetch = TypesPrefetch.from_db()
+
+    if target_parents is not None:
+        target_parents = [(ct_id, obj_id) for ct_id, obj_id in target_parents]
+
+    updates = EvaluationUpdates()
+    for object_role in object_roles:
+        updates.collect(object_role, types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id, target_parents=target_parents)
+    updates.apply()
+
+
+def _created_role_teams(role_pks: list[int]) -> tuple[dict[int, set[int]], set[int]]:
+    """Map each role in role_pks to the teams it provides membership to.
+
+    These are the roles being recomputed (e.g. a team's member role). Returns
+    (role_pk -> team_ids, union of all team_ids) via a single query on the
+    provides_teams through table.
+    """
+    role_to_teams: dict[int, set[int]] = defaultdict(set)
+    through = ObjectRole.provides_teams.through
+    for role_pk, team_id in through.objects.filter(objectrole_id__in=role_pks).values_list('objectrole_id', 'team_id'):
+        role_to_teams[role_pk].add(team_id)
+    return role_to_teams, set().union(*role_to_teams.values()) if role_to_teams else set()
+
+
+def _created_team_roles(team_ids: set[int], object_ct_id: int, parent_keys: set[tuple[int, str]]) -> tuple[dict[int, ObjectRole], dict[int, set[int]]]:
+    """Load the roles held by team_ids that can grant on the created object.
+
+    The inverse direction of _created_role_teams: given teams, find the roles
+    assigned *to* those teams, limited to roles on the object itself or on one
+    of its parents (parent_keys). Returns (role_pk -> ObjectRole,
+    team_id -> held role_pks).
+    """
+    team_roles_by_pk: dict[int, ObjectRole] = {}
+    team_to_role_pks: dict[int, set[int]] = defaultdict(set)
+    if not team_ids:
+        return team_roles_by_pk, team_to_role_pks
+
+    relevant_filter = Q(content_type_id=object_ct_id, object_id__in=[])
+    for ct_id, parent_id in parent_keys:
+        relevant_filter |= Q(content_type_id=ct_id, object_id=parent_id)
+    team_roles_by_pk = {role.pk: role for role in ObjectRole.objects.filter(teams__in=team_ids).filter(relevant_filter).distinct()}
+    if not team_roles_by_pk:
+        return team_roles_by_pk, team_to_role_pks
+
+    assignment_model = ObjectRole.teams.through
+    for team_id, role_pk in assignment_model.objects.filter(team_id__in=team_ids, object_role_id__in=team_roles_by_pk.keys()).values_list(
+        'team_id', 'object_role_id'
+    ):
+        team_to_role_pks[team_id].add(role_pk)
+    return team_roles_by_pk, team_to_role_pks
+
+
+def _created_existing_evaluations(role_pks: list[int], object_pk: int | UUID, object_ct_id: int) -> dict[int, dict]:
+    """Load the RoleEvaluation rows that already exist for the created object.
+
+    Returns role_pk -> {(codename, content_type_id, object_id): evaluation_id},
+    reading from RoleEvaluationUUID when the object is UUID-keyed.
+    """
+    evaluation_model = RoleEvaluationUUID if isinstance(object_pk, UUID) else RoleEvaluation
+    existing: dict[int, dict] = defaultdict(dict)
+    for eval_id, role_pk, codename, ct_id, obj_id in evaluation_model.objects.filter(
+        role_id__in=role_pks, content_type_id=object_ct_id, object_id=object_pk
+    ).values_list('id', 'role_id', 'codename', 'content_type_id', 'object_id'):
+        existing[role_pk][(codename, ct_id, obj_id)] = eval_id
+    return existing
+
+
+def _collect_created_role_updates(
+    role: ObjectRole,
+    direct_keys: set[tuple[int, str]],
+    role_to_teams: dict[int, set[int]],
+    team_to_role_pks: dict[int, set[int]],
+    team_roles_by_pk: dict[int, ObjectRole],
+    expected_by_role_pk: dict[int, set],
+    types_prefetch: TypesPrefetch,
+    object_pk: int | UUID,
+    object_ct_id: int,
+    existing: dict[int, dict],
+    updates: EvaluationUpdates,
+) -> None:
+    """Diff one role's expected evaluations on the created object against existing ones.
+
+    A role's expected set is the union of its own direct permissions (only when
+    its object is the created object or a parent of it) and the permissions of
+    every team-held role reached through the teams it provides membership to.
+    Missing rows are queued on updates.to_add, stale rows on updates.to_delete.
+    expected_by_role_pk memoizes per-role results across calls.
+    """
+
+    def expected_for(expected_role: ObjectRole) -> set:
+        if expected_role.pk not in expected_by_role_pk:
+            expected_by_role_pk[expected_role.pk] = expected_role.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id)
+        return expected_by_role_pk[expected_role.pk]
+
+    expected: set = set()
+    if (role.content_type_id, str(role.object_id)) in direct_keys:
+        expected |= expected_for(role)
+    for team_id in role_to_teams.get(role.pk, ()):
+        for team_role_pk in team_to_role_pks.get(team_id, ()):
+            expected |= expected_for(team_roles_by_pk[team_role_pk])
+
+    role_existing = existing.get(role.pk, {})
+    for key in role_existing.keys() - expected:
+        updates.to_delete.add((role_existing[key], type(key[2])))
+    for codename, ct_id, obj_id in expected - role_existing.keys():
+        updates.to_add.append(RoleEvaluation(codename=codename, content_type_id=ct_id, object_id=obj_id, role=role))
+
+
+def recompute_role_evaluations_for_created(
+    object_roles: Iterable[ObjectRole],
+    object_pk: int | UUID,
+    object_ct_id: int,
+    target_parents: Iterable[tuple[int, int | UUID]],
+    types_prefetch: Optional[TypesPrefetch] = None,
+) -> None:
+    """Recompute RoleEvaluation entries for a single, just-created object.
+
+    Equivalent to recompute_role_evaluations(object_roles, object_pk=..., object_ct_id=...,
+    target_parents=...) but organised around the object instead of around each role:
+
+    * one query loads the teams every role provides membership to,
+    * one query loads the team-held roles that can grant on the new object
+      (roles on the object itself or on its parent chain),
+    * one query maps those teams to those roles,
+    * one query loads whatever evaluations already exist for the object,
+    * each relevant role's expected evaluations are computed once.
+
+    A role's own object can only contribute if it is the new object or one of its
+    parents; other roles in object_roles contribute purely through their teams.
+    """
+    if types_prefetch is None:
+        types_prefetch = TypesPrefetch.from_db()
+    roles = list(object_roles)
+    if not roles:
+        return
+    role_pks = [r.pk for r in roles]
+    object_id_str = str(object_pk)
+    parent_keys = {(ct_id, str(parent_id)) for ct_id, parent_id in target_parents}
+    direct_keys = parent_keys | {(object_ct_id, object_id_str)}
+
+    role_to_teams, team_ids = _created_role_teams(role_pks)
+    team_roles_by_pk, team_to_role_pks = _created_team_roles(team_ids, object_ct_id, parent_keys | {(object_ct_id, object_id_str)})
+    existing = _created_existing_evaluations(role_pks, object_pk, object_ct_id)
+    expected_by_role_pk: dict[int, set] = {}
+    updates = EvaluationUpdates()
+    for role in roles:
+        _collect_created_role_updates(
+            role,
+            direct_keys,
+            role_to_teams,
+            team_to_role_pks,
+            team_roles_by_pk,
+            expected_by_role_pk,
+            types_prefetch,
+            object_pk,
+            object_ct_id,
+            existing,
+            updates,
+        )
+    updates.apply()
+
+
+def recompute_all_role_evaluations() -> None:
+    """Recompute RoleEvaluation entries for every ObjectRole in the database.
+
+    Iterates all ObjectRoles in memory-bounded chunks using keyset
+    pagination, batch-loading evaluation data per chunk via
+    EvaluationsPrefetch to minimize queries.
+    """
+    types_prefetch = TypesPrefetch.from_db()
+    updates = EvaluationUpdates()
+
+    last_pk = 0
+    while True:
+        chunk = list(ObjectRole.objects.order_by('pk').filter(pk__gt=last_pk)[:RECOMPUTE_CHUNK_SIZE])
+        if not chunk:
+            break
+        last_pk = chunk[-1].pk
+        evaluations_prefetch = EvaluationsPrefetch.from_roles(chunk)
+        for object_role in chunk:
+            updates.collect(object_role, types_prefetch, evaluations_prefetch)
+        del chunk, evaluations_prefetch
+        gc.collect()
+
+    updates.apply()
+
+
+def compute_object_role_permissions(object_roles=None, **kwargs):
+    """Backward compatibility stub. Use recompute_role_evaluations() or recompute_all_role_evaluations() instead."""
+    if object_roles is None:
+        recompute_all_role_evaluations()
+    else:
+        recompute_role_evaluations(object_roles, **kwargs)

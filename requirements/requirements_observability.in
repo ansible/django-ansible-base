@@ -1,0 +1,9 @@
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-instrumentation-django
+opentelemetry-instrumentation-grpc
+opentelemetry-instrumentation-logging
+opentelemetry-instrumentation-psycopg
+opentelemetry-instrumentation-psycopg2
+opentelemetry-instrumentation-requests
+opentelemetry-exporter-otlp-proto-grpc

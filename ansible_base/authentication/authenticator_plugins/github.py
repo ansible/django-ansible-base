@@ -9,7 +9,7 @@ from ansible_base.authentication.social_auth import SocialAuthMixin, SocialAuthV
 logger = logging.getLogger('ansible_base.authentication.authenticator_plugins.github')
 
 
-class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, GithubOAuth2, AbstractAuthenticatorPlugin):
+class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, GithubOAuth2, AbstractAuthenticatorPlugin):  # type: ignore[override]
     configuration_class = GithubConfiguration
     logger = logger
     type = "github"

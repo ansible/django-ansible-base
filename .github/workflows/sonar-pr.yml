@@ -30,7 +30,10 @@ on:
       - CI
     types:
       - completed
-permissions: read-all
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
 jobs:
   sonar-pr-analysis:
     name: SonarCloud PR Analysis
@@ -40,18 +43,22 @@ jobs:
       github.event.workflow_run.event == 'pull_request' &&
       startsWith(github.repository, 'ansible') && endsWith(github.repository, 'django-ansible-base')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           show-progress: false
+          allow-unsafe-pr-checkout: true
+          persist-credentials: false
+          fetch-depth: 0
 
       # Download all individual coverage artifacts from CI workflow
       - name: Download coverage artifacts
-        uses: dawidd6/action-download-artifact@246dbf436b23d7c49e21a7ab8204ca9ecd1fe615
+        uses: dawidd6/action-download-artifact@eab87c9830c39eff17e5a6eadb20bfb4bc880477 # v27
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           workflow: CI
           run_id: ${{ github.event.workflow_run.id }}
-          pattern: coverage-*
+          name: coverage-.*
+          name_is_regexp: true
 
       # Extract PR metadata from workflow_run event
       - name: Set PR metadata and prepare for analysis
@@ -122,7 +129,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@e44258b109568baa0df60ed515909fc6c72cba92
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets[format('{0}', vars.SONAR_TOKEN_SECRET_NAME)] }}
@@ -143,19 +150,24 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       startsWith(github.repository, 'ansible') && endsWith(github.repository, 'django-ansible-base')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           show-progress: false
+          allow-unsafe-pr-checkout: true
+          persist-credentials: false
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
 
       # Download all individual coverage artifacts from CI workflow (optional for branch pushes)
       - name: Download coverage artifacts
         continue-on-error: true
-        uses: dawidd6/action-download-artifact@246dbf436b23d7c49e21a7ab8204ca9ecd1fe615
+        uses: dawidd6/action-download-artifact@eab87c9830c39eff17e5a6eadb20bfb4bc880477 # v27
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           workflow: CI
           run_id: ${{ github.event.workflow_run.id }}
-          pattern: coverage-*
+          name: coverage-.*
+          name_is_regexp: true
 
       - name: Print SonarCloud Analysis Summary
         env:
@@ -183,7 +195,7 @@ jobs:
           echo "└── Result: ✅ Running SonarCloud branch analysis"
 
       - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@e44258b109568baa0df60ed515909fc6c72cba92
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets[format('{0}', vars.SONAR_TOKEN_SECRET_NAME)] }}

@@ -1,11 +1,436 @@
+import uuid
 from copy import deepcopy
+from unittest.mock import patch
+from uuid import uuid4
 
 import pytest
+from django.apps import apps as django_apps
+from django.contrib.contenttypes.models import ContentType
+from django.db import IntegrityError
 from rest_framework.test import APIClient
 
 from ansible_base.lib.utils.response import get_relative_url
-from ansible_base.rbac.models import DABContentType, DABPermission, RoleDefinition
-from test_app.models import Team, User
+from ansible_base.rbac.backfill import backfill_object_ansible_id
+from ansible_base.rbac.models import DABContentType, DABPermission, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
+from ansible_base.resource_registry.models import Resource
+from test_app.models import Inventory, Organization, Team, User, UUIDModel
+
+
+@pytest.mark.django_db
+def test_user_batch_rejects_empty_assignments():
+    from ansible_base.rbac.service_api.serializers import ServiceRoleUserAssignmentBatchSerializer
+
+    serializer = ServiceRoleUserAssignmentBatchSerializer(data={"from_service": str(uuid4()), "assignments": []})
+
+    assert not serializer.is_valid()
+    assert "assignments" in serializer.errors
+
+
+@pytest.mark.django_db
+def test_user_batch_requires_source_service(rando, inv_rd, inventory):
+    from ansible_base.rbac.service_api.serializers import ServiceRoleUserAssignmentBatchSerializer
+
+    serializer = ServiceRoleUserAssignmentBatchSerializer(
+        data={
+            'assignments': [{'role_definition': inv_rd.name, 'user_ansible_id': str(rando.resource.ansible_id), 'object_id': str(inventory.pk)}],
+        }
+    )
+
+    assert not serializer.is_valid()
+    assert 'from_service' in serializer.errors
+
+
+@pytest.mark.django_db
+def test_bulk_assign_uses_creator_from_batch_wrapper(admin_api_client, admin_user, rando, inv_rd, inventory):
+    response = admin_api_client.post(
+        get_relative_url('serviceuserassignment-bulk-assign'),
+        data={
+            'from_service': str(uuid4()),
+            'created_by_ansible_id': str(admin_user.resource.ansible_id),
+            'assignments': [{'role_definition': inv_rd.name, 'user_ansible_id': str(rando.resource.ansible_id), 'object_id': str(inventory.pk)}],
+        },
+        format='json',
+    )
+
+    assert response.status_code == 200, response.data
+    assignment = RoleUserAssignment.objects.get(user=rando, role_definition=inv_rd, object_id=str(inventory.pk))
+    assert assignment.created_by == admin_user
+
+
+@pytest.mark.django_db
+def test_user_batch_accepts_existing_item_schema(rando, inv_rd, inventory):
+    from ansible_base.rbac.service_api.serializers import ServiceRoleUserAssignmentBatchSerializer
+
+    serializer = ServiceRoleUserAssignmentBatchSerializer(
+        data={
+            "from_service": str(uuid4()),
+            "assignments": [{"role_definition": inv_rd.name, "user_ansible_id": str(rando.resource.ansible_id), "object_id": str(inventory.pk)}],
+        }
+    )
+
+    assert serializer.is_valid(), serializer.errors
+
+
+@pytest.mark.parametrize(
+    'route_name',
+    [
+        'serviceuserassignment-bulk-assign',
+        'serviceuserassignment-bulk-unassign',
+        'serviceteamassignment-bulk-assign',
+        'serviceteamassignment-bulk-unassign',
+    ],
+)
+def test_bulk_assignment_action_options_documents_batch_wrapper(admin_api_client, route_name):
+    response = admin_api_client.options(get_relative_url(route_name))
+
+    assert response.status_code == 200, response.data
+    post_schema = response.data['actions']['POST']
+    assert {'from_service', 'assignments'} <= set(post_schema)
+
+
+@pytest.mark.django_db
+def test_user_batch_resolves_common_creator_once(admin_user, rando, inv_rd, inventory):
+    from ansible_base.rbac.service_api.serializers import ServiceRoleUserAssignmentBatchSerializer
+
+    serializer = ServiceRoleUserAssignmentBatchSerializer(
+        data={
+            'from_service': str(uuid4()),
+            'created_by_ansible_id': str(admin_user.resource.ansible_id),
+            'assignments': [{'role_definition': inv_rd.name, 'user_ansible_id': str(rando.resource.ansible_id), 'object_id': str(inventory.pk)}],
+        }
+    )
+
+    assert serializer.is_valid(), serializer.errors
+    assert serializer.validated_data['created_by'] == admin_user
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('metadata_field', ('from_service', 'created_by_ansible_id'))
+def test_user_batch_rejects_common_metadata_repeated_per_item(rando, inv_rd, inventory, metadata_field):
+    from ansible_base.rbac.service_api.serializers import ServiceRoleUserAssignmentBatchSerializer
+
+    assignment = {
+        'role_definition': inv_rd.name,
+        'user_ansible_id': str(rando.resource.ansible_id),
+        'object_id': str(inventory.pk),
+        metadata_field: str(uuid4()),
+    }
+    serializer = ServiceRoleUserAssignmentBatchSerializer(
+        data={
+            'from_service': str(uuid4()),
+            'assignments': [assignment],
+        }
+    )
+
+    assert not serializer.is_valid()
+    assert metadata_field in str(serializer.errors['assignments'])
+
+
+def test_bulk_assign_is_idempotent(admin_api_client, rando, inv_rd, inventory, organization):
+    second_inventory = Inventory.objects.create(name='second inventory', organization=organization)
+    data = {
+        "from_service": str(uuid4()),
+        "assignments": [
+            {"role_definition": inv_rd.name, "user_ansible_id": str(rando.resource.ansible_id), "object_id": str(inventory.pk)},
+            {"role_definition": inv_rd.name, "user_ansible_id": str(rando.resource.ansible_id), "object_id": str(second_inventory.pk)},
+        ],
+    }
+    url = get_relative_url("serviceuserassignment-bulk-assign")
+    assert admin_api_client.post(url, data=data, format="json").data == {"created": 2, "existing": 0}
+    assert admin_api_client.post(url, data=data, format="json").data == {"created": 0, "existing": 2}
+
+
+def test_bulk_assign_is_atomic_when_one_item_is_invalid(admin_api_client, rando, inv_rd, inventory):
+    response = admin_api_client.post(
+        get_relative_url("serviceuserassignment-bulk-assign"),
+        data={
+            "from_service": str(uuid4()),
+            "assignments": [
+                {"role_definition": inv_rd.name, "user_ansible_id": str(rando.resource.ansible_id), "object_id": str(inventory.pk)},
+                {"role_definition": "does-not-exist", "user_ansible_id": str(rando.resource.ansible_id), "object_id": str(inventory.pk)},
+            ],
+        },
+        format="json",
+    )
+    assert response.status_code == 400
+    assert not RoleUserAssignment.objects.filter(user=rando, role_definition=inv_rd).exists()
+
+
+@pytest.mark.django_db
+def test_bulk_assign_reports_concurrent_assignment_as_existing(admin_api_client, rando, inv_rd, inventory, monkeypatch):
+    assignment = inv_rd.give_permission(rando, inventory)
+    lookup_count = 0
+
+    def existing_lookup(view, triples, for_update=False):
+        nonlocal lookup_count
+        lookup_count += 1
+        return [] if lookup_count == 1 else [assignment]
+
+    def conflicting_insert(**kwargs):
+        assert kwargs['ignore_conflicts'] is False
+        raise IntegrityError('assignment inserted concurrently')
+
+    import ansible_base.rbac.service_api.views as service_views
+    from ansible_base.rbac.service_api.views import BaseSerivceRoleAssignmentViewSet
+
+    monkeypatch.setattr(BaseSerivceRoleAssignmentViewSet, '_find_existing_batch_assignments', existing_lookup)
+    monkeypatch.setattr(service_views, 'bulk_give_permissions', conflicting_insert)
+
+    response = admin_api_client.post(
+        get_relative_url('serviceuserassignment-bulk-assign'),
+        data={
+            'from_service': str(uuid4()),
+            'assignments': [{'role_definition': inv_rd.name, 'user_ansible_id': str(rando.resource.ansible_id), 'object_id': str(inventory.pk)}],
+        },
+        format='json',
+    )
+
+    assert response.status_code == 200, response.data
+    assert response.data == {'created': 0, 'existing': 1}
+
+
+@pytest.mark.django_db
+def test_bulk_assign_fails_after_unresolved_insert_conflicts(admin_api_client, rando, inv_rd, inventory, monkeypatch):
+    import ansible_base.rbac.service_api.views as service_views
+    from ansible_base.rbac.service_api.views import BaseSerivceRoleAssignmentViewSet
+
+    monkeypatch.setattr(BaseSerivceRoleAssignmentViewSet, '_find_existing_batch_assignments', lambda view, triples: [])
+    conflicting_insert = patch.object(service_views, 'bulk_give_permissions', side_effect=IntegrityError('unrelated constraint'))
+    url = get_relative_url('serviceuserassignment-bulk-assign')
+    data = {
+        'from_service': str(uuid4()),
+        'assignments': [{'role_definition': inv_rd.name, 'user_ansible_id': str(rando.resource.ansible_id), 'object_id': str(inventory.pk)}],
+    }
+    with conflicting_insert as bulk_give:
+        with pytest.raises(IntegrityError, match='could not recover'):
+            admin_api_client.post(url, data=data, format='json')
+
+    assert bulk_give.call_count == 5
+
+
+@pytest.mark.django_db
+def test_bulk_assign_reports_global_assignment_get_or_create_result(admin_api_client, rando):
+    role_definition = RoleDefinition.objects.managed.sys_auditor
+    data = {
+        'from_service': str(uuid4()),
+        'assignments': [{'role_definition': role_definition.name, 'user_ansible_id': str(rando.resource.ansible_id)}],
+    }
+    url = get_relative_url('serviceuserassignment-bulk-assign')
+
+    first = admin_api_client.post(url, data=data, format='json')
+    second = admin_api_client.post(url, data=data, format='json')
+
+    assert first.status_code == 200, first.data
+    assert first.data == {'created': 1, 'existing': 0}
+    assert second.status_code == 200, second.data
+    assert second.data == {'created': 0, 'existing': 1}
+
+
+@pytest.mark.django_db
+def test_global_permission_reports_whether_it_inserted(rando):
+    role_definition = RoleDefinition.objects.managed.sys_auditor
+
+    first, first_created = role_definition.give_global_permission(rando, return_created=True)
+    second, second_created = role_definition.give_global_permission(rando, return_created=True)
+
+    assert first_created is True
+    assert second_created is False
+    assert first.pk == second.pk
+
+
+@pytest.mark.django_db
+def test_bulk_assign_counts_global_get_or_create_race_as_existing(admin_api_client, rando, monkeypatch):
+    role_definition = RoleDefinition.objects.managed.sys_auditor
+    existing_assignment = role_definition.give_global_permission(rando)
+
+    def no_existing_assignments(view, triples, for_update=False):
+        return []
+
+    def get_existing_global_assignment(self, actor, return_created=False):
+        return existing_assignment, False
+
+    from ansible_base.rbac.service_api.views import BaseSerivceRoleAssignmentViewSet
+
+    monkeypatch.setattr(BaseSerivceRoleAssignmentViewSet, '_find_existing_batch_assignments', no_existing_assignments)
+    monkeypatch.setattr(RoleDefinition, 'give_global_permission', get_existing_global_assignment)
+
+    response = admin_api_client.post(
+        get_relative_url('serviceuserassignment-bulk-assign'),
+        data={
+            'from_service': str(uuid4()),
+            'assignments': [{'role_definition': role_definition.name, 'user_ansible_id': str(rando.resource.ansible_id)}],
+        },
+        format='json',
+    )
+
+    assert response.status_code == 200, response.data
+    assert response.data == {'created': 0, 'existing': 1}
+
+
+@pytest.mark.django_db
+def test_bulk_assign_team_roles_is_idempotent(admin_api_client, team, inv_rd, inventory):
+    data = {
+        'from_service': str(uuid4()),
+        'assignments': [{'role_definition': inv_rd.name, 'team_ansible_id': str(team.resource.ansible_id), 'object_id': str(inventory.pk)}],
+    }
+    url = get_relative_url('serviceteamassignment-bulk-assign')
+
+    first = admin_api_client.post(url, data=data, format='json')
+    second = admin_api_client.post(url, data=data, format='json')
+
+    assert first.status_code == 200, first.data
+    assert first.data == {'created': 1, 'existing': 0}
+    assert second.status_code == 200, second.data
+    assert second.data == {'created': 0, 'existing': 1}
+
+
+@pytest.mark.django_db
+def test_bulk_assign_and_unassign_are_idempotent_for_local_uuid_objects(admin_api_client, rando, organization):
+    from ansible_base.rbac import permission_registry
+
+    uuid_role = RoleDefinition.objects.create_from_permissions(
+        name='local-uuid-batch-role',
+        permissions=['view_uuidmodel'],
+        content_type=permission_registry.content_type_model.objects.get_for_model(UUIDModel),
+    )
+    target = UUIDModel.objects.create(organization=organization)
+    data = {
+        'from_service': str(uuid4()),
+        'assignments': [{'role_definition': uuid_role.name, 'user_ansible_id': str(rando.resource.ansible_id), 'object_id': str(target.pk)}],
+    }
+
+    first = admin_api_client.post(get_relative_url('serviceuserassignment-bulk-assign'), data=data, format='json')
+    second = admin_api_client.post(get_relative_url('serviceuserassignment-bulk-assign'), data=data, format='json')
+    removal = admin_api_client.post(get_relative_url('serviceuserassignment-bulk-unassign'), data=data, format='json')
+
+    assert first.status_code == 200, first.data
+    assert first.data == {'created': 1, 'existing': 0}
+    assert second.status_code == 200, second.data
+    assert second.data == {'created': 0, 'existing': 1}
+    assert removal.status_code == 200, removal.data
+    assert removal.data == {'deleted': 1, 'missing': 0}
+    assert not RoleUserAssignment.objects.filter(user=rando, role_definition=uuid_role, object_id=str(target.pk)).exists()
+
+
+@pytest.mark.django_db
+def test_unassign_locks_assignments_in_global_primary_key_order(rando, inv_rd, inventory):
+    from ansible_base.rbac.service_api.views import BatchPermissionTriple, ServiceRoleUserAssignmentViewSet
+
+    other_role = RoleDefinition.objects.create_from_permissions(
+        name='bulk-lock-order-inventory-viewer',
+        permissions=['view_inventory'],
+        content_type=inv_rd.content_type,
+    )
+    first_role, second_role = sorted((inv_rd, other_role), key=lambda role: role.pk)
+    second_assignment = second_role.give_permission(rando, inventory)
+    first_assignment = first_role.give_permission(rando, inventory)
+    assert second_assignment.pk < first_assignment.pk
+
+    view = ServiceRoleUserAssignmentViewSet()
+    view.batch_lookup_chunk_size = 1
+    triples = [
+        BatchPermissionTriple(first_role, rando, inventory),
+        BatchPermissionTriple(second_role, rando, inventory),
+    ]
+
+    assignments = view._find_existing_batch_assignments(triples, for_update=True)
+
+    assert [assignment.pk for assignment in assignments] == sorted((first_assignment.pk, second_assignment.pk))
+
+
+@pytest.mark.django_db
+def test_bulk_assign_remote_object_fallback(admin_api_client, rando, foo_rd):
+    from ansible_base.rbac.remote import RemoteObject
+
+    response = admin_api_client.post(
+        get_relative_url('serviceuserassignment-bulk-assign'),
+        data={
+            'from_service': str(uuid4()),
+            'assignments': [{'role_definition': foo_rd.name, 'user_ansible_id': str(rando.resource.ansible_id), 'object_id': '42'}],
+        },
+        format='json',
+    )
+
+    assert response.status_code == 200, response.data
+    assignment = RoleUserAssignment.objects.get(user=rando, role_definition=foo_rd)
+    assert isinstance(assignment.content_object, RemoteObject)
+    assert assignment.object_id == '42'
+
+
+@pytest.mark.parametrize('action', ['bulk-assign', 'bulk-unassign'])
+@pytest.mark.parametrize(
+    ('assignment_viewset', 'actor_field', 'actor_fixture'),
+    [('serviceuserassignment', 'user_ansible_id', 'rando'), ('serviceteamassignment', 'team_ansible_id', 'team')],
+)
+@pytest.mark.parametrize(
+    ('role_fixture', 'object_id'),
+    [('inv_rd', 'not-an-integer'), ('foo_rd_uuid', 'not-a-uuid')],
+)
+def test_bulk_assignment_actions_reject_malformed_object_ids(
+    admin_api_client, request, action, assignment_viewset, actor_field, actor_fixture, role_fixture, object_id
+):
+    role_definition = request.getfixturevalue(role_fixture)
+    actor = request.getfixturevalue(actor_fixture)
+    response = admin_api_client.post(
+        get_relative_url(f'{assignment_viewset}-{action}'),
+        data={
+            'from_service': str(uuid4()),
+            'assignments': [{'role_definition': role_definition.name, actor_field: str(actor.resource.ansible_id), 'object_id': object_id}],
+        },
+        format='json',
+    )
+
+    assert response.status_code == 400, response.data
+    assert 'object_id' in response.data
+
+
+@pytest.mark.django_db
+def test_bulk_unassign_user_and_global_roles_are_idempotent(admin_api_client, rando, inv_rd, inventory):
+    inv_rd.give_permission(rando, inventory)
+    global_role = RoleDefinition.objects.managed.sys_auditor
+    global_role.give_global_permission(rando)
+    data = {
+        'from_service': str(uuid4()),
+        'assignments': [
+            {'role_definition': inv_rd.name, 'user_ansible_id': str(rando.resource.ansible_id), 'object_id': str(inventory.pk)},
+            {'role_definition': global_role.name, 'user_ansible_id': str(rando.resource.ansible_id)},
+        ],
+    }
+    url = get_relative_url('serviceuserassignment-bulk-unassign')
+
+    first = admin_api_client.post(url, data=data, format='json')
+    second = admin_api_client.post(url, data=data, format='json')
+
+    assert first.status_code == 200, first.data
+    assert first.data == {'deleted': 2, 'missing': 0}
+    assert second.status_code == 200, second.data
+    assert second.data == {'deleted': 0, 'missing': 2}
+
+
+@pytest.mark.django_db
+def test_bulk_unassign_team_role_is_idempotent(admin_api_client, team, inv_rd, inventory):
+    inv_rd.give_permission(team, inventory)
+    data = {
+        'from_service': str(uuid4()),
+        'assignments': [{'role_definition': inv_rd.name, 'team_ansible_id': str(team.resource.ansible_id), 'object_id': str(inventory.pk)}],
+    }
+    url = get_relative_url('serviceteamassignment-bulk-unassign')
+
+    first = admin_api_client.post(url, data=data, format='json')
+    second = admin_api_client.post(url, data=data, format='json')
+
+    assert first.status_code == 200, first.data
+    assert first.data == {'deleted': 1, 'missing': 0}
+    assert second.status_code == 200, second.data
+    assert second.data == {'deleted': 0, 'missing': 1}
+
+
+@pytest.mark.django_db
+def test_service_assignment_serializer_does_not_require_from_service():
+    """Service-index clients may sync an assignment without a secondary-sync origin."""
+    from ansible_base.rbac.service_api.serializers import ServiceRoleUserAssignmentSerializer
+
+    assert ServiceRoleUserAssignmentSerializer().fields['from_service'].required is False
 
 
 @pytest.mark.django_db
@@ -116,9 +541,142 @@ def test_list_role_user_assignments(admin_api_client, rando, inv_rd, inventory):
     assert len(candidates) == 1, response.data
     from_api = candidates[0]
 
+    # 'id' is required for cursor-based pagination in migrate_service_data
+    assert 'id' in from_api, f"'id' missing from service-index user assignment response: {from_api.keys()}"
+    assert from_api['id'] == RoleUserAssignment.objects.get(user=rando, role_definition=inv_rd, object_id=inventory.id).id
     assert int(from_api['object_id']) == inventory.id
     assert from_api['user_ansible_id'] == str(rando.resource.ansible_id)
     assert from_api['content_type'] == 'aap.inventory'
+
+
+@pytest.mark.django_db
+def test_list_role_team_assignments_includes_id(admin_api_client, inv_rd, inventory, team, member_rd, rando):
+    """Service-index team assignment responses include 'id' for cursor-based pagination."""
+    member_rd.give_permission(rando, team)
+    inv_rd.give_permission(team, inventory)
+
+    url = get_relative_url('serviceteamassignment-list')
+    response = admin_api_client.get(url + '?page_size=200', format="json")
+    assert response.status_code == 200, response.data
+
+    candidates = [a for a in response.data['results'] if a['role_definition'] == inv_rd.name]
+    assert len(candidates) == 1, response.data
+    from_api = candidates[0]
+
+    assert 'id' in from_api, f"'id' missing from service-index team assignment response: {from_api.keys()}"
+    assert from_api['id'] == RoleTeamAssignment.objects.get(team=team, role_definition=inv_rd, object_id=inventory.id).id
+    assert from_api['team_ansible_id'] == str(team.resource.ansible_id)
+
+
+@pytest.mark.django_db
+def test_object_ansible_id_in_list_response(admin_api_client, rando, org_admin_rd, organization):
+    """Verify object_ansible_id is correctly returned for organization-level assignments."""
+    org2 = Organization.objects.create(name='Covering Index Test Org')
+    assignment = org_admin_rd.give_permission(rando, organization)
+    org_admin_rd.give_permission(rando, org2)
+    assert assignment.object_ansible_id == organization.resource.ansible_id
+
+    url = get_relative_url('serviceuserassignment-list')
+    response = admin_api_client.get(url + '?page_size=200', format="json")
+    assert response.status_code == 200, response.data
+
+    org_assignments = [a for a in response.data['results'] if a['role_definition'] == org_admin_rd.name]
+    assert len(org_assignments) == 2
+
+    returned_ansible_ids = {a['object_ansible_id'] for a in org_assignments}
+    assert str(organization.resource.ansible_id) in returned_ansible_ids
+    assert str(org2.resource.ansible_id) in returned_ansible_ids
+
+
+@pytest.mark.django_db
+def test_backfill_object_ansible_id(rando, org_admin_rd, organization):
+    assignment = org_admin_rd.give_permission(rando, organization)
+    RoleUserAssignment.objects.filter(pk=assignment.pk).update(object_ansible_id=None)
+
+    backfill_object_ansible_id(django_apps)
+
+    assignment.refresh_from_db()
+    assert assignment.object_ansible_id == organization.resource.ansible_id
+
+
+@pytest.mark.django_db
+def test_assignment_object_ansible_id_tracks_resource_changes(rando, org_admin_rd, organization):
+    assignment = org_admin_rd.give_permission(rando, organization)
+    resource = organization.resource
+    resource.ansible_id = uuid.uuid4()
+    resource.save()
+
+    assignment.refresh_from_db()
+    assert assignment.object_ansible_id == resource.ansible_id
+
+
+@pytest.mark.django_db
+def test_service_api_uses_cached_object_ansible_id(admin_api_client, rando, org_admin_rd, organization):
+    assignment = org_admin_rd.give_permission(rando, organization)
+    RoleUserAssignment.objects.filter(pk=assignment.pk).update(object_ansible_id=None)
+
+    response = admin_api_client.get(get_relative_url('serviceuserassignment-list'), format='json')
+
+    assert response.status_code == 200, response.data
+    result = next(item for item in response.data['results'] if item['id'] == assignment.id)
+    assert result['object_ansible_id'] is None
+
+
+@pytest.mark.django_db
+def test_resource_ansible_id_filter_remains_supported(admin_api_client, rando, org_admin_rd, organization):
+    """Keep the legacy resource__ansible_id service-index filter working."""
+    assignment = org_admin_rd.give_permission(rando, organization)
+    RoleUserAssignment.objects.filter(pk=assignment.pk).update(object_role=None)
+    url = get_relative_url('serviceuserassignment-list')
+
+    response = admin_api_client.get(url + f'?resource__ansible_id={organization.resource.ansible_id}', format='json')
+
+    assert response.status_code == 200, response.data
+    assert [item['id'] for item in response.data['results']] == [assignment.id]
+
+
+@pytest.mark.django_db
+def test_global_assignment_resource_annotation_is_null(rando):
+    role_definition = RoleDefinition.objects.managed.sys_auditor
+    assignment = role_definition.give_global_permission(rando)
+
+    from ansible_base.rbac.service_api.views import ServiceRoleUserAssignmentViewSet
+
+    annotated_assignment = ServiceRoleUserAssignmentViewSet().get_queryset().get(pk=assignment.pk)
+
+    assert annotated_assignment.object_ansible_id is None
+
+
+@pytest.mark.django_db
+def test_assignment_annotation_does_not_join_dab_content_type_id_to_resource_content_type_id(rando):
+    """DAB and Django ContentType IDs are separate namespaces."""
+    wrong_resource_type = ContentType.objects.create(app_label='wrong', model=f'wrong_{uuid.uuid4().hex}')
+    while DABContentType.objects.filter(pk=wrong_resource_type.pk).exists():
+        wrong_resource_type = ContentType.objects.create(app_label='wrong', model=f'wrong_{uuid.uuid4().hex}')
+
+    dab_content_type = DABContentType.objects.create(
+        id=wrong_resource_type.pk,
+        service='aap',
+        app_label='test_app',
+        model='organization',
+        pk_field_type='integer',
+    )
+    role_definition = RoleDefinition.objects.create(name=f'wrong-content-type-{uuid.uuid4().hex}', content_type=dab_content_type)
+    assignment = RoleUserAssignment.objects.create(
+        user=rando,
+        role_definition=role_definition,
+        content_type=dab_content_type,
+        object_id='17',
+        object_role=None,
+    )
+    wrong_resource = Resource.objects.create(content_type=wrong_resource_type, object_id='17')
+
+    from ansible_base.rbac.service_api.views import ServiceRoleUserAssignmentViewSet
+
+    annotated_assignment = ServiceRoleUserAssignmentViewSet().get_queryset().get(pk=assignment.pk)
+
+    assert annotated_assignment.object_ansible_id is None
+    assert annotated_assignment.object_ansible_id != wrong_resource.ansible_id
 
 
 @pytest.mark.django_db
@@ -488,7 +1046,9 @@ class TestCreatedByAnsibleIdAllowNull:
 
     def test_serializer_allows_null_values_in_validation(self, admin_api_client, rando, inv_rd, inventory):
         """Test that the serializer field properly handles null validation with allow_null=True"""
-        from ansible_base.rbac.service_api.serializers import ServiceRoleUserAssignmentSerializer
+        from ansible_base.rbac.service_api.serializers import (
+            ServiceRoleUserAssignmentSerializer,
+        )
 
         # Test data with null created_by_ansible_id
         data = {
@@ -528,6 +1088,7 @@ class TestRestClientSyncAssignment:
         """Test that sync_assignment removes object_id when object_ansible_id is present"""
         from unittest.mock import MagicMock, patch
 
+        from ansible_base.resource_registry.models import service_id
         from ansible_base.resource_registry.rest_client import ResourceAPIClient
 
         # Create an assignment to an organization (which has a resource)
@@ -551,6 +1112,8 @@ class TestRestClientSyncAssignment:
 
             # Should NOT have object_id (removed by sync_assignment)
             assert 'object_id' not in sent_data, "object_id should not be sent for registered objects"
+            assert sent_data['from_service'] == str(service_id())
+            assert 'created_by_ansible_id' not in sent_data
 
     def test_sync_assignment_sends_only_object_id_for_non_registered_objects(self, rando, inventory, inv_rd):
         """Test that sync_assignment keeps object_id when object_ansible_id is None"""
@@ -665,20 +1228,20 @@ class TestValidationErrors:
         assert response.status_code == 400, response.data
         assert "Can not provide either 'object_id' or 'object_ansible_id' for system role" in str(response.data)
 
-    def test_object_role_without_valid_object_error(self, admin_api_client, rando, inv_rd):
-        """Test that object role without valid object raises validation error"""
+    def test_object_role_with_nonexistent_object_creates_remote_assignment(self, admin_api_client, rando, inv_rd):
+        """Synced assignments for non-existent local objects fall back to
+        RemoteObject so that cross-service sync is not blocked by object
+        ordering (the object may not have been synced yet)."""
         url = get_relative_url('serviceuserassignment-assign')
         data = {
             "role_definition": inv_rd.name,
             "user_ansible_id": str(rando.resource.ansible_id),
-            "object_id": "99999",  # Non-existent inventory ID
+            "object_id": "99999",
         }
 
         response = admin_api_client.post(url, data=data)
-        assert response.status_code == 400, response.data
-        # Check if the error is about object not existing
-        error_msg = str(response.data)
-        assert "does not exist" in error_msg.lower()
+        assert response.status_code == 201, response.data
+        assert str(response.data["object_id"]) == "99999"
 
     def test_object_role_without_object_specified_error(self, admin_api_client, rando, inv_rd):
         """Test that object role without object_id raises validation error"""
@@ -694,3 +1257,361 @@ class TestValidationErrors:
         # Check if the error is about missing object_id or object_ansible_id
         error_msg = str(response.data)
         assert "You must provide either 'object_id' or 'object_ansible_id'" in error_msg
+
+
+@pytest.mark.django_db
+class TestServiceFilter:
+    """Test content_type__service filter on service-index assignment endpoints."""
+
+    def _create_foo_assignment(self, admin_api_client, rando, foo_rd):
+        """Create a foo-service assignment via the service-index assign endpoint."""
+        url = get_relative_url('serviceuserassignment-assign')
+        data = {
+            "role_definition": foo_rd.name,
+            "user_ansible_id": str(rando.resource.ansible_id),
+            "object_id": "42",
+        }
+        response = admin_api_client.post(url, data=data)
+        assert response.status_code in (200, 201), response.data
+
+    def test_user_assignments_filtered_by_service(self, admin_api_client, rando, inv_rd, inventory, foo_rd):
+        """When content_type__service is provided, only assignments matching that service are returned."""
+        inv_rd.give_permission(rando, inventory)
+        self._create_foo_assignment(admin_api_client, rando, foo_rd)
+
+        url = get_relative_url('serviceuserassignment-list')
+
+        response = admin_api_client.get(url + '?content_type__service=aap', format="json")
+        assert response.status_code == 200, response.data
+        assert len(response.data['results']) >= 1, "Filtered results should not be empty"
+        for a in response.data['results']:
+            if a['content_type']:
+                assert a['content_type'].startswith('aap.'), f"Expected only aap content types, got {a['content_type']}"
+
+    def test_user_assignments_filtered_excludes_other_services(self, admin_api_client, rando, inv_rd, inventory, foo_rd):
+        """Filtering by one service excludes assignments for other services."""
+        inv_rd.give_permission(rando, inventory)
+        self._create_foo_assignment(admin_api_client, rando, foo_rd)
+
+        url = get_relative_url('serviceuserassignment-list')
+
+        response_aap = admin_api_client.get(url + '?content_type__service=aap', format="json")
+        assert response_aap.status_code == 200
+        assert len(response_aap.data['results']) >= 1, "AAP-filtered results should not be empty"
+        for a in response_aap.data['results']:
+            if a['content_type']:
+                assert not a['content_type'].startswith('foo.'), "foo assignment should not appear in aap-filtered results"
+
+        response_foo = admin_api_client.get(url + '?content_type__service=foo', format="json")
+        assert response_foo.status_code == 200
+        assert len(response_foo.data['results']) >= 1, "Foo-filtered results should not be empty"
+        for a in response_foo.data['results']:
+            if a['content_type']:
+                assert not a['content_type'].startswith('aap.'), "aap assignment should not appear in foo-filtered results"
+
+    def test_global_assignments_included_when_filtered(self, admin_api_client, rando, inv_rd, inventory):
+        """Global assignments (content_type=None) are included regardless of filter value."""
+        inv_rd.give_permission(rando, inventory)
+        sys_auditor = RoleDefinition.objects.managed.sys_auditor
+        sys_auditor.give_global_permission(rando)
+
+        url = get_relative_url('serviceuserassignment-list')
+        response = admin_api_client.get(url + '?content_type__service=aap', format="json")
+        assert response.status_code == 200
+
+        global_assignments = [a for a in response.data['results'] if a['content_type'] is None]
+        assert len(global_assignments) >= 1, "Global assignments should be included in filtered results"
+
+    def test_no_filter_returns_all_assignments(self, admin_api_client, rando, inv_rd, inventory, foo_rd):
+        """Without content_type__service filter, all assignments are returned (backward compatible)."""
+        inv_rd.give_permission(rando, inventory)
+        self._create_foo_assignment(admin_api_client, rando, foo_rd)
+        sys_auditor = RoleDefinition.objects.managed.sys_auditor
+        sys_auditor.give_global_permission(rando)
+
+        url = get_relative_url('serviceuserassignment-list')
+
+        response_all = admin_api_client.get(url + '?page_size=200', format="json")
+        assert response_all.status_code == 200
+        all_results = response_all.data['results']
+
+        response_aap = admin_api_client.get(url + '?content_type__service=aap&page_size=200', format="json")
+        response_foo = admin_api_client.get(url + '?content_type__service=foo&page_size=200', format="json")
+
+        assert len(all_results) >= len(response_aap.data['results'])
+        assert len(all_results) >= len(response_foo.data['results'])
+
+    def test_team_assignments_filtered_by_service(self, admin_api_client, inv_rd, inventory, team, member_rd, rando):
+        """Team assignment endpoint also supports content_type__service filter."""
+        member_rd.give_permission(rando, team)
+        inv_rd.give_permission(team, inventory)
+
+        url = get_relative_url('serviceteamassignment-list')
+        response = admin_api_client.get(url + '?content_type__service=aap', format="json")
+        assert response.status_code == 200
+        for a in response.data['results']:
+            if a['content_type']:
+                assert a['content_type'].startswith('aap.'), f"Expected aap content type, got {a['content_type']}"
+
+    def test_team_global_assignments_included_when_filtered(self, admin_api_client, team, member_rd, rando):
+        """Global team assignments are included when filtering by service."""
+        member_rd.give_permission(rando, team)
+        sys_auditor = RoleDefinition.objects.managed.sys_auditor
+        sys_auditor.give_global_permission(team)
+
+        url = get_relative_url('serviceteamassignment-list')
+        response = admin_api_client.get(url + '?content_type__service=aap', format="json")
+        assert response.status_code == 200
+
+        global_assignments = [a for a in response.data['results'] if a['content_type'] is None]
+        assert len(global_assignments) >= 1, "Global team assignments should be included in filtered results"
+
+    def test_nonexistent_service_returns_only_globals(self, admin_api_client, rando, inv_rd, inventory):
+        """Filtering by a service with no assignments returns only global assignments."""
+        inv_rd.give_permission(rando, inventory)
+        sys_auditor = RoleDefinition.objects.managed.sys_auditor
+        sys_auditor.give_global_permission(rando)
+
+        url = get_relative_url('serviceuserassignment-list')
+        response = admin_api_client.get(url + '?content_type__service=nonexistent', format="json")
+        assert response.status_code == 200
+
+        for a in response.data['results']:
+            assert a['content_type'] is None, f"Only global assignments should be returned for nonexistent service, got {a['content_type']}"
+
+
+@pytest.mark.django_db
+class TestParentReference:
+    """Test parent_reference field in service API serializers."""
+
+    def test_assign_with_parent_reference_for_remote_object(self, admin_api_client, rando):
+        """When parent_reference is included in an assign request for a remote object,
+        it should be stored on the ObjectRole."""
+        from ansible_base.rbac.models import DABContentType, DABPermission, ObjectRole, RoleDefinition
+
+        org = Organization.objects.create(name='Parent Org')
+        org_ct = DABContentType.objects.get_for_model(org)
+        remote_ct = DABContentType.objects.create(service='awx', model='jobtemplate', app_label='main', parent_content_type=org_ct)
+        perm = DABPermission.objects.create(codename='execute_jobtemplate', content_type=remote_ct)
+        rd = RoleDefinition.objects.create_from_permissions(name='JT Execute', permissions=[perm.api_slug], content_type=remote_ct)
+
+        url = get_relative_url('serviceuserassignment-assign')
+        data = {
+            "role_definition": rd.name,
+            "user_ansible_id": str(rando.resource.ansible_id),
+            "object_id": "42",
+            "parent_reference": str(org.pk),
+        }
+        response = admin_api_client.post(url, data=data)
+        assert response.status_code == 201, response.data
+        assert response.data['parent_reference'] == str(org.pk)
+
+        obj_role = ObjectRole.objects.get(role_definition=rd, object_id='42')
+        assert str(obj_role.parent_reference) == str(org.pk)
+
+    def test_assign_without_parent_reference_defaults_to_empty(self, admin_api_client, rando):
+        """Omitting parent_reference should still work (backward compatible)."""
+        from ansible_base.rbac.models import DABContentType, DABPermission, ObjectRole, RoleDefinition
+
+        remote_ct = DABContentType.objects.create(service='awx', model='remote_inventory', app_label='main')
+        perm = DABPermission.objects.create(codename='use_remote_inventory', content_type=remote_ct)
+        rd = RoleDefinition.objects.create_from_permissions(name='Remote Inv Use', permissions=[perm.api_slug], content_type=remote_ct)
+
+        url = get_relative_url('serviceuserassignment-assign')
+        data = {
+            "role_definition": rd.name,
+            "user_ansible_id": str(rando.resource.ansible_id),
+            "object_id": "99",
+        }
+        response = admin_api_client.post(url, data=data)
+        assert response.status_code == 201, response.data
+        assert response.data['parent_reference'] == ''
+
+        obj_role = ObjectRole.objects.get(role_definition=rd, object_id='99')
+        assert obj_role.parent_reference == ''
+
+    def test_assign_rejects_non_string_parent_reference(self, admin_api_client, rando):
+        """parent_reference must be a string; reject dict/list payloads."""
+        from ansible_base.rbac.models import DABContentType, DABPermission, RoleDefinition
+
+        remote_ct = DABContentType.objects.create(service='awx', model='remote_inventory', app_label='main')
+        perm = DABPermission.objects.create(codename='use_remote_inventory', content_type=remote_ct)
+        rd = RoleDefinition.objects.create_from_permissions(name='Remote Inv Use', permissions=[perm.api_slug], content_type=remote_ct)
+
+        url = get_relative_url('serviceuserassignment-assign')
+        data = {
+            "role_definition": rd.name,
+            "user_ansible_id": str(rando.resource.ansible_id),
+            "object_id": "99",
+            "parent_reference": {"id": 12},
+        }
+        response = admin_api_client.post(url, data=data, format='json')
+        assert response.status_code == 400, response.data
+        assert 'parent_reference' in response.data
+
+    def test_list_response_includes_parent_reference_for_local_object(self, admin_api_client, rando, inv_rd, inventory):
+        """parent_reference should be resolved from the local model's organization FK."""
+        inv_rd.give_permission(rando, inventory)
+
+        url = get_relative_url('serviceuserassignment-list')
+        response = admin_api_client.get(url + '?page_size=200', format="json")
+        assert response.status_code == 200, response.data
+
+        candidates = [a for a in response.data['results'] if a['role_definition'] == inv_rd.name]
+        assert len(candidates) >= 1
+        assert candidates[0]['parent_reference'] == str(inventory.organization.pk)
+
+    def test_list_response_parent_reference_empty_for_global_roles(self, admin_api_client, rando):
+        """Global/system role assignments should have empty parent_reference."""
+        sys_auditor = RoleDefinition.objects.managed.sys_auditor
+        sys_auditor.give_global_permission(rando)
+
+        url = get_relative_url('serviceuserassignment-list')
+        response = admin_api_client.get(url + '?page_size=200', format="json")
+        assert response.status_code == 200, response.data
+
+        candidates = [a for a in response.data['results'] if a['role_definition'] == sys_auditor.name]
+        assert len(candidates) >= 1
+        assert candidates[0]['parent_reference'] == ''
+
+    def test_team_assign_with_parent_reference(self, admin_api_client, team, member_rd, rando):
+        """parent_reference works for team assignments too."""
+        from ansible_base.rbac.models import DABContentType, DABPermission, ObjectRole, RoleDefinition
+
+        member_rd.give_permission(rando, team)
+        org = team.organization
+        org_ct = DABContentType.objects.get_for_model(org)
+        remote_ct = DABContentType.objects.create(service='awx', model='project', app_label='main', parent_content_type=org_ct)
+        perm = DABPermission.objects.create(codename='use_project', content_type=remote_ct)
+        rd = RoleDefinition.objects.create_from_permissions(name='Project Use', permissions=[perm.api_slug], content_type=remote_ct)
+
+        url = get_relative_url('serviceteamassignment-assign')
+        data = {
+            "role_definition": rd.name,
+            "team_ansible_id": str(team.resource.ansible_id),
+            "object_id": "77",
+            "parent_reference": str(org.pk),
+        }
+        response = admin_api_client.post(url, data=data)
+        assert response.status_code == 201, response.data
+        assert response.data['parent_reference'] == str(org.pk)
+
+        obj_role = ObjectRole.objects.get(role_definition=rd, object_id='77')
+        assert str(obj_role.parent_reference) == str(org.pk)
+
+    def test_org_permission_evaluates_with_parent_reference(self, admin_api_client, rando):
+        """When parent_reference is set, org-level roles should evaluate
+        permission on the remote child object."""
+        from ansible_base.rbac.models import DABContentType, DABPermission, RoleDefinition
+
+        org = Organization.objects.create(name='Eval Test Org')
+        org_ct = DABContentType.objects.get_for_model(org)
+        remote_ct = DABContentType.objects.create(service='ctrl', model='workflow', app_label='main', parent_content_type=org_ct)
+        view_perm = DABPermission.objects.create(codename='view_workflow', content_type=remote_ct)
+        change_perm = DABPermission.objects.create(codename='change_workflow', content_type=remote_ct)
+
+        obj_rd = RoleDefinition.objects.create_from_permissions(name='Workflow Viewer', permissions=[view_perm.api_slug], content_type=remote_ct)
+        org_rd = RoleDefinition.objects.create_from_permissions(
+            name='Org Workflow Admin',
+            permissions=[view_perm.api_slug, change_perm.api_slug, 'shared.view_organization'],
+            content_type=org_ct,
+        )
+
+        url = get_relative_url('serviceuserassignment-assign')
+        data = {
+            "role_definition": obj_rd.name,
+            "user_ansible_id": str(rando.resource.ansible_id),
+            "object_id": "55",
+            "parent_reference": str(org.pk),
+        }
+        response = admin_api_client.post(url, data=data)
+        assert response.status_code == 201, response.data
+
+        from ansible_base.rbac.remote import RemoteObject
+
+        remote_obj = RemoteObject(content_type=remote_ct, object_id=55, parent_reference=org.pk)
+        assert rando.has_obj_perm(remote_obj, 'view')
+        assert not rando.has_obj_perm(remote_obj, 'change')
+
+        org_rd.give_permission(rando, org)
+        assert rando.has_obj_perm(remote_obj, 'change')
+
+    def test_sync_assignment_includes_parent_reference(self, rando, inv_rd, inventory):
+        """rest_client.sync_assignment payload should include parent_reference."""
+        from unittest.mock import MagicMock, patch
+
+        from ansible_base.resource_registry.rest_client import ResourceAPIClient
+
+        assignment = inv_rd.give_permission(rando, inventory)
+
+        client = ResourceAPIClient(service_url='http://example.com', service_path='/api/v1/service-index/')
+        with patch.object(client, '_sync_assignment', return_value=MagicMock()) as mock_sync:
+            client.sync_assignment(assignment)
+            sent_data = mock_sync.call_args[0][0]
+            assert 'parent_reference' in sent_data
+            assert sent_data['parent_reference'] == str(inventory.organization.pk)
+
+    def test_pipeline_sets_parent_reference_for_local_models(self, rando, inv_rd, inventory):
+        """_resolve_content_object should fill parent_reference from the local model's parent FK."""
+        from ansible_base.rbac.models import ObjectRole
+
+        inv_rd.give_permission(rando, inventory)
+
+        obj_role = ObjectRole.objects.get(role_definition=inv_rd, object_id=str(inventory.pk))
+        assert obj_role.parent_reference == str(inventory.organization.pk)
+
+    def test_repair_parent_references_command(self, rando, inv_rd, inventory):
+        """Management command should backfill empty parent_reference on existing ObjectRoles."""
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        from ansible_base.rbac.models import ObjectRole
+
+        inv_rd.give_permission(rando, inventory)
+        obj_role = ObjectRole.objects.get(role_definition=inv_rd, object_id=str(inventory.pk))
+        ObjectRole.objects.filter(pk=obj_role.pk).update(parent_reference='')
+
+        out = StringIO()
+        call_command('repair_parent_references', stdout=out)
+        obj_role.refresh_from_db()
+        assert obj_role.parent_reference == str(inventory.organization.pk)
+
+    def test_repair_parent_references_dry_run(self, rando, inv_rd, inventory):
+        """Dry run should not modify data."""
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        from ansible_base.rbac.models import ObjectRole
+
+        inv_rd.give_permission(rando, inventory)
+        obj_role = ObjectRole.objects.get(role_definition=inv_rd, object_id=str(inventory.pk))
+        ObjectRole.objects.filter(pk=obj_role.pk).update(parent_reference='')
+
+        out = StringIO()
+        call_command('repair_parent_references', '--dry-run', stdout=out)
+        obj_role.refresh_from_db()
+        assert obj_role.parent_reference == ''
+        assert 'Would update' in out.getvalue()
+
+    def test_repair_parent_references_noop(self):
+        """Command should report nothing when all parent_references are already set."""
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        out = StringIO()
+        call_command('repair_parent_references', stdout=out)
+        assert 'No ObjectRoles need parent_reference backfill.' in out.getvalue()
+
+    def test_pipeline_parent_reference_empty_for_top_level_models(self, rando):
+        """Models without a parent FK (e.g. Organization) should get empty parent_reference."""
+        from ansible_base.rbac.models import ObjectRole, RoleDefinition
+
+        org = Organization.objects.create(name='Pipeline Test Org')
+        org_admin = RoleDefinition.objects.managed.org_admin
+        org_admin.give_permission(rando, org)
+
+        obj_role = ObjectRole.objects.get(role_definition=org_admin, object_id=str(org.pk))
+        assert obj_role.parent_reference == ''

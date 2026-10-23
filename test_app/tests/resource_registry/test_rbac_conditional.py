@@ -7,6 +7,12 @@ import pytest
 from django.conf import settings
 from django.test import override_settings
 
+from ansible_base.resource_registry.constants import (
+    SHARED_ORGANIZATION_RESOURCE_TYPE,
+    SHARED_ROLE_DEFINITION_RESOURCE_TYPE,
+    SHARED_TEAM_RESOURCE_TYPE,
+    SHARED_USER_RESOURCE_TYPE,
+)
 from ansible_base.resource_registry.registry import ServiceAPIConfig
 from ansible_base.resource_registry.rest_client import ResourceAPIClient
 from ansible_base.resource_registry.shared_types import LenientPermissionSlugListField, RoleDefinitionType
@@ -44,9 +50,6 @@ class TestResourceRegistryWithoutRBAC:
         with pytest.raises(RuntimeError, match="This operation requires ansible_base.rbac to be installed"):
             client.sync_unassignment(None, None, None)
 
-        with pytest.raises(RuntimeError, match="This operation requires ansible_base.rbac to be installed"):
-            client.sync_object_deletion(None)
-
     def test_role_definition_type_raises_error(self):
         """Test that RoleDefinitionType raises error when rbac not available."""
         with pytest.raises(RuntimeError, match="requires ansible_base.rbac to be installed"):
@@ -57,12 +60,12 @@ class TestResourceRegistryWithoutRBAC:
         processors = ServiceAPIConfig._get_default_resource_processors()
 
         # Should not include shared.roledefinition when rbac is not installed
-        assert "shared.roledefinition" not in processors
+        assert SHARED_ROLE_DEFINITION_RESOURCE_TYPE not in processors
 
         # Should still include other processors
-        assert "shared.user" in processors
-        assert "shared.team" in processors
-        assert "shared.organization" in processors
+        assert SHARED_USER_RESOURCE_TYPE in processors
+        assert SHARED_TEAM_RESOURCE_TYPE in processors
+        assert SHARED_ORGANIZATION_RESOURCE_TYPE in processors
 
     @pytest.mark.django_db
     def test_resource_registry_basic_functionality_works(self):
@@ -129,12 +132,12 @@ class TestResourceRegistryWithRBAC:
         processors = ServiceAPIConfig._get_default_resource_processors()
 
         # Should include shared.roledefinition when rbac is installed
-        assert "shared.roledefinition" in processors
+        assert SHARED_ROLE_DEFINITION_RESOURCE_TYPE in processors
 
         # Should also include other processors
-        assert "shared.user" in processors
-        assert "shared.team" in processors
-        assert "shared.organization" in processors
+        assert SHARED_USER_RESOURCE_TYPE in processors
+        assert SHARED_TEAM_RESOURCE_TYPE in processors
+        assert SHARED_ORGANIZATION_RESOURCE_TYPE in processors
 
 
 class TestResourceRegistryConditionalImports:

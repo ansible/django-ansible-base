@@ -8,8 +8,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
 from io import StringIO, TextIOBase
-from typing import Any
 
+import requests
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -19,12 +19,28 @@ from django.db.utils import Error, IntegrityError
 from requests import HTTPError
 
 from ansible_base.lib.utils.apps import is_rbac_installed
+from ansible_base.rbac.role_sync_utils import (  # noqa: F401 — re-exported for backward compatibility
+    AssignmentTuple,
+    create_local_assignment,
+    delete_local_assignment,
+    get_ansible_id_or_pk,
+    get_content_object,
+    get_local_assignments,
+)
+from ansible_base.resource_registry.constants import SHARED_USER_RESOURCE_TYPE
 from ansible_base.resource_registry.models import Resource, ResourceType
 from ansible_base.resource_registry.models.service_identifier import service_id
 from ansible_base.resource_registry.registry import get_registry
-from ansible_base.resource_registry.rest_client import ResourceAPIClient, get_resource_server_client
+from ansible_base.resource_registry.rest_client import (
+    ResourceAPIClient,
+    get_resource_server_client,
+)
 
 logger = logging.getLogger('ansible_base.resources_api.tasks.sync')
+
+# Must match defaults in lib/dynamic_config/settings_logic.py resource_registry_defaults
+DEFAULT_SYNC_PAGE_SIZE = 50
+DEFAULT_SYNC_JWT_EXPIRATION = 60
 
 
 class ManifestNotFound(HTTPError):
@@ -76,26 +92,131 @@ class SyncResult:
 
 
 @dataclass
-class AssignmentTuple:
-    """Represents an assignment as a 3-tuple for comparison"""
+class RemoteAssignmentResult:
+    """Result of fetching remote assignments, including completeness status.
 
-    actor_ansible_id: str  # user_ansible_id or team_ansible_id
-    ansible_id_or_pk: str | None  # object_id or object_ansible_id (None for global)
-    role_definition_name: str
-    assignment_type: str  # 'user' or 'team'
+    When ``is_complete`` is False the caller must not use the partial
+    ``assignments`` set for deletion decisions — doing so would remove
+    local assignments that simply weren't fetched.
+    """
 
-    def __hash__(self):
-        return hash((self.actor_ansible_id, self.ansible_id_or_pk, self.role_definition_name, self.assignment_type))
+    assignments: set[AssignmentTuple] = field(default_factory=set)
+    is_complete: bool = False
+    protected_pairs: frozenset[tuple[str, str, str]] = field(default_factory=frozenset)
 
-    def __eq__(self, other):
-        if not isinstance(other, AssignmentTuple):
+
+class RemoteAssignmentFetcher:
+    """Fetches role assignments from a remote resource server with pagination.
+
+    Collects user and team assignments into a single set.  If any page
+    request fails the fetcher stops early and marks the result as
+    incomplete so the caller can skip deletions safely.
+    """
+
+    def __init__(self, api_client: ResourceAPIClient, page_size: int | None = None, service_filter: str | None = None):
+        self.api_client = api_client
+        self.assignments: set[AssignmentTuple] = set()
+        self.page_size = page_size if page_size is not None else getattr(settings, 'RESOURCE_SYNC_PAGE_SIZE', DEFAULT_SYNC_PAGE_SIZE)
+        self.service_filter = service_filter
+        self._protected_pairs: set[tuple[str, str, str]] = set()
+
+    def fetch(self) -> RemoteAssignmentResult:
+        """Paginate user then team assignments and return the result.
+
+        If user pagination fails, team pagination is skipped entirely
+        because the result will be incomplete regardless.
+        """
+        from ansible_base.rbac.models.role import RoleDefinition
+
+        # Keep each target content type so object_id fallbacks can be validated
+        # against the target model's actual primary-key type.
+        role_definitions = RoleDefinition.objects.select_related('content_type').filter(name__isnull=False)
+        self.local_role_definitions = {role_definition.name: role_definition for role_definition in role_definitions}
+        self.local_role_names = set(self.local_role_definitions)
+
+        users_ok = self._paginate(self.api_client.list_user_assignments, 'user_ansible_id', 'user')
+        if not users_ok:
+            return RemoteAssignmentResult(assignments=self.assignments, is_complete=False, protected_pairs=frozenset(self._protected_pairs))
+
+        teams_ok = self._paginate(self.api_client.list_team_assignments, 'team_ansible_id', 'team')
+        return RemoteAssignmentResult(assignments=self.assignments, is_complete=teams_ok, protected_pairs=frozenset(self._protected_pairs))
+
+    def _process_page(self, results: list, actor_id_key: str, assignment_type: str) -> None:
+        """Add valid assignments from a single response page to ``self.assignments``."""
+        for assignment in results:
+            role_name = assignment['role_definition']
+            if role_name not in self.local_role_names:
+                logger.debug(f"Skipping remote {assignment_type} assignment with unknown local role: {role_name}")
+                continue
+            object_ansible_id = assignment.get('object_ansible_id')
+            ansible_id_or_pk = object_ansible_id or assignment.get('object_id')
+            role_definition = self.local_role_definitions[role_name]
+            if not object_ansible_id and ansible_id_or_pk and role_definition.content_type:
+                # Legacy remote rows may omit object_ansible_id. Validate the
+                # object_id fallback by model type so UUID primary keys remain valid.
+                try:
+                    role_definition.content_type.model_class()._meta.pk.to_python(ansible_id_or_pk)
+                except (TypeError, ValueError, ValidationError) as exc:
+                    actor_id = assignment.get(actor_id_key)
+                    logger.warning(
+                        "Skipping remote %s assignment (actor=%s, role=%s): object_id %r is invalid "
+                        "for the target content type — possible Gateway data corruption: %s",
+                        assignment_type,
+                        actor_id,
+                        role_name,
+                        ansible_id_or_pk,
+                        exc,
+                    )
+                    # The skipped row is not a real revocation; protect its
+                    # matching local assignment during this reconciliation.
+                    self._protected_pairs.add((str(actor_id), role_name, assignment_type))
+                    continue
+            self.assignments.add(
+                AssignmentTuple(
+                    actor_ansible_id=assignment[actor_id_key],
+                    ansible_id_or_pk=ansible_id_or_pk,
+                    role_definition_name=role_name,
+                    assignment_type=assignment_type,
+                )
+            )
+
+    def _paginate(self, list_fn, actor_id_key: str, assignment_type: str) -> bool:
+        """Paginate a single assignment endpoint, adding results to ``self.assignments``.
+
+        Returns True if all pages were fetched successfully, False on any error.
+        """
+        page = 1
+        try:
+            while True:
+                filters = {'page': page, 'page_size': self.page_size}
+                if self.service_filter:
+                    filters['content_type__service'] = self.service_filter
+                resp = list_fn(filters=filters)
+                if resp.status_code != 200:
+                    logger.warning(f"Failed to fetch {assignment_type} assignments page {page}: HTTP {resp.status_code}")
+                    return False
+
+                data = resp.json()
+                self._process_page(data.get('results') or [], actor_id_key, assignment_type)
+
+                if not data.get('next'):
+                    return True
+
+                page += 1
+                logger.debug(f"Fetching next page {page} of {assignment_type} assignments")
+        except Exception:
+            logger.exception(f"Failed to fetch remote {assignment_type} assignments")
             return False
-        return (
-            self.actor_ansible_id == other.actor_ansible_id
-            and self.ansible_id_or_pk == other.ansible_id_or_pk
-            and self.role_definition_name == other.role_definition_name
-            and self.assignment_type == other.assignment_type
-        )
+
+
+def get_remote_assignments(api_client: ResourceAPIClient, page_size: int | None = None, service_filter: str | None = None) -> RemoteAssignmentResult:
+    """Fetch remote assignments from the resource server and convert to tuples.
+
+    Returns a ``RemoteAssignmentResult`` so the caller can distinguish a
+    complete fetch from a partial one (e.g. due to HTTP errors or
+    timeouts mid-pagination).
+    """
+    return RemoteAssignmentFetcher(api_client, page_size=page_size, service_filter=service_filter).fetch()
 
 
 def create_api_client() -> ResourceAPIClient:
@@ -109,16 +230,23 @@ def create_api_client() -> ResourceAPIClient:
     if not service_path:
         raise ValueError("RESOURCE_SERVICE_PATH is not set.")
     params["service_path"] = service_path
+    params["jwt_expiration"] = getattr(settings, "RESOURCE_SYNC_JWT_EXPIRATION", DEFAULT_SYNC_JWT_EXPIRATION)
 
     client = get_resource_server_client(**params)
     return client
 
 
+def close_manifest_stream(manifest_stream):
+    """Close the manifest stream to free up the connection pool."""
+    if manifest_stream is not None:
+        manifest_stream.close()
+
+
 def fetch_manifest(
     resource_type_name: str,
     api_client: ResourceAPIClient | None = None,
-) -> list[ManifestItem]:
-    """Fetch RESOURCE_SERVER manifest, parses the CSV and returns a list."""
+) -> tuple[list[ManifestItem], bool]:
+    """Fetch RESOURCE_SERVER manifest, parses the CSV and returns a list and a boolean indicating if the data is complete."""
     api_client = api_client or create_api_client()
     api_client.raise_if_bad_request = False  # Status check is needed
 
@@ -134,250 +262,31 @@ def fetch_manifest(
         manifest_stream.raise_for_status()
     except HTTPError as exc:
         raise ResourceSyncHTTPError() from exc
-
-    csv_reader = csv.DictReader(StringIO(manifest_stream.text))
-    return [ManifestItem(**row) for row in csv_reader]
-
-
-def get_ansible_id_or_pk(assignment) -> str:
-    if not is_rbac_installed():
-        raise RuntimeError("get_ansible_id_or_pk requires ansible_base.rbac to be installed")
-    # For object-scoped assignments, try to get the object's ansible_id
-    if assignment.content_type.model in ('organization', 'team'):
-        object_resource = Resource.objects.filter(object_id=assignment.object_id, content_type__model=assignment.content_type.model).first()
-        if object_resource:
-            ansible_id_or_pk = object_resource.ansible_id
-        else:
-            raise RuntimeError(f"Error: {assignment.content_type.model} {assignment.object_id} was found without an associated Resource.")
-    else:
-        ansible_id_or_pk = assignment.object_id
-
-    return str(ansible_id_or_pk)
-
-
-def get_content_object(role_definition, assignment_tuple: AssignmentTuple) -> Any:
-    if not is_rbac_installed():
-        raise RuntimeError("get_content_object requires ansible_base.rbac to be installed")
-    content_object = None
-    if role_definition.content_type.model in ('organization', 'team'):
-        object_resource = Resource.objects.get(ansible_id=assignment_tuple.ansible_id_or_pk)
-        content_object = object_resource.content_object
-    else:
-        model = role_definition.content_type.model_class()
-        content_object = model.objects.get(pk=assignment_tuple.ansible_id_or_pk)
-
-    return content_object
-
-
-@dataclass
-class RemoteAssignmentResult:
-    """Result of fetching remote assignments, including completeness status.
-
-    When ``is_complete`` is False the caller must not use the partial
-    ``assignments`` set for deletion decisions — doing so would remove
-    local assignments that simply weren't fetched.
-    """
-
-    assignments: set[AssignmentTuple] = field(default_factory=set)
-    is_complete: bool = False
-
-
-class RemoteAssignmentFetcher:
-    """Fetches role assignments from a remote resource server with pagination.
-
-    Collects user and team assignments into a single set.  If any page
-    request fails the fetcher stops early and marks the result as
-    incomplete so the caller can skip deletions safely.
-    """
-
-    def __init__(self, api_client: ResourceAPIClient):
-        self.api_client = api_client
-        self.assignments: set[AssignmentTuple] = set()
-
-    def fetch(self) -> RemoteAssignmentResult:
-        """Paginate user then team assignments and return the result.
-
-        If user pagination fails, team pagination is skipped entirely
-        because the result will be incomplete regardless.
-        """
-        from ansible_base.rbac.models.role import RoleDefinition
-
-        self.local_role_names: set[str] = set(RoleDefinition.objects.values_list('name', flat=True))
-
-        users_ok = self._paginate(self.api_client.list_user_assignments, 'user_ansible_id', 'user')
-        if not users_ok:
-            return RemoteAssignmentResult(assignments=self.assignments, is_complete=False)
-
-        teams_ok = self._paginate(self.api_client.list_team_assignments, 'team_ansible_id', 'team')
-        return RemoteAssignmentResult(assignments=self.assignments, is_complete=teams_ok)
-
-    def _paginate(self, list_fn, actor_id_key: str, assignment_type: str) -> bool:
-        """Paginate a single assignment endpoint, adding results to ``self.assignments``.
-
-        Returns True if all pages were fetched successfully, False on any error.
-        """
-        page = 1
-        try:
-            while True:
-                resp = list_fn(filters={'page': page})
-                if resp.status_code != 200:
-                    logger.warning(f"Failed to fetch {assignment_type} assignments page {page}: HTTP {resp.status_code}")
-                    return False
-
-                data = resp.json()
-                for assignment in data.get('results', []):
-                    role_name = assignment['role_definition']
-                    if role_name not in self.local_role_names:
-                        logger.debug(f"Skipping remote {assignment_type} assignment with unknown local role: {role_name}")
-                        continue
-                    ansible_id_or_pk = assignment.get('object_ansible_id') or assignment.get('object_id')
-                    self.assignments.add(
-                        AssignmentTuple(
-                            actor_ansible_id=assignment[actor_id_key],
-                            ansible_id_or_pk=ansible_id_or_pk,
-                            role_definition_name=role_name,
-                            assignment_type=assignment_type,
-                        )
-                    )
-
-                if not data.get('next'):
-                    return True
-
-                page += 1
-                logger.debug(f"Fetching next page {page} of {assignment_type} assignments")
-        except Exception:
-            logger.exception(f"Failed to fetch remote {assignment_type} assignments")
-            return False
-
-
-def get_remote_assignments(api_client: ResourceAPIClient) -> RemoteAssignmentResult:
-    """Fetch remote assignments from the resource server and convert to tuples.
-
-    Returns a ``RemoteAssignmentResult`` so the caller can distinguish a
-    complete fetch from a partial one (e.g. due to HTTP errors or
-    timeouts mid-pagination).
-    """
-    return RemoteAssignmentFetcher(api_client).fetch()
-
-
-def get_local_assignments() -> set[AssignmentTuple]:
-    """Get local assignments and convert to tuples."""
-    if not is_rbac_installed():
-        raise RuntimeError("get_local_assignments requires ansible_base.rbac to be installed")
-    from ansible_base.rbac.models.role import RoleTeamAssignment, RoleUserAssignment
-
-    assignments = set()
-
-    # Get user assignments
-    for assignment in RoleUserAssignment.objects.select_related('user', 'role_definition').all():
-        try:
-            user_resource = Resource.get_resource_for_object(assignment.user)
-        except Resource.DoesNotExist:
-            # Skip assignments where the user doesn't have a resource
-            continue
-
-        user_ansible_id = user_resource.ansible_id
-        # Handle both object-scoped and global assignments
-        object_id = assignment.object_id
-        ansible_id_or_pk = None
-        if object_id and assignment.content_type:
-            ansible_id_or_pk = get_ansible_id_or_pk(assignment)
-
-        assignments.add(
-            AssignmentTuple(
-                actor_ansible_id=str(user_ansible_id),
-                ansible_id_or_pk=ansible_id_or_pk if ansible_id_or_pk else None,
-                role_definition_name=assignment.role_definition.name,
-                assignment_type='user',
-            )
-        )
-
-    # Get team assignments
-    for assignment in RoleTeamAssignment.objects.select_related('team', 'role_definition').all():
-        try:
-            team_resource = Resource.get_resource_for_object(assignment.team)
-        except Resource.DoesNotExist:
-            # Skip assignments where the user doesn't have a resource
-            continue
-        team_ansible_id = team_resource.ansible_id
-
-        # Handle both object-scoped and global assignments
-        object_id = assignment.object_id
-        ansible_id_or_pk = None
-        if object_id and assignment.content_type:
-            # For object-scoped assignments, try to get the object's ansible_id
-            ansible_id_or_pk = get_ansible_id_or_pk(assignment)
-
-        assignments.add(
-            AssignmentTuple(
-                actor_ansible_id=str(team_ansible_id),
-                ansible_id_or_pk=ansible_id_or_pk if ansible_id_or_pk else None,
-                role_definition_name=assignment.role_definition.name,
-                assignment_type='team',
-            )
-        )
-
-    return assignments
-
-
-def delete_local_assignment(assignment_tuple: AssignmentTuple) -> bool:
-    """Delete a local assignment based on the tuple."""
-    if not is_rbac_installed():
-        raise RuntimeError("delete_local_assignment requires ansible_base.rbac to be installed")
-    from ansible_base.rbac.models.role import RoleDefinition
-
     try:
-        role_definition = RoleDefinition.objects.get(name=assignment_tuple.role_definition_name)
-
-        # Get the actor (user or team)
-        resource = Resource.objects.get(ansible_id=assignment_tuple.actor_ansible_id)
-        actor = resource.content_object
-
-        # Get the object if it's not a global assignment
-        content_object = None
-        if assignment_tuple.ansible_id_or_pk:
-            content_object = get_content_object(role_definition, assignment_tuple)
-        # Use the role definition's remove methods
-        if content_object:
-            role_definition.remove_permission(actor, content_object)
-        else:
-            role_definition.remove_global_permission(actor)
-
-        return True
-
-    except Exception as e:
-        logger.error(f"Failed to delete assignment {assignment_tuple}: {e}")
-        return False
-
-
-def create_local_assignment(assignment_tuple: AssignmentTuple) -> bool:
-    """Create a local assignment based on the tuple."""
-    if not is_rbac_installed():
-        raise RuntimeError("create_local_assignment requires ansible_base.rbac to be installed")
-    from ansible_base.rbac.models.role import RoleDefinition
-
+        expected_count = manifest_stream.headers.get("X-Resource-Count")
+        expected_count_int = int(expected_count) if expected_count is not None else None
+        if expected_count_int is None:
+            logger.warning(f"Manifest for {resource_type_name} has no X-Resource-Count header; treating as incomplete out of caution.")
+            close_manifest_stream(manifest_stream)
+            return [], True
+    except ValueError:
+        logger.warning(f"Manifest for {resource_type_name} sent a non-numeric X-Resource-Count header: {expected_count!r}")
+        close_manifest_stream(manifest_stream)
+        return [], True
     try:
-        role_definition = RoleDefinition.objects.get(name=assignment_tuple.role_definition_name)
-
-        # Get the actor (user or team)
-        resource = Resource.objects.get(ansible_id=assignment_tuple.actor_ansible_id)
-        actor = resource.content_object
-
-        # Get the object if it's not a global assignment
-        content_object = None
-        if assignment_tuple.ansible_id_or_pk:
-            content_object = get_content_object(role_definition, assignment_tuple)
-        # Use the role definition's give methods
-        if content_object:
-            role_definition.give_permission(actor, content_object)
-        else:
-            role_definition.give_global_permission(actor)
-
-        return True
-
-    except Exception as e:
-        logger.error(f"Failed to create assignment {assignment_tuple}: {e}")
-        return False
+        data_rows = list(csv.DictReader(StringIO(manifest_stream.text)))
+    except requests.exceptions.RequestException:
+        logger.warning(f"Manifest fetch for {resource_type_name} was interrupted mid-transfer")
+        return [], True
+    finally:
+        close_manifest_stream(manifest_stream)
+    actual_count = len(data_rows)
+    if expected_count_int != actual_count:
+        has_incomplete_data = True
+        logger.warning(f"Manifest count mismatch for {resource_type_name}: expected {expected_count}, got {actual_count}")
+    else:
+        has_incomplete_data = False
+    return [ManifestItem(**row) for row in data_rows], has_incomplete_data
 
 
 def get_orphan_resources(
@@ -397,7 +306,7 @@ def get_orphan_resources(
     )
 
     # Exclude system user from deletion, consistent with manifest endpoint
-    if resource_type_name == "shared.user":
+    if resource_type_name == SHARED_USER_RESOURCE_TYPE:
         from ansible_base.lib.utils.models import get_system_user
 
         system_user = get_system_user()
@@ -414,7 +323,7 @@ def delete_resource(resource: Resource):
     try:
         return resource.delete_resource()
     except Error as exc:  # pragma: no cover
-        logger.error(f"Failed to delete resource {resource.ansible_id}. Received error: {exc}")
+        logger.exception(f"Failed to delete resource {resource.ansible_id}")
         raise ResourceDeletionError() from exc
 
 
@@ -484,13 +393,13 @@ def _attempt_update_resource(
         try:
             _handle_conflict(resource_data, resource.resource_type_obj, api_client)
             resource.update_resource(resource_data, partial=True, **kwargs)
-        except (ResourceDeletionError, IntegrityError, Error, ValidationError) as e:
-            logger.error(f"Failed to gracefully handle conflict for {resource_data}. Got error {e}.")
+        except (ResourceDeletionError, IntegrityError, Error, ValidationError):
+            logger.exception(f"Failed to gracefully handle conflict for {resource_data}")
             return SyncResult(SyncStatus.CONFLICT, manifest_item)
-    except (Error, ValidationError) as e:
+    except (Error, ValidationError):
         # Something happened with the database. We don't know what it is. Instead of failing the whole
         # sync, we'll raise an error and skip this for now.
-        logger.error(f"Failed to update resource {resource.ansible_id}. Received error: {e}. Will try again on the next sync.")
+        logger.exception(f"Failed to update resource {resource.ansible_id}. Will try again on the next sync.")
         return SyncResult(SyncStatus.ERROR, manifest_item)
 
     return SyncResult(SyncStatus.UPDATED, manifest_item)
@@ -524,13 +433,13 @@ def _attempt_create_resource(
                 ansible_id=manifest_item.ansible_id,
                 service_id=resource_service_id,
             )
-        except (ResourceDeletionError, IntegrityError, Error, ValidationError) as e:
-            logger.error(f"Failed to gracefully handle conflict for {resource_data}. Got error {e}.")
+        except (ResourceDeletionError, IntegrityError, Error, ValidationError):
+            logger.exception(f"Failed to gracefully handle conflict for {resource_data}")
             return SyncResult(SyncStatus.CONFLICT, manifest_item)
-    except (Error, ValidationError) as e:
+    except (Error, ValidationError):
         # Something happened with the database. We don't know what it is. Instead of failing the whole
         # sync, we'll raise an error and skip this for now.
-        logger.error(f"Failed to create {manifest_item.ansible_id}. Received error: {e}. Will try again on the next sync.")
+        logger.exception(f"Failed to create {manifest_item.ansible_id}. Will try again on the next sync.")
         return SyncResult(SyncStatus.ERROR, manifest_item)
 
     return SyncResult(SyncStatus.CREATED, manifest_item)
@@ -617,6 +526,8 @@ class SyncExecutor:
     asyncio: bool = False
     results: dict = field(default_factory=lambda: defaultdict(list))
     sync_assignments: bool = True
+    page_size: int | None = None
+    service_filter: str | None = None
 
     def write(self, text: str = ""):
         """Write to assigned IO or simply ignores the text."""
@@ -696,9 +607,10 @@ class SyncExecutor:
             resource_type,
             manifest_list,
         )
-        self.deleted_count = resources_to_cleanup.count()
-        if self.deleted_count:
-            self.write(f"Deleting {self.deleted_count} orphaned resources")
+        orphan_count = resources_to_cleanup.count()
+        deleted_before = len(self.results["deleted"])
+        if orphan_count:
+            self.write(f"Deleting {orphan_count} orphaned resources")
             for orphan in resources_to_cleanup:
                 try:
                     _sc = orphan.content_type.resource_type.serializer_class
@@ -706,10 +618,11 @@ class SyncExecutor:
                     data.update(orphan.summary_fields())
                     with transaction.atomic():
                         delete_resource(orphan)
-                except ResourceDeletionError as exc:
-                    self.write(f"Error deleting orphaned resources {str(exc)}")
+                except Exception as exc:  # noqa: BLE001 - continue cleaning remaining orphans
+                    self.write(f"Error deleting orphaned resource {orphan.ansible_id}: {type(exc).__name__}: {exc}")
                 else:  # persist in the report
                     self.results["deleted"].append(data)
+        self.deleted_count = len(self.results["deleted"]) - deleted_before  # actual successes for this resource type
 
     def _handle_retries(self):  # pragma: no cover
         """Check if there are unavailable resources to re-try."""
@@ -763,19 +676,33 @@ class SyncExecutor:
         self.write(">>> Syncing role assignments")
 
         try:
-            remote_result = get_remote_assignments(self.api_client)
-            local_assignments = get_local_assignments()
+            remote_result = get_remote_assignments(self.api_client, page_size=self.page_size, service_filter=self.service_filter)
+            local_assignments = get_local_assignments(service=self.service_filter)
 
             # Deletions are only safe when the remote fetch was complete.
-            # A partial fetch would cause us to delete assignments that
-            # simply weren't fetched.
-            if remote_result.is_complete:
-                to_delete = local_assignments - remote_result.assignments
-                deleted_count, delete_errors = self._apply_assignment_changes(to_delete, delete_local_assignment, "DELETED")
-            else:
+            # A partial fetch means we never saw some assignments, so we cannot
+            # treat their absence as a revocation.
+            if not remote_result.is_complete:
                 self.write("Skipping assignment deletions — remote fetch was incomplete. Will retry on next sync cycle.")
                 logger.warning("Skipping assignment deletions: remote fetch was incomplete. Deletions deferred to next complete sync.")
                 deleted_count, delete_errors = 0, 0
+            else:
+                to_delete = local_assignments - remote_result.assignments
+                if remote_result.protected_pairs:
+                    # Some remote assignments were corrupted and skipped.  Protect the
+                    # matching local assignments (same actor + role + type) from deletion —
+                    # their apparent absence is due to the corruption, not a real revocation.
+                    # All other deletions (different actor/role combinations) proceed normally.
+                    protected = remote_result.protected_pairs
+                    shielded = {a for a in to_delete if (a.actor_ansible_id, a.role_definition_name, a.assignment_type) in protected}
+                    if shielded:
+                        logger.warning(
+                            "Shielding %d local assignment(s) from deletion — their remote counterpart "
+                            "had a corrupted UUID object_id. Will reconcile on next sync cycle.",
+                            len(shielded),
+                        )
+                    to_delete -= shielded
+                deleted_count, delete_errors = self._apply_assignment_changes(to_delete, delete_local_assignment, "DELETED")
 
             # Creations are safe even on a partial fetch.
             to_create = remote_result.assignments - local_assignments
@@ -812,12 +739,22 @@ class SyncExecutor:
 
             self.write(f">>> {resource_type_name}")
             try:
-                manifest_list = fetch_manifest(resource_type_name, api_client=self.api_client)
+                manifest_list, has_incomplete_data = fetch_manifest(resource_type_name, api_client=self.api_client)
             except ManifestNotFound as ex:
                 self.write(str(ex))
                 continue
+            if has_incomplete_data:
+                self.deleted_count = 0  # Reset deleted count to avoid reporting deletions when we can't be sure
+                self.write(
+                    f"Warning: Manifest for {resource_type_name} is incomplete. Some resources may be missing. "
+                    "Skipping orphan clean up to avoid accidental deletion."
+                )
+                logger.warning(
+                    f"Manifest for {resource_type_name} is incomplete. Some resources may be missing.  Skipping orphan clean up to avoid accidental deletion."
+                )
 
-            self._cleanup_orphans(resource_type_name, manifest_list)
+            else:
+                self._cleanup_orphans(resource_type_name, manifest_list)
             self._dispatch_sync_process(manifest_list)
             self._handle_retries()
 

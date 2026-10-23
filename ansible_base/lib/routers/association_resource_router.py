@@ -271,7 +271,7 @@ class AssociationResourceRouter(routers.SimpleRouter):
         for method in exclude_list:
             setattr(AssociatedViewSetType, method, attribute_raiser)
 
-        class AssociatedViewSet(viewset, AssociationViewSetMethodsMixin, metaclass=AssociatedViewSetType):
+        class AssociatedViewSet(viewset, AssociationViewSetMethodsMixin, metaclass=AssociatedViewSetType):  # type: ignore[valid-type]
             """Adjusted version of given viewset for related endpoint with only list views"""
 
             pass

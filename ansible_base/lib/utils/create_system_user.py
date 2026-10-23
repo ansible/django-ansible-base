@@ -15,7 +15,7 @@ These functions are in its own file because it is loaded during migrations so it
 """
 
 
-def create_system_user(user_model: Type[models.Model]) -> models.Model:
+def create_system_user(user_model: Type[models.Model]) -> Optional[models.Model]:
     # Note: We can't load models here so we can typecast to anything better than Model
     from ansible_base.lib.abstract_models.user import AbstractDABUser
 

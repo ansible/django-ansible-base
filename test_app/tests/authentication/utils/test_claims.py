@@ -1,3 +1,5 @@
+import hashlib
+import logging
 from unittest import mock
 
 import pytest
@@ -70,6 +72,18 @@ from test_app.tests.authentication.conftest import ORG_ADMIN_ROLE_NAME, ORG_MEMB
             {"team_membership": {}, "organization_membership": {}, 'rbac_roles': {'system': {'roles': {}}, 'organizations': {}}},
             [{1: False, 'enabled': True}],
             id="map_type 'allow' with trigger 'never' sets 'access_allowed' to False",
+        ),
+        pytest.param(
+            {"always": {}},
+            "allow",
+            "",
+            {},
+            [],
+            True,
+            None,
+            {"team_membership": {}, "organization_membership": {}, 'rbac_roles': {'system': {'roles': {}}, 'organizations': {}}},
+            [{1: True, 'enabled': True}],
+            id="map_type 'allow' with trigger 'always' sets 'access_allowed' to True (AAP-45394)",
         ),
         pytest.param(
             {"always": {}},
@@ -347,93 +361,78 @@ def test_create_claims_revoke(local_authenticator_map, process_function, trigger
 
 
 @pytest.mark.parametrize(
-    "trigger_condition, groups, case_insensitive, has_access",
+    "trigger_condition, groups, has_access",
     [
         # has_or
-        ({"has_or": ["foo"]}, ["foo"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo"]}, ["bar"], False, claims.TriggerResult.SKIP),
-        ({"has_or": ["foo", "bar"]}, ["foo"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo", "bar"]}, ["bar"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo", "bar"]}, ["baz"], False, claims.TriggerResult.SKIP),
-        ({"has_or": ["foo", "bar"]}, ["foo", "bar"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo", "bar"]}, ["foo", "baz"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo", "bar"]}, ["bar", "baz"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo"]}, ["baz", "foo", "qux"], False, claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"]}, ["foo"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"]}, ["bar"], claims.TriggerResult.SKIP),
+        ({"has_or": ["foo", "bar"]}, ["foo"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo", "bar"]}, ["bar"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo", "bar"]}, ["baz"], claims.TriggerResult.SKIP),
+        ({"has_or": ["foo", "bar"]}, ["foo", "bar"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo", "bar"]}, ["foo", "baz"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo", "bar"]}, ["bar", "baz"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"]}, ["baz", "foo", "qux"], claims.TriggerResult.ALLOW),
         # has_and
-        ({"has_and": ["foo"]}, ["foo"], False, claims.TriggerResult.ALLOW),
-        ({"has_and": ["foo"]}, ["bar"], False, claims.TriggerResult.SKIP),
-        ({"has_and": ["foo", "bar"]}, ["foo", "bar"], False, claims.TriggerResult.ALLOW),
-        ({"has_and": ["foo", "bar"]}, ["bar", "foo"], False, claims.TriggerResult.ALLOW),
-        ({"has_and": ["foo", "bar"]}, ["foo"], False, claims.TriggerResult.SKIP),
-        ({"has_and": ["foo", "bar"]}, ["bar"], False, claims.TriggerResult.SKIP),
-        ({"has_and": ["foo", "bar"]}, ["baz"], False, claims.TriggerResult.SKIP),
-        ({"has_and": ["foo", "bar"]}, ["foo", "baz"], False, claims.TriggerResult.SKIP),
-        ({"has_and": ["foo", "bar"]}, ["bar", "baz"], False, claims.TriggerResult.SKIP),
+        ({"has_and": ["foo"]}, ["foo"], claims.TriggerResult.ALLOW),
+        ({"has_and": ["foo"]}, ["bar"], claims.TriggerResult.SKIP),
+        ({"has_and": ["foo", "bar"]}, ["foo", "bar"], claims.TriggerResult.ALLOW),
+        ({"has_and": ["foo", "bar"]}, ["bar", "foo"], claims.TriggerResult.ALLOW),
+        ({"has_and": ["foo", "bar"]}, ["foo"], claims.TriggerResult.SKIP),
+        ({"has_and": ["foo", "bar"]}, ["bar"], claims.TriggerResult.SKIP),
+        ({"has_and": ["foo", "bar"]}, ["baz"], claims.TriggerResult.SKIP),
+        ({"has_and": ["foo", "bar"]}, ["foo", "baz"], claims.TriggerResult.SKIP),
+        ({"has_and": ["foo", "bar"]}, ["bar", "baz"], claims.TriggerResult.SKIP),
         # has_not
-        ({"has_not": ["foo"]}, ["foo"], False, claims.TriggerResult.SKIP),
-        ({"has_not": ["foo"]}, ["bar"], False, claims.TriggerResult.ALLOW),
-        ({"has_not": ["foo", "bar"]}, ["foo"], False, claims.TriggerResult.SKIP),
-        ({"has_not": ["foo", "bar"]}, ["bar"], False, claims.TriggerResult.SKIP),
-        ({"has_not": ["foo", "bar"]}, ["baz"], False, claims.TriggerResult.ALLOW),
-        ({"has_not": ["foo", "bar"]}, ["foo", "bar"], False, claims.TriggerResult.SKIP),
-        ({"has_not": ["foo", "bar"]}, ["foo", "baz"], False, claims.TriggerResult.SKIP),
-        ({"has_not": ["foo", "bar"]}, ["bar", "baz"], False, claims.TriggerResult.SKIP),
-        ({"has_not": ["foo"]}, ["baz", "foo", "qux"], False, claims.TriggerResult.SKIP),
+        ({"has_not": ["foo"]}, ["foo"], claims.TriggerResult.SKIP),
+        ({"has_not": ["foo"]}, ["bar"], claims.TriggerResult.ALLOW),
+        ({"has_not": ["foo", "bar"]}, ["foo"], claims.TriggerResult.SKIP),
+        ({"has_not": ["foo", "bar"]}, ["bar"], claims.TriggerResult.SKIP),
+        ({"has_not": ["foo", "bar"]}, ["baz"], claims.TriggerResult.ALLOW),
+        ({"has_not": ["foo", "bar"]}, ["foo", "bar"], claims.TriggerResult.SKIP),
+        ({"has_not": ["foo", "bar"]}, ["foo", "baz"], claims.TriggerResult.SKIP),
+        ({"has_not": ["foo", "bar"]}, ["bar", "baz"], claims.TriggerResult.SKIP),
+        ({"has_not": ["foo"]}, ["baz", "foo", "qux"], claims.TriggerResult.SKIP),
         # has_or and has_and (only has_or has effect)
-        ({"has_or": ["foo"], "has_and": ["bar"]}, ["foo"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo"], "has_and": ["bar"]}, ["bar"], False, claims.TriggerResult.SKIP),
-        ({"has_or": ["foo"], "has_and": ["bar"]}, ["foo", "bar"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo"], "has_and": ["bar"]}, ["foo", "baz"], False, claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"], "has_and": ["bar"]}, ["foo"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"], "has_and": ["bar"]}, ["bar"], claims.TriggerResult.SKIP),
+        ({"has_or": ["foo"], "has_and": ["bar"]}, ["foo", "bar"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"], "has_and": ["bar"]}, ["foo", "baz"], claims.TriggerResult.ALLOW),
         # has_or and has_not (only has_or has effect)
-        ({"has_or": ["foo"], "has_not": ["bar"]}, ["foo"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo"], "has_not": ["bar"]}, ["bar"], False, claims.TriggerResult.SKIP),
-        ({"has_or": ["foo"], "has_not": ["bar"]}, ["foo", "bar"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo"], "has_not": ["bar"]}, ["foo", "baz"], False, claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"], "has_not": ["bar"]}, ["foo"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"], "has_not": ["bar"]}, ["bar"], claims.TriggerResult.SKIP),
+        ({"has_or": ["foo"], "has_not": ["bar"]}, ["foo", "bar"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"], "has_not": ["bar"]}, ["foo", "baz"], claims.TriggerResult.ALLOW),
         # has_and and has_not (only has_and has effect)
-        ({"has_and": ["foo"], "has_not": ["bar"]}, ["foo"], False, claims.TriggerResult.ALLOW),
-        ({"has_and": ["foo"], "has_not": ["bar"]}, ["bar"], False, claims.TriggerResult.SKIP),
-        ({"has_and": ["foo"], "has_not": ["bar"]}, ["foo", "bar"], False, claims.TriggerResult.ALLOW),
-        ({"has_and": ["foo"], "has_not": ["bar"]}, ["baz", "foo"], False, claims.TriggerResult.ALLOW),
+        ({"has_and": ["foo"], "has_not": ["bar"]}, ["foo"], claims.TriggerResult.ALLOW),
+        ({"has_and": ["foo"], "has_not": ["bar"]}, ["bar"], claims.TriggerResult.SKIP),
+        ({"has_and": ["foo"], "has_not": ["bar"]}, ["foo", "bar"], claims.TriggerResult.ALLOW),
+        ({"has_and": ["foo"], "has_not": ["bar"]}, ["baz", "foo"], claims.TriggerResult.ALLOW),
         # has_or, has_and, and has_not (only has_or has effect)
-        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["foo"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["bar"], False, claims.TriggerResult.SKIP),
-        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["baz"], False, claims.TriggerResult.SKIP),
-        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["foo", "bar"], False, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["foo", "baz"], False, claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["foo"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["bar"], claims.TriggerResult.SKIP),
+        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["baz"], claims.TriggerResult.SKIP),
+        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["foo", "bar"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"], "has_and": ["bar"], "has_not": ["baz"]}, ["foo", "baz"], claims.TriggerResult.ALLOW),
         # None of has_or, has_and, or has_not
-        ({}, ["foo"], False, claims.TriggerResult.SKIP),
-        ({"foo": "bar"}, ["foo"], False, claims.TriggerResult.SKIP),
-        # Case insensitivity (with and without flag enabled)
-        ({"has_or": ["FOO"]}, ["foo"], True, claims.TriggerResult.ALLOW),
-        ({"has_or": ["FOO"]}, ["foo"], False, claims.TriggerResult.SKIP),
-        ({"has_or": ["foo"]}, ["FOO"], True, claims.TriggerResult.ALLOW),
-        ({"has_or": ["foo"]}, ["FOO"], False, claims.TriggerResult.SKIP),
-        ({"has_or": ["bAR"]}, ["foo", "bar"], True, claims.TriggerResult.ALLOW),
-        ({"has_or": ["bAR"]}, ["foo", "bar"], False, claims.TriggerResult.SKIP),
-        ({"has_and": ["fOo", "bAr"]}, ["foo", "bar"], True, claims.TriggerResult.ALLOW),
-        ({"has_and": ["fOo", "bAr"]}, ["foo", "bar"], False, claims.TriggerResult.SKIP),
-        ({"has_not": ["FOO"]}, ["foo"], True, claims.TriggerResult.SKIP),
-        ({"has_and": ["fOo", "bAr"]}, ["foo", "BaZ"], True, claims.TriggerResult.SKIP),
+        ({}, ["foo"], claims.TriggerResult.SKIP),
+        ({"foo": "bar"}, ["foo"], claims.TriggerResult.SKIP),
+        # Case insensitivity (always enabled)
+        ({"has_or": ["FOO"]}, ["foo"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["foo"]}, ["FOO"], claims.TriggerResult.ALLOW),
+        ({"has_or": ["bAR"]}, ["foo", "bar"], claims.TriggerResult.ALLOW),
+        ({"has_and": ["fOo", "bAr"]}, ["foo", "bar"], claims.TriggerResult.ALLOW),
+        ({"has_not": ["FOO"]}, ["foo"], claims.TriggerResult.SKIP),
+        ({"has_and": ["fOo", "bAr"]}, ["foo", "BaZ"], claims.TriggerResult.SKIP),
     ],
 )
 @pytest.mark.django_db
-def test_process_groups(trigger_condition, groups, case_insensitive, has_access):
+def test_process_groups(trigger_condition, groups, has_access):
     """
     Test the process_groups function.
     """
-    from flags.state import disable_flag, enable_flag
-
-    if case_insensitive:
-        enable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
-    else:
-        disable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
-
-    try:
-        res = claims.process_groups(trigger_condition, groups, map_id=1, tracking_id="xxx")
-        assert res is has_access
-    finally:
-        # Clean up: disable the flag after test
-        disable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
+    res = claims.process_groups(trigger_condition, groups, map_id=1, tracking_id="xxx")
+    assert res is has_access
 
 
 @pytest.mark.parametrize(
@@ -464,89 +463,77 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
 
 
 @pytest.mark.parametrize(
-    "trigger_condition, attributes, case_insensitive, expected",
+    "trigger_condition, attributes, expected",
     [
         pytest.param(
             {"email": {"equals": "foo@example.com"}},
             {"email": "foo@example.com"},
-            False,
             claims.TriggerResult.ALLOW,
             id="equals, positive",
         ),
         pytest.param(
             {"email": {"equals": "foo@example.com"}},
             {"email": "foo@example.org"},
-            False,
             claims.TriggerResult.SKIP,
             id="equals, negative",
         ),
         pytest.param(
             {"email": {"matches": ".*@ex.*"}},
             {"email": "foo@example.com"},
-            False,
             claims.TriggerResult.ALLOW,
             id="matches, positive",
         ),
         pytest.param(
             {"email": {"matches": "^foo@.*"}},
             {"email": "foo@example.com"},
-            False,
             claims.TriggerResult.ALLOW,
             id="matches, start of line, positive",
         ),
         pytest.param(
             {"email": {"matches": "foo@.*"}},
             {"email": "bar@example.com"},
-            False,
             claims.TriggerResult.SKIP,
             id="matches, negative",
         ),
         pytest.param(
             {"email": {"matches": "^foo@.*"}},
             {"email": "bar@example.com"},
-            False,
             claims.TriggerResult.SKIP,
             id="matches, start of line, negative",
         ),
         pytest.param(
             {"email": {"contains": "@example.com"}},
             {"email": "foo@example.com"},
-            False,
             claims.TriggerResult.ALLOW,
             id="contains, positive",
         ),
         pytest.param(
             {"email": {"contains": "@example.com"}},
             {"email": "foo@example.org"},
-            False,
             claims.TriggerResult.SKIP,
             id="contains, negative",
         ),
         pytest.param(
             {"email": {"ends_with": "@example.com"}},
             {"email": "foo@example.com"},
-            False,
             claims.TriggerResult.ALLOW,
             id="ends_with, positive",
         ),
         pytest.param(
             {"email": {"ends_with": "@example.com"}},
             {"email": "foo@example.org"},
-            False,
             claims.TriggerResult.SKIP,
             id="ends_with, negative",
         ),
         pytest.param(
             {"email": {"in": ["foo@example.com", "bar@example.org"]}},
             {"email": "foo@example.com"},
-            False,
             claims.TriggerResult.ALLOW,
             id="in, positive",
         ),
         pytest.param(
             {"email": {"in": ["foo@example.com", "bar@example.org"]}},
             {"email": "baz@example.net"},
-            False,
             claims.TriggerResult.SKIP,
             id="in, negative",
         ),
@@ -559,7 +546,6 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "baz@example.net"},
-            False,
             claims.TriggerResult.SKIP,
             id="'and' join_condition, missing one attribute, negative",
         ),
@@ -572,7 +558,6 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "baz@example.net", "favorite_color": "red"},
-            False,
             claims.TriggerResult.SKIP,
             id="'and' join_condition, two false conditions, negative",
         ),
@@ -585,7 +570,6 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "foo@example.org", "favorite_color": "teal"},
-            False,
             claims.TriggerResult.SKIP,
             id="'and' join_condition, one false condition, negative",
         ),
@@ -598,7 +582,6 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "foo@example.com", "favorite_color": "teal"},
-            False,
             claims.TriggerResult.ALLOW,
             id="'and' join_condition, positive",
         ),
@@ -611,7 +594,6 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "foo@example.com", "favorite_color": "teal"},
-            False,
             claims.TriggerResult.ALLOW,
             id="'or' join_condition, both conditions true, positive",
         ),
@@ -624,7 +606,6 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "foo@example.com", "favorite_color": "red"},
-            False,
             claims.TriggerResult.ALLOW,
             id="'or' join_condition, one condition true, positive",
         ),
@@ -636,7 +617,6 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "foo@example.com", "favorite_color": "red"},
-            False,
             claims.TriggerResult.ALLOW,
             id="implicit 'or' join_condition, one condition true, positive",
         ),
@@ -648,7 +628,6 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "foo@example.org", "favorite_color": "red"},
-            False,
             claims.TriggerResult.SKIP,
             id="implicit 'or' join_condition, both conditions false, negative",
         ),
@@ -661,77 +640,66 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
                 },
             },
             {"email": "foo@example.org", "favorite_color": "red"},
-            False,
             claims.TriggerResult.SKIP,
             id="'or' join_condition, both conditions false, negative",
         ),
         pytest.param(
             {"email": {"invalid": "omg hey foo@example.com bye"}},
             {"email": "foo@example.org"},
-            False,
             claims.TriggerResult.SKIP,
             id="invalid predicate in trigger conditions returns None",
         ),
         pytest.param(
             {"email": {}},
             {"email": "foo@example.org"},
-            False,
             claims.TriggerResult.ALLOW,
             id="trigger dict attribute has empty dict, becomes 'exists', positive",
         ),
         pytest.param(
             {"email": {}},
             {"favorite_color": "teal"},
-            False,
             claims.TriggerResult.SKIP,
             id="trigger dict attribute has empty dict, becomes 'exists', negative",
         ),
         pytest.param(
             {"email": {}},
             {},
-            False,
             claims.TriggerResult.SKIP,
             id="trigger dict attribute has empty dict, becomes 'exists', empty attributes, negative",
         ),
         pytest.param(
             {"email": {}, "favorite_color": {}},
             {"favorite_color": "teal"},
-            False,
             claims.TriggerResult.ALLOW,
             id="trigger dict attributes have empty dicts, becomes 'exists', implicit 'or', positive",
         ),
         pytest.param(
             {"email": {}, "favorite_color": {}, "join_condition": "or"},
             {"favorite_color": "teal"},
-            False,
             claims.TriggerResult.ALLOW,
             id="trigger dict attributes have empty dicts, becomes 'exists', explicit 'or', positive",
         ),
         pytest.param(
             {"email": {}, "favorite_color": {}, "join_condition": "and"},
             {"favorite_color": "teal"},
-            False,
             claims.TriggerResult.SKIP,
             id="trigger dict attributes have empty dicts, becomes 'exists', explicit 'and', negative",
         ),
         pytest.param(
             {"email": {}, "favorite_color": {}, "join_condition": "and"},
             {"favorite_color": "teal", "email": "foo@example.com"},
-            False,
             claims.TriggerResult.ALLOW,
             id="trigger dict attributes have empty dicts, becomes 'exists', explicit 'and', positive",
         ),
         pytest.param(
             {"email": {"contains": "example"}},
             {"email": None},
-            False,
             claims.TriggerResult.SKIP,
             id="user attribute is None, no predicate checks, returns None",
         ),
         pytest.param(
             {"email": {}},
             {"email": None},
-            False,
             claims.TriggerResult.ALLOW,
             id="user attribute is None, exists check still works, negative",
         ),
@@ -739,202 +707,154 @@ def test_has_access_with_join(current_access, new_access, condition, expected):
         pytest.param(
             {"email": {"equals": "foo@example.com"}},
             {"email": ["bar@example.com", "baz@example.com"]},
-            False,
             claims.TriggerResult.SKIP,
             id="user attribute is list, no matches, negative",
         ),
         pytest.param(
             {"email": {"equals": "foo@example.com"}},
             {"email": ["bar@example.com", "foo@example.com"]},
-            False,
             claims.TriggerResult.ALLOW,
             id="user attribute is list, one match, implicit 'or', positive",
         ),
         pytest.param(
             {"email": {"equals": "foo@example.com"}, "join_condition": "and"},
             {"email": ["bar@example.com", "foo@example.com"]},
-            False,
             claims.TriggerResult.SKIP,
             id="user attribute is list, one match, explicit 'and', negative",
         ),
         pytest.param(
             {"email": {"equals": "foo@example.com"}, "join_condition": "and"},
             {"email": ["foo@example.com", "foo@example.com"]},
-            False,
             claims.TriggerResult.ALLOW,
             id="user attribute is list, all matches, explicit 'and', positive",
         ),
         pytest.param(
             {"email": {"equals": "foo@example.com"}, "join_condition": "or"},
             {"email": ["foo@example.com", "foo@example.com"]},
-            False,
             claims.TriggerResult.ALLOW,
             id="user attribute is list, all matches, explicit 'or', positive",
         ),
         pytest.param(
             {"email": {"equals": "foo@example.com"}, "join_condition": "and"},
             {"email": []},
-            False,
             claims.TriggerResult.SKIP,
             id="user attribute is empty list, explicit 'and', returns None",
         ),
         pytest.param(
             {"email": {"equals": "foo@example.com"}, "join_condition": "or"},
             {"email": []},
-            False,
             claims.TriggerResult.SKIP,
             id="user attribute is empty list, explicit 'or', returns None",
         ),
         pytest.param(
             {"email": {"equals": "foo@example.com"}, "join_condition": "or"},
             {"email": ["foo@example.com", "bar@example.com"]},
-            False,
             claims.TriggerResult.ALLOW,
             id="user attribute is list, explicit 'or', second match is false, positive",
         ),
         pytest.param(
             {"email": {"equals": "foo@example.com"}, "join_condition": "invalid"},
             {"email": ["foo@example.com", "bar@example.com"]},
-            False,
             claims.TriggerResult.ALLOW,
             id="join condition is invalid, defaults to or",
         ),
         pytest.param(
             {"username": {"equals": "alice"}, "join_condition": "or"},
             {"username": "bob", "email": ""},
-            False,
             claims.TriggerResult.SKIP,
             id="user attribute is string, condition equals, join condition or, negative",
         ),
+        # Case insensitivity (always enabled)
         pytest.param(
             {"username": {"equals": "lowercase"}, "join_condition": "or"},
             {"username": "LOWERCASE"},
-            True,
             claims.TriggerResult.ALLOW,
-            id="username attribute value case mismatch",
-        ),
-        pytest.param(
-            {"username": {"equals": "lowercase"}, "join_condition": "or"},
-            {"username": "LOWERCASE"},
-            False,
-            claims.TriggerResult.SKIP,
             id="username attribute value case mismatch",
         ),
         pytest.param(
             {"uSeRnAmE": {"equals": "bbelcher"}, "join_condition": "or"},
             {"username": "bbelcher"},
-            True,
             claims.TriggerResult.ALLOW,
-            id="username attribute name/key case mismatch",
-        ),
-        pytest.param(
-            {"uSeRnAmE": {"equals": "bbelcher"}, "join_condition": "or"},
-            {"username": "bbelcher"},
-            False,
-            claims.TriggerResult.SKIP,
             id="username attribute name/key case mismatch",
         ),
         pytest.param(
             {"USERNAME": {"equals": "lowercase"}, "join_condition": "or"},
             {"username": "LOWERCASE"},
-            True,
             claims.TriggerResult.ALLOW,
             id="username attribute name/key and value case mismatch",
         ),
         pytest.param(
             {"username": {"contains": "USER"}, "join_condition": "or"},
             {"username": "myusername"},
-            True,
             claims.TriggerResult.ALLOW,
             id="username attribute value case mismatch contains",
         ),
         pytest.param(
             {"username": {"in": ["BOB", "JOE", "JOHN", "TAMAR"]}, "join_condition": "or"},
             {"username": "tamar"},
-            True,
             claims.TriggerResult.ALLOW,
             id="username attribute value case mismatch in",
         ),
         pytest.param(
             {"email": {"matches": ".*@REDHAT.COM"}, "join_condition": "or"},
             {"email": "fred@redhat.com"},
-            True,
             claims.TriggerResult.ALLOW,
             id="email attribute value case mismatch matches",
         ),
         pytest.param(
             {"email": {}},
             {"email": None},
-            True,
             claims.TriggerResult.ALLOW,
-            id="user attribute is None, exists check still works, case sensitive, negative",
+            id="user attribute is None, exists check still works",
         ),
         pytest.param(
             {"department": {"in": ["Engineering", "Sales", "Marketing"]}},
             {"department": "Engineering"},
-            False,
             claims.TriggerResult.ALLOW,
             id="in operator with list value, positive match",
         ),
         pytest.param(
             {"department": {"in": ["Engineering", "Sales", "Marketing"]}},
             {"department": "HR"},
-            False,
             claims.TriggerResult.SKIP,
             id="in operator with list value, negative match",
         ),
         pytest.param(
             {"department": {"in": ["Engineering", "Sales", "Marketing"]}},
             {"department": "engineering"},
-            True,
             claims.TriggerResult.ALLOW,
             id="in operator with list value, case insensitive match",
         ),
         pytest.param(
             {"department": {"in": "Engineering"}},
             {"department": "Engineering"},
-            False,
             claims.TriggerResult.SKIP,
             id="in operator with string value (invalid) should be ignored",
         ),
         pytest.param(
             {"cn": {"ends_with": "_admin"}, "employeeType": {"equals": "manager"}, "join_condition": "and"},
             {"cn": ["ldap_admin"]},
-            False,
             claims.TriggerResult.SKIP,
             id="missing attribute required by 'and' condition should result in skip",
         ),
         pytest.param(
             {"cn": {"ends_with": "_admin"}, "employeeType": {"equals": "manager"}, "join_condition": "or"},
             {"cn": ["ldap_admin"]},
-            False,
             claims.TriggerResult.ALLOW,
             id="missing attribute when using 'or' condition should result in allow",
         ),
         pytest.param(
             {"cn": {"ends_with": "_admin"}, "employeeType": {"equals": "manager"}, "join_condition": "and"},
             {"cn": ["ldap_org_admin"], "employeeType": ["manager"]},
-            False,
             claims.TriggerResult.ALLOW,
             id="all attribute required by 'and' condition should result in allow",
         ),
     ],
 )
 @pytest.mark.django_db
-def test_process_user_attributes(trigger_condition, attributes, expected, case_insensitive):
-    from flags.state import disable_flag, enable_flag
-
-    if case_insensitive:
-        enable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
-    else:
-        disable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
-
-    try:
-        res = claims.process_user_attributes(trigger_condition, attributes, map_id=1, tracking_id="xxx")
-        assert res is expected
-    finally:
-        # Clean up: disable the flag after test
-        disable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
+def test_process_user_attributes(trigger_condition, attributes, expected):
+    res = claims.process_user_attributes(trigger_condition, attributes, map_id=1, tracking_id="xxx")
+    assert res is expected
 
 
 def test_update_user_claims_extra_data(user, local_authenticator_map):
@@ -977,6 +897,74 @@ def test_update_user_claims_groups(user, local_authenticator_map):
     assert local_authenticator_map.authenticator == authenticator_user.provider  # sanity check
     result = claims.update_user_claims(user, authenticator, ["foo"])
     assert result is user
+
+
+def test_update_user_claims_attrs_override(user, local_authenticator_map):
+    """
+    Verify that when attrs is explicitly passed to update_user_claims, it is
+    used for attribute-based trigger evaluation instead of extra_data.
+
+    This simulates the OIDC pipeline flow where the identity provider's response
+    contains claims (like preferred_username) that are NOT stored in extra_data
+    but should still be available for authenticator map attribute matching.
+    """
+    local_authenticator_map.triggers = {"attributes": {"preferred_username": {"contains": "oidc_user"}}}
+    local_authenticator_map.save()
+    authenticator = local_authenticator_map.authenticator
+    authenticator_user = AuthenticatorUser(
+        provider=authenticator,
+        user=user,
+        extra_data={"id": "some-sub-value", "token_type": "Bearer"},
+    )
+    authenticator_user.save()
+
+    # Without attrs override, the trigger won't match (preferred_username not in extra_data)
+    result = claims.update_user_claims(user, authenticator, [])
+    assert result is user  # still allowed (no "allow" map to block)
+
+    # Verify the map didn't fire by checking that last_login_map_results shows "skipped"
+    authenticator_user.refresh_from_db()
+    map_results = authenticator_user.last_login_map_results
+    assert map_results[0][str(local_authenticator_map.pk)] == "skipped"
+
+    # With attrs override containing the claim, the trigger SHOULD match
+    oidc_response = {"preferred_username": "oidc_user_1", "email": "user@example.com", "sub": "abc123"}
+    result = claims.update_user_claims(user, authenticator, [], attrs=oidc_response)
+    assert result is user
+
+    authenticator_user.refresh_from_db()
+    map_results = authenticator_user.last_login_map_results
+    assert map_results[0][str(local_authenticator_map.pk)] is True
+
+
+def test_update_user_claims_saml_attrs_override(user, local_authenticator_map):
+    """
+    Verify that SAML-style attrs (list values) are correctly matched by
+    attribute-based triggers when passed via the attrs parameter.
+
+    SAML identity providers return attribute values as lists
+    (e.g., ["true"] instead of "true"). The trigger evaluator should handle
+    both formats via _normalize_user_value().
+    """
+    local_authenticator_map.triggers = {"attributes": {"is_superuser": {"contains": "true"}}}
+    local_authenticator_map.save()
+    authenticator = local_authenticator_map.authenticator
+    authenticator_user = AuthenticatorUser(
+        provider=authenticator,
+        user=user,
+        extra_data={"id": "saml-uid", "token_type": "Bearer"},
+    )
+    authenticator_user.save()
+
+    # SAML attrs have list values — this is what the pipeline now passes
+    # after extracting response["attributes"]
+    saml_attrs = {"is_superuser": ["true"], "email": ["user@example.com"]}
+    result = claims.update_user_claims(user, authenticator, [], attrs=saml_attrs)
+    assert result is user
+
+    authenticator_user.refresh_from_db()
+    map_results = authenticator_user.last_login_map_results
+    assert map_results[0][str(local_authenticator_map.pk)] is True
 
 
 @pytest.mark.parametrize("enabled", [True, False])
@@ -1554,25 +1542,16 @@ def test_create_claims_with_map_enabled_or_disabled(enabled, local_authenticator
             None,
             {"management_roles": ["pm", "lead", "director"]},
             {
-                'organization_membership': {
-                    'Business': True,
-                },
+                'organization_membership': {},
                 'rbac_roles': {
-                    'organizations': {
-                        'Business': {
-                            'roles': {
-                                SYSTEM_ROLE_NAME: True,
-                            },
-                            'teams': {},
-                        },
-                    },
+                    'organizations': {},
                     'system': {
                         'roles': {},
                     },
                 },
                 'team_membership': {},
             },
-            id="role_map_type_organization_assignment",
+            id="role_map_type_global_role_with_org_is_skipped",
         ),
         pytest.param(
             'role',
@@ -2202,42 +2181,22 @@ class TestClaimsHelperFunctions:
         if expected_log_contains:
             assert expected_log_contains in caplog.text
 
-    @pytest.mark.django_db
     @pytest.mark.parametrize(
-        "case_insensitive_enabled, trigger_condition, attributes, expected_trigger, expected_attrs",
+        "trigger_condition, attributes, expected_trigger, expected_attrs",
         [
             (
-                False,
                 {"USERNAME": {"equals": "TestUser"}},
                 {"USERNAME": "TestUser"},
-                {"USERNAME": {"equals": "TestUser"}},  # No change when disabled
-                {"USERNAME": "TestUser"},  # No change when disabled
-            ),
-            (
-                True,
-                {"USERNAME": {"equals": "TestUser"}},
-                {"USERNAME": "TestUser"},
-                {"username": {"equals": "testuser"}},  # Lowercased when enabled
+                {"username": {"equals": "testuser"}},
                 {"username": "TestUser"},  # Keys lowercased, values unchanged
             ),
         ],
     )
-    def test_prepare_case_insensitive_data(self, case_insensitive_enabled, trigger_condition, attributes, expected_trigger, expected_attrs):
-        """Test _prepare_case_insensitive_data with case insensitivity enabled/disabled"""
-        from flags.state import disable_flag, enable_flag
-
-        if case_insensitive_enabled:
-            enable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
-        else:
-            disable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
-
-        try:
-            result_trigger, result_attrs = claims._prepare_case_insensitive_data(trigger_condition, attributes, 1, "test-id")
-            assert result_trigger == expected_trigger
-            assert result_attrs == expected_attrs
-        finally:
-            # Clean up: disable the flag after test
-            disable_flag("FEATURE_CASE_INSENSITIVE_AUTH_MAPS_ENABLED")
+    def test_prepare_case_insensitive_data(self, trigger_condition, attributes, expected_trigger, expected_attrs):
+        """Test _prepare_case_insensitive_data always normalizes case"""
+        result_trigger, result_attrs = claims._prepare_case_insensitive_data(trigger_condition, attributes, 1, "test-id")
+        assert result_trigger == expected_trigger
+        assert result_attrs == expected_attrs
 
     @pytest.mark.parametrize(
         "user_value, expected",
@@ -2710,3 +2669,452 @@ class TestRefactoredCacheExisting:
         if "Test Role" in cache_instance.cache:
             for content_type_id in expected_skipped_content_types:
                 assert content_type_id not in cache_instance.cache["Test Role"]
+
+
+# --- AAP-45394 regression tests ---
+
+
+@mock.patch("ansible_base.authentication.utils.claims.logger")
+def test_create_claims_allow_grant_no_error_logged(
+    logger,
+    local_authenticator_map,
+    shut_up_logging,
+):
+    """
+    Regression test for AAP-45047: map_type 'allow' with a firing trigger
+    must NOT log an error or fall through to the catch-all else branch.
+    """
+    local_authenticator_map.triggers = {"always": {}}
+    local_authenticator_map.map_type = "allow"
+    local_authenticator_map.save()
+
+    authenticator = local_authenticator_map.authenticator
+    claims.create_claims(authenticator, "username", {}, [])
+
+    logger.error.assert_not_called()
+
+
+def test_create_claims_deny_all_then_allow_override(
+    local_authenticator_map,
+    local_authenticator_map_1,
+):
+    """
+    Regression test for AAP-45394: a deny-all allow map at order=1 must be
+    recoverable by an allow-always allow map at order=2.
+
+    Before the fix the 'allow' branch only triggered when has_permission=False,
+    so the affirmative branch (has_permission=True) was silently dropped and
+    access remained denied.
+    """
+    # order=1: deny-all rule (trigger 'never' -> has_permission=False)
+    local_authenticator_map.map_type = 'allow'
+    local_authenticator_map.triggers = {'never': {}}
+    local_authenticator_map.order = 1
+    local_authenticator_map.save()
+
+    # order=2: allow-always rule (trigger 'always' -> has_permission=True)
+    local_authenticator_map_1.map_type = 'allow'
+    local_authenticator_map_1.triggers = {'always': {}}
+    local_authenticator_map_1.order = 2
+    local_authenticator_map_1.save()
+
+    authenticator = local_authenticator_map.authenticator
+    res = claims.create_claims(authenticator, 'username', {}, [])
+
+    assert res['access_allowed'] is True, 'An allow-always map at order=2 must override a deny-all map at order=1 (AAP-45394)'
+
+
+def test_create_claims_deny_all_not_overridden_without_match(
+    local_authenticator_map,
+    local_authenticator_map_1,
+):
+    """
+    Regression test for AAP-45394: when the user does NOT match the second
+    allow map's trigger, access must remain denied.
+    """
+    # order=1: deny-all
+    local_authenticator_map.map_type = 'allow'
+    local_authenticator_map.triggers = {'never': {}}
+    local_authenticator_map.order = 1
+    local_authenticator_map.save()
+
+    # order=2: allow only for members of group 'special-group'; user has no groups
+    local_authenticator_map_1.map_type = 'allow'
+    local_authenticator_map_1.triggers = {'groups': {'has_or': ['special-group']}}
+    local_authenticator_map_1.order = 2
+    local_authenticator_map_1.save()
+
+    authenticator = local_authenticator_map.authenticator
+    # Pass an empty groups list -- the user is NOT in 'special-group'
+    res = claims.create_claims(authenticator, 'username', {}, [])
+
+    assert res['access_allowed'] is False, 'User not matching the second allow map must remain denied (AAP-45394)'
+
+
+def test_create_claims_deny_all_overridden_with_group_match(
+    local_authenticator_map,
+    local_authenticator_map_1,
+):
+    """
+    Regression test for AAP-45394: when the user DOES match the second allow
+    map's trigger, the deny from the first map must be overridden.
+    """
+    # order=1: deny-all
+    local_authenticator_map.map_type = 'allow'
+    local_authenticator_map.triggers = {'never': {}}
+    local_authenticator_map.order = 1
+    local_authenticator_map.save()
+
+    # order=2: allow for members of 'special-group'
+    local_authenticator_map_1.map_type = 'allow'
+    local_authenticator_map_1.triggers = {'groups': {'has_or': ['special-group']}}
+    local_authenticator_map_1.order = 2
+    local_authenticator_map_1.save()
+
+    authenticator = local_authenticator_map.authenticator
+    # Pass 'special-group' in the groups list -- the user IS in the group
+    res = claims.create_claims(authenticator, 'username', {}, ['special-group'])
+
+    assert res['access_allowed'] is True, 'User matching the second allow map must have access granted despite earlier deny (AAP-45394)'
+
+
+def test_create_claims_allow_then_deny_preserves_deny(
+    local_authenticator_map,
+    local_authenticator_map_1,
+):
+    """
+    Verify the reverse ordering: allow-always at order=1, deny-all at order=2.
+    The later deny must override the earlier allow (last writer wins).
+    """
+    local_authenticator_map.map_type = 'allow'
+    local_authenticator_map.triggers = {'always': {}}
+    local_authenticator_map.order = 1
+    local_authenticator_map.save()
+
+    local_authenticator_map_1.map_type = 'allow'
+    local_authenticator_map_1.triggers = {'never': {}}
+    local_authenticator_map_1.order = 2
+    local_authenticator_map_1.save()
+
+    authenticator = local_authenticator_map.authenticator
+    res = claims.create_claims(authenticator, 'username', {}, [])
+
+    assert res['access_allowed'] is False, 'A deny-all map at order=2 must override an allow-always map at order=1'
+
+
+def test_create_claims_revoke_deny_overridden_by_later_allow(
+    local_authenticator_map,
+    local_authenticator_map_1,
+):
+    """
+    A revoke=True allow map whose trigger does not match converts SKIP to DENY.
+    A subsequent allow-always map must override that denial (last writer wins).
+    """
+    # order=1: allow for group 'admins' with revoke=True
+    # user NOT in admins -> SKIP -> revoke converts to DENY -> access_allowed=False
+    local_authenticator_map.map_type = 'allow'
+    local_authenticator_map.triggers = {'groups': {'has_or': ['admins']}}
+    local_authenticator_map.revoke = True
+    local_authenticator_map.order = 1
+    local_authenticator_map.save()
+
+    # order=2: allow-always -> access_allowed=True
+    local_authenticator_map_1.map_type = 'allow'
+    local_authenticator_map_1.triggers = {'always': {}}
+    local_authenticator_map_1.order = 2
+    local_authenticator_map_1.save()
+
+    authenticator = local_authenticator_map.authenticator
+    res = claims.create_claims(authenticator, 'username', {}, [])
+
+    assert res['access_allowed'] is True, 'An allow-always map must override a revoke-deny from an earlier map'
+
+
+def test_create_claims_three_maps_last_writer_wins(
+    local_authenticator_map,
+    local_authenticator_map_1,
+    local_authenticator_map_2,
+):
+    """
+    Three allow maps: allow(1) -> deny(2) -> allow(3).
+    The last evaluated map must win.
+    """
+    local_authenticator_map.map_type = 'allow'
+    local_authenticator_map.triggers = {'always': {}}
+    local_authenticator_map.order = 1
+    local_authenticator_map.save()
+
+    local_authenticator_map_1.map_type = 'allow'
+    local_authenticator_map_1.triggers = {'never': {}}
+    local_authenticator_map_1.order = 2
+    local_authenticator_map_1.save()
+
+    local_authenticator_map_2.map_type = 'allow'
+    local_authenticator_map_2.triggers = {'always': {}}
+    local_authenticator_map_2.order = 3
+    local_authenticator_map_2.save()
+
+    authenticator = local_authenticator_map.authenticator
+    res = claims.create_claims(authenticator, 'username', {}, [])
+
+    assert res['access_allowed'] is True, 'The last allow map (order=3, always) must win over the deny at order=2'
+
+
+# ---------------------------------------------------------------------------
+# Performance and correctness tests for optimized claims processing
+# ---------------------------------------------------------------------------
+
+# Deterministically-generated group names for performance tests.
+# 33 groups matches the scale observed in production SAML responses.
+_MANY_GROUPS = [f"group-{hashlib.sha256(f'seed-{i}'.encode()).hexdigest()[:16]}" for i in range(33)]
+# Pick one to use as a known-present value in match tests
+_KNOWN_GROUP = _MANY_GROUPS[7]
+
+
+class TestProcessUserValueInOperatorLogVolume:
+    """Verify the 'in' operator emits O(1) log lines per evaluation, not O(n) per user value."""
+
+    def test_in_operator_emits_one_log_line_per_map(self, caplog):
+        """The 'in' operator must emit at most 1 log line per map, not per value."""
+        tc = {'groups': {'in': ['nonexistent_group']}}
+
+        with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.utils.claims'):
+            claims._process_user_value(None, tc, _MANY_GROUPS, 'or', 'groups', 1, 'log-test')
+
+        attr_log_lines = [r for r in caplog.records if 'groups' in r.getMessage() and 'Map [1]' in r.getMessage()]
+        assert len(attr_log_lines) == 1, (
+            f"Expected 1 summary log line for 'in' operator, got {len(attr_log_lines)}: " f"{[r.getMessage() for r in attr_log_lines]}"
+        )
+
+
+class TestProcessUserValueInOperatorCorrectness:
+    """Verify set-based 'in' operator produces identical results to per-value iteration."""
+
+    def test_in_single_value_positive(self):
+        tc = {'email': {'in': ['foo@example.com', 'bar@example.org']}}
+        result = claims._process_user_value(None, tc, ['foo@example.com'], 'or', 'email', 1, 't')
+        assert result is True
+
+    def test_in_single_value_negative(self):
+        tc = {'email': {'in': ['foo@example.com', 'bar@example.org']}}
+        result = claims._process_user_value(None, tc, ['baz@example.net'], 'or', 'email', 1, 't')
+        assert result is False
+
+    def test_in_multi_value_any_match_or_join(self):
+        tc = {'groups': {'in': ['admin']}}
+        result = claims._process_user_value(None, tc, ['user', 'admin', 'staff'], 'or', 'groups', 1, 't')
+        assert result is True
+
+    def test_in_multi_value_no_match_or_join(self):
+        tc = {'groups': {'in': ['superadmin']}}
+        result = claims._process_user_value(None, tc, ['user', 'admin', 'staff'], 'or', 'groups', 1, 't')
+        assert result is False
+
+    def test_in_multi_value_all_match_and_join(self):
+        tc = {'groups': {'in': ['admin', 'user', 'staff']}}
+        result = claims._process_user_value(None, tc, ['user', 'admin'], 'and', 'groups', 1, 't')
+        assert result is True
+
+    def test_in_multi_value_partial_match_and_join(self):
+        tc = {'groups': {'in': ['admin']}}
+        result = claims._process_user_value(None, tc, ['user', 'admin'], 'and', 'groups', 1, 't')
+        assert result is False
+
+    def test_in_empty_user_value_returns_none(self):
+        tc = {'groups': {'in': ['admin']}}
+        result = claims._process_user_value(None, tc, [], 'or', 'groups', 1, 't')
+        assert result is None
+
+    def test_in_case_insensitive(self):
+        tc = {'groups': {'in': ['admin']}}
+        result = claims._process_user_value(None, tc, ['ADMIN'], 'or', 'groups', 1, 't')
+        assert result is True
+
+    def test_in_preserves_existing_has_access_true_or(self):
+        tc = {'groups': {'in': ['admin']}}
+        result = claims._process_user_value(True, tc, ['nobody'], 'or', 'groups', 1, 't')
+        assert result is True
+
+    def test_in_flips_false_to_true_on_match_or(self):
+        """has_access=False must flip to True when a match is found with 'or' join."""
+        tc = {'groups': {'in': ['admin']}}
+        result = claims._process_user_value(False, tc, ['admin'], 'or', 'groups', 1, 't')
+        assert result is True
+
+    def test_in_preserves_false_on_no_match_or(self):
+        """has_access=False stays False when no match is found with 'or' join."""
+        tc = {'groups': {'in': ['admin']}}
+        result = claims._process_user_value(False, tc, ['nobody'], 'or', 'groups', 1, 't')
+        assert result is False
+
+    def test_in_preserves_existing_has_access_and(self):
+        tc = {'groups': {'in': ['admin']}}
+        result = claims._process_user_value(True, tc, ['nobody'], 'and', 'groups', 1, 't')
+        assert result is False
+
+    def test_in_case_insensitive_trigger_and_user(self):
+        """Trigger values and user values with mixed case must match."""
+        tc = {'groups': {'in': ['HybRid_Cloud_Admin']}}
+        result = claims._process_user_value(None, tc, ['HYBRID_CLOUD_ADMIN'], 'or', 'groups', 1, 't')
+        assert result is True
+
+    def test_in_partial_match_and_join(self):
+        """With 'and' join, partial match (some values in trigger) must return False."""
+        tc = {'groups': {'in': ['admin', 'editor']}}
+        result = claims._process_user_value(None, tc, ['admin', 'viewer'], 'and', 'groups', 1, 't')
+        assert result is False
+
+    def test_in_many_groups_single_trigger_no_match(self):
+        """33 user groups, trigger has 1 non-matching value."""
+        tc = {'groups': {'in': ['nonexistent_group']}}
+        result = claims._process_user_value(None, tc, _MANY_GROUPS, 'or', 'groups', 1, 't')
+        assert result is False
+
+    def test_in_many_groups_single_trigger_with_match(self):
+        """33 user groups, trigger has 1 matching value."""
+        tc = {'groups': {'in': [_KNOWN_GROUP]}}
+        result = claims._process_user_value(None, tc, _MANY_GROUPS, 'or', 'groups', 1, 't')
+        assert result is True
+
+
+class TestEarlyExitForOtherOperators:
+    """Verify early exit for equals/contains/ends_with/matches operators."""
+
+    def test_equals_early_exit_or_join(self, caplog):
+        """With 'or' join, first match should stop iteration."""
+        values = ['a', 'b', 'target', 'd', 'e']
+        tc = {'attr': {'equals': 'target'}}
+
+        with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.utils.claims'):
+            result = claims._process_user_value(None, tc, values, 'or', 'attr', 1, 'exit-test')
+
+        assert result is True
+        value_logs = [r for r in caplog.records if 'value [' in r.getMessage() and 'Map [1]' in r.getMessage()]
+        # Should have logged a, b, target — then stopped (3 not 5)
+        assert len(value_logs) == 3, f"Expected early exit after 3 values, got {len(value_logs)} log lines"
+
+    def test_equals_early_exit_and_join(self, caplog):
+        """With 'and' join, first mismatch should stop iteration."""
+        values = ['target', 'wrong', 'target', 'target']
+        tc = {'attr': {'equals': 'target'}}
+
+        with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.utils.claims'):
+            result = claims._process_user_value(None, tc, values, 'and', 'attr', 1, 'exit-test')
+
+        assert result is False
+        value_logs = [r for r in caplog.records if 'value [' in r.getMessage() and 'Map [1]' in r.getMessage()]
+        assert len(value_logs) == 2, f"Expected early exit after 2 values, got {len(value_logs)} log lines"
+
+    def test_contains_early_exit_or_join(self, caplog):
+        """With 'or' join, first match should stop iteration."""
+        values = ['foo', 'bar', 'hello_world', 'baz']
+        tc = {'attr': {'contains': 'world'}}
+
+        with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.utils.claims'):
+            result = claims._process_user_value(None, tc, values, 'or', 'attr', 1, 'exit-test')
+
+        assert result is True
+        value_logs = [r for r in caplog.records if 'value [' in r.getMessage() and 'Map [1]' in r.getMessage()]
+        assert len(value_logs) == 3, f"Expected early exit after 3 values, got {len(value_logs)} log lines"
+
+    def test_ends_with_early_exit_or_join(self, caplog):
+        """With 'or' join, first match should stop iteration."""
+        values = ['user@other.com', 'user@example.com', 'user@third.com']
+        tc = {'attr': {'ends_with': '@example.com'}}
+
+        with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.utils.claims'):
+            result = claims._process_user_value(None, tc, values, 'or', 'attr', 1, 'exit-test')
+
+        assert result is True
+        value_logs = [r for r in caplog.records if 'value [' in r.getMessage() and 'Map [1]' in r.getMessage()]
+        assert len(value_logs) == 2, f"Expected early exit after 2 values, got {len(value_logs)} log lines"
+
+    def test_matches_early_exit_or_join(self, caplog):
+        """With 'or' join, first regex match should stop iteration."""
+        values = ['nope', 'admin-group-1', 'other']
+        tc = {'attr': {'matches': r'^admin-.*'}}
+
+        with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.utils.claims'):
+            result = claims._process_user_value(None, tc, values, 'or', 'attr', 1, 'exit-test')
+
+        assert result is True
+        value_logs = [r for r in caplog.records if 'value [' in r.getMessage() and 'Map [1]' in r.getMessage()]
+        assert len(value_logs) == 2, f"Expected early exit after 2 values, got {len(value_logs)} log lines"
+
+    def test_matches_early_exit_and_join(self, caplog):
+        """With 'and' join, first regex mismatch should stop iteration."""
+        values = ['admin-1', 'not-admin', 'admin-2']
+        tc = {'attr': {'matches': r'^admin-.*'}}
+
+        with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.utils.claims'):
+            result = claims._process_user_value(None, tc, values, 'and', 'attr', 1, 'exit-test')
+
+        assert result is False
+        value_logs = [r for r in caplog.records if 'value [' in r.getMessage() and 'Map [1]' in r.getMessage()]
+        assert len(value_logs) == 2, f"Expected early exit after 2 values, got {len(value_logs)} log lines"
+
+
+class TestProcessUserValueEdgeCases:
+    """Cover branch conditions in _process_user_value for unknown operators and disabled logging."""
+
+    def test_unknown_operator_returns_has_access_unchanged(self):
+        """An unrecognized operator key should return has_access unchanged."""
+        tc = {'attr': {'unknown_op': 'value'}}
+        result = claims._process_user_value(None, tc, ['x'], 'or', 'attr', 1, 't')
+        assert result is None
+
+    def test_in_operator_with_logging_disabled(self, caplog):
+        """The 'in' path must work correctly even when DEBUG logging is disabled."""
+        tc = {'groups': {'in': ['admin']}}
+        with caplog.at_level(logging.WARNING, logger='ansible_base.authentication.utils.claims'):
+            result = claims._process_user_value(None, tc, ['admin'], 'or', 'groups', 1, 't')
+        assert result is True
+        attr_logs = [r for r in caplog.records if 'groups' in r.getMessage()]
+        assert len(attr_logs) == 0
+
+    def test_scalar_operator_with_logging_disabled(self, caplog):
+        """Scalar operators must work correctly even when DEBUG logging is disabled."""
+        tc = {'attr': {'equals': 'target'}}
+        with caplog.at_level(logging.WARNING, logger='ansible_base.authentication.utils.claims'):
+            result = claims._process_user_value(None, tc, ['target'], 'or', 'attr', 1, 't')
+        assert result is True
+        attr_logs = [r for r in caplog.records if 'attr' in r.getMessage().lower()]
+        assert len(attr_logs) == 0
+
+
+class TestProcessUserAttributesLogVolume:
+    """End-to-end log volume test via the public process_user_attributes API."""
+
+    def test_many_groups_attribute_in_operator_debug_log_volume(self, caplog):
+        """342 evaluations must produce O(342) log lines, not O(342 * 33)."""
+        trigger = {'groups': {'in': ['nonexistent']}}
+        attrs = {'groups': _MANY_GROUPS}
+
+        with caplog.at_level(logging.DEBUG, logger='ansible_base.authentication.utils.claims'):
+            for _ in range(342):
+                claims.process_user_attributes(dict(trigger), dict(attrs), map_id=1, tracking_id='vol')
+
+        attr_lines = [r for r in caplog.records if 'groups' in r.getMessage().lower()]
+        # 342 maps x 1 summary line = 342, not 342 x 33 = 11286
+        assert len(attr_lines) <= 342, (
+            f"Expected <= 342 attr log lines, got {len(attr_lines)}. " f"The 'in' operator should emit 1 summary line per evaluation, not per user value."
+        )
+
+
+@pytest.mark.django_db
+class TestCreateClaimsQueryCount:
+    """Integration test: create_claims must not issue N+1 queries."""
+
+    def test_many_maps_query_count(self, local_authenticator, django_assert_num_queries):
+        """create_claims must not issue N+1 queries for N maps."""
+        for i in range(10):
+            AuthenticatorMap.objects.create(
+                name=f'map-{i}',
+                authenticator=local_authenticator,
+                map_type='allow',
+                triggers={'attributes': {'email': {'in': ['test@example.com']}}},
+                order=i,
+            )
+
+        with django_assert_num_queries(1):
+            claims.create_claims(local_authenticator, 'testuser', {'email': 'test@example.com'}, [])
