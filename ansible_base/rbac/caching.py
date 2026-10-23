@@ -564,8 +564,20 @@ def _collect_created_role_updates(
     role_existing = existing.get(role.pk, {})
     for key in role_existing.keys() - expected:
         updates.to_delete.add((role_existing[key], type(key[2])))
+
+    # Group evaluations by content type to use the correct model (int vs UUID)
+    from ansible_base.rbac.models.content_type import DABContentType
+    evals_by_ct = defaultdict(list)
     for codename, ct_id, obj_id in expected - role_existing.keys():
-        updates.to_add.append(RoleEvaluation(codename=codename, content_type_id=ct_id, object_id=obj_id, role=role))
+        evals_by_ct[ct_id].append((codename, obj_id))
+
+    # Create evaluation instances using the correct model for each content type
+    for ct_id, evals in evals_by_ct.items():
+        ct = DABContentType.objects.get(pk=ct_id)
+        model_cls = ct.model_class()
+        eval_model = get_evaluation_model(model_cls)
+        for codename, obj_id in evals:
+            updates.to_add.append(eval_model(codename=codename, content_type_id=ct_id, object_id=obj_id, role=role))
 
 
 def recompute_role_evaluations_for_created(

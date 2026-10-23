@@ -835,8 +835,21 @@ class ObjectRole(ObjectRoleFields):
             to_delete.add((existing_partials[(codename, content_type_id, object_id)], type(object_id)))
 
         to_add = []
+        # Group evaluations by content type to determine which evaluation model to use
+        evaluations_by_ct = {}
         for codename, ct_id, obj_pk in expected_evaluations - existing_set:
-            to_add.append(RoleEvaluation(codename=codename, content_type_id=ct_id, object_id=obj_pk, role=self))
+            if ct_id not in evaluations_by_ct:
+                evaluations_by_ct[ct_id] = []
+            evaluations_by_ct[ct_id].append((codename, obj_pk))
+
+        # Create evaluation instances using the correct model for each content type
+        from ansible_base.rbac.models import get_evaluation_model
+        for ct_id, evals in evaluations_by_ct.items():
+            ct = DABContentType.objects.get(pk=ct_id)
+            model_cls = ct.model_class()
+            eval_model = get_evaluation_model(model_cls)
+            for codename, obj_pk in evals:
+                to_add.append(eval_model(codename=codename, content_type_id=ct_id, object_id=obj_pk, role=self))
 
         return (to_delete, to_add)
 

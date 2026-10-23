@@ -44,6 +44,15 @@ class StandInPK:
             return models.UUIDField()
         return models.IntegerField()
 
+    def db_type(self, connection):
+        """Return the database-specific type for this primary key field.
+
+        This method is used by get_evaluation_model() to determine which
+        RoleEvaluation model to use (RoleEvaluation for integer PKs,
+        RoleEvaluationUUID for UUID PKs).
+        """
+        return self.django_field().db_type(connection)
+
 
 class StandinMeta:
     def __init__(self, ct: models.Model, abstract=False):

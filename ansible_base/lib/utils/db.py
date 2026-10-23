@@ -10,6 +10,13 @@ from django.db import DEFAULT_DB_ALIAS, IntegrityError, OperationalError, connec
 from django.db.backends.postgresql.base import DatabaseWrapper as PsycopgDatabaseWrapper
 from django.db.migrations.executor import MigrationExecutor
 
+# MS SQL Server raises pyodbc.IntegrityError which is not caught by django.db.IntegrityError
+try:
+    import pyodbc
+    DatabaseIntegrityError = (IntegrityError, pyodbc.IntegrityError)
+except ImportError:
+    DatabaseIntegrityError = (IntegrityError,)
+
 logger = logging.getLogger(__name__)
 
 
@@ -502,21 +509,22 @@ def bulk_create_db_safe(model_class, objects, ignore_conflicts=True, using=None)
         return manager.bulk_create(objects, ignore_conflicts=True)
     else:
         # MS SQL: doesn't support ignore_conflicts
-        # Try bulk first (fast path), fall back only on conflict
-        try:
-            return manager.bulk_create(objects)
-        except IntegrityError:
-            # Rare - only on race condition, fall back to one-by-one
-            logger.warning(
-                f"Conflict during bulk_create for {model_class.__name__}, "
-                "falling back to one-by-one"
-            )
-            created = []
-            for obj in objects:
-                try:
-                    obj.save(using=using)
-                    created.append(obj)
-                except IntegrityError:
-                    # Ignore this conflict
-                    pass
-            return created
+        # MS SQL Server cannot recover from IntegrityError within a transaction,
+        # so we skip bulk_create entirely and go straight to one-by-one.
+        # Each save must be in its own savepoint to isolate transaction aborts.
+        created = []
+        for obj in objects:
+            # Use savepoint to isolate each save - required for MS SQL transaction recovery
+            sid = transaction.savepoint(using=using)
+            try:
+                obj.save(using=using)
+                transaction.savepoint_commit(sid, using=using)
+                created.append(obj)
+            except DatabaseIntegrityError as e:
+                # IntegrityError aborts the transaction on MS SQL Server.
+                # Clear the flag and rollback the savepoint to recover.
+                logger.debug(f"bulk_create_db_safe: Caught IntegrityError for {model_class.__name__}: {e}")
+                db_connection.needs_rollback = False
+                transaction.savepoint_rollback(sid, using=using)
+                # Ignore this conflict - this is the ignore_conflicts=True behavior
+        return created

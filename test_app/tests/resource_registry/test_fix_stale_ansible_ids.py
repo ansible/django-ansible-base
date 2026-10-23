@@ -12,15 +12,18 @@ from ansible_base.resource_registry.models import Resource
 def _insert_duplicate_resource(ct, object_id, name):
     """Insert a duplicate Resource entry via raw SQL (unique constraint must be dropped first)."""
     ansible_id = uuid.uuid4()
+    # Get an existing service_id using ORM (database-agnostic)
+    existing = Resource.objects.values_list('service_id', flat=True).first()
+    service_id = existing if existing else uuid.uuid4()
+
+    # Pass UUID objects directly - the cursor wrapper will convert them to the
+    # appropriate format (hex string for MSSQL, UUID type for PostgreSQL)
     with connection.cursor() as cursor:
-        cursor.execute("SELECT service_id FROM dab_resource_registry_resource LIMIT 1")
-        row = cursor.fetchone()
-        service_id = row[0] if row else str(uuid.uuid4())
         cursor.execute(
             "INSERT INTO dab_resource_registry_resource "
             "(ansible_id, content_type_id, object_id, name, service_id, is_partially_migrated) "
             "VALUES (%s, %s, %s, %s, %s, %s)",
-            [str(ansible_id), ct.pk, str(object_id), name, service_id, False],
+            [ansible_id, ct.pk, str(object_id), name, service_id, False],
         )
     return ansible_id
 
@@ -176,8 +179,20 @@ class TestFixStaleAnsibleIdsDuplicates:
         self.team = Team.objects.create(name="dupe_test_team", organization=organization)
         self.ct = ContentType.objects.get_for_model(self.team)
         with connection.cursor() as cursor:
-            cursor.execute("ALTER TABLE dab_resource_registry_resource DROP CONSTRAINT IF EXISTS unique_resource_content_type_object_id")
-            cursor.execute("DROP INDEX IF EXISTS unique_resource_content_type_object_id")
+            # Drop existing constraint/index (database-specific syntax)
+            # The constraint is a UniqueConstraint which creates an underlying index
+            if connection.vendor == 'microsoft':
+                # MS SQL Server: Try to drop as constraint first, then as index
+                # Django creates this as a constraint, but our teardown recreates it as an index
+                # (because SQL Server doesn't support INCLUDE in ALTER TABLE ADD CONSTRAINT)
+                # So we need to handle both cases
+                cursor.execute("IF EXISTS (SELECT 1 FROM sys.objects WHERE name = 'unique_resource_content_type_object_id' AND type = 'UQ') "
+                              "ALTER TABLE dab_resource_registry_resource DROP CONSTRAINT unique_resource_content_type_object_id")
+                cursor.execute("DROP INDEX IF EXISTS unique_resource_content_type_object_id ON dab_resource_registry_resource")
+            else:
+                # PostgreSQL: DROP CONSTRAINT first, then index
+                cursor.execute("ALTER TABLE dab_resource_registry_resource DROP CONSTRAINT IF EXISTS unique_resource_content_type_object_id")
+                cursor.execute("DROP INDEX IF EXISTS unique_resource_content_type_object_id")
         _insert_duplicate_resource(self.ct, self.team.pk, self.team.name)
         yield
         Resource.objects.filter(content_type=self.ct, object_id=str(self.team.pk)).exclude(
@@ -185,11 +200,28 @@ class TestFixStaleAnsibleIdsDuplicates:
         ).delete()
         self.team.delete()
         with connection.cursor() as cursor:
-            cursor.execute("DROP INDEX IF EXISTS unique_resource_content_type_object_id")
-            cursor.execute(
-                "ALTER TABLE dab_resource_registry_resource ADD CONSTRAINT unique_resource_content_type_object_id "
-                "UNIQUE (content_type_id, object_id) INCLUDE (ansible_id)"
-            )
+            # Recreate the unique constraint to restore the original state
+            # Important: We must recreate as a CONSTRAINT (not just INDEX) on SQL Server
+            # because Django's UniqueConstraint migration creates a constraint, and
+            # the next test's setup expects to DROP CONSTRAINT (not DROP INDEX)
+            if connection.vendor == 'microsoft':
+                # MS SQL Server: First drop any existing constraint/index
+                cursor.execute("ALTER TABLE dab_resource_registry_resource DROP CONSTRAINT IF EXISTS unique_resource_content_type_object_id")
+                # Create as a constraint using ALTER TABLE (same as Django migration)
+                # Note: SQL Server doesn't support INCLUDE in ALTER TABLE ADD CONSTRAINT,
+                # so we use CREATE UNIQUE INDEX which creates an implicitly named constraint
+                cursor.execute(
+                    "CREATE UNIQUE INDEX unique_resource_content_type_object_id "
+                    "ON dab_resource_registry_resource (content_type_id, object_id) "
+                    "INCLUDE (ansible_id)"
+                )
+            else:
+                # PostgreSQL: drop index if it exists, then recreate as constraint
+                cursor.execute("DROP INDEX IF EXISTS unique_resource_content_type_object_id")
+                cursor.execute(
+                    "ALTER TABLE dab_resource_registry_resource ADD CONSTRAINT unique_resource_content_type_object_id "
+                    "UNIQUE (content_type_id, object_id) INCLUDE (ansible_id)"
+                )
 
     def test_detect_duplicates_audit_only(self, capsys):
         call_command("fix_stale_ansible_ids", "team")

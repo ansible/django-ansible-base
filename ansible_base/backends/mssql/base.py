@@ -7,19 +7,25 @@ fields that have indexes or unique constraints.
 
 from mssql.base import DatabaseWrapper as MSSQLDatabaseWrapper
 
+from .cursor_override import CursorWrapper
+from .operations import DatabaseOperations
 from .schema import DatabaseSchemaEditor
 
 
 class DatabaseWrapper(MSSQLDatabaseWrapper):
     """
-    Custom MS SQL database backend using our schema editor.
+    Custom MS SQL database backend using our schema editor, operations, and cursor.
 
-    This wrapper extends mssql-django's DatabaseWrapper to use our custom
-    SchemaEditor that handles TextField-to-CharField conversion automatically
-    during migration execution.
+    This wrapper extends mssql-django's DatabaseWrapper to:
+    - Use custom SchemaEditor for TextField-to-CharField conversion
+    - Use custom DatabaseOperations for proper UUID handling
+    - Use custom CursorWrapper to convert UUID parameters to strings
+    - Remove ISJSON CHECK constraint from JSONFields
 
-    Also removes ISJSON CHECK constraint from JSONFields to support encrypted
-    JSON data (which is stored as a string and fails JSON validation).
+    Fixes:
+    - TextField cannot be indexed on MS SQL Server (converts to CharField)
+    - UUIDField causes OverflowError with pyodbc (converts to string via cursor wrapper)
+    - Encrypted JSON data fails ISJSON validation (removes constraint)
 
     Usage in settings.py:
         DATABASES = {
@@ -32,6 +38,7 @@ class DatabaseWrapper(MSSQLDatabaseWrapper):
     """
 
     SchemaEditorClass = DatabaseSchemaEditor
+    ops_class = DatabaseOperations
 
     # Override to remove ISJSON constraint from JSONField
     # This allows storing encrypted data in JSONField columns
@@ -42,3 +49,12 @@ class DatabaseWrapper(MSSQLDatabaseWrapper):
         'PositiveSmallIntegerField': '[%(column)s] >= 0',
         'PositiveBigIntegerField': '[%(column)s] >= 0',
     }
+
+    def create_cursor(self, name=None):
+        """
+        Create a cursor with UUID parameter handling.
+
+        Overrides mssql-django's create_cursor to use our custom CursorWrapper
+        that converts UUID objects to hex strings before passing to pyodbc.
+        """
+        return CursorWrapper(self.connection.cursor(), self)
