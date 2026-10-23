@@ -40,6 +40,11 @@ class FakeBackend:
         return default
 
 
+def get_social_auth_setting(name: str, default=None):
+    """Read a global social-auth setting, including dynamically supplied values."""
+    return FakeBackend().setting(name, default)
+
+
 def raise_auth_exception(message: str, backend: Optional[Authenticator] = None):
     raise AuthException(backend, message)
 
