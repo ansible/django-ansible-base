@@ -16,7 +16,7 @@ from urllib3.exceptions import InsecureRequestWarning
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.bearer_authentication import BearerAuthenticationResult, BearerTokenValidationError, ScopedBearerToken
 from ansible_base.authentication.jwk_client import CachedJWKClient
-from ansible_base.authentication.utils.authentication import get_or_create_authenticator_user
+from ansible_base.authentication.utils.authentication import get_or_create_authenticator_user, get_social_auth_setting
 from ansible_base.authentication.utils.claims import update_user_claims
 from ansible_base.authentication.utils.user import normalize_and_get_email
 from ansible_base.lib.serializers.fields import BooleanField, CharField, IntegerField, ListField, URLField
@@ -738,7 +738,16 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         # claim is safe to supply to the standard Email fallback merge strategy.
         email_key = configuration.get("EMAIL_KEY", "")
         email = normalize_and_get_email(claims.get(email_key)) if isinstance(email_key, str) else None
-        username = resolve_claim_from_key(jwt_claims, configuration.get("USERNAME_KEY", ""))
+        if get_social_auth_setting("USERNAME_IS_FULL_EMAIL", False):
+            username = email
+            if username is None:
+                logger.debug(
+                    "External OAuth authenticator %s requires an email claim because SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL is enabled",
+                    self.database_instance.name,
+                )
+                raise BearerTokenValidationError()
+        else:
+            username = resolve_claim_from_key(jwt_claims, configuration.get("USERNAME_KEY", ""))
         user_kwargs = {
             "uid": uid,
             "email": email,

@@ -1,5 +1,6 @@
 import warnings
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import jwt
@@ -8,6 +9,8 @@ import requests
 from ansible_base.authentication.authenticator_plugins.oauth_bearer import AuthenticatorPlugin
 from ansible_base.authentication.bearer_authentication import BearerTokenValidationError
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
+from django.conf import settings
+from django.test import override_settings
 from urllib3.exceptions import InsecureRequestWarning
 
 
@@ -26,6 +29,10 @@ def _claims(configuration, **overrides):
 def _routing_claims(configuration):
     """Return the unverified claims used to select this configured provider."""
     return {"iss": configuration["ISSUER_URL"], "aud": configuration["AUDIENCE"]}
+
+
+def _social_auth_settings():
+    return {"SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL": settings.SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL}
 
 
 def _authenticate_signed_token(plugin, token, public_key):
@@ -514,6 +521,30 @@ def test_oauth_bearer_plugin_uses_username_key(oauth_bearer_authenticator):
     assert result.user == user
     assert get_or_create.call_args.kwargs["uid"] == "stable-subject"
     assert get_or_create.call_args.kwargs["username"] == "alice"
+
+
+@override_settings(
+    SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL=True,
+    ANSIBLE_BASE_SOCIAL_AUTH_STRATEGY_SETTINGS_FUNCTION="test_app.tests.authentication.authenticator_plugins.test_external_oauth_runtime._social_auth_settings",
+)
+def test_external_oauth_plugin_uses_email_as_username_when_globally_configured():
+    """The global social-auth policy overrides this authenticator's USERNAME_KEY."""
+    plugin = AuthenticatorPlugin(database_instance=SimpleNamespace(name="External OAuth", configuration={}))
+    configuration = {"ID_KEY": "sub", "USERNAME_KEY": "preferred_username", "EMAIL_KEY": "email", "GROUPS_CLAIM": "groups"}
+    claims = {"sub": "stable-subject", "preferred_username": "alice", "email": "alice@example.com", "groups": []}
+    user = Mock(is_active=True, username="alice@example.com")
+
+    with (
+        patch(
+            "ansible_base.authentication.authenticator_plugins.external_oauth.get_or_create_authenticator_user",
+            return_value=(user, Mock(), True),
+        ) as get_or_create,
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.is_system_user", return_value=False),
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.update_user_claims", return_value=user),
+    ):
+        assert plugin._user_from_claims(claims, claims, None, configuration) is user
+
+    assert get_or_create.call_args.kwargs["username"] == "alice@example.com"
 
 
 @pytest.mark.django_db
