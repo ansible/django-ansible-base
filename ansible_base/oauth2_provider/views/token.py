@@ -75,7 +75,11 @@ class TokenView(oauth_views.TokenView):
 
 
 class OAuth2TokenViewSet(ModelViewSet, AnsibleBaseDjangoAppApiView):
-    queryset = OAuth2AccessToken.objects.all()
+    queryset = (
+        OAuth2AccessToken.objects
+        .select_related("user", "created_by", "modified_by", "refresh_token", "application")
+        .order_by("id")
+    )
     serializer_class = OAuth2TokenSerializer
     permission_classes = [OAuth2ScopePermission, OAuth2TokenPermission]
 
