@@ -134,17 +134,17 @@ def test_external_oauth_plugin_defaults_missing_clock_skew_for_existing_configur
         ({}, {"scope": "write"}, {"read", "write"}),
         ({}, {"scope": ["profile", "write"]}, {"read", "write"}),
         (
-            {"SCOPE_ATTRIBUTE_NAME": "scp", "READ_SCOPE_NAME": "gateway.read", "WRITE_SCOPE_NAME": "gateway.write"},
+            {"SCOPE_KEY": "scp", "READ_SCOPE_NAME": "gateway.read", "WRITE_SCOPE_NAME": "gateway.write"},
             {"scp": "openid gateway.read"},
             {"read"},
         ),
         (
-            {"SCOPE_ATTRIBUTE_NAME": "scp", "READ_SCOPE_NAME": "gateway.read", "WRITE_SCOPE_NAME": "gateway.write"},
+            {"SCOPE_KEY": "scp", "READ_SCOPE_NAME": "gateway.read", "WRITE_SCOPE_NAME": "gateway.write"},
             {"scp": "openid gateway.write"},
             {"read", "write"},
         ),
         (
-            {"SCOPE_ATTRIBUTE_NAME": "scp", "WRITE_SCOPE_NAME": "gateway.write"},
+            {"SCOPE_KEY": "scp", "WRITE_SCOPE_NAME": "gateway.write"},
             {"scope": "write", "scp": "openid"},
             set(),
         ),
@@ -161,7 +161,7 @@ def test_external_oauth_plugin_maps_configured_token_scopes_to_read_write(extern
 
     logger.debug.assert_called_once_with(
         f"External OAuth authenticator {external_oauth_authenticator.name} mapped scope claim "
-        f"{configuration.get('SCOPE_ATTRIBUTE_NAME', 'scope')} to API scopes {sorted(expected_scopes)}"
+        f"{configuration.get('SCOPE_KEY', 'scope')} to API scopes {sorted(expected_scopes)}"
     )
 
 
@@ -296,12 +296,12 @@ def test_external_oauth_plugin_updates_configured_profile_fields(external_oauth_
     user = Mock(email="old@example.com", first_name="Old", last_name="Name")
     authenticator_user = Mock(email="old@example.com")
     configuration = {
-        "EMAIL_FIELD_FROM_USERINFO": "mail",
-        "FIRST_NAME_FIELD_FROM_USERINFO": "given_name",
-        "LAST_NAME_FIELD_FROM_USERINFO": "family_name",
+        "EMAIL_KEY": "mail",
+        "FIRST_NAME_KEY": "given_name",
+        "LAST_NAME_KEY": "family_name",
     }
 
-    plugin._update_userinfo_profile(
+    plugin._update_profile_fields(
         user,
         authenticator_user,
         {"mail": "Profile@Example.com", "given_name": "Profile", "family_name": "User"},
@@ -312,6 +312,104 @@ def test_external_oauth_plugin_updates_configured_profile_fields(external_oauth_
     user.save.assert_called_once_with(update_fields=["email", "first_name", "last_name"])
     assert authenticator_user.email == "profile@example.com"
     authenticator_user.save.assert_called_once_with(update_fields=["email"])
+
+
+@pytest.mark.django_db
+def test_external_oauth_plugin_updates_profile_fields_from_jwt(external_oauth_authenticator):
+    """Configured profile fields are populated when the validated JWT is the only claim source."""
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    user = Mock(email="old@example.com", first_name="Old", last_name="Name")
+    authenticator_user = Mock(email="old@example.com")
+    configuration = {
+        "EMAIL_KEY": "email",
+        "FIRST_NAME_KEY": "given_name",
+        "LAST_NAME_KEY": "family_name",
+    }
+
+    plugin._update_profile_fields(
+        user,
+        authenticator_user,
+        {"email": "Jwt@Example.com", "given_name": "JWT", "family_name": "User"},
+        configuration,
+    )
+
+    assert (user.email, user.first_name, user.last_name) == ("jwt@example.com", "JWT", "User")
+    user.save.assert_called_once_with(update_fields=["email", "first_name", "last_name"])
+    assert authenticator_user.email == "jwt@example.com"
+    authenticator_user.save.assert_called_once_with(update_fields=["email"])
+
+
+@pytest.mark.django_db
+def test_external_oauth_plugin_enriches_jwt_profile_fields_from_userinfo(external_oauth_authenticator):
+    """Accepted UserInfo profile claims override JWT profile claims during provisioning."""
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    configuration = {
+        "ID_KEY": "sub",
+        "EMAIL_KEY": "email",
+        "FIRST_NAME_KEY": "given_name",
+        "LAST_NAME_KEY": "family_name",
+        "GROUPS_CLAIM": "groups",
+    }
+    jwt_claims = {
+        "sub": "stable-subject",
+        "email": "token@example.com",
+        "given_name": "Token",
+        "family_name": "User",
+        "groups": [],
+    }
+    userinfo_claims = {
+        "sub": "stable-subject",
+        "email": "Profile@Example.com",
+        "given_name": "Profile",
+        "family_name": "Person",
+    }
+    claims = plugin._merge_claims(jwt_claims, userinfo_claims)
+    user = Mock(is_active=True, username="gateway_admin", email="old@example.com", first_name="Old", last_name="Name")
+    authenticator_user = Mock(email="old@example.com")
+
+    with (
+        patch(
+            "ansible_base.authentication.authenticator_plugins.external_oauth.get_or_create_authenticator_user",
+            return_value=(user, authenticator_user, False),
+        ) as get_or_create,
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.is_system_user", return_value=False),
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.update_user_claims", return_value=user),
+    ):
+        assert plugin._user_from_claims(claims, jwt_claims, userinfo_claims, configuration) is user
+
+    assert get_or_create.call_args.kwargs["email"] == "profile@example.com"
+    assert (user.email, user.first_name, user.last_name) == ("profile@example.com", "Profile", "Person")
+    user.save.assert_called_once_with(update_fields=["email", "first_name", "last_name"])
+    assert authenticator_user.email == "profile@example.com"
+    authenticator_user.save.assert_called_once_with(update_fields=["email"])
+
+
+@pytest.mark.django_db
+def test_external_oauth_plugin_uses_configured_profile_email_for_merge(external_oauth_authenticator):
+    """A configured validated JWT/UserInfo profile email participates in Email fallback."""
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    configuration = {"ID_KEY": "sub", "EMAIL_KEY": "mail"}
+    user = Mock(is_active=True, username="gateway_admin")
+
+    with (
+        patch(
+            "ansible_base.authentication.authenticator_plugins.external_oauth.get_or_create_authenticator_user",
+            return_value=(user, Mock(), False),
+        ) as get_or_create,
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.is_system_user", return_value=False),
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.update_user_claims", return_value=user),
+    ):
+        assert (
+            plugin._user_from_claims(
+                {"sub": "stable-subject", "groups": [], "mail": "No.One@Nowhere.com"},
+                {"sub": "stable-subject"},
+                {"sub": "stable-subject", "mail": "No.One@Nowhere.com"},
+                configuration,
+            )
+            is user
+        )
+
+    assert get_or_create.call_args.kwargs["email"] == "no.one@nowhere.com"
 
 
 @pytest.mark.django_db
@@ -330,7 +428,7 @@ def test_external_oauth_plugin_does_not_route_tokens_when_required_configuration
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("setting", ("JWKS_URI", "CLAIM_LIST"))
+@pytest.mark.parametrize("setting", ("JWKS_URI", "ID_KEY"))
 def test_external_oauth_plugin_rejects_missing_required_runtime_configuration(external_oauth_authenticator, setting):
     """Missing required legacy configuration is rejected without a KeyError."""
     plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
@@ -347,10 +445,10 @@ def test_external_oauth_plugin_rejects_missing_required_runtime_configuration(ex
 
 
 @pytest.mark.django_db
-def test_external_oauth_plugin_uses_first_usable_claim_list_value_for_uid(external_oauth_authenticator):
-    """The ordered CLAIM_LIST selects the uid passed to authenticator-user provisioning."""
+def test_external_oauth_plugin_uses_id_key_for_uid(external_oauth_authenticator):
+    """ID_KEY selects the uid passed to authenticator-user provisioning."""
     plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
-    plugin.database_instance.configuration["CLAIM_LIST"] = ["preferred_username", "email"]
+    plugin.database_instance.configuration["ID_KEY"] = "preferred_username"
     user = Mock(is_active=True, username="external-user")
     claims = {
         **_routing_claims(plugin.database_instance.configuration),
@@ -380,10 +478,49 @@ def test_external_oauth_plugin_uses_first_usable_claim_list_value_for_uid(extern
 
 
 @pytest.mark.django_db
+def test_external_oauth_plugin_uses_username_key(external_oauth_authenticator):
+    """USERNAME_KEY selects the local username independently of ID_KEY."""
+    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    plugin.database_instance.configuration.update(
+        {
+            "ID_KEY": "sub",
+            "USERNAME_KEY": "preferred_username",
+        }
+    )
+    user = Mock(is_active=True, username="alice")
+    claims = {
+        **_routing_claims(plugin.database_instance.configuration),
+        "sub": "stable-subject",
+        "preferred_username": "alice",
+        "groups": [],
+    }
+
+    with (
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.CachedJWKClient") as jwk_client,
+        patch(
+            "ansible_base.authentication.authenticator_plugins.external_oauth.decode",
+            side_effect=[_routing_claims(plugin.database_instance.configuration), claims],
+        ),
+        patch(
+            "ansible_base.authentication.authenticator_plugins.external_oauth.get_or_create_authenticator_user",
+            return_value=(user, Mock(), True),
+        ) as get_or_create,
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.is_system_user", return_value=False),
+        patch("ansible_base.authentication.authenticator_plugins.external_oauth.update_user_claims", return_value=user),
+    ):
+        jwk_client.return_value.get_signing_key_from_jwt.return_value = Mock(key="public-key")
+        result = plugin.authenticate(token="token")
+
+    assert result.user == user
+    assert get_or_create.call_args.kwargs["uid"] == "stable-subject"
+    assert get_or_create.call_args.kwargs["username"] == "alice"
+
+
+@pytest.mark.django_db
 def test_external_oauth_plugin_maps_azp_service_principal_through_user_claims(external_oauth_authenticator):
     """An azp-first service principal provisions an identity and applies normal authenticator maps."""
     plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
-    plugin.database_instance.configuration["CLAIM_LIST"] = ["azp", "email"]
+    plugin.database_instance.configuration["ID_KEY"] = "azp"
     user = Mock(is_active=True, username="gateway-service")
     claims = {
         **_routing_claims(plugin.database_instance.configuration),

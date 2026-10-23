@@ -302,7 +302,12 @@ def _validate_username_for_new_user(username: str, authenticator: Authenticator)
 
 
 def get_or_create_authenticator_user(
-    uid: str, email: str | None, authenticator: Authenticator, user_details: dict = dict, extra_data: dict = dict
+    uid: str,
+    email: str | None,
+    authenticator: Authenticator,
+    user_details: dict = dict,
+    extra_data: dict = dict,
+    username: str | None = None,
 ) -> Tuple[Optional[AbstractUser], Optional[AuthenticatorUser], Optional[bool]]:
     """
     Create the user object in the database along with it's associated AuthenticatorUser class.
@@ -323,10 +328,12 @@ def get_or_create_authenticator_user(
         raise
 
     # Step 1: Determine the username, running the migration logic FIRST. This is the key fix.
-    if migrated_username := migrate_from_existing_authenticator(uid=uid, alt_uid=None, authenticator=authenticator, preferred_username=uid):
-        username = migrated_username
+    preferred_username = username or uid
+    if migrated_username := migrate_from_existing_authenticator(uid=uid, alt_uid=None, authenticator=authenticator, preferred_username=preferred_username):
+        local_username = migrated_username
     else:
-        username = determine_username_from_uid(uid=uid, uid_filter=[uid], email=email, authenticator=authenticator)
+        uid_filter = [preferred_username] if preferred_username == uid else [preferred_username, uid]
+        local_username = determine_username_from_uid(uid=preferred_username, uid_filter=uid_filter, email=email, authenticator=authenticator)
 
     # Step 2: Now that the username is finalized, try to find the AuthenticatorUser.
     auth_user = None
@@ -342,14 +349,14 @@ def get_or_create_authenticator_user(
         created = False
     except AuthenticatorUser.DoesNotExist:
         # If the AuthenticatorUser doesn't exist, validate the username before creating a new one.
-        if not _validate_username_for_new_user(username, authenticator):
+        if not _validate_username_for_new_user(local_username, authenticator):
             return None, None, None
 
     # Step 3: Get or create the main User model instance.
     details = {k: user_details.get(k, "") for k in ["first_name", "last_name", "email"]}
-    local_user, user_created = get_user_model().objects.get_or_create(username=username, defaults=details)
+    local_user, user_created = get_user_model().objects.get_or_create(username=local_username, defaults=details)
     if user_created:
-        logger.info(f"Authenticator {authenticator.name} created User {username}")
+        logger.info(f"Authenticator {authenticator.name} created User {local_username}")
 
     # Step 4: If the AuthenticatorUser was not found in Step 2, create it now.
     if created is None:
@@ -362,7 +369,7 @@ def get_or_create_authenticator_user(
         )
         if created:
             extra = ' attaching to existing user' if not user_created else ''
-            logger.debug(f"Authenticator {authenticator.name} created AuthenticatorUser for {username}{extra}")
+            logger.debug(f"Authenticator {authenticator.name} created AuthenticatorUser for {local_username}{extra}")
 
     # Ensure the returned user object is the one linked to the auth_user.
     final_user = auth_user.user if auth_user else local_user
