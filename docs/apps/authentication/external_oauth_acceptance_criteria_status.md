@@ -5,7 +5,7 @@ Current implementation assessment for the related external OAuth authentication 
 | Jira | AC | Status | Details | Action |
 | --- | --- | --- | --- |
 | AAP-66708 | JWT Bearer token validates against matching external OAuth provider | Done | External plugin routes by unverified issuer/audience, then validates signature through JWKS. | None |
-| AAP-66708 | Validate issuer, audience, expiration, and subject | Done | Issuer/audience/required `exp`, signature, and allowed algorithms validate. Identity is configurable through `ID_KEY`; `sub` is supported but not mandatory. | None |
+| AAP-66708 | Validate issuer, audience, expiration, and subject | Done | Issuer/audience/required `exp`, signature, and allowed algorithms validate. Identity is configurable through ordered `CLAIM_LIST`; `sub` is supported but not mandatory. | None |
 | AAP-66708 | Non-external OAuth tokens fall through | Done | Opaque/foreign tokens decline in the plugin. A presented Bearer credential ends in 401 after all Bearer handlers—including local OAuth—decline it. | None |
 | AAP-66708 | No existing-auth regression | Done | Focused unit coverage is green. Broader end-to-end product regression validation is deferred to M7. | None |
 | AAP-66709 | JWKS cache has configurable TTL | Done | Shared Django cache uses each provider's `JWKS_CACHE_TIMEOUT`. | None |
@@ -19,7 +19,7 @@ Current implementation assessment for the related external OAuth authentication 
 | AAP-66711 | Generic client errors, detailed server context | Done | Client-safe failures distinguish invalid, expired, and provider-unavailable credentials without exposing provider details; diagnostic context remains server-side. | None |
 | AAP-66711 | RFC 6750 `WWW-Authenticate` response | Done | Bearer failures return RFC 6750 challenges with safe `invalid_token` details. | None |
 | AAP-95658 | Evaluate matching external authenticators in configured order | Done | Bearer dispatcher invokes cached API authenticators in `order`; matching external OAuth plugins decline nonmatching tokens. | None |
-| AAP-95658 | Resolve identity claims from the configured key | Done | `ID_KEY` selects the usable scalar claim used as the external identity. | None |
-| AAP-95658 | Define/test authoritative present-claim and failed-match behavior | Done | Unit tests establish usable scalar-claim semantics and verify a later matching authenticator can succeed when an earlier one declines. | None |
-| AAP-95659 | Map service-principal claims to standard users via `AuthenticatorUser` | Done | `azp` or `client_id` can be configured as `ID_KEY`; its usable value becomes the `uid` passed to `get_or_create_authenticator_user()`. | None |
+| AAP-95658 | Resolve identity claims in configured claim-list order | Done | `resolve_uid_from_claims()` selects the first present, usable scalar claim from `CLAIM_LIST`. | None |
+| AAP-95658 | Define/test authoritative present-claim and failed-match behavior | Done | Unit tests establish first usable claim semantics and verify a later matching authenticator can succeed when an earlier one declines. | None |
+| AAP-95659 | Map service-principal claims to standard users via `AuthenticatorUser` | Done | `azp` and `client_id` can be configured in `CLAIM_LIST`; the first usable claim becomes the `uid` passed to `get_or_create_authenticator_user()`. | None |
 | AAP-95659 | Preserve normal RBAC administration | Done | Resulting standard users go through normal claims/map processing and RBAC structures; focused tests verify the service-principal mapping path. | None |
