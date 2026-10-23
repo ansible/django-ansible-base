@@ -80,7 +80,7 @@ jwcrypto==1.5.7
     #   django-oauth-toolkit
 ldap-filter==1.0.1
     # via -r requirements/requirements_authentication.in
-lxml==5.3.0
+lxml==6.0.4
     # via
     #   -r requirements/requirements_authentication.in
     #   python3-saml
