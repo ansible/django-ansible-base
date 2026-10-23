@@ -26,9 +26,8 @@ from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.validation import validate_url
 
 logger = logging.getLogger("ansible_base.authentication.authenticator_plugins.oauth_bearer")
-
 OIDC_DISCOVERY_PATH = "/.well-known/openid-configuration"
-OIDC_DISCOVERY_TIMEOUT_SETTING = "ANSIBLE_BASE_OAUTH_BEARER_DISCOVERY_TIMEOUT"
+OIDC_DISCOVERY_TIMEOUT_SETTING = "ANSIBLE_BASE_EXTERNAL_OAUTH_DISCOVERY_TIMEOUT"
 OIDC_DISCOVERY_TIMEOUT_DEFAULT = 30
 OIDC_DISCOVERY_LOG_BODY_MAX = 512
 
@@ -252,17 +251,16 @@ class OAuthBearerConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_("JWKS Cache Timeout (seconds)"),
     )
 
-    CLAIM_LIST = ListField(
+    ID_KEY = CharField(
         help_text=_(
-            "Ordered JWT claim keys used to resolve the external identity. "
+            "JWT claim key used to resolve the external identity. "
             "No assumed default — configure explicitly. "
-            "The first claim present in the token wins. "
-            'Example for Entra ID: ["email", "azp"] (human users and service principals).'
+            "Examples include 'sub' for users and 'azp' for service principals."
         ),
         required=True,
         allow_null=False,
-        allow_empty=False,
-        ui_field_label=_("Claim List"),
+        allow_blank=False,
+        ui_field_label=_("ID Key"),
     )
 
     # Default matches AzureAD / Entra ID ("groups"). OIDC SSO uses "Group" for
@@ -291,31 +289,31 @@ class OAuthBearerConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_("UserInfo URL"),
     )
 
-    EMAIL_FIELD_FROM_USERINFO = CharField(
-        help_text=_("Optional UserInfo claim used to update the user's email address."),
+    EMAIL_KEY = CharField(
+        help_text=_("Optional JWT or UserInfo claim used to set the user's email address."),
         required=False,
         allow_blank=True,
         allow_null=True,
         default="",
-        ui_field_label=_("Email Field From UserInfo"),
+        ui_field_label=_("Email Key"),
     )
 
-    FIRST_NAME_FIELD_FROM_USERINFO = CharField(
-        help_text=_("Optional UserInfo claim used to update the user's first name."),
+    FIRST_NAME_KEY = CharField(
+        help_text=_("Optional JWT or UserInfo claim used to set the user's first name."),
         required=False,
         allow_blank=True,
         allow_null=True,
         default="",
-        ui_field_label=_("First Name Field From UserInfo"),
+        ui_field_label=_("First Name Key"),
     )
 
-    LAST_NAME_FIELD_FROM_USERINFO = CharField(
-        help_text=_("Optional UserInfo claim used to update the user's last name."),
+    LAST_NAME_KEY = CharField(
+        help_text=_("Optional JWT or UserInfo claim used to set the user's last name."),
         required=False,
         allow_blank=True,
         allow_null=True,
         default="",
-        ui_field_label=_("Last Name Field From UserInfo"),
+        ui_field_label=_("Last Name Key"),
     )
 
     OIDC_ENDPOINT = URLField(
@@ -342,12 +340,21 @@ class OAuthBearerConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_("Verify SSL Certificate"),
     )
 
-    SCOPE_ATTRIBUTE_NAME = CharField(
+    USERNAME_KEY = CharField(
+        help_text=_("Optional JWT claim key used to select the local username. If unset or absent from the token, the external ID is used."),
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        default="",
+        ui_field_label=_("Username Key"),
+    )
+
+    SCOPE_KEY = CharField(
         help_text=_("Name of the attribute to use for the scope claim. Defaults to 'scope'."),
         allow_blank=False,
         allow_null=False,
         default="scope",
-        ui_field_label=_("Scope Attribute Name"),
+        ui_field_label=_("Scope Key"),
     )
 
     WRITE_SCOPE_NAME = CharField(
@@ -380,17 +387,14 @@ class OAuthBearerConfiguration(BaseAuthenticatorConfiguration):
 
         local_issuer = _local_oidc_issuer()
         if local_issuer and attrs.get("ISSUER_URL") == local_issuer:
-            errors["ISSUER_URL"] = _("An OAuth Bearer issuer cannot be this deployment's local OIDC issuer.")
-
-        claim_list = attrs.get("CLAIM_LIST") or []
-        invalid_claims = [claim for claim in claim_list if not isinstance(claim, str) or not claim.strip()]
-        if invalid_claims:
-            errors["CLAIM_LIST"] = _("CLAIM_LIST entries must be non-empty strings.")
+            errors["ISSUER_URL"] = _("An external OAuth issuer cannot be this deployment's local OIDC issuer.")
 
         if errors:
             raise ValidationError(errors)
 
-        attrs["CLAIM_LIST"] = [claim.strip() for claim in claim_list]
+        attrs["ID_KEY"] = attrs["ID_KEY"].strip()
+        username_key = attrs.get("USERNAME_KEY") or ""
+        attrs["USERNAME_KEY"] = username_key.strip()
 
         if oidc_endpoint:
             # OIDC_ENDPOINT takes precedence: discovery overwrites JWKS_URI / USERINFO_URL.
@@ -414,32 +418,14 @@ def _scalar_claim_uid(value: Any) -> str | None:
     return None
 
 
-def resolve_uid_from_claims(claims: dict[str, Any], claim_list: list[str]) -> str | None:
-    """
-    Resolve an external identity from token claims using CLAIM_LIST order.
-
-    The first present, non-empty string or integer claim value wins. Supports both
-    human-user claim shapes (email, sub, preferred_username, upn) and service-principal
-    shapes (azp, client_id) in a single ordered list. Bool, float, and non-scalar
-    values (list/dict) are skipped rather than coerced into a uid.
-    """
-    if not claims or not claim_list:
-        return None
-
-    for claim_name in claim_list:
-        if claim_name not in claims:
-            continue
-        uid = _scalar_claim_uid(claims[claim_name])
-        if uid is not None:
-            return uid
-
-    return None
+def resolve_claim_from_key(claims: dict[str, Any], key: str) -> str | None:
+    """Resolve a scalar claim value, rejecting absent, empty, and non-scalar values."""
+    return _scalar_claim_uid(claims.get(key)) if claims and key else None
 
 
 class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
     configuration_class = OAuthBearerConfiguration
     type = "oauth_bearer"
-    display_name = _("OAuth Bearer Token")
     category = "api_auth"
     logger = logger
     configuration_encrypted_fields = []
@@ -451,7 +437,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
     def get_default_attributes(self) -> list[str]:
         """Attributes available for authenticator maps.
 
-        Prefer the configured CLAIM_LIST + GROUPS_CLAIM when a database instance
+        Prefer the configured ID_KEY + GROUPS_CLAIM when a database instance
         is attached; otherwise fall back to a common baseline of claim names.
         """
         if not self.database_instance:
@@ -459,10 +445,10 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
 
         config = self.database_instance.configuration or {}
         attrs = []
-        for claim in config.get("CLAIM_LIST") or []:
+        for claim in (config.get("ID_KEY"), config.get("USERNAME_KEY")):
             if isinstance(claim, str) and claim.strip() and claim not in attrs:
                 attrs.append(claim.strip())
-        for field_name in ("EMAIL_FIELD_FROM_USERINFO", "FIRST_NAME_FIELD_FROM_USERINFO", "LAST_NAME_FIELD_FROM_USERINFO"):
+        for field_name in ("EMAIL_KEY", "FIRST_NAME_KEY", "LAST_NAME_KEY"):
             claim = config.get(field_name)
             if isinstance(claim, str) and claim.strip() and claim not in attrs:
                 attrs.append(claim.strip())
@@ -472,7 +458,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         return attrs or list(_BASELINE_ATTRIBUTES)
 
     def _matches_token_routing_claims(self, token: str, configuration: dict[str, Any]) -> bool:
-        """Return whether unverified routing claims identify this OAuth Bearer provider.
+        """Return whether unverified routing claims identify this external OAuth provider.
 
         The dispatcher passes every Bearer token to each API authenticator.  This
         inexpensive check lets this JWT-specific plugin decline opaque tokens and
@@ -544,14 +530,14 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
             logger.debug("OAuth Bearer token is None or database instance is None")
             return None
 
-        logger.debug(f"Attempting to authenticate with OAuth Bearer authenticator {self.database_instance.name}")
+        logger.debug(f"Attempting to authenticate with external OAuth authenticator {self.database_instance.name}")
 
         configuration = self.database_instance.configuration
         if not self._matches_token_routing_claims(token, configuration):
             logger.debug(f"OAuth Bearer token does not match authenticator {self.database_instance.name}")
             return None
 
-        logger.debug(f"Validating OAuth Bearer token against authenticator {self.database_instance.name}")
+        logger.debug(f"Validating external OAuth token against authenticator {self.database_instance.name}")
         jwks_uri = configuration.get("JWKS_URI", "")
         if not jwks_uri:
             logger.error(f"OAuth Bearer authenticator {self.database_instance.name} has no configured JWKS URI")
@@ -586,7 +572,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
                 raise requests.exceptions.HTTPError(f"HTTP {response.status_code}")
             content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
             logger.debug(
-                "External OAuth UserInfo response received for authenticator %s at %s with content type %s",
+                "OAuth Bearer UserInfo response received for authenticator %s at %s with content type %s",
                 self.database_instance.name,
                 url,
                 content_type or "<missing>",
@@ -594,7 +580,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
             userinfo_claims = self._decode_userinfo_jwt(response.text, jwk_client, configuration) if content_type == "application/jwt" else response.json()
         except (requests.exceptions.RequestException, requests.exceptions.JSONDecodeError, ValueError) as exc:
             logger.warning(
-                "External OAuth UserInfo request failed for authenticator %s at %s: %s",
+                "OAuth Bearer UserInfo request failed for authenticator %s at %s: %s",
                 self.database_instance.name,
                 url,
                 exc,
@@ -603,20 +589,20 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
 
         if not isinstance(userinfo_claims, dict):
             logger.warning(
-                "External OAuth UserInfo response was not a JSON object for authenticator %s at %s",
+                "OAuth Bearer UserInfo response was not a JSON object for authenticator %s at %s",
                 self.database_instance.name,
                 url,
             )
             return None
         if userinfo_claims.get("sub") != jwt_claims.get("sub"):
             logger.warning(
-                "External OAuth UserInfo subject did not match the validated access token for authenticator %s at %s",
+                "OAuth Bearer UserInfo subject did not match the validated access token for authenticator %s at %s",
                 self.database_instance.name,
                 url,
             )
             return None
         logger.debug(
-            "External OAuth UserInfo claims accepted for authenticator %s; claim keys=%s",
+            "OAuth Bearer UserInfo claims accepted for authenticator %s; claim keys=%s",
             self.database_instance.name,
             sorted(userinfo_claims),
         )
@@ -636,7 +622,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
             )
         except (KeyError, PyJWKClientError, PyJWTError) as exc:
             logger.warning(
-                "External OAuth UserInfo JWT validation failed for authenticator %s: %s",
+                "OAuth Bearer UserInfo JWT validation failed for authenticator %s: %s",
                 self.database_instance.name,
                 exc,
             )
@@ -652,8 +638,8 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
     def _read_write_scopes(self, claims: dict[str, Any]) -> frozenset[str]:
         """Extract verified read/write scopes, with write implying read."""
         configuration = self.database_instance.configuration
-        scope_attribute_name = configuration.get("SCOPE_ATTRIBUTE_NAME", "scope")
-        claimed_scopes = claims.get(scope_attribute_name, "")
+        scope_key = configuration.get("SCOPE_KEY", "scope")
+        claimed_scopes = claims.get(scope_key, "")
         if isinstance(claimed_scopes, str):
             scopes = set(claimed_scopes.split())
         elif isinstance(claimed_scopes, list):
@@ -668,9 +654,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
             user_scopes.update({"read", "write"})
 
         granted_scopes = frozenset(user_scopes)
-        logger.debug(
-            f"OAuth Bearer authenticator {self.database_instance.name} mapped scope claim {scope_attribute_name} to API scopes {sorted(granted_scopes)}"
-        )
+        logger.debug(f"OAuth Bearer authenticator {self.database_instance.name} mapped scope claim {scope_key} to API scopes {sorted(granted_scopes)}")
         return granted_scopes
 
     def _build_jwk_client(self, jwks_uri: str, configuration: dict[str, Any]) -> CachedJWKClient:
@@ -693,7 +677,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
     def _signing_key_for_token(self, jwk_client: CachedJWKClient, token: str) -> PyJWK:
         """Look up the token key and translate provider errors into safe API failures."""
         try:
-            logger.debug(f"Fetching the signing key for OAuth Bearer authenticator {self.database_instance.name}")
+            logger.debug(f"Fetching the signing key for external OAuth authenticator {self.database_instance.name}")
             return jwk_client.get_signing_key_from_jwt(token)
         except PyJWKClientConnectionError:
             logger.warning(f"OAuth Bearer JWKS endpoint is unavailable for authenticator {self.database_instance.name}")
@@ -705,7 +689,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
     def _validated_claims(self, token: str, signing_key: PyJWK, jwk_client: CachedJWKClient, configuration: dict[str, Any]) -> dict[str, Any]:
         """Verify claims and retry once if an IdP key rotation invalidated the cached key."""
         try:
-            logger.debug(f"Fetched signing key for OAuth Bearer authenticator {self.database_instance.name}; validating JWT")
+            logger.debug(f"Fetched signing key for external OAuth authenticator {self.database_instance.name}; validating JWT")
             claims = self._decode_validated_token(token, signing_key, configuration)
             logger.debug(f"OAuth Bearer JWT validated for authenticator {self.database_instance.name}")
             return claims
@@ -743,28 +727,35 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         userinfo_claims: dict[str, Any] | None,
         configuration: dict[str, Any],
     ) -> AbstractBaseUser | None:
-        """Resolve, provision, and map a verified OAuth Bearer identity to an active user."""
-        uid = resolve_uid_from_claims(jwt_claims, configuration.get("CLAIM_LIST", []))
+        """Resolve, provision, and map a verified external OAuth identity to an active user."""
+        uid = resolve_claim_from_key(jwt_claims, configuration.get("ID_KEY", ""))
         if uid is None:
             logger.debug(f"OAuth Bearer token did not contain a configured identity claim for authenticator {self.database_instance.name}")
             raise BearerTokenValidationError()
 
-        # Supplying profile email here would activate the helper's legacy
-        # email-based merge behavior. The validated JWT UID is the only
-        # identity source for external bearer authentication.
+        # ``claims`` always contains validated JWT claims and may be enriched
+        # by subject-bound UserInfo claims. Its explicitly configured email
+        # claim is safe to supply to the standard Email fallback merge strategy.
+        email_key = configuration.get("EMAIL_KEY", "")
+        email = normalize_and_get_email(claims.get(email_key)) if isinstance(email_key, str) else None
+        username = resolve_claim_from_key(jwt_claims, configuration.get("USERNAME_KEY", ""))
+        user_kwargs = {
+            "uid": uid,
+            "email": email,
+            "authenticator": self.database_instance,
+            "user_details": {},
+            "extra_data": claims,
+        }
+        if username is not None:
+            user_kwargs["username"] = username
         user, authenticator_user, _created = get_or_create_authenticator_user(
-            uid=uid,
-            email=None,
-            authenticator=self.database_instance,
-            user_details={},
-            extra_data=claims,
+            **user_kwargs,
         )
         if user is None or not user.is_active or is_system_user(user):
             logger.debug(f"OAuth Bearer identity maps to an ineligible user for authenticator {self.database_instance.name}")
             raise BearerTokenValidationError()
 
-        if userinfo_claims is not None:
-            self._update_userinfo_profile(user, authenticator_user, userinfo_claims, configuration)
+        self._update_profile_fields(user, authenticator_user, claims, configuration)
 
         groups = claims.get(configuration.get("GROUPS_CLAIM", "groups"), [])
         if not isinstance(groups, list):
@@ -772,42 +763,42 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         groups = [group for group in groups if isinstance(group, str)]
         return update_user_claims(user, self.database_instance, groups, attrs=claims)
 
-    def _update_userinfo_profile(self, user: AbstractBaseUser, authenticator_user: Any, userinfo_claims: dict[str, Any], configuration: dict[str, Any]) -> None:
-        """Update configured local profile fields from a successful UserInfo response."""
+    def _update_profile_fields(self, user: AbstractBaseUser, authenticator_user: Any, claims: dict[str, Any], configuration: dict[str, Any]) -> None:
+        """Update configured local profile fields from validated JWT and accepted UserInfo claims."""
         field_mappings = {
-            "email": configuration.get("EMAIL_FIELD_FROM_USERINFO", ""),
-            "first_name": configuration.get("FIRST_NAME_FIELD_FROM_USERINFO", ""),
-            "last_name": configuration.get("LAST_NAME_FIELD_FROM_USERINFO", ""),
+            "email": configuration.get("EMAIL_KEY", ""),
+            "first_name": configuration.get("FIRST_NAME_KEY", ""),
+            "last_name": configuration.get("LAST_NAME_KEY", ""),
         }
         logger.debug(
-            "External OAuth UserInfo profile mapping for authenticator %s: mappings=%s, available_claim_keys=%s",
+            "OAuth Bearer profile mapping for authenticator %s: mappings=%s, available_claim_keys=%s",
             self.database_instance.name,
             field_mappings,
-            sorted(userinfo_claims),
+            sorted(claims),
         )
         changed_fields = []
         for user_field, userinfo_field in field_mappings.items():
             if not isinstance(userinfo_field, str) or not userinfo_field:
                 logger.debug(
-                    "External OAuth UserInfo profile field %s is not configured for authenticator %s",
+                    "OAuth Bearer profile field %s is not configured for authenticator %s",
                     user_field,
                     self.database_instance.name,
                 )
                 continue
-            if userinfo_field not in userinfo_claims:
+            if userinfo_field not in claims:
                 logger.debug(
-                    "External OAuth UserInfo claim %s for local profile field %s is absent for authenticator %s",
+                    "OAuth Bearer profile claim %s for local profile field %s is absent for authenticator %s",
                     userinfo_field,
                     user_field,
                     self.database_instance.name,
                 )
                 continue
-            value = userinfo_claims[userinfo_field]
+            value = claims[userinfo_field]
             if user_field == "email":
                 value = normalize_and_get_email(value)
             elif not isinstance(value, str):
                 logger.debug(
-                    "External OAuth UserInfo claim %s for local profile field %s has unsupported type %s for authenticator %s",
+                    "OAuth Bearer profile claim %s for local profile field %s has unsupported type %s for authenticator %s",
                     userinfo_field,
                     user_field,
                     type(value).__name__,
@@ -816,7 +807,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
                 continue
             if value is None:
                 logger.debug(
-                    "External OAuth UserInfo claim %s could not be normalized for local profile field %s on authenticator %s",
+                    "OAuth Bearer profile claim %s could not be normalized for local profile field %s on authenticator %s",
                     userinfo_field,
                     user_field,
                     self.database_instance.name,
@@ -824,7 +815,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
                 continue
             if getattr(user, user_field) == value:
                 logger.debug(
-                    "External OAuth UserInfo profile field %s is already current for authenticator %s",
+                    "OAuth Bearer profile field %s is already current for authenticator %s",
                     user_field,
                     self.database_instance.name,
                 )
@@ -835,7 +826,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         if changed_fields:
             user.save(update_fields=changed_fields)
             logger.debug(
-                "External OAuth UserInfo updated local profile fields %s for authenticator %s",
+                "OAuth Bearer updated local profile fields %s for authenticator %s",
                 changed_fields,
                 self.database_instance.name,
             )
