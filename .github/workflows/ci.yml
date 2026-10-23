@@ -35,8 +35,17 @@ jobs:
           show-progress: false
           persist-credentials: false
 
+      - run: Check installed packages
+        run: dpkg -l '*pkg*conf'
+
       - name: Install build requirements
-        run: sudo apt-get update && sudo apt-get install -y libsasl2-dev libldap2-dev libssl-dev libxmlsec1-dev
+        run: sudo apt-get update && sudo apt-get install -y libsasl2-dev libldap2-dev libssl-dev libxmlsec1-dev pkg-config
+
+      - run: Probe pkg-config
+        run: |
+          pkg-config --list-all
+          pkg-config --libs xmlsec1
+          pkg-config --cflags xmlsec1
 
       - name: Install python ${{ matrix.tests.python-version }}
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
