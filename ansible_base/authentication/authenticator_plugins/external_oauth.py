@@ -17,7 +17,7 @@ from ansible_base.authentication.authenticator_plugins.base import AbstractAuthe
 from ansible_base.authentication.bearer_authentication import BearerAuthenticationResult, BearerTokenValidationError, ScopedBearerToken
 from ansible_base.authentication.jwk_client import CachedJWKClient
 from ansible_base.authentication.utils.authentication import get_or_create_authenticator_user, get_social_auth_setting
-from ansible_base.authentication.utils.claims import update_user_claims
+from ansible_base.authentication.utils.claims import merge_groups_from_claim_sources, update_user_claims
 from ansible_base.authentication.utils.user import normalize_and_get_email
 from ansible_base.lib.serializers.fields import BooleanField, CharField, IntegerField, ListField, URLField
 from ansible_base.lib.serializers.validators import JWTAlgorithmListFieldValidator, asymmetric_jwt_algorithms
@@ -294,7 +294,7 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
         required=False,
         allow_blank=True,
         allow_null=True,
-        default="",
+        default="email",
         ui_field_label=_("Email Key"),
     )
 
@@ -449,7 +449,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
             if isinstance(claim, str) and claim.strip() and claim not in attrs:
                 attrs.append(claim.strip())
         for field_name in ("EMAIL_KEY", "FIRST_NAME_KEY", "LAST_NAME_KEY"):
-            claim = config.get(field_name)
+            claim = config.get(field_name) or ("email" if field_name == "EMAIL_KEY" else "")
             if isinstance(claim, str) and claim.strip() and claim not in attrs:
                 attrs.append(claim.strip())
         groups_claim = config.get("GROUPS_CLAIM") or "groups"
@@ -548,7 +548,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         jwt_claims = self._validated_claims(token, signing_key, jwk_client, configuration)
         userinfo_claims = self._fetch_userinfo_claims(token, jwt_claims, jwk_client, configuration)
         claims = self._merge_claims(jwt_claims, userinfo_claims)
-        user = self._user_from_claims(claims, jwt_claims, userinfo_claims, configuration)
+        user = self._user_from_claims(claims, jwt_claims, configuration, userinfo_claims)
         if user is None:
             return None
         return BearerAuthenticationResult(user=user, auth=ScopedBearerToken(scopes=self._read_write_scopes(jwt_claims)))
@@ -577,7 +577,9 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
                 url,
                 content_type or "<missing>",
             )
-            userinfo_claims = self._decode_userinfo_jwt(response.text, jwk_client, configuration) if content_type == "application/jwt" else response.json()
+            userinfo_claims = (
+                self._decode_userinfo_jwt(response.text, jwt_claims, jwk_client, configuration) if content_type == "application/jwt" else response.json()
+            )
         except (requests.exceptions.RequestException, requests.exceptions.JSONDecodeError, ValueError) as exc:
             logger.warning(
                 "External OAuth UserInfo request failed for authenticator %s at %s: %s",
@@ -594,7 +596,13 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
                 url,
             )
             return None
-        if userinfo_claims.get("sub") != jwt_claims.get("sub"):
+        # OIDC Core §5.3.2 requires UserInfo to contain ``sub`` and requires
+        # clients to discard UserInfo whose subject differs from the ID Token.
+        # This inbound flow has no ID Token, so the validated bearer JWT is the
+        # equivalent subject-binding source.
+        # https://openid.net/specs/openid-connect-core-1_0.html#UserInfoResponse
+        jwt_sub = jwt_claims.get("sub")
+        if not isinstance(jwt_sub, str) or not jwt_sub or userinfo_claims.get("sub") != jwt_sub:
             logger.warning(
                 "External OAuth UserInfo subject did not match the validated access token for authenticator %s at %s",
                 self.database_instance.name,
@@ -608,15 +616,45 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         )
         return userinfo_claims
 
-    def _decode_userinfo_jwt(self, token: str, jwk_client: CachedJWKClient, configuration: dict[str, Any]) -> dict[str, Any] | None:
-        """Validate a signed JWT UserInfo response with the provider's configured keys."""
+    @staticmethod
+    def _userinfo_audiences(jwt_claims: dict[str, Any]) -> tuple[str, ...]:
+        """Return audience values bound to the already validated bearer token.
+
+        OIDC Core §5.3.2 requires a signed UserInfo response's ``aud`` to
+        include the relying party's client ID. In an inbound bearer flow we do
+        not configure that client ID separately, so use the validated token's
+        ``azp``/``client_id`` when available. Include its verified resource
+        audiences as well for providers that bind signed UserInfo to the
+        resource audience.
+        https://openid.net/specs/openid-connect-core-1_0.html#UserInfoResponse
+        """
+        audiences = []
+        token_audiences = jwt_claims.get("aud")
+        if isinstance(token_audiences, str):
+            audiences.append(token_audiences)
+        elif isinstance(token_audiences, list):
+            audiences.extend(audience for audience in token_audiences if isinstance(audience, str))
+        for claim in ("azp", "client_id"):
+            value = jwt_claims.get(claim)
+            if isinstance(value, str) and value:
+                audiences.append(value)
+        return tuple(dict.fromkeys(audiences))
+
+    def _decode_userinfo_jwt(self, token: str, jwt_claims: dict[str, Any], jwk_client: CachedJWKClient, configuration: dict[str, Any]) -> dict[str, Any] | None:
+        """Validate a signed JWT UserInfo response with the provider's configured keys.
+
+        OIDC Core §5.3.2 requires signed UserInfo responses to include issuer
+        and audience claims; the configured issuer and token-derived audiences
+        are therefore validated along with the signature.
+        https://openid.net/specs/openid-connect-core-1_0.html#UserInfoResponse
+        """
         try:
             signing_key = jwk_client.get_signing_key_from_jwt(token)
             return decode(
                 token,
                 key=signing_key.key,
                 algorithms=configuration.get("ALLOWED_ALGORITHMS", ["RS256"]),
-                audience=configuration["AUDIENCE"],
+                audience=self._userinfo_audiences(jwt_claims),
                 issuer=configuration["ISSUER_URL"],
                 leeway=configuration.get("JWT_CLOCK_SKEW_TOLERANCE_SECONDS", 0),
             )
@@ -724,8 +762,8 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         self,
         claims: dict[str, Any],
         jwt_claims: dict[str, Any],
-        userinfo_claims: dict[str, Any] | None,
         configuration: dict[str, Any],
+        userinfo_claims: dict[str, Any] | None = None,
     ) -> AbstractBaseUser | None:
         """Resolve, provision, and map a verified external OAuth identity to an active user."""
         uid = resolve_claim_from_key(jwt_claims, configuration.get("ID_KEY", ""))
@@ -736,7 +774,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         # ``claims`` always contains validated JWT claims and may be enriched
         # by subject-bound UserInfo claims. Its explicitly configured email
         # claim is safe to supply to the standard Email fallback merge strategy.
-        email_key = configuration.get("EMAIL_KEY", "")
+        email_key = configuration.get("EMAIL_KEY") or "email"
         email = normalize_and_get_email(claims.get(email_key)) if isinstance(email_key, str) else None
         if get_social_auth_setting("USERNAME_IS_FULL_EMAIL", False):
             username = email
@@ -766,16 +804,13 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
 
         self._update_profile_fields(user, authenticator_user, claims, configuration)
 
-        groups = claims.get(configuration.get("GROUPS_CLAIM", "groups"), [])
-        if not isinstance(groups, list):
-            groups = []
-        groups = [group for group in groups if isinstance(group, str)]
+        groups = merge_groups_from_claim_sources(configuration.get("GROUPS_CLAIM", "groups"), userinfo_claims, jwt_claims)
         return update_user_claims(user, self.database_instance, groups, attrs=claims)
 
     def _update_profile_fields(self, user: AbstractBaseUser, authenticator_user: Any, claims: dict[str, Any], configuration: dict[str, Any]) -> None:
         """Update configured local profile fields from validated JWT and accepted UserInfo claims."""
         field_mappings = {
-            "email": configuration.get("EMAIL_KEY", ""),
+            "email": configuration.get("EMAIL_KEY") or "email",
             "first_name": configuration.get("FIRST_NAME_KEY", ""),
             "last_name": configuration.get("LAST_NAME_KEY", ""),
         }

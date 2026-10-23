@@ -332,7 +332,7 @@ def test_get_default_attributes_uses_configured_claims(external_oauth_authentica
         "GROUPS_CLAIM": "Group",
     }
     plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
-    assert plugin.get_default_attributes() == ["preferred_username", "Group"]
+    assert plugin.get_default_attributes() == ["preferred_username", "email", "Group"]
 
     unconfigured = AuthenticatorPlugin()
     assert "email" in unconfigured.get_default_attributes()
