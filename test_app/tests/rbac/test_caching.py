@@ -217,7 +217,16 @@ class TestSafeM2mAdd:
 # ---------------------------------------------------------------------------
 
 
-class TestSafeBulkCreateEvaluations:
+class SkipIfNotPostgreSQL:
+    @pytest.fixture(autouse=True)
+    def skip_if_not_postgresql(self):
+        from django.db import connection
+        if connection.vendor != 'postgresql':
+            pytest.skip('PostgreSQL-specific bulk_create behavior')
+
+
+@pytest.mark.django_db
+class TestSafeBulkCreateEvaluations(SkipIfNotPostgreSQL):
     @patch('ansible_base.rbac.caching.transaction.atomic', _noop_atomic)
     def test_noop_on_empty_list(self):
         """Empty evaluations list returns immediately without DB calls."""

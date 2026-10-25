@@ -192,6 +192,20 @@ def _pair_filter(assignments: list[AssignmentBase], actor_field: str) -> Q:
     return q
 
 
+def _pair_filter_chunked(assignments: list[AssignmentBase], actor_field: str, chunk_size: int = 1000):
+    """
+    Build Q filters in chunks to avoid SQL Server's 2100 parameter limit.
+
+    Each Q condition uses 2 parameters (actor + object_role), so chunk_size of 1000
+    means up to 2000 parameters per query, safely below SQL Server's 2100 limit.
+
+    Yields Q filters, each covering a chunk of assignments.
+    """
+    for i in range(0, len(assignments), chunk_size):
+        chunk = assignments[i:i + chunk_size]
+        yield _pair_filter(chunk, actor_field)
+
+
 def _fire_post_save(db_assignments: list[AssignmentBase], existing_pks: set[int]) -> None:
     """Fire post_save signals for newly-created assignments (skipped by bulk_create)."""
     for assignment in db_assignments:
@@ -226,10 +240,21 @@ def _create_assignments(
             )
         )
     if user_assignments:
-        pair_q = _pair_filter(user_assignments, 'user')
-        existing_user_pks = set(RoleUserAssignment.objects.filter(pair_q).values_list('pk', flat=True))
-        bulk_create_db_safe(RoleUserAssignment, user_assignments, ignore_conflicts=ignore_conflicts)
-        db_users = list(RoleUserAssignment.objects.filter(pair_q))
+        # Use chunked queries for large assignment sets to avoid SQL Server's 2100 parameter limit
+        # Each Q condition uses 2 parameters, so chunk at 1000 to stay under limit
+        if connection.vendor == 'microsoft' and len(user_assignments) > 1000:
+            existing_user_pks = set()
+            for chunk_q in _pair_filter_chunked(user_assignments, 'user', chunk_size=1000):
+                existing_user_pks.update(RoleUserAssignment.objects.filter(chunk_q).values_list('pk', flat=True))
+            bulk_create_db_safe(RoleUserAssignment, user_assignments, ignore_conflicts=ignore_conflicts)
+            db_users = []
+            for chunk_q in _pair_filter_chunked(user_assignments, 'user', chunk_size=1000):
+                db_users.extend(RoleUserAssignment.objects.filter(chunk_q))
+        else:
+            pair_q = _pair_filter(user_assignments, 'user')
+            existing_user_pks = set(RoleUserAssignment.objects.filter(pair_q).values_list('pk', flat=True))
+            bulk_create_db_safe(RoleUserAssignment, user_assignments, ignore_conflicts=ignore_conflicts)
+            db_users = list(RoleUserAssignment.objects.filter(pair_q))
         all_assignments.extend(db_users)
         if fire_signals_on_create:
             _fire_post_save(db_users, existing_user_pks)
@@ -251,10 +276,20 @@ def _create_assignments(
             )
         )
     if team_assignments:
-        pair_q = _pair_filter(team_assignments, 'team')
-        existing_team_pks = set(RoleTeamAssignment.objects.filter(pair_q).values_list('pk', flat=True))
-        bulk_create_db_safe(RoleTeamAssignment, team_assignments, ignore_conflicts=ignore_conflicts)
-        db_teams = list(RoleTeamAssignment.objects.filter(pair_q))
+        # Use chunked queries for large assignment sets to avoid SQL Server's 2100 parameter limit
+        if connection.vendor == 'microsoft' and len(team_assignments) > 1000:
+            existing_team_pks = set()
+            for chunk_q in _pair_filter_chunked(team_assignments, 'team', chunk_size=1000):
+                existing_team_pks.update(RoleTeamAssignment.objects.filter(chunk_q).values_list('pk', flat=True))
+            bulk_create_db_safe(RoleTeamAssignment, team_assignments, ignore_conflicts=ignore_conflicts)
+            db_teams = []
+            for chunk_q in _pair_filter_chunked(team_assignments, 'team', chunk_size=1000):
+                db_teams.extend(RoleTeamAssignment.objects.filter(chunk_q))
+        else:
+            pair_q = _pair_filter(team_assignments, 'team')
+            existing_team_pks = set(RoleTeamAssignment.objects.filter(pair_q).values_list('pk', flat=True))
+            bulk_create_db_safe(RoleTeamAssignment, team_assignments, ignore_conflicts=ignore_conflicts)
+            db_teams = list(RoleTeamAssignment.objects.filter(pair_q))
         all_assignments.extend(db_teams)
         if fire_signals_on_create:
             _fire_post_save(db_teams, existing_team_pks)
@@ -317,14 +352,32 @@ def _find_assignments(
     actor_field: str,
 ) -> list[AssignmentBase]:
     """Find existing assignments matching resolved triples via the ObjectRole lookup."""
-    q = Q()
+    # Build list of (object_role_id, actor_pk) pairs
+    pairs = []
     for ra in resolved:
         obj_role = lookup.get((ra.role_definition.pk, ra.object_id))
         if obj_role is not None:
-            q |= Q(object_role_id=obj_role.pk, **{actor_field: ra.actor.pk})
-    if not q:
+            pairs.append((obj_role.pk, ra.actor.pk))
+
+    if not pairs:
         return []
-    return list(model.objects.filter(q))
+
+    # Handle SQL Server's 2100 parameter limit by chunking
+    # Each condition uses 2 parameters, so chunk at 1000 to stay under limit
+    if connection.vendor == 'microsoft' and len(pairs) > 1000:
+        results = []
+        for i in range(0, len(pairs), 1000):
+            chunk = pairs[i:i + 1000]
+            q = Q()
+            for obj_role_id, actor_pk in chunk:
+                q |= Q(object_role_id=obj_role_id, **{actor_field: actor_pk})
+            results.extend(model.objects.filter(q))
+        return results
+    else:
+        q = Q()
+        for obj_role_id, actor_pk in pairs:
+            q |= Q(object_role_id=obj_role_id, **{actor_field: actor_pk})
+        return list(model.objects.filter(q))
 
 
 def _recompute_after_remove(

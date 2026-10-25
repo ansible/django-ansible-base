@@ -34,10 +34,21 @@ def test_child_id_list_query_is_narrowed_to_new_object(rando, organization, team
     with CaptureQueriesContext(connection) as ctx:
         new_inv = Inventory.objects.create(name='inv-new', organization=organization)
 
-    child_queries = [q['sql'] for q in ctx.captured_queries if q['sql'].startswith('SELECT') and '"test_app_inventory"."organization_id"' in q['sql']]
+    # SQL Server uses [brackets], PostgreSQL uses "quotes"
+    child_queries = [
+        q['sql'] for q in ctx.captured_queries
+        if q['sql'].startswith('SELECT') and (
+            '"test_app_inventory"."organization_id"' in q['sql'] or
+            '[test_app_inventory].[organization_id]' in q['sql']
+        )
+    ]
     assert child_queries, 'expected the recompute to look up inventories of the organization'
     for sql in child_queries:
-        assert f'"test_app_inventory"."id" = {new_inv.pk}' in sql, sql
+        # Check for both PostgreSQL and SQL Server identifier quoting
+        assert (
+            f'"test_app_inventory"."id" = {new_inv.pk}' in sql or
+            f'[test_app_inventory].[id] = {new_inv.pk}' in sql
+        ), sql
 
     # and the new inventory did get its evaluations through the org role and the team member role
     org_role = ObjectRole.objects.get(role_definition=org_inv_rd, object_id=organization.pk)
@@ -80,7 +91,17 @@ def test_remote_child_id_list_query_is_narrowed(rando, organization):
         expected = org_role.expected_direct_permissions(TypesPrefetch.from_db(), look_ahead=GenericObject(foo_type.id, 42))
 
     assert expected == {('view_foo', foo_type.id, 42), ('change_foo', foo_type.id, 42)}
-    remote_queries = [q['sql'] for q in ctx.captured_queries if '"dab_rbac_objectrole"."parent_reference"' in q['sql']]
+    # SQL Server uses [brackets], PostgreSQL uses "quotes"
+    remote_queries = [
+        q['sql'] for q in ctx.captured_queries
+        if '"dab_rbac_objectrole"."parent_reference"' in q['sql'] or
+           '[dab_rbac_objectrole].[parent_reference]' in q['sql']
+    ]
     assert remote_queries
     for sql in remote_queries:
-        assert '"dab_rbac_objectrole"."object_id" = \'42\'' in sql, sql
+        # Check for both PostgreSQL (quoted string) and SQL Server (unquoted integer or quoted)
+        assert (
+            '"dab_rbac_objectrole"."object_id" = \'42\'' in sql or
+            '[dab_rbac_objectrole].[object_id] = \'42\'' in sql or
+            '[dab_rbac_objectrole].[object_id] = 42' in sql
+        ), sql
