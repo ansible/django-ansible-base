@@ -10,6 +10,7 @@ Verifies that:
 from unittest import mock
 
 import pytest
+from django.db import connection
 from django.test.utils import override_settings
 
 from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation
@@ -110,6 +111,10 @@ class TestOptimizedDeleteCleanup:
     through-table cleanup.
     """
 
+    @pytest.mark.skipif(
+        "connection.vendor == 'microsoft'",
+        reason="Parallel test execution causes IntegrityError on SQL Server when managed.clear() rebuilds role definitions",
+    )
     def test_full_cleanup_after_optimized_delete(self):
         from django.contrib.auth import get_user_model
 

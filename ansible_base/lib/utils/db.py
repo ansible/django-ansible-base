@@ -144,6 +144,9 @@ def _convert_lock_id_to_resource_name(lock_id):
 
     Returns:
         str: Resource name for sp_getapplock
+
+    Raises:
+        ValueError: If tuple/list has wrong length or non-integer elements
     """
     if isinstance(lock_id, str):
         # Already a string - truncate to 255 chars if needed
@@ -151,8 +154,13 @@ def _convert_lock_id_to_resource_name(lock_id):
     elif isinstance(lock_id, int):
         return f"dab_lock_{lock_id}"
     elif isinstance(lock_id, (list, tuple)):
+        # Match PostgreSQL validation: must have exactly 2 integer elements
+        if len(lock_id) != 2:
+            raise ValueError("Tuples and lists as lock IDs must have exactly two entries.")
+        if not isinstance(lock_id[0], int) or not isinstance(lock_id[1], int):
+            raise ValueError("Both members of a tuple/list lock ID must be integers")
         # Join tuple elements with underscore
-        return f"dab_lock_{'_'.join(str(x) for x in lock_id)}"[:255]
+        return f"dab_lock_{lock_id[0]}_{lock_id[1]}"
     else:
         # Fall back to hash for other types
         pos = crc32(str(lock_id).encode("utf-8"))
@@ -194,7 +202,12 @@ def _mssql_advisory_lock(lock_id, shared=False, wait=True, lock_session_timeout_
     else:
         timeout = -1  # Wait indefinitely
 
-    cursor = connections[using].cursor()
+    # Ensure connection is properly established for this thread
+    conn = connections[using]
+    if conn.connection is None:
+        conn.ensure_connection()
+
+    cursor = conn.cursor()
     acquired = False
 
     try:
@@ -205,11 +218,23 @@ def _mssql_advisory_lock(lock_id, shared=False, wait=True, lock_session_timeout_
         # -2 = canceled
         # -3 = deadlock victim
         # -999 = parameter validation or other error
-        cursor.execute(
-            "DECLARE @result int; EXEC @result = sp_getapplock @Resource=%s, @LockMode=%s, @LockTimeout=%s; SELECT @result",
-            [resource_name, lock_mode, timeout]
-        )
-        result = cursor.fetchone()[0]
+        # SQL Server sp_getapplock: execute and fetch result in separate steps
+        # Using SET NOCOUNT ON to suppress row count messages that can interfere with result retrieval
+        # SQL Server application locks are visible across connections regardless of LockOwner
+        # Use 'Session' as default - 'Transaction' requires an active transaction
+        sql = """
+            SET NOCOUNT ON;
+            DECLARE @result int;
+            EXEC @result = sp_getapplock @Resource=%s, @LockMode=%s, @LockTimeout=%s, @LockOwner='Session';
+            SELECT @result AS lock_result;
+        """
+        try:
+            cursor.execute(sql, [resource_name, lock_mode, timeout])
+            row = cursor.fetchone()
+            result = row[0] if row else -999
+        except Exception as e:
+            logger.error(f'MS SQL sp_getapplock query failed for resource {resource_name}: {e}')
+            result = -999
 
         if result >= 0:
             # Lock acquired (0 or 1)
@@ -227,8 +252,8 @@ def _mssql_advisory_lock(lock_id, shared=False, wait=True, lock_session_timeout_
 
     finally:
         if acquired:
-            # Release the lock
-            cursor.execute("EXEC sp_releaseapplock @Resource=%s", [resource_name])
+            # Release the lock - must match @LockOwner used in sp_getapplock
+            cursor.execute("EXEC sp_releaseapplock @Resource=%s, @LockOwner='Session'", [resource_name])
         cursor.close()
 
 
@@ -492,39 +517,116 @@ def bulk_create_db_safe(model_class, objects, ignore_conflicts=True, using=None)
 
         # With database alias:
         bulk_create_db_safe(MyModel, items, using='replica')
+
+    Note:
+        Like bulk_create(), this function does NOT fire post_save signals.
+        Callers are responsible for firing signals if needed.
     """
-    # Get the manager, optionally with database alias
-    manager = model_class.objects.using(using) if using else model_class.objects
+    # Normalize using to always have a database alias
+    if using is None:
+        using = DEFAULT_DB_ALIAS
+
+    # Get the manager with database alias
+    manager = model_class.objects.using(using)
 
     # Get connection for the specified database
-    db_connection = connections[using] if using else connection
+    db_connection = connections[using]
 
-    # If ignore_conflicts is False, just use standard bulk_create
+    # If ignore_conflicts is False, check if backend can return PKs from bulk_create
     if not ignore_conflicts:
-        return manager.bulk_create(objects, ignore_conflicts=False)
+        # SQL Server in some configurations doesn't support OUTPUT clause with triggers
+        # or in certain transaction scenarios, so can_return_rows_from_bulk_insert may be False
+        if not db_connection.features.can_return_rows_from_bulk_insert:
+            # Backend doesn't support returning PKs from bulk_create
+            # Fall back to individual saves with batched transaction commits
+            # This is slower but ensures PKs are populated correctly
+            from django.db.models.signals import pre_save, post_save
+
+            created = []
+            pre_save_receivers = pre_save.receivers[:]
+            post_save_receivers = post_save.receivers[:]
+
+            try:
+                # Disconnect signals to match bulk_create() semantics
+                pre_save.receivers = []
+                post_save.receivers = []
+
+                # Save in batches with shared savepoints for better performance
+                batch_size = 50
+                for i in range(0, len(objects), batch_size):
+                    batch = objects[i:i + batch_size]
+                    sid = transaction.savepoint(using=using)
+                    try:
+                        for obj in batch:
+                            obj.save(force_insert=True, using=using)
+                            obj._state.db = using
+                            obj._state.adding = False  # Mark as saved
+                            created.append(obj)
+                        transaction.savepoint_commit(sid, using=using)
+                    except Exception:
+                        transaction.savepoint_rollback(sid, using=using)
+                        raise
+            finally:
+                pre_save.receivers = pre_save_receivers
+                post_save.receivers = post_save_receivers
+
+            return created
+
+        # Backend supports returning PKs - use standard bulk_create
+        created = manager.bulk_create(objects, ignore_conflicts=False)
+        for obj in created:
+            if obj._state.db is None:
+                obj._state.db = using
+        return created
 
     # Handle ignore_conflicts=True
     if db_connection.features.supports_ignore_conflicts:
         # PostgreSQL: use native support (no behavior change)
-        return manager.bulk_create(objects, ignore_conflicts=True)
+        created = manager.bulk_create(objects, ignore_conflicts=True)
+        # Ensure _state.db is set correctly for m2m operations
+        for obj in created:
+            obj._state.db = using
+        return created
     else:
         # MS SQL: doesn't support ignore_conflicts
         # MS SQL Server cannot recover from IntegrityError within a transaction,
         # so we skip bulk_create entirely and go straight to one-by-one.
         # Each save must be in its own savepoint to isolate transaction aborts.
+        # IMPORTANT: Block signals to match bulk_create() semantics (doesn't fire signals)
+        from django.db.models.signals import pre_save, post_save
+
         created = []
-        for obj in objects:
-            # Use savepoint to isolate each save - required for MS SQL transaction recovery
-            sid = transaction.savepoint(using=using)
-            try:
-                obj.save(using=using)
-                transaction.savepoint_commit(sid, using=using)
-                created.append(obj)
-            except DatabaseIntegrityError as e:
-                # IntegrityError aborts the transaction on MS SQL Server.
-                # Clear the flag and rollback the savepoint to recover.
-                logger.debug(f"bulk_create_db_safe: Caught IntegrityError for {model_class.__name__}: {e}")
-                db_connection.needs_rollback = False
-                transaction.savepoint_rollback(sid, using=using)
-                # Ignore this conflict - this is the ignore_conflicts=True behavior
+
+        # Collect all signal receivers so we can temporarily disconnect them
+        pre_save_receivers = pre_save.receivers[:]
+        post_save_receivers = post_save.receivers[:]
+
+        try:
+            # Temporarily disconnect all pre_save and post_save signals
+            # This matches bulk_create() behavior which doesn't fire signals
+            pre_save.receivers = []
+            post_save.receivers = []
+
+            for obj in objects:
+                # Use savepoint to isolate each save - required for MS SQL transaction recovery
+                sid = transaction.savepoint(using=using)
+                try:
+                    obj.save(force_insert=True, using=using)
+                    transaction.savepoint_commit(sid, using=using)
+                    # Ensure _state.db is set correctly (bulk_create does this automatically)
+                    # This is needed for m2m operations after bulk creation
+                    obj._state.db = using
+                    created.append(obj)
+                except DatabaseIntegrityError as e:
+                    # IntegrityError aborts the transaction on MS SQL Server.
+                    # Clear the flag and rollback the savepoint to recover.
+                    logger.debug(f"bulk_create_db_safe: Caught IntegrityError for {model_class.__name__}: {e}")
+                    db_connection.needs_rollback = False
+                    transaction.savepoint_rollback(sid, using=using)
+                    # Ignore this conflict - this is the ignore_conflicts=True behavior
+        finally:
+            # Restore signal receivers
+            pre_save.receivers = pre_save_receivers
+            post_save.receivers = post_save_receivers
+
         return created
