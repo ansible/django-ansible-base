@@ -5,7 +5,7 @@ import importlib
 import logging
 import re
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Iterable, List, Mapping, Optional, Union
 from uuid import uuid4
 
 from django.conf import settings
@@ -40,6 +40,24 @@ class TriggerResult(Enum):
     ALLOW = auto()
     DENY = auto()
     SKIP = auto()
+
+
+def merge_groups_from_claim_sources(groups_claim: str, *claim_sources: Mapping[str, Any] | None) -> list[str]:
+    """Return the ordered, de-duplicated string groups from each claims source."""
+    if not groups_claim:
+        return []
+
+    groups = []
+    seen = set()
+    for source in claim_sources:
+        claim_groups = source.get(groups_claim, []) if source else []
+        if not isinstance(claim_groups, list):
+            continue
+        for group in claim_groups:
+            if isinstance(group, str) and group not in seen:
+                seen.add(group)
+                groups.append(group)
+    return groups
 
 
 def create_claims(authenticator: Authenticator, username: str, attrs: dict, groups: list[str]) -> dict:
