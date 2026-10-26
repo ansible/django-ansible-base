@@ -361,7 +361,7 @@ def oauth_bearer_configuration():
         "ALLOWED_ALGORITHMS": ["RS256"],
         "AUDIENCE": "api://aap-example",
         "JWKS_CACHE_TIMEOUT": 3600,
-        "CLAIM_LIST": ["email", "azp"],
+        "ID_KEY": "email",
         "GROUPS_CLAIM": "groups",
         "USERINFO_URL": "",
         "OIDC_ENDPOINT": "",
