@@ -6,6 +6,7 @@ import pytest
 from django.test import RequestFactory
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -22,10 +23,15 @@ from ansible_base.authentication.permissions import TokenScopePermission
 from ansible_base.authentication.session import SessionAuthentication
 
 
-def _request(token: str | None = None, scheme: str = "Bearer"):
-    """Build a request that optionally has an Authorization credential."""
+def _django_request(token: str | None = None, scheme: str = "Bearer"):
+    """Build a Django request that optionally has an Authorization credential."""
     headers = {} if token is None else {"HTTP_AUTHORIZATION": f"{scheme} {token}"}
     return RequestFactory().get("/", **headers)
+
+
+def _request(token: str | None = None, scheme: str = "Bearer"):
+    """Build a DRF request matching what BearerAuthentication receives in production."""
+    return Request(_django_request(token, scheme))
 
 
 class _BearerProtectedView(APIView):
@@ -311,7 +317,7 @@ def test_bearer_authentication_exposes_safe_challenge_in_drf_response():
         patch.object(BearerAuthentication, "_api_authentication_backends", return_value=OrderedDict([(17, plugin)])),
         patch.object(BearerAuthentication, "_authenticate_local_oauth", return_value=None),
     ):
-        response = _BearerProtectedView.as_view()(_request("opaque-token"))
+        response = _BearerProtectedView.as_view()(_django_request("opaque-token"))
 
     assert response.status_code == 401
     assert response["WWW-Authenticate"] == 'Bearer realm="api", error="invalid_token", error_description="The access token expired"'
@@ -327,7 +333,7 @@ def test_bearer_authentication_exposes_rfc6750_challenge_when_session_authentica
         patch.object(BearerAuthentication, "_api_authentication_backends", return_value=OrderedDict([(17, plugin)])),
         patch.object(BearerAuthentication, "_authenticate_local_oauth", return_value=None),
     ):
-        response = _SessionThenBearerProtectedView.as_view()(_request("malformed-token"))
+        response = _SessionThenBearerProtectedView.as_view()(_django_request("malformed-token"))
 
     assert response.status_code == 401
     assert response["WWW-Authenticate"] == 'Bearer realm="api", error="invalid_token"'
