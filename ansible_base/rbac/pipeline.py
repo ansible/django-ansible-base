@@ -163,6 +163,7 @@ def _ensure_object_roles(requested_assignments: list[ResolvedAssignment]) -> Obj
                     )
                     for oid in missing
                 ],
+                ignore_conflicts=True,
             )
             # Re-fetch to get PKs — bulk_create(ignore_conflicts=True) doesn't populate them.
             # unique_together on (role_definition, content_type, object_id) guarantees one row per oid.
