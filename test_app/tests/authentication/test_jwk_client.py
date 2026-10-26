@@ -13,6 +13,10 @@ def _token(kid="key-id"):
     return jwt.encode({"sub": "subject"}, "not-used", algorithm="HS256", headers={"kid": kid})
 
 
+def _jwk_document(kid="key-id"):
+    return {"keys": [{"kty": "oct", "k": "c2VjcmV0", "kid": kid, "alg": "HS256"}]}
+
+
 @pytest.fixture(autouse=True)
 def clear_cache():
     cache.clear()
@@ -91,6 +95,64 @@ def test_cached_jwk_client_reuses_jwk_set_across_instances():
     fetch_data.assert_called_once_with()
 
 
+def test_cached_jwk_client_only_caches_a_parser_validated_jwk_set():
+    client = CachedJWKClient("https://issuer.example.com/keys")
+    document = _jwk_document()
+
+    with patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data", return_value=document) as fetch_data:
+        jwk_set = client.get_jwk_set()
+
+    assert [key.key_id for key in jwk_set.keys] == ["key-id"]
+    assert cache.get(client._jwk_set_cache_key) == document
+    fetch_data.assert_called_once_with()
+
+
+@pytest.mark.parametrize("document", [{"error": "temporarily unavailable"}, {"keys": []}, {"keys": [{"kty": "invalid"}]}])
+def test_cached_jwk_client_does_not_cache_an_unusable_jwk_set(document):
+    client = CachedJWKClient("https://issuer.example.com/keys")
+
+    with patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data", return_value=document):
+        with pytest.raises(PyJWKClientError, match="unusable key set"):
+            client.get_jwk_set()
+
+    assert cache.get(client._jwk_set_cache_key) is None
+
+
+def test_cached_jwk_client_recovers_after_an_unusable_jwk_set_response():
+    client = CachedJWKClient("https://issuer.example.com/keys")
+    document = _jwk_document()
+
+    with patch(
+        "ansible_base.authentication.jwk_client.PyJWKClient.fetch_data",
+        side_effect=[{"error": "temporarily unavailable"}, document],
+    ) as fetch_data:
+        with pytest.raises(PyJWKClientError, match="unusable key set"):
+            client.get_jwk_set()
+        jwk_set = client.get_jwk_set()
+
+    assert [key.key_id for key in jwk_set.keys] == ["key-id"]
+    assert cache.get(client._jwk_set_cache_key) == document
+    assert fetch_data.call_count == 2
+
+
+def test_cached_jwk_client_preserves_a_valid_jwk_set_when_forced_refresh_is_unusable():
+    client = CachedJWKClient("https://issuer.example.com/keys")
+    document = _jwk_document()
+    cache.set(client._jwk_set_cache_key, document)
+
+    with patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data", return_value={"error": "temporarily unavailable"}):
+        with pytest.raises(PyJWKClientError, match="unusable key set"):
+            client.get_jwk_set(refresh=True)
+
+    assert cache.get(client._jwk_set_cache_key) == document
+
+
+def test_cached_jwk_client_disables_pyjwt_per_instance_jwk_set_cache():
+    client = CachedJWKClient("https://issuer.example.com/keys")
+
+    assert client.jwk_set_cache is None
+
+
 def test_cached_jwk_client_uses_cached_jwk_set_when_provider_is_unavailable():
     first_client = CachedJWKClient("https://issuer.example.com/keys")
     second_client = CachedJWKClient("https://issuer.example.com/keys")
@@ -138,15 +200,15 @@ def test_cached_jwk_client_blocks_second_forced_refresh_during_cooldown():
     client = CachedJWKClient("https://issuer.example.com/keys")
     document = {"keys": []}
     with (
-        patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data", return_value=document),
-        patch("ansible_base.authentication.jwk_client.PyJWKSet.from_dict", return_value=Mock()) as from_dict,
+        patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data", return_value=document) as fetch_data,
+        patch("ansible_base.authentication.jwk_client.PyJWKSet.from_dict", return_value=Mock()),
     ):
         client.get_jwk_set(refresh=True)
         with pytest.raises(PyJWKClientError, match="refresh is already in progress"):
             client.get_jwk_set(refresh=True)
 
     assert client.forced_refresh_cooldown == 60
-    assert from_dict.call_count == 1
+    fetch_data.assert_called_once_with()
 
 
 def test_cached_jwk_client_allows_every_forced_refresh_when_cooldown_is_disabled():
