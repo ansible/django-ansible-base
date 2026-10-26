@@ -13,6 +13,7 @@ from rest_framework.serializers import SerializerMethodField
 
 from ansible_base.lib.serializers.common import CommonModelSerializer
 from ansible_base.lib.serializers.mixins import CleanTextMixin
+from ansible_base.lib.serializers.validators import validate_mssql_description
 from ansible_base.lib.utils.encryption import ENCRYPTED_STRING
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.oauth2_provider.models import OAuth2AccessToken, OAuth2RefreshToken
@@ -79,6 +80,11 @@ class OAuth2TokenSerializer(CleanTextMixin, CommonModelSerializer):
     def validate_scope(self, value):
         if not self._is_valid_scope(value):
             raise ValidationError(_('Must be a simple space-separated string with allowed scopes {}.').format(SCOPES))
+        return value
+
+    def validate_description(self, value):
+        """Validate description field length for SQL Server compatibility."""
+        validate_mssql_description(value)
         return value
 
     def create(self, validated_data):
