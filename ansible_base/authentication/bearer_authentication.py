@@ -6,9 +6,9 @@ from typing import Any, NoReturn
 
 from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser
-from django.http import HttpRequest
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.request import Request
 
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
 from ansible_base.authentication.models import Authenticator
@@ -104,7 +104,7 @@ def get_api_authentication_backends(last_updated: Any) -> OrderedDict[int, Any]:
 class BearerAuthentication(BaseAuthentication):
     """Dispatch standard Bearer credentials to configured API authenticators and local OAuth2."""
 
-    def authenticate(self, request: HttpRequest) -> tuple[AbstractBaseUser, Any] | None:
+    def authenticate(self, request: Request) -> tuple[AbstractBaseUser, Any] | None:
         """Authenticate a Bearer token or reject it after every Bearer handler declines it."""
         logger.debug("Authenticating with BearerAuthentication")
 
@@ -130,7 +130,7 @@ class BearerAuthentication(BaseAuthentication):
 
         self._raise_failure(request, first_failure if auth_scheme == "bearer" else None)
 
-    def _get_bearer_credential(self, request: HttpRequest) -> tuple[str, str] | None:
+    def _get_bearer_credential(self, request: Request) -> tuple[str, str] | None:
         """Return a supported authorization scheme and token, or decline another scheme."""
         authorization = request.headers.get("Authorization")
         if not authorization:
@@ -148,7 +148,7 @@ class BearerAuthentication(BaseAuthentication):
             self._raise_failure(request)
         return auth_scheme, token
 
-    def _authenticate_api_plugins(self, request: HttpRequest, token: str) -> tuple[AbstractBaseUser | None, Any | None, BearerTokenValidationError | None]:
+    def _authenticate_api_plugins(self, request: Request, token: str) -> tuple[AbstractBaseUser | None, Any | None, BearerTokenValidationError | None]:
         """Try API plugins and preserve the first expected failure for a final 401."""
         first_failure = None
         for authenticator_id, authenticator in self._api_authentication_backends().items():
@@ -182,7 +182,7 @@ class BearerAuthentication(BaseAuthentication):
 
         return None, None, first_failure
 
-    def authenticate_header(self, request: HttpRequest) -> str:
+    def authenticate_header(self, request: Request) -> str:
         """Return the OAuth2-provided Bearer challenge for rejected Bearer credentials."""
         # APIView.handle_exception obtains the response header from this method,
         # rather than from an AuthenticationFailed instance. Preserve a safe
@@ -205,7 +205,7 @@ class BearerAuthentication(BaseAuthentication):
         """Return whether the optional DAB OAuth2 provider is available for Bearer fallback."""
         return "ansible_base.oauth2_provider" in settings.INSTALLED_APPS
 
-    def _authenticate_local_oauth(self, request: HttpRequest) -> tuple[AbstractBaseUser, Any] | None:
+    def _authenticate_local_oauth(self, request: Request) -> tuple[AbstractBaseUser, Any] | None:
         """Delegate to local OAuth2 only when its optional application is installed."""
         if not self._oauth2_provider_installed():
             return None
@@ -217,7 +217,7 @@ class BearerAuthentication(BaseAuthentication):
         return LoggedOAuth2Authentication().authenticate(request)
 
     @staticmethod
-    def _raise_failure(request: HttpRequest, failure: BearerTokenValidationError | None = None) -> NoReturn:
+    def _raise_failure(request: Request, failure: BearerTokenValidationError | None = None) -> NoReturn:
         """Raise a final Bearer failure and retain its challenge for DRF response handling."""
         exception = BearerAuthenticationFailed(failure)
         setattr(request, _REQUEST_CHALLENGE_ATTRIBUTE, exception.auth_header)
