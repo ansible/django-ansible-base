@@ -434,8 +434,7 @@ def rbac_post_save_update_evaluations(instance, created, *args, **kwargs):
     if hasattr(instance, '__rbac_original_parent_id') and instance.__rbac_original_parent_id != current_parent_id:
         logger.info(f'Object {instance} changed RBAC parent {instance.__rbac_original_parent_id}-->{current_parent_id}')
         if _moved_object_is_leaf(instance):
-            obj_ct_id = permission_registry.content_type_model.objects.get_for_model(instance).id
-            post_save_update_obj_permissions(instance, object_pk=instance.pk, object_ct_id=obj_ct_id)
+            post_save_update_obj_permissions(instance, look_ahead=True)
         else:
             post_save_update_obj_permissions(instance)
 
