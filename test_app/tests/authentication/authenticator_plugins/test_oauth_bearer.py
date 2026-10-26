@@ -9,6 +9,7 @@ from rest_framework.serializers import ValidationError
 from ansible_base.authentication.authenticator_plugins.oauth_bearer import (
     AuthenticatorPlugin,
     OAuthBearerConfiguration,
+    _append_unique_claim,
     _local_oidc_issuer,
     apply_oidc_discovery,
     oidc_discovery_url,
@@ -20,6 +21,15 @@ from ansible_base.lib.utils.response import get_relative_url
 
 PLUGIN_TYPE = "ansible_base.authentication.authenticator_plugins.oauth_bearer"
 DISCOVERY_MODULE = "ansible_base.authentication.authenticator_plugins.oauth_bearer"
+
+
+def test_append_unique_claim_strips_and_deduplicates_usable_claim_names():
+    attributes = []
+
+    for claim in (None, 42, "  ", " email ", "email", "groups"):
+        _append_unique_claim(attributes, claim)
+
+    assert attributes == ["email", "groups"]
 
 
 def _discovery_document(**overrides):

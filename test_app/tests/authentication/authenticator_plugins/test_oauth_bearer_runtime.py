@@ -36,6 +36,23 @@ def _social_auth_settings():
     return {"SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL": settings.SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL}
 
 
+@pytest.mark.parametrize(
+    ("user_field", "claim_key", "claims", "expected"),
+    [
+        ("email", "email", {"email": "Profile@Example.com"}, "profile@example.com"),
+        ("email", "email", {"email": None}, None),
+        ("first_name", "given_name", {"given_name": "Ada"}, "Ada"),
+        ("first_name", "given_name", {"given_name": 42}, None),
+        ("last_name", "", {"last_name": "Lovelace"}, None),
+        ("last_name", "last_name", {}, None),
+    ],
+)
+def test_oauth_bearer_plugin_profile_claim_value(user_field, claim_key, claims, expected):
+    plugin = AuthenticatorPlugin(database_instance=SimpleNamespace(name="OAuth Bearer", configuration={}))
+
+    assert plugin._profile_claim_value(user_field, claim_key, claims) == expected
+
+
 def _authenticate_signed_token(plugin, token, public_key):
     with (
         patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.CachedJWKClient") as jwk_client,
