@@ -29,18 +29,17 @@ class JSONFieldBasicTest(TestCase):
             name='Auth1',
             enabled=True,
             type='ansible_base.authentication.authenticator_plugins.ldap',
-            configuration={'SERVER_URI': 'ldap://localhost'},  # configuration has default=dict
         )
         auth2 = Authenticator.objects.create(
             name='Auth2',
             enabled=True,
             type='ansible_base.authentication.authenticator_plugins.ldap',
-            configuration={},
         )
 
         # Verify both have empty dicts
         self.assertEqual(auth1.configuration, {})
         self.assertEqual(auth2.configuration, {})
+        self.assertIsNot(auth1.configuration, auth2.configuration)
 
         # Modify one and verify the other is unchanged (no shared reference)
         auth1.configuration['test_key'] = 'test_value'
@@ -245,10 +244,11 @@ class JSONFieldEncryptionTest(TransactionTestCase):
         # Query for CHECK constraints on extra_data
         with connection.cursor() as cursor:
             cursor.execute("""
-                SELECT CONSTRAINT_NAME, CHECK_CLAUSE
-                FROM INFORMATION_SCHEMA.CHECK_CONSTRAINTS
-                WHERE CONSTRAINT_NAME LIKE '%extra_data%'
-                  AND TABLE_NAME = 'dab_authentication_authenticatoruser'
+                SELECT cc.name, cc.definition
+                FROM sys.check_constraints AS cc
+                JOIN sys.tables AS t ON t.object_id = cc.parent_object_id
+                WHERE t.name = 'dab_authentication_authenticatoruser'
+                  AND cc.definition LIKE '%extra_data%'
             """)
             constraints = cursor.fetchall()
 
@@ -458,7 +458,7 @@ class JSONFieldBulkOperationsTest(TransactionTestCase):
                 user=self.user,
                 provider=self.auth,
                 uid=f'bulk_{i}',
-                extra_data={'index': i, 'name': f'User {i}'},
+                claims={'index': i, 'name': f'User {i}'},
             )
             for i in range(10)
         ]
@@ -467,10 +467,8 @@ class JSONFieldBulkOperationsTest(TransactionTestCase):
         self.assertEqual(len(created), 10)
 
         # Verify all data saved correctly
-        for i, au in enumerate(AuthenticatorUser.objects.filter(uid__startswith='bulk_').order_by('uid')):
-            # Note: bulk_create doesn't call save(), so encryption won't happen
-            # This tests that raw JSON data works
-            pass
+        users = AuthenticatorUser.objects.filter(uid__startswith='bulk_').order_by('uid')
+        self.assertEqual([au.claims for au in users], [{'index': i, 'name': f'User {i}'} for i in range(10)])
 
     def test_bulk_update_jsonfield(self):
         """Bulk update should handle JSONField correctly."""
@@ -481,20 +479,19 @@ class JSONFieldBulkOperationsTest(TransactionTestCase):
                 user=self.user,
                 provider=self.auth,
                 uid=f'update_{i}',
-                extra_data={'value': i},
+                claims={'value': i},
             )
             auth_users.append(au)
 
         # Update all
         for au in auth_users:
-            au.extra_data['updated'] = True
+            au.claims['updated'] = True
 
-        AuthenticatorUser.objects.bulk_update(auth_users, ['extra_data'])
+        AuthenticatorUser.objects.bulk_update(auth_users, ['claims'])
 
         # Verify updates
-        for au in AuthenticatorUser.objects.filter(uid__startswith='update_'):
-            # Note: bulk_update also bypasses save(), so encryption handling differs
-            pass
+        users = AuthenticatorUser.objects.filter(uid__startswith='update_').order_by('uid')
+        self.assertEqual([au.claims for au in users], [{'value': i, 'updated': True} for i in range(5)])
 
 
 class JSONFieldDatabaseSpecificTest(TestCase):
