@@ -1,9 +1,15 @@
+import warnings
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import jwt
 import pytest
+import requests
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
+from django.conf import settings
+from django.test import override_settings
+from urllib3.exceptions import InsecureRequestWarning
 
 from ansible_base.authentication.authenticator_plugins.oauth_bearer import AuthenticatorPlugin
 from ansible_base.authentication.bearer_authentication import BearerTokenValidationError
@@ -24,6 +30,27 @@ def _claims(configuration, **overrides):
 def _routing_claims(configuration):
     """Return the unverified claims used to select this configured provider."""
     return {"iss": configuration["ISSUER_URL"], "aud": configuration["AUDIENCE"]}
+
+
+def _social_auth_settings():
+    return {"SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL": settings.SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL}
+
+
+@pytest.mark.parametrize(
+    ("user_field", "claim_key", "claims", "expected"),
+    [
+        ("email", "email", {"email": "Profile@Example.com"}, "profile@example.com"),
+        ("email", "email", {"email": None}, None),
+        ("first_name", "given_name", {"given_name": "Ada"}, "Ada"),
+        ("first_name", "given_name", {"given_name": 42}, None),
+        ("last_name", "", {"last_name": "Lovelace"}, None),
+        ("last_name", "last_name", {}, None),
+    ],
+)
+def test_oauth_bearer_plugin_profile_claim_value(user_field, claim_key, claims, expected):
+    plugin = AuthenticatorPlugin(database_instance=SimpleNamespace(name="OAuth Bearer", configuration={}))
+
+    assert plugin._profile_claim_value(user_field, claim_key, claims) == expected
 
 
 def _authenticate_signed_token(plugin, token, public_key):
@@ -104,7 +131,7 @@ def test_oauth_bearer_plugin_validates_token_and_updates_claims(oauth_bearer_aut
         uid="user@example.com",
         email="user@example.com",
         authenticator=oauth_bearer_authenticator,
-        user_details={"email": "user@example.com"},
+        user_details={},
         extra_data=claims,
     )
     update_claims.assert_called_once_with(user, oauth_bearer_authenticator, ["operators"], attrs=claims)
@@ -132,17 +159,17 @@ def test_oauth_bearer_plugin_defaults_missing_clock_skew_for_existing_configurat
         ({}, {"scope": "write"}, {"read", "write"}),
         ({}, {"scope": ["profile", "write"]}, {"read", "write"}),
         (
-            {"SCOPE_ATTRIBUTE_NAME": "scp", "READ_SCOPE_NAME": "gateway.read", "WRITE_SCOPE_NAME": "gateway.write"},
+            {"SCOPE_KEY": "scp", "READ_SCOPE_NAME": "gateway.read", "WRITE_SCOPE_NAME": "gateway.write"},
             {"scp": "openid gateway.read"},
             {"read"},
         ),
         (
-            {"SCOPE_ATTRIBUTE_NAME": "scp", "READ_SCOPE_NAME": "gateway.read", "WRITE_SCOPE_NAME": "gateway.write"},
+            {"SCOPE_KEY": "scp", "READ_SCOPE_NAME": "gateway.read", "WRITE_SCOPE_NAME": "gateway.write"},
             {"scp": "openid gateway.write"},
             {"read", "write"},
         ),
         (
-            {"SCOPE_ATTRIBUTE_NAME": "scp", "WRITE_SCOPE_NAME": "gateway.write"},
+            {"SCOPE_KEY": "scp", "WRITE_SCOPE_NAME": "gateway.write"},
             {"scope": "write", "scp": "openid"},
             set(),
         ),
@@ -159,7 +186,7 @@ def test_oauth_bearer_plugin_maps_configured_token_scopes_to_read_write(oauth_be
 
     logger.debug.assert_called_once_with(
         f"OAuth Bearer authenticator {oauth_bearer_authenticator.name} mapped scope claim "
-        f"{configuration.get('SCOPE_ATTRIBUTE_NAME', 'scope')} to API scopes {sorted(expected_scopes)}"
+        f"{configuration.get('SCOPE_KEY', 'scope')} to API scopes {sorted(expected_scopes)}"
     )
 
 
@@ -186,13 +213,292 @@ def test_oauth_bearer_plugin_defaults_missing_optional_configuration_for_existin
     ):
         AuthenticatorPlugin._decode_validated_token("token", signing_key, configuration)
         plugin._build_jwk_client(configuration["JWKS_URI"], configuration)
-        assert plugin._user_from_claims(claims, configuration) == user
+        assert plugin._user_from_claims(claims, claims, configuration) == user
 
     assert decode_token.call_args.kwargs["algorithms"] == ["RS256"]
     assert decode_token.call_args.kwargs["audience"] == configuration["AUDIENCE"]
     assert decode_token.call_args.kwargs["issuer"] == configuration["ISSUER_URL"]
     jwk_client.assert_called_once_with(configuration["JWKS_URI"], lifespan=3600, timeout=30, ssl_context=None)
     update_claims.assert_called_once_with(user, oauth_bearer_authenticator, ["operators"], attrs=claims)
+
+
+@pytest.mark.django_db
+def test_oauth_bearer_plugin_fetches_userinfo_with_original_bearer_token(oauth_bearer_authenticator):
+    plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
+    configuration = plugin.database_instance.configuration
+    configuration.update({"USERINFO_URL": "https://login.example.com/userinfo", "USERINFO_URL_TIMEOUT": 12, "VERIFY_SSL": False})
+    response = Mock(status_code=200, headers={"Content-Type": "application/json"})
+    response.json.return_value = {"sub": "subject", "email": "profile@example.com", "groups": ["operators"]}
+
+    with patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.requests.get", return_value=response) as get:
+        claims = plugin._fetch_userinfo_claims("original-access-token", {"sub": "subject"}, Mock(), configuration)
+
+    assert claims == response.json.return_value
+    get.assert_called_once_with(
+        "https://login.example.com/userinfo",
+        headers={"Accept": "application/json, application/jwt", "Authorization": "Bearer original-access-token"},
+        timeout=12,
+        verify=False,
+    )
+
+
+@pytest.mark.django_db
+def test_oauth_bearer_plugin_silences_expected_insecure_userinfo_warning(oauth_bearer_authenticator):
+    plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
+    configuration = plugin.database_instance.configuration
+    configuration.update({"USERINFO_URL": "https://login.example.com/userinfo", "VERIFY_SSL": False})
+    response = Mock(status_code=200, headers={"Content-Type": "application/json"})
+    response.json.return_value = {"sub": "subject"}
+
+    def response_with_tls_warning(*args, **kwargs):
+        warnings.warn("certificate verification disabled", InsecureRequestWarning)
+        return response
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with patch(
+            "ansible_base.authentication.authenticator_plugins.oauth_bearer.requests.get",
+            side_effect=response_with_tls_warning,
+        ):
+            assert plugin._fetch_userinfo_claims("token", {"sub": "subject"}, Mock(), configuration) == {"sub": "subject"}
+
+    assert not [warning for warning in caught if issubclass(warning.category, InsecureRequestWarning)]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("side_effect", "return_value"),
+    [
+        (requests.exceptions.Timeout("timed out"), None),
+        (None, Mock(status_code=503, headers={"Content-Type": "application/json"})),
+    ],
+)
+def test_oauth_bearer_plugin_treats_userinfo_failures_as_optional(oauth_bearer_authenticator, side_effect, return_value):
+    plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
+    configuration = plugin.database_instance.configuration
+    configuration["USERINFO_URL"] = "https://login.example.com/userinfo"
+
+    with (
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.requests.get", side_effect=side_effect, return_value=return_value),
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.logger") as logger,
+    ):
+        assert plugin._fetch_userinfo_claims("token", {"sub": "subject"}, Mock(), configuration) is None
+
+    logger.warning.assert_called_once()
+    assert plugin.database_instance.name in logger.warning.call_args.args
+    assert configuration["USERINFO_URL"] in logger.warning.call_args.args
+
+
+@pytest.mark.django_db
+def test_oauth_bearer_plugin_rejects_userinfo_for_another_subject(oauth_bearer_authenticator):
+    plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
+    configuration = plugin.database_instance.configuration
+    configuration["USERINFO_URL"] = "https://login.example.com/userinfo"
+    response = Mock(status_code=200, headers={"Content-Type": "application/json"})
+    response.json.return_value = {"sub": "another-subject", "email": "profile@example.com"}
+
+    with patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.requests.get", return_value=response):
+        assert plugin._fetch_userinfo_claims("token", {"sub": "subject"}, Mock(), configuration) is None
+
+
+def test_oauth_bearer_plugin_rejects_userinfo_without_subject_binding():
+    plugin = AuthenticatorPlugin(database_instance=SimpleNamespace(name="OAuth Bearer", configuration={}))
+    configuration = {"USERINFO_URL": "https://login.example.com/userinfo"}
+    response = Mock(status_code=200, headers={"Content-Type": "application/json"})
+    response.json.return_value = {"email": "profile@example.com"}
+
+    with patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.requests.get", return_value=response):
+        assert plugin._fetch_userinfo_claims("token", {"sub": "subject"}, Mock(), configuration) is None
+
+
+@pytest.mark.django_db
+def test_oauth_bearer_plugin_preserves_validated_jwt_authority(oauth_bearer_authenticator):
+    plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
+    jwt_claims = {"sub": "subject", "scope": "read", "email": "token@example.com"}
+    userinfo_claims = {"sub": "subject", "scope": "write", "email": "profile@example.com", "groups": ["operators"]}
+
+    assert plugin._merge_claims(jwt_claims, userinfo_claims) == {
+        "sub": "subject",
+        "scope": "read",
+        "email": "profile@example.com",
+        "groups": ["operators"],
+    }
+
+
+def test_oauth_bearer_plugin_uses_shared_group_union():
+    """Bearer authentication uses the same UserInfo-plus-token group union as browser OIDC."""
+    plugin = AuthenticatorPlugin(database_instance=SimpleNamespace(name="OAuth Bearer", configuration={}))
+    configuration = {"ID_KEY": "sub", "GROUPS_CLAIM": "groups"}
+    jwt_claims = {"sub": "stable-subject", "groups": ["token", "shared"]}
+    userinfo_claims = {"sub": "stable-subject", "groups": ["profile", "shared"]}
+    claims = plugin._merge_claims(jwt_claims, userinfo_claims)
+    user = Mock(is_active=True, username="gateway_admin")
+
+    with (
+        patch(
+            "ansible_base.authentication.authenticator_plugins.oauth_bearer.get_or_create_authenticator_user",
+            return_value=(user, Mock(), False),
+        ),
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.is_system_user", return_value=False),
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.update_user_claims", return_value=user) as update_claims,
+    ):
+        assert plugin._user_from_claims(claims, jwt_claims, configuration, userinfo_claims) is user
+
+    assert update_claims.call_args.args[2] == ["profile", "shared", "token"]
+
+
+def test_oauth_bearer_plugin_defaults_email_key_to_email_claim():
+    plugin = AuthenticatorPlugin(database_instance=SimpleNamespace(name="OAuth Bearer", configuration={}))
+    configuration = {"ID_KEY": "sub", "GROUPS_CLAIM": "groups"}
+    claims = {"sub": "stable-subject", "email": "user@example.com", "groups": []}
+    user = Mock(is_active=True, username="gateway_admin", email="user@example.com")
+    authenticator_user = Mock(email="user@example.com")
+
+    with (
+        patch(
+            "ansible_base.authentication.authenticator_plugins.oauth_bearer.get_or_create_authenticator_user",
+            return_value=(user, authenticator_user, False),
+        ) as get_or_create,
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.is_system_user", return_value=False),
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.update_user_claims", return_value=user),
+    ):
+        assert plugin._user_from_claims(claims, claims, configuration) is user
+
+    assert get_or_create.call_args.kwargs["email"] == "user@example.com"
+
+
+def test_oauth_bearer_plugin_derives_userinfo_audiences_from_validated_bearer_token():
+    plugin = AuthenticatorPlugin(database_instance=SimpleNamespace(name="OAuth Bearer", configuration={}))
+    jwt_claims = {"aud": ["aap-api", "secondary-resource"], "azp": "oauth-client", "client_id": "provider-client"}
+    signing_key = Mock(key="public-key")
+
+    configuration = {"ISSUER_URL": "https://issuer.example.com", "ALLOWED_ALGORITHMS": ["RS256"]}
+    with patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.decode", return_value={}) as decode_token:
+        assert plugin._decode_userinfo_jwt("userinfo-jwt", jwt_claims, Mock(get_signing_key_from_jwt=Mock(return_value=signing_key)), configuration) == {}
+
+    assert decode_token.call_args.kwargs["audience"] == ("aap-api", "secondary-resource", "oauth-client", "provider-client")
+
+
+@pytest.mark.django_db
+def test_oauth_bearer_plugin_updates_configured_profile_fields(oauth_bearer_authenticator):
+    plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
+    user = Mock(email="old@example.com", first_name="Old", last_name="Name")
+    authenticator_user = Mock(email="old@example.com")
+    configuration = {
+        "EMAIL_KEY": "mail",
+        "FIRST_NAME_KEY": "given_name",
+        "LAST_NAME_KEY": "family_name",
+    }
+
+    plugin._update_profile_fields(
+        user,
+        authenticator_user,
+        {"mail": "Profile@Example.com", "given_name": "Profile", "family_name": "User"},
+        configuration,
+    )
+
+    assert (user.email, user.first_name, user.last_name) == ("profile@example.com", "Profile", "User")
+    user.save.assert_called_once_with(update_fields=["email", "first_name", "last_name"])
+    assert authenticator_user.email == "profile@example.com"
+    authenticator_user.save.assert_called_once_with(update_fields=["email"])
+
+
+@pytest.mark.django_db
+def test_oauth_bearer_plugin_updates_profile_fields_from_jwt(oauth_bearer_authenticator):
+    """Configured profile fields are populated when the validated JWT is the only claim source."""
+    plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
+    user = Mock(email="old@example.com", first_name="Old", last_name="Name")
+    authenticator_user = Mock(email="old@example.com")
+    configuration = {
+        "EMAIL_KEY": "email",
+        "FIRST_NAME_KEY": "given_name",
+        "LAST_NAME_KEY": "family_name",
+    }
+
+    plugin._update_profile_fields(
+        user,
+        authenticator_user,
+        {"email": "Jwt@Example.com", "given_name": "JWT", "family_name": "User"},
+        configuration,
+    )
+
+    assert (user.email, user.first_name, user.last_name) == ("jwt@example.com", "JWT", "User")
+    user.save.assert_called_once_with(update_fields=["email", "first_name", "last_name"])
+    assert authenticator_user.email == "jwt@example.com"
+    authenticator_user.save.assert_called_once_with(update_fields=["email"])
+
+
+@pytest.mark.django_db
+def test_oauth_bearer_plugin_enriches_jwt_profile_fields_from_userinfo(oauth_bearer_authenticator):
+    """Accepted UserInfo profile claims override JWT profile claims during provisioning."""
+    plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
+    configuration = {
+        "ID_KEY": "sub",
+        "EMAIL_KEY": "email",
+        "FIRST_NAME_KEY": "given_name",
+        "LAST_NAME_KEY": "family_name",
+        "GROUPS_CLAIM": "groups",
+    }
+    jwt_claims = {
+        "sub": "stable-subject",
+        "email": "token@example.com",
+        "given_name": "Token",
+        "family_name": "User",
+        "groups": [],
+    }
+    userinfo_claims = {
+        "sub": "stable-subject",
+        "email": "Profile@Example.com",
+        "given_name": "Profile",
+        "family_name": "Person",
+    }
+    claims = plugin._merge_claims(jwt_claims, userinfo_claims)
+    user = Mock(is_active=True, username="gateway_admin", email="old@example.com", first_name="Old", last_name="Name")
+    authenticator_user = Mock(email="old@example.com")
+
+    with (
+        patch(
+            "ansible_base.authentication.authenticator_plugins.oauth_bearer.get_or_create_authenticator_user",
+            return_value=(user, authenticator_user, False),
+        ) as get_or_create,
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.is_system_user", return_value=False),
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.update_user_claims", return_value=user),
+    ):
+        assert plugin._user_from_claims(claims, jwt_claims, configuration, userinfo_claims) is user
+
+    assert get_or_create.call_args.kwargs["email"] == "profile@example.com"
+    assert (user.email, user.first_name, user.last_name) == ("profile@example.com", "Profile", "Person")
+    user.save.assert_called_once_with(update_fields=["email", "first_name", "last_name"])
+    assert authenticator_user.email == "profile@example.com"
+    authenticator_user.save.assert_called_once_with(update_fields=["email"])
+
+
+@pytest.mark.django_db
+def test_oauth_bearer_plugin_uses_configured_profile_email_for_merge(oauth_bearer_authenticator):
+    """A configured validated JWT/UserInfo profile email participates in Email fallback."""
+    plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
+    configuration = {"ID_KEY": "sub", "EMAIL_KEY": "mail"}
+    user = Mock(is_active=True, username="gateway_admin")
+
+    with (
+        patch(
+            "ansible_base.authentication.authenticator_plugins.oauth_bearer.get_or_create_authenticator_user",
+            return_value=(user, Mock(), False),
+        ) as get_or_create,
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.is_system_user", return_value=False),
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.update_user_claims", return_value=user),
+    ):
+        assert (
+            plugin._user_from_claims(
+                {"sub": "stable-subject", "groups": [], "mail": "No.One@Nowhere.com"},
+                {"sub": "stable-subject"},
+                configuration,
+                {"sub": "stable-subject", "mail": "No.One@Nowhere.com"},
+            )
+            is user
+        )
+
+    assert get_or_create.call_args.kwargs["email"] == "no.one@nowhere.com"
 
 
 @pytest.mark.django_db
@@ -211,7 +517,7 @@ def test_oauth_bearer_plugin_does_not_route_tokens_when_required_configuration_i
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("setting", ("JWKS_URI", "CLAIM_LIST"))
+@pytest.mark.parametrize("setting", ("JWKS_URI", "ID_KEY"))
 def test_oauth_bearer_plugin_rejects_missing_required_runtime_configuration(oauth_bearer_authenticator, setting):
     """Missing required legacy configuration is rejected without a KeyError."""
     plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
@@ -224,14 +530,14 @@ def test_oauth_bearer_plugin_rejects_missing_required_runtime_configuration(oaut
             plugin.authenticate(token="token")
     else:
         with pytest.raises(BearerTokenValidationError):
-            plugin._user_from_claims({"email": "user@example.com"}, configuration)
+            plugin._user_from_claims({"email": "user@example.com"}, {"email": "user@example.com"}, configuration)
 
 
 @pytest.mark.django_db
-def test_oauth_bearer_plugin_uses_first_usable_claim_list_value_for_uid(oauth_bearer_authenticator):
-    """The ordered CLAIM_LIST selects the uid passed to authenticator-user provisioning."""
+def test_oauth_bearer_plugin_uses_id_key_for_uid(oauth_bearer_authenticator):
+    """ID_KEY selects the uid passed to authenticator-user provisioning."""
     plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
-    plugin.database_instance.configuration["CLAIM_LIST"] = ["preferred_username", "email"]
+    plugin.database_instance.configuration["ID_KEY"] = "preferred_username"
     user = Mock(is_active=True, username="external-user")
     claims = {
         **_routing_claims(plugin.database_instance.configuration),
@@ -261,10 +567,73 @@ def test_oauth_bearer_plugin_uses_first_usable_claim_list_value_for_uid(oauth_be
 
 
 @pytest.mark.django_db
+def test_oauth_bearer_plugin_uses_username_key(oauth_bearer_authenticator):
+    """USERNAME_KEY selects the local username independently of ID_KEY."""
+    plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
+    plugin.database_instance.configuration.update(
+        {
+            "ID_KEY": "sub",
+            "USERNAME_KEY": "preferred_username",
+        }
+    )
+    user = Mock(is_active=True, username="alice")
+    claims = {
+        **_routing_claims(plugin.database_instance.configuration),
+        "sub": "stable-subject",
+        "preferred_username": "alice",
+        "groups": [],
+    }
+
+    with (
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.CachedJWKClient") as jwk_client,
+        patch(
+            "ansible_base.authentication.authenticator_plugins.oauth_bearer.decode",
+            side_effect=[_routing_claims(plugin.database_instance.configuration), claims],
+        ),
+        patch(
+            "ansible_base.authentication.authenticator_plugins.oauth_bearer.get_or_create_authenticator_user",
+            return_value=(user, Mock(), True),
+        ) as get_or_create,
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.is_system_user", return_value=False),
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.update_user_claims", return_value=user),
+    ):
+        jwk_client.return_value.get_signing_key_from_jwt.return_value = Mock(key="public-key")
+        result = plugin.authenticate(token="token")
+
+    assert result.user == user
+    assert get_or_create.call_args.kwargs["uid"] == "stable-subject"
+    assert get_or_create.call_args.kwargs["username"] == "alice"
+
+
+@override_settings(
+    SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL=True,
+    ANSIBLE_BASE_SOCIAL_AUTH_STRATEGY_SETTINGS_FUNCTION="test_app.tests.authentication.authenticator_plugins.test_oauth_bearer_runtime._social_auth_settings",
+)
+def test_oauth_bearer_plugin_uses_email_as_username_when_globally_configured():
+    """The global social-auth policy overrides this authenticator's USERNAME_KEY."""
+    plugin = AuthenticatorPlugin(database_instance=SimpleNamespace(name="OAuth Bearer", configuration={}))
+    configuration = {"ID_KEY": "sub", "USERNAME_KEY": "preferred_username", "EMAIL_KEY": "email", "GROUPS_CLAIM": "groups"}
+    claims = {"sub": "stable-subject", "preferred_username": "alice", "email": "alice@example.com", "groups": []}
+    user = Mock(is_active=True, username="alice@example.com")
+
+    with (
+        patch(
+            "ansible_base.authentication.authenticator_plugins.oauth_bearer.get_or_create_authenticator_user",
+            return_value=(user, Mock(), True),
+        ) as get_or_create,
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.is_system_user", return_value=False),
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.update_user_claims", return_value=user),
+    ):
+        assert plugin._user_from_claims(claims, claims, configuration) is user
+
+    assert get_or_create.call_args.kwargs["username"] == "alice@example.com"
+
+
+@pytest.mark.django_db
 def test_oauth_bearer_plugin_maps_azp_service_principal_through_user_claims(oauth_bearer_authenticator):
     """An azp-first service principal provisions an identity and applies normal authenticator maps."""
     plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
-    plugin.database_instance.configuration["CLAIM_LIST"] = ["azp", "email"]
+    plugin.database_instance.configuration["ID_KEY"] = "azp"
     user = Mock(is_active=True, username="gateway-service")
     claims = {
         **_routing_claims(plugin.database_instance.configuration),
@@ -520,7 +889,7 @@ def test_oauth_bearer_plugin_treats_non_list_groups_as_empty(oauth_bearer_authen
         patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.is_system_user", return_value=False),
         patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.update_user_claims", return_value=user) as update_claims,
     ):
-        assert plugin._user_from_claims(claims, plugin.database_instance.configuration) is user
+        assert plugin._user_from_claims(claims, claims, plugin.database_instance.configuration) is user
 
     assert update_claims.call_args.args[2] == []
 

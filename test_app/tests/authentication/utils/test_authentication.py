@@ -158,6 +158,20 @@ class TestAuthenticationUtilsAuthentication:
         assert AuthenticatorUser.objects.filter(uid=user1_uid, user__username=user2_uid).exists(), "Missing renamed user"
         assert AuthenticatorUser.objects.filter(uid=user2_uid, user__username=user2_user.username).exists(), "Missing newly created user"
 
+    def test_get_or_create_authenticator_user_uses_configured_username(self, local_authenticator):
+        user, authenticator_user, created = authentication.get_or_create_authenticator_user(
+            uid="stable-subject",
+            email="",
+            authenticator=local_authenticator,
+            user_details={},
+            extra_data={},
+            username="preferred-name",
+        )
+
+        assert created is True
+        assert user.username == "preferred-name"
+        assert authenticator_user.uid == "stable-subject"
+
     @pytest.mark.parametrize(
         "auth_fixture",
         [
