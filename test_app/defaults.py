@@ -126,7 +126,7 @@ if db_backend == "mssql":
             "USER": os.getenv("DB_USER", "sa"),
             "PASSWORD": os.getenv("DB_PASSWORD", "DabingPass!1234"),  # Matches docker-compose.mssql.yml MSSQL_SA_PASSWORD
             "NAME": os.getenv("DB_NAME", "dab_db"),
-            "OPTIONS": {"driver": 'ODBC Driver 18 for SQL Server', "extra_params": "Encrypt=yes;TrustServerCertificate=yes"}
+            "OPTIONS": {"driver": 'ODBC Driver 18 for SQL Server', "extra_params": "Encrypt=yes;TrustServerCertificate=yes"},
         }
     }
 else:

@@ -91,9 +91,9 @@ def test_parent_change_loads_only_the_moved_objects_evaluations(rando, org_inv_r
         inv.save()
     # SQL Server uses [brackets], PostgreSQL uses "quotes"
     eval_loads = [
-        q['sql'] for q in ctx.captured_queries
-        if ('"dab_rbac_roleevaluation"' in q['sql'] or '[dab_rbac_roleevaluation]' in q['sql'])
-        and q['sql'].startswith('SELECT')
+        q['sql']
+        for q in ctx.captured_queries
+        if ('"dab_rbac_roleevaluation"' in q['sql'] or '[dab_rbac_roleevaluation]' in q['sql']) and q['sql'].startswith('SELECT')
     ]
     assert eval_loads
     # the evaluation table may appear under its own name or a subquery alias (U0)

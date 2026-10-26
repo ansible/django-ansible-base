@@ -40,10 +40,7 @@ def validate_mssql_text_length(value, max_length, field_name='This field'):
         return
 
     if len(value) > max_length:
-        raise ValidationError(
-            f"{field_name} is limited to {max_length} characters when using MS SQL Server. "
-            f"Current length: {len(value)} characters."
-        )
+        raise ValidationError(f"{field_name} is limited to {max_length} characters when using MS SQL Server. " f"Current length: {len(value)} characters.")
 
 
 # Convenience validators for common field types

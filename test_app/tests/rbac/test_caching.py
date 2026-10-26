@@ -221,6 +221,7 @@ class SkipIfNotPostgreSQL:
     @pytest.fixture(autouse=True)
     def skip_if_not_postgresql(self):
         from django.db import connection
+
         if connection.vendor != 'postgresql':
             pytest.skip('PostgreSQL-specific bulk_create behavior')
 

@@ -27,9 +27,9 @@ def test_team_roles_loaded_with_one_query(rando, organization, org_inv_rd, membe
     with CaptureQueriesContext(connection) as ctx:
         Inventory.objects.create(name='inv-new', organization=organization)
     team_role_queries = [
-        q['sql'] for q in ctx.captured_queries
-        if ('"dab_rbac_objectrole"' in q['sql'] or '[dab_rbac_objectrole]' in q['sql'])
-        and 'dab_rbac_roleteamassignment' in q['sql']
+        q['sql']
+        for q in ctx.captured_queries
+        if ('"dab_rbac_objectrole"' in q['sql'] or '[dab_rbac_objectrole]' in q['sql']) and 'dab_rbac_roleteamassignment' in q['sql']
     ]
     assert len(team_role_queries) == 1, team_role_queries
 

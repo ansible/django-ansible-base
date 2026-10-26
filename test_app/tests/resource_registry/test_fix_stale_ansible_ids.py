@@ -186,8 +186,10 @@ class TestFixStaleAnsibleIdsDuplicates:
                 # Django creates this as a constraint, but our teardown recreates it as an index
                 # (because SQL Server doesn't support INCLUDE in ALTER TABLE ADD CONSTRAINT)
                 # So we need to handle both cases
-                cursor.execute("IF EXISTS (SELECT 1 FROM sys.objects WHERE name = 'unique_resource_content_type_object_id' AND type = 'UQ') "
-                              "ALTER TABLE dab_resource_registry_resource DROP CONSTRAINT unique_resource_content_type_object_id")
+                cursor.execute(
+                    "IF EXISTS (SELECT 1 FROM sys.objects WHERE name = 'unique_resource_content_type_object_id' AND type = 'UQ') "
+                    "ALTER TABLE dab_resource_registry_resource DROP CONSTRAINT unique_resource_content_type_object_id"
+                )
                 cursor.execute("DROP INDEX IF EXISTS unique_resource_content_type_object_id ON dab_resource_registry_resource")
             else:
                 # PostgreSQL: DROP CONSTRAINT first, then index

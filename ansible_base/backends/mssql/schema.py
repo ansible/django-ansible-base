@@ -149,9 +149,7 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
                 max_length = self._determine_max_length(field, model)
 
                 # Create a CharField with the same attributes
-                converted_field = models.CharField(
-                    max_length=max_length, **self._copy_field_attrs(field)
-                )
+                converted_field = models.CharField(max_length=max_length, **self._copy_field_attrs(field))
 
                 # Generate SQL for CharField instead
                 return super().column_sql(model, converted_field, include_default)
@@ -168,11 +166,14 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
         try:
             with self.connection.cursor() as cursor:
                 # Use %s placeholders with tuple for parameters
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH
                     FROM INFORMATION_SCHEMA.COLUMNS
                     WHERE TABLE_NAME = %s AND COLUMN_NAME = %s
-                """, (table_name, column_name))
+                """,
+                    (table_name, column_name),
+                )
                 row = cursor.fetchone()
                 if row:
                     data_type, max_length = row

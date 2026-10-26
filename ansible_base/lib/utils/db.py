@@ -13,6 +13,7 @@ from django.db.migrations.executor import MigrationExecutor
 # MS SQL Server raises pyodbc.IntegrityError which is not caught by django.db.IntegrityError
 try:
     import pyodbc
+
     DatabaseIntegrityError = (IntegrityError, pyodbc.IntegrityError)
 except ImportError:
     DatabaseIntegrityError = (IntegrityError,)
@@ -340,7 +341,7 @@ def advisory_lock(*args, lock_session_timeout_milliseconds=0, **kwargs):
                 shared=kwargs.get('shared', False),
                 wait=kwargs.get('wait', True),
                 lock_session_timeout_milliseconds=lock_session_timeout_milliseconds,
-                using=kwargs.get('using', None)
+                using=kwargs.get('using', None),
             ) as internal_lock:
                 yield internal_lock
         except OperationalError:
@@ -540,7 +541,7 @@ def bulk_create_db_safe(model_class, objects, ignore_conflicts=True, using=None)
             # Backend doesn't support returning PKs from bulk_create
             # Fall back to individual saves with batched transaction commits
             # This is slower but ensures PKs are populated correctly
-            from django.db.models.signals import pre_save, post_save
+            from django.db.models.signals import post_save, pre_save
 
             created = []
             pre_save_receivers = pre_save.receivers[:]
@@ -554,7 +555,7 @@ def bulk_create_db_safe(model_class, objects, ignore_conflicts=True, using=None)
                 # Save in batches with shared savepoints for better performance
                 batch_size = 50
                 for i in range(0, len(objects), batch_size):
-                    batch = objects[i:i + batch_size]
+                    batch = objects[i : i + batch_size]
                     sid = transaction.savepoint(using=using)
                     try:
                         for obj in batch:
@@ -593,7 +594,7 @@ def bulk_create_db_safe(model_class, objects, ignore_conflicts=True, using=None)
         # so we skip bulk_create entirely and go straight to one-by-one.
         # Each save must be in its own savepoint to isolate transaction aborts.
         # IMPORTANT: Block signals to match bulk_create() semantics (doesn't fire signals)
-        from django.db.models.signals import pre_save, post_save
+        from django.db.models.signals import post_save, pre_save
 
         created = []
 

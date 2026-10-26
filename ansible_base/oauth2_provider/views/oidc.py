@@ -73,10 +73,10 @@ class RPInitiatedLogoutView(_DOTRPInitiatedLogoutView):
         # Database-agnostic alternative to scope__regex=r"(^|\s)openid(\s|$)"
         # which requires CLR assembly installation on SQL Server.
         openid_scope_filter = (
-            Q(scope='openid') |                    # exact match
-            Q(scope__startswith='openid ') |       # first in list
-            Q(scope__endswith=' openid') |         # last in list
-            Q(scope__contains=' openid ')          # in the middle
+            Q(scope='openid')  # exact match
+            | Q(scope__startswith='openid ')  # first in list
+            | Q(scope__endswith=' openid')  # last in list
+            | Q(scope__contains=' openid ')  # in the middle
         )
         access_tokens = access_token_model.objects.filter(user=user).filter(openid_scope_filter)
         if application is not None:
