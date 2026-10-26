@@ -53,7 +53,7 @@ def test_cached_jwk_client_discards_invalid_cached_jwk_and_refetches():
     client = CachedJWKClient("https://issuer.example.com/keys")
     token = _token()
     cache_identifier = hashlib.sha256(b"key-id").hexdigest()
-    cache_key = f"external_oauth_jwk:{client._cache_namespace}:{cache_identifier}"
+    cache_key = f"jwk:{client._cache_namespace}:{cache_identifier}"
     cache.set(cache_key, {"not": "a JWK"})
     signing_key = Mock(_jwk_data={"kty": "RSA", "kid": "key-id"})
 

@@ -81,6 +81,7 @@ class AuthenticatorPlugin(SocialAuthMixin, AbstractAuthenticatorPlugin, ModelBac
     configuration_encrypted_fields = ['SECRET']
     logger = logger
     type = "tacacs"
+    display_name = _("TACACS+")
     category = "password"
 
     def __init__(self, database_instance=None, *args, **kwargs):
