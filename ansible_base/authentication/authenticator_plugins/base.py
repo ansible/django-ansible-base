@@ -40,6 +40,10 @@ class BaseAuthenticatorConfiguration(serializers.Serializer):
             default = None
             if field.default is not empty:
                 default = field.default
+            elif getattr(field, "initial", empty) is not empty:
+                # DRF forbids required=True with default=; expose initial so the UI can
+                # pre-fill a type hint (e.g. [] for list fields) without relaxing required.
+                default = field.initial
 
             schema_data = {
                 "name": f,
