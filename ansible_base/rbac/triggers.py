@@ -1,7 +1,6 @@
 import logging
 from contextlib import contextmanager
-from typing import Generator, Optional, Union
-from uuid import UUID
+from typing import Generator, Optional
 
 from django.db import connection
 from django.db.models import Model
@@ -24,6 +23,7 @@ from ansible_base.rbac.caching import (
 )
 from ansible_base.rbac.models import ObjectRole, RoleDefinition, get_evaluation_model
 from ansible_base.rbac.permission_registry import permission_registry
+from ansible_base.rbac.remote import GenericObject
 from ansible_base.rbac.validators import validate_team_assignment_enabled
 
 logger = logging.getLogger('ansible_base.rbac.triggers')
@@ -181,9 +181,9 @@ def defer_rbac_computations() -> Generator[None, None, None]:
         _reset_and_flush_deferred_rbac(suppress_flush_errors=False)
 
 
-def _process_created_instances(created_instances) -> tuple[set[tuple], set[int]]:
-    """Extract parent GFKs and team IDs from deferred created instances."""
-    all_parent_gfks: set[tuple] = set()
+def _process_created_instances(created_instances) -> tuple[set[GenericObject], set[int]]:
+    """Extract parent objects and team IDs from deferred created instances."""
+    all_parent_gfks: set[GenericObject] = set()
     team_ids: set[int] = set()
     for instance, _, _ in created_instances:
         parent_gfks = get_parent_ids(instance)
@@ -302,7 +302,8 @@ def rbac_post_init_set_original_parent(sender, instance, **kwargs):
     instance.__rbac_original_parent_id = getattr(instance, parent_id_name)
 
 
-def get_parent_ids(instance) -> list[tuple[Model, Union[int, UUID]]]:
+def get_parent_ids(instance) -> list[GenericObject]:
+    """Return the instance's whole parent chain, nearest parent first."""
     parent_field_name = permission_registry.get_parent_fd_name(instance)
     if not parent_field_name:
         return []
@@ -313,12 +314,12 @@ def get_parent_ids(instance) -> list[tuple[Model, Union[int, UUID]]]:
         parent_obj = getattr(instance, parent_field_name)
         if parent_obj:
             parent_ct = permission_registry.content_type_model.objects.get_for_model(parent_cls)
-            return [(parent_ct, parent_obj.pk)] + get_parent_ids(parent_obj)
+            return [GenericObject(parent_ct.id, parent_obj.pk)] + get_parent_ids(parent_obj)
     else:
         parent_id = getattr(instance, f'{parent_field_name}_id')
         if parent_id:
             parent_ct = permission_registry.content_type_model.objects.get_for_model(parent_cls)
-            return [(parent_ct, parent_id)]
+            return [GenericObject(parent_ct.id, parent_id)]
     return []
 
 
@@ -336,7 +337,7 @@ def _get_parent_gfks_for_update(instance):
 
     parent_cls = permission_registry.get_parent_model(instance)
     parent_ct = permission_registry.content_type_model.objects.get_for_model(parent_cls)
-    parent_gfks.append((parent_ct, original_parent_id))
+    parent_gfks.append(GenericObject(parent_ct.id, original_parent_id))
     # Roles on the old parent's own parents (e.g. a namespace's organization) granted on this
     # object too. Rather than walk the old chain, which needs the old parent to still exist
     # (it may be deleted concurrently), recompute every role that holds a cached evaluation
@@ -346,8 +347,12 @@ def _get_parent_gfks_for_update(instance):
     return parent_gfks, set(ObjectRole.objects.filter(id__in=cached_role_ids))
 
 
-def post_save_update_obj_permissions(instance, object_pk=None, object_ct_id=None, created=False):
-    "Utility method shared by multiple signals"
+def post_save_update_obj_permissions(instance, look_ahead: bool = False):
+    """Utility method shared by multiple signals
+
+    With look_ahead, the recompute is narrowed to evaluations on this instance,
+    which is correct when the instance was just created and nothing else changed.
+    """
     # Account for organization roles (and other parent objects), new and old
     parent_gfks, roles_granting_before_move = _get_parent_gfks_for_update(instance)
 
@@ -363,13 +368,12 @@ def post_save_update_obj_permissions(instance, object_pk=None, object_ct_id=None
         compute_team_member_roles(team_ids=[instance.id])
 
     if to_update:
-        target_parents = None
-        if object_pk is not None:
-            target_parents = [(parent_ct.id, parent_id) for parent_ct, parent_id in parent_gfks]
-        if created and object_pk is not None:
-            recompute_role_evaluations_for_created(to_update, object_pk=object_pk, object_ct_id=object_ct_id, target_parents=target_parents)
+        if look_ahead:
+            obj_ct = permission_registry.content_type_model.objects.get_for_model(instance)
+            target = GenericObject(obj_ct.id, instance.pk)
+            recompute_role_evaluations_for_created(to_update, look_ahead=target, target_parents=parent_gfks)
         else:
-            recompute_role_evaluations(to_update, object_pk=object_pk, object_ct_id=object_ct_id, target_parents=target_parents)
+            recompute_role_evaluations(to_update)
 
 
 def rbac_pre_save_identify_changes(instance, *args, **kwargs):
@@ -417,7 +421,7 @@ def rbac_post_save_update_evaluations(instance, created, *args, **kwargs):
         if defer_rbac_state.active:
             defer_rbac_state.created_instances.append((instance, instance.pk, obj_ct_id))
             return
-        post_save_update_obj_permissions(instance, object_pk=instance.pk, object_ct_id=obj_ct_id, created=True)
+        post_save_update_obj_permissions(instance, look_ahead=True)
         return
 
     # The parent object can not have changed if update_fields was given and did not list that field
@@ -430,8 +434,7 @@ def rbac_post_save_update_evaluations(instance, created, *args, **kwargs):
     if hasattr(instance, '__rbac_original_parent_id') and instance.__rbac_original_parent_id != current_parent_id:
         logger.info(f'Object {instance} changed RBAC parent {instance.__rbac_original_parent_id}-->{current_parent_id}')
         if _moved_object_is_leaf(instance):
-            obj_ct_id = permission_registry.content_type_model.objects.get_for_model(instance).id
-            post_save_update_obj_permissions(instance, object_pk=instance.pk, object_ct_id=obj_ct_id)
+            post_save_update_obj_permissions(instance, look_ahead=True)
         else:
             post_save_update_obj_permissions(instance)
 
