@@ -679,6 +679,25 @@ def test_oidc_discovery_uses_configured_timeout(admin_api_client, oauth_bearer_c
     assert response.status_code == 201, response.data
 
 
+@pytest.mark.django_db
+def test_oidc_discovery_uses_five_second_default_timeout(admin_api_client, oauth_bearer_configuration):
+    config = deepcopy(oauth_bearer_configuration)
+    config["JWKS_URI"] = ""
+    config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
+
+    with patch(
+        f"{DISCOVERY_MODULE}.requests.get",
+        side_effect=_mock_requests_get(_discovery_document(), expected_timeout=5),
+    ):
+        response = admin_api_client.post(
+            get_relative_url("authenticator-list"),
+            data=_authenticator_payload("Discovery Default Timeout", config),
+            format="json",
+        )
+
+    assert response.status_code == 201, response.data
+
+
 def test_apply_oidc_discovery_noop_without_endpoint():
     attrs = {"JWKS_URI": "https://manual.example.com/keys", "OIDC_ENDPOINT": ""}
     assert apply_oidc_discovery(attrs) is attrs
