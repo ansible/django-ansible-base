@@ -4,11 +4,19 @@ Tests for custom MS SQL Server SchemaEditor.
 Tests the TextField-to-CharField conversion logic.
 """
 
-import pytest
+from unittest.mock import Mock
+
 from django.db import models
 from django.test import TestCase
 
 from ansible_base.backends.mssql.schema import DatabaseSchemaEditor
+
+
+def make_schema_editor():
+    """Build a schema editor with the connection metadata Django requires."""
+    connection = Mock()
+    connection.features.can_rollback_ddl = True
+    return DatabaseSchemaEditor(connection=connection)
 
 
 class TestFieldNeedsConversion(TestCase):
@@ -16,8 +24,7 @@ class TestFieldNeedsConversion(TestCase):
 
     def setUp(self):
         """Create a mock schema editor for testing."""
-        # We don't actually need a real connection for these unit tests
-        self.schema_editor = DatabaseSchemaEditor(connection=None)
+        self.schema_editor = make_schema_editor()
 
     def test_textfield_with_db_index_needs_conversion(self):
         """TextField with db_index=True should need conversion."""
@@ -94,7 +101,7 @@ class TestDetermineMaxLength(TestCase):
 
     def setUp(self):
         """Create a mock schema editor for testing."""
-        self.schema_editor = DatabaseSchemaEditor(connection=None)
+        self.schema_editor = make_schema_editor()
 
     def test_codename_field_gets_100(self):
         """Codename fields should get max_length=100."""
@@ -179,7 +186,7 @@ class TestCopyFieldAttrs(TestCase):
 
     def setUp(self):
         """Create a mock schema editor for testing."""
-        self.schema_editor = DatabaseSchemaEditor(connection=None)
+        self.schema_editor = make_schema_editor()
 
     def test_copies_relevant_attributes(self):
         """Should copy relevant field attributes."""
