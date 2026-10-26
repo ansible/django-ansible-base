@@ -426,6 +426,7 @@ def resolve_claim_from_key(claims: dict[str, Any], key: str) -> str | None:
 class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
     configuration_class = OAuthBearerConfiguration
     type = "oauth_bearer"
+    display_name = _("OAuth Bearer Token")
     category = "api_auth"
     logger = logger
     configuration_encrypted_fields = []

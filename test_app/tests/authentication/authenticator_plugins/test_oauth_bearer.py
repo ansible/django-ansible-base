@@ -222,7 +222,6 @@ def test_oauth_bearer_rejects_the_local_oidc_issuer(admin_api_client, oauth_bear
         (lambda cfg: cfg.update({"JWKS_CACHE_TIMEOUT": 30}), ["JWKS_CACHE_TIMEOUT"]),
         (lambda cfg: cfg.update({"JWKS_URI": "http://provider.example.com/keys"}), ["JWKS_URI"]),
         (lambda cfg: cfg.update({"OIDC_ENDPOINT": "http://provider.example.com", "JWKS_URI": ""}), ["OIDC_ENDPOINT"]),
-        (lambda cfg: cfg.update({"ID_KEY": 123}), ["ID_KEY"]),
         (lambda cfg: cfg.update({"not_a_real_field": "nope"}), ["not_a_real_field"]),
     ],
 )
@@ -286,19 +285,33 @@ def test_id_key_identity_resolution(claims, claim_key, expected):
 
 
 @pytest.mark.django_db
-def test_oauth_bearer_validate_accumulates_object_errors(admin_api_client, oauth_bearer_configuration):
-    """Endpoint-pair and ID_KEY errors should be returned together."""
+def test_oauth_bearer_validate_requires_an_endpoint(admin_api_client, oauth_bearer_configuration):
+    """A configuration requires either an explicit JWKS URI or OIDC discovery endpoint."""
     config = deepcopy(oauth_bearer_configuration)
     config["JWKS_URI"] = ""
     config["OIDC_ENDPOINT"] = ""
-    config["ID_KEY"] = ""
     url = get_relative_url("authenticator-list")
-    response = admin_api_client.post(url, data=_authenticator_payload("Accumulated Errors", config), format="json")
+    response = admin_api_client.post(url, data=_authenticator_payload("Missing Endpoint", config), format="json")
     assert response.status_code == 400, response.data
     error_payload = response.data.get("configuration", response.data)
     assert "JWKS_URI" in error_payload or "JWKS_URI" in response.data
     assert "OIDC_ENDPOINT" in error_payload or "OIDC_ENDPOINT" in response.data
-    assert "ID_KEY" in error_payload or "ID_KEY" in response.data
+
+
+@pytest.mark.django_db
+def test_oauth_bearer_coerces_a_numeric_id_key_like_other_claim_key_fields(admin_api_client, oauth_bearer_configuration):
+    """Claim-key fields follow DRF CharField's standard scalar-string coercion."""
+    config = deepcopy(oauth_bearer_configuration)
+    config["ID_KEY"] = 123
+
+    response = admin_api_client.post(
+        get_relative_url("authenticator-list"),
+        data=_authenticator_payload("Numeric ID Key", config),
+        format="json",
+    )
+
+    assert response.status_code == 201, response.data
+    assert response.data["configuration"]["ID_KEY"] == "123"
 
 
 @pytest.mark.django_db
