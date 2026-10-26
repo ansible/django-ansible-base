@@ -4,7 +4,7 @@
 #
 cryptography  # Imported by core utils (lib/utils/encryption.py, lib/utils/validation.py); version cap lives in requirements_authentication.in
 Django>=5,<6.0
-djangorestframework<3.16 # problem with OAuth2Application.organization null handling
+djangorestframework  # unconstrained: consumers choose their DRF version; DAB is 3.15+ compatible via explicit organization required=True (CVE-2026-73228/73229, AAP-91663)
 django-crum
 inflection
 sqlparse>=0.5.2 # https://github.com/ansible/django-ansible-base/security/dependabot/9
