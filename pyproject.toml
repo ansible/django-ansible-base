@@ -102,6 +102,8 @@ legacy_tox_ini = """
         py312-sqlite
         py312-in-files
         py312-query-count-scale
+        py312-mssql-check
+        py312-mssql
     labels =
         test = py312-check, py312, py312-sqlite, py312-in-files
         mssql = py312-mssql-check, py312-mssql
