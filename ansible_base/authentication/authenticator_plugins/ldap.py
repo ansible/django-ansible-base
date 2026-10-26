@@ -289,7 +289,7 @@ class LDAPConfiguration(BaseAuthenticatorConfiguration):
         ui_field_label=_('LDAP Bind DN'),
     )
     BIND_PASSWORD = CharField(
-        help_text=_("The password used for BIND_DN."),
+        help_text=_("The password used for LDAP Bind DN."),
         allow_null=False,
         required=False,
         ui_field_label=_('LDAP Bind Password'),

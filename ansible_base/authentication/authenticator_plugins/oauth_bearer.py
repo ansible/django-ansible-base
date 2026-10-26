@@ -184,8 +184,8 @@ class OAuthBearerConfiguration(BaseAuthenticatorConfiguration):
     JWKS_URI = URLField(
         help_text=_(
             "Provider JWKS endpoint used to verify JWT signatures. "
-            "Either JWKS_URI or OIDC_ENDPOINT must be provided. "
-            "When OIDC_ENDPOINT is set, this value is overwritten from discovery on every save."
+            "Either JWKS URI or OIDC Discovery Endpoint must be provided. "
+            "When OIDC Discovery Endpoint is set, this value is overwritten from discovery on every save."
         ),
         required=False,
         allow_blank=True,
@@ -277,8 +277,8 @@ class OAuthBearerConfiguration(BaseAuthenticatorConfiguration):
     USERINFO_URL = URLField(
         help_text=_(
             "Optional UserInfo endpoint fetched after JWT validation to retrieve supplementary claims "
-            "(for example group memberships). When OIDC_ENDPOINT is set and the discovery document "
-            "includes userinfo_endpoint, this value is overwritten from discovery on every save."
+            "(for example group memberships). When OIDC Discovery Endpoint is set and the discovery "
+            "document includes userinfo_endpoint, this value is overwritten from discovery on every save."
         ),
         required=False,
         allow_blank=True,
@@ -319,10 +319,11 @@ class OAuthBearerConfiguration(BaseAuthenticatorConfiguration):
     OIDC_ENDPOINT = URLField(
         help_text=_(
             "Base URL for OIDC auto-discovery. At save time (every create/update while this field is "
-            "set), fetches /.well-known/openid-configuration and overwrites JWKS_URI from jwks_uri "
-            "(required) and USERINFO_URL from userinfo_endpoint when present. Discovery is the source "
-            "of truth while OIDC_ENDPOINT remains set — clear it to manage JWKS_URI/USERINFO_URL "
-            "manually. Either JWKS_URI or OIDC_ENDPOINT must be provided. Not used at runtime."
+            "set), fetches /.well-known/openid-configuration and overwrites JWKS URI from jwks_uri "
+            "(required) and UserInfo URL from userinfo_endpoint when present. Discovery is the source "
+            "of truth while OIDC Discovery Endpoint remains set — clear it to manage JWKS URI / "
+            "UserInfo URL manually. Either JWKS URI or OIDC Discovery Endpoint must be provided. "
+            "Not used at runtime."
         ),
         required=False,
         allow_blank=True,
@@ -381,7 +382,7 @@ class OAuthBearerConfiguration(BaseAuthenticatorConfiguration):
         oidc_endpoint = attrs.get("OIDC_ENDPOINT") or ""
 
         if not jwks_uri and not oidc_endpoint:
-            message = _("Either JWKS_URI or OIDC_ENDPOINT must be provided.")
+            message = _("Either JWKS URI or OIDC Discovery Endpoint must be provided.")
             errors["JWKS_URI"] = message
             errors["OIDC_ENDPOINT"] = message
 
