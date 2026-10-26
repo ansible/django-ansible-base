@@ -43,11 +43,11 @@ def test_authenticator_backends_cache(ldap_authenticator):
 
 
 @pytest.mark.django_db
-def test_authenticator_backends_excludes_api_auth(external_oauth_authenticator, ldap_authenticator):
+def test_authenticator_backends_excludes_api_auth(oauth_bearer_authenticator, ldap_authenticator):
     backend.get_authentication_backends.cache_clear()
     authenticators = backend.get_authentication_backends("api-auth-filter")
     assert ldap_authenticator.id in authenticators
-    assert external_oauth_authenticator.id not in authenticators
+    assert oauth_bearer_authenticator.id not in authenticators
 
 
 def shuffle_backends(backends):

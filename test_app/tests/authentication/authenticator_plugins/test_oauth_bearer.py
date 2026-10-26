@@ -6,9 +6,9 @@ import requests
 from django.test import override_settings
 from rest_framework.serializers import ValidationError
 
-from ansible_base.authentication.authenticator_plugins.external_oauth import (
+from ansible_base.authentication.authenticator_plugins.oauth_bearer import (
     AuthenticatorPlugin,
-    ExternalOAuthConfiguration,
+    OAuthBearerConfiguration,
     _local_oidc_issuer,
     apply_oidc_discovery,
     oidc_discovery_url,
@@ -18,8 +18,8 @@ from ansible_base.authentication.authenticator_plugins.utils import get_authenti
 from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.utils.response import get_relative_url
 
-PLUGIN_TYPE = "ansible_base.authentication.authenticator_plugins.external_oauth"
-DISCOVERY_MODULE = "ansible_base.authentication.authenticator_plugins.external_oauth"
+PLUGIN_TYPE = "ansible_base.authentication.authenticator_plugins.oauth_bearer"
+DISCOVERY_MODULE = "ansible_base.authentication.authenticator_plugins.oauth_bearer"
 
 
 def _discovery_document(**overrides):
@@ -76,7 +76,7 @@ def _authenticator_payload(name, configuration, enabled=True):
 )
 @override_settings(INSTALLED_APPS=["ansible_base.oauth2_provider"])
 def test_local_oidc_issuer_handles_provider_configuration(oauth2_provider, expected):
-    """Only a non-empty string local issuer reserves an external OAuth issuer URL."""
+    """Only a non-empty string local issuer reserves an OAuth Bearer issuer URL."""
     with patch(f"{DISCOVERY_MODULE}.get_setting", return_value=oauth2_provider):
         assert _local_oidc_issuer() == expected
 
@@ -88,28 +88,28 @@ def test_local_oidc_issuer_is_unset_without_the_optional_oauth2_provider():
 
 
 @pytest.mark.django_db
-def test_external_oauth_plugin_registered():
+def test_oauth_bearer_plugin_registered():
     assert PLUGIN_TYPE in get_authenticator_plugins()
     plugin = get_authenticator_plugin(PLUGIN_TYPE)
     assert isinstance(plugin, AuthenticatorPlugin)
-    assert plugin.type == "external_oauth"
+    assert plugin.type == "oauth_bearer"
     assert plugin.category == "api_auth"
     assert plugin.get_login_url(None) is None
 
 
 @pytest.mark.django_db
-def test_external_oauth_create_update_delete_via_api(admin_api_client, external_oauth_configuration):
+def test_oauth_bearer_create_update_delete_via_api(admin_api_client, oauth_bearer_configuration):
     url = get_relative_url("authenticator-list")
-    response = admin_api_client.post(url, data=_authenticator_payload("Entra External OAuth", external_oauth_configuration), format="json")
+    response = admin_api_client.post(url, data=_authenticator_payload("Entra OAuth Bearer", oauth_bearer_configuration), format="json")
     assert response.status_code == 201, response.data
     authenticator_id = response.data["id"]
     authenticator = Authenticator.objects.get(id=authenticator_id)
     assert authenticator.category == "api_auth"
     assert response.data["configuration"]["CLAIM_LIST"] == ["email", "azp"]
-    assert response.data["configuration"]["ISSUER_URL"] == external_oauth_configuration["ISSUER_URL"]
+    assert response.data["configuration"]["ISSUER_URL"] == oauth_bearer_configuration["ISSUER_URL"]
 
     detail_url = get_relative_url("authenticator-detail", kwargs={"pk": authenticator_id})
-    updated_config = deepcopy(external_oauth_configuration)
+    updated_config = deepcopy(oauth_bearer_configuration)
     updated_config["AUDIENCE"] = "api://updated"
     updated_config["CLAIM_LIST"] = ["preferred_username", "client_id"]
     response = admin_api_client.patch(detail_url, data={"configuration": updated_config}, format="json")
@@ -123,9 +123,9 @@ def test_external_oauth_create_update_delete_via_api(admin_api_client, external_
 
 
 @pytest.mark.django_db
-def test_external_oauth_allows_https_container_service_jwks_url(admin_api_client, external_oauth_configuration):
+def test_oauth_bearer_allows_https_container_service_jwks_url(admin_api_client, oauth_bearer_configuration):
     """HTTPS JWKS endpoints may use a single-label container service hostname."""
-    config = deepcopy(external_oauth_configuration)
+    config = deepcopy(oauth_bearer_configuration)
     config["JWKS_URI"] = "https://keycloak:8443/auth/realms/gateway/protocol/openid-connect/certs"
 
     response = admin_api_client.post(
@@ -139,9 +139,9 @@ def test_external_oauth_allows_https_container_service_jwks_url(admin_api_client
 
 
 @pytest.mark.django_db
-def test_external_oauth_discovery_allows_https_container_service_urls(admin_api_client, external_oauth_configuration):
+def test_oauth_bearer_discovery_allows_https_container_service_urls(admin_api_client, oauth_bearer_configuration):
     """Discovery accepts HTTPS endpoints served through a container service hostname."""
-    config = deepcopy(external_oauth_configuration)
+    config = deepcopy(oauth_bearer_configuration)
     config.update(
         {
             "JWKS_URI": "",
@@ -162,10 +162,10 @@ def test_external_oauth_discovery_allows_https_container_service_urls(admin_api_
 
 
 @pytest.mark.django_db
-def test_external_oauth_multiple_providers(admin_api_client, external_oauth_configuration):
+def test_oauth_bearer_multiple_providers(admin_api_client, oauth_bearer_configuration):
     url = get_relative_url("authenticator-list")
-    first = deepcopy(external_oauth_configuration)
-    second = deepcopy(external_oauth_configuration)
+    first = deepcopy(oauth_bearer_configuration)
+    second = deepcopy(oauth_bearer_configuration)
     second["ISSUER_URL"] = "https://keycloak.example.com/realms/aap"
     second["JWKS_URI"] = "https://keycloak.example.com/realms/aap/protocol/openid-connect/certs"
     second["CLAIM_LIST"] = ["preferred_username", "client_id"]
@@ -184,9 +184,9 @@ def test_external_oauth_multiple_providers(admin_api_client, external_oauth_conf
 
 @pytest.mark.django_db
 @override_settings(OAUTH2_PROVIDER={"OIDC_ISS_ENDPOINT": "https://gateway.example.com/o"})
-def test_external_oauth_rejects_the_local_oidc_issuer(admin_api_client, external_oauth_configuration):
+def test_oauth_bearer_rejects_the_local_oidc_issuer(admin_api_client, oauth_bearer_configuration):
     """DAB reserves its own optional OIDC issuer for local token handling."""
-    config = deepcopy(external_oauth_configuration)
+    config = deepcopy(oauth_bearer_configuration)
     config["ISSUER_URL"] = "https://gateway.example.com/o"
     response = admin_api_client.post(
         get_relative_url("authenticator-list"),
@@ -225,23 +225,23 @@ def test_external_oauth_rejects_the_local_oidc_issuer(admin_api_client, external
         (lambda cfg: cfg.update({"not_a_real_field": "nope"}), ["not_a_real_field"]),
     ],
 )
-def test_external_oauth_invalid_configuration(admin_api_client, external_oauth_configuration, mutation, expected_fields):
-    config = deepcopy(external_oauth_configuration)
+def test_oauth_bearer_invalid_configuration(admin_api_client, oauth_bearer_configuration, mutation, expected_fields):
+    config = deepcopy(oauth_bearer_configuration)
     mutation(config)
     url = get_relative_url("authenticator-list")
-    response = admin_api_client.post(url, data=_authenticator_payload("Invalid External OAuth", config), format="json")
+    response = admin_api_client.post(url, data=_authenticator_payload("Invalid OAuth Bearer", config), format="json")
     assert response.status_code == 400, response.data
     for field in expected_fields:
         assert field in response.data or field in response.data.get("configuration", response.data)
 
 
 @pytest.mark.django_db
-def test_external_oauth_enable_disable_toggle_preserves_configuration(admin_api_client, external_oauth_configuration):
+def test_oauth_bearer_enable_disable_toggle_preserves_configuration(admin_api_client, oauth_bearer_configuration):
     """Disable/enable must preserve configuration without requiring recreate."""
     url = get_relative_url("authenticator-list")
     create_response = admin_api_client.post(
         url,
-        data=_authenticator_payload("Toggle External OAuth", external_oauth_configuration, enabled=True),
+        data=_authenticator_payload("Toggle OAuth Bearer", oauth_bearer_configuration, enabled=True),
         format="json",
     )
     assert create_response.status_code == 201, create_response.data
@@ -251,13 +251,13 @@ def test_external_oauth_enable_disable_toggle_preserves_configuration(admin_api_
     disable_response = admin_api_client.patch(detail_url, data={"enabled": False}, format="json")
     assert disable_response.status_code == 200, disable_response.data
     assert disable_response.data["enabled"] is False
-    assert disable_response.data["configuration"]["ISSUER_URL"] == external_oauth_configuration["ISSUER_URL"]
+    assert disable_response.data["configuration"]["ISSUER_URL"] == oauth_bearer_configuration["ISSUER_URL"]
     assert disable_response.data["configuration"]["CLAIM_LIST"] == ["email", "azp"]
 
     get_response = admin_api_client.get(detail_url)
     assert get_response.status_code == 200
     assert get_response.data["enabled"] is False
-    assert get_response.data["configuration"]["JWKS_URI"] == external_oauth_configuration["JWKS_URI"]
+    assert get_response.data["configuration"]["JWKS_URI"] == oauth_bearer_configuration["JWKS_URI"]
 
     enable_response = admin_api_client.patch(detail_url, data={"enabled": True}, format="json")
     assert enable_response.status_code == 200, enable_response.data
@@ -297,9 +297,9 @@ def test_claim_list_identity_resolution(claims, claim_list, expected):
 
 
 @pytest.mark.django_db
-def test_external_oauth_validate_accumulates_object_errors(admin_api_client, external_oauth_configuration):
+def test_oauth_bearer_validate_accumulates_object_errors(admin_api_client, oauth_bearer_configuration):
     """Endpoint-pair and CLAIM_LIST errors should be returned together."""
-    config = deepcopy(external_oauth_configuration)
+    config = deepcopy(oauth_bearer_configuration)
     config["JWKS_URI"] = ""
     config["OIDC_ENDPOINT"] = ""
     config["CLAIM_LIST"] = ["email", ""]
@@ -313,8 +313,8 @@ def test_external_oauth_validate_accumulates_object_errors(admin_api_client, ext
 
 
 @pytest.mark.django_db
-def test_claim_list_order_preserved_via_api(admin_api_client, external_oauth_configuration):
-    config = deepcopy(external_oauth_configuration)
+def test_claim_list_order_preserved_via_api(admin_api_client, oauth_bearer_configuration):
+    config = deepcopy(oauth_bearer_configuration)
     config["CLAIM_LIST"] = ["azp", "email", "preferred_username"]
     url = get_relative_url("authenticator-list")
     response = admin_api_client.post(url, data=_authenticator_payload("Ordered Claims", config), format="json")
@@ -323,8 +323,8 @@ def test_claim_list_order_preserved_via_api(admin_api_client, external_oauth_con
 
 
 @pytest.mark.django_db
-def test_external_oauth_schema_has_no_separate_user_service_claim_fields():
-    schema_names = {field["name"] for field in ExternalOAuthConfiguration().get_configuration_schema()}
+def test_oauth_bearer_schema_has_no_separate_user_service_claim_fields():
+    schema_names = {field["name"] for field in OAuthBearerConfiguration().get_configuration_schema()}
     assert "CLAIM_LIST" in schema_names
     assert "USERNAME_CLAIM" not in schema_names
     assert "CLIENT_ID_CLAIM" not in schema_names
@@ -333,16 +333,16 @@ def test_external_oauth_schema_has_no_separate_user_service_claim_fields():
 
 
 @pytest.mark.django_db
-def test_get_default_attributes_uses_configured_claims(external_oauth_authenticator):
-    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+def test_get_default_attributes_uses_configured_claims(oauth_bearer_authenticator):
+    plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
     assert plugin.get_default_attributes() == ["email", "azp", "groups"]
 
-    external_oauth_authenticator.configuration = {
-        **external_oauth_authenticator.configuration,
+    oauth_bearer_authenticator.configuration = {
+        **oauth_bearer_authenticator.configuration,
         "CLAIM_LIST": ["preferred_username", "client_id"],
         "GROUPS_CLAIM": "Group",
     }
-    plugin = AuthenticatorPlugin(database_instance=external_oauth_authenticator)
+    plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
     assert plugin.get_default_attributes() == ["preferred_username", "client_id", "Group"]
 
     unconfigured = AuthenticatorPlugin()
@@ -351,10 +351,10 @@ def test_get_default_attributes_uses_configured_claims(external_oauth_authentica
 
 
 @pytest.mark.django_db
-def test_external_oauth_existing_authenticator_compatibility(admin_api_client, local_authenticator, oidc_authenticator, external_oauth_configuration):
-    """Creating external_oauth must not disturb existing authenticator types."""
+def test_oauth_bearer_existing_authenticator_compatibility(admin_api_client, local_authenticator, oidc_authenticator, oauth_bearer_configuration):
+    """Creating oauth_bearer must not disturb existing authenticator types."""
     url = get_relative_url("authenticator-list")
-    response = admin_api_client.post(url, data=_authenticator_payload("Compat External OAuth", external_oauth_configuration), format="json")
+    response = admin_api_client.post(url, data=_authenticator_payload("Compat OAuth Bearer", oauth_bearer_configuration), format="json")
     assert response.status_code == 201, response.data
 
     list_response = admin_api_client.get(url)
@@ -371,21 +371,21 @@ def test_external_oauth_existing_authenticator_compatibility(admin_api_client, l
 
 
 @pytest.mark.django_db
-def test_api_auth_not_presented_as_login_choice(external_oauth_authenticator, local_authenticator):
+def test_api_auth_not_presented_as_login_choice(oauth_bearer_authenticator, local_authenticator):
     """api_auth authenticators must not appear as password or SSO login choices."""
     from ansible_base.authentication.views.ui_auth import generate_ui_auth_data
 
     result = generate_ui_auth_data()
     password_names = {item.get("name") for item in result["passwords"]}
     sso_names = {item.get("name") for item in result["ssos"]}
-    assert external_oauth_authenticator.name not in password_names
-    assert external_oauth_authenticator.name not in sso_names
+    assert oauth_bearer_authenticator.name not in password_names
+    assert oauth_bearer_authenticator.name not in sso_names
     assert local_authenticator.name in password_names
 
 
 @pytest.mark.django_db
-def test_oidc_discovery_populates_jwks_and_userinfo(admin_api_client, external_oauth_configuration):
-    config = deepcopy(external_oauth_configuration)
+def test_oidc_discovery_populates_jwks_and_userinfo(admin_api_client, oauth_bearer_configuration):
+    config = deepcopy(oauth_bearer_configuration)
     config["JWKS_URI"] = ""
     config["USERINFO_URL"] = ""
     config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
@@ -394,7 +394,7 @@ def test_oidc_discovery_populates_jwks_and_userinfo(admin_api_client, external_o
     with patch(f"{DISCOVERY_MODULE}.requests.get", side_effect=_mock_requests_get(document)) as mock_get:
         response = admin_api_client.post(
             get_relative_url("authenticator-list"),
-            data=_authenticator_payload("Discovered External OAuth", config),
+            data=_authenticator_payload("Discovered OAuth Bearer", config),
             format="json",
         )
 
@@ -406,8 +406,8 @@ def test_oidc_discovery_populates_jwks_and_userinfo(admin_api_client, external_o
 
 
 @pytest.mark.django_db
-def test_oidc_discovery_missing_userinfo_still_populates_jwks(admin_api_client, external_oauth_configuration):
-    config = deepcopy(external_oauth_configuration)
+def test_oidc_discovery_missing_userinfo_still_populates_jwks(admin_api_client, oauth_bearer_configuration):
+    config = deepcopy(oauth_bearer_configuration)
     config["JWKS_URI"] = ""
     config["USERINFO_URL"] = "https://manual.example.com/userinfo"
     config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
@@ -428,8 +428,8 @@ def test_oidc_discovery_missing_userinfo_still_populates_jwks(admin_api_client, 
 
 
 @pytest.mark.django_db
-def test_oidc_discovery_takes_precedence_over_manual_jwks(admin_api_client, external_oauth_configuration):
-    config = deepcopy(external_oauth_configuration)
+def test_oidc_discovery_takes_precedence_over_manual_jwks(admin_api_client, oauth_bearer_configuration):
+    config = deepcopy(oauth_bearer_configuration)
     config["JWKS_URI"] = "https://manual.example.com/keys"
     config["USERINFO_URL"] = "https://manual.example.com/userinfo"
     config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
@@ -459,8 +459,8 @@ def test_oidc_discovery_takes_precedence_over_manual_jwks(admin_api_client, exte
         (_mock_requests_get({"jwks_uri": "https://x"}, status_code=204), "HTTP 204"),
     ],
 )
-def test_oidc_discovery_network_errors(admin_api_client, external_oauth_configuration, side_effect, expected_substring):
-    config = deepcopy(external_oauth_configuration)
+def test_oidc_discovery_network_errors(admin_api_client, oauth_bearer_configuration, side_effect, expected_substring):
+    config = deepcopy(oauth_bearer_configuration)
     config["JWKS_URI"] = ""
     config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
 
@@ -479,8 +479,8 @@ def test_oidc_discovery_network_errors(admin_api_client, external_oauth_configur
 
 
 @pytest.mark.django_db
-def test_oidc_discovery_invalid_json(admin_api_client, external_oauth_configuration, caplog):
-    config = deepcopy(external_oauth_configuration)
+def test_oidc_discovery_invalid_json(admin_api_client, oauth_bearer_configuration, caplog):
+    config = deepcopy(oauth_bearer_configuration)
     config["JWKS_URI"] = ""
     config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
 
@@ -504,8 +504,8 @@ def test_oidc_discovery_invalid_json(admin_api_client, external_oauth_configurat
 
 
 @pytest.mark.django_db
-def test_oidc_discovery_missing_jwks_uri(admin_api_client, external_oauth_configuration):
-    config = deepcopy(external_oauth_configuration)
+def test_oidc_discovery_missing_jwks_uri(admin_api_client, oauth_bearer_configuration):
+    config = deepcopy(oauth_bearer_configuration)
     config["JWKS_URI"] = ""
     config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
     document = _discovery_document()
@@ -524,8 +524,8 @@ def test_oidc_discovery_missing_jwks_uri(admin_api_client, external_oauth_config
 
 
 @pytest.mark.django_db
-def test_oidc_discovery_respects_verify_ssl_false(admin_api_client, external_oauth_configuration):
-    config = deepcopy(external_oauth_configuration)
+def test_oidc_discovery_respects_verify_ssl_false(admin_api_client, oauth_bearer_configuration):
+    config = deepcopy(oauth_bearer_configuration)
     config["JWKS_URI"] = ""
     config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
     config["VERIFY_SSL"] = False
@@ -546,8 +546,8 @@ def test_oidc_discovery_respects_verify_ssl_false(admin_api_client, external_oau
 
 
 @pytest.mark.django_db
-def test_oidc_discovery_timeout(admin_api_client, external_oauth_configuration):
-    config = deepcopy(external_oauth_configuration)
+def test_oidc_discovery_timeout(admin_api_client, oauth_bearer_configuration):
+    config = deepcopy(oauth_bearer_configuration)
     config["JWKS_URI"] = ""
     config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
 
@@ -565,8 +565,8 @@ def test_oidc_discovery_timeout(admin_api_client, external_oauth_configuration):
 
 
 @pytest.mark.django_db
-def test_oidc_discovery_non_object_json(admin_api_client, external_oauth_configuration, caplog):
-    config = deepcopy(external_oauth_configuration)
+def test_oidc_discovery_non_object_json(admin_api_client, oauth_bearer_configuration, caplog):
+    config = deepcopy(oauth_bearer_configuration)
     config["JWKS_URI"] = ""
     config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
 
@@ -586,8 +586,8 @@ def test_oidc_discovery_non_object_json(admin_api_client, external_oauth_configu
 
 
 @pytest.mark.django_db
-def test_oidc_discovery_rejects_invalid_discovered_jwks_uri(admin_api_client, external_oauth_configuration):
-    config = deepcopy(external_oauth_configuration)
+def test_oidc_discovery_rejects_invalid_discovered_jwks_uri(admin_api_client, oauth_bearer_configuration):
+    config = deepcopy(oauth_bearer_configuration)
     config["JWKS_URI"] = ""
     config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
     document = _discovery_document(jwks_uri="not a url")
@@ -606,9 +606,9 @@ def test_oidc_discovery_rejects_invalid_discovered_jwks_uri(admin_api_client, ex
 
 
 @pytest.mark.django_db
-def test_oidc_discovery_overwrites_manual_values_on_update(admin_api_client, external_oauth_configuration):
+def test_oidc_discovery_overwrites_manual_values_on_update(admin_api_client, oauth_bearer_configuration):
     """While OIDC_ENDPOINT remains set, every save re-runs discovery and overwrites JWKS/UserInfo."""
-    config = deepcopy(external_oauth_configuration)
+    config = deepcopy(oauth_bearer_configuration)
     config["JWKS_URI"] = ""
     config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
     initial_document = _discovery_document(
@@ -646,9 +646,9 @@ def test_oidc_discovery_overwrites_manual_values_on_update(admin_api_client, ext
 
 
 @pytest.mark.django_db
-@override_settings(ANSIBLE_BASE_EXTERNAL_OAUTH_DISCOVERY_TIMEOUT=12)
-def test_oidc_discovery_uses_configured_timeout(admin_api_client, external_oauth_configuration):
-    config = deepcopy(external_oauth_configuration)
+@override_settings(ANSIBLE_BASE_OAUTH_BEARER_DISCOVERY_TIMEOUT=12)
+def test_oidc_discovery_uses_configured_timeout(admin_api_client, oauth_bearer_configuration):
+    config = deepcopy(oauth_bearer_configuration)
     config["JWKS_URI"] = ""
     config["OIDC_ENDPOINT"] = "https://login.example.com/tenant/v2.0"
     document = _discovery_document()

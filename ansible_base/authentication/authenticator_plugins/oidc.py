@@ -206,6 +206,7 @@ class OpenIdConnectConfiguration(BaseAuthenticatorConfiguration):
 class AuthenticatorPlugin(SocialAuthMixin, SocialAuthValidateCallbackMixin, OpenIdConnectAuth, AbstractAuthenticatorPlugin):  # type: ignore[override]
     configuration_class = OpenIdConnectConfiguration
     type = "open_id_connect"
+    display_name = _("Generic OIDC")
     logger = logger
     category = "sso"
     configuration_encrypted_fields = ["SECRET"]

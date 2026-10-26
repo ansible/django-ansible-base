@@ -473,6 +473,7 @@ class AuthenticatorPlugin(LDAPBackend, AbstractAuthenticatorPlugin):
     configuration_class = LDAPConfiguration
     configuration_encrypted_fields = ['BIND_PASSWORD']
     type = 'LDAP'
+    display_name = _("LDAP")
     category = "password"
 
     def __init__(self, database_instance=None, *args, **kwargs):

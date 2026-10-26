@@ -352,7 +352,7 @@ def oidc_authenticator(oidc_configuration):
 
 
 @pytest.fixture
-def external_oauth_configuration():
+def oauth_bearer_configuration():
     return {
         "ISSUER_URL": "https://login.example.com/tenant/v2.0",
         "JWKS_URI": "https://login.example.com/tenant/discovery/v2.0/keys",
@@ -370,16 +370,16 @@ def external_oauth_configuration():
 
 
 @pytest.fixture
-def external_oauth_authenticator(external_oauth_configuration):
+def oauth_bearer_authenticator(oauth_bearer_configuration):
     from ansible_base.authentication.models import Authenticator
 
     authenticator = Authenticator.objects.create(
-        name="Test External OAuth Authenticator",
+        name="Test OAuth Bearer Authenticator",
         enabled=True,
         create_objects=True,
         remove_users=True,
-        type="ansible_base.authentication.authenticator_plugins.external_oauth",
-        configuration=external_oauth_configuration,
+        type="ansible_base.authentication.authenticator_plugins.oauth_bearer",
+        configuration=oauth_bearer_configuration,
     )
     yield authenticator
     delete_authenticator(authenticator)

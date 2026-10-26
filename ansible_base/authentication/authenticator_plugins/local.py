@@ -2,6 +2,7 @@ import logging
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
+from django.utils.translation import gettext_lazy as _
 
 from ansible_base.authentication.authenticator_plugins.base import AbstractAuthenticatorPlugin, BaseAuthenticatorConfiguration
 from ansible_base.authentication.utils.authentication import get_or_create_authenticator_user
@@ -23,6 +24,7 @@ class AuthenticatorPlugin(ModelBackend, AbstractAuthenticatorPlugin):
     configuration_class = LocalConfiguration
     logger = logger
     type = "local"
+    display_name = _("Local")
     category = "password"
 
     def __init__(self, database_instance=None, *args, **kwargs):
