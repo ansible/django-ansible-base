@@ -34,16 +34,16 @@ def test_lookahead_only_loads_relevant_team_roles(rando, organization, team, org
         new_inv = Inventory.objects.create(name='inv-new', organization=organization)
 
     team_role_queries = [
-        q['sql'] for q in ctx.captured_queries
-        if ('"dab_rbac_objectrole"' in q['sql'] or '[dab_rbac_objectrole]' in q['sql'])
-        and 'dab_rbac_roleteamassignment' in q['sql']
+        q['sql']
+        for q in ctx.captured_queries
+        if ('"dab_rbac_objectrole"' in q['sql'] or '[dab_rbac_objectrole]' in q['sql']) and 'dab_rbac_roleteamassignment' in q['sql']
     ]
     assert len(team_role_queries) == 1, team_role_queries
     # Check for both PostgreSQL (quoted string) and SQL Server (unquoted integer or quoted)
     assert (
-        f'"dab_rbac_objectrole"."object_id" = \'{organization.pk}\'' in team_role_queries[0] or
-        f'[dab_rbac_objectrole].[object_id] = \'{organization.pk}\'' in team_role_queries[0] or
-        f'[dab_rbac_objectrole].[object_id] = {organization.pk}' in team_role_queries[0]
+        f'"dab_rbac_objectrole"."object_id" = \'{organization.pk}\'' in team_role_queries[0]
+        or f'[dab_rbac_objectrole].[object_id] = \'{organization.pk}\'' in team_role_queries[0]
+        or f'[dab_rbac_objectrole].[object_id] = {organization.pk}' in team_role_queries[0]
     ), team_role_queries[0]
     # evaluations for the new inventory come from the one relevant role only
     assert (

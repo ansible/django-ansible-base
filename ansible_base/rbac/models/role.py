@@ -841,6 +841,7 @@ class ObjectRole(ObjectRoleFields):
 
         # Create evaluation instances using the correct model for each content type
         from ansible_base.rbac.models import get_evaluation_model
+
         for ct_id, evals in evaluations_by_ct.items():
             ct = DABContentType.objects.get(pk=ct_id)
             model_cls = ct.model_class()

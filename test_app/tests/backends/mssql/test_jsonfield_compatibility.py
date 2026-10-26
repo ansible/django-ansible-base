@@ -56,6 +56,7 @@ class JSONFieldBasicTest(TestCase):
         # Let's test with AuthenticatorUser.last_login_map_results which has default=list
 
         from django.contrib.auth import get_user_model
+
         User = get_user_model()
 
         user = User.objects.create(username='testuser')
@@ -166,6 +167,7 @@ class JSONFieldEncryptionTest(TransactionTestCase):
 
     def setUp(self):
         from django.contrib.auth import get_user_model
+
         User = get_user_model()
 
         self.user = User.objects.create(username='testuser')
@@ -235,6 +237,7 @@ class JSONFieldEncryptionTest(TransactionTestCase):
 
         # Verify it's valid base64
         import base64
+
         decoded = base64.b64decode(au_from_db.extra_data['binary'])
         self.assertEqual(decoded, b'binary data \x00\x01\x02')
 
@@ -243,19 +246,20 @@ class JSONFieldEncryptionTest(TransactionTestCase):
         """MS SQL should not have ISJSON constraint on extra_data (allows encrypted data)."""
         # Query for CHECK constraints on extra_data
         with connection.cursor() as cursor:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT cc.name, cc.definition
                 FROM sys.check_constraints AS cc
                 JOIN sys.tables AS t ON t.object_id = cc.parent_object_id
                 WHERE t.name = 'dab_authentication_authenticatoruser'
                   AND cc.definition LIKE '%extra_data%'
-            """)
+            """
+            )
             constraints = cursor.fetchall()
 
         # Should have no ISJSON constraints
         for name, clause in constraints:
-            self.assertNotIn('isjson', clause.lower(),
-                           f"Found ISJSON constraint on extra_data: {clause}")
+            self.assertNotIn('isjson', clause.lower(), f"Found ISJSON constraint on extra_data: {clause}")
 
 
 class JSONFieldSizeTest(TestCase):
@@ -263,6 +267,7 @@ class JSONFieldSizeTest(TestCase):
 
     def setUp(self):
         from django.contrib.auth import get_user_model
+
         User = get_user_model()
 
         self.user = User.objects.create(username='testuser')
@@ -286,7 +291,7 @@ class JSONFieldSizeTest(TestCase):
                         'key1': 'value' * 100,
                         'key2': 'value' * 100,
                         'key3': 'value' * 100,
-                    }
+                    },
                 }
                 for i in range(100)
             ]
@@ -345,6 +350,7 @@ class JSONFieldEdgeCasesTest(TestCase):
 
     def setUp(self):
         from django.contrib.auth import get_user_model
+
         User = get_user_model()
 
         self.user = User.objects.create(username='testuser')
@@ -441,6 +447,7 @@ class JSONFieldBulkOperationsTest(TransactionTestCase):
 
     def setUp(self):
         from django.contrib.auth import get_user_model
+
         User = get_user_model()
 
         self.user = User.objects.create(username='testuser')
@@ -505,12 +512,14 @@ class JSONFieldDatabaseSpecificTest(TestCase):
     def test_mssql_uses_nvarchar_max(self):
         """MS SQL should use nvarchar(max) for JSONField."""
         with connection.cursor() as cursor:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH
                 FROM INFORMATION_SCHEMA.COLUMNS
                 WHERE TABLE_NAME = 'dab_authentication_authenticatoruser'
                   AND COLUMN_NAME = 'extra_data'
-            """)
+            """
+            )
             data_type, max_length = cursor.fetchone()
 
             self.assertEqual(data_type, 'nvarchar')
@@ -520,12 +529,14 @@ class JSONFieldDatabaseSpecificTest(TestCase):
     def test_postgresql_uses_jsonb(self):
         """PostgreSQL should use jsonb for JSONField."""
         with connection.cursor() as cursor:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT data_type
                 FROM information_schema.columns
                 WHERE table_name = 'dab_authentication_authenticatoruser'
                   AND column_name = 'extra_data'
-            """)
+            """
+            )
             row = cursor.fetchone()
             if row:
                 data_type = row[0]

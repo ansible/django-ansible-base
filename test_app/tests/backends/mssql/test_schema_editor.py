@@ -190,9 +190,7 @@ class TestCopyFieldAttrs(TestCase):
 
     def test_copies_relevant_attributes(self):
         """Should copy relevant field attributes."""
-        field = models.TextField(
-            null=True, blank=True, db_index=True, unique=True, help_text="Test help", verbose_name="Test Field"
-        )
+        field = models.TextField(null=True, blank=True, db_index=True, unique=True, help_text="Test help", verbose_name="Test Field")
 
         attrs = self.schema_editor._copy_field_attrs(field)
 

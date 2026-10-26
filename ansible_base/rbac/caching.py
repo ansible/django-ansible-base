@@ -567,6 +567,7 @@ def _collect_created_role_updates(
 
     # Group evaluations by content type to use the correct model (int vs UUID)
     from ansible_base.rbac.models.content_type import DABContentType
+
     evals_by_ct = defaultdict(list)
     for codename, ct_id, obj_id in expected - role_existing.keys():
         evals_by_ct[ct_id].append((codename, obj_id))

@@ -36,19 +36,14 @@ def test_child_id_list_query_is_narrowed_to_new_object(rando, organization, team
 
     # SQL Server uses [brackets], PostgreSQL uses "quotes"
     child_queries = [
-        q['sql'] for q in ctx.captured_queries
-        if q['sql'].startswith('SELECT') and (
-            '"test_app_inventory"."organization_id"' in q['sql'] or
-            '[test_app_inventory].[organization_id]' in q['sql']
-        )
+        q['sql']
+        for q in ctx.captured_queries
+        if q['sql'].startswith('SELECT') and ('"test_app_inventory"."organization_id"' in q['sql'] or '[test_app_inventory].[organization_id]' in q['sql'])
     ]
     assert child_queries, 'expected the recompute to look up inventories of the organization'
     for sql in child_queries:
         # Check for both PostgreSQL and SQL Server identifier quoting
-        assert (
-            f'"test_app_inventory"."id" = {new_inv.pk}' in sql or
-            f'[test_app_inventory].[id] = {new_inv.pk}' in sql
-        ), sql
+        assert f'"test_app_inventory"."id" = {new_inv.pk}' in sql or f'[test_app_inventory].[id] = {new_inv.pk}' in sql, sql
 
     # and the new inventory did get its evaluations through the org role and the team member role
     org_role = ObjectRole.objects.get(role_definition=org_inv_rd, object_id=organization.pk)
@@ -93,15 +88,15 @@ def test_remote_child_id_list_query_is_narrowed(rando, organization):
     assert expected == {('view_foo', foo_type.id, 42), ('change_foo', foo_type.id, 42)}
     # SQL Server uses [brackets], PostgreSQL uses "quotes"
     remote_queries = [
-        q['sql'] for q in ctx.captured_queries
-        if '"dab_rbac_objectrole"."parent_reference"' in q['sql'] or
-           '[dab_rbac_objectrole].[parent_reference]' in q['sql']
+        q['sql']
+        for q in ctx.captured_queries
+        if '"dab_rbac_objectrole"."parent_reference"' in q['sql'] or '[dab_rbac_objectrole].[parent_reference]' in q['sql']
     ]
     assert remote_queries
     for sql in remote_queries:
         # Check for both PostgreSQL (quoted string) and SQL Server (unquoted integer or quoted)
         assert (
-            '"dab_rbac_objectrole"."object_id" = \'42\'' in sql or
-            '[dab_rbac_objectrole].[object_id] = \'42\'' in sql or
-            '[dab_rbac_objectrole].[object_id] = 42' in sql
+            '"dab_rbac_objectrole"."object_id" = \'42\'' in sql
+            or '[dab_rbac_objectrole].[object_id] = \'42\'' in sql
+            or '[dab_rbac_objectrole].[object_id] = 42' in sql
         ), sql

@@ -203,7 +203,7 @@ def _pair_filter_chunked(assignments: list[AssignmentBase], actor_field: str, ch
     Yields Q filters, each covering a chunk of assignments.
     """
     for i in range(0, len(assignments), chunk_size):
-        chunk = assignments[i:i + chunk_size]
+        chunk = assignments[i : i + chunk_size]
         yield _pair_filter(chunk, actor_field)
 
 
@@ -368,7 +368,7 @@ def _find_assignments(
     if connection.vendor == 'microsoft' and len(pairs) > 1000:
         results = []
         for i in range(0, len(pairs), 1000):
-            chunk = pairs[i:i + 1000]
+            chunk = pairs[i : i + 1000]
             q = Q()
             for obj_role_id, actor_pk in chunk:
                 q |= Q(object_role_id=obj_role_id, **{actor_field: actor_pk})
