@@ -438,6 +438,14 @@ def _token_matches_issuer_and_audience(payload: dict[str, Any], issuer_url: str,
     return False
 
 
+def _append_unique_claim(attributes: list[str], claim: Any) -> None:
+    """Append one non-empty string claim unless it is already present."""
+    if isinstance(claim, str):
+        claim = claim.strip()
+        if claim and claim not in attributes:
+            attributes.append(claim)
+
+
 class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
     configuration_class = OAuthBearerConfiguration
     type = "oauth_bearer"
@@ -462,15 +470,11 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         config = self.database_instance.configuration or {}
         attrs = []
         for claim in (config.get("ID_KEY"), config.get("USERNAME_KEY")):
-            if isinstance(claim, str) and claim.strip() and claim not in attrs:
-                attrs.append(claim.strip())
+            _append_unique_claim(attrs, claim)
         for field_name in ("EMAIL_KEY", "FIRST_NAME_KEY", "LAST_NAME_KEY"):
             claim = config.get(field_name) or ("email" if field_name == "EMAIL_KEY" else "")
-            if isinstance(claim, str) and claim.strip() and claim not in attrs:
-                attrs.append(claim.strip())
-        groups_claim = config.get("GROUPS_CLAIM") or "groups"
-        if isinstance(groups_claim, str) and groups_claim.strip() and groups_claim not in attrs:
-            attrs.append(groups_claim.strip())
+            _append_unique_claim(attrs, claim)
+        _append_unique_claim(attrs, config.get("GROUPS_CLAIM") or "groups")
         return attrs or list(_BASELINE_ATTRIBUTES)
 
     def _matches_token_routing_claims(self, token: str, configuration: dict[str, Any]) -> bool:
@@ -831,40 +835,8 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         )
         changed_fields = []
         for user_field, userinfo_field in field_mappings.items():
-            if not isinstance(userinfo_field, str) or not userinfo_field:
-                logger.debug(
-                    "OAuth Bearer profile field %s is not configured for authenticator %s",
-                    user_field,
-                    self.database_instance.name,
-                )
-                continue
-            if userinfo_field not in claims:
-                logger.debug(
-                    "OAuth Bearer profile claim %s for local profile field %s is absent for authenticator %s",
-                    userinfo_field,
-                    user_field,
-                    self.database_instance.name,
-                )
-                continue
-            value = claims[userinfo_field]
-            if user_field == "email":
-                value = normalize_and_get_email(value)
-            elif not isinstance(value, str):
-                logger.debug(
-                    "OAuth Bearer profile claim %s for local profile field %s has unsupported type %s for authenticator %s",
-                    userinfo_field,
-                    user_field,
-                    type(value).__name__,
-                    self.database_instance.name,
-                )
-                continue
+            value = self._profile_claim_value(user_field, userinfo_field, claims)
             if value is None:
-                logger.debug(
-                    "OAuth Bearer profile claim %s could not be normalized for local profile field %s on authenticator %s",
-                    userinfo_field,
-                    user_field,
-                    self.database_instance.name,
-                )
                 continue
             if getattr(user, user_field) == value:
                 logger.debug(
@@ -886,3 +858,40 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         if "email" in changed_fields and authenticator_user is not None:
             authenticator_user.email = user.email
             authenticator_user.save(update_fields=["email"])
+
+    def _profile_claim_value(self, user_field: str, claim_key: Any, claims: dict[str, Any]) -> str | None:
+        """Return a configured, usable profile claim while logging skipped values."""
+        if not isinstance(claim_key, str) or not claim_key:
+            logger.debug("OAuth Bearer profile field %s is not configured for authenticator %s", user_field, self.database_instance.name)
+            return None
+        if claim_key not in claims:
+            logger.debug(
+                "OAuth Bearer profile claim %s for local profile field %s is absent for authenticator %s",
+                claim_key,
+                user_field,
+                self.database_instance.name,
+            )
+            return None
+
+        value = claims[claim_key]
+        if user_field == "email":
+            normalized_email = normalize_and_get_email(value)
+            if normalized_email is not None:
+                return normalized_email
+            logger.debug(
+                "OAuth Bearer profile claim %s could not be normalized for local profile field %s on authenticator %s",
+                claim_key,
+                user_field,
+                self.database_instance.name,
+            )
+            return None
+        if not isinstance(value, str):
+            logger.debug(
+                "OAuth Bearer profile claim %s for local profile field %s has unsupported type %s for authenticator %s",
+                claim_key,
+                user_field,
+                type(value).__name__,
+                self.database_instance.name,
+            )
+            return None
+        return value
