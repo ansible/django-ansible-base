@@ -3,10 +3,9 @@ import logging
 from django.apps import AppConfig
 from django.apps import apps as django_apps
 from django.conf import settings
-from django.db import connection
 from django.db.models import Case, Exists, OuterRef, TextField, UUIDField, Value, When, signals
 from django.db.models.functions import Cast
-from django.db.utils import IntegrityError, NotSupportedError
+from django.db.utils import IntegrityError
 
 import ansible_base.lib.checks  # noqa: F401 - register checks
 from ansible_base.lib.utils.db import bulk_create_db_safe, ensure_transaction, migrations_are_complete
