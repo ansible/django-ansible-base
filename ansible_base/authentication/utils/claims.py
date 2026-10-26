@@ -13,6 +13,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError, models
+from django.db.models import Q
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import DateTimeField
@@ -785,7 +786,15 @@ class ReconcileUser:
         """
         # NOTE(cutwater): Here `prefetch_related` is used to prevent N+1 problem when accessing `content_object`
         #  attribute in `RoleUserAssignmentsCache.cache_existing` method.
-        role_assignments = self.user.role_assignments.prefetch_related('content_object').all()
+        from ansible_base.rbac.remote import get_local_resource_services
+
+        role_assignments = (
+            self.user.role_assignments.filter(
+                Q(content_type__isnull=True) | Q(content_type__service__in=get_local_resource_services()),
+            )
+            .select_related('content_type', 'role_definition')
+            .prefetch_related('content_object')
+        )
         self.permissions_cache.cache_existing(role_assignments)
 
         # System roles
