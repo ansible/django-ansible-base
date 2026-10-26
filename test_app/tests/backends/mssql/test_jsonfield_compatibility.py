@@ -8,7 +8,6 @@ particularly for encrypted fields, NULL handling, and large payloads.
 import json
 from unittest import skipUnless
 
-from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from django.db import connection
 from django.test import TestCase, TransactionTestCase
@@ -16,7 +15,6 @@ from django.test import TestCase, TransactionTestCase
 from ansible_base.activitystream.models import Entry
 from ansible_base.authentication.models import Authenticator, AuthenticatorUser
 from ansible_base.lib.utils.db import bulk_create_db_safe
-from ansible_base.lib.utils.encryption import ansible_encryption
 
 
 class JSONFieldBasicTest(TestCase):

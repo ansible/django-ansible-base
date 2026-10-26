@@ -10,7 +10,7 @@ Verifies that:
 from unittest import mock
 
 import pytest
-from django.db import connection
+from django.db import connection  # noqa: F401 - used in pytest.mark.skipif string
 from django.test.utils import override_settings
 
 from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation
