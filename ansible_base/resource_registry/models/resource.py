@@ -9,8 +9,6 @@ from django.db import models, transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import ValidationError
 
-from ansible_base.lib.validators.mssql import validate_mssql_object_id
-
 from .service_identifier import service_id
 
 if TYPE_CHECKING:
@@ -74,7 +72,7 @@ class Resource(models.Model):
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, related_name="resources", help_text=_("The content type for this resource."))
 
     # this has to accommodate integer and UUID object IDs
-    object_id = models.TextField(null=False, db_index=True, validators=[validate_mssql_object_id], help_text=_("The object id for this resource."))
+    object_id = models.TextField(null=False, db_index=True, help_text=_("The object id for this resource."))
     content_object = GenericForeignKey('content_type', 'object_id')
 
     service_id = models.UUIDField(

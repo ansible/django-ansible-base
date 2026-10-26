@@ -33,13 +33,6 @@ def get_evaluation_model(cls):
         # we accomplish this by inspecting the raw database type of the field
         pk_db_type = pk_field.db_type(connection)
 
-    # For remote objects, pk_db_type is a logical type string ("uuid", "integer")
-    # stored in the content_type. Convert it to the database-specific type for
-    # comparison, using StandInPK's db_type method which delegates to the
-    # appropriate Django field type.
-    if isinstance(cls, RemoteObject) or (inspect.isclass(cls) and issubclass(cls, RemoteObject)):
-        pk_db_type = cls._meta.pk.db_type(connection)
-
     for eval_cls in (RoleEvaluation, RoleEvaluationUUID):
         if pk_db_type == eval_cls._meta.get_field('object_id').db_type(connection):
             return eval_cls

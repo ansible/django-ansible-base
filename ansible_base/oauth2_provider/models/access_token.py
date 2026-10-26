@@ -14,7 +14,6 @@ from ansible_base.lib.logging import log_auth_event
 from ansible_base.lib.utils.hashing import hash_string
 from ansible_base.lib.utils.models import prevent_search
 from ansible_base.lib.utils.settings import get_setting
-from ansible_base.lib.validators.mssql import validate_mssql_description
 from ansible_base.oauth2_provider.utils import is_external_account
 
 logger = logging.getLogger('ansible_base.oauth2_provider.models.access_token')
@@ -66,7 +65,7 @@ class OAuth2AccessToken(CommonModel, oauth2_models.AbstractAccessToken, activity
         related_name='access_tokens',
         help_text=_('The related application. If None, this is a user token instead of an application token.'),
     )
-    description = models.TextField(default='', blank=True, validators=[validate_mssql_description], help_text=_('A description for this token.'))
+    description = models.TextField(default='', blank=True, help_text=_('A description for this token.'))
     last_used = models.DateTimeField(null=True, default=None, editable=False, help_text=_('A timestamp of when this token was last used.'))
     scope = models.CharField(
         default='write',

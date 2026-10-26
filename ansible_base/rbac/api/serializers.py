@@ -12,6 +12,7 @@ from rest_framework.serializers import ValidationError
 from ansible_base.lib.abstract_models.common import get_url_for_object
 from ansible_base.lib.serializers.common import CommonModelSerializer, ImmutableCommonModelSerializer
 from ansible_base.lib.serializers.mixins import CleanTextMixin
+from ansible_base.lib.serializers.validators import validate_mssql_description
 from ansible_base.lib.utils.auth import get_team_model
 from ansible_base.lib.utils.response import get_relative_url
 from ansible_base.rbac.models import RoleDefinition, RoleTeamAssignment, RoleUserAssignment
@@ -52,6 +53,11 @@ class RoleDefinitionSerializer(CleanTextMixin, CommonModelSerializer):
         model = RoleDefinition
         read_only_fields = ('id', 'summary_fields')
         fields = '__all__'
+
+    def validate_description(self, value):
+        """Validate description field length for SQL Server compatibility."""
+        validate_mssql_description(value)
+        return value
 
     def validate(self, validated_data):
         # Obtain the resultant new values
