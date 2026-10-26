@@ -14,20 +14,20 @@ This directory contains tests for the custom MS SQL Server backend, including:
 
 ```bash
 # Using pytest (recommended)
-pytest ansible_base/backends/mssql/tests/
+pytest test_app/tests/backends/mssql/
 
 # Using Django test runner
-python manage.py test ansible_base.backends.mssql.tests
+python manage.py test test_app.tests.backends.mssql
 ```
 
 ### Specific Test Classes
 
 ```bash
 # JSONField compatibility tests only
-pytest ansible_base/backends/mssql/tests/test_jsonfield_compatibility.py
+pytest test_app/tests/backends/mssql/test_jsonfield_compatibility.py
 
 # Schema editor tests only
-pytest ansible_base/backends/mssql/tests/test_schema_editor.py
+pytest test_app/tests/backends/mssql/test_schema_editor.py
 ```
 
 ### Database-Specific Tests
@@ -50,10 +50,10 @@ To verify compatibility, run tests on both PostgreSQL and MS SQL Server:
 
 ```bash
 # PostgreSQL
-DJANGO_SETTINGS_MODULE=test_app.settings pytest ansible_base/backends/mssql/tests/test_jsonfield_compatibility.py
+pytest test_app/tests/backends/mssql/test_jsonfield_compatibility.py
 
 # MS SQL Server
-DJANGO_SETTINGS_MODULE=test_app.settings_mssql pytest ansible_base/backends/mssql/tests/test_jsonfield_compatibility.py
+DB_BACKEND=mssql pytest test_app/tests/backends/mssql/test_jsonfield_compatibility.py
 ```
 
 ## Test Coverage
@@ -161,7 +161,7 @@ strategy:
 steps:
   - name: Run MS SQL backend tests
     run: |
-      pytest ansible_base/backends/mssql/tests/
+      pytest test_app/tests/backends/mssql/
     env:
       DATABASE_ENGINE: ${{ matrix.database }}
 ```
