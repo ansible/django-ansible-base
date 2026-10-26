@@ -23,9 +23,10 @@ from ansible_base.lib.utils.models import is_system_user
 from ansible_base.lib.utils.settings import get_setting
 from ansible_base.lib.utils.validation import validate_url
 
-logger = logging.getLogger("ansible_base.authentication.authenticator_plugins.external_oauth")
+logger = logging.getLogger("ansible_base.authentication.authenticator_plugins.oauth_bearer")
+
 OIDC_DISCOVERY_PATH = "/.well-known/openid-configuration"
-OIDC_DISCOVERY_TIMEOUT_SETTING = "ANSIBLE_BASE_EXTERNAL_OAUTH_DISCOVERY_TIMEOUT"
+OIDC_DISCOVERY_TIMEOUT_SETTING = "ANSIBLE_BASE_OAUTH_BEARER_DISCOVERY_TIMEOUT"
 OIDC_DISCOVERY_TIMEOUT_DEFAULT = 30
 OIDC_DISCOVERY_LOG_BODY_MAX = 512
 
@@ -43,7 +44,7 @@ _BASELINE_ATTRIBUTES = [
 def _local_oidc_issuer() -> str | None:
     """Return this deployment's OIDC issuer when DAB's optional provider is installed.
 
-    External OAuth is reusable outside Gateway, so it deliberately knows only
+    OAuth Bearer is reusable outside Gateway, so it deliberately knows only
     about DAB's optional OAuth2 provider configuration—not Gateway settings or
     Workload Identity.  A deployment without that provider has no local issuer
     to reserve.
@@ -158,7 +159,7 @@ def apply_oidc_discovery(attrs: dict[str, Any]) -> dict[str, Any]:
     return attrs
 
 
-class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
+class OAuthBearerConfiguration(BaseAuthenticatorConfiguration):
     documentation_url = "https://openid.net/specs/openid-connect-discovery-1_0.html"
 
     ISSUER_URL = URLField(
@@ -331,7 +332,7 @@ class ExternalOAuthConfiguration(BaseAuthenticatorConfiguration):
 
         local_issuer = _local_oidc_issuer()
         if local_issuer and attrs.get("ISSUER_URL") == local_issuer:
-            errors["ISSUER_URL"] = _("An external OAuth issuer cannot be this deployment's local OIDC issuer.")
+            errors["ISSUER_URL"] = _("An OAuth Bearer issuer cannot be this deployment's local OIDC issuer.")
 
         claim_list = attrs.get("CLAIM_LIST") or []
         invalid_claims = [claim for claim in claim_list if not isinstance(claim, str) or not claim.strip()]
@@ -388,8 +389,9 @@ def resolve_uid_from_claims(claims: dict[str, Any], claim_list: list[str]) -> st
 
 
 class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
-    configuration_class = ExternalOAuthConfiguration
-    type = "external_oauth"
+    configuration_class = OAuthBearerConfiguration
+    type = "oauth_bearer"
+    display_name = _("OAuth Bearer Token")
     category = "api_auth"
     logger = logger
     configuration_encrypted_fields = []
@@ -418,7 +420,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         return attrs or list(_BASELINE_ATTRIBUTES)
 
     def _matches_token_routing_claims(self, token: str, configuration: dict[str, Any]) -> bool:
-        """Return whether unverified routing claims identify this external OAuth provider.
+        """Return whether unverified routing claims identify this OAuth Bearer provider.
 
         The dispatcher passes every Bearer token to each API authenticator.  This
         inexpensive check lets this JWT-specific plugin decline opaque tokens and
@@ -437,7 +439,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
                 },
             )
         except (PyJWTError, TypeError, ValueError) as exc:
-            logger.debug(f"External OAuth token cannot be routed to an issuer: {exc}")
+            logger.debug(f"OAuth Bearer token cannot be routed to an issuer: {exc}")
             return False
 
         # These values predate this plugin's schema migrations in some
@@ -487,20 +489,20 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         # token validation uses only the credential passed by the dispatcher.
         del request
         if token is None or self.database_instance is None:
-            logger.debug("External OAuth token is None or database instance is None")
+            logger.debug("OAuth Bearer token is None or database instance is None")
             return None
 
-        logger.debug(f"Attempting to authenticate with external OAuth authenticator {self.database_instance.name}")
+        logger.debug(f"Attempting to authenticate with OAuth Bearer authenticator {self.database_instance.name}")
 
         configuration = self.database_instance.configuration
         if not self._matches_token_routing_claims(token, configuration):
-            logger.debug(f"External OAuth token does not match authenticator {self.database_instance.name}")
+            logger.debug(f"OAuth Bearer token does not match authenticator {self.database_instance.name}")
             return None
 
-        logger.debug(f"Validating external OAuth token against authenticator {self.database_instance.name}")
+        logger.debug(f"Validating OAuth Bearer token against authenticator {self.database_instance.name}")
         jwks_uri = configuration.get("JWKS_URI", "")
         if not jwks_uri:
-            logger.error(f"External OAuth authenticator {self.database_instance.name} has no configured JWKS URI")
+            logger.error(f"OAuth Bearer authenticator {self.database_instance.name} has no configured JWKS URI")
             raise BearerTokenValidationError()
 
         jwk_client = self._build_jwk_client(jwks_uri, configuration)
@@ -531,7 +533,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
 
         granted_scopes = frozenset(user_scopes)
         logger.debug(
-            f"External OAuth authenticator {self.database_instance.name} mapped scope claim {scope_attribute_name} to API scopes {sorted(granted_scopes)}"
+            f"OAuth Bearer authenticator {self.database_instance.name} mapped scope claim {scope_attribute_name} to API scopes {sorted(granted_scopes)}"
         )
         return granted_scopes
 
@@ -555,54 +557,54 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
     def _signing_key_for_token(self, jwk_client: CachedJWKClient, token: str) -> PyJWK:
         """Look up the token key and translate provider errors into safe API failures."""
         try:
-            logger.debug(f"Fetching the signing key for external OAuth authenticator {self.database_instance.name}")
+            logger.debug(f"Fetching the signing key for OAuth Bearer authenticator {self.database_instance.name}")
             return jwk_client.get_signing_key_from_jwt(token)
         except PyJWKClientConnectionError:
-            logger.warning(f"External OAuth JWKS endpoint is unavailable for authenticator {self.database_instance.name}")
+            logger.warning(f"OAuth Bearer JWKS endpoint is unavailable for authenticator {self.database_instance.name}")
             raise BearerTokenValidationError("provider_unavailable") from None
         except PyJWKClientError:
-            logger.debug(f"External OAuth signing key lookup rejected a token for authenticator {self.database_instance.name}")
+            logger.debug(f"OAuth Bearer signing key lookup rejected a token for authenticator {self.database_instance.name}")
             raise BearerTokenValidationError() from None
 
     def _validated_claims(self, token: str, signing_key: PyJWK, jwk_client: CachedJWKClient, configuration: dict[str, Any]) -> dict[str, Any]:
         """Verify claims and retry once if an IdP key rotation invalidated the cached key."""
         try:
-            logger.debug(f"Fetched signing key for external OAuth authenticator {self.database_instance.name}; validating JWT")
+            logger.debug(f"Fetched signing key for OAuth Bearer authenticator {self.database_instance.name}; validating JWT")
             claims = self._decode_validated_token(token, signing_key, configuration)
-            logger.debug(f"External OAuth JWT validated for authenticator {self.database_instance.name}")
+            logger.debug(f"OAuth Bearer JWT validated for authenticator {self.database_instance.name}")
             return claims
         except ExpiredSignatureError:
-            logger.debug(f"External OAuth token expired for authenticator {self.database_instance.name}")
+            logger.debug(f"OAuth Bearer token expired for authenticator {self.database_instance.name}")
             raise BearerTokenValidationError("expired") from None
         except InvalidSignatureError:
             return self._validated_claims_after_key_refresh(token, signing_key, jwk_client, configuration)
         except PyJWTError:
-            logger.debug(f"External OAuth token validation failed for authenticator {self.database_instance.name}")
+            logger.debug(f"OAuth Bearer token validation failed for authenticator {self.database_instance.name}")
             raise BearerTokenValidationError() from None
 
     def _validated_claims_after_key_refresh(self, token: str, signing_key: PyJWK, jwk_client: CachedJWKClient, configuration: dict[str, Any]) -> dict[str, Any]:
         """Refresh a potentially rotated signing key once, then verify the original JWT again."""
         try:
-            logger.debug(f"External OAuth JWT signature failed for authenticator {self.database_instance.name}; refreshing signing key")
+            logger.debug(f"OAuth Bearer JWT signature failed for authenticator {self.database_instance.name}; refreshing signing key")
             refreshed_signing_key = jwk_client.refresh_signing_key_from_jwt(token)
             if refreshed_signing_key._jwk_data == signing_key._jwk_data:
                 raise BearerTokenValidationError()
             return self._decode_validated_token(token, refreshed_signing_key, configuration)
         except ExpiredSignatureError:
-            logger.debug(f"External OAuth token expired after key refresh for authenticator {self.database_instance.name}")
+            logger.debug(f"OAuth Bearer token expired after key refresh for authenticator {self.database_instance.name}")
             raise BearerTokenValidationError("expired") from None
         except PyJWKClientConnectionError:
-            logger.warning(f"External OAuth JWKS endpoint is unavailable during refresh for authenticator {self.database_instance.name}")
+            logger.warning(f"OAuth Bearer JWKS endpoint is unavailable during refresh for authenticator {self.database_instance.name}")
             raise BearerTokenValidationError("provider_unavailable") from None
         except (PyJWKClientError, PyJWTError):
-            logger.debug(f"External OAuth token validation failed after key refresh for authenticator {self.database_instance.name}")
+            logger.debug(f"OAuth Bearer token validation failed after key refresh for authenticator {self.database_instance.name}")
             raise BearerTokenValidationError() from None
 
     def _user_from_claims(self, claims: dict[str, Any], configuration: dict[str, Any]) -> AbstractBaseUser | None:
-        """Resolve, provision, and map a verified external OAuth identity to an active user."""
+        """Resolve, provision, and map a verified OAuth Bearer identity to an active user."""
         uid = resolve_uid_from_claims(claims, configuration.get("CLAIM_LIST", []))
         if uid is None:
-            logger.debug(f"External OAuth token did not contain a configured identity claim for authenticator {self.database_instance.name}")
+            logger.debug(f"OAuth Bearer token did not contain a configured identity claim for authenticator {self.database_instance.name}")
             raise BearerTokenValidationError()
 
         email = normalize_and_get_email(claims.get("email")) or ""
@@ -614,7 +616,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
             extra_data=claims,
         )
         if user is None or not user.is_active or is_system_user(user):
-            logger.debug(f"External OAuth identity maps to an ineligible user for authenticator {self.database_instance.name}")
+            logger.debug(f"OAuth Bearer identity maps to an ineligible user for authenticator {self.database_instance.name}")
             raise BearerTokenValidationError()
 
         groups = claims.get(configuration.get("GROUPS_CLAIM", "groups"), [])

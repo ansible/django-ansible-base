@@ -368,38 +368,38 @@ def test_bearer_authentication_rejects_token_when_all_handlers_decline():
 
 
 @pytest.mark.django_db
-def test_api_authentication_backends_cache_and_refresh_configuration(external_oauth_authenticator):
+def test_api_authentication_backends_cache_and_refresh_configuration(oauth_bearer_authenticator):
     """API plugins are rebuilt only when the API-authenticator timestamp changes."""
     plugin = Mock()
-    initial_modified = external_oauth_authenticator.modified
+    initial_modified = oauth_bearer_authenticator.modified
 
     with patch(
         "ansible_base.authentication.bearer_authentication.get_authenticator_plugin",
         return_value=plugin,
     ) as get_plugin:
         cached = get_api_authentication_backends(initial_modified)
-        assert cached == OrderedDict([(external_oauth_authenticator.id, plugin)])
+        assert cached == OrderedDict([(oauth_bearer_authenticator.id, plugin)])
         assert get_api_authentication_backends(initial_modified) is cached
-        get_plugin.assert_called_once_with(external_oauth_authenticator.type)
-        plugin.update_if_needed.assert_called_once_with(external_oauth_authenticator)
+        get_plugin.assert_called_once_with(oauth_bearer_authenticator.type)
+        plugin.update_if_needed.assert_called_once_with(oauth_bearer_authenticator)
 
-        external_oauth_authenticator.name = "Updated external OAuth authenticator"
-        external_oauth_authenticator.save()
-        get_api_authentication_backends(external_oauth_authenticator.modified)
+        oauth_bearer_authenticator.name = "Updated OAuth Bearer authenticator"
+        oauth_bearer_authenticator.save()
+        get_api_authentication_backends(oauth_bearer_authenticator.modified)
 
     assert get_plugin.call_count == 2
 
 
 @pytest.mark.django_db
-def test_api_authentication_cache_version_includes_disabled_authenticators(external_oauth_authenticator):
+def test_api_authentication_cache_version_includes_disabled_authenticators(oauth_bearer_authenticator):
     """Enabling a previously disabled API authenticator invalidates a cached dispatcher list."""
     disabled = Authenticator.objects.create(
         name="Disabled API authenticator",
         enabled=False,
-        type=external_oauth_authenticator.type,
-        configuration=external_oauth_authenticator.configuration,
+        type=oauth_bearer_authenticator.type,
+        configuration=oauth_bearer_authenticator.configuration,
         category="api_auth",
-        order=external_oauth_authenticator.order + 1,
+        order=oauth_bearer_authenticator.order + 1,
     )
     with patch("ansible_base.authentication.bearer_authentication.get_api_authentication_backends") as get_backends:
         BearerAuthentication()._api_authentication_backends()
@@ -408,13 +408,13 @@ def test_api_authentication_cache_version_includes_disabled_authenticators(exter
 
 
 @pytest.mark.django_db
-def test_api_authentication_backends_skip_plugins_that_are_not_installed(external_oauth_authenticator):
+def test_api_authentication_backends_skip_plugins_that_are_not_installed(oauth_bearer_authenticator):
     """A configured plugin unavailable in this deployment cannot break Bearer dispatch."""
     with patch(
         "ansible_base.authentication.bearer_authentication.get_authenticator_plugin",
         side_effect=ImportError,
     ):
-        assert get_api_authentication_backends(external_oauth_authenticator.modified) == OrderedDict()
+        assert get_api_authentication_backends(oauth_bearer_authenticator.modified) == OrderedDict()
 
 
 def test_bearer_authentication_skips_local_oauth_when_its_optional_app_is_absent():
