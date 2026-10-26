@@ -423,6 +423,21 @@ def resolve_claim_from_key(claims: dict[str, Any], key: str) -> str | None:
     return _scalar_claim_uid(claims.get(key)) if claims and key else None
 
 
+def _token_matches_issuer_and_audience(payload: dict[str, Any], issuer_url: str, expected_audience: str) -> bool:
+    """Return whether unverified claims can be routed to this provider."""
+    if payload.get("iss") != issuer_url:
+        return False
+
+    audience = payload.get("aud")
+    if isinstance(audience, str):
+        return audience == expected_audience
+    if isinstance(audience, list):
+        # This is routing only. PyJWT validates the audience after this plugin
+        # selects the token's provider.
+        return expected_audience in audience
+    return False
+
+
 class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
     configuration_class = OAuthBearerConfiguration
     type = "oauth_bearer"
@@ -489,17 +504,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         if not isinstance(issuer_url, str) or not issuer_url or not isinstance(expected_audience, str) or not expected_audience:
             return False
 
-        if payload.get("iss") != issuer_url:
-            return False
-
-        audience = payload.get("aud")
-        if isinstance(audience, str):
-            return audience == expected_audience
-        if isinstance(audience, list):
-            # This is routing only. PyJWT performs the authoritative claim-type
-            # and audience validation after this provider selects the token.
-            return expected_audience in audience
-        return False
+        return _token_matches_issuer_and_audience(payload, issuer_url, expected_audience)
 
     @staticmethod
     def _decode_validated_token(token: str, signing_key: Any, configuration: dict[str, Any]) -> dict[str, Any]:
@@ -759,6 +764,28 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
             logger.debug(f"OAuth Bearer token validation failed after key refresh for authenticator {self.database_instance.name}")
             raise BearerTokenValidationError() from None
 
+    def _bearer_identity_from_claims(
+        self, claims: dict[str, Any], jwt_claims: dict[str, Any], configuration: dict[str, Any]
+    ) -> tuple[str, str | None, str | None]:
+        """Return validated provisioning identifiers from token claims."""
+        uid = resolve_claim_from_key(jwt_claims, configuration.get("ID_KEY", ""))
+        if uid is None:
+            logger.debug(f"OAuth Bearer token did not contain a configured identity claim for authenticator {self.database_instance.name}")
+            raise BearerTokenValidationError()
+
+        email_key = configuration.get("EMAIL_KEY") or "email"
+        email = normalize_and_get_email(claims.get(email_key)) if isinstance(email_key, str) else None
+        if get_social_auth_setting("USERNAME_IS_FULL_EMAIL", False):
+            if email is not None:
+                return uid, email, email
+            logger.debug(
+                "External OAuth authenticator %s requires an email claim because SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL is enabled",
+                self.database_instance.name,
+            )
+            raise BearerTokenValidationError()
+
+        return uid, email, resolve_claim_from_key(jwt_claims, configuration.get("USERNAME_KEY", ""))
+
     def _user_from_claims(
         self,
         claims: dict[str, Any],
@@ -767,26 +794,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         userinfo_claims: dict[str, Any] | None = None,
     ) -> AbstractBaseUser | None:
         """Resolve, provision, and map a verified external OAuth identity to an active user."""
-        uid = resolve_claim_from_key(jwt_claims, configuration.get("ID_KEY", ""))
-        if uid is None:
-            logger.debug(f"OAuth Bearer token did not contain a configured identity claim for authenticator {self.database_instance.name}")
-            raise BearerTokenValidationError()
-
-        # ``claims`` always contains validated JWT claims and may be enriched
-        # by subject-bound UserInfo claims. Its explicitly configured email
-        # claim is safe to supply to the standard Email fallback merge strategy.
-        email_key = configuration.get("EMAIL_KEY") or "email"
-        email = normalize_and_get_email(claims.get(email_key)) if isinstance(email_key, str) else None
-        if get_social_auth_setting("USERNAME_IS_FULL_EMAIL", False):
-            username = email
-            if username is None:
-                logger.debug(
-                    "External OAuth authenticator %s requires an email claim because SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL is enabled",
-                    self.database_instance.name,
-                )
-                raise BearerTokenValidationError()
-        else:
-            username = resolve_claim_from_key(jwt_claims, configuration.get("USERNAME_KEY", ""))
+        uid, email, username = self._bearer_identity_from_claims(claims, jwt_claims, configuration)
         user_kwargs = {
             "uid": uid,
             "email": email,
