@@ -490,6 +490,67 @@ def get_sql_server_notify_params(alias: str = DEFAULT_DB_ALIAS, **extra_options)
     return params
 
 
+@contextmanager
+def _without_model_save_signals():
+    from django.db.models.signals import post_save, pre_save
+
+    pre_save_receivers = pre_save.receivers[:]
+    post_save_receivers = post_save.receivers[:]
+    try:
+        pre_save.receivers = []
+        post_save.receivers = []
+        yield
+    finally:
+        pre_save.receivers = pre_save_receivers
+        post_save.receivers = post_save_receivers
+
+
+def _bulk_create_using_manager(manager, objects, using, ignore_conflicts):
+    created = manager.bulk_create(objects, ignore_conflicts=ignore_conflicts) or []
+    for obj in created:
+        if ignore_conflicts or obj._state.db is None:
+            obj._state.db = using
+    return created
+
+
+def _bulk_create_with_savepoints(objects, using):
+    """Save in batches when the backend cannot return inserted primary keys."""
+    created = []
+    with _without_model_save_signals():
+        for start in range(0, len(objects), 50):
+            batch = objects[start : start + 50]
+            savepoint_id = transaction.savepoint(using=using)
+            try:
+                for obj in batch:
+                    obj.save(force_insert=True, using=using)
+                    obj._state.db = using
+                    obj._state.adding = False
+                    created.append(obj)
+                transaction.savepoint_commit(savepoint_id, using=using)
+            except Exception:
+                transaction.savepoint_rollback(savepoint_id, using=using)
+                raise
+    return created
+
+
+def _bulk_create_ignoring_conflicts(model_class, objects, using, db_connection):
+    """Save individually so SQL Server can recover from each conflict."""
+    created = []
+    with _without_model_save_signals():
+        for obj in objects:
+            savepoint_id = transaction.savepoint(using=using)
+            try:
+                obj.save(force_insert=True, using=using)
+                transaction.savepoint_commit(savepoint_id, using=using)
+                obj._state.db = using
+                created.append(obj)
+            except DatabaseIntegrityError as exc:
+                logger.debug(f"bulk_create_db_safe: Caught IntegrityError for {model_class.__name__}: {exc}")
+                db_connection.needs_rollback = False
+                transaction.savepoint_rollback(savepoint_id, using=using)
+    return created
+
+
 def bulk_create_db_safe(model_class, objects, ignore_conflicts=True, using=None):
     """
     Database-safe bulk_create that works on both PostgreSQL and MS SQL Server.
@@ -523,9 +584,6 @@ def bulk_create_db_safe(model_class, objects, ignore_conflicts=True, using=None)
         Like bulk_create(), this function does NOT fire post_save signals.
         Callers are responsible for firing signals if needed.
     """
-    # Use the model manager when Django's router should choose the database.
-    # Keep this path as a manager call so callers that patch `objects.bulk_create`
-    # retain the same behavior as a direct bulk_create call.
     if using is None:
         manager = model_class.objects
         using = manager.db
@@ -535,101 +593,11 @@ def bulk_create_db_safe(model_class, objects, ignore_conflicts=True, using=None)
     # Get connection for the specified database
     db_connection = connections[using]
 
-    # If ignore_conflicts is False, check if backend can return PKs from bulk_create
-    if not ignore_conflicts:
-        # SQL Server in some configurations doesn't support OUTPUT clause with triggers
-        # or in certain transaction scenarios, so can_return_rows_from_bulk_insert may be False
-        if not db_connection.features.can_return_rows_from_bulk_insert:
-            # Backend doesn't support returning PKs from bulk_create
-            # Fall back to individual saves with batched transaction commits
-            # This is slower but ensures PKs are populated correctly
-            from django.db.models.signals import post_save, pre_save
+    if ignore_conflicts:
+        if not db_connection.features.supports_ignore_conflicts:
+            return _bulk_create_ignoring_conflicts(model_class, objects, using, db_connection)
+        return _bulk_create_using_manager(manager, objects, using, ignore_conflicts=True)
 
-            created = []
-            pre_save_receivers = pre_save.receivers[:]
-            post_save_receivers = post_save.receivers[:]
-
-            try:
-                # Disconnect signals to match bulk_create() semantics
-                pre_save.receivers = []
-                post_save.receivers = []
-
-                # Save in batches with shared savepoints for better performance
-                batch_size = 50
-                for i in range(0, len(objects), batch_size):
-                    batch = objects[i : i + batch_size]
-                    sid = transaction.savepoint(using=using)
-                    try:
-                        for obj in batch:
-                            obj.save(force_insert=True, using=using)
-                            obj._state.db = using
-                            obj._state.adding = False  # Mark as saved
-                            created.append(obj)
-                        transaction.savepoint_commit(sid, using=using)
-                    except Exception:
-                        transaction.savepoint_rollback(sid, using=using)
-                        raise
-            finally:
-                pre_save.receivers = pre_save_receivers
-                post_save.receivers = post_save_receivers
-
-            return created
-
-        # Backend supports returning PKs - use standard bulk_create
-        created = manager.bulk_create(objects, ignore_conflicts=False) or []
-        for obj in created:
-            if obj._state.db is None:
-                obj._state.db = using
-        return created
-
-    # Handle ignore_conflicts=True
-    if db_connection.features.supports_ignore_conflicts:
-        # PostgreSQL: use native support (no behavior change)
-        created = manager.bulk_create(objects, ignore_conflicts=True) or []
-        # Ensure _state.db is set correctly for m2m operations
-        for obj in created:
-            obj._state.db = using
-        return created
-    else:
-        # MS SQL: doesn't support ignore_conflicts
-        # MS SQL Server cannot recover from IntegrityError within a transaction,
-        # so we skip bulk_create entirely and go straight to one-by-one.
-        # Each save must be in its own savepoint to isolate transaction aborts.
-        # IMPORTANT: Block signals to match bulk_create() semantics (doesn't fire signals)
-        from django.db.models.signals import post_save, pre_save
-
-        created = []
-
-        # Collect all signal receivers so we can temporarily disconnect them
-        pre_save_receivers = pre_save.receivers[:]
-        post_save_receivers = post_save.receivers[:]
-
-        try:
-            # Temporarily disconnect all pre_save and post_save signals
-            # This matches bulk_create() behavior which doesn't fire signals
-            pre_save.receivers = []
-            post_save.receivers = []
-
-            for obj in objects:
-                # Use savepoint to isolate each save - required for MS SQL transaction recovery
-                sid = transaction.savepoint(using=using)
-                try:
-                    obj.save(force_insert=True, using=using)
-                    transaction.savepoint_commit(sid, using=using)
-                    # Ensure _state.db is set correctly (bulk_create does this automatically)
-                    # This is needed for m2m operations after bulk creation
-                    obj._state.db = using
-                    created.append(obj)
-                except DatabaseIntegrityError as e:
-                    # IntegrityError aborts the transaction on MS SQL Server.
-                    # Clear the flag and rollback the savepoint to recover.
-                    logger.debug(f"bulk_create_db_safe: Caught IntegrityError for {model_class.__name__}: {e}")
-                    db_connection.needs_rollback = False
-                    transaction.savepoint_rollback(sid, using=using)
-                    # Ignore this conflict - this is the ignore_conflicts=True behavior
-        finally:
-            # Restore signal receivers
-            pre_save.receivers = pre_save_receivers
-            post_save.receivers = post_save_receivers
-
-        return created
+    if not db_connection.features.can_return_rows_from_bulk_insert:
+        return _bulk_create_with_savepoints(objects, using)
+    return _bulk_create_using_manager(manager, objects, using, ignore_conflicts=False)

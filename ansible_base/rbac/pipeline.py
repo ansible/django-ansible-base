@@ -214,6 +214,66 @@ def _fire_post_save(db_assignments: list[AssignmentBase], existing_pks: set[int]
             post_save.send(sender=type(assignment), instance=assignment, created=True, raw=False, using='default', update_fields=None)
 
 
+def _build_assignment_objects(
+    resolved: list[ResolvedAssignment],
+    assignment_model,
+    actor_field: str,
+    lookup: ObjectRoleLookup,
+    object_ansible_ids: dict[tuple[str, str, str], str],
+    created_by,
+) -> list[AssignmentBase]:
+    assignments = []
+    for item in resolved:
+        object_role = lookup[(item.role_definition.pk, item.object_id)]
+        assignments.append(
+            assignment_model(
+                **{
+                    actor_field: item.actor,
+                    'object_role': object_role,
+                    'role_definition': item.role_definition,
+                    'content_type': item.content_type,
+                    'object_id': item.object_id,
+                    'object_ansible_id': object_ansible_ids.get((item.content_type.app_label, item.content_type.model, item.object_id)),
+                    'created_by': created_by,
+                }
+            )
+        )
+    return assignments
+
+
+def _assignment_query_filters(assignments: list[AssignmentBase], actor_field: str) -> list[Q]:
+    if connection.vendor == 'microsoft' and len(assignments) > 1000:
+        return list(_pair_filter_chunked(assignments, actor_field, chunk_size=1000))
+    return [_pair_filter(assignments, actor_field)]
+
+
+def _create_assignment_batch(
+    assignment_model,
+    assignments: list[AssignmentBase],
+    actor_field: str,
+    fire_signals_on_create: bool,
+    ignore_conflicts: bool,
+) -> list[AssignmentBase]:
+    if not assignments:
+        return []
+
+    query_filters = _assignment_query_filters(assignments, actor_field)
+    existing_pks = set()
+    for query_filter in query_filters:
+        existing_pks.update(assignment_model.objects.filter(query_filter).values_list('pk', flat=True))
+
+    bulk_create_db_safe(assignment_model, assignments, ignore_conflicts=ignore_conflicts)
+
+    created = []
+    for query_filter in query_filters:
+        created.extend(assignment_model.objects.filter(query_filter))
+    if fire_signals_on_create:
+        _fire_post_save(created, existing_pks)
+    else:
+        _audit_log_created(created, existing_pks)
+    return created
+
+
 def _create_assignments(
     user_resolved: list[ResolvedAssignment],
     team_resolved: list[ResolvedAssignment],
@@ -226,76 +286,12 @@ def _create_assignments(
     created_by = current_user_or_system_user()
     all_assignments: list[AssignmentBase] = []
 
-    user_assignments = []
-    for ra in user_resolved:
-        obj_role = lookup[(ra.role_definition.pk, ra.object_id)]
-        user_assignments.append(
-            RoleUserAssignment(
-                user=ra.actor,
-                object_role=obj_role,
-                role_definition=ra.role_definition,
-                content_type=ra.content_type,
-                object_id=ra.object_id,
-                object_ansible_id=object_ansible_ids.get((ra.content_type.app_label, ra.content_type.model, ra.object_id)),
-                created_by=created_by,
-            )
-        )
-    if user_assignments:
-        # Use chunked queries for large assignment sets to avoid SQL Server's 2100 parameter limit
-        # Each Q condition uses 2 parameters, so chunk at 1000 to stay under limit
-        if connection.vendor == 'microsoft' and len(user_assignments) > 1000:
-            existing_user_pks = set()
-            for chunk_q in _pair_filter_chunked(user_assignments, 'user', chunk_size=1000):
-                existing_user_pks.update(RoleUserAssignment.objects.filter(chunk_q).values_list('pk', flat=True))
-            bulk_create_db_safe(RoleUserAssignment, user_assignments, ignore_conflicts=ignore_conflicts)
-            db_users = []
-            for chunk_q in _pair_filter_chunked(user_assignments, 'user', chunk_size=1000):
-                db_users.extend(RoleUserAssignment.objects.filter(chunk_q))
-        else:
-            pair_q = _pair_filter(user_assignments, 'user')
-            existing_user_pks = set(RoleUserAssignment.objects.filter(pair_q).values_list('pk', flat=True))
-            bulk_create_db_safe(RoleUserAssignment, user_assignments, ignore_conflicts=ignore_conflicts)
-            db_users = list(RoleUserAssignment.objects.filter(pair_q))
-        all_assignments.extend(db_users)
-        if fire_signals_on_create:
-            _fire_post_save(db_users, existing_user_pks)
-        else:
-            _audit_log_created(db_users, existing_user_pks)
-
-    team_assignments = []
-    for ra in team_resolved:
-        obj_role = lookup[(ra.role_definition.pk, ra.object_id)]
-        team_assignments.append(
-            RoleTeamAssignment(
-                team=ra.actor,
-                object_role=obj_role,
-                role_definition=ra.role_definition,
-                content_type=ra.content_type,
-                object_id=ra.object_id,
-                object_ansible_id=object_ansible_ids.get((ra.content_type.app_label, ra.content_type.model, ra.object_id)),
-                created_by=created_by,
-            )
-        )
-    if team_assignments:
-        # Use chunked queries for large assignment sets to avoid SQL Server's 2100 parameter limit
-        if connection.vendor == 'microsoft' and len(team_assignments) > 1000:
-            existing_team_pks = set()
-            for chunk_q in _pair_filter_chunked(team_assignments, 'team', chunk_size=1000):
-                existing_team_pks.update(RoleTeamAssignment.objects.filter(chunk_q).values_list('pk', flat=True))
-            bulk_create_db_safe(RoleTeamAssignment, team_assignments, ignore_conflicts=ignore_conflicts)
-            db_teams = []
-            for chunk_q in _pair_filter_chunked(team_assignments, 'team', chunk_size=1000):
-                db_teams.extend(RoleTeamAssignment.objects.filter(chunk_q))
-        else:
-            pair_q = _pair_filter(team_assignments, 'team')
-            existing_team_pks = set(RoleTeamAssignment.objects.filter(pair_q).values_list('pk', flat=True))
-            bulk_create_db_safe(RoleTeamAssignment, team_assignments, ignore_conflicts=ignore_conflicts)
-            db_teams = list(RoleTeamAssignment.objects.filter(pair_q))
-        all_assignments.extend(db_teams)
-        if fire_signals_on_create:
-            _fire_post_save(db_teams, existing_team_pks)
-        else:
-            _audit_log_created(db_teams, existing_team_pks)
+    for resolved, assignment_model, actor_field in (
+        (user_resolved, RoleUserAssignment, 'user'),
+        (team_resolved, RoleTeamAssignment, 'team'),
+    ):
+        objects = _build_assignment_objects(resolved, assignment_model, actor_field, lookup, object_ansible_ids, created_by)
+        all_assignments.extend(_create_assignment_batch(assignment_model, objects, actor_field, fire_signals_on_create, ignore_conflicts))
 
     return all_assignments
 
