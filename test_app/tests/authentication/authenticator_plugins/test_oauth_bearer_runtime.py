@@ -774,6 +774,24 @@ def test_oauth_bearer_plugin_classifies_unavailable_jwks_provider(oauth_bearer_a
 
 
 @pytest.mark.django_db
+def test_oauth_bearer_plugin_classifies_unusable_jwks_provider_response(oauth_bearer_authenticator):
+    """An unusable JWKS document is translated into a safe invalid-token failure."""
+    plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
+    with (
+        patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.CachedJWKClient") as jwk_client,
+        patch(
+            "ansible_base.authentication.authenticator_plugins.oauth_bearer.decode",
+            return_value=_routing_claims(oauth_bearer_authenticator.configuration),
+        ),
+    ):
+        jwk_client.return_value.get_signing_key_from_jwt.side_effect = jwt.PyJWKClientError("unusable key set")
+        with pytest.raises(BearerTokenValidationError) as exc_info:
+            plugin.authenticate(token="token")
+
+    assert exc_info.value.reason == "invalid"
+
+
+@pytest.mark.django_db
 def test_oauth_bearer_plugin_propagates_unexpected_identity_provisioning_errors(oauth_bearer_authenticator):
     """Provisioning defects bubble to the dispatcher, which records unexpected plugin exceptions."""
     plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
