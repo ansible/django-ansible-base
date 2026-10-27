@@ -566,15 +566,13 @@ def _collect_created_role_updates(
         updates.to_delete.add((role_existing[key], type(key[2])))
 
     # Group evaluations by content type to use the correct model (int vs UUID)
-    from ansible_base.rbac.models.content_type import DABContentType
-
     evals_by_ct = defaultdict(list)
     for codename, ct_id, obj_id in expected - role_existing.keys():
         evals_by_ct[ct_id].append((codename, obj_id))
 
     # Create evaluation instances using the correct model for each content type
     for ct_id, evals in evals_by_ct.items():
-        ct = DABContentType.objects.get(pk=ct_id)
+        ct = types_prefetch.get_content_type(ct_id)
         model_cls = ct.model_class()
         eval_model = get_evaluation_model(model_cls)
         for codename, obj_id in evals:
