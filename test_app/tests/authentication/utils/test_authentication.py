@@ -1,3 +1,5 @@
+from unittest import mock
+
 import pytest
 from django.conf import settings
 from django.test import override_settings
@@ -113,8 +115,13 @@ class TestAuthenticationUtilsAuthentication:
     def test_determine_username_from_uid_logs_email_link_to_existing_user(self, ldap_authenticator, expected_log):
         User.objects.create(username="existing-user", email="existing-user@example.com")
 
-        with expected_log(self.logger, "info", "linking user new-uid to existing user existing-user via email existing-user@example.com"):
-            username = authentication.determine_username_from_uid(uid="new-uid", email="existing-user@example.com", authenticator=ldap_authenticator)
+        with mock.patch("ansible_base.authentication.utils.authentication.log_auth_event") as audit_log:
+            with expected_log(self.logger, "info", "linking user new-uid to existing user existing-user via email existing-user@example.com"):
+                username = authentication.determine_username_from_uid(uid="new-uid", email="existing-user@example.com", authenticator=ldap_authenticator)
+
+        audit_log.assert_called_once_with(
+            f"Authenticator {ldap_authenticator.name} is linking user new-uid to existing user existing-user via email existing-user@example.com"
+        )
 
         assert username == "existing-user"
 
