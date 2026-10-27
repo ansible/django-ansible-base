@@ -7,6 +7,7 @@ from django.test.utils import CaptureQueriesContext
 from ansible_base.rbac.caching import recompute_all_role_evaluations, recompute_role_evaluations_for_created
 from ansible_base.rbac.models import ObjectRole, RoleEvaluation
 from ansible_base.rbac.permission_registry import permission_registry
+from ansible_base.rbac.remote import GenericObject
 from ansible_base.rbac.triggers import object_roles_for_parents
 from test_app.models import Inventory, Organization, Team
 
@@ -76,9 +77,11 @@ def test_created_recompute_removes_stale_rows_and_adds_missing(rando, organizati
     stale = RoleEvaluation.objects.create(role=member_role, codename='bogus_inventory', content_type_id=_inv_ct_id(), object_id=inv.pk)
     RoleEvaluation.objects.filter(role=org_role, codename='change_inventory', content_type_id=_inv_ct_id(), object_id=inv.pk).delete()
 
-    to_update = object_roles_for_parents({(permission_registry.content_type_model.objects.get_for_model(Organization), organization.pk)})
+    to_update = object_roles_for_parents({GenericObject(_org_ct_id(), organization.pk)})
     assert {org_role, member_role} <= to_update
-    recompute_role_evaluations_for_created(to_update, object_pk=inv.pk, object_ct_id=_inv_ct_id(), target_parents=[(_org_ct_id(), organization.pk)])
+    recompute_role_evaluations_for_created(
+        to_update, look_ahead=GenericObject(_inv_ct_id(), inv.pk), target_parents=[GenericObject(_org_ct_id(), organization.pk)]
+    )
 
     assert not RoleEvaluation.objects.filter(pk=stale.pk).exists()
     assert RoleEvaluation.objects.filter(role=org_role, codename='change_inventory', content_type_id=_inv_ct_id(), object_id=inv.pk).exists()
@@ -92,5 +95,5 @@ def test_created_recompute_with_no_roles_is_a_no_op(organization, django_assert_
     types_prefetch = TypesPrefetch.from_db()
     with django_assert_num_queries(0):
         recompute_role_evaluations_for_created(
-            [], object_pk=1, object_ct_id=_inv_ct_id(), target_parents=[(_org_ct_id(), organization.pk)], types_prefetch=types_prefetch
+            [], look_ahead=GenericObject(_inv_ct_id(), 1), target_parents=[GenericObject(_org_ct_id(), organization.pk)], types_prefetch=types_prefetch
         )

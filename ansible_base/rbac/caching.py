@@ -3,6 +3,7 @@ import logging
 import threading
 from collections import defaultdict
 from collections.abc import Iterable
+from itertools import islice
 from typing import Optional, Union
 from uuid import UUID
 
@@ -14,6 +15,7 @@ from django.db.utils import IntegrityError
 from ansible_base.rbac.models import ObjectRole, RoleEvaluation, RoleEvaluationUUID, get_evaluation_model
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.prefetch import EvaluationsPrefetch, TypesPrefetch
+from ansible_base.rbac.remote import GenericObject
 
 logger = logging.getLogger('ansible_base.rbac.caching')
 
@@ -113,9 +115,9 @@ def cleanup_orphaned_object_roles() -> int:
     return deleted_count
 
 
-def object_roles_for_parents(parent_gfks: set[tuple]) -> set['ObjectRole']:
+def object_roles_for_parents(parent_gfks: set[GenericObject]) -> set['ObjectRole']:
     """Return ObjectRoles affected by created objects via their parent chain. Called by defer_rbac_computations flush."""
-    q_exprs = [Q(content_type=parent_ct, object_id=parent_id) for parent_ct, parent_id in parent_gfks]
+    q_exprs = [Q(content_type_id=parent.content_type_id, object_id=parent.pk) for parent in parent_gfks]
     q_filter = q_exprs[0]
     for next_q in q_exprs[1:]:
         q_filter |= next_q
@@ -388,14 +390,13 @@ class EvaluationUpdates:
         # ObjectRole collected in this recompute (look-ahead mode only).
         self.lookahead_cache: dict = {}
 
-    def collect(self, object_role, types_prefetch, evaluations_prefetch=None, object_pk=None, object_ct_id=None, target_parents=None):
+    def collect(self, object_role, types_prefetch, evaluations_prefetch=None, look_ahead=None, target_parents=None):
         role_to_delete, role_to_add = object_role.needed_cache_updates(
             types_prefetch=types_prefetch,
             evaluations_prefetch=evaluations_prefetch,
-            object_pk=object_pk,
-            object_ct_id=object_ct_id,
+            look_ahead=look_ahead,
             target_parents=target_parents,
-            lookahead_cache=self.lookahead_cache if object_pk is not None else None,
+            lookahead_cache=self.lookahead_cache if look_ahead else None,
         )
         if role_to_delete:
             logger.debug('Removing %d object-permissions from ObjectRole(pk=%s)', len(role_to_delete), object_role.pk)
@@ -446,9 +447,8 @@ class EvaluationUpdates:
 def recompute_role_evaluations(
     object_roles: Iterable[ObjectRole],
     types_prefetch: Optional[TypesPrefetch] = None,
-    object_pk: Optional[int | UUID] = None,
-    object_ct_id: Optional[int] = None,
-    target_parents: Optional[Iterable[tuple[int, int | UUID]]] = None,
+    look_ahead: GenericObject | None = None,
+    target_parents: Iterable[GenericObject] | None = None,
 ) -> None:
     """Recompute RoleEvaluation entries for a specific set of ObjectRoles.
 
@@ -456,21 +456,28 @@ def recompute_role_evaluations(
     data) against existing RoleEvaluation rows, then bulk-creates missing
     entries and bulk-deletes stale ones.
 
-    When object_pk and object_ct_id are provided, the scope is narrowed to
-    a single target object (used by post_save signals for look-ahead).
-    target_parents, the (content_type_id, object_id) parent chain of that
-    object, additionally lets team-held roles be filtered to the ones that
-    can grant evaluations on it.
+    With look_ahead, the scope is narrowed to that single object (used by
+    post_save signals). target_parents, the parent chain of that object,
+    additionally lets team-held roles be filtered to the ones that can grant
+    evaluations on it.
+
+    Without look_ahead, the roles are recomputed in full, batch-loading their
+    existing evaluations and team-held roles per chunk the same way
+    recompute_all_role_evaluations does, instead of one query per role.
     """
     if types_prefetch is None:
         types_prefetch = TypesPrefetch.from_db()
 
-    if target_parents is not None:
-        target_parents = [(ct_id, obj_id) for ct_id, obj_id in target_parents]
-
     updates = EvaluationUpdates()
-    for object_role in object_roles:
-        updates.collect(object_role, types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id, target_parents=target_parents)
+    if look_ahead:
+        for object_role in object_roles:
+            updates.collect(object_role, types_prefetch, look_ahead=look_ahead, target_parents=target_parents)
+    else:
+        roles = iter(object_roles)
+        while chunk := list(islice(roles, RECOMPUTE_CHUNK_SIZE)):
+            evaluations_prefetch = EvaluationsPrefetch.from_roles(chunk)
+            for object_role in chunk:
+                updates.collect(object_role, types_prefetch, evaluations_prefetch)
     updates.apply()
 
 
@@ -488,13 +495,18 @@ def _created_role_teams(role_pks: list[int]) -> tuple[dict[int, set[int]], set[i
     return role_to_teams, set().union(*role_to_teams.values()) if role_to_teams else set()
 
 
-def _created_team_roles(team_ids: set[int], object_ct_id: int, parent_keys: set[tuple[int, str]]) -> tuple[dict[int, ObjectRole], dict[int, set[int]]]:
+def _created_team_roles(
+    team_ids: set[int],
+    object_ct_id: int,
+    parent_keys: set[tuple[int, str]],
+    granting_rd_ids: set[int],
+) -> tuple[dict[int, ObjectRole], dict[int, set[int]]]:
     """Load the roles held by team_ids that can grant on the created object.
 
     The inverse direction of _created_role_teams: given teams, find the roles
     assigned *to* those teams, limited to roles on the object itself or on one
-    of its parents (parent_keys). Returns (role_pk -> ObjectRole,
-    team_id -> held role_pks).
+    of its parents (parent_keys) whose definition can grant on the object type
+    (granting_rd_ids). Returns (role_pk -> ObjectRole, team_id -> held role_pks).
     """
     team_roles_by_pk: dict[int, ObjectRole] = {}
     team_to_role_pks: dict[int, set[int]] = defaultdict(set)
@@ -504,6 +516,7 @@ def _created_team_roles(team_ids: set[int], object_ct_id: int, parent_keys: set[
     relevant_filter = Q(content_type_id=object_ct_id, object_id__in=[])
     for ct_id, parent_id in parent_keys:
         relevant_filter |= Q(content_type_id=ct_id, object_id=parent_id)
+    relevant_filter &= Q(role_definition_id__in=granting_rd_ids)
     team_roles_by_pk = {role.pk: role for role in ObjectRole.objects.filter(teams__in=team_ids).filter(relevant_filter).distinct()}
     if not team_roles_by_pk:
         return team_roles_by_pk, team_to_role_pks
@@ -538,28 +551,29 @@ def _collect_created_role_updates(
     team_to_role_pks: dict[int, set[int]],
     team_roles_by_pk: dict[int, ObjectRole],
     expected_by_role_pk: dict[int, set],
+    granting_rd_ids: set[int],
     types_prefetch: TypesPrefetch,
-    object_pk: int | UUID,
-    object_ct_id: int,
+    look_ahead: GenericObject,
     existing: dict[int, dict],
     updates: EvaluationUpdates,
 ) -> None:
     """Diff one role's expected evaluations on the created object against existing ones.
 
     A role's expected set is the union of its own direct permissions (only when
-    its object is the created object or a parent of it) and the permissions of
-    every team-held role reached through the teams it provides membership to.
+    its object is the created object or a parent of it, and its definition can
+    grant on the object type) and the permissions of every team-held role
+    reached through the teams it provides membership to.
     Missing rows are queued on updates.to_add, stale rows on updates.to_delete.
     expected_by_role_pk memoizes per-role results across calls.
     """
 
     def expected_for(expected_role: ObjectRole) -> set:
         if expected_role.pk not in expected_by_role_pk:
-            expected_by_role_pk[expected_role.pk] = expected_role.expected_direct_permissions(types_prefetch, object_pk=object_pk, object_ct_id=object_ct_id)
+            expected_by_role_pk[expected_role.pk] = expected_role.expected_direct_permissions(types_prefetch, look_ahead=look_ahead)
         return expected_by_role_pk[expected_role.pk]
 
     expected: set = set()
-    if (role.content_type_id, str(role.object_id)) in direct_keys:
+    if (role.content_type_id, str(role.object_id)) in direct_keys and role.role_definition_id in granting_rd_ids:
         expected |= expected_for(role)
     for team_id in role_to_teams.get(role.pk, ()):
         for team_role_pk in team_to_role_pks.get(team_id, ()):
@@ -574,14 +588,13 @@ def _collect_created_role_updates(
 
 def recompute_role_evaluations_for_created(
     object_roles: Iterable[ObjectRole],
-    object_pk: int | UUID,
-    object_ct_id: int,
-    target_parents: Iterable[tuple[int, int | UUID]],
+    look_ahead: GenericObject,
+    target_parents: Iterable[GenericObject],
     types_prefetch: Optional[TypesPrefetch] = None,
 ) -> None:
     """Recompute RoleEvaluation entries for a single, just-created object.
 
-    Equivalent to recompute_role_evaluations(object_roles, object_pk=..., object_ct_id=...,
+    Equivalent to recompute_role_evaluations(object_roles, look_ahead=look_ahead,
     target_parents=...) but organised around the object instead of around each role:
 
     * one query loads the teams every role provides membership to,
@@ -600,12 +613,20 @@ def recompute_role_evaluations_for_created(
     if not roles:
         return
     role_pks = [r.pk for r in roles]
+    object_pk = look_ahead.pk
+    object_ct_id = look_ahead.content_type_id
     object_id_str = str(object_pk)
-    parent_keys = {(ct_id, str(parent_id)) for ct_id, parent_id in target_parents}
+    parent_keys = {(parent.content_type_id, str(parent.pk)) for parent in target_parents}
     direct_keys = parent_keys | {(object_ct_id, object_id_str)}
 
     role_to_teams, team_ids = _created_role_teams(role_pks)
-    team_roles_by_pk, team_to_role_pks = _created_team_roles(team_ids, object_ct_id, parent_keys | {(object_ct_id, object_id_str)})
+    granting_rd_ids = types_prefetch.role_definition_ids_granting(object_ct_id)
+    team_roles_by_pk, team_to_role_pks = _created_team_roles(
+        team_ids,
+        object_ct_id,
+        parent_keys | {(object_ct_id, object_id_str)},
+        granting_rd_ids,
+    )
     existing = _created_existing_evaluations(role_pks, object_pk, object_ct_id)
     expected_by_role_pk: dict[int, set] = {}
     updates = EvaluationUpdates()
@@ -617,9 +638,9 @@ def recompute_role_evaluations_for_created(
             team_to_role_pks,
             team_roles_by_pk,
             expected_by_role_pk,
+            granting_rd_ids,
             types_prefetch,
-            object_pk,
-            object_ct_id,
+            look_ahead,
             existing,
             updates,
         )

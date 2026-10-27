@@ -5,6 +5,7 @@ import pytest
 from ansible_base.rbac.caching import recompute_all_role_evaluations
 from ansible_base.rbac.models import ObjectRole, RoleEvaluation
 from ansible_base.rbac.permission_registry import permission_registry
+from ansible_base.rbac.remote import GenericObject
 from test_app.models import Inventory, Organization
 
 
@@ -33,7 +34,7 @@ def test_team_object_roles_on_other_objects_are_not_proposed(rando, organization
     # simulate the state during the post_save signal: nothing cached yet for inv_b
     RoleEvaluation.objects.filter(role=member_role, object_id=inv_b.pk, content_type_id=_inv_ct_id()).delete()
 
-    to_delete, to_add = member_role.needed_cache_updates(object_pk=inv_b.pk, object_ct_id=_inv_ct_id())
+    to_delete, to_add = member_role.needed_cache_updates(look_ahead=GenericObject(_inv_ct_id(), inv_b.pk))
     assert not to_delete
     assert to_add
     assert {(e.content_type_id, e.object_id) for e in to_add} == {(_inv_ct_id(), inv_b.pk)}
