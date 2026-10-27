@@ -209,7 +209,6 @@ def _handle_email_fallback_strategy(uid: str, email: Union[str, list[str], None]
     elif user_count == 1:
         existing_user = existing_user_match.first()
         message = f"Authenticator {authenticator.name} is linking user {uid} to existing user {existing_user.username} via email {normalized_email}"
-        logger.info(message)
         log_auth_event(message)
         return existing_user.username
     # PROPOSAL FLOW: Does an AAP User with this email exist? No
