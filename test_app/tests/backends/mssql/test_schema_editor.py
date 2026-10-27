@@ -4,10 +4,12 @@ Tests for custom MS SQL Server SchemaEditor.
 Tests the TextField-to-CharField conversion logic.
 """
 
-from unittest.mock import Mock
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from django.db import models
 from django.test import TestCase
+from mssql.schema import DatabaseSchemaEditor as MSSQLSchemaEditor
 
 from ansible_base.backends.mssql.schema import DatabaseSchemaEditor
 
@@ -94,6 +96,22 @@ class TestFieldNeedsConversion(TestCase):
 
         result = self.schema_editor._field_needs_conversion(field, MockModel)
         self.assertFalse(result)
+
+    def test_model_without_meta_does_not_need_conversion(self):
+        field = models.TextField()
+
+        self.assertFalse(self.schema_editor._field_needs_conversion(field, object))
+
+    def test_non_unique_constraint_and_unrelated_index_do_not_need_conversion(self):
+        field = models.TextField()
+        field.name = 'test_field'
+        constraint = models.CheckConstraint(condition=models.Q(test_field__isnull=False), name='check_test_field')
+        index = models.Index(fields=['other_field'], name='idx_other_field')
+
+        class MockModel:
+            _meta = type('Meta', (), {'constraints': [constraint], 'indexes': [index]})()
+
+        self.assertFalse(self.schema_editor._field_needs_conversion(field, MockModel))
 
 
 class TestDetermineMaxLength(TestCase):
@@ -219,3 +237,70 @@ class TestCopyFieldAttrs(TestCase):
         self.assertNotIn('null', attrs)
         self.assertNotIn('blank', attrs)
         self.assertNotIn('editable', attrs)
+
+
+class TestSchemaEditorConstraints(TestCase):
+    def setUp(self):
+        self.schema_editor = make_schema_editor()
+        self.field = models.TextField(null=True)
+        self.field.set_attributes_from_name('description')
+        self.model = SimpleNamespace(
+            _meta=SimpleNamespace(
+                db_table='test_table',
+                get_field=lambda field_name: self.field if field_name == 'description' else None,
+            )
+        )
+
+    def test_add_constraint_converts_existing_nvarchar_max_textfield(self):
+        constraint = models.UniqueConstraint(fields=['description'], name='unique_description')
+        with (
+            patch.object(self.schema_editor, '_get_column_type', return_value='nvarchar(max)') as get_column_type,
+            patch.object(self.schema_editor, 'execute') as execute,
+            patch.object(MSSQLSchemaEditor, 'add_constraint', return_value='parent result') as add_constraint,
+        ):
+            result = self.schema_editor.add_constraint(self.model, constraint)
+
+        self.assertEqual(result, 'parent result')
+        get_column_type.assert_called_once_with('test_table', 'description')
+        execute.assert_called_once_with('ALTER TABLE [test_table] ALTER COLUMN [description] nvarchar(450) NULL')
+        self.assertIsInstance(self.field, models.CharField)
+        self.assertEqual(self.field.max_length, 450)
+        add_constraint.assert_called_once_with(self.model, constraint)
+
+    def test_add_constraint_leaves_bounded_textfield_unchanged(self):
+        constraint = models.UniqueConstraint(fields=['description'], name='unique_description')
+        with (
+            patch.object(self.schema_editor, '_get_column_type', return_value='nvarchar(255)'),
+            patch.object(self.schema_editor, 'execute') as execute,
+            patch.object(MSSQLSchemaEditor, 'add_constraint', return_value='parent result'),
+        ):
+            self.schema_editor.add_constraint(self.model, constraint)
+
+        execute.assert_not_called()
+        self.assertIsInstance(self.field, models.TextField)
+
+    def test_add_constraint_ignores_non_unique_constraints(self):
+        constraint = models.CheckConstraint(condition=models.Q(description__isnull=False), name='check_description')
+        with (
+            patch.object(self.schema_editor, '_get_column_type') as get_column_type,
+            patch.object(self.schema_editor, 'execute') as execute,
+            patch.object(MSSQLSchemaEditor, 'add_constraint', return_value='parent result'),
+        ):
+            self.schema_editor.add_constraint(self.model, constraint)
+
+        get_column_type.assert_not_called()
+        execute.assert_not_called()
+
+    def test_add_index_converts_descending_textfield(self):
+        index = models.Index(fields=['-description'], name='idx_description')
+        with (
+            patch.object(self.schema_editor, '_get_column_type', return_value='nvarchar(max)'),
+            patch.object(self.schema_editor, 'execute') as execute,
+            patch.object(MSSQLSchemaEditor, 'add_index', return_value='parent result') as add_index,
+        ):
+            result = self.schema_editor.add_index(self.model, index)
+
+        self.assertEqual(result, 'parent result')
+        execute.assert_called_once_with('ALTER TABLE [test_table] ALTER COLUMN [description] nvarchar(450) NULL')
+        self.assertIsInstance(self.field, models.CharField)
+        add_index.assert_called_once_with(self.model, index)
