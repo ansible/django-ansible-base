@@ -28,8 +28,9 @@ from ansible_base.lib.utils.validation import validate_url
 logger = logging.getLogger("ansible_base.authentication.authenticator_plugins.oauth_bearer")
 OIDC_DISCOVERY_PATH = "/.well-known/openid-configuration"
 OIDC_DISCOVERY_TIMEOUT_SETTING = "ANSIBLE_BASE_EXTERNAL_OAUTH_DISCOVERY_TIMEOUT"
-OIDC_DISCOVERY_TIMEOUT_DEFAULT = 30
+OIDC_DISCOVERY_TIMEOUT_DEFAULT = 5
 OIDC_DISCOVERY_LOG_BODY_MAX = 512
+DEFAULT_JWKS_URL_TIMEOUT = 5
 
 _BASELINE_ATTRIBUTES = [
     "email",
@@ -198,7 +199,7 @@ class OAuthBearerConfiguration(BaseAuthenticatorConfiguration):
 
     JWKS_URL_TIMEOUT = IntegerField(
         help_text=_("Timeout for JWKS URL requests in seconds."),
-        default=30,
+        default=DEFAULT_JWKS_URL_TIMEOUT,
         allow_null=False,
         validators=[MinValueValidator(1), MaxValueValidator(300)],
         ui_field_label=_("JWKS URL Timeout"),
@@ -719,7 +720,7 @@ class AuthenticatorPlugin(AbstractAuthenticatorPlugin):
         return CachedJWKClient(
             jwks_uri,
             lifespan=configuration.get("JWKS_CACHE_TIMEOUT", 3600),
-            timeout=configuration.get("JWKS_URL_TIMEOUT", 30),
+            timeout=configuration.get("JWKS_URL_TIMEOUT", DEFAULT_JWKS_URL_TIMEOUT),
             ssl_context=ssl_context,
         )
 
