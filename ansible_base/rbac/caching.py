@@ -1,7 +1,6 @@
 import gc
 import logging
 import threading
-import time
 from collections import defaultdict
 from collections.abc import Iterable
 from itertools import islice
@@ -11,7 +10,7 @@ from uuid import UUID
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
-from django.db.utils import IntegrityError, OperationalError
+from django.db.utils import IntegrityError
 
 from ansible_base.rbac.models import ObjectRole, RoleEvaluation, RoleEvaluationUUID, get_evaluation_model
 from ansible_base.rbac.permission_registry import permission_registry
@@ -21,8 +20,6 @@ from ansible_base.rbac.remote import GenericObject
 logger = logging.getLogger('ansible_base.rbac.caching')
 
 RECOMPUTE_CHUNK_SIZE = 1000
-DEADLOCK_RETRIES = 3
-DEADLOCK_RETRY_DELAY = 0.05
 
 
 """
@@ -355,16 +352,6 @@ def compute_team_member_roles(team_ids=None):
             team.member_roles.remove(*to_remove)
 
 
-def _is_deadlock(exc):
-    """Return True if *exc* is Postgres reporting this transaction as a deadlock victim (SQLSTATE 40P01).
-
-    psycopg3 exposes the SQLSTATE as .sqlstate, psycopg2 as .pgcode.
-    """
-    cause = exc.__cause__
-    sqlstate = getattr(cause, 'sqlstate', None) or getattr(cause, 'pgcode', None)
-    return sqlstate == '40P01'
-
-
 def _evaluation_sort_key(evaluation):
     """Sort key in the column order of the unique index one_entry_per_object_permission_and_role.
 
@@ -375,31 +362,10 @@ def _evaluation_sort_key(evaluation):
     return (evaluation.object_id, evaluation.content_type_id, evaluation.codename, evaluation.role_id)
 
 
-def _bulk_create_retrying_deadlocks(model, evaluations, ignore_conflicts):
-    """bulk_create in a savepoint, running it again if Postgres picks it as a deadlock victim.
-
-    Rolling back to the savepoint undoes only this insert and releases the index entries
-    it took, which lets the other transaction finish, then the same insert runs again.
-    A deadlock that also involves rows from earlier statements of the transaction can
-    repeat, so after DEADLOCK_RETRIES the error is raised as before.
-    """
-    for attempt in range(DEADLOCK_RETRIES + 1):
-        try:
-            with transaction.atomic():
-                model.objects.bulk_create(evaluations, ignore_conflicts=ignore_conflicts)
-            return
-        except OperationalError as exc:
-            if not _is_deadlock(exc) or attempt == DEADLOCK_RETRIES:
-                raise
-            logger.warning('Deadlock inserting %d %s rows, retrying (attempt %d)', len(evaluations), model.__name__, attempt + 1)
-            time.sleep(DEADLOCK_RETRY_DELAY * (attempt + 1))
-
-
 def _safe_bulk_create_evaluations(model, evaluations, ignore_conflicts):
-    """bulk_create RoleEvaluation rows, handling concurrent ObjectRole deletions and deadlocks.
+    """bulk_create RoleEvaluation rows, handling concurrent ObjectRole deletions.
 
-    Rows are inserted in unique-index order, see _evaluation_sort_key, and a deadlock
-    is retried, see _bulk_create_retrying_deadlocks.
+    Rows are inserted in unique-index order, see _evaluation_sort_key.
 
     ignore_conflicts (ON CONFLICT DO NOTHING) only suppresses unique-constraint
     violations.  A concurrent ObjectRole deletion causes an FK violation on
@@ -410,7 +376,8 @@ def _safe_bulk_create_evaluations(model, evaluations, ignore_conflicts):
         return
     evaluations = sorted(evaluations, key=_evaluation_sort_key)
     try:
-        _bulk_create_retrying_deadlocks(model, evaluations, ignore_conflicts)
+        with transaction.atomic():
+            model.objects.bulk_create(evaluations, ignore_conflicts=ignore_conflicts)
     except IntegrityError as exc:
         if not _is_stale_objectrole_fk(exc):
             raise
@@ -418,7 +385,8 @@ def _safe_bulk_create_evaluations(model, evaluations, ignore_conflicts):
         evaluations = [e for e in evaluations if e.role_id in existing_role_ids]
         if evaluations:
             try:
-                _bulk_create_retrying_deadlocks(model, evaluations, ignore_conflicts)
+                with transaction.atomic():
+                    model.objects.bulk_create(evaluations, ignore_conflicts=ignore_conflicts)
             except IntegrityError as exc:
                 if not _is_stale_objectrole_fk(exc):
                     raise
