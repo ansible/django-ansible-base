@@ -9,6 +9,19 @@ import uuid
 from django.db.backends.signals import connection_created
 from django.dispatch import receiver
 
+SQL_GUID = -11
+
+
+def _guid_to_uuid(value):
+    """Convert a SQL Server uniqueidentifier result to a Python UUID."""
+    if value is None or isinstance(value, uuid.UUID):
+        return value
+    if isinstance(value, bytes):
+        return uuid.UUID(bytes_le=value)
+    if isinstance(value, str):
+        return uuid.UUID(value)
+    return value
+
 
 @receiver(connection_created)
 def setup_uuid_handling(sender, connection, **kwargs):
@@ -19,22 +32,11 @@ def setup_uuid_handling(sender, connection, **kwargs):
     them to integers, causing OverflowError. This sets up converters to handle
     UUIDs as strings.
     """
-    if connection.vendor == 'microsoft':
-        raw_conn = connection.connection
-        if raw_conn and hasattr(raw_conn, 'add_output_converter'):
-            # SQL_GUID type constant for SQL Server uniqueidentifier
-            SQL_GUID = -11
+    if connection.vendor != 'microsoft':
+        return
 
-            # Output converter: Read uniqueidentifier as Python UUID
-            def guid_to_uuid(value):
-                if value is None:
-                    return None
-                if isinstance(value, uuid.UUID):
-                    return value
-                if isinstance(value, bytes):
-                    return uuid.UUID(bytes_le=value)
-                if isinstance(value, str):
-                    return uuid.UUID(value)
-                return value
+    raw_conn = connection.connection
+    if raw_conn is None or not hasattr(raw_conn, 'add_output_converter'):
+        return
 
-            raw_conn.add_output_converter(SQL_GUID, guid_to_uuid)
+    raw_conn.add_output_converter(SQL_GUID, _guid_to_uuid)

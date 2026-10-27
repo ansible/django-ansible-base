@@ -28,32 +28,27 @@ class CursorWrapper(MSSQLCursorWrapper):
         pyodbc doesn't support natively and would otherwise convert to
         128-bit integers (causing OverflowError).
         """
-        fp = []
-        if params is not None:
-            for p in params:
-                if isinstance(p, str):
-                    if self.driver_charset:
-                        # FreeTDS (and other ODBC drivers?) doesn't support Unicode
-                        # yet, so we need to encode parameters in utf-8
-                        fp.append(smart_str(p, self.driver_charset))
-                    else:
-                        fp.append(p)
+        if params is None:
+            return ()
+        return tuple(self._format_param(param) for param in params)
 
-                elif isinstance(p, bytes):
-                    fp.append(p)
+    def _format_param(self, param):
+        """Normalize one parameter for pyodbc."""
+        if isinstance(param, str):
+            if self.driver_charset:
+                # FreeTDS (and other ODBC drivers?) doesn't support Unicode
+                # yet, so we need to encode parameters in utf-8
+                return smart_str(param, self.driver_charset)
+            return param
 
-                elif isinstance(p, type(True)):
-                    if p:
-                        fp.append(1)
-                    else:
-                        fp.append(0)
+        if isinstance(param, bytes):
+            return param
 
-                elif isinstance(p, uuid.UUID):
-                    # Convert UUID to hex string for pyodbc binding
-                    # SQL Server char(32) column expects 32-character hex string
-                    fp.append(p.hex)
+        if isinstance(param, bool):
+            return int(param)
 
-                else:
-                    fp.append(p)
+        if isinstance(param, uuid.UUID):
+            # SQL Server char(32) columns expect 32-character hexadecimal strings.
+            return param.hex
 
-        return tuple(fp)
+        return param
