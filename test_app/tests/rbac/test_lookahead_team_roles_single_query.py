@@ -7,6 +7,7 @@ from django.test.utils import CaptureQueriesContext
 from ansible_base.rbac.caching import recompute_all_role_evaluations
 from ansible_base.rbac.models import ObjectRole, RoleEvaluation
 from ansible_base.rbac.permission_registry import permission_registry
+from ansible_base.rbac.remote import GenericObject
 from test_app.models import Inventory, Organization, Team
 
 
@@ -35,7 +36,7 @@ def test_team_roles_loaded_with_one_query_per_role(rando, organization, org_inv_
 
     new_inv = Inventory.objects.create(name='inv-new', organization=organization)
     with CaptureQueriesContext(connection) as ctx:
-        org_member_role.needed_cache_updates(object_pk=new_inv.pk, object_ct_id=_inv_ct_id(), target_parents=[(_org_ct_id(), organization.pk)])
+        org_member_role.needed_cache_updates(look_ahead=GenericObject(_inv_ct_id(), new_inv.pk), target_parents=[GenericObject(_org_ct_id(), organization.pk)])
     team_role_queries = [q['sql'] for q in ctx.captured_queries if '"dab_rbac_objectrole"' in q['sql'] and 'dab_rbac_roleteamassignment' in q['sql']]
     assert len(team_role_queries) == 1, team_role_queries
 
