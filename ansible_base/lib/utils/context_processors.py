@@ -1,12 +1,14 @@
 from ansible_base.lib.utils.settings import get_function_from_setting
 
 
-def _check_deprecation(view):
-    """Check if view has deprecation info."""
+def _check_deprecation(view, method):
+    """Resolve handler metadata before view metadata and the legacy deprecation flag."""
     if not view:
         return None
 
-    deprecation_metadata = getattr(view, 'deprecation', None)
+    action = getattr(view, 'action', None) or method.lower()
+    action_method = getattr(view, action, None)
+    deprecation_metadata = getattr(action_method, 'deprecation', None) or getattr(view, 'deprecation', None)
     if deprecation_metadata:
         return deprecation_metadata
 
@@ -32,7 +34,7 @@ def version(request):
     """
     context = getattr(request, 'parser_context', {})
     view = context.get('view')
-    deprecation_metadata = _check_deprecation(view)
+    deprecation_metadata = _check_deprecation(view, getattr(request, 'method', ''))
     deprecated = deprecation_metadata is not None
     deprecated_message = deprecation_metadata['detail'] if deprecation_metadata else ''
     api_version = 'Unknown'
