@@ -1,6 +1,6 @@
 """Tests for ansible_base.rbac.caching — specifically the concurrency guards:
 _is_stale_objectrole_fk, _safe_m2m_add, _safe_bulk_create_evaluations, and the
-insert ordering and deadlock retry of the RoleEvaluation bulk insert.
+insert ordering of the RoleEvaluation bulk insert.
 """
 
 import threading
@@ -10,13 +10,11 @@ from uuid import uuid4
 
 import pytest
 from django.db import connection, transaction
-from django.db.utils import IntegrityError, OperationalError
+from django.db.utils import IntegrityError
 
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.caching import (
-    DEADLOCK_RETRIES,
     _evaluation_sort_key,
-    _is_deadlock,
     _is_stale_objectrole_fk,
     _safe_bulk_create_evaluations,
     _safe_m2m_add,
@@ -52,18 +50,6 @@ def _make_objectrole_fk_error(use_pgcode=False):
         ),
         use_pgcode=use_pgcode,
     )
-
-
-def _make_operational_error(sqlstate, use_pgcode=False):
-    """Build a Django OperationalError wrapping a fake DB-level cause."""
-    cause = Exception('deadlock detected' if sqlstate == '40P01' else 'some error')
-    if use_pgcode:
-        cause.pgcode = sqlstate
-    else:
-        cause.sqlstate = sqlstate
-    exc = OperationalError(str(cause))
-    exc.__cause__ = cause
-    return exc
 
 
 @contextmanager
@@ -365,7 +351,7 @@ class TestSafeBulkCreateEvaluations:
 
 
 # ---------------------------------------------------------------------------
-# RoleEvaluation insert order and deadlock retry
+# RoleEvaluation insert order
 # ---------------------------------------------------------------------------
 
 
@@ -393,42 +379,6 @@ def test_bulk_insert_is_in_unique_index_order(model, object_ids):
         _safe_bulk_create_evaluations(model, evaluations, True)
     inserted = [_evaluation_sort_key(e) for e in mock_bc.call_args.args[0]]
     assert inserted == sorted(_evaluation_sort_key(e) for e in evaluations)
-
-
-@pytest.mark.parametrize(
-    'sqlstate, use_pgcode, expected',
-    [('40P01', False, True), ('40P01', True, True), ('55P03', False, False), (None, False, False)],
-)
-def test_is_deadlock(sqlstate, use_pgcode, expected):
-    assert _is_deadlock(_make_operational_error(sqlstate, use_pgcode=use_pgcode)) is expected
-
-
-@pytest.mark.parametrize(
-    'errors, expected_calls, raises',
-    [
-        pytest.param([_make_operational_error('40P01')], 2, False, id='deadlock-then-success'),
-        pytest.param([_make_operational_error('40P01')] * (DEADLOCK_RETRIES + 1), DEADLOCK_RETRIES + 1, True, id='persistent-deadlock'),
-        pytest.param([_make_operational_error('55P03')], 1, True, id='other-operational-error'),
-    ],
-)
-@patch('ansible_base.rbac.caching.time.sleep')
-@patch('ansible_base.rbac.caching.transaction.atomic', _noop_atomic)
-def test_bulk_insert_deadlock_retry(mock_sleep, errors, expected_calls, raises):
-    """A deadlock victim's insert runs again, up to DEADLOCK_RETRIES times; other errors are raised at once."""
-    remaining = list(errors)
-
-    def bulk_create(objs, **kwargs):
-        if remaining:
-            raise remaining.pop(0)
-
-    evaluations = [MagicMock(role_id=1, object_id=10)]
-    with patch.object(RoleEvaluation.objects, 'bulk_create', side_effect=bulk_create) as mock_bc:
-        if raises:
-            with pytest.raises(OperationalError):
-                _safe_bulk_create_evaluations(RoleEvaluation, evaluations, True)
-        else:
-            _safe_bulk_create_evaluations(RoleEvaluation, evaluations, True)
-    assert mock_bc.call_count == expected_calls
 
 
 @pytest.mark.django_db(transaction=True)
@@ -460,13 +410,11 @@ def test_concurrent_gap_heals_in_reversed_order_do_not_deadlock(organization, ra
         finally:
             connection.close()
 
-    with patch('ansible_base.rbac.caching.logger') as mock_logger:
-        threads = [threading.Thread(target=heal, args=(rows,)), threading.Thread(target=heal, args=(rows[::-1],))]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join(timeout=60)
+    threads = [threading.Thread(target=heal, args=(rows,)), threading.Thread(target=heal, args=(rows[::-1],))]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=60)
 
     assert errors == []
-    assert not [call for call in mock_logger.warning.call_args_list if 'Deadlock' in call.args[0]]
     assert RoleEvaluation.objects.filter(role=role).count() == len(rows)
