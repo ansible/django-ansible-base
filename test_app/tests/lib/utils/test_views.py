@@ -8,6 +8,7 @@ from django.contrib.auth.models import AnonymousUser
 from django.http.response import HttpResponseBase
 from django.test import override_settings
 from django.test.client import RequestFactory
+from django.utils import translation
 from rest_framework.views import APIView
 
 from ansible_base.authentication.views.authenticator import AuthenticatorViewSet
@@ -93,7 +94,42 @@ def test_ansible_base_view_deprecated_view(view_with_headers, mock_request, defa
     initial_response = HttpResponseBase()
     view = DeprecatedView()
     response = view.finalize_response(mock_request, initial_response)
+    assert 'Warning' in response
+    assert response['X-API-Deprecated'] == 'true'
+    assert 'deprecated' in response['X-API-Deprecated-Detail'].lower()
     assert response["Warning"] == "This resource has been deprecated and will be removed in a future release."
+
+
+@pytest.mark.parametrize(
+    'language,translated_message',
+    [('fr', 'Cette ressource est obsolete.'), ('de', 'Diese Ressource ist veraltet.')],
+)
+def test_deprecation_default_headers_use_active_language(mock_request, language, translated_message):
+    """Both default headers resolve their translation when the response is finalized."""
+    default_message = 'This resource has been deprecated and will be removed in a future release.'
+
+    def translate(message):
+        """Simulate translation of the default deprecation message in the active language."""
+        if message == default_message and translation.get_language() == language:
+            return translated_message
+        return message
+
+    with mock.patch('django.utils.translation._trans.gettext', side_effect=translate):
+        with translation.override(language):
+            response = DeprecatedView().finalize_response(mock_request, HttpResponseBase())
+
+    assert response['X-API-Deprecated-Detail'] == translated_message
+    assert response['Warning'] == translated_message
+
+
+def test_ansible_base_view_uses_custom_deprecation_detail(view_with_headers, mock_request):
+    """Explicit metadata supplies the custom detail without emitting the legacy Warning header."""
+    view_with_headers.deprecation = {'detail': 'Use the replacement endpoint instead.'}
+    response = view_with_headers.finalize_response(mock_request, HttpResponseBase())
+
+    assert response['X-API-Deprecated'] == 'true'
+    assert response['X-API-Deprecated-Detail'] == 'Use the replacement endpoint instead.'
+    assert 'Warning' not in response
 
 
 def test_ansible_base_view_deprecated_view_warning_header_override(mock_request):
