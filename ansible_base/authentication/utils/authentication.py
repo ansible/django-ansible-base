@@ -206,7 +206,9 @@ def _handle_email_fallback_strategy(uid: str, email: Union[str, list[str], None]
         raise AuthException(f"Found more than 1 user matching {uid}/{email}, unable to determine which user to merge with!")
     # PROPOSAL FLOW: Are there multiple AAP users with this Email? No only 1
     elif user_count == 1:
-        return existing_user_match.first().username
+        existing_user = existing_user_match.first()
+        logger.info(f"Authenticator {authenticator.name} is linking user {uid} to existing user {existing_user.username} via email {normalized_email}")
+        return existing_user.username
     # PROPOSAL FLOW: Does an AAP User with this email exist? No
     else:
         new_username = get_local_username({'username': uid})
