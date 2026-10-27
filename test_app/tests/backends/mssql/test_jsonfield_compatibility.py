@@ -15,6 +15,7 @@ from django.test import TestCase, TransactionTestCase
 from ansible_base.activitystream.models import Entry
 from ansible_base.authentication.models import Authenticator, AuthenticatorUser
 from ansible_base.lib.utils.db import bulk_create_db_safe
+from ansible_base.lib.utils.encryption import ansible_encryption
 
 
 class JSONFieldBasicTest(TestCase):
@@ -464,6 +465,7 @@ class JSONFieldBulkOperationsTest(TransactionTestCase):
                 provider=self.auth,
                 uid=f'bulk_{i}',
                 claims={'index': i, 'name': f'User {i}'},
+                extra_data=ansible_encryption.encrypt_string({}),
             )
             for i in range(10)
         ]
