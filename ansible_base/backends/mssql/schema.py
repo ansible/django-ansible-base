@@ -50,38 +50,9 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
         Note: If table was created via create_model(), the column is already
         the correct type. We only need to ALTER if the table existed beforehand.
         """
-        # Get the fields being indexed
+        # Convert indexed TextFields before asking SQL Server to create the index.
         for field_name in index.fields:
-            # Handle F() expressions and plain field names
-            if hasattr(field_name, 'name'):
-                field_name = field_name.name
-
-            # Remove leading - for descending order
-            field_name = field_name.lstrip('-')
-
-            try:
-                field = model._meta.get_field(field_name)
-                if isinstance(field, models.TextField):
-                    # Check if column already exists and what type it is
-                    table_name = model._meta.db_table
-                    column_name = field.column
-
-                    # Query the actual column type
-                    column_type = self._get_column_type(table_name, column_name)
-
-                    if column_type and 'max' in column_type.lower():
-                        # Column exists as nvarchar(max), needs conversion
-                        max_length = self._determine_max_length(field, model)
-                        null_clause = "NULL" if field.null else "NOT NULL"
-
-                        sql = f"ALTER TABLE [{table_name}] ALTER COLUMN [{column_name}] nvarchar({max_length}) {null_clause}"
-                        self.execute(sql)
-
-                        # Update the field definition for future operations
-                        field.__class__ = models.CharField
-                        field.max_length = max_length
-            except Exception:
-                pass
+            self._convert_existing_textfield_column(model, field_name)
 
         return super().add_index(model, index)
 
@@ -97,31 +68,36 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
         # Only handle UniqueConstraints
         if isinstance(constraint, models.UniqueConstraint):
             for field_name in constraint.fields:
-                try:
-                    field = model._meta.get_field(field_name)
-                    if isinstance(field, models.TextField):
-                        # Check if column already exists and what type it is
-                        table_name = model._meta.db_table
-                        column_name = field.column
-
-                        # Query the actual column type
-                        column_type = self._get_column_type(table_name, column_name)
-
-                        if column_type and 'max' in column_type.lower():
-                            # Column exists as nvarchar(max), needs conversion
-                            max_length = self._determine_max_length(field, model)
-                            null_clause = "NULL" if field.null else "NOT NULL"
-
-                            sql = f"ALTER TABLE [{table_name}] ALTER COLUMN [{column_name}] nvarchar({max_length}) {null_clause}"
-                            self.execute(sql)
-
-                            # Update the field definition for future operations
-                            field.__class__ = models.CharField
-                            field.max_length = max_length
-                except Exception:
-                    pass
+                self._convert_existing_textfield_column(model, field_name)
 
         return super().add_constraint(model, constraint)
+
+    def _convert_existing_textfield_column(self, model, field_name):
+        """Bound an existing nvarchar(max) TextField before indexing it."""
+        if hasattr(field_name, 'name'):
+            field_name = field_name.name
+        field_name = field_name.lstrip('-')
+
+        try:
+            field = model._meta.get_field(field_name)
+            if not isinstance(field, models.TextField):
+                return
+
+            table_name = model._meta.db_table
+            column_name = field.column
+            column_type = self._get_column_type(table_name, column_name)
+            if not column_type or 'max' not in column_type.lower():
+                return
+
+            max_length = self._determine_max_length(field, model)
+            null_clause = "NULL" if field.null else "NOT NULL"
+            sql = f"ALTER TABLE [{table_name}] ALTER COLUMN [{column_name}] nvarchar({max_length}) {null_clause}"
+            self.execute(sql)
+
+            field.__class__ = models.CharField
+            field.max_length = max_length
+        except Exception:
+            pass
 
     def column_sql(self, model, field, include_default=False):
         """
@@ -198,36 +174,34 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
         Returns:
             bool: True if the TextField needs conversion to CharField
         """
-        # Check direct field attributes
-        if getattr(field, 'db_index', False):
+        if getattr(field, 'db_index', False) or getattr(field, 'unique', False):
             return True
 
-        if getattr(field, 'unique', False):
-            return True
+        model_meta = getattr(model, '_meta', None)
+        if model_meta is None:
+            return False
 
-        # Check model Meta constraints and indexes
-        if hasattr(model, '_meta'):
-            # Check legacy unique_together
-            for unique_fields in getattr(model._meta, 'unique_together', []):
-                if field.name in unique_fields:
-                    return True
+        field_name = field.name
+        return (
+            self._field_in_unique_together(field_name, model_meta)
+            or self._field_in_unique_constraints(field_name, model_meta)
+            or self._field_in_indexes(field_name, model_meta)
+        )
 
-            # Check UniqueConstraint in Meta.constraints
-            for constraint in getattr(model._meta, 'constraints', []):
-                if isinstance(constraint, models.UniqueConstraint):
-                    # Handle both field names and F() expressions
-                    constraint_fields = getattr(constraint, 'fields', [])
-                    if field.name in constraint_fields:
-                        return True
+    @staticmethod
+    def _field_in_unique_together(field_name, model_meta):
+        return any(field_name in fields for fields in getattr(model_meta, 'unique_together', []))
 
-            # Check indexes in Meta.indexes
-            for index in getattr(model._meta, 'indexes', []):
-                # Handle both field names and F() expressions
-                index_fields = getattr(index, 'fields', [])
-                if field.name in index_fields:
-                    return True
+    @staticmethod
+    def _field_in_unique_constraints(field_name, model_meta):
+        return any(
+            isinstance(constraint, models.UniqueConstraint) and field_name in getattr(constraint, 'fields', [])
+            for constraint in getattr(model_meta, 'constraints', [])
+        )
 
-        return False
+    @staticmethod
+    def _field_in_indexes(field_name, model_meta):
+        return any(field_name in getattr(index, 'fields', []) for index in getattr(model_meta, 'indexes', []))
 
     def _determine_max_length(self, field, model):
         """
