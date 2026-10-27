@@ -85,7 +85,87 @@ def test_create_assignments_chunks_large_mssql_batches(monkeypatch, actor_field)
     audit_log.assert_called_once_with(assignments, set())
 
 
+def test_find_assignments_returns_empty_when_no_roles_match():
+    resolved = [SimpleNamespace(role_definition=SimpleNamespace(pk=1), object_id='1', actor=SimpleNamespace(pk=1))]
+    model = SimpleNamespace(objects=SimpleNamespace(filter=Mock()))
+
+    assert pipeline._find_assignments(resolved, {}, model, 'user') == []
+    model.objects.filter.assert_not_called()
+
+
+def test_find_assignments_returns_matching_objects_for_small_batches(monkeypatch):
+    monkeypatch.setattr(pipeline, 'connection', SimpleNamespace(vendor='postgresql'))
+    role_definition = SimpleNamespace(pk=1)
+    actor = SimpleNamespace(pk=2)
+    resolved = [pipeline.ResolvedAssignment(role_definition, actor, None, '3', '')]
+    object_role = SimpleNamespace(pk=4)
+    expected = [SimpleNamespace(pk=5)]
+    model = SimpleNamespace(objects=SimpleNamespace(filter=Mock(return_value=expected)))
+
+    result = pipeline._find_assignments(resolved, {(1, '3'): object_role}, model, 'user')
+
+    assert result == expected
+    model.objects.filter.assert_called_once()
+
+
+def test_find_assignments_chunks_large_mssql_batches(monkeypatch):
+    monkeypatch.setattr(pipeline, 'connection', SimpleNamespace(vendor='microsoft'))
+    role_definition = SimpleNamespace(pk=1)
+    resolved = [
+        pipeline.ResolvedAssignment(role_definition, SimpleNamespace(pk=index), None, str(index), '')
+        for index in range(1001)
+    ]
+    lookup = {(1, item.object_id): SimpleNamespace(pk=index) for index, item in enumerate(resolved)}
+    first_batch = [SimpleNamespace(pk=1)]
+    second_batch = [SimpleNamespace(pk=2)]
+    model = SimpleNamespace(objects=SimpleNamespace(filter=Mock(side_effect=[first_batch, second_batch])))
+
+    result = pipeline._find_assignments(resolved, lookup, model, 'user')
+
+    assert result == first_batch + second_batch
+    assert model.objects.filter.call_count == 2
+
+
 def _record_created(model, objects):
     for index, obj in enumerate(objects, start=1):
         obj.pk = index
     model.objects.objects = list(objects)
+
+
+def test_find_assignments_returns_empty_when_no_lookup_matches():
+    resolved = [pipeline.ResolvedAssignment(SimpleNamespace(pk=1), SimpleNamespace(pk=2), None, '3', '')]
+    model = SimpleNamespace(objects=SimpleNamespace(filter=Mock()))
+
+    assert pipeline._find_assignments(resolved, {}, model, 'user') == []
+    model.objects.filter.assert_not_called()
+
+
+def test_find_assignments_uses_one_filter_for_small_batches(monkeypatch):
+    monkeypatch.setattr(pipeline, 'connection', SimpleNamespace(vendor='postgresql'))
+    resolved = [pipeline.ResolvedAssignment(SimpleNamespace(pk=1), SimpleNamespace(pk=2), None, '3', '')]
+    role = SimpleNamespace(pk=4)
+    found = [SimpleNamespace(pk=5)]
+    manager = SimpleNamespace(filter=Mock(return_value=found))
+
+    result = pipeline._find_assignments(resolved, {(1, '3'): role}, SimpleNamespace(objects=manager), 'user')
+
+    assert result == found
+    manager.filter.assert_called_once()
+
+
+def test_find_assignments_chunks_large_mssql_batches(monkeypatch):
+    monkeypatch.setattr(pipeline, 'connection', SimpleNamespace(vendor='microsoft'))
+    role_definition = SimpleNamespace(pk=1)
+    resolved = [
+        pipeline.ResolvedAssignment(role_definition, SimpleNamespace(pk=index), None, str(index), '')
+        for index in range(1001)
+    ]
+    lookup = {(1, assignment.object_id): SimpleNamespace(pk=index) for index, assignment in enumerate(resolved)}
+    first_batch = [SimpleNamespace(pk=1)]
+    second_batch = [SimpleNamespace(pk=2)]
+    manager = SimpleNamespace(filter=Mock(side_effect=[first_batch, second_batch]))
+
+    result = pipeline._find_assignments(resolved, lookup, SimpleNamespace(objects=manager), 'user')
+
+    assert result == first_batch + second_batch
+    assert manager.filter.call_count == 2

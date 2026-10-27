@@ -5,7 +5,7 @@ Tests the TextField-to-CharField conversion logic.
 """
 
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from django.db import models
 from django.test import TestCase
@@ -304,3 +304,63 @@ class TestSchemaEditorConstraints(TestCase):
         execute.assert_called_once_with('ALTER TABLE [test_table] ALTER COLUMN [description] nvarchar(450) NULL')
         self.assertIsInstance(self.field, models.CharField)
         add_index.assert_called_once_with(self.model, index)
+
+    def test_create_model_converts_indexed_textfield_before_parent_call(self):
+        field = models.TextField(db_index=True)
+        field.set_attributes_from_name('name')
+        model = SimpleNamespace(_meta=SimpleNamespace(local_fields=[field]))
+        with patch.object(MSSQLSchemaEditor, 'create_model', return_value='parent result') as create_model:
+            result = self.schema_editor.create_model(model)
+
+        self.assertEqual(result, 'parent result')
+        self.assertIsInstance(field, models.CharField)
+        self.assertEqual(field.max_length, 255)
+        create_model.assert_called_once_with(model)
+
+    def test_column_sql_converts_indexed_textfield(self):
+        field = models.TextField(db_index=True)
+        field.set_attributes_from_name('description')
+        model = SimpleNamespace(_meta=SimpleNamespace(label='test.Model', unique_together=[], constraints=[], indexes=[]))
+        with patch.object(MSSQLSchemaEditor, 'column_sql', return_value=('parent sql', [])) as column_sql:
+            result = self.schema_editor.column_sql(model, field, include_default=True)
+
+        self.assertEqual(result, ('parent sql', []))
+        _, converted_field, include_default = column_sql.call_args.args
+        self.assertIsInstance(converted_field, models.CharField)
+        self.assertEqual(converted_field.max_length, 450)
+        self.assertTrue(include_default)
+
+    def test_column_sql_delegates_unconverted_field(self):
+        field = models.CharField(max_length=80)
+        model = SimpleNamespace(_meta=SimpleNamespace(label='test.Model'))
+        with patch.object(MSSQLSchemaEditor, 'column_sql', return_value=('parent sql', [])) as column_sql:
+            result = self.schema_editor.column_sql(model, field, include_default=False)
+
+        self.assertEqual(result, ('parent sql', []))
+        self.assertIs(column_sql.call_args.args[1], field)
+
+    def test_get_column_type_formats_information_schema_results(self):
+        cursor = Mock()
+        connection = MagicMock()
+        connection.cursor.return_value.__enter__.return_value = cursor
+        self.schema_editor.connection = connection
+
+        for row, expected in (
+            (('nvarchar', -1), 'nvarchar(max)'),
+            (('nvarchar', 450), 'nvarchar(450)'),
+            (('int', 0), 'int'),
+            (None, None),
+        ):
+            cursor.fetchone.return_value = row
+            self.assertEqual(self.schema_editor._get_column_type('test_table', 'description'), expected)
+
+        self.assertEqual(cursor.execute.call_count, 4)
+
+    def test_get_column_type_returns_none_on_database_error(self):
+        cursor = Mock()
+        cursor.execute.side_effect = RuntimeError('database unavailable')
+        connection = MagicMock()
+        connection.cursor.return_value.__enter__.return_value = cursor
+        self.schema_editor.connection = connection
+
+        self.assertIsNone(self.schema_editor._get_column_type('test_table', 'description'))
