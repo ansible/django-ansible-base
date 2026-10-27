@@ -523,12 +523,14 @@ def bulk_create_db_safe(model_class, objects, ignore_conflicts=True, using=None)
         Like bulk_create(), this function does NOT fire post_save signals.
         Callers are responsible for firing signals if needed.
     """
-    # Normalize using to always have a database alias
+    # Use the model manager when Django's router should choose the database.
+    # Keep this path as a manager call so callers that patch `objects.bulk_create`
+    # retain the same behavior as a direct bulk_create call.
     if using is None:
-        using = DEFAULT_DB_ALIAS
-
-    # Get the manager with database alias
-    manager = model_class.objects.using(using)
+        manager = model_class.objects
+        using = manager.db
+    else:
+        manager = model_class.objects.using(using)
 
     # Get connection for the specified database
     db_connection = connections[using]
@@ -574,7 +576,7 @@ def bulk_create_db_safe(model_class, objects, ignore_conflicts=True, using=None)
             return created
 
         # Backend supports returning PKs - use standard bulk_create
-        created = manager.bulk_create(objects, ignore_conflicts=False)
+        created = manager.bulk_create(objects, ignore_conflicts=False) or []
         for obj in created:
             if obj._state.db is None:
                 obj._state.db = using
@@ -583,7 +585,7 @@ def bulk_create_db_safe(model_class, objects, ignore_conflicts=True, using=None)
     # Handle ignore_conflicts=True
     if db_connection.features.supports_ignore_conflicts:
         # PostgreSQL: use native support (no behavior change)
-        created = manager.bulk_create(objects, ignore_conflicts=True)
+        created = manager.bulk_create(objects, ignore_conflicts=True) or []
         # Ensure _state.db is set correctly for m2m operations
         for obj in created:
             obj._state.db = using
