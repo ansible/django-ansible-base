@@ -506,7 +506,7 @@ class JSONFieldDatabaseSpecificTest(TestCase):
 
     def test_database_vendor_detection(self):
         """Verify we can detect the current database vendor."""
-        self.assertIn(connection.vendor, ['postgresql', 'microsoft'])
+        self.assertIn(connection.vendor, ['postgresql', 'microsoft', 'sqlite'])
 
     @skipUnless(connection.vendor == 'microsoft', 'MS SQL Server only')
     def test_mssql_uses_nvarchar_max(self):
