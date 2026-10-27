@@ -4,8 +4,12 @@ from unittest.mock import Mock
 
 import pytest
 from django.utils.encoding import smart_str
+from mssql.operations import DatabaseOperations as MSSQLDatabaseOperations
 
+from ansible_base.backends.mssql.base import DatabaseWrapper
 from ansible_base.backends.mssql.cursor_override import CursorWrapper
+from ansible_base.backends.mssql.operations import DatabaseOperations
+from ansible_base.backends.mssql.schema import DatabaseSchemaEditor
 from ansible_base.backends.mssql.signals import setup_uuid_handling
 
 
@@ -39,6 +43,31 @@ def test_format_params_converts_booleans_and_uuids():
     value = uuid.uuid4()
 
     assert make_cursor_wrapper().format_params([True, False, value]) == (1, 0, value.hex)
+
+
+def test_database_wrapper_uses_custom_backend_components():
+    assert DatabaseWrapper.SchemaEditorClass is DatabaseSchemaEditor
+    assert DatabaseWrapper.ops_class is DatabaseOperations
+    assert 'JSONField' not in DatabaseWrapper.data_type_check_constraints
+    assert DatabaseWrapper.data_type_check_constraints['PositiveIntegerField'] == '[%(column)s] >= 0'
+
+
+def test_database_wrapper_create_cursor_uses_uuid_cursor_wrapper():
+    wrapper = DatabaseWrapper.__new__(DatabaseWrapper)
+    raw_cursor = Mock()
+    wrapper.connection = Mock()
+    wrapper.connection.cursor.return_value = raw_cursor
+    wrapper.driver_charset = None
+
+    cursor = wrapper.create_cursor()
+
+    assert isinstance(cursor, CursorWrapper)
+    assert cursor.cursor is raw_cursor
+    assert cursor.connection is wrapper
+
+
+def test_database_operations_inherits_mssql_defaults():
+    assert issubclass(DatabaseOperations, MSSQLDatabaseOperations)
 
 
 def test_setup_uuid_handling_registers_guid_converter():
