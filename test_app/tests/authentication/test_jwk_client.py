@@ -1,12 +1,15 @@
 import hashlib
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 import jwt
 import pytest
 from django.core.cache import cache
 from jwt.exceptions import PyJWKClientError, PyJWKError
 
-from ansible_base.authentication.jwk_client import CachedJWKClient
+from ansible_base.authentication.jwk_client import (
+    CachedJWKClient,
+    JWKSFetchTimeoutError,
+)
 
 
 def _token(kid="key-id"):
@@ -51,6 +54,17 @@ def test_cached_jwk_client_rejects_tokens_without_a_kid():
     token = jwt.encode({"sub": "subject"}, "not-used", algorithm="HS256")
     with pytest.raises(PyJWKClientError, match="missing kid"):
         client.get_signing_key_from_jwt(token)
+
+
+@pytest.mark.parametrize(
+    ("timeout", "expected_wait", "expected_lease"),
+    [(1, 1, 2), (30, 30, 31)],
+)
+def test_cached_jwk_client_uses_jwks_timeout_for_fetch_coordination(timeout, expected_wait, expected_lease):
+    client = CachedJWKClient("https://issuer.example.com/keys", timeout=timeout)
+
+    assert client.fetch_wait_seconds == expected_wait
+    assert client.fetch_lease_seconds == expected_lease
 
 
 def test_cached_jwk_client_discards_invalid_cached_jwk_and_refetches():
@@ -196,7 +210,7 @@ def test_cached_jwk_client_scopes_jwk_set_cache_by_provider_uri():
     assert fetch_data.call_count == 2
 
 
-def test_cached_jwk_client_blocks_second_forced_refresh_during_cooldown():
+def test_cached_jwk_client_times_out_second_forced_refresh_during_cooldown():
     client = CachedJWKClient("https://issuer.example.com/keys")
     document = {"keys": []}
     with (
@@ -204,7 +218,11 @@ def test_cached_jwk_client_blocks_second_forced_refresh_during_cooldown():
         patch("ansible_base.authentication.jwk_client.PyJWKSet.from_dict", return_value=Mock()),
     ):
         client.get_jwk_set(refresh=True)
-        with pytest.raises(PyJWKClientError, match="refresh is already in progress"):
+        with (
+            patch("ansible_base.authentication.jwk_client.time.monotonic", side_effect=[0, client.fetch_wait_seconds]),
+            patch("ansible_base.authentication.jwk_client.time.sleep"),
+            pytest.raises(JWKSFetchTimeoutError, match="Timed out waiting"),
+        ):
             client.get_jwk_set(refresh=True)
 
     assert client.forced_refresh_cooldown == 60
@@ -241,12 +259,116 @@ def test_cached_jwk_client_rejects_a_non_object_jwk_set():
             client.get_jwk_set()
 
 
-def test_cached_jwk_client_rejects_a_second_jwk_fetch_while_the_first_is_locked():
+def test_cached_jwk_client_reuses_jwk_set_populated_by_the_fetch_lock_owner():
     client = CachedJWKClient("https://issuer.example.com/keys")
-    cache.set(client._fetch_lock_key, True, timeout=client.forced_refresh_cooldown)
+    document = {"keys": []}
+    cache.set(client._fetch_lock_key, "other-request", timeout=client.fetch_lease_seconds)
 
-    with pytest.raises(PyJWKClientError, match="fetch is already in progress"):
+    def complete_peer_fetch(_delay):
+        cache.set(client._jwk_set_cache_key, document, timeout=client.cache_timeout)
+
+    with (
+        patch("ansible_base.authentication.jwk_client.random.uniform", return_value=0.01),
+        patch("ansible_base.authentication.jwk_client.time.sleep", side_effect=complete_peer_fetch),
+        patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data") as fetch_data,
+        patch("ansible_base.authentication.jwk_client.PyJWKSet.from_dict", return_value=Mock()) as from_dict,
+    ):
         client.get_jwk_set()
+
+    fetch_data.assert_not_called()
+    from_dict.assert_called_once_with(document)
+
+
+def test_cached_jwk_client_raises_availability_error_when_fetch_lock_owner_does_not_finish():
+    client = CachedJWKClient("https://issuer.example.com/keys")
+    cache.set(client._fetch_lock_key, "other-request", timeout=client.fetch_lease_seconds)
+
+    with (
+        patch("ansible_base.authentication.jwk_client.time.monotonic", side_effect=[0, client.fetch_wait_seconds]),
+        patch("ansible_base.authentication.jwk_client.time.sleep"),
+        pytest.raises(JWKSFetchTimeoutError, match="Timed out waiting"),
+    ):
+        client.get_jwk_set()
+
+
+def test_cached_jwk_client_exponentially_backs_off_fetch_retries():
+    with (
+        patch("ansible_base.authentication.jwk_client.time.monotonic", return_value=0),
+        patch("ansible_base.authentication.jwk_client.random.uniform", side_effect=[0.02, 0.04]) as uniform,
+        patch("ansible_base.authentication.jwk_client.time.sleep") as sleep,
+    ):
+        CachedJWKClient._sleep_before_jwk_set_retry(1, retry_count=0)
+        CachedJWKClient._sleep_before_jwk_set_retry(1, retry_count=1)
+
+    assert uniform.call_args_list == [call(0.01, 0.02), call(0.02, 0.04)]
+    assert sleep.call_args_list == [call(0.02), call(0.04)]
+
+
+def test_cached_jwk_client_waits_for_an_active_fetch_before_forced_refresh():
+    client = CachedJWKClient("https://issuer.example.com/keys")
+    document = {"keys": []}
+    cache.set(client._fetch_lock_key, "other-request", timeout=client.fetch_lease_seconds)
+
+    def complete_peer_fetch(_delay):
+        cache.delete(client._fetch_lock_key)
+
+    with (
+        patch("ansible_base.authentication.jwk_client.random.uniform", return_value=0.01),
+        patch("ansible_base.authentication.jwk_client.time.sleep", side_effect=complete_peer_fetch),
+        patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data", return_value=document) as fetch_data,
+        patch("ansible_base.authentication.jwk_client.PyJWKSet.from_dict", return_value=Mock()),
+    ):
+        client.get_jwk_set(refresh=True)
+
+    fetch_data.assert_called_once_with()
+
+
+def test_cached_jwk_client_waits_for_refresh_cooldown_before_forced_refresh():
+    client = CachedJWKClient("https://issuer.example.com/keys")
+    document = {"keys": []}
+    cache.set(client._refresh_lock_key, True, timeout=client.forced_refresh_cooldown)
+
+    def expire_refresh_cooldown(_delay):
+        cache.delete(client._refresh_lock_key)
+
+    with (
+        patch("ansible_base.authentication.jwk_client.random.uniform", return_value=0.01),
+        patch("ansible_base.authentication.jwk_client.time.sleep", side_effect=expire_refresh_cooldown),
+        patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data", return_value=document) as fetch_data,
+        patch("ansible_base.authentication.jwk_client.PyJWKSet.from_dict", return_value=Mock()),
+    ):
+        client.get_jwk_set(refresh=True)
+
+    fetch_data.assert_called_once_with()
+
+
+def test_cached_jwk_client_raises_availability_error_when_forced_refresh_wait_expires():
+    client = CachedJWKClient("https://issuer.example.com/keys")
+    cache.set(client._fetch_lock_key, "other-request", timeout=client.fetch_lease_seconds)
+
+    with (
+        patch("ansible_base.authentication.jwk_client.time.monotonic", side_effect=[0, client.fetch_wait_seconds]),
+        patch("ansible_base.authentication.jwk_client.time.sleep"),
+        pytest.raises(JWKSFetchTimeoutError, match="Timed out waiting"),
+    ):
+        client.get_jwk_set(refresh=True)
+
+
+def test_cached_jwk_client_does_not_release_a_replaced_fetch_lease():
+    client = CachedJWKClient("https://issuer.example.com/keys")
+    document = {"keys": []}
+
+    def replace_fetch_lease():
+        cache.set(client._fetch_lock_key, "new-owner", timeout=client.fetch_lease_seconds)
+        return document
+
+    with (
+        patch("ansible_base.authentication.jwk_client.PyJWKClient.fetch_data", side_effect=replace_fetch_lease),
+        patch("ansible_base.authentication.jwk_client.PyJWKSet.from_dict", return_value=Mock()),
+    ):
+        client.get_jwk_set()
+
+    assert cache.get(client._fetch_lock_key) == "new-owner"
 
 
 def test_cached_jwk_client_refreshes_and_caches_a_signing_key():
@@ -277,7 +399,7 @@ def test_cached_jwk_client_keeps_a_cached_signing_key_when_refresh_is_in_cooldow
     cache.set(client._signing_key_cache_key("key-id"), cached_key)
     cache.set(client._refresh_lock_key, True, timeout=client.forced_refresh_cooldown)
 
-    with pytest.raises(PyJWKClientError, match="refresh is already in progress"):
+    with pytest.raises(PyJWKClientError, match="refresh is on cooldown"):
         client.refresh_signing_key_from_jwt(token)
 
     assert cache.get(client._signing_key_cache_key("key-id")) == cached_key
@@ -301,8 +423,8 @@ def test_cached_jwk_client_rejects_unknown_kid_when_shared_refresh_is_throttled(
         patch.object(
             client,
             "get_signing_keys",
-            side_effect=[[], PyJWKClientError("JWKS refresh is already in progress")],
+            side_effect=[[], PyJWKClientError("JWKS refresh is on cooldown")],
         ),
     ):
-        with pytest.raises(PyJWKClientError, match="refresh is already in progress"):
+        with pytest.raises(PyJWKClientError, match="refresh is on cooldown"):
             client.get_signing_key("missing")

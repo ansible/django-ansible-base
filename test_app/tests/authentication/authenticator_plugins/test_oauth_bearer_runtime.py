@@ -13,6 +13,7 @@ from urllib3.exceptions import InsecureRequestWarning
 
 from ansible_base.authentication.authenticator_plugins.oauth_bearer import AuthenticatorPlugin
 from ansible_base.authentication.bearer_authentication import BearerTokenValidationError
+from ansible_base.authentication.jwk_client import JWKSFetchTimeoutError
 
 
 def _claims(configuration, **overrides):
@@ -218,7 +219,7 @@ def test_oauth_bearer_plugin_defaults_missing_optional_configuration_for_existin
     assert decode_token.call_args.kwargs["algorithms"] == ["RS256"]
     assert decode_token.call_args.kwargs["audience"] == configuration["AUDIENCE"]
     assert decode_token.call_args.kwargs["issuer"] == configuration["ISSUER_URL"]
-    jwk_client.assert_called_once_with(configuration["JWKS_URI"], lifespan=3600, timeout=30, ssl_context=None)
+    jwk_client.assert_called_once_with(configuration["JWKS_URI"], lifespan=3600, timeout=5, ssl_context=None)
     update_claims.assert_called_once_with(user, oauth_bearer_authenticator, ["operators"], attrs=claims)
 
 
@@ -756,8 +757,8 @@ def test_oauth_bearer_plugin_classifies_expired_tokens(oauth_bearer_authenticato
 
 
 @pytest.mark.django_db
-def test_oauth_bearer_plugin_classifies_unavailable_jwks_provider(oauth_bearer_authenticator):
-    """An unavailable JWKS endpoint has a safe client-visible failure category."""
+def test_oauth_bearer_plugin_classifies_coordinated_jwks_fetch_timeout_as_provider_unavailable(oauth_bearer_authenticator):
+    """A peer JWKS fetch timeout is not evidence that the bearer token is invalid."""
     plugin = AuthenticatorPlugin(database_instance=oauth_bearer_authenticator)
     with (
         patch("ansible_base.authentication.authenticator_plugins.oauth_bearer.CachedJWKClient") as jwk_client,
@@ -766,7 +767,7 @@ def test_oauth_bearer_plugin_classifies_unavailable_jwks_provider(oauth_bearer_a
             return_value=_routing_claims(oauth_bearer_authenticator.configuration),
         ),
     ):
-        jwk_client.return_value.get_signing_key_from_jwt.side_effect = jwt.PyJWKClientConnectionError("unavailable")
+        jwk_client.return_value.get_signing_key_from_jwt.side_effect = JWKSFetchTimeoutError("timed out")
         with pytest.raises(BearerTokenValidationError) as exc_info:
             plugin.authenticate(token="token")
 
