@@ -233,8 +233,8 @@ def _mssql_advisory_lock(lock_id, shared=False, wait=True, lock_session_timeout_
             cursor.execute(sql, [resource_name, lock_mode, timeout])
             row = cursor.fetchone()
             result = row[0] if row else -999
-        except Exception as e:
-            logger.error(f'MS SQL sp_getapplock query failed for resource {resource_name}: {e}')
+        except Exception:
+            logger.exception(f'MS SQL sp_getapplock query failed for resource {resource_name}')
             result = -999
 
         if result >= 0:

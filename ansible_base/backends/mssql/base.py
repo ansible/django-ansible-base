@@ -43,11 +43,12 @@ class DatabaseWrapper(MSSQLDatabaseWrapper):
     # Override to remove ISJSON constraint from JSONField
     # This allows storing encrypted data in JSONField columns
     # (encrypted data is a string, not valid JSON, so would fail ISJSON check)
+    positive_field_constraint = '[%(column)s] >= 0'
     data_type_check_constraints = {
         # 'JSONField': '(ISJSON ("%(column)s") = 1)',  # Removed - breaks encrypted JSONFields
-        'PositiveIntegerField': '[%(column)s] >= 0',
-        'PositiveSmallIntegerField': '[%(column)s] >= 0',
-        'PositiveBigIntegerField': '[%(column)s] >= 0',
+        'PositiveIntegerField': positive_field_constraint,
+        'PositiveSmallIntegerField': positive_field_constraint,
+        'PositiveBigIntegerField': positive_field_constraint,
     }
 
     def create_cursor(self, name=None):
