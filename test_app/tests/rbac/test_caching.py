@@ -1,19 +1,28 @@
-"""Tests for ansible_base.rbac.caching — specifically the TOCTOU race-condition
-guards: _is_stale_objectrole_fk, _safe_m2m_add, and _safe_bulk_create_evaluations.
+"""Tests for ansible_base.rbac.caching — specifically the concurrency guards:
+_is_stale_objectrole_fk, _safe_m2m_add, _safe_bulk_create_evaluations, and the
+insert ordering and deadlock retry of the RoleEvaluation bulk insert.
 """
 
+import threading
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pytest
-from django.db.utils import IntegrityError
+from django.db import connection, transaction
+from django.db.utils import IntegrityError, OperationalError
 
+from ansible_base.rbac import permission_registry
 from ansible_base.rbac.caching import (
+    DEADLOCK_RETRIES,
+    _evaluation_sort_key,
+    _is_deadlock,
     _is_stale_objectrole_fk,
     _safe_bulk_create_evaluations,
     _safe_m2m_add,
 )
-from ansible_base.rbac.models import RoleEvaluation
+from ansible_base.rbac.models import RoleEvaluation, RoleEvaluationUUID
+from test_app.models import Inventory
 
 # ---------------------------------------------------------------------------
 # Helpers to build mock psycopg-style exceptions
@@ -43,6 +52,18 @@ def _make_objectrole_fk_error(use_pgcode=False):
         ),
         use_pgcode=use_pgcode,
     )
+
+
+def _make_operational_error(sqlstate, use_pgcode=False):
+    """Build a Django OperationalError wrapping a fake DB-level cause."""
+    cause = Exception('deadlock detected' if sqlstate == '40P01' else 'some error')
+    if use_pgcode:
+        cause.pgcode = sqlstate
+    else:
+        cause.sqlstate = sqlstate
+    exc = OperationalError(str(cause))
+    exc.__cause__ = cause
+    return exc
 
 
 @contextmanager
@@ -341,3 +362,111 @@ class TestSafeBulkCreateEvaluations:
             _safe_bulk_create_evaluations(RoleEvaluation, [eval1], False)
 
         assert call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# RoleEvaluation insert order and deadlock retry
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize('model', [RoleEvaluation, RoleEvaluationUUID])
+def test_sort_key_matches_unique_constraint(model):
+    """The sort key must follow the column order of the unique index the inserts lock on."""
+    constraint = next(c for c in model._meta.constraints if c.name.startswith('one_entry_per_object_permission_and_role'))
+    columns = [model._meta.get_field(name).attname for name in constraint.fields]
+    evaluation = model(codename='view_inventory', content_type_id=7, object_id=uuid4() if model is RoleEvaluationUUID else 42, role_id=3)
+    assert _evaluation_sort_key(evaluation) == tuple(getattr(evaluation, column) for column in columns)
+
+
+@pytest.mark.parametrize('model, object_ids', [(RoleEvaluation, [3, 1, 2]), (RoleEvaluationUUID, [uuid4(), uuid4(), uuid4()])])
+@patch('ansible_base.rbac.caching.transaction.atomic', _noop_atomic)
+def test_bulk_insert_is_in_unique_index_order(model, object_ids):
+    """Whatever order the evaluations are collected in, they are inserted in unique-index order."""
+    evaluations = [
+        model(codename=codename, content_type_id=ct_id, object_id=object_id, role_id=role_id)
+        for role_id in (5, 4)
+        for codename in ('view_inventory', 'change_inventory')
+        for ct_id in (2, 1)
+        for object_id in object_ids
+    ]
+    with patch.object(model.objects, 'bulk_create') as mock_bc:
+        _safe_bulk_create_evaluations(model, evaluations, True)
+    inserted = [_evaluation_sort_key(e) for e in mock_bc.call_args.args[0]]
+    assert inserted == sorted(_evaluation_sort_key(e) for e in evaluations)
+
+
+@pytest.mark.parametrize(
+    'sqlstate, use_pgcode, expected',
+    [('40P01', False, True), ('40P01', True, True), ('55P03', False, False), (None, False, False)],
+)
+def test_is_deadlock(sqlstate, use_pgcode, expected):
+    assert _is_deadlock(_make_operational_error(sqlstate, use_pgcode=use_pgcode)) is expected
+
+
+@pytest.mark.parametrize(
+    'errors, expected_calls, raises',
+    [
+        pytest.param([_make_operational_error('40P01')], 2, False, id='deadlock-then-success'),
+        pytest.param([_make_operational_error('40P01')] * (DEADLOCK_RETRIES + 1), DEADLOCK_RETRIES + 1, True, id='persistent-deadlock'),
+        pytest.param([_make_operational_error('55P03')], 1, True, id='other-operational-error'),
+    ],
+)
+@patch('ansible_base.rbac.caching.time.sleep')
+@patch('ansible_base.rbac.caching.transaction.atomic', _noop_atomic)
+def test_bulk_insert_deadlock_retry(mock_sleep, errors, expected_calls, raises):
+    """A deadlock victim's insert runs again, up to DEADLOCK_RETRIES times; other errors are raised at once."""
+    remaining = list(errors)
+
+    def bulk_create(objs, **kwargs):
+        if remaining:
+            raise remaining.pop(0)
+
+    evaluations = [MagicMock(role_id=1, object_id=10)]
+    with patch.object(RoleEvaluation.objects, 'bulk_create', side_effect=bulk_create) as mock_bc:
+        if raises:
+            with pytest.raises(OperationalError):
+                _safe_bulk_create_evaluations(RoleEvaluation, evaluations, True)
+        else:
+            _safe_bulk_create_evaluations(RoleEvaluation, evaluations, True)
+    assert mock_bc.call_count == expected_calls
+
+
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_gap_heals_in_reversed_order_do_not_deadlock(organization, rando, org_inv_rd):
+    """Two transactions healing the same gap from opposite ends insert in the same order, so neither deadlocks.
+
+    Unsorted, the reversed lists meet in the middle and each waits on the other's
+    uncommitted rows, which Postgres resolves by killing one of them.
+    """
+    if connection.vendor != 'postgresql':
+        pytest.skip('Row-level lock waits need Postgres')
+    role = org_inv_rd.give_permission(rando, organization).object_role
+    RoleEvaluation.objects.filter(role=role).delete()
+    ct_id = permission_registry.content_type_model.objects.get_for_model(Inventory).id
+    rows = [(codename, object_id) for object_id in range(1, 3001) for codename in ('view_inventory', 'change_inventory')]
+    barrier = threading.Barrier(2)
+    errors = []
+
+    def heal(ordered_rows):
+        try:
+            with transaction.atomic():
+                barrier.wait(timeout=30)
+                evaluations = [
+                    RoleEvaluation(codename=codename, content_type_id=ct_id, object_id=object_id, role_id=role.id) for codename, object_id in ordered_rows
+                ]
+                _safe_bulk_create_evaluations(RoleEvaluation, evaluations, True)
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            connection.close()
+
+    with patch('ansible_base.rbac.caching.logger') as mock_logger:
+        threads = [threading.Thread(target=heal, args=(rows,)), threading.Thread(target=heal, args=(rows[::-1],))]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=60)
+
+    assert errors == []
+    assert not [call for call in mock_logger.warning.call_args_list if 'Deadlock' in call.args[0]]
+    assert RoleEvaluation.objects.filter(role=role).count() == len(rows)
