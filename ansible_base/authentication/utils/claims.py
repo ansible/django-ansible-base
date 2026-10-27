@@ -13,6 +13,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError, models
+from django.db.models import Q
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from rest_framework.serializers import DateTimeField
@@ -24,6 +25,8 @@ from ansible_base.lib.logging import log_auth_warning
 from ansible_base.lib.utils.apps import is_rbac_installed
 from ansible_base.lib.utils.auth import get_organization_model, get_team_model
 from ansible_base.lib.utils.string import is_empty
+from ansible_base.rbac.remote import get_local_resource_services
+from ansible_base.rbac.sync import maybe_reverse_sync_assignments
 
 from .trigger_definition import TRIGGER_DEFINITION
 
@@ -782,10 +785,16 @@ class ReconcileUser:
         """
         Processes the user claims (key `rbac_roles`)
         and adds/removes RBAC permissions (a.k.a. role_user_assignments)
+
+        Only global roles and roles on objects in this service are reconciled, so assignments
+        on objects of other services are filtered out in the query and never loaded. The related
+        objects are loaded up front to avoid a query per assignment in cache_existing.
         """
-        # NOTE(cutwater): Here `prefetch_related` is used to prevent N+1 problem when accessing `content_object`
-        #  attribute in `RoleUserAssignmentsCache.cache_existing` method.
-        role_assignments = self.user.role_assignments.prefetch_related('content_object').all()
+        role_assignments = (
+            self.user.role_assignments.filter(Q(content_type__isnull=True) | Q(content_type__service__in=get_local_resource_services()))
+            .select_related('content_type', 'role_definition')
+            .prefetch_related('content_object')
+        )
         self.permissions_cache.cache_existing(role_assignments)
 
         # System roles
@@ -853,8 +862,6 @@ class ReconcileUser:
                         assignments_to_sync.append(assignment)
 
         if assignments_to_sync:
-            from ansible_base.rbac.sync import maybe_reverse_sync_assignments
-
             maybe_reverse_sync_assignments(assignments_to_sync)
 
     def _apply_permission(self, object_with_status, role_name) -> Optional[models.Model]:
@@ -1012,30 +1019,17 @@ class RoleUserAssignmentsCache:
         Notes:
             - Caches both global/system roles and local object role assignments
             - Global/system roles have content_type_id=None and object_id=None
-            - Local object roles are cached only if content_type.service is local or "shared"
+            - Assignments on objects of other services must already be filtered out, see manage_permissions
             - Organization/Team roles have specific content_type_id and object_id values
             - All cached assignments are marked with STATUS_EXISTING status
             - Role definitions are also cached separately in self.role_definitions
         """
-        local_resource_prefixes = ["shared"]
-        from ansible_base.rbac.remote import get_local_resource_prefix  # RBAC must be installed to use method
-
-        local_resource_prefixes.append(get_local_resource_prefix())
-
         for role_assignment in role_assignments:
             # Cache role definition
             if (role_definition := self._rd_by_id(role_assignment)) is None:
                 role_definition = role_assignment.role_definition
                 self.role_definitions[role_definition.name] = role_definition
 
-            # Skip role assignments that should not be cached
-            if not (
-                role_assignment.content_type is None  # Global/system roles (e.g., System Auditor)
-                or role_assignment.content_type.service in local_resource_prefixes
-            ):  # Local object roles
-                continue
-
-            # Cache Role User Assignment - only initialize cache key for assignments we're actually caching
             self._init_cache_key(role_definition.name, content_type_id=role_assignment.content_type_id)
 
             # Cache the role assignment
