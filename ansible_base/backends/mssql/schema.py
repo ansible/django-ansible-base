@@ -11,6 +11,8 @@ from django.core.exceptions import FieldDoesNotExist
 from django.db import models
 from mssql.schema import DatabaseSchemaEditor as MSSQLSchemaEditor
 
+from ansible_base.lib.utils.mssql import get_mssql_constrained_textfield_max_length, get_mssql_textfield_max_length
+
 logger = logging.getLogger('ansible_base.backends.mssql.schema')
 
 
@@ -24,23 +26,6 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
     intercepts field SQL generation and dynamically converts problematic
     TextField definitions to CharField with appropriate max_length values.
     """
-
-    def create_model(self, model):
-        """
-        Override to convert TextField definitions before creating the table.
-        """
-        # Convert TextFields with constraints to CharFields before creating table
-        for field in model._meta.local_fields:
-            if isinstance(field, models.TextField) and self._field_needs_conversion(field, model):
-                max_length = self._determine_max_length(field, model)
-
-                # Replace the field with a CharField
-                # We need to modify the field in-place
-                field.__class__ = models.CharField
-                field.max_length = max_length
-
-        # Call parent implementation with potentially modified fields
-        return super().create_model(model)
 
     def add_index(self, model, index):
         """
@@ -90,16 +75,15 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
         table_name = model._meta.db_table
         column_name = field.column
         column_type = self._get_column_type(table_name, column_name)
-        if not column_type or 'max' not in column_type.lower():
+        if column_type is None:
+            raise RuntimeError(f"Could not find SQL Server column '{table_name}.{column_name}' before adding an index or constraint.")
+        if 'max' not in column_type.lower():
             return
 
         max_length = self._determine_max_length(field, model)
         null_clause = "NULL" if field.null else "NOT NULL"
         sql = f"ALTER TABLE [{table_name}] ALTER COLUMN [{column_name}] nvarchar({max_length}) {null_clause}"
         self.execute(sql)
-
-        field.__class__ = models.CharField
-        field.max_length = max_length
 
     def column_sql(self, model, field, include_default=False):
         """
@@ -143,7 +127,6 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
         """
         try:
             with self.connection.cursor() as cursor:
-                # Use %s placeholders with tuple for parameters
                 cursor.execute(
                     """
                     SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH
@@ -153,17 +136,17 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
                     (table_name, column_name),
                 )
                 row = cursor.fetchone()
-                if row:
-                    data_type, max_length = row
-                    if max_length == -1:
-                        return f"{data_type}(max)"
-                    elif max_length:
-                        return f"{data_type}({max_length})"
-                    else:
-                        return data_type
-                return None
-        except Exception:
+        except Exception as exc:
+            raise RuntimeError(f"Could not inspect SQL Server column '{table_name}.{column_name}'.") from exc
+
+        if row is None:
             return None
+        data_type, max_length = row
+        if max_length == -1:
+            return f"{data_type}(max)"
+        if max_length:
+            return f"{data_type}({max_length})"
+        return data_type
 
     def _field_needs_conversion(self, field, model):
         """
@@ -176,34 +159,7 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
         Returns:
             bool: True if the TextField needs conversion to CharField
         """
-        if getattr(field, 'db_index', False) or getattr(field, 'unique', False):
-            return True
-
-        model_meta = getattr(model, '_meta', None)
-        if model_meta is None:
-            return False
-
-        field_name = field.name
-        return (
-            self._field_in_unique_together(field_name, model_meta)
-            or self._field_in_unique_constraints(field_name, model_meta)
-            or self._field_in_indexes(field_name, model_meta)
-        )
-
-    @staticmethod
-    def _field_in_unique_together(field_name, model_meta):
-        return any(field_name in fields for fields in getattr(model_meta, 'unique_together', []))
-
-    @staticmethod
-    def _field_in_unique_constraints(field_name, model_meta):
-        return any(
-            isinstance(constraint, models.UniqueConstraint) and field_name in getattr(constraint, 'fields', [])
-            for constraint in getattr(model_meta, 'constraints', [])
-        )
-
-    @staticmethod
-    def _field_in_indexes(field_name, model_meta):
-        return any(field_name in getattr(index, 'fields', []) for index in getattr(model_meta, 'indexes', []))
+        return get_mssql_constrained_textfield_max_length(field, model) is not None
 
     def _determine_max_length(self, field, model):
         """
@@ -216,27 +172,7 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
         Returns:
             int: Appropriate max_length for the CharField
         """
-        field_name = field.name.lower()
-
-        # Permission codenames: Django standard is 100
-        if 'codename' in field_name:
-            return 100
-
-        # Object IDs and parent references: MS SQL index limit
-        # MS SQL can index up to 900 bytes, nvarchar uses 2 bytes per char
-        if any(x in field_name for x in ['object_id', 'parent_reference']):
-            return 450
-
-        # Names: standard varchar length (common in eda-server, awx)
-        if field_name == 'name':
-            return 255
-
-        # Singleton names and role fields: shorter (awx-specific)
-        if any(x in field_name for x in ['singleton', 'role_field']):
-            return 64
-
-        # Default: MS SQL index limit (safe for all constrained TextFields)
-        return 450
+        return get_mssql_textfield_max_length(field.name)
 
     def _copy_field_attrs(self, field):
         """

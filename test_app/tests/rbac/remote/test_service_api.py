@@ -1,5 +1,6 @@
 import uuid
 from copy import deepcopy
+from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -1448,6 +1449,37 @@ class TestParentReference:
         response = admin_api_client.post(url, data=data, format='json')
         assert response.status_code == 400, response.data
         assert 'parent_reference' in response.data
+
+    @pytest.mark.parametrize(
+        ('field_name', 'value'),
+        [
+            ('object_id', 'x' * 451),
+            ('parent_reference', 'x' * 451),
+        ],
+    )
+    def test_assign_rejects_overlong_indexed_text(self, admin_api_client, rando, monkeypatch, field_name, value):
+        """SQL Server indexed TextFields return a validation error before insert."""
+        from ansible_base.lib.serializers import validators
+        from ansible_base.rbac.models import DABContentType, DABPermission, RoleDefinition
+
+        monkeypatch.setattr(validators, 'connection', SimpleNamespace(vendor='microsoft'))
+        remote_ct = DABContentType.objects.create(service='awx', model='long_id_object', app_label='main')
+        perm = DABPermission.objects.create(codename='use_long_id_object', content_type=remote_ct)
+        rd = RoleDefinition.objects.create_from_permissions(name='Long Id Object Role', permissions=[perm.api_slug], content_type=remote_ct)
+
+        data = {
+            'role_definition': rd.name,
+            'user_ansible_id': str(rando.resource.ansible_id),
+            'object_id': '42',
+            'parent_reference': '',
+        }
+        data[field_name] = value
+
+        response = admin_api_client.post(get_relative_url('serviceuserassignment-assign'), data=data)
+
+        assert response.status_code == 400, response.data
+        assert field_name in response.data
+        assert '450' in str(response.data[field_name])
 
     def test_list_response_includes_parent_reference_for_local_object(self, admin_api_client, rando, inv_rd, inventory):
         """parent_reference should be resolved from the local model's organization FK."""
