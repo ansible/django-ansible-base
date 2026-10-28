@@ -161,6 +161,27 @@ def cleanup_orphaned_object_roles() -> int:
     return deleted_count
 
 
+def get_parent_ids(instance) -> list[GenericObject]:
+    """Return the instance's whole parent chain, nearest parent first."""
+    parent_field_name = permission_registry.get_parent_fd_name(instance)
+    if not parent_field_name:
+        return []
+    parent_cls = permission_registry.get_parent_model(instance)
+
+    if permission_registry.get_parent_fd_name(parent_cls):
+        # has another level of model
+        parent_obj = getattr(instance, parent_field_name)
+        if parent_obj:
+            parent_ct = permission_registry.content_type_model.objects.get_for_model(parent_cls)
+            return [GenericObject(parent_ct.id, parent_obj.pk)] + get_parent_ids(parent_obj)
+    else:
+        parent_id = getattr(instance, f'{parent_field_name}_id')
+        if parent_id:
+            parent_ct = permission_registry.content_type_model.objects.get_for_model(parent_cls)
+            return [GenericObject(parent_ct.id, parent_id)]
+    return []
+
+
 def object_roles_for_parents(parent_gfks: set[GenericObject]) -> set['ObjectRole']:
     """Return ObjectRoles affected by created objects via their parent chain. Called by defer_rbac_computations flush."""
     q_exprs = [Q(content_type_id=parent.content_type_id, object_id=parent.pk) for parent in parent_gfks]
@@ -527,7 +548,7 @@ def recompute_role_evaluations(
     updates.apply()
 
 
-def _created_role_teams(role_pks: list[int]) -> tuple[dict[int, set[int]], set[int]]:
+def _target_role_teams(role_pks: list[int]) -> tuple[dict[int, set[int]], set[int]]:
     """Map each role in role_pks to the teams it provides membership to.
 
     These are the roles being recomputed (e.g. a team's member role). Returns
@@ -541,15 +562,15 @@ def _created_role_teams(role_pks: list[int]) -> tuple[dict[int, set[int]], set[i
     return role_to_teams, set().union(*role_to_teams.values()) if role_to_teams else set()
 
 
-def _created_team_roles(
+def _target_team_roles(
     team_ids: set[int],
     object_ct_id: int,
     parent_keys: set[tuple[int, str]],
     granting_rd_ids: set[int],
 ) -> tuple[dict[int, ObjectRole], dict[int, set[int]]]:
-    """Load the roles held by team_ids that can grant on the created object.
+    """Load the roles held by team_ids that can grant on the target object.
 
-    The inverse direction of _created_role_teams: given teams, find the roles
+    The inverse direction of _target_role_teams: given teams, find the roles
     assigned *to* those teams, limited to roles on the object itself or on one
     of its parents (parent_keys) whose definition can grant on the object type
     (granting_rd_ids). Returns (role_pk -> ObjectRole, team_id -> held role_pks).
@@ -575,8 +596,8 @@ def _created_team_roles(
     return team_roles_by_pk, team_to_role_pks
 
 
-def _created_existing_evaluations(role_pks: list[int], object_pk: int | UUID, object_ct_id: int) -> dict[int, dict]:
-    """Load the RoleEvaluation rows that already exist for the created object.
+def _target_existing_evaluations(role_pks: list[int], object_pk: int | UUID, object_ct_id: int) -> dict[int, dict]:
+    """Load the RoleEvaluation rows that already exist for the target object.
 
     Returns role_pk -> {(codename, content_type_id, object_id): evaluation_id},
     reading from RoleEvaluationUUID when the object is UUID-keyed.
@@ -590,7 +611,7 @@ def _created_existing_evaluations(role_pks: list[int], object_pk: int | UUID, ob
     return existing
 
 
-def _collect_created_role_updates(
+def _collect_target_role_updates(
     role: ObjectRole,
     direct_keys: set[tuple[int, str]],
     role_to_teams: dict[int, set[int]],
@@ -603,10 +624,10 @@ def _collect_created_role_updates(
     existing: dict[int, dict],
     updates: EvaluationUpdates,
 ) -> None:
-    """Diff one role's expected evaluations on the created object against existing ones.
+    """Diff one role's expected evaluations on the target object against existing ones.
 
     A role's expected set is the union of its own direct permissions (only when
-    its object is the created object or a parent of it, and its definition can
+    its object is the target object or a parent of it, and its definition can
     grant on the object type) and the permissions of every team-held role
     reached through the teams it provides membership to.
     Missing rows are queued on updates.to_add, stale rows on updates.to_delete.
@@ -632,25 +653,29 @@ def _collect_created_role_updates(
         updates.to_add.append(RoleEvaluation(codename=codename, content_type_id=ct_id, object_id=obj_id, role=role))
 
 
-def recompute_role_evaluations_for_created(
+def recompute_role_evaluations_for_object(
     object_roles: Iterable[ObjectRole],
     look_ahead: GenericObject,
     target_parents: Iterable[GenericObject],
     types_prefetch: Optional[TypesPrefetch] = None,
 ) -> None:
-    """Recompute RoleEvaluation entries for a single, just-created object.
+    """Recompute the RoleEvaluation entries of object_roles on a single object, look_ahead.
 
-    Equivalent to recompute_role_evaluations(object_roles, look_ahead=look_ahead,
-    target_parents=...) but organised around the object instead of around each role:
+    Used when a change can only affect evaluations on that one object: the object was
+    created or moved to another parent (post_save), or a team lost a role whose direct
+    permissions are all on it. target_parents must be the object's whole parent chain;
+    a team-held role on a parent left out of it would be missed and its evaluations deleted.
+
+    Rather than recomputing each role in full, the work is organised around the object:
 
     * one query loads the teams every role provides membership to,
-    * one query loads the team-held roles that can grant on the new object
+    * one query loads the team-held roles that can grant on the object
       (roles on the object itself or on its parent chain),
     * one query maps those teams to those roles,
     * one query loads whatever evaluations already exist for the object,
     * each relevant role's expected evaluations are computed once.
 
-    A role's own object can only contribute if it is the new object or one of its
+    A role's own object can only contribute if it is look_ahead or one of its
     parents; other roles in object_roles contribute purely through their teams.
     """
     if types_prefetch is None:
@@ -665,19 +690,19 @@ def recompute_role_evaluations_for_created(
     parent_keys = {(parent.content_type_id, str(parent.pk)) for parent in target_parents}
     direct_keys = parent_keys | {(object_ct_id, object_id_str)}
 
-    role_to_teams, team_ids = _created_role_teams(role_pks)
+    role_to_teams, team_ids = _target_role_teams(role_pks)
     granting_rd_ids = types_prefetch.role_definition_ids_granting(object_ct_id)
-    team_roles_by_pk, team_to_role_pks = _created_team_roles(
+    team_roles_by_pk, team_to_role_pks = _target_team_roles(
         team_ids,
         object_ct_id,
         parent_keys | {(object_ct_id, object_id_str)},
         granting_rd_ids,
     )
-    existing = _created_existing_evaluations(role_pks, object_pk, object_ct_id)
+    existing = _target_existing_evaluations(role_pks, object_pk, object_ct_id)
     expected_by_role_pk: dict[int, set] = {}
     updates = EvaluationUpdates()
     for role in roles:
-        _collect_created_role_updates(
+        _collect_target_role_updates(
             role,
             direct_keys,
             role_to_teams,

@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 from django.contrib.auth import get_user_model
 
-from ansible_base.rbac.caching import recompute_all_role_evaluations, recompute_role_evaluations, recompute_role_evaluations_for_created
+from ansible_base.rbac.caching import recompute_all_role_evaluations, recompute_role_evaluations, recompute_role_evaluations_for_object
 from ansible_base.rbac.models import DABContentType, DABPermission, ObjectRole, RoleDefinition, RoleEvaluation
 from ansible_base.rbac.models.content_type import get_local_resource_prefix
 from ansible_base.rbac.permission_registry import permission_registry
@@ -15,7 +15,7 @@ from test_app.models import CollectionImport, Inventory, Namespace, Organization
 
 LOOKAHEAD_RECOMPUTES = [
     pytest.param(recompute_role_evaluations, id='recompute_role_evaluations'),
-    pytest.param(recompute_role_evaluations_for_created, id='recompute_role_evaluations_for_created'),
+    pytest.param(recompute_role_evaluations_for_object, id='recompute_role_evaluations_for_object'),
 ]
 
 # An Organization role with only a child permission still emits (codename, org_ct, org.pk):
