@@ -15,6 +15,6 @@ USER mssql
 EXPOSE 1433
 
 HEALTHCHECK --interval=3s --timeout=2s --start-period=2s --retries=5 \
-  CMD /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -Q "SELECT 1" -C || exit 1
+  CMD /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -Q "IF DB_ID('dab_db') IS NULL THROW 50000, 'Database dab_db is not ready', 1;" -C -b || exit 1
 
 ENTRYPOINT ["./entrypoint.sh"]
