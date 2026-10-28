@@ -1,8 +1,10 @@
+from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock
 
 import pytest
 from django.conf import settings
 from django.core.exceptions import FieldDoesNotExist, FieldError, ValidationError
+from django.http import QueryDict
 from django.test.utils import override_settings
 from django.utils.http import urlencode
 from rest_framework.exceptions import ParseError, PermissionDenied
@@ -10,6 +12,7 @@ from rest_framework.exceptions import ParseError, PermissionDenied
 from ansible_base.authentication.models import Authenticator, AuthenticatorMap
 from ansible_base.authentication.views import AuthenticatorViewSet
 from ansible_base.lib.utils.response import get_relative_url
+from ansible_base.rest_filters.rest_framework import field_lookup_backend
 from ansible_base.rest_filters.rest_framework.field_lookup_backend import FieldLookupBackend
 from test_app import models
 
@@ -68,6 +71,26 @@ def test_invalid_iexact():
     with pytest.raises(ValueError) as excinfo:
         field_lookup.value_to_python(Authenticator, 'id__iexact', '1')
     assert 'is not a text field and cannot be filtered by case-insensitive search' in str(excinfo.value)
+
+
+@pytest.mark.parametrize('lookup', ['name__regex', 'name__iregex'])
+def test_regex_lookups_rejected_on_sql_server(lookup, monkeypatch):
+    monkeypatch.setattr(field_lookup_backend, 'connection', SimpleNamespace(vendor='microsoft'), raising=False)
+    query_params = QueryDict('', mutable=True)
+    query_params[lookup] = '^acme$'
+
+    with pytest.raises(ParseError, match='Regular expression lookups are not supported on SQL Server'):
+        FieldLookupBackend().filter_queryset(SimpleNamespace(query_params=query_params), Authenticator.objects.all(), SimpleNamespace())
+
+
+@pytest.mark.parametrize('lookup', ['name__regex', 'name__iregex'])
+def test_regex_lookups_remain_available_on_postgresql(lookup, monkeypatch):
+    monkeypatch.setattr(field_lookup_backend, 'connection', SimpleNamespace(vendor='postgresql'), raising=False)
+
+    value, new_lookup, _ = FieldLookupBackend().value_to_python(Authenticator, lookup, '^acme$')
+
+    assert value == '^acme$'
+    assert new_lookup == lookup
 
 
 @pytest.mark.parametrize('lookup_suffix', ['', 'contains', 'startswith', 'in'])
