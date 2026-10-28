@@ -188,7 +188,7 @@ def test_get_sql_server_notify_params_applies_overrides_and_options():
 
 def test_get_sql_server_notify_params_uses_host_and_port_defaults(monkeypatch):
     databases = {'replica': {'ENGINE': 'ansible_base.backends.mssql', 'NAME': 'replica_db'}}
-    monkeypatch.setattr(db, 'combine_settings_dict', lambda *args, **kwargs: {'NAME': 'replica_db'})
+    monkeypatch.setattr(db, 'combine_settings_dict', lambda *args, **kwargs: {'HOST': '', 'PORT': '', 'NAME': 'replica_db'})
     with override_settings(DATABASES=databases):
         params = db.get_sql_server_notify_params(alias='replica')
 
