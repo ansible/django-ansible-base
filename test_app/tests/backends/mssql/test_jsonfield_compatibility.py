@@ -509,6 +509,20 @@ class JSONFieldDatabaseSpecificTest(TestCase):
         self.assertIn(connection.vendor, ['postgresql', 'microsoft', 'sqlite'])
 
     @skipUnless(connection.vendor == 'microsoft', 'MS SQL Server only')
+    def test_mssql_server_and_database_use_case_accent_sensitive_collation(self):
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT CONVERT(NVARCHAR(128), SERVERPROPERTY('Collation')),
+                       CONVERT(NVARCHAR(128), DATABASEPROPERTYEX(DB_NAME(), 'Collation'))
+                """
+            )
+            server_collation, database_collation = cursor.fetchone()
+
+        self.assertEqual(server_collation, 'Latin1_General_100_CS_AS')
+        self.assertEqual(database_collation, 'Latin1_General_100_CS_AS')
+
+    @skipUnless(connection.vendor == 'microsoft', 'MS SQL Server only')
     def test_mssql_uses_nvarchar_max(self):
         """MS SQL should use nvarchar(max) for JSONField."""
         with connection.cursor() as cursor:

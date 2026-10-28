@@ -82,11 +82,11 @@ mssql:
 	else \
 		echo "Creating new dab_mssql container"; \
 		$(DOCKER_COMPOSE) -f docker-compose.mssql.yml up -d mssql --quiet-pull; \
-		echo "Waiting for SQL Server to be healthy..."; \
-		timeout 60 bash -c 'until docker exec dab_mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "YourStrong!Passw0rd" -C -Q "SELECT 1" -b > /dev/null 2>&1; do sleep 1; done' && echo "✓ SQL Server is ready"; \
-		echo "Creating dab_db database..."; \
-		docker exec dab_mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "YourStrong!Passw0rd" -C -Q "IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = 'dab_db') CREATE DATABASE dab_db" -b && echo "✓ dab_db database ready"; \
 	fi
+	@echo "Waiting for SQL Server to be healthy..."
+	@timeout 60 bash -c 'until docker exec dab_mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "YourStrong!Passw0rd" -C -Q "SELECT 1" -b > /dev/null 2>&1; do sleep 1; done' && echo "✓ SQL Server is ready"
+	@echo "Creating or validating dab_db collation..."
+	@docker exec dab_mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "YourStrong!Passw0rd" -C -Q "IF DB_ID(N'dab_db') IS NULL CREATE DATABASE dab_db COLLATE Latin1_General_100_CS_AS; IF CONVERT(NVARCHAR(128), SERVERPROPERTY('Collation')) <> N'Latin1_General_100_CS_AS' RAISERROR(N'SQL Server has the wrong collation; run make stop-mssql and recreate the local container.', 16, 1); IF CONVERT(NVARCHAR(128), DATABASEPROPERTYEX(N'dab_db', N'Collation')) <> N'Latin1_General_100_CS_AS' RAISERROR(N'dab_db has the wrong collation; run make stop-mssql to recreate the local database.', 16, 1);" -b && echo "✓ dab_db collation is ready"
 
 ## Stops the MS SQL Server container and removes data volume (fresh DB on next start)
 stop-mssql:
