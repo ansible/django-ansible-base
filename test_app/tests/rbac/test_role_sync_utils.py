@@ -2,6 +2,7 @@ from unittest import mock
 
 import pytest
 
+from ansible_base.rbac.remote import RemoteObject
 from ansible_base.rbac.role_sync_utils import (
     _SKIP,
     AssignmentTuple,
@@ -444,3 +445,61 @@ def test_backward_compat_imports():
         get_local_assignments,
         get_remote_assignments,
     )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('pk_field_type, object_id', [('integer', '42'), ('uuid', 'ad680c04-5ef0-4a69-bfc1-f78348f444b4')])
+@pytest.mark.parametrize('actor_type', ['user', 'team'])
+def test_sync_remote_assignment_lifecycle(pk_field_type, object_id, actor_type, rando, team, member_rd):
+    from ansible_base.rbac.models import DABContentType, DABPermission, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
+    from ansible_base.resource_registry.tasks.sync import RemoteAssignmentResult, SyncExecutor
+
+    ct = DABContentType.objects.create(service='sync_remote', app_label='remote', model=f'widget_{pk_field_type}', pk_field_type=pk_field_type)
+    permission = DABPermission.objects.create(content_type=ct, codename=f'view_{ct.model}')
+    rd = RoleDefinition.objects.create_from_permissions(name='Remote Widget Viewer', permissions=[permission.api_slug], content_type=ct)
+    actor = rando if actor_type == 'user' else team
+    if actor_type == 'team':
+        member_rd.give_permission(rando, team)
+    assignment = AssignmentTuple(str(Resource.get_resource_for_object(actor).ansible_id), object_id, rd.name, actor_type)
+    obj = ct.get_object_for_this_type(pk=object_id)
+    assignment_model = RoleUserAssignment if actor_type == 'user' else RoleTeamAssignment
+    executor = SyncExecutor(api_client=mock.Mock(), resource_type_names=['unused'], service_filter=ct.service)
+
+    with mock.patch('ansible_base.resource_registry.tasks.sync.get_remote_assignments') as fetch:
+        fetch.return_value = RemoteAssignmentResult(assignments={assignment}, is_complete=True)
+        executor.run()
+        assert executor.results['assignment_errors'] == [0]
+        assert rando.has_obj_perm(obj, 'view')
+        assert get_local_assignments(service=ct.service) == {assignment}
+        executor.run()
+        assert executor.results['assignments_created'] == [0]
+        assert assignment_model.objects.filter(role_definition=rd).count() == 1
+
+        fetch.return_value = RemoteAssignmentResult(is_complete=True)
+        executor.run()
+        assert executor.results['assignment_errors'] == [0]
+        assert executor.results['assignments_deleted'] == [1]
+        assert not rando.has_obj_perm(obj, 'view')
+        assert not assignment_model.objects.filter(role_definition=rd).exists()
+        executor.run()
+        assert executor.results['assignments_deleted'] == [0]
+
+
+@pytest.mark.django_db
+def test_get_content_object_preserves_configured_remote_standin(settings):
+    from ansible_base.rbac import remote
+    from ansible_base.rbac.models import DABContentType, RoleDefinition
+
+    settings.RBAC_REMOTE_OBJECT_CLASS = f'{__name__}.CustomRemoteObject'
+    ct = DABContentType.objects.create(service='custom_remote', app_label='remote', model='widget')
+    rd = RoleDefinition.objects.create(name='Custom Remote Viewer', content_type=ct)
+    with mock.patch.object(remote, '_REMOTE_STANDIN_CACHE', {}):
+        obj = get_content_object(rd, AssignmentTuple('unused', '42', rd.name, 'user'))
+        assert isinstance(obj, CustomRemoteObject)
+        assert type(obj) is ct.model_class()
+        assert obj.content_type == ct
+        assert obj.pk == 42
+
+
+class CustomRemoteObject(RemoteObject):
+    pass
