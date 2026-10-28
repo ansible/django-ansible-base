@@ -1,9 +1,10 @@
 import uuid
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 from django.utils.encoding import smart_str
+from mssql.base import CursorWrapper as MSSQLCursorWrapper
 from mssql.operations import DatabaseOperations as MSSQLDatabaseOperations
 
 from ansible_base.backends.mssql.base import DatabaseWrapper
@@ -43,6 +44,16 @@ def test_format_params_converts_booleans_and_uuids():
     value = uuid.uuid4()
 
     assert make_cursor_wrapper().format_params([True, False, value]) == (1, 0, value.hex)
+
+
+def test_format_params_converts_uuids_before_delegating_to_parent():
+    wrapper = make_cursor_wrapper(driver_charset='utf-8')
+    value = uuid.uuid4()
+
+    with patch.object(MSSQLCursorWrapper, 'format_params', return_value=('parent-formatted',)) as parent_format_params:
+        assert wrapper.format_params(['hello', value, True]) == ('parent-formatted',)
+
+    parent_format_params.assert_called_once_with(('hello', value.hex, True))
 
 
 def test_database_wrapper_uses_custom_backend_components():
