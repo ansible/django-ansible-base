@@ -120,9 +120,9 @@ if db_backend == "mssql":
         "default": {
             "ENGINE": "ansible_base.backends.mssql",
             "HOST": os.getenv("DB_HOST", "127.0.0.1"),
-            "PORT": int(os.getenv("DB_PORT", "1433")),  # Matches docker-compose.mssql.yml port mapping
+            "PORT": int(os.getenv("DB_PORT", "1433")),  # SQL Server container port exposed by tox-docker
             "USER": os.getenv("DB_USER", "sa"),
-            "PASSWORD": os.getenv("DB_PASSWORD", "DabingPass!1234"),  # Matches docker-compose.mssql.yml MSSQL_SA_PASSWORD
+            "PASSWORD": os.getenv("DB_PASSWORD", "DabingPass!1234"),  # Matches tools/dev_mssql/Dockerfile; compose uses test_app.mssqlsettings
             "NAME": os.getenv("DB_NAME", "dab_db"),
             "OPTIONS": {"driver": 'ODBC Driver 18 for SQL Server', "extra_params": "Encrypt=yes;TrustServerCertificate=yes"},
         }
