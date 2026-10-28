@@ -134,25 +134,16 @@ def test_activitystream_m2m_forward_bulk(django_assert_max_num_queries, django_u
     """
     Ensure that m2m activity stream entries in forward direction are created in bulk.
     """
-    from django.db import connection
-
     # Create a bunch of users
     user_objs = [django_user_model(username=str(i)) for i in range(100)]
     users = bulk_create_db_safe(django_user_model, user_objs, ignore_conflicts=False)
 
-    # Setting this to 20 in case some real queries are added in the future.
-    # Really as long as it's less than 100 it means we're doing the right thing.
-    # In practice it's closer to 5.
-    # On SQL Server where bulk_create can't return PKs, we need individual saves
-    # which increases the query count significantly (but still better than one-by-one everywhere)
-    max_queries = 120 if connection.vendor == 'microsoft' else 20
-    with django_assert_max_num_queries(max_queries) as captured:
+    with django_assert_max_num_queries(20) as captured:
         animal.people_friends.add(*users)
 
     inserts = len([q for q in captured.connection.queries if q['sql'].startswith('INSERT') or q['sql'].startswith('SET NOCOUNT ON INSERT')])
-    # PostgreSQL: 2 INSERTs (1 for m2m, 1 bulk for activity stream)
-    # SQL Server: 101+ INSERTs (1 for m2m, 100 individual for activity stream due to PK population limitation)
-    expected_inserts = 101 if connection.vendor == 'microsoft' else 2
+    # One M2M through-table insert and one bulk activity-stream insert.
+    expected_inserts = 2
     assert inserts == expected_inserts
 
     entries = animal.activity_stream_entries.all()
@@ -165,15 +156,12 @@ def test_activitystream_m2m_forward_bulk(django_assert_max_num_queries, django_u
     assert entries.last().operation == 'associate'
     assert entries.last().related_content_object == users[-1]
 
-    max_queries_remove = 120 if connection.vendor == 'microsoft' else 20
-    with django_assert_max_num_queries(max_queries_remove) as captured:
+    with django_assert_max_num_queries(20) as captured:
         animal.people_friends.remove(*users)
 
     disassoc_inserts = len([q for q in captured.connection.queries if q['sql'].startswith('INSERT') or q['sql'].startswith('SET NOCOUNT ON INSERT')])
-    # Only one insert (for activity stream entries)
-    # Even though django_assert_max_num_queries is a context manager the earlier inserts still seem to count
-    # SQL Server: 100 individual inserts for activity stream entries
-    expected_disassoc_inserts = 100 if connection.vendor == 'microsoft' else 1
+    # The captured query list includes the two earlier inserts from the add.
+    expected_disassoc_inserts = 1
     assert disassoc_inserts == expected_inserts + expected_disassoc_inserts
 
 
@@ -181,25 +169,16 @@ def test_activitystream_m2m_reverse_bulk(django_assert_max_num_queries, django_u
     """
     Ensure that m2m activity stream entries in reverse direction are created in bulk.
     """
-    from django.db import connection
-
     # Create a bunch of animals
     animal_objs = [Animal(name=str(i)) for i in range(100)]
     animals = bulk_create_db_safe(Animal, animal_objs, ignore_conflicts=False)
 
-    # Setting this to 20 in case some real queries are added in the future.
-    # Really as long as it's less than 100 it means we're doing the right thing.
-    # In practice it's closer to 5.
-    # On SQL Server where bulk_create can't return PKs, we need individual saves
-    # which increases the query count significantly (but still better than one-by-one everywhere)
-    max_queries = 120 if connection.vendor == 'microsoft' else 20
-    with django_assert_max_num_queries(max_queries) as captured:
+    with django_assert_max_num_queries(20) as captured:
         user.animal_friends.add(*animals)
 
     inserts = len([q for q in captured.connection.queries if q['sql'].startswith('INSERT') or q['sql'].startswith('SET NOCOUNT ON INSERT')])
-    # PostgreSQL: 2 INSERTs (1 for m2m, 1 bulk for activity stream)
-    # SQL Server: 101+ INSERTs (1 for m2m, 100 individual for activity stream due to PK population limitation)
-    expected_inserts = 101 if connection.vendor == 'microsoft' else 2
+    # One M2M through-table insert and one bulk activity-stream insert.
+    expected_inserts = 2
     assert inserts == expected_inserts
 
     user_entries = user.activity_stream_entries.all()
@@ -214,15 +193,12 @@ def test_activitystream_m2m_reverse_bulk(django_assert_max_num_queries, django_u
         assert entries.last().operation == 'associate'
         assert entries.last().related_content_object == user
 
-    max_queries_remove = 120 if connection.vendor == 'microsoft' else 20
-    with django_assert_max_num_queries(max_queries_remove) as captured:
+    with django_assert_max_num_queries(20) as captured:
         user.animal_friends.remove(*animals)
 
     disassoc_inserts = len([q for q in captured.connection.queries if q['sql'].startswith('INSERT') or q['sql'].startswith('SET NOCOUNT ON INSERT')])
-    # Only one insert (for activity stream entries)
-    # Even though django_assert_max_num_queries is a context manager the earlier inserts still seem to count
-    # SQL Server: 100 individual inserts for activity stream entries
-    expected_disassoc_inserts = 100 if connection.vendor == 'microsoft' else 1
+    # The captured query list includes the two earlier inserts from the add.
+    expected_disassoc_inserts = 1
     assert disassoc_inserts == expected_inserts + expected_disassoc_inserts
     for animal in animals:
         entries = animal.activity_stream_entries.all()

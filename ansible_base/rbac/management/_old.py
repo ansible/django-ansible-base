@@ -87,6 +87,6 @@ def create_dab_permissions(app_config, verbosity=2, interactive=True, using=DEFA
             permission.content_type = ct
             perms.append(permission)
 
-    bulk_create_db_safe(Permission, perms, ignore_conflicts=False, using=using)
+    bulk_create_db_safe(Permission, perms, ignore_conflicts=False, using=using, return_ids=False)
     for perm in perms:
         logger.debug("Adding permission '%s'" % perm)
