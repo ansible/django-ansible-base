@@ -267,6 +267,16 @@ class TestSchemaEditorConstraints(TestCase):
         self.assertEqual(self.field.max_length, 450)
         add_constraint.assert_called_once_with(self.model, constraint)
 
+    def test_add_constraint_propagates_alter_column_error(self):
+        constraint = models.UniqueConstraint(fields=['description'], name='unique_description')
+        with (
+            patch.object(self.schema_editor, '_get_column_type', return_value='nvarchar(max)'),
+            patch.object(self.schema_editor, 'execute', side_effect=RuntimeError('alter failed')),
+            patch.object(MSSQLSchemaEditor, 'add_constraint', return_value='parent result'),
+        ):
+            with self.assertRaisesRegex(RuntimeError, 'alter failed'):
+                self.schema_editor.add_constraint(self.model, constraint)
+
     def test_add_constraint_leaves_bounded_textfield_unchanged(self):
         constraint = models.UniqueConstraint(fields=['description'], name='unique_description')
         with (

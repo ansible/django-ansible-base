@@ -7,6 +7,7 @@ are detected, enabling MS SQL Server compatibility without modifying migrations.
 
 import logging
 
+from django.core.exceptions import FieldDoesNotExist
 from django.db import models
 from mssql.schema import DatabaseSchemaEditor as MSSQLSchemaEditor
 
@@ -80,24 +81,25 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
 
         try:
             field = model._meta.get_field(field_name)
-            if not isinstance(field, models.TextField):
-                return
+        except FieldDoesNotExist:
+            return
 
-            table_name = model._meta.db_table
-            column_name = field.column
-            column_type = self._get_column_type(table_name, column_name)
-            if not column_type or 'max' not in column_type.lower():
-                return
+        if not isinstance(field, models.TextField):
+            return
 
-            max_length = self._determine_max_length(field, model)
-            null_clause = "NULL" if field.null else "NOT NULL"
-            sql = f"ALTER TABLE [{table_name}] ALTER COLUMN [{column_name}] nvarchar({max_length}) {null_clause}"
-            self.execute(sql)
+        table_name = model._meta.db_table
+        column_name = field.column
+        column_type = self._get_column_type(table_name, column_name)
+        if not column_type or 'max' not in column_type.lower():
+            return
 
-            field.__class__ = models.CharField
-            field.max_length = max_length
-        except Exception:
-            pass
+        max_length = self._determine_max_length(field, model)
+        null_clause = "NULL" if field.null else "NOT NULL"
+        sql = f"ALTER TABLE [{table_name}] ALTER COLUMN [{column_name}] nvarchar({max_length}) {null_clause}"
+        self.execute(sql)
+
+        field.__class__ = models.CharField
+        field.max_length = max_length
 
     def column_sql(self, model, field, include_default=False):
         """
