@@ -23,14 +23,15 @@ class FakeManager:
     def __init__(self):
         self.objects = []
         self.filters = []
+        self.chunk_size = pipeline.SQL_SERVER_PAIR_FILTER_BATCH_SIZE
 
     def filter(self, query):
         call_index = len(self.filters)
         self.filters.append(query)
         if call_index < 2:
             return FakeQuerySet([])
-        start = (call_index - 2) * 1000
-        return FakeQuerySet(self.objects[start : start + 1000])
+        start = (call_index - 2) * self.chunk_size
+        return FakeQuerySet(self.objects[start : start + self.chunk_size])
 
 
 class FakeAssignment:
@@ -64,7 +65,7 @@ def test_create_assignments_chunks_large_mssql_batches(monkeypatch, actor_field)
             object_id=str(index),
             parent_reference='',
         )
-        for index in range(1001)
+        for index in range(pipeline.SQL_SERVER_PAIR_FILTER_BATCH_SIZE + 1)
     ]
     lookup = {(role_definition.pk, item.object_id): SimpleNamespace(pk=item.object_id) for item in resolved}
     object_ansible_ids = {('test_app', 'inventory', '0'): 'ansible-0'}
@@ -77,7 +78,7 @@ def test_create_assignments_chunks_large_mssql_batches(monkeypatch, actor_field)
         fire_signals_on_create=False,
     )
 
-    assert len(assignments) == 1001
+    assert len(assignments) == pipeline.SQL_SERVER_PAIR_FILTER_BATCH_SIZE + 1
     assert assignments[0].object_ansible_id == 'ansible-0'
     assert assignments[1].object_ansible_id is None
     assert len(manager.filters) == 4
@@ -91,6 +92,17 @@ def test_find_assignments_returns_empty_when_no_roles_match():
 
     assert pipeline._find_assignments(resolved, {}, model, 'user') == []
     model.objects.filter.assert_not_called()
+
+
+def test_pair_filter_chunks_stay_under_sql_server_parameter_limit(monkeypatch):
+    monkeypatch.setattr(pipeline, 'connection', SimpleNamespace(vendor='microsoft'))
+    pairs = [(index, index) for index in range(2101)]
+
+    filters = list(pipeline._pair_filter_chunks(pairs, 'object_role_id', 'user_id'))
+
+    assert len(filters) > 1
+    assert sum(len(query_filter.children) for query_filter in filters) == len(pairs)
+    assert all(len(query_filter.children) * pipeline.PARAMETERS_PER_PAIR_FILTER < pipeline.SQL_SERVER_MAX_QUERY_PARAMETERS for query_filter in filters)
 
 
 def test_find_assignments_returns_matching_objects_for_small_batches(monkeypatch):
@@ -113,7 +125,7 @@ def test_find_assignments_chunks_large_mssql_batches(monkeypatch):
     role_definition = SimpleNamespace(pk=1)
     resolved = [
         pipeline.ResolvedAssignment(role_definition, SimpleNamespace(pk=index), None, str(index), '')
-        for index in range(1001)
+        for index in range(pipeline.SQL_SERVER_PAIR_FILTER_BATCH_SIZE + 1)
     ]
     lookup = {(1, item.object_id): SimpleNamespace(pk=index) for index, item in enumerate(resolved)}
     first_batch = [SimpleNamespace(pk=1)]
@@ -151,21 +163,3 @@ def test_find_assignments_uses_one_filter_for_small_batches(monkeypatch):
 
     assert result == found
     manager.filter.assert_called_once()
-
-
-def test_find_assignments_chunks_large_mssql_batches(monkeypatch):
-    monkeypatch.setattr(pipeline, 'connection', SimpleNamespace(vendor='microsoft'))
-    role_definition = SimpleNamespace(pk=1)
-    resolved = [
-        pipeline.ResolvedAssignment(role_definition, SimpleNamespace(pk=index), None, str(index), '')
-        for index in range(1001)
-    ]
-    lookup = {(1, assignment.object_id): SimpleNamespace(pk=index) for index, assignment in enumerate(resolved)}
-    first_batch = [SimpleNamespace(pk=1)]
-    second_batch = [SimpleNamespace(pk=2)]
-    manager = SimpleNamespace(filter=Mock(side_effect=[first_batch, second_batch]))
-
-    result = pipeline._find_assignments(resolved, lookup, SimpleNamespace(objects=manager), 'user')
-
-    assert result == first_batch + second_batch
-    assert manager.filter.call_count == 2
