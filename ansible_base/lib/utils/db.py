@@ -475,8 +475,8 @@ def get_sql_server_notify_params(alias: str = DEFAULT_DB_ALIAS, **extra_options)
 
     # Extract pyodbc connection parameters from Django settings
     params = {
-        'server': settings_dict.get('HOST', 'localhost'),
-        'port': settings_dict.get('PORT', 1433),
+        'server': settings_dict.get('HOST') or 'localhost',
+        'port': settings_dict.get('PORT') or 1433,
         'database': settings_dict.get('NAME'),
         'user': settings_dict.get('USER'),
         'password': settings_dict.get('PASSWORD'),
