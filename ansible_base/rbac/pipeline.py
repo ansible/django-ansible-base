@@ -15,6 +15,7 @@ from ansible_base.lib.utils.models import current_user_or_system_user
 from ansible_base.rbac.caching import (
     bulk_ancestor_roles,
     compute_team_member_roles,
+    delete_object_roles,
     defer_rbac_state,
     recompute_role_evaluations,
     team_ids_from_role_target,
@@ -379,7 +380,7 @@ def _recompute_after_remove(
         surviving_object_roles = ObjectRole.objects.filter(pk__in=[o.pk for o in object_roles_to_update])
         recompute_role_evaluations(surviving_object_roles)
 
-    ObjectRole.objects.filter(id__in=object_role_ids, users__isnull=True, teams__isnull=True).delete()
+    delete_object_roles(ObjectRole.objects.filter(id__in=object_role_ids, users__isnull=True, teams__isnull=True))
 
 
 def remove_assignments(

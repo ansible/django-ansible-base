@@ -8,12 +8,12 @@ from typing import Optional, Union
 from uuid import UUID
 
 from django.conf import settings
-from django.db import transaction
+from django.db import connections, transaction
 from django.db.models import Q
 from django.db.utils import IntegrityError
 
 from ansible_base.lib.utils.db import bulk_create_db_safe
-from ansible_base.rbac.models import ObjectRole, RoleEvaluation, RoleEvaluationUUID, get_evaluation_model
+from ansible_base.rbac.models import ObjectRole, RoleEvaluation, RoleEvaluationUUID, RoleTeamAssignment, RoleUserAssignment, get_evaluation_model
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.prefetch import EvaluationsPrefetch, TypesPrefetch
 from ansible_base.rbac.remote import GenericObject
@@ -77,13 +77,55 @@ def bulk_ancestor_roles(team_pks: Iterable[int]) -> set['ObjectRole']:
     return set(ObjectRole.objects.filter(permission_partials__in=ancestor_evals))
 
 
+def delete_object_roles(queryset) -> tuple[int, dict[str, int]]:
+    """Delete ObjectRoles and their assignments safely on SQL Server.
+
+    Django temporarily sets nullable cascading foreign keys to NULL on
+    databases that cannot defer constraint checks. For assignments this can
+    turn two object-scoped grants into duplicate global grants and violate the
+    global-assignment unique constraint. Remove those assignment rows first so
+    the ObjectRole cascade has no nullable foreign keys to update.
+    """
+    using = queryset.db
+    if not isinstance(using, str) or connections[using].vendor != 'microsoft':
+        return queryset.delete()
+
+    deleted_count = 0
+    deleted_by_model = {}
+    with transaction.atomic(using=using):
+        candidate_ids = set(queryset.values_list('pk', flat=True))
+        if not candidate_ids:
+            return 0, {}
+
+        # Lock only the ObjectRole rows. This prevents a concurrent assignment
+        # from appearing after assignment cleanup but before the cascade.
+        object_role_ids = set(
+            ObjectRole.objects.using(using).select_for_update().filter(pk__in=candidate_ids).values_list('pk', flat=True)
+        )
+        if not object_role_ids:
+            return 0, {}
+
+        for assignment_model in (RoleUserAssignment, RoleTeamAssignment):
+            count, model_counts = assignment_model.objects.using(using).filter(object_role_id__in=object_role_ids).delete()
+            deleted_count += count
+            for label, model_count in model_counts.items():
+                deleted_by_model[label] = deleted_by_model.get(label, 0) + model_count
+
+        count, model_counts = ObjectRole.objects.using(using).filter(pk__in=object_role_ids).delete()
+        deleted_count += count
+        for label, model_count in model_counts.items():
+            deleted_by_model[label] = deleted_by_model.get(label, 0) + model_count
+
+    return deleted_count, deleted_by_model
+
+
 def cleanup_deleted_team_roles(team_pks: set[int]) -> tuple[set['ObjectRole'], set[int]]:
     """Remove ObjectRoles and evaluations for deleted teams. Called by defer_rbac_computations flush."""
     ancestor_roles = bulk_ancestor_roles(team_pks)
     team_ct_id = permission_registry.team_ct_id
     RoleEvaluation.objects.filter(content_type_id=team_ct_id, object_id__in=team_pks).delete()
     deleted_or_ids = set(ObjectRole.objects.filter(content_type_id=team_ct_id, object_id__in=team_pks).values_list('id', flat=True))
-    ObjectRole.objects.filter(id__in=deleted_or_ids).delete()
+    delete_object_roles(ObjectRole.objects.filter(id__in=deleted_or_ids))
     eval_model = get_evaluation_model(permission_registry.team_model)
     eval_model.objects.filter(content_type_id=team_ct_id, object_id__in=team_pks).delete()
     return ancestor_roles, deleted_or_ids
@@ -97,7 +139,7 @@ def cleanup_deleted_object_roles(object_pks: list[tuple[int, int | UUID]]) -> se
     deleted_or_ids: set[int] = set()
     for ct_id, obj_ids in by_ct.items():
         batch_ids = set(ObjectRole.objects.filter(content_type_id=ct_id, object_id__in=obj_ids).values_list('id', flat=True))
-        ObjectRole.objects.filter(id__in=batch_ids).delete()
+        delete_object_roles(ObjectRole.objects.filter(id__in=batch_ids))
         deleted_or_ids.update(batch_ids)
         uuid_ids = {oid for oid in obj_ids if isinstance(oid, UUID)}
         int_ids = obj_ids - uuid_ids
@@ -110,7 +152,7 @@ def cleanup_deleted_object_roles(object_pks: list[tuple[int, int | UUID]]) -> se
 
 def cleanup_orphaned_object_roles() -> int:
     """Delete ObjectRoles with no user or team assignments."""
-    deleted_count, _ = ObjectRole.objects.filter(users__isnull=True, teams__isnull=True).delete()
+    deleted_count, _ = delete_object_roles(ObjectRole.objects.filter(users__isnull=True, teams__isnull=True))
     if deleted_count:
         logger.info('Cleaned up %d orphaned ObjectRole(s)', deleted_count)
     return deleted_count

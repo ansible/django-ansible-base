@@ -10,7 +10,6 @@ Verifies that:
 from unittest import mock
 
 import pytest
-from django.db import connection  # noqa: F401 - used in pytest.mark.skipif string
 from django.test.utils import override_settings
 
 from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation
@@ -111,10 +110,6 @@ class TestOptimizedDeleteCleanup:
     through-table cleanup.
     """
 
-    @pytest.mark.skipif(
-        "connection.vendor == 'microsoft'",
-        reason="Parallel test execution causes IntegrityError on SQL Server when managed.clear() rebuilds role definitions",
-    )
     def test_full_cleanup_after_optimized_delete(self):
         from django.contrib.auth import get_user_model
 
@@ -199,6 +194,12 @@ class TestOptimizedDeleteCleanup:
             content_type_id__in=int_cts + [uuid_ct.id],
             object_id__in=int_pks + [str(uuid_obj.pk)],
         ).exists(), "Orphaned RoleUserAssignments"
+
+        assert not RoleUserAssignment.objects.filter(
+            user__in=[user_member, user_admin],
+            role_definition__in=[member_rd, org_admin_rd, inv_rd, uuid_rd],
+            object_role__isnull=True,
+        ).exists(), "Object-scoped assignments must not become global assignments"
 
         assert not RoleTeamAssignment.objects.filter(content_type_id__in=int_cts, object_id__in=int_pks).exists(), "Orphaned RoleTeamAssignments"
 
