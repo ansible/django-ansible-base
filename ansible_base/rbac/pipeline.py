@@ -41,6 +41,11 @@ ContentObject = Union[models.Model, RemoteObject]
 PermissionTriple = tuple[RoleDefinition, models.Model, ContentObject]
 ObjectRoleLookup = dict[tuple[int, str], ObjectRole]
 
+SQL_SERVER_MAX_QUERY_PARAMETERS = 2100
+PARAMETERS_PER_PAIR_FILTER = 2
+SQL_SERVER_QUERY_PARAMETER_HEADROOM = 100
+SQL_SERVER_PAIR_FILTER_BATCH_SIZE = (SQL_SERVER_MAX_QUERY_PARAMETERS - SQL_SERVER_QUERY_PARAMETER_HEADROOM) // PARAMETERS_PER_PAIR_FILTER
+
 
 def _resolve_content_object(obj: models.Model | RemoteObject) -> tuple[DABContentType, str, str]:
     """Resolve content_type, object_id, and parent_reference from a content object.
@@ -185,26 +190,14 @@ def _audit_log_created(db_assignments: list[AssignmentBase], existing_pks: set[i
             _store_activitystream_entry(None, assignment, 'create')
 
 
-def _pair_filter(assignments: list[AssignmentBase], actor_field: str) -> Q:
-    """Build a Q filter matching exact (actor, object_role) pairs — no cross-product."""
-    q = Q()
-    for a in assignments:
-        q |= Q(**{actor_field: getattr(a, actor_field), 'object_role': a.object_role})
-    return q
-
-
-def _pair_filter_chunked(assignments: list[AssignmentBase], actor_field: str, chunk_size: int = 1000):
-    """
-    Build Q filters in chunks to avoid SQL Server's 2100 parameter limit.
-
-    Each Q condition uses 2 parameters (actor + object_role), so chunk_size of 1000
-    means up to 2000 parameters per query, safely below SQL Server's 2100 limit.
-
-    Yields Q filters, each covering a chunk of assignments.
-    """
-    for i in range(0, len(assignments), chunk_size):
-        chunk = assignments[i : i + chunk_size]
-        yield _pair_filter(chunk, actor_field)
+def _pair_filter_chunks(pairs: Sequence[tuple[object, object]], first_field: str, second_field: str):
+    """Build OR filters for exact pairs, respecting SQL Server's parameter limit."""
+    chunk_size = SQL_SERVER_PAIR_FILTER_BATCH_SIZE if connection.vendor == 'microsoft' else max(len(pairs), 1)
+    for start in range(0, len(pairs), chunk_size):
+        query_filter = Q()
+        for first_value, second_value in pairs[start : start + chunk_size]:
+            query_filter |= Q(**{first_field: first_value, second_field: second_value})
+        yield query_filter
 
 
 def _fire_post_save(db_assignments: list[AssignmentBase], existing_pks: set[int]) -> None:
@@ -242,9 +235,8 @@ def _build_assignment_objects(
 
 
 def _assignment_query_filters(assignments: list[AssignmentBase], actor_field: str) -> list[Q]:
-    if connection.vendor == 'microsoft' and len(assignments) > 1000:
-        return list(_pair_filter_chunked(assignments, actor_field, chunk_size=1000))
-    return [_pair_filter(assignments, actor_field)]
+    pairs = [(getattr(assignment, actor_field), assignment.object_role) for assignment in assignments]
+    return list(_pair_filter_chunks(pairs, actor_field, 'object_role'))
 
 
 def _create_assignment_batch(
@@ -359,22 +351,10 @@ def _find_assignments(
     if not pairs:
         return []
 
-    # Handle SQL Server's 2100 parameter limit by chunking
-    # Each condition uses 2 parameters, so chunk at 1000 to stay under limit
-    if connection.vendor == 'microsoft' and len(pairs) > 1000:
-        results = []
-        for i in range(0, len(pairs), 1000):
-            chunk = pairs[i : i + 1000]
-            q = Q()
-            for obj_role_id, actor_pk in chunk:
-                q |= Q(object_role_id=obj_role_id, **{actor_field: actor_pk})
-            results.extend(model.objects.filter(q))
-        return results
-    else:
-        q = Q()
-        for obj_role_id, actor_pk in pairs:
-            q |= Q(object_role_id=obj_role_id, **{actor_field: actor_pk})
-        return list(model.objects.filter(q))
+    results = []
+    for query_filter in _pair_filter_chunks(pairs, 'object_role_id', actor_field):
+        results.extend(model.objects.filter(query_filter))
+    return results
 
 
 def _recompute_after_remove(
