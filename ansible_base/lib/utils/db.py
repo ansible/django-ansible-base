@@ -241,9 +241,8 @@ def _mssql_advisory_lock(lock_id, shared=False, wait=True, lock_session_timeout_
             # Lock acquired (0 or 1)
             acquired = True
         elif result == -1:
-            # Timeout - not an error if wait=False
             if wait:
-                logger.warning(f'MS SQL advisory lock timeout for resource {resource_name}')
+                raise OperationalError(f'MS SQL sp_getapplock timed out for resource {resource_name}')
             acquired = False
         else:
             # Other errors (-2, -3, -999)
