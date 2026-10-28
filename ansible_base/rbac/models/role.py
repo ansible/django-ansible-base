@@ -805,8 +805,8 @@ class ObjectRole(ObjectRoleFields):
         evaluations_prefetch: an EvaluationsPrefetch instance with batch-loaded
         evaluation data for this role's chunk, avoiding per-role queries.
 
-        A just-created object is recomputed by recompute_role_evaluations_for_created
-        instead, which narrows the work to that one object.
+        A change confined to one object is recomputed by recompute_role_evaluations_for_object
+        instead, which narrows the work to that object.
         """
 
         if types_prefetch is None:
