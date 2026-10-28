@@ -113,5 +113,15 @@ def test_ancestor_roles_not_recomputed_in_full(team_with_ancestors, organization
             rd.give_permission(team_with_ancestors, obj)
         else:
             rd.remove_permission(team_with_ancestors, obj)
-    full = {c.args[0].pk for c in spy.call_args_list if c.kwargs.get('look_ahead') is None}
-    assert not full & ancestor_pks
+    recomputed = {c.args[0].pk for c in spy.call_args_list}
+    assert not recomputed & ancestor_pks
+
+
+@pytest.mark.django_db
+def test_remove_keeps_permission_the_team_holds_through_a_parent(team_with_ancestors, organization):
+    rd, obj = _target('object', organization)
+    _rd('org-inv', Organization, ['view_organization', 'view_inventory']).give_permission(team_with_ancestors, obj.organization)
+    rd.give_permission(team_with_ancestors, obj)
+    rd.remove_permission(team_with_ancestors, obj)
+    assert User.objects.get(username='member').has_obj_perm(obj, 'view_inventory')
+    _assert_matches_full_recompute()

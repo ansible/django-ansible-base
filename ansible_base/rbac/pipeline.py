@@ -18,7 +18,9 @@ from ansible_base.rbac.caching import (
     bulk_ancestor_roles,
     compute_team_member_roles,
     defer_rbac_state,
+    get_parent_ids,
     recompute_role_evaluations,
+    recompute_role_evaluations_for_object,
     team_ids_from_role_target,
 )
 from ansible_base.rbac.models.content_type import DABContentType
@@ -296,6 +298,14 @@ def _direct_permission_targets(object_roles: Iterable[ObjectRole]) -> set[tuple[
     return targets
 
 
+def _parent_chain(target: GenericObject) -> list[GenericObject]:
+    """Return the whole parent chain of target, nearest parent first. Remote objects have none."""
+    content_type = DABContentType.objects.get_for_id(target.content_type_id)
+    if content_type.is_remote:
+        return []
+    return get_parent_ids(content_type.model_class().objects.get(pk=target.pk))
+
+
 def _check_defer_guard() -> None:
     if defer_rbac_state.active and defer_rbac_state.has_deferred_data:
         raise RuntimeError(
@@ -369,8 +379,8 @@ def _recompute_after_remove(
 
     team_object_role_ids are the ObjectRoles whose team assignments were removed. When they do not
     grant team membership and all of their direct permissions are on a single object, the roles
-    providing the teams in actor_team_ids can only lose permissions on that object, so they are
-    recomputed with the look-ahead scoped to it. Otherwise they are recomputed in full, along
+    providing the teams in actor_team_ids can only lose permissions on that object, so only their
+    evaluations on it are recomputed. Otherwise they are recomputed in full, along
     with the roles below the removed ones.
     """
     _check_defer_guard()
@@ -398,7 +408,8 @@ def _recompute_after_remove(
         recompute_role_evaluations(surviving_object_roles)
     if scoped_targets:
         (object_ct_id, object_pk) = scoped_targets.pop()
-        recompute_role_evaluations(bulk_ancestor_roles(actor_team_ids), look_ahead=GenericObject(object_ct_id, object_pk))
+        target = GenericObject(object_ct_id, object_pk)
+        recompute_role_evaluations_for_object(bulk_ancestor_roles(actor_team_ids), look_ahead=target, target_parents=_parent_chain(target))
 
     ObjectRole.objects.filter(id__in=object_role_ids, users__isnull=True, teams__isnull=True).delete()
 
