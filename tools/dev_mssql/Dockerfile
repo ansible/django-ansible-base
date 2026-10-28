@@ -2,6 +2,7 @@ FROM mcr.microsoft.com/mssql/server:2025-latest
 
 ENV ACCEPT_EULA=Y
 ENV MSSQL_SA_PASSWORD=DabingPass!1234
+ENV MSSQL_COLLATION=Latin1_General_100_CS_AS
 
 USER root
 

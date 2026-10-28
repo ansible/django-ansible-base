@@ -25,6 +25,7 @@ services:
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_SA_PASSWORD: "YourStrong!Passw0rd"
+      MSSQL_COLLATION: "Latin1_General_100_CS_AS"
       MSSQL_PID: "Developer"
     ports:
       - "55433:1433"

@@ -110,9 +110,12 @@ For production use:
 
 ### MS SQL Specific
 
+- The test SQL Server instance and `dab_db` use `Latin1_General_100_CS_AS` so case and accent comparisons match PostgreSQL.
+- Provision external SQL Server databases with this collation before applying DAB migrations; changing the database default does not alter existing string columns.
 - JSONField stored as `nvarchar(max)` (not native JSON type)
 - No ISJSON() constraint (removed to support encryption)
 - Maximum size: ~1GB per field (practical limit ~100MB recommended)
+- Do not append `_SC` or `_UTF8` while the current backend/schema uses legacy `text`/`ntext` operations; SQL Server error 4189 rejects them.
 
 ### PostgreSQL Specific
 
