@@ -28,6 +28,8 @@ tox will automatically create/start and stop/destroy the postgres container.  If
 
 To run tests against MS SQL Server instead of PostgreSQL, use the dedicated MS SQL tox environments. Tox-docker starts and removes the SQL Server test container automatically.
 
+For consumer setup, database collation, ODBC installation, and `TextField` migration requirements, see the [SQL Server compatibility and migration guide](mssql-compatibility-guide.md).
+
 ```bash
 # Run all MS SQL tests
 tox -m mssql
