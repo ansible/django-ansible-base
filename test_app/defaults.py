@@ -120,20 +120,21 @@ if db_backend == "mssql":
         "default": {
             "ENGINE": "ansible_base.backends.mssql",
             "HOST": os.getenv("DB_HOST", "127.0.0.1"),
-            "PORT": int(os.getenv("DB_PORT", "1433")),  # SQL Server container port exposed by tox-docker
+            "PORT": int(os.getenv("DB_PORT", "1433")),  # tox-docker supplies its host-mapped port; local Compose uses mssqlsettings.py
             "USER": os.getenv("DB_USER", "sa"),
-            "PASSWORD": os.getenv("DB_PASSWORD", "DabingPass!1234"),  # Matches tools/dev_mssql/Dockerfile; compose uses test_app.mssqlsettings
+            "PASSWORD": os.getenv("DB_PASSWORD", "DabingPass!1234"),  # Matches tools/dev_mssql/Dockerfile; local Compose uses mssqlsettings.py
             "NAME": os.getenv("DB_NAME", "dab_db"),
             "OPTIONS": {"driver": 'ODBC Driver 18 for SQL Server', "extra_params": "Encrypt=yes;TrustServerCertificate=yes"},
         }
     }
 else:
-    # PostgreSQL (default) - matches tools/dev_postgres/Dockerfile
+    # Host-side PostgreSQL default matches `make postgres` (55432:5432).
+    # docker-compose.yml overrides DB_PORT=5432 for its internal network.
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
             "HOST": os.getenv("DB_HOST", "127.0.0.1"),
-            "PORT": int(os.getenv("DB_PORT", "5432")),
+            "PORT": int(os.getenv("DB_PORT", "55432")),
             "USER": os.getenv("DB_USER", "dab"),
             "PASSWORD": os.getenv("DB_PASSWORD", "dabing"),
             "NAME": os.getenv("DB_NAME", "dab_db"),
