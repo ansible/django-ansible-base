@@ -7,7 +7,7 @@ from django.test.utils import CaptureQueriesContext
 
 from ansible_base.rbac import permission_registry
 from ansible_base.rbac.caching import EvaluationUpdates, recompute_all_role_evaluations, recompute_role_evaluations
-from ansible_base.rbac.models import ObjectRole, RoleDefinition, RoleEvaluation, RoleEvaluationUUID
+from ansible_base.rbac.models import DABContentType, ObjectRole, RoleDefinition, RoleEvaluation, RoleEvaluationUUID
 from ansible_base.rbac.prefetch import EvaluationsPrefetch, TypesPrefetch
 from test_app.models import Inventory, Organization, Team, UUIDModel
 
@@ -22,6 +22,23 @@ def org_inv_rd():
 
 
 class TestEvaluationsPrefetch:
+    def test_needed_cache_updates_uses_prefetched_content_type(self):
+        role = ObjectRole(id=42)
+        content_type_id = 123
+        types_prefetch = mock.Mock()
+
+        with (
+            mock.patch.object(role, '_load_existing_partials', return_value={}),
+            mock.patch.object(role, 'expected_direct_permissions', return_value={('view_test', content_type_id, 1)}),
+            mock.patch.object(role, '_team_role_evaluations', return_value=set()),
+            mock.patch('ansible_base.rbac.models.get_evaluation_model', return_value=mock.Mock()),
+            mock.patch.object(DABContentType.objects, 'get', side_effect=AssertionError('should use TypesPrefetch')),
+        ):
+            _, to_add = role.needed_cache_updates(types_prefetch=types_prefetch)
+
+        types_prefetch.get_content_type.assert_called_once_with(content_type_id)
+        assert len(to_add) == 1
+
     @pytest.mark.django_db
     def test_partials_loaded(self, org_inv_rd, rando):
         """EvaluationsPrefetch loads existing evaluation data by role PK."""
