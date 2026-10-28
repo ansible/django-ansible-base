@@ -31,6 +31,10 @@ REST_FRAMEWORK = {
 }
 ```
 
+### Regex lookups
+
+The `__regex` and `__iregex` lookups are rejected with a 400 response when the database vendor is Microsoft SQL Server. The `mssql-django` backend compiles them to `dbo.REGEXP_LIKE`, a user-defined function that isn't installed by default. PostgreSQL regex filters remain supported.
+
 ## Letting Extra Query Params Through
 
 Sometimes you may have a view that needs to use a query param for a reason unrelated to filtering.
