@@ -15,8 +15,8 @@ from ansible_base.lib.utils.models import current_user_or_system_user
 from ansible_base.rbac.caching import (
     bulk_ancestor_roles,
     compute_team_member_roles,
-    delete_object_roles,
     defer_rbac_state,
+    delete_object_roles,
     recompute_role_evaluations,
     team_ids_from_role_target,
 )
@@ -170,6 +170,7 @@ def _ensure_object_roles(requested_assignments: list[ResolvedAssignment]) -> Obj
                     for oid in missing
                 ],
                 ignore_conflicts=True,
+                return_ids=False,
             )
             # Re-fetch to get PKs — bulk_create(ignore_conflicts=True) doesn't populate them.
             # unique_together on (role_definition, content_type, object_id) guarantees one row per oid.
@@ -255,7 +256,7 @@ def _create_assignment_batch(
     for query_filter in query_filters:
         existing_pks.update(assignment_model.objects.filter(query_filter).values_list('pk', flat=True))
 
-    bulk_create_db_safe(assignment_model, assignments, ignore_conflicts=ignore_conflicts)
+    bulk_create_db_safe(assignment_model, assignments, ignore_conflicts=ignore_conflicts, return_ids=False)
 
     created = []
     for query_filter in query_filters:

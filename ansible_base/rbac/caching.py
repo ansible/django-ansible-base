@@ -99,9 +99,7 @@ def delete_object_roles(queryset) -> tuple[int, dict[str, int]]:
 
         # Lock only the ObjectRole rows. This prevents a concurrent assignment
         # from appearing after assignment cleanup but before the cascade.
-        object_role_ids = set(
-            ObjectRole.objects.using(using).select_for_update().filter(pk__in=candidate_ids).values_list('pk', flat=True)
-        )
+        object_role_ids = set(ObjectRole.objects.using(using).select_for_update().filter(pk__in=candidate_ids).values_list('pk', flat=True))
         if not object_role_ids:
             return 0, {}
 
@@ -407,7 +405,7 @@ def _safe_bulk_create_evaluations(model, evaluations, ignore_conflicts):
         return
     try:
         with transaction.atomic():
-            bulk_create_db_safe(model, evaluations, ignore_conflicts=ignore_conflicts)
+            bulk_create_db_safe(model, evaluations, ignore_conflicts=ignore_conflicts, return_ids=False)
     except IntegrityError as exc:
         if not _is_stale_objectrole_fk(exc):
             raise
@@ -416,7 +414,7 @@ def _safe_bulk_create_evaluations(model, evaluations, ignore_conflicts):
         if evaluations:
             try:
                 with transaction.atomic():
-                    bulk_create_db_safe(model, evaluations, ignore_conflicts=ignore_conflicts)
+                    bulk_create_db_safe(model, evaluations, ignore_conflicts=ignore_conflicts, return_ids=False)
             except IntegrityError as exc:
                 if not _is_stale_objectrole_fk(exc):
                     raise

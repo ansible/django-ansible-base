@@ -114,11 +114,11 @@ def _backfill_missing_resources(registry, resource_cls, resource_type_cls, apps)
                 )
             )
             if len(data) == batch_size:
-                bulk_create_db_safe(resource_cls, data, ignore_conflicts=True)
+                bulk_create_db_safe(resource_cls, data, ignore_conflicts=True, return_ids=False)
                 _sync_backfilled_resource_ids(resource_cls, r_type.content_type, [resource.object_id for resource in data])
                 data.clear()
         if data:
-            bulk_create_db_safe(resource_cls, data, ignore_conflicts=True)
+            bulk_create_db_safe(resource_cls, data, ignore_conflicts=True, return_ids=False)
             _sync_backfilled_resource_ids(resource_cls, r_type.content_type, [resource.object_id for resource in data])
         r_type.save()
 

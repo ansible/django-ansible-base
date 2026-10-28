@@ -82,7 +82,7 @@ def test_create_assignments_chunks_large_mssql_batches(monkeypatch, actor_field)
     assert assignments[0].object_ansible_id == 'ansible-0'
     assert assignments[1].object_ansible_id is None
     assert len(manager.filters) == 4
-    safe_bulk_create.assert_called_once_with(assignment_class, assignments, ignore_conflicts=True)
+    safe_bulk_create.assert_called_once_with(assignment_class, assignments, ignore_conflicts=True, return_ids=False)
     audit_log.assert_called_once_with(assignments, set())
 
 

@@ -128,7 +128,7 @@ def sync_dab_permissions(verbosity=2, using=DEFAULT_DB_ALIAS, apps=global_apps):
             permission.api_slug = f'{ct.service}.{codename}'
             perms.append(permission)
 
-    bulk_create_db_safe(Permission, perms, ignore_conflicts=False, using=using)
+    bulk_create_db_safe(Permission, perms, ignore_conflicts=False, using=using, return_ids=False)
 
     # This is all just for nice logging
     perms_by_model_name = defaultdict(list)

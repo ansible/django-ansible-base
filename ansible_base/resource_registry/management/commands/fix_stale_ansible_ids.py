@@ -176,11 +176,11 @@ class Command(BaseCommand):
         for obj in model_cls.objects.filter(pk__in=coerced_pks).iterator(chunk_size=500):
             batch.append(init_resource_from_object(obj, resource_type=rt, resource_config=resource_config))
             if len(batch) >= 500:  # pragma: no cover
-                bulk_create_db_safe(Resource, batch, ignore_conflicts=True)
+                bulk_create_db_safe(Resource, batch, ignore_conflicts=True, return_ids=False)
                 created += len(batch)
                 batch.clear()
         if batch:
-            bulk_create_db_safe(Resource, batch, ignore_conflicts=True)
+            bulk_create_db_safe(Resource, batch, ignore_conflicts=True, return_ids=False)
             created += len(batch)
         return created
 
