@@ -57,3 +57,8 @@ def validate_mssql_object_id(value):
 def validate_mssql_codename(value):
     """Validate codename field (100 char limit on SQL Server)."""
     validate_mssql_text_length(value, max_length=100, field_name='Codename')
+
+
+def validate_mssql_parent_reference(value):
+    """Validate indexed parent_reference fields (450 char limit on SQL Server)."""
+    validate_mssql_text_length(value, max_length=450, field_name='Parent reference')

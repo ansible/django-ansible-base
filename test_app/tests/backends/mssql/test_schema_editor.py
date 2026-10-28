@@ -86,6 +86,16 @@ class TestFieldNeedsConversion(TestCase):
         result = self.schema_editor._field_needs_conversion(field, MockModel)
         self.assertTrue(result)
 
+    def test_textfield_in_descending_index_needs_conversion(self):
+        field = models.TextField()
+        field.name = 'test_field'
+        index = models.Index(fields=['-test_field'], name='idx_test')
+
+        class MockModel:
+            _meta = type('Meta', (), {'unique_together': [], 'constraints': [], 'indexes': [index]})()
+
+        self.assertTrue(self.schema_editor._field_needs_conversion(field, MockModel))
+
     def test_plain_textfield_does_not_need_conversion(self):
         """Plain TextField without constraints should not need conversion."""
         field = models.TextField()
@@ -263,8 +273,8 @@ class TestSchemaEditorConstraints(TestCase):
         self.assertEqual(result, 'parent result')
         get_column_type.assert_called_once_with('test_table', 'description')
         execute.assert_called_once_with('ALTER TABLE [test_table] ALTER COLUMN [description] nvarchar(450) NULL')
-        self.assertIsInstance(self.field, models.CharField)
-        self.assertEqual(self.field.max_length, 450)
+        self.assertIsInstance(self.field, models.TextField)
+        self.assertIsNone(self.field.max_length)
         add_constraint.assert_called_once_with(self.model, constraint)
 
     def test_add_constraint_propagates_alter_column_error(self):
@@ -312,10 +322,10 @@ class TestSchemaEditorConstraints(TestCase):
 
         self.assertEqual(result, 'parent result')
         execute.assert_called_once_with('ALTER TABLE [test_table] ALTER COLUMN [description] nvarchar(450) NULL')
-        self.assertIsInstance(self.field, models.CharField)
+        self.assertIsInstance(self.field, models.TextField)
         add_index.assert_called_once_with(self.model, index)
 
-    def test_create_model_converts_indexed_textfield_before_parent_call(self):
+    def test_create_model_does_not_mutate_indexed_textfield(self):
         field = models.TextField(db_index=True)
         field.set_attributes_from_name('name')
         model = SimpleNamespace(_meta=SimpleNamespace(local_fields=[field]))
@@ -323,8 +333,8 @@ class TestSchemaEditorConstraints(TestCase):
             result = self.schema_editor.create_model(model)
 
         self.assertEqual(result, 'parent result')
-        self.assertIsInstance(field, models.CharField)
-        self.assertEqual(field.max_length, 255)
+        self.assertIsInstance(field, models.TextField)
+        self.assertIsNone(field.max_length)
         create_model.assert_called_once_with(model)
 
     def test_column_sql_converts_indexed_textfield(self):
@@ -339,6 +349,7 @@ class TestSchemaEditorConstraints(TestCase):
         self.assertIsInstance(converted_field, models.CharField)
         self.assertEqual(converted_field.max_length, 450)
         self.assertTrue(include_default)
+        self.assertIsInstance(field, models.TextField)
 
     def test_column_sql_delegates_unconverted_field(self):
         field = models.CharField(max_length=80)
@@ -366,11 +377,23 @@ class TestSchemaEditorConstraints(TestCase):
 
         self.assertEqual(cursor.execute.call_count, 4)
 
-    def test_get_column_type_returns_none_on_database_error(self):
+    def test_get_column_type_propagates_database_errors_with_column_context(self):
         cursor = Mock()
         cursor.execute.side_effect = RuntimeError('database unavailable')
         connection = MagicMock()
         connection.cursor.return_value.__enter__.return_value = cursor
         self.schema_editor.connection = connection
 
-        self.assertIsNone(self.schema_editor._get_column_type('test_table', 'description'))
+        with self.assertRaisesRegex(RuntimeError, 'test_table.description'):
+            self.schema_editor._get_column_type('test_table', 'description')
+
+    def test_add_index_fails_clearly_when_column_is_missing(self):
+        index = models.Index(fields=['description'], name='idx_description')
+        with (
+            patch.object(self.schema_editor, '_get_column_type', return_value=None),
+            patch.object(self.schema_editor, 'execute') as execute,
+        ):
+            with self.assertRaisesRegex(RuntimeError, 'test_table.description'):
+                self.schema_editor.add_index(self.model, index)
+
+        execute.assert_not_called()

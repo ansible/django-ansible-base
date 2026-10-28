@@ -29,6 +29,7 @@ def test_mssql_text_length_accepts_limit_and_rejects_excess(monkeypatch):
         (validators.validate_mssql_description, 'x' * 4001, 'Description is limited to 4000 characters'),
         (validators.validate_mssql_object_id, 'x' * 451, 'Object ID is limited to 450 characters'),
         (validators.validate_mssql_codename, 'x' * 101, 'Codename is limited to 100 characters'),
+        (validators.validate_mssql_parent_reference, 'x' * 451, 'Parent reference is limited to 450 characters'),
     ],
 )
 def test_mssql_convenience_validators_enforce_limits(monkeypatch, validator, value, message):

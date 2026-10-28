@@ -7,6 +7,8 @@ from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
+from ansible_base.lib.serializers.validators import validate_mssql_object_id, validate_mssql_parent_reference
+
 from ..api.fields import ActorAnsibleIdField
 from ..models import DABContentType, DABPermission, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
 from ..policies import check_content_obj_permission
@@ -120,6 +122,15 @@ class BaseAssignmentSerializer(serializers.ModelSerializer):
         else:
             if has_object_id or has_object_ansible_id:
                 raise serializers.ValidationError("Can not provide either 'object_id' or 'object_ansible_id' for system role")
+
+        for field_name, validator, value in (
+            ('object_id', validate_mssql_object_id, attrs.get('object_id')),
+            ('parent_reference', validate_mssql_parent_reference, parent_reference),
+        ):
+            try:
+                validator(value)
+            except DjangoValidationError as exc:
+                raise serializers.ValidationError({field_name: exc.messages}) from exc
 
         return super().validate(attrs)
 
