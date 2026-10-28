@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterator, Sequence
-from typing import Union
+from collections.abc import Iterable, Iterator, Sequence
+from typing import Optional, Union
 from uuid import UUID
+
+from django.db.models import Q
 
 from ansible_base.lib.utils.models import is_add_perm
 from ansible_base.rbac.permission_registry import permission_registry
+from ansible_base.rbac.remote import GenericObject
 
 from .models.content_type import DABContentType
 from .models.permission import DABPermission
@@ -122,16 +125,25 @@ class EvaluationsPrefetch:
     (which prefetch_related would do). Only the columns needed by
     needed_cache_updates are fetched, grouped by role PK.
 
+    from_roles loads everything the roles grant. for_object loads only what concerns one
+    object (the look-ahead), for recomputes where nothing else can have changed.
+
     Public interface — used by ObjectRole.needed_cache_updates:
-        get_partials(role_pk)      -> existing int-pk evaluations
-        get_partials_uuid(role_pk) -> existing uuid-pk evaluations
-        get_team_roles(role_pk)    -> team ObjectRoles via provides_teams chain
+        get_partials(role_pk)          -> existing int-pk evaluations
+        get_partials_uuid(role_pk)     -> existing uuid-pk evaluations
+        get_team_roles(role_pk)        -> team ObjectRoles via provides_teams chain
+        grants_directly(role)          -> whether the role's own object can grant in scope
+        expected_direct_permissions(role, types_prefetch) -> the role's evaluations in scope
     """
 
     def __init__(self) -> None:
         self._partials: dict[int, dict[PartialKey, int]] = {}
         self._partials_uuid: dict[int, dict[PartialKey, int]] = {}
         self._team_roles: dict[int, list[ObjectRole]] = {}
+        self.look_ahead: Optional[GenericObject] = None
+        self._direct_keys: set[tuple[int, str]] = set()
+        self._granting_rd_ids: set[int] = set()
+        self._expected_by_role_pk: dict[int, set[PartialKey]] = {}
 
     # -- public getters (consumed by ObjectRole.needed_cache_updates) --
 
@@ -146,6 +158,28 @@ class EvaluationsPrefetch:
     def get_team_roles(self, role_pk: int) -> list[ObjectRole]:
         """ObjectRoles reachable via provides_teams -> has_roles for role_pk."""
         return self._team_roles.get(role_pk, [])
+
+    def grants_directly(self, role: ObjectRole) -> bool:
+        """Whether role's own permissions can produce evaluations in scope.
+
+        Always for a full prefetch. For one object, only when the role's object is that
+        object or one of its parents and its definition can grant on the object type;
+        any other role contributes purely through the teams it provides.
+        """
+        if self.look_ahead is None:
+            return True
+        return (role.content_type_id, str(role.object_id)) in self._direct_keys and role.role_definition_id in self._granting_rd_ids
+
+    def expected_direct_permissions(self, role: ObjectRole, types_prefetch: TypesPrefetch) -> set[PartialKey]:
+        """role.expected_direct_permissions in scope, memoized per role for one object.
+
+        A team-held role reached through several teams is evaluated once per object recompute.
+        """
+        if self.look_ahead is None:
+            return role.expected_direct_permissions(types_prefetch)
+        if role.pk not in self._expected_by_role_pk:
+            self._expected_by_role_pk[role.pk] = role.expected_direct_permissions(types_prefetch, look_ahead=self.look_ahead)
+        return self._expected_by_role_pk[role.pk]
 
     # -- factory --
 
@@ -172,12 +206,49 @@ class EvaluationsPrefetch:
 
         return inst
 
+    @classmethod
+    def for_object(
+        cls, roles: Sequence[ObjectRole], look_ahead: GenericObject, target_parents: Iterable[GenericObject], types_prefetch: TypesPrefetch
+    ) -> EvaluationsPrefetch:
+        """Load what roles need to be recomputed on the single object look_ahead.
+
+        target_parents must be the object's whole parent chain: a team-held role on a
+        parent left out of it would be missed and its evaluations deleted.
+
+        * one query loads the teams every role provides membership to,
+        * one query loads the team-held roles that can grant on the object
+          (roles on the object itself or on its parent chain),
+        * one query maps those teams to those roles,
+        * one query loads whatever evaluations already exist for the object.
+        """
+        inst = cls()
+        inst.look_ahead = look_ahead
+        inst._granting_rd_ids = types_prefetch.role_definition_ids_granting(look_ahead.content_type_id)
+        inst._direct_keys = {(parent.content_type_id, str(parent.pk)) for parent in target_parents} | {(look_ahead.content_type_id, str(look_ahead.pk))}
+        if not roles:
+            return inst
+
+        role_pks = [r.pk for r in roles]
+        role_to_teams = cls._fetch_role_to_teams(role_pks)
+        team_to_role_pks, team_roles_by_pk = cls._fetch_target_team_roles(role_to_teams, inst._direct_keys, inst._granting_rd_ids)
+        for pk in role_pks:
+            candidate_pks = {rpk for team_id in role_to_teams.get(pk, []) for rpk in team_to_role_pks.get(team_id, [])}
+            inst._team_roles[pk] = [team_roles_by_pk[rpk] for rpk in candidate_pks]
+
+        evaluation_model = RoleEvaluationUUID if isinstance(look_ahead.pk, UUID) else RoleEvaluation
+        partials = cls._fetch_evaluations(evaluation_model, role_pks, Q(content_type_id=look_ahead.content_type_id, object_id=look_ahead.pk))
+        if evaluation_model is RoleEvaluationUUID:
+            inst._partials_uuid = partials
+        else:
+            inst._partials = partials
+        return inst
+
     # -- internal loading steps --
 
     @staticmethod
-    def _fetch_evaluations(model: type, role_pks: list[int]) -> dict[int, dict[PartialKey, int]]:
+    def _fetch_evaluations(model: type, role_pks: list[int], scope: Q = Q()) -> dict[int, dict[PartialKey, int]]:
         by_role: dict[int, dict[PartialKey, int]] = defaultdict(dict)
-        for role_id, eval_id, codename, ct_id, obj_id in model.objects.filter(role_id__in=role_pks).values_list(
+        for role_id, eval_id, codename, ct_id, obj_id in model.objects.filter(scope, role_id__in=role_pks).values_list(
             'role_id', 'id', 'codename', 'content_type_id', 'object_id'
         ):
             by_role[role_id][(codename, ct_id, obj_id)] = eval_id
@@ -198,6 +269,30 @@ class EvaluationsPrefetch:
             for team_id, obj_role_id in RoleTeamAssignment.objects.filter(team_id__in=all_team_ids).values_list('team_id', 'object_role_id'):
                 team_to_role_pks[team_id].append(obj_role_id)
         return team_to_role_pks
+
+    @staticmethod
+    def _fetch_target_team_roles(
+        role_to_teams: dict[int, list[int]], direct_keys: set[tuple[int, str]], granting_rd_ids: set[int]
+    ) -> tuple[dict[int, list[int]], dict[int, ObjectRole]]:
+        """The roles the teams hold on the object or its parents (direct_keys) that can grant on it.
+
+        Returns (team_id -> held role pks, role pk -> ObjectRole).
+        """
+        all_team_ids = {tid for tids in role_to_teams.values() for tid in tids}
+        if not all_team_ids:
+            return {}, {}
+        relevant = Q(pk__in=[])
+        for ct_id, object_id in direct_keys:
+            relevant |= Q(content_type_id=ct_id, object_id=object_id)
+        team_roles_by_pk = {r.pk: r for r in ObjectRole.objects.filter(relevant, teams__in=all_team_ids, role_definition_id__in=granting_rd_ids).distinct()}
+        if not team_roles_by_pk:
+            return {}, {}
+        team_to_role_pks: dict[int, list[int]] = defaultdict(list)
+        for team_id, obj_role_id in RoleTeamAssignment.objects.filter(team_id__in=all_team_ids, object_role_id__in=team_roles_by_pk.keys()).values_list(
+            'team_id', 'object_role_id'
+        ):
+            team_to_role_pks[team_id].append(obj_role_id)
+        return team_to_role_pks, team_roles_by_pk
 
     @staticmethod
     def _fetch_team_role_instances(team_to_role_pks: dict[int, list[int]]) -> dict[int, ObjectRole]:

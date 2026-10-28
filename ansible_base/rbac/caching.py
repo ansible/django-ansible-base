@@ -529,111 +529,6 @@ def recompute_role_evaluations(
     updates.apply()
 
 
-def _target_role_teams(role_pks: list[int]) -> tuple[dict[int, set[int]], set[int]]:
-    """Map each role in role_pks to the teams it provides membership to.
-
-    These are the roles being recomputed (e.g. a team's member role). Returns
-    (role_pk -> team_ids, union of all team_ids) via a single query on the
-    provides_teams through table.
-    """
-    role_to_teams: dict[int, set[int]] = defaultdict(set)
-    through = ObjectRole.provides_teams.through
-    for role_pk, team_id in through.objects.filter(objectrole_id__in=role_pks).values_list('objectrole_id', 'team_id'):
-        role_to_teams[role_pk].add(team_id)
-    return role_to_teams, set().union(*role_to_teams.values()) if role_to_teams else set()
-
-
-def _target_team_roles(
-    team_ids: set[int],
-    object_ct_id: int,
-    parent_keys: set[tuple[int, str]],
-    granting_rd_ids: set[int],
-) -> tuple[dict[int, ObjectRole], dict[int, set[int]]]:
-    """Load the roles held by team_ids that can grant on the target object.
-
-    The inverse direction of _target_role_teams: given teams, find the roles
-    assigned *to* those teams, limited to roles on the object itself or on one
-    of its parents (parent_keys) whose definition can grant on the object type
-    (granting_rd_ids). Returns (role_pk -> ObjectRole, team_id -> held role_pks).
-    """
-    team_roles_by_pk: dict[int, ObjectRole] = {}
-    team_to_role_pks: dict[int, set[int]] = defaultdict(set)
-    if not team_ids:
-        return team_roles_by_pk, team_to_role_pks
-
-    relevant_filter = Q(content_type_id=object_ct_id, object_id__in=[])
-    for ct_id, parent_id in parent_keys:
-        relevant_filter |= Q(content_type_id=ct_id, object_id=parent_id)
-    relevant_filter &= Q(role_definition_id__in=granting_rd_ids)
-    team_roles_by_pk = {role.pk: role for role in ObjectRole.objects.filter(teams__in=team_ids).filter(relevant_filter).distinct()}
-    if not team_roles_by_pk:
-        return team_roles_by_pk, team_to_role_pks
-
-    assignment_model = ObjectRole.teams.through
-    for team_id, role_pk in assignment_model.objects.filter(team_id__in=team_ids, object_role_id__in=team_roles_by_pk.keys()).values_list(
-        'team_id', 'object_role_id'
-    ):
-        team_to_role_pks[team_id].add(role_pk)
-    return team_roles_by_pk, team_to_role_pks
-
-
-def _target_existing_evaluations(role_pks: list[int], object_pk: int | UUID, object_ct_id: int) -> dict[int, dict]:
-    """Load the RoleEvaluation rows that already exist for the target object.
-
-    Returns role_pk -> {(codename, content_type_id, object_id): evaluation_id},
-    reading from RoleEvaluationUUID when the object is UUID-keyed.
-    """
-    evaluation_model = RoleEvaluationUUID if isinstance(object_pk, UUID) else RoleEvaluation
-    existing: dict[int, dict] = defaultdict(dict)
-    for eval_id, role_pk, codename, ct_id, obj_id in evaluation_model.objects.filter(
-        role_id__in=role_pks, content_type_id=object_ct_id, object_id=object_pk
-    ).values_list('id', 'role_id', 'codename', 'content_type_id', 'object_id'):
-        existing[role_pk][(codename, ct_id, obj_id)] = eval_id
-    return existing
-
-
-def _collect_target_role_updates(
-    role: ObjectRole,
-    direct_keys: set[tuple[int, str]],
-    role_to_teams: dict[int, set[int]],
-    team_to_role_pks: dict[int, set[int]],
-    team_roles_by_pk: dict[int, ObjectRole],
-    expected_by_role_pk: dict[int, set],
-    granting_rd_ids: set[int],
-    types_prefetch: TypesPrefetch,
-    look_ahead: GenericObject,
-    existing: dict[int, dict],
-    updates: EvaluationUpdates,
-) -> None:
-    """Diff one role's expected evaluations on the target object against existing ones.
-
-    A role's expected set is the union of its own direct permissions (only when
-    its object is the target object or a parent of it, and its definition can
-    grant on the object type) and the permissions of every team-held role
-    reached through the teams it provides membership to.
-    Missing rows are queued on updates.to_add, stale rows on updates.to_delete.
-    expected_by_role_pk memoizes per-role results across calls.
-    """
-
-    def expected_for(expected_role: ObjectRole) -> set:
-        if expected_role.pk not in expected_by_role_pk:
-            expected_by_role_pk[expected_role.pk] = expected_role.expected_direct_permissions(types_prefetch, look_ahead=look_ahead)
-        return expected_by_role_pk[expected_role.pk]
-
-    expected: set = set()
-    if (role.content_type_id, str(role.object_id)) in direct_keys and role.role_definition_id in granting_rd_ids:
-        expected |= expected_for(role)
-    for team_id in role_to_teams.get(role.pk, ()):
-        for team_role_pk in team_to_role_pks.get(team_id, ()):
-            expected |= expected_for(team_roles_by_pk[team_role_pk])
-
-    role_existing = existing.get(role.pk, {})
-    for key in role_existing.keys() - expected:
-        updates.to_delete.add((role_existing[key], type(key[2])))
-    for codename, ct_id, obj_id in expected - role_existing.keys():
-        updates.to_add.append(RoleEvaluation(codename=codename, content_type_id=ct_id, object_id=obj_id, role=role))
-
-
 def recompute_role_evaluations_for_object(
     object_roles: Iterable[ObjectRole],
     look_ahead: GenericObject,
@@ -647,55 +542,21 @@ def recompute_role_evaluations_for_object(
     permissions are all on it. target_parents must be the object's whole parent chain;
     a team-held role on a parent left out of it would be missed and its evaluations deleted.
 
-    Rather than recomputing each role in full, the work is organised around the object:
-
-    * one query loads the teams every role provides membership to,
-    * one query loads the team-held roles that can grant on the object
-      (roles on the object itself or on its parent chain),
-    * one query maps those teams to those roles,
-    * one query loads whatever evaluations already exist for the object,
-    * each relevant role's expected evaluations are computed once.
-
-    A role's own object can only contribute if it is look_ahead or one of its
-    parents; other roles in object_roles contribute purely through their teams.
+    The roles go through the same needed_cache_updates diff as a full recompute, against
+    an EvaluationsPrefetch.for_object, which loads only what concerns the object in a
+    fixed number of queries. A role's own object only contributes if it is look_ahead
+    or one of its parents; other roles contribute purely through their teams. Team-held
+    roles reached through several roles are evaluated once.
     """
     if types_prefetch is None:
         types_prefetch = TypesPrefetch.from_db()
     roles = list(object_roles)
     if not roles:
         return
-    role_pks = [r.pk for r in roles]
-    object_pk = look_ahead.pk
-    object_ct_id = look_ahead.content_type_id
-    object_id_str = str(object_pk)
-    parent_keys = {(parent.content_type_id, str(parent.pk)) for parent in target_parents}
-    direct_keys = parent_keys | {(object_ct_id, object_id_str)}
-
-    role_to_teams, team_ids = _target_role_teams(role_pks)
-    granting_rd_ids = types_prefetch.role_definition_ids_granting(object_ct_id)
-    team_roles_by_pk, team_to_role_pks = _target_team_roles(
-        team_ids,
-        object_ct_id,
-        parent_keys | {(object_ct_id, object_id_str)},
-        granting_rd_ids,
-    )
-    existing = _target_existing_evaluations(role_pks, object_pk, object_ct_id)
-    expected_by_role_pk: dict[int, set] = {}
+    evaluations_prefetch = EvaluationsPrefetch.for_object(roles, look_ahead, target_parents, types_prefetch)
     updates = EvaluationUpdates()
     for role in roles:
-        _collect_target_role_updates(
-            role,
-            direct_keys,
-            role_to_teams,
-            team_to_role_pks,
-            team_roles_by_pk,
-            expected_by_role_pk,
-            granting_rd_ids,
-            types_prefetch,
-            look_ahead,
-            existing,
-            updates,
-        )
+        updates.collect(role, types_prefetch, evaluations_prefetch)
     updates.apply()
 
 
