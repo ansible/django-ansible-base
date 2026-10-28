@@ -63,18 +63,26 @@ def test_mssql_advisory_lock_acquires_and_releases(monkeypatch):
     cursor.close.assert_called_once()
 
 
-@pytest.mark.parametrize(('wait', 'warning_expected'), [(False, False), (True, True)])
-def test_mssql_advisory_lock_timeout_returns_not_acquired(monkeypatch, wait, warning_expected):
+def test_mssql_advisory_lock_timeout_returns_not_acquired_when_not_waiting(monkeypatch):
     _, cursor = make_mssql_connection(monkeypatch, (-1,))
-    logger = Mock()
-    monkeypatch.setattr(db, 'logger', logger)
 
-    with db._mssql_advisory_lock('lock', wait=wait) as acquired:
+    with db._mssql_advisory_lock('lock', wait=False) as acquired:
         assert acquired is False
 
     assert cursor.execute.call_count == 1
-    assert cursor.execute.call_args.args[1] == ['lock', 'Exclusive', 0 if not wait else -1]
-    assert logger.warning.called is warning_expected
+    assert cursor.execute.call_args.args[1] == ['lock', 'Exclusive', 0]
+
+
+def test_mssql_advisory_lock_timeout_raises_when_waiting(monkeypatch):
+    _, cursor = make_mssql_connection(monkeypatch, (-1,))
+
+    with pytest.raises(OperationalError, match='timed out'):
+        with db._mssql_advisory_lock('lock', wait=True, lock_session_timeout_milliseconds=500):
+            pytest.fail('waiting lock acquisition should raise after timing out')
+
+    assert cursor.execute.call_count == 1
+    assert cursor.execute.call_args.args[1] == ['lock', 'Exclusive', 500]
+    cursor.close.assert_called_once()
 
 
 @pytest.mark.parametrize(('row', 'code'), [(None, -999), ((-3,), -3)])
