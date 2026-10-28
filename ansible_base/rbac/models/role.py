@@ -843,7 +843,7 @@ class ObjectRole(ObjectRoleFields):
         from ansible_base.rbac.models import get_evaluation_model
 
         for ct_id, evals in evaluations_by_ct.items():
-            ct = DABContentType.objects.get(pk=ct_id)
+            ct = types_prefetch.get_content_type(ct_id)
             model_cls = ct.model_class()
             eval_model = get_evaluation_model(model_cls)
             for codename, obj_pk in evals:
