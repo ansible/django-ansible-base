@@ -450,9 +450,10 @@ def test_backward_compat_imports():
 @pytest.mark.django_db
 @pytest.mark.parametrize('pk_field_type, object_id', [('integer', '42'), ('uuid', 'ad680c04-5ef0-4a69-bfc1-f78348f444b4')])
 @pytest.mark.parametrize('actor_type', ['user', 'team'])
-def test_sync_remote_assignment_lifecycle(pk_field_type, object_id, actor_type, rando, team, member_rd):
+@pytest.mark.parametrize('with_ansible_id', [False, True])
+def test_sync_remote_assignment_lifecycle(pk_field_type, object_id, actor_type, with_ansible_id, rando, team, member_rd):
     from ansible_base.rbac.models import DABContentType, DABPermission, RoleDefinition, RoleTeamAssignment, RoleUserAssignment
-    from ansible_base.resource_registry.tasks.sync import RemoteAssignmentResult, SyncExecutor
+    from ansible_base.resource_registry.tasks.sync import SyncExecutor
 
     ct = DABContentType.objects.create(service='sync_remote', app_label='remote', model=f'widget_{pk_field_type}', pk_field_type=pk_field_type)
     permission = DABPermission.objects.create(content_type=ct, codename=f'view_{ct.model}')
@@ -463,26 +464,35 @@ def test_sync_remote_assignment_lifecycle(pk_field_type, object_id, actor_type, 
     assignment = AssignmentTuple(str(Resource.get_resource_for_object(actor).ansible_id), object_id, rd.name, actor_type)
     obj = ct.get_object_for_this_type(pk=object_id)
     assignment_model = RoleUserAssignment if actor_type == 'user' else RoleTeamAssignment
-    executor = SyncExecutor(api_client=mock.Mock(), resource_type_names=['unused'], service_filter=ct.service)
+    api_client = mock.Mock()
+    rows = []
+    for kind in ('user', 'team'):
+        response = mock.Mock(status_code=200)
+        response.json.return_value = {'results': rows if kind == actor_type else [], 'next': None}
+        getattr(api_client, f'list_{kind}_assignments').return_value = response
+    row = {'role_definition': rd.name, f'{actor_type}_ansible_id': assignment.actor_ansible_id, 'object_id': object_id}
+    if with_ansible_id:
+        row['object_ansible_id'] = '9e18d5d2-338a-4a1b-a3dc-e375fd82baf9'
+    rows.append(row)
+    executor = SyncExecutor(api_client=api_client, resource_type_names=['unused'], service_filter=ct.service)
 
-    with mock.patch('ansible_base.resource_registry.tasks.sync.get_remote_assignments') as fetch:
-        fetch.return_value = RemoteAssignmentResult(assignments={assignment}, is_complete=True)
-        executor.run()
-        assert executor.results['assignment_errors'] == [0]
-        assert rando.has_obj_perm(obj, 'view')
-        assert get_local_assignments(service=ct.service) == {assignment}
-        executor.run()
-        assert executor.results['assignments_created'] == [0]
-        assert assignment_model.objects.filter(role_definition=rd).count() == 1
+    executor.run()
+    assert executor.results['assignment_errors'] == [0]
+    assert rando.has_obj_perm(obj, 'view')
+    assert get_local_assignments(service=ct.service) == {assignment}
+    executor.run()
+    assert executor.results['assignments_created'] == [0]
+    assert executor.results['assignments_deleted'] == [0]
+    assert assignment_model.objects.filter(role_definition=rd).count() == 1
 
-        fetch.return_value = RemoteAssignmentResult(is_complete=True)
-        executor.run()
-        assert executor.results['assignment_errors'] == [0]
-        assert executor.results['assignments_deleted'] == [1]
-        assert not rando.has_obj_perm(obj, 'view')
-        assert not assignment_model.objects.filter(role_definition=rd).exists()
-        executor.run()
-        assert executor.results['assignments_deleted'] == [0]
+    rows.clear()
+    executor.run()
+    assert executor.results['assignment_errors'] == [0]
+    assert executor.results['assignments_deleted'] == [1]
+    assert not rando.has_obj_perm(obj, 'view')
+    assert not assignment_model.objects.filter(role_definition=rd).exists()
+    executor.run()
+    assert executor.results['assignments_deleted'] == [0]
 
 
 @pytest.mark.django_db
