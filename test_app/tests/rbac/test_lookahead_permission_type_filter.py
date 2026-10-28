@@ -10,6 +10,7 @@ from ansible_base.rbac.models import DABContentType, DABPermission, ObjectRole, 
 from ansible_base.rbac.models.content_type import get_local_resource_prefix
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.prefetch import TypesPrefetch
+from ansible_base.rbac.remote import GenericObject
 from test_app.models import CollectionImport, Inventory, Namespace, Organization
 
 LOOKAHEAD_RECOMPUTES = [
@@ -130,7 +131,7 @@ def _assert_lookahead_on_org_keeps_rows(member_role, organization, recompute):
     """A look-ahead recompute targeting the organization must not drop any row of a full recompute."""
     recompute_all_role_evaluations()
     before = _evaluation_rows()
-    recompute([member_role], object_pk=organization.pk, object_ct_id=_org_ct_id(), target_parents=[])
+    recompute([member_role], look_ahead=GenericObject(_org_ct_id(), organization.pk), target_parents=[])
     assert _evaluation_rows() == before
 
 

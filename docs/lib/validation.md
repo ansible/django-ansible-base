@@ -134,6 +134,21 @@ OPTIONS hints appear when all of the following hold:
 
 Model field validators do not emit OPTIONS metadata.
 
+**Exception — AuthenticatorMap trigger fields.** The attribute names and values
+under the `triggers` `JSONField` are enforced server-side (tier 2) but, being
+nested JSON rather than Char/Text model fields, get no OPTIONS hint from the rules
+above. `AuthenticatorMapViewSet` uses a custom
+`AuthenticatorMapMetadata(CleanTextMetadata)` that injects top-level `attribute`
+and `value` hints into the **create (`POST`) action only** when
+`ENHANCED_INPUT_VALIDATION_ENABLED` is on. The platform UI resolves nested form
+fields (`attributes.{index}.attribute`, `attributes.{index}.value`) by their last
+path segment, so these drive client-side validation with no UI change. Update
+(`PUT`) is intentionally excluded because the serializer
+[grandfathers](#grandfather-behavior) stored attribute names on update — a static
+OPTIONS pattern can't express that per-instance exception, so injecting it there
+would wrongly block edits to maps carrying a legacy name (new names entered during
+an edit are still enforced server-side).
+
 ### Customization
 
 Extension: which model fields and JSON sub-keys the mixin validates or skips.
