@@ -110,9 +110,21 @@ def test_mssql_advisory_lock_wraps_execute_errors(monkeypatch):
     cursor.close.assert_called_once()
 
 
+def test_mssql_advisory_lock_release_error_preserves_body_exception_and_closes_connection(monkeypatch):
+    connection, cursor = make_mssql_connection(monkeypatch, (0,))
+    cursor.execute.side_effect = [None, OperationalError('release failed')]
+
+    with pytest.raises(RuntimeError, match='body failed'):
+        with db._mssql_advisory_lock('lock', using='replica'):
+            raise RuntimeError('body failed')
+
+    connection.close.assert_called_once()
+    cursor.close.assert_called_once()
+
+
 def test_advisory_lock_dispatches_to_mssql_and_passes_options(monkeypatch):
     connection = SimpleNamespace(vendor='microsoft', close_if_unusable_or_obsolete=Mock())
-    monkeypatch.setattr(db, 'connection', connection)
+    monkeypatch.setattr(db, 'connections', {'default': connection, 'replica': connection})
     called = {}
 
     @contextmanager
@@ -133,7 +145,7 @@ def test_advisory_lock_dispatches_to_mssql_and_passes_options(monkeypatch):
 
 def test_advisory_lock_closes_connection_after_mssql_error(monkeypatch):
     connection = SimpleNamespace(vendor='microsoft', close_if_unusable_or_obsolete=Mock())
-    monkeypatch.setattr(db, 'connection', connection)
+    monkeypatch.setattr(db, 'connections', {'default': connection})
 
     class FailedLock:
         def __enter__(self):
@@ -150,8 +162,24 @@ def test_advisory_lock_closes_connection_after_mssql_error(monkeypatch):
     connection.close_if_unusable_or_obsolete.assert_called_once()
 
 
+def test_advisory_lock_closes_using_alias_after_mssql_error(monkeypatch):
+    default_connection = Mock(vendor='microsoft')
+    replica_connection = Mock(vendor='microsoft')
+    cursor = replica_connection.cursor.return_value
+    cursor.fetchone.return_value = (0,)
+    monkeypatch.setattr(db, 'connection', default_connection)
+    monkeypatch.setattr(db, 'connections', {'default': default_connection, 'replica': replica_connection})
+
+    with pytest.raises(OperationalError, match='body failed'):
+        with db.advisory_lock('lock', using='replica'):
+            raise OperationalError('body failed')
+
+    replica_connection.close_if_unusable_or_obsolete.assert_called_once()
+    default_connection.close_if_unusable_or_obsolete.assert_not_called()
+
+
 def test_advisory_lock_requires_lock_id_for_mssql(monkeypatch):
-    monkeypatch.setattr(db, 'connection', SimpleNamespace(vendor='microsoft'))
+    monkeypatch.setattr(db, 'connections', {'default': SimpleNamespace(vendor='microsoft')})
 
     with pytest.raises(ValueError, match='lock identifier'):
         with db.advisory_lock():

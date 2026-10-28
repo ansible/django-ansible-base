@@ -22,6 +22,45 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _close_lock_connection(db_connection):
+    try:
+        db_connection.close()
+    except Exception:
+        logger.exception('Failed to close database connection after advisory lock release failed')
+
+
+def _close_lock_cursor(cursor):
+    try:
+        cursor.close()
+    except Exception:
+        logger.exception('Failed to close cursor during advisory lock cleanup')
+
+
+@contextmanager
+def _advisory_lock_scope(cursor, db_connection, acquired, release_lock):
+    """Release a session lock without replacing an exception from the protected body."""
+    try:
+        yield acquired
+    except BaseException:
+        if acquired:
+            try:
+                release_lock()
+            except Exception:
+                logger.exception('Failed to release advisory lock; discarding its database connection')
+                _close_lock_connection(db_connection)
+        _close_lock_cursor(cursor)
+        raise
+    else:
+        try:
+            if acquired:
+                release_lock()
+        except Exception:
+            _close_lock_connection(db_connection)
+            _close_lock_cursor(cursor)
+            raise
+        cursor.close()
+
+
 @contextmanager
 def ensure_transaction():
     needs_new_transaction = not transaction.get_connection().in_atomic_block
@@ -113,25 +152,28 @@ def django_pglocks_advisory_lock(lock_id, shared=False, wait=True, using=None):
     acquire_params = (function_name,) + params
 
     command = base % acquire_params
-    cursor = connections[using].cursor()
-
-    cursor.execute(command)
-
-    if not wait:
-        acquired = cursor.fetchone()[0]
-    else:
-        acquired = True
+    db_connection = connections[using]
+    cursor = db_connection.cursor()
 
     try:
+        cursor.execute(command)
+
+        if not wait:
+            acquired = cursor.fetchone()[0]
+        else:
+            acquired = True
+    except BaseException:
+        _close_lock_cursor(cursor)
+        raise
+
+    release_params = (release_function_name,) + params
+    release_command = base % release_params
+
+    def release_lock():
+        cursor.execute(release_command)
+
+    with _advisory_lock_scope(cursor, db_connection, acquired, release_lock):
         yield acquired
-    finally:
-        if acquired:
-            release_params = (release_function_name,) + params
-
-            command = base % release_params
-            cursor.execute(command)
-
-        cursor.close()
 
 
 def _convert_lock_id_to_resource_name(lock_id):
@@ -248,14 +290,15 @@ def _mssql_advisory_lock(lock_id, shared=False, wait=True, lock_session_timeout_
         else:
             # Other errors (-2, -3, -999)
             raise OperationalError(f'MS SQL sp_getapplock failed with code {result} for resource {resource_name}')
+    except BaseException:
+        _close_lock_cursor(cursor)
+        raise
 
+    def release_lock():
+        cursor.execute("EXEC sp_releaseapplock @Resource=%s, @LockOwner='Session'", [resource_name])
+
+    with _advisory_lock_scope(cursor, conn, acquired, release_lock):
         yield acquired
-
-    finally:
-        if acquired:
-            # Release the lock - must match @LockOwner used in sp_getapplock
-            cursor.execute("EXEC sp_releaseapplock @Resource=%s, @LockOwner='Session'", [resource_name])
-        cursor.close()
 
 
 @contextmanager
@@ -298,15 +341,17 @@ def advisory_lock(*args, lock_session_timeout_milliseconds=0, **kwargs):
                 # Got the lock
                 pass
     """
+    using = kwargs.get('using') or DEFAULT_DB_ALIAS
+    db_connection = connections[using]
     internal_error = False
 
-    if connection.vendor == "postgresql":
+    if db_connection.vendor == "postgresql":
         # PostgreSQL implementation using pg_advisory_lock
         cur = None
         idle_in_transaction_session_timeout = None
         idle_session_timeout = None
         if lock_session_timeout_milliseconds > 0:
-            with connection.cursor() as cur:
+            with db_connection.cursor() as cur:
                 idle_in_transaction_session_timeout = cur.execute("SHOW idle_in_transaction_session_timeout").fetchone()[0]
                 idle_session_timeout = cur.execute("SHOW idle_session_timeout").fetchone()[0]
                 cur.execute("SET idle_in_transaction_session_timeout = %s", (lock_session_timeout_milliseconds,))
@@ -319,16 +364,21 @@ def advisory_lock(*args, lock_session_timeout_milliseconds=0, **kwargs):
             # Suspected case is that timeout happened due to the given timeout
             # this is _expected_ to leave the connection in an unusable state, so dropping it is better
             logger.info('Dropping connection due to suspected timeout inside advisory_lock')
-            connection.close_if_unusable_or_obsolete()
+            db_connection.close_if_unusable_or_obsolete()
             internal_error = True
             raise
         finally:
-            if (not internal_error) and lock_session_timeout_milliseconds > 0:
-                with connection.cursor() as cur:
+            if (
+                not internal_error
+                and lock_session_timeout_milliseconds > 0
+                and db_connection.connection is not None
+                and not db_connection.closed_in_transaction
+            ):
+                with db_connection.cursor() as cur:
                     cur.execute("SET idle_in_transaction_session_timeout = %s", (idle_in_transaction_session_timeout,))
                     cur.execute("SET idle_session_timeout = %s", (idle_session_timeout,))
 
-    elif connection.vendor == "microsoft":
+    elif db_connection.vendor == "microsoft":
         # MS SQL Server implementation using sp_getapplock
         # Extract lock_id from args (first positional argument)
         if not args:
@@ -341,21 +391,21 @@ def advisory_lock(*args, lock_session_timeout_milliseconds=0, **kwargs):
                 shared=kwargs.get('shared', False),
                 wait=kwargs.get('wait', True),
                 lock_session_timeout_milliseconds=lock_session_timeout_milliseconds,
-                using=kwargs.get('using', None),
+                using=using,
             ) as internal_lock:
                 yield internal_lock
         except OperationalError:
             logger.info('Dropping connection due to error inside MS SQL advisory_lock')
-            connection.close_if_unusable_or_obsolete()
+            db_connection.close_if_unusable_or_obsolete()
             internal_error = True
             raise
 
-    elif connection.vendor == "sqlite":
+    elif db_connection.vendor == "sqlite":
         # SQLite no-op - no distributed locking needed
         yield True
 
     else:
-        raise RuntimeError(f'Advisory lock not implemented for database type {connection.vendor}')
+        raise RuntimeError(f'Advisory lock not implemented for database type {db_connection.vendor}')
 
 
 # Django settings.DATABASES['alias'] dictionary type
