@@ -46,7 +46,7 @@ advisory_lock(
 ### Parameters
 
 - **`*args`**: Lock identifier
-  - **PostgreSQL**: Integer, 2-integer tuple, or string
+  - **PostgreSQL**: One 64-bit integer, a pair of 32-bit integers, or a string (hashed to a 32-bit integer)
   - **MS SQL Server**: Converted to string resource name (max 255 chars)
     - Integer → `"dab_lock_{n}"`
     - Tuple `(a, b)` → `"dab_lock_{a}_{b}"`
@@ -54,14 +54,14 @@ advisory_lock(
     - Other types → CRC32 hash → `"dab_lock_{hash}"`
 
 - **`lock_session_timeout_milliseconds`** (int, default: 0): Database-level timeout
-  - 0 = use database defaults (wait indefinitely if `wait=True`)
-  - \>0 = timeout after N milliseconds
-  - **PostgreSQL**: Sets `idle_in_transaction_session_timeout` and `idle_session_timeout`
-  - **MS SQL Server**: Passed to `sp_getapplock @LockTimeout`
+  - 0 = no DAB timeout override; PostgreSQL leaves its session settings unchanged, while SQL Server waits indefinitely when `wait=True`
+  - \>0 = apply a backend-specific timeout
+  - **PostgreSQL**: Sets `idle_in_transaction_session_timeout` and `idle_session_timeout`; this does not limit how long lock acquisition waits
+  - **MS SQL Server**: Passed to `sp_getapplock @LockTimeout` and limits lock acquisition
 
 - **`wait`** (bool, default: True): Block until lock acquired?
-  - `True`: Block indefinitely (or until timeout)
-  - `False`: Return immediately if lock unavailable
+  - `True`: Wait for the lock. PostgreSQL's `pg_advisory_lock()` returns only after acquiring it. On SQL Server, an acquisition timeout raises `OperationalError`.
+  - `False`: Try once and return immediately if the lock is unavailable
 
 - **`shared`** (bool, default: False): Lock mode
   - `False`: Exclusive lock (no other locks allowed)
@@ -75,6 +75,8 @@ Context manager that yields:
 - **`True`**: Lock acquired
 - **`False`**: Lock not acquired (only when `wait=False`)
 
+With `wait=True`, PostgreSQL yields `True` after the lock is acquired. Its `lock_session_timeout_milliseconds` setting controls idle-session timeouts, not acquisition time; the fallback branch in the example below is therefore only used with `wait=False`.
+
 ### Raises
 
 - **`RuntimeError`**: Unsupported database vendor
@@ -85,11 +87,12 @@ Context manager that yields:
 ### PostgreSQL
 
 - Uses `pg_advisory_lock()` and `pg_try_advisory_lock()` from django-pglocks
-- Lock IDs are integers or 2-integer tuples passed directly to the database
-- **Session-scoped by default** - locks persist until explicitly released or session ends
+- A single integer uses PostgreSQL's 64-bit lock form; a two-integer tuple uses two 32-bit `int4` values
+- **Session-scoped by default** - locks remain held until explicitly released or the database session ends; they are not released at transaction end
 - Supports both exclusive and shared lock modes
-- Timeout handled via `idle_in_transaction_session_timeout` and `idle_session_timeout` settings
-- **Connection recovery**: On timeout, the connection is closed (`close_if_unusable_or_obsolete()`) as timeout leaves it in an unusable state
+- `lock_session_timeout_milliseconds` sets `idle_in_transaction_session_timeout` and `idle_session_timeout`; it does not set a lock-acquisition timeout
+- With `wait=True`, `pg_advisory_lock()` waits until the lock is acquired and then yields `True`; with `wait=False`, `pg_try_advisory_lock()` can yield `False`
+- **Connection recovery**: After `OperationalError`, calls `close_if_unusable_or_obsolete()` because a server timeout can leave the connection unusable
 
 ### MS SQL Server
 
@@ -103,8 +106,9 @@ Context manager that yields:
   - `-2` = Canceled
   - `-3` = Deadlock victim
   - `-999` = Parameter validation or other error
+- `wait=True` with a positive `lock_session_timeout_milliseconds` raises `OperationalError` if lock acquisition times out; `wait=False` yields `False` when the lock is unavailable
 - **Must explicitly release** with `sp_releaseapplock` (handled in `finally` block)
-- **Connection recovery**: On error, connection is closed
+- **Connection recovery**: After `OperationalError`, calls `close_if_unusable_or_obsolete()`
 
 ### SQLite
 
@@ -115,13 +119,13 @@ Context manager that yields:
 
 | Aspect | PostgreSQL | MS SQL Server |
 |--------|-----------|---------------|
-| **Lock ID format** | Native integers or 2-integer tuples | Strings (auto-converted from int/tuple) |
-| **Max lock ID size** | 2 integers (64-bit each) | 255 characters |
-| **Release mechanism** | Auto-releases on transaction/session end | Explicit `sp_releaseapplock` required |
-| **Scope** | Session or transaction | Session (explicit `LockOwner='Session'`) |
+| **Lock ID format** | One 64-bit integer or two 32-bit integers | Strings (auto-converted from int/tuple) |
+| **Max lock ID size** | 64-bit integer or two 32-bit integers | 255 characters |
+| **Release mechanism** | Explicit unlock; also released when the session ends | Explicit `sp_releaseapplock`; also released when the session ends |
+| **Scope** | Session | Session (explicit `LockOwner='Session'`) |
 | **Error codes** | Generic `OperationalError` | Distinct codes for timeout/deadlock/cancel |
-| **Timeout handling** | Set via session variables | Passed to `sp_getapplock` parameter |
-| **Connection recovery** | Closes on timeout | Closes on any error |
+| **Timeout handling** | Idle-session timeouts; lock acquisition itself waits | `@LockTimeout` bounds lock acquisition |
+| **Connection recovery** | Checks and closes an unusable connection after `OperationalError` | Checks for an unusable connection after `OperationalError` |
 
 ## Examples
 
@@ -137,13 +141,13 @@ with advisory_lock('import_task', wait=False) as acquired:
     run_import()
 ```
 
-### Shared lock with timeout
+### Shared lock with a non-blocking fallback
 
 ```python
 with advisory_lock(
     'read_config',
     shared=True,
-    lock_session_timeout_milliseconds=5000
+    wait=False
 ) as acquired:
     if acquired:
         # Read configuration
