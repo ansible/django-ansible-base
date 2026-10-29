@@ -1,7 +1,7 @@
 import json
+import re
 
 from django.contrib.auth import logout
-from django.db.models import Q
 from django.urls import reverse
 from oauth2_provider.http import OAuth2ResponseRedirect
 from oauth2_provider.models import get_access_token_model, get_refresh_token_model
@@ -9,6 +9,8 @@ from oauth2_provider.settings import oauth2_settings
 from oauth2_provider.views import RPInitiatedLogoutView as _DOTRPInitiatedLogoutView
 from oauth2_provider.views.oidc import ConnectDiscoveryInfoView
 from oauthlib.common import add_params_to_uri
+
+_OPENID_SCOPE_RE = re.compile(r'(^|\s)openid(\s|$)')
 
 
 class DiscoveryInfoView(ConnectDiscoveryInfoView):
@@ -69,20 +71,17 @@ class RPInitiatedLogoutView(_DOTRPInitiatedLogoutView):
         access_token_model = get_access_token_model()
         refresh_token_model = get_refresh_token_model()
 
-        # Match "openid" as a complete word in the space-separated scope field.
-        # Database-agnostic alternative to scope__regex=r"(^|\s)openid(\s|$)"
-        # which requires CLR assembly installation on SQL Server.
-        openid_scope_filter = (
-            Q(scope='openid')  # exact match
-            | Q(scope__startswith='openid ')  # first in list
-            | Q(scope__endswith=' openid')  # last in list
-            | Q(scope__contains=' openid ')  # in the middle
-        )
-        access_tokens = access_token_model.objects.filter(user=user).filter(openid_scope_filter)
+        # Use a substring query to limit candidates, then apply the previous
+        # case-sensitive whitespace-boundary semantics in Python. SQL Server
+        # doesn't provide REGEXP_LIKE by default, and LIKE follows DB collation.
+        access_tokens = access_token_model.objects.filter(user=user, scope__contains='openid')
         if application is not None:
             access_tokens = access_tokens.filter(application=application)
 
         for access_token in access_tokens:
+            if not _OPENID_SCOPE_RE.search(access_token.scope):
+                continue
+
             # id_token is a direct nullable FK on AccessToken -- None, not DoesNotExist, when unset.
             id_token = access_token.id_token
 
