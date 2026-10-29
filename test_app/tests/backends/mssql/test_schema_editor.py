@@ -428,7 +428,69 @@ class TestSchemaEditorConstraints(TestCase):
                 self.assertEqual(result, 'parent result')
                 get_column_type.assert_called_once_with('test_table', 'description')
                 execute.assert_called_once_with('ALTER TABLE [test_table] ALTER COLUMN [description] nvarchar(450) NULL')
-                alter_field.assert_called_once_with(model, old_field, new_field, False)
+                alter_field.assert_called_once()
+                _, bounded_old_field, bounded_new_field, strict = alter_field.call_args.args
+                self.assertIsInstance(bounded_old_field, models.CharField)
+                self.assertEqual(bounded_old_field.max_length, 450)
+                self.assertIsInstance(bounded_new_field, models.CharField)
+                self.assertEqual(bounded_new_field.max_length, 450)
+                self.assertEqual(bounded_new_field.db_index, new_field_kwargs.get('db_index', False))
+                self.assertEqual(bounded_new_field.unique, new_field_kwargs.get('unique', False))
+                self.assertFalse(strict)
+
+    def test_alter_field_passes_bounded_fields_for_nullability_change(self):
+        old_field = models.TextField(null=True, db_index=True)
+        old_field.set_attributes_from_name('description')
+        new_field = models.TextField(null=False, db_index=True)
+        new_field.set_attributes_from_name('description')
+        model = SimpleNamespace(
+            _meta=SimpleNamespace(
+                db_table='test_table',
+                get_field=lambda field_name: old_field if field_name == 'description' else None,
+            )
+        )
+
+        with (
+            patch.object(self.schema_editor, '_get_column_type', return_value='nvarchar(max)'),
+            patch.object(self.schema_editor, 'execute') as execute,
+            patch.object(MSSQLSchemaEditor, 'alter_field', return_value='parent result') as alter_field,
+        ):
+            result = self.schema_editor.alter_field(model, old_field, new_field)
+
+        self.assertEqual(result, 'parent result')
+        execute.assert_called_once_with('ALTER TABLE [test_table] ALTER COLUMN [description] nvarchar(450) NULL')
+        _, bounded_old_field, bounded_new_field, _ = alter_field.call_args.args
+        self.assertIsInstance(bounded_old_field, models.CharField)
+        self.assertEqual(bounded_old_field.max_length, 450)
+        self.assertTrue(bounded_old_field.null)
+        self.assertIsInstance(bounded_new_field, models.CharField)
+        self.assertEqual(bounded_new_field.max_length, 450)
+        self.assertFalse(bounded_new_field.null)
+        self.assertIsInstance(old_field, models.TextField)
+        self.assertIsInstance(new_field, models.TextField)
+
+    def test_alter_field_keeps_original_fields_for_default_only_change(self):
+        old_field = models.TextField(null=True, db_index=True, default='old')
+        old_field.set_attributes_from_name('description')
+        new_field = models.TextField(null=True, db_index=True, default='new')
+        new_field.set_attributes_from_name('description')
+        model = SimpleNamespace(
+            _meta=SimpleNamespace(
+                db_table='test_table',
+                get_field=lambda field_name: old_field if field_name == 'description' else None,
+            )
+        )
+
+        with (
+            patch.object(self.schema_editor, '_get_column_type', return_value='nvarchar(450)'),
+            patch.object(self.schema_editor, 'execute') as execute,
+            patch.object(MSSQLSchemaEditor, 'alter_field', return_value='parent result') as alter_field,
+        ):
+            result = self.schema_editor.alter_field(model, old_field, new_field)
+
+        self.assertEqual(result, 'parent result')
+        execute.assert_not_called()
+        alter_field.assert_called_once_with(model, old_field, new_field, False)
 
     def test_alter_unique_together_converts_existing_textfield_before_constraint(self):
         text_field = models.TextField(null=True)
