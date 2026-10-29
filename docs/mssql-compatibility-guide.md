@@ -4,7 +4,7 @@ django-ansible-base includes a SQL Server backend built on `mssql-django`. This 
 
 ## Python dependencies and ODBC driver
 
-The Python runtime requirements in [`requirements/requirements.in`](../requirements/requirements.in) include `mssql-django` and `pyodbc` as base dependencies. They are installed for all DAB consumers; there is no separate MSSQL extra to enable.
+The SQL Server Python dependencies are in the optional `mssql` extra. Install them with `pip install 'django-ansible-base[mssql]'` (or include `mssql` alongside the other extras your application uses). The `all` extra includes the SQL Server dependencies.
 
 The Microsoft ODBC Driver is an operating-system dependency and is not installed by pip. Install Microsoft ODBC Driver 18 in the application image or host, and configure the Django driver name as `ODBC Driver 18 for SQL Server`. Use Microsoft's current [Linux installation guide](https://learn.microsoft.com/en-us/sql/connect/odbc/linux-mac/installing-the-microsoft-odbc-driver-for-sql-server) or [Windows download page](https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server) for the packages matching your platform. Linux builds that compile `pyodbc` may also need the distribution's `unixODBC` development headers.
 
