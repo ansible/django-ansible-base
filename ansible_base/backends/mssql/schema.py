@@ -62,8 +62,28 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
         """Bound an existing TextField before AlterField creates a new index or unique constraint."""
         if self._field_needs_conversion(new_field, model):
             self._convert_existing_textfield_column(model, old_field.name)
+            if self._alteration_changes_bounded_column(old_field, new_field):
+                if isinstance(old_field, models.TextField):
+                    old_field = self._bounded_field_copy(model, old_field)
+                new_field = self._bounded_field_copy(model, new_field)
 
         return super().alter_field(model, old_field, new_field, strict)
+
+    def _alteration_changes_bounded_column(self, old_field, new_field):
+        """Return whether AlterField will change a bounded column or its indexes."""
+        schema_attributes = ('null', 'db_index', 'unique', 'primary_key', 'db_column', 'db_tablespace', 'db_collation')
+        return old_field.get_internal_type() != new_field.get_internal_type() or any(
+            getattr(old_field, attr, None) != getattr(new_field, attr, None) for attr in schema_attributes
+        )
+
+    def _bounded_field_copy(self, model, field):
+        """Return a CharField copy with the SQL Server length selected for this TextField."""
+        _, _, args, kwargs = field.deconstruct()
+        kwargs['max_length'] = self._determine_max_length(field, model)
+        bounded_field = models.CharField(*args, **kwargs)
+        bounded_field.set_attributes_from_name(field.name)
+        bounded_field.model = model
+        return bounded_field
 
     def alter_unique_together(self, model, old_unique_together, new_unique_together):
         """Bound existing TextFields before AlterUniqueTogether creates constraints."""
