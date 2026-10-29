@@ -31,10 +31,7 @@ def test_team_roles_loaded_with_one_query(rando, organization, org_inv_rd, membe
         for q in ctx.captured_queries
         if ('"dab_rbac_objectrole"' in q['sql'] or '[dab_rbac_objectrole]' in q['sql'])
         and 'dab_rbac_roleteamassignment' in q['sql']
-        and (
-            '"dab_rbac_roleteamassignment"."team_id" IN' in q['sql']
-            or '[dab_rbac_roleteamassignment].[team_id] IN' in q['sql']
-        )
+        and ('"dab_rbac_roleteamassignment"."team_id" IN' in q['sql'] or '[dab_rbac_roleteamassignment].[team_id] IN' in q['sql'])
     ]
     assert len(team_role_queries) == 1, team_role_queries
 
