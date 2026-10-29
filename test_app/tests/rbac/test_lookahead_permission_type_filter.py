@@ -5,18 +5,13 @@ from unittest.mock import patch
 import pytest
 from django.contrib.auth import get_user_model
 
-from ansible_base.rbac.caching import recompute_all_role_evaluations, recompute_role_evaluations, recompute_role_evaluations_for_object
+from ansible_base.rbac.caching import recompute_all_role_evaluations, recompute_role_evaluations_for_object
 from ansible_base.rbac.models import DABContentType, DABPermission, ObjectRole, RoleDefinition, RoleEvaluation
 from ansible_base.rbac.models.content_type import get_local_resource_prefix
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.prefetch import TypesPrefetch
 from ansible_base.rbac.remote import GenericObject
 from test_app.models import CollectionImport, Inventory, Namespace, Organization
-
-LOOKAHEAD_RECOMPUTES = [
-    pytest.param(recompute_role_evaluations, id='recompute_role_evaluations'),
-    pytest.param(recompute_role_evaluations_for_object, id='recompute_role_evaluations_for_object'),
-]
 
 # An Organization role with only a child permission still emits (codename, org_ct, org.pk):
 # an add-permission on a grandchild type always, any permission with parent permission caching.
@@ -127,11 +122,11 @@ def test_grandchild_add_permission_still_granted(rando, organization, team, memb
     assert RoleEvaluation.objects.filter(role=member_role, content_type_id=ns_ct, object_id=ns.pk, codename='add_collectionimport').exists()
 
 
-def _assert_lookahead_on_org_keeps_rows(member_role, organization, recompute):
+def _assert_lookahead_on_org_keeps_rows(member_role, organization):
     """A look-ahead recompute targeting the organization must not drop any row of a full recompute."""
     recompute_all_role_evaluations()
     before = _evaluation_rows()
-    recompute([member_role], look_ahead=GenericObject(_org_ct_id(), organization.pk), target_parents=[])
+    recompute_role_evaluations_for_object([member_role], look_ahead=GenericObject(_org_ct_id(), organization.pk), target_parents=[])
     assert _evaluation_rows() == before
 
 
@@ -146,12 +141,11 @@ def test_role_definition_ids_granting_own_type_with_only_child_permission(settin
 
 @pytest.mark.django_db
 @pytest.mark.parametrize('codename, cache_parent_permissions', ORG_OWN_TYPE_CHILD_PERMISSIONS)
-@pytest.mark.parametrize('recompute', LOOKAHEAD_RECOMPUTES)
-def test_lookahead_on_org_keeps_child_permission_evaluation(settings, rando, organization, team, member_rd, recompute, codename, cache_parent_permissions):
+def test_lookahead_on_org_keeps_child_permission_evaluation(settings, rando, organization, team, member_rd, codename, cache_parent_permissions):
     settings.ANSIBLE_BASE_CACHE_PARENT_PERMISSIONS = cache_parent_permissions
     child_only_rd = _org_rd('org-child-only', [codename])
     child_only_rd.give_permission(team, organization)
     member_rd.give_permission(rando, team)
     member_role = ObjectRole.objects.get(role_definition=member_rd, object_id=team.pk)
-    _assert_lookahead_on_org_keeps_rows(member_role, organization, recompute)
+    _assert_lookahead_on_org_keeps_rows(member_role, organization)
     assert RoleEvaluation.objects.filter(role=member_role, codename=codename, content_type_id=_org_ct_id(), object_id=organization.pk).exists()
