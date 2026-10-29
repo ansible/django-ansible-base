@@ -792,10 +792,9 @@ class ObjectRole(ObjectRoleFields):
         across all objects this role grants permissions to.
 
         evaluations_prefetch: an EvaluationsPrefetch instance with batch-loaded
-        evaluation data for this role's chunk, avoiding per-role queries.
-
-        A just-created object is recomputed by recompute_role_evaluations_for_object
-        instead, which narrows the work to that one object.
+        evaluation data for this role's chunk, avoiding per-role queries. When it was
+        built for one object (EvaluationsPrefetch.for_object), the existing and
+        expected evaluations, and so the changes, are limited to that object.
         """
 
         if types_prefetch is None:
@@ -804,12 +803,15 @@ class ObjectRole(ObjectRoleFields):
             types_prefetch = TypesPrefetch.from_db()
 
         existing_partials = self._load_existing_partials(evaluations_prefetch)
-        expected_evaluations = self.expected_direct_permissions(types_prefetch)
 
         if evaluations_prefetch is not None:
+            expected_evaluations = set()
+            if evaluations_prefetch.grants_directly(self):
+                expected_evaluations.update(evaluations_prefetch.expected_direct_permissions(self, types_prefetch))
             for team_role in evaluations_prefetch.get_team_roles(self.pk):
-                expected_evaluations.update(team_role.expected_direct_permissions(types_prefetch))
+                expected_evaluations.update(evaluations_prefetch.expected_direct_permissions(team_role, types_prefetch))
         else:
+            expected_evaluations = self.expected_direct_permissions(types_prefetch)
             expected_evaluations.update(self._team_role_evaluations(types_prefetch))
 
         self._log_partials_count(len(expected_evaluations), 'expected evaluation', self.pk)

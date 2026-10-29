@@ -113,7 +113,12 @@ def test_ancestor_roles_not_recomputed_in_full(team_with_ancestors, organization
             rd.give_permission(team_with_ancestors, obj)
         else:
             rd.remove_permission(team_with_ancestors, obj)
-    recomputed = {c.args[0].pk for c in spy.call_args_list}
+
+    def in_full(call):
+        evaluations_prefetch = call.kwargs.get('evaluations_prefetch')
+        return evaluations_prefetch is None or evaluations_prefetch.look_ahead is None
+
+    recomputed = {c.args[0].pk for c in spy.call_args_list if in_full(c)}
     assert not recomputed & ancestor_pks
 
 
