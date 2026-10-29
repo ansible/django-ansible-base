@@ -143,6 +143,28 @@ def test_advisory_lock_dispatches_to_mssql_and_passes_options(monkeypatch):
     }
 
 
+def test_advisory_lock_preserves_positional_options_for_mssql(monkeypatch):
+    default_connection = SimpleNamespace(vendor='microsoft', close_if_unusable_or_obsolete=Mock())
+    replica_connection = SimpleNamespace(vendor='microsoft', close_if_unusable_or_obsolete=Mock())
+    monkeypatch.setattr(db, 'connections', {'default': default_connection, 'replica': replica_connection})
+    called = {}
+
+    @contextmanager
+    def fake_mssql_lock(lock_id, **kwargs):
+        called['lock_id'] = lock_id
+        called['kwargs'] = kwargs
+        yield False
+
+    monkeypatch.setattr(db, '_mssql_advisory_lock', fake_mssql_lock)
+    with db.advisory_lock('lock', True, False, 'replica') as acquired:
+        assert acquired is False
+
+    assert called == {
+        'lock_id': 'lock',
+        'kwargs': {'shared': True, 'wait': False, 'lock_session_timeout_milliseconds': 0, 'using': 'replica'},
+    }
+
+
 def test_advisory_lock_closes_connection_after_mssql_error(monkeypatch):
     connection = SimpleNamespace(vendor='microsoft', close_if_unusable_or_obsolete=Mock())
     monkeypatch.setattr(db, 'connections', {'default': connection})
