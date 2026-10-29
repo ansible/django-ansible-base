@@ -8,11 +8,12 @@ from typing import Optional, Union
 from uuid import UUID
 
 from django.conf import settings
-from django.db import connections, transaction
+from django.db import DEFAULT_DB_ALIAS, connections, transaction
 from django.db.models import Q
 from django.db.utils import IntegrityError
 
 from ansible_base.lib.utils.db import bulk_create_db_safe
+from ansible_base.lib.utils.mssql import SQL_SERVER_MAX_QUERY_PARAMETERS, SQL_SERVER_QUERY_PARAMETER_HEADROOM
 from ansible_base.rbac.models import ObjectRole, RoleEvaluation, RoleEvaluationUUID, RoleTeamAssignment, RoleUserAssignment, get_evaluation_model
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.prefetch import EvaluationsPrefetch, TypesPrefetch
@@ -21,6 +22,8 @@ from ansible_base.rbac.remote import GenericObject
 logger = logging.getLogger('ansible_base.rbac.caching')
 
 RECOMPUTE_CHUNK_SIZE = 1000
+EVALUATION_UNIQUE_KEY_FIELDS = ('object_id', 'content_type_id', 'codename', 'role_id')
+MSSQL_EVALUATION_KEY_FILTER_BATCH_SIZE = (SQL_SERVER_MAX_QUERY_PARAMETERS - SQL_SERVER_QUERY_PARAMETER_HEADROOM) // len(EVALUATION_UNIQUE_KEY_FIELDS)
 
 
 """
@@ -403,9 +406,14 @@ def _safe_bulk_create_evaluations(model, evaluations, ignore_conflicts):
     """
     if not evaluations:
         return
+    using = DEFAULT_DB_ALIAS
     try:
-        with transaction.atomic():
-            bulk_create_db_safe(model, evaluations, ignore_conflicts=ignore_conflicts, return_ids=False)
+        with transaction.atomic(using=using):
+            if ignore_conflicts and connections[using].vendor == 'microsoft':
+                evaluations = _filter_existing_evaluation_keys(model, evaluations, using)
+                if not evaluations:
+                    return
+            bulk_create_db_safe(model, evaluations, ignore_conflicts=ignore_conflicts, using=using, return_ids=False)
     except IntegrityError as exc:
         if not _is_stale_objectrole_fk(exc):
             raise
@@ -413,12 +421,33 @@ def _safe_bulk_create_evaluations(model, evaluations, ignore_conflicts):
         evaluations = [e for e in evaluations if e.role_id in existing_role_ids]
         if evaluations:
             try:
-                with transaction.atomic():
-                    bulk_create_db_safe(model, evaluations, ignore_conflicts=ignore_conflicts, return_ids=False)
+                with transaction.atomic(using=using):
+                    bulk_create_db_safe(model, evaluations, ignore_conflicts=ignore_conflicts, using=using, return_ids=False)
             except IntegrityError as exc:
                 if not _is_stale_objectrole_fk(exc):
                     raise
                 logger.warning('Persistent IntegrityError in bulk_create for %s, will be corrected on next recompute', model.__name__)
+
+
+def _filter_existing_evaluation_keys(model, evaluations, using):
+    """Remove known or in-batch duplicate evaluation keys before SQL Server bulk insert."""
+    unique_evaluations = {}
+    for evaluation in evaluations:
+        key = tuple(getattr(evaluation, field_name) for field_name in EVALUATION_UNIQUE_KEY_FIELDS)
+        unique_evaluations.setdefault(key, evaluation)
+
+    existing_keys = set()
+    queryset = model.objects.using(using)
+    batch_size = MSSQL_EVALUATION_KEY_FILTER_BATCH_SIZE
+    for offset in range(0, len(unique_evaluations), batch_size):
+        keys = list(unique_evaluations)[offset : offset + batch_size]
+        key_filter = None
+        for key in keys:
+            key_match = Q(**dict(zip(EVALUATION_UNIQUE_KEY_FIELDS, key)))
+            key_filter = key_match if key_filter is None else key_filter | key_match
+        existing_keys.update(queryset.filter(key_filter).values_list(*EVALUATION_UNIQUE_KEY_FIELDS))
+
+    return [evaluation for key, evaluation in unique_evaluations.items() if key not in existing_keys]
 
 
 class EvaluationUpdates:

@@ -12,6 +12,7 @@ from django.db.models.signals import post_save
 
 from ansible_base.lib.utils.db import bulk_create_db_safe
 from ansible_base.lib.utils.models import current_user_or_system_user
+from ansible_base.lib.utils.mssql import SQL_SERVER_MAX_QUERY_PARAMETERS, SQL_SERVER_QUERY_PARAMETER_HEADROOM
 from ansible_base.rbac.caching import (
     bulk_ancestor_roles,
     compute_team_member_roles,
@@ -42,9 +43,7 @@ ContentObject = Union[models.Model, RemoteObject]
 PermissionTriple = tuple[RoleDefinition, models.Model, ContentObject]
 ObjectRoleLookup = dict[tuple[int, str], ObjectRole]
 
-SQL_SERVER_MAX_QUERY_PARAMETERS = 2100
 PARAMETERS_PER_PAIR_FILTER = 2
-SQL_SERVER_QUERY_PARAMETER_HEADROOM = 100
 SQL_SERVER_PAIR_FILTER_BATCH_SIZE = (SQL_SERVER_MAX_QUERY_PARAMETERS - SQL_SERVER_QUERY_PARAMETER_HEADROOM) // PARAMETERS_PER_PAIR_FILTER
 
 
