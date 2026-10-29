@@ -6,9 +6,16 @@ fields that have indexes or unique constraints.
 """
 
 from mssql.base import DatabaseWrapper as MSSQLDatabaseWrapper
+from mssql.operations import DatabaseOperations as MSSQLDatabaseOperations
 
 from .cursor_override import CursorWrapper
 from .schema import DatabaseSchemaEditor
+
+
+class DatabaseOperations(MSSQLDatabaseOperations):
+    """Route Django query compilation through the case-sensitive alias fix."""
+
+    compiler_module = 'ansible_base.backends.mssql.compiler'
 
 
 class DatabaseWrapper(MSSQLDatabaseWrapper):
@@ -36,6 +43,7 @@ class DatabaseWrapper(MSSQLDatabaseWrapper):
     """
 
     SchemaEditorClass = DatabaseSchemaEditor
+    ops_class = DatabaseOperations
 
     # Override to remove ISJSON constraint from JSONField
     # This allows storing encrypted data in JSONField columns
