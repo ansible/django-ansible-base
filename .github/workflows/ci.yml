@@ -68,10 +68,12 @@ jobs:
 
           gpg --dearmor --output "$key_dir/microsoft.gpg" "$key_dir/microsoft.asc"
           sudo install -d -m 0755 /usr/share/keyrings
-          sudo install -o root -g root -m 0644 "$key_dir/microsoft.gpg" /usr/share/keyrings/microsoft-archive-keyring.gpg
-          printf 'deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-archive-keyring.gpg] https://packages.microsoft.com/ubuntu/%s/prod %s main\n' \
+          sudo install -o root -g root -m 0644 "$key_dir/microsoft.gpg" /usr/share/keyrings/microsoft-prod.gpg
+          # The ubuntu-24.04 runner already configures this repo in microsoft-prod.list.
+          # Reuse that keyring and replace the same list entry instead of adding a conflicting Signed-By.
+          printf 'deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/%s/prod %s main\n' \
             "$(lsb_release -rs)" "$(lsb_release -cs)" \
-            | sudo tee /etc/apt/sources.list.d/mssql-release.list >/dev/null
+            | sudo tee /etc/apt/sources.list.d/microsoft-prod.list >/dev/null
           sudo apt-get update
           sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev
 
