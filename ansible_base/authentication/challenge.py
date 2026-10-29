@@ -11,7 +11,7 @@ class ChallengeAwareAuthenticationMixin:
     def record_authentication_challenge(self, request: Any, challenge: str) -> None:
         record_authentication_challenge(request, challenge)
 
-    def get_default_authentication_challenge(self, request: Any) -> str | None:
+    def get_default_authentication_challenge(self, _request: Any) -> str | None:
         return None
 
     def authenticate_header(self, request: Any) -> str | None:
