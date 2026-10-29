@@ -21,18 +21,23 @@ This module will be the source of truth for things like the projet name.
 
 
 class StandInPK:
+    UUID_FIELD_TYPES = {'uuid', 'uniqueidentifier', 'char(32)'}
+
     def __init__(self, ct: models.Model):
         self.pk_field_type = ct.pk_field_type
 
+    def _is_uuid_type(self) -> bool:
+        return str(self.pk_field_type).strip().lower() in self.UUID_FIELD_TYPES
+
     def get_prep_value(self, value: Union[str, int, uuid.UUID]) -> Union[str, int]:
-        if self.pk_field_type == "uuid":
+        if self._is_uuid_type():
             if isinstance(value, uuid.UUID):
                 return str(value)
             return str(uuid.UUID(value))
         return int(value)
 
     def to_python(self, value: Union[str, int, uuid.UUID]) -> Union[int, uuid.UUID]:
-        if self.pk_field_type == "uuid":
+        if self._is_uuid_type():
             if isinstance(value, uuid.UUID):
                 return value
             return uuid.UUID(value)
@@ -40,7 +45,7 @@ class StandInPK:
 
     def django_field(self):
         "This gives a mock Django field like what it mimics"
-        if self.pk_field_type == "uuid":
+        if self._is_uuid_type():
             return models.UUIDField()
         return models.IntegerField()
 
