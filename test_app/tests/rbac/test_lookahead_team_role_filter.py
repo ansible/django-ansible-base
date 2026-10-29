@@ -36,7 +36,12 @@ def test_lookahead_only_loads_relevant_team_roles(rando, organization, team, org
     team_role_queries = [
         q['sql']
         for q in ctx.captured_queries
-        if ('"dab_rbac_objectrole"' in q['sql'] or '[dab_rbac_objectrole]' in q['sql']) and 'dab_rbac_roleteamassignment' in q['sql']
+        if ('"dab_rbac_objectrole"' in q['sql'] or '[dab_rbac_objectrole]' in q['sql'])
+        and 'dab_rbac_roleteamassignment' in q['sql']
+        and (
+            '"dab_rbac_roleteamassignment"."team_id" IN' in q['sql']
+            or '[dab_rbac_roleteamassignment].[team_id] IN' in q['sql']
+        )
     ]
     assert len(team_role_queries) == 1, team_role_queries
     # Check for both PostgreSQL (quoted string) and SQL Server (unquoted integer or quoted)
