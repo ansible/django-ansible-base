@@ -761,6 +761,11 @@ class ObjectRole(ObjectRoleFields):
             logger.debug(msg, label, count, role_pk)
 
     def _load_existing_partials(self, evaluations_prefetch: 'EvaluationsPrefetch | None') -> dict[tuple[str, int, int | UUID], int]:
+        """Return the RoleEvaluation rows this role currently has, from both evaluation tables.
+
+        Each key is a (codename, content_type_id, object_id) tuple and its value is the id of
+        that row, which needed_cache_updates uses to delete it if it is no longer expected.
+        """
         existing_partials = {}
 
         if evaluations_prefetch is not None:
@@ -770,7 +775,7 @@ class ObjectRole(ObjectRoleFields):
             for source in (self.permission_partials, self.permission_partials_uuid):
                 for eval_id, codename, content_type_id, object_id in source.values_list('id', 'codename', 'content_type_id', 'object_id'):
                     existing_partials[(codename, content_type_id, object_id)] = eval_id
-        self._log_partials_count(len(existing_partials), 'existing evaluation (full)', self.pk)
+        self._log_partials_count(len(existing_partials), 'existing evaluation', self.pk)
 
         return existing_partials
 
@@ -786,10 +791,16 @@ class ObjectRole(ObjectRoleFields):
             expected_evaluations.update(team_role.expected_direct_permissions(types_prefetch))
         return expected_evaluations
 
-    def needed_cache_updates(self, types_prefetch=None, evaluations_prefetch=None):
+    def needed_cache_updates(self, types_prefetch=None, evaluations_prefetch=None) -> tuple[set[tuple[int, type]], list['RoleEvaluation']]:
         """Return (to_delete, to_add) changes needed in the RoleEvaluation table
         to make cached object-role permissions accurate for this role,
         across all objects this role grants permissions to.
+
+        to_delete: a set of (evaluation_id, object_id type) pairs, where the type, int or UUID,
+        says whether the row is in RoleEvaluation or RoleEvaluationUUID.
+
+        to_add: a list of unsaved RoleEvaluation instances, one per missing
+        (codename, content_type_id, object_id); EvaluationUpdates sorts them into the right table.
 
         evaluations_prefetch: an EvaluationsPrefetch instance with batch-loaded
         evaluation data for this role's chunk, avoiding per-role queries.
