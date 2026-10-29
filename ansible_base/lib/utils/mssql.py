@@ -2,6 +2,9 @@
 
 from django.db import models
 
+SQL_SERVER_MAX_QUERY_PARAMETERS = 2100
+SQL_SERVER_QUERY_PARAMETER_HEADROOM = 100
+
 
 def get_mssql_textfield_max_length(field_name: str | None) -> int:
     """Return the SQL Server column length selected for a constrained TextField."""

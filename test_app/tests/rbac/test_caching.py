@@ -3,11 +3,13 @@ guards: _is_stale_objectrole_fk, _safe_m2m_add, and _safe_bulk_create_evaluation
 """
 
 from contextlib import contextmanager
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 from django.db.utils import IntegrityError
 
+import ansible_base.rbac.caching as rbac_caching
 from ansible_base.rbac.caching import (
     _is_stale_objectrole_fk,
     _safe_bulk_create_evaluations,
@@ -351,3 +353,44 @@ class TestSafeBulkCreateEvaluations(SkipIfMSSQL):
             _safe_bulk_create_evaluations(RoleEvaluation, [eval1], False)
 
         assert call_count == 1
+
+
+class TestMSSQLBulkCreatePrefilter:
+    def _mock_evaluation_model(self, existing_keys):
+        manager = MagicMock()
+        manager.using.return_value.filter.return_value.values_list.return_value = existing_keys
+        model = SimpleNamespace(__name__='RoleEvaluation', objects=manager)
+        return model, manager
+
+    def test_filters_existing_and_duplicate_evaluation_keys(self, monkeypatch):
+        monkeypatch.setattr(rbac_caching, 'connections', {'default': SimpleNamespace(vendor='microsoft')})
+        monkeypatch.setattr(rbac_caching.transaction, 'atomic', _noop_atomic)
+
+        existing = SimpleNamespace(object_id=1, content_type_id=20, codename='view_inventory', role_id=30)
+        new = SimpleNamespace(object_id=2, content_type_id=20, codename='view_inventory', role_id=30)
+        duplicate_new = SimpleNamespace(object_id=2, content_type_id=20, codename='view_inventory', role_id=30)
+        model, manager = self._mock_evaluation_model([(1, 20, 'view_inventory', 30)])
+        bulk_create = MagicMock()
+        monkeypatch.setattr(rbac_caching, 'bulk_create_db_safe', bulk_create)
+
+        rbac_caching._safe_bulk_create_evaluations(model, [existing, new, duplicate_new], ignore_conflicts=True)
+
+        manager.using.assert_called_once_with('default')
+        bulk_create.assert_called_once_with(model, [new], ignore_conflicts=True, using='default', return_ids=False)
+
+    def test_chunks_key_prefilter_queries_under_sql_server_parameter_limit(self, monkeypatch):
+        monkeypatch.setattr(rbac_caching, 'connections', {'default': SimpleNamespace(vendor='microsoft')})
+        monkeypatch.setattr(rbac_caching.transaction, 'atomic', _noop_atomic)
+
+        model, manager = self._mock_evaluation_model([])
+        evaluations = [SimpleNamespace(object_id=object_id, content_type_id=20, codename='view_inventory', role_id=30) for object_id in range(501)]
+        bulk_create = MagicMock()
+        monkeypatch.setattr(rbac_caching, 'bulk_create_db_safe', bulk_create)
+
+        rbac_caching._safe_bulk_create_evaluations(model, evaluations, ignore_conflicts=True)
+
+        filter_calls = manager.using.return_value.filter.call_args_list
+        assert len(filter_calls) == 2
+        assert len(filter_calls[0].args[0].children) == 500
+        assert len(filter_calls[1].args[0].children) == 4
+        bulk_create.assert_called_once_with(model, evaluations, ignore_conflicts=True, using='default', return_ids=False)
