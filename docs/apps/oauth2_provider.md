@@ -57,19 +57,19 @@ To manually configure the settings in an application that also enables
 `ansible_base.authentication`, use the unified Bearer authenticator:
 ```
 OAUTH2_PROVIDER = {
-    'ACCESS_TOKEN_EXPIRE_SECONDS': 31536000000
-    'AUTHORIZATION_CODE_EXPIRE_SECONDS': 600
-    'REFRESH_TOKEN_EXPIRE_SECONDS': 2628000
-    'APPLICATION_MODEL': 'dab_oauth2_provider.OAuth2Application'
-    'ACCESS_TOKEN_MODEL': 'dab_oauth2_provider.OAuth2AccessToken'
+    'ACCESS_TOKEN_EXPIRE_SECONDS': 31536000000,
+    'AUTHORIZATION_CODE_EXPIRE_SECONDS': 600,
+    'REFRESH_TOKEN_EXPIRE_SECONDS': 2628000,
+    'APPLICATION_MODEL': 'dab_oauth2_provider.OAuth2Application',
+    'ACCESS_TOKEN_MODEL': 'dab_oauth2_provider.OAuth2AccessToken',
 }
 
-REST_FRAMEWORK = [
+REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'ansible_base.authentication.bearer_authentication.BearerAuthentication',
         ...
-    ]
-]
+    ],
+}
 OAUTH2_PROVIDER_APPLICATION_MODEL = 'dab_oauth2_provider.OAuth2Application'
 OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL = 'dab_oauth2_provider.OAuth2AccessToken'
 OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL = "dab_oauth2_provider.OAuth2RefreshToken"
@@ -80,6 +80,8 @@ ALLOW_OAUTH2_FOR_EXTERNAL_USERS = False
 
 Applications that enable only `ansible_base.oauth2_provider` can continue to
 use `ansible_base.oauth2_provider.authentication.LoggedOAuth2Authentication`.
+See [OAuth bearer-token authentication](authentication/oauth_bearer.md) to
+configure an external OAuth or OpenID Connect issuer.
 
 ### Runtime settings
 You may want to allow for some of the settings above to be runtime instead of hard coded. These might include the EXPIRE_SECONDS and ALLOW_OATUH2_FOR_EXTERNAL_USERS.
