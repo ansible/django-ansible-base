@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from typing import Any, Type, Union
 from uuid import UUID
 
@@ -14,12 +15,13 @@ from ansible_base.lib.abstract_models.team import AbstractTeam
 _AUTHENTICATION_CHALLENGES_ATTRIBUTE = "_ansible_base_authentication_challenges"
 
 
-def _authentication_request_objects(request: Any) -> tuple[Any, ...]:
+def _authentication_request_objects(request: Any) -> Iterator[Any]:
     """Return a DRF request and its underlying Django request, when present."""
+    yield request
+
     underlying_request = getattr(request, "_request", None)
-    if underlying_request is None or underlying_request is request:
-        return (request,)
-    return (request, underlying_request)
+    if underlying_request is not None and underlying_request is not request:
+        yield underlying_request
 
 
 def record_authentication_challenge(request: Any, challenge: str) -> None:
