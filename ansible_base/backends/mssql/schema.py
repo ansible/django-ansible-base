@@ -58,6 +58,33 @@ class DatabaseSchemaEditor(MSSQLSchemaEditor):
 
         return super().add_constraint(model, constraint)
 
+    def alter_field(self, model, old_field, new_field, strict=False):
+        """Bound an existing TextField before AlterField creates a new index or unique constraint."""
+        if self._field_needs_conversion(new_field, model):
+            self._convert_existing_textfield_column(model, old_field.name)
+
+        return super().alter_field(model, old_field, new_field, strict)
+
+    def alter_unique_together(self, model, old_unique_together, new_unique_together):
+        """Bound existing TextFields before AlterUniqueTogether creates constraints."""
+        old_sets = {tuple(fields) for fields in old_unique_together}
+        new_sets = {tuple(fields) for fields in new_unique_together}
+        for field_names in new_sets.difference(old_sets):
+            for field_name in field_names:
+                self._convert_existing_textfield_column(model, field_name)
+
+        return super().alter_unique_together(model, old_unique_together, new_unique_together)
+
+    def alter_index_together(self, model, old_index_together, new_index_together):
+        """Bound existing TextFields before AlterIndexTogether creates indexes."""
+        old_sets = {tuple(fields) for fields in old_index_together}
+        new_sets = {tuple(fields) for fields in new_index_together}
+        for field_names in new_sets.difference(old_sets):
+            for field_name in field_names:
+                self._convert_existing_textfield_column(model, field_name)
+
+        return super().alter_index_together(model, old_index_together, new_index_together)
+
     def _convert_existing_textfield_column(self, model, field_name):
         """Bound an existing nvarchar(max) TextField before indexing it."""
         if hasattr(field_name, 'name'):

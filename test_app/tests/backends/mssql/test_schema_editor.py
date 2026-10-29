@@ -397,3 +397,80 @@ class TestSchemaEditorConstraints(TestCase):
                 self.schema_editor.add_index(self.model, index)
 
         execute.assert_not_called()
+
+    def test_alter_field_converts_existing_textfield_before_adding_index_or_unique(self):
+        for new_field_kwargs in ({'db_index': True}, {'unique': True}):
+            with self.subTest(new_field_kwargs=new_field_kwargs):
+                old_field = models.TextField(null=True)
+                old_field.set_attributes_from_name('description')
+                new_field = models.TextField(null=True, **new_field_kwargs)
+                new_field.set_attributes_from_name('description')
+                model = SimpleNamespace(
+                    _meta=SimpleNamespace(
+                        db_table='test_table',
+                        get_field=lambda field_name: old_field if field_name == 'description' else None,
+                    )
+                )
+                with (
+                    patch.object(self.schema_editor, '_get_column_type', return_value='nvarchar(max)') as get_column_type,
+                    patch.object(self.schema_editor, 'execute') as execute,
+                    patch.object(MSSQLSchemaEditor, 'alter_field', return_value='parent result') as alter_field,
+                ):
+                    result = self.schema_editor.alter_field(model, old_field, new_field)
+
+                self.assertEqual(result, 'parent result')
+                get_column_type.assert_called_once_with('test_table', 'description')
+                execute.assert_called_once_with('ALTER TABLE [test_table] ALTER COLUMN [description] nvarchar(450) NULL')
+                alter_field.assert_called_once_with(model, old_field, new_field, False)
+
+    def test_alter_unique_together_converts_existing_textfield_before_constraint(self):
+        text_field = models.TextField(null=True)
+        text_field.set_attributes_from_name('description')
+        other_field = models.CharField(max_length=80)
+        other_field.set_attributes_from_name('other')
+        fields = {'description': text_field, 'other': other_field}
+        model = SimpleNamespace(
+            _meta=SimpleNamespace(
+                db_table='test_table',
+                get_field=fields.__getitem__,
+            )
+        )
+        new_unique_together = (('description', 'other'),)
+
+        with (
+            patch.object(self.schema_editor, '_get_column_type', return_value='nvarchar(max)') as get_column_type,
+            patch.object(self.schema_editor, 'execute') as execute,
+            patch.object(MSSQLSchemaEditor, 'alter_unique_together', return_value='parent result') as alter_unique_together,
+        ):
+            result = self.schema_editor.alter_unique_together(model, (), new_unique_together)
+
+        self.assertEqual(result, 'parent result')
+        get_column_type.assert_called_once_with('test_table', 'description')
+        execute.assert_called_once_with('ALTER TABLE [test_table] ALTER COLUMN [description] nvarchar(450) NULL')
+        alter_unique_together.assert_called_once_with(model, (), new_unique_together)
+
+    def test_alter_index_together_converts_existing_textfield_before_index(self):
+        text_field = models.TextField(null=True)
+        text_field.set_attributes_from_name('description')
+        other_field = models.CharField(max_length=80)
+        other_field.set_attributes_from_name('other')
+        fields = {'description': text_field, 'other': other_field}
+        model = SimpleNamespace(
+            _meta=SimpleNamespace(
+                db_table='test_table',
+                get_field=fields.__getitem__,
+            )
+        )
+        new_index_together = (('description', 'other'),)
+
+        with (
+            patch.object(self.schema_editor, '_get_column_type', return_value='nvarchar(max)') as get_column_type,
+            patch.object(self.schema_editor, 'execute') as execute,
+            patch.object(MSSQLSchemaEditor, 'alter_index_together', return_value='parent result') as alter_index_together,
+        ):
+            result = self.schema_editor.alter_index_together(model, (), new_index_together)
+
+        self.assertEqual(result, 'parent result')
+        get_column_type.assert_called_once_with('test_table', 'description')
+        execute.assert_called_once_with('ALTER TABLE [test_table] ALTER COLUMN [description] nvarchar(450) NULL')
+        alter_index_together.assert_called_once_with(model, (), new_index_together)
