@@ -1,5 +1,6 @@
 import gc
 import logging
+import re
 import threading
 from collections import defaultdict
 from collections.abc import Iterable
@@ -10,9 +11,8 @@ from uuid import UUID
 from django.conf import settings
 from django.db import DEFAULT_DB_ALIAS, connections, transaction
 from django.db.models import Q
-from django.db.utils import IntegrityError
 
-from ansible_base.lib.utils.db import bulk_create_db_safe
+from ansible_base.lib.utils.db import DatabaseIntegrityError, bulk_create_db_safe
 from ansible_base.lib.utils.mssql import SQL_SERVER_MAX_QUERY_PARAMETERS, SQL_SERVER_QUERY_PARAMETER_HEADROOM
 from ansible_base.rbac.models import ObjectRole, RoleEvaluation, RoleEvaluationUUID, RoleTeamAssignment, RoleUserAssignment, get_evaluation_model
 from ansible_base.rbac.permission_registry import permission_registry
@@ -293,23 +293,29 @@ def _is_stale_objectrole_fk(exc):
     """Return True if *exc* is specifically an FK violation from a stale ObjectRole reference.
 
     PostgreSQL (psycopg2/psycopg3): checks SQLSTATE 23503 (foreign_key_violation)
-    and that the referenced table is ``dab_rbac_objectrole``.  Other
-    IntegrityError sub-types (unique-constraint, check-constraint, etc.) or FK
-    violations referencing a different table return False so they propagate
-    normally.
+    and that the referenced table is ``dab_rbac_objectrole``. SQL Server
+    (pyodbc): checks SQLSTATE 23000, native error 547, and the referenced table.
+    Other IntegrityError sub-types (unique-constraint, check-constraint, etc.)
+    or FK violations referencing a different table return False so they
+    propagate normally.
 
-    Other backends (SQLite): returns False.  The TOCTOU race requires truly
-    concurrent committed transactions, which SQLite's global write lock
-    prevents, so FK errors there indicate a real bug.
+    SQLite returns False. The TOCTOU race requires truly concurrent committed
+    transactions, which SQLite's global write lock prevents, so FK errors
+    there indicate a real bug.
     """
-    cause = exc.__cause__
-    if cause is None:
-        return False
+    cause = exc.__cause__ or exc
     # psycopg3 exposes .sqlstate, psycopg2 exposes .pgcode
     sqlstate = getattr(cause, 'sqlstate', None) or getattr(cause, 'pgcode', None)
-    if sqlstate != '23503':
+    message = ' '.join(str(arg) for arg in getattr(cause, 'args', ())) or str(cause)
+    message_lower = message.lower()
+    if sqlstate == '23503':
+        return 'dab_rbac_objectrole' in message_lower
+    if sqlstate is None and getattr(cause, 'args', ()):
+        sqlstate = str(cause.args[0])
+    if sqlstate != '23000':
         return False
-    return 'dab_rbac_objectrole' in str(cause)
+    native_error_codes = {int(code) for code in re.findall(r'\((\d+)\)', message)}
+    return 547 in native_error_codes and 'foreign key' in message_lower and 'dab_rbac_objectrole' in message_lower
 
 
 def _safe_m2m_add(team, to_add):
@@ -325,7 +331,7 @@ def _safe_m2m_add(team, to_add):
     try:
         with transaction.atomic():
             team.member_roles.add(*to_add)
-    except IntegrityError as exc:
+    except DatabaseIntegrityError as exc:
         if not _is_stale_objectrole_fk(exc):
             raise
         to_add = set(ObjectRole.objects.filter(id__in=to_add).values_list('id', flat=True))
@@ -333,7 +339,7 @@ def _safe_m2m_add(team, to_add):
             try:
                 with transaction.atomic():
                     team.member_roles.add(*to_add)
-            except IntegrityError as exc:
+            except DatabaseIntegrityError as exc:
                 if not _is_stale_objectrole_fk(exc):
                     raise
                 logger.warning('Persistent IntegrityError adding member_roles for team %s, will be corrected on next recompute', team.id)
@@ -414,7 +420,7 @@ def _safe_bulk_create_evaluations(model, evaluations, ignore_conflicts):
                 if not evaluations:
                     return
             bulk_create_db_safe(model, evaluations, ignore_conflicts=ignore_conflicts, using=using, return_ids=False)
-    except IntegrityError as exc:
+    except DatabaseIntegrityError as exc:
         if not _is_stale_objectrole_fk(exc):
             raise
         existing_role_ids = set(ObjectRole.objects.filter(id__in={e.role_id for e in evaluations}).values_list('id', flat=True))
@@ -423,7 +429,7 @@ def _safe_bulk_create_evaluations(model, evaluations, ignore_conflicts):
             try:
                 with transaction.atomic(using=using):
                     bulk_create_db_safe(model, evaluations, ignore_conflicts=ignore_conflicts, using=using, return_ids=False)
-            except IntegrityError as exc:
+            except DatabaseIntegrityError as exc:
                 if not _is_stale_objectrole_fk(exc):
                     raise
                 logger.warning('Persistent IntegrityError in bulk_create for %s, will be corrected on next recompute', model.__name__)

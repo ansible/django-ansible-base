@@ -117,6 +117,36 @@ class TestIsStaleObjectroleFk:
         )
         assert _is_stale_objectrole_fk(exc) is True
 
+    @pytest.mark.parametrize('wrapped', [False, True])
+    def test_returns_true_for_sql_server_objectrole_fk_violation(self, wrapped):
+        detail = (
+            '[23000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]The INSERT statement '
+            'conflicted with the FOREIGN KEY constraint "dab_rbac_objectrole_provides_teams_objectrole_id_fk". '
+            'The conflict occurred in database "dab_db", table "dbo.dab_rbac_objectrole", column "id". '
+            '(547) (SQLExecDirectW)'
+        )
+        driver_error = Exception('23000', detail)
+        if wrapped:
+            exc = IntegrityError(*driver_error.args)
+            exc.__cause__ = driver_error
+        else:
+            exc = driver_error
+
+        assert _is_stale_objectrole_fk(exc) is True
+
+    @pytest.mark.parametrize(
+        'detail',
+        [
+            '[23000] [SQL Server]The INSERT statement conflicted with the FOREIGN KEY constraint "other_fk". '
+            'The conflict occurred in table "dbo.other_table". (547) (SQLExecDirectW)',
+            '[23000] [SQL Server]The INSERT statement conflicted with the CHECK constraint "objectrole_check". '
+            'The conflict occurred in table "dbo.dab_rbac_objectrole". (547) (SQLExecDirectW)',
+            '[23000] [SQL Server]Violation of UNIQUE KEY constraint. (2627) (SQLExecDirectW)',
+        ],
+    )
+    def test_returns_false_for_other_sql_server_integrity_errors(self, detail):
+        assert _is_stale_objectrole_fk(Exception('23000', detail)) is False
+
 
 # ---------------------------------------------------------------------------
 # _safe_m2m_add
@@ -157,6 +187,29 @@ class TestSafeM2mAdd:
         team.member_roles.add.side_effect = flaky_add
         _safe_m2m_add(team, {1, 9999})
         assert call_count == 2
+        mock_or_qs.filter.assert_called_once()
+
+    @patch('ansible_base.rbac.caching.transaction.atomic', _noop_atomic)
+    @patch('ansible_base.rbac.caching.ObjectRole.objects')
+    def test_retries_on_raw_sql_server_objectrole_fk_error(self, mock_or_qs, monkeypatch):
+        class SqlServerIntegrityError(Exception):
+            pass
+
+        monkeypatch.setattr(rbac_caching, 'DatabaseIntegrityError', (IntegrityError, SqlServerIntegrityError), raising=False)
+        mock_or_qs.filter.return_value.values_list.return_value = [1]
+        detail = (
+            '[23000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]The INSERT statement '
+            'conflicted with the FOREIGN KEY constraint "dab_rbac_objectrole_provides_teams_objectrole_id_fk". '
+            'The conflict occurred in database "dab_db", table "dbo.dab_rbac_objectrole", column "id". '
+            '(547) (SQLExecDirectW)'
+        )
+        driver_error = SqlServerIntegrityError('23000', detail)
+        team = MagicMock()
+        team.member_roles.add.side_effect = [driver_error, None]
+
+        _safe_m2m_add(team, {1, 9999})
+
+        assert team.member_roles.add.call_count == 2
         mock_or_qs.filter.assert_called_once()
 
     @patch('ansible_base.rbac.caching.transaction.atomic', _noop_atomic)
