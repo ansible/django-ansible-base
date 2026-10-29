@@ -89,6 +89,16 @@ def test_authentication_challenge_uses_the_provided_default_when_no_authenticato
     assert get_authentication_challenge(SimpleNamespace(), default="Session") == "Session"
 
 
+def test_authentication_challenge_is_shared_between_drf_and_django_request_objects():
+    django_request = SimpleNamespace()
+    drf_request = SimpleNamespace(_request=django_request)
+
+    record_authentication_challenge(drf_request, 'Basic realm="api"')
+
+    assert get_authentication_challenge(drf_request) == 'Basic realm="api"'
+    assert get_authentication_challenge(django_request) == 'Basic realm="api"'
+
+
 def test_challenge_aware_authenticator_returns_the_first_recorded_challenge():
     class TestAuthentication(ChallengeAwareAuthenticationMixin):
         def get_default_authentication_challenge(self, request):
