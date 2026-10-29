@@ -2,7 +2,8 @@ import pytest
 from django.test.utils import override_settings
 
 from ansible_base.lib.utils.response import get_relative_url
-from ansible_base.rbac.models import RoleDefinition
+from ansible_base.rbac.models import RoleDefinition, RoleUserAssignment
+from test_app.models import Inventory
 
 
 @pytest.mark.django_db
@@ -42,6 +43,20 @@ def test_delete_role_definition(admin_api_client, inv_rd):
     response = admin_api_client.delete(url)
     assert response.status_code == 204, response.data
     assert not RoleDefinition.objects.filter(pk=inv_rd.pk).exists()
+
+
+@pytest.mark.django_db
+def test_delete_role_definition_with_multiple_object_assignments(admin_api_client, inv_rd, rando, inventory, organization):
+    second_inventory = Inventory.objects.create(name='second-inventory', organization=organization)
+    inv_rd.give_permission(rando, inventory)
+    inv_rd.give_permission(rando, second_inventory)
+    url = get_relative_url('roledefinition-detail', kwargs={'pk': inv_rd.pk})
+
+    response = admin_api_client.delete(url)
+
+    assert response.status_code == 204, response.data
+    assert not RoleDefinition.objects.filter(pk=inv_rd.pk).exists()
+    assert not RoleUserAssignment.objects.filter(user=rando, role_definition=inv_rd).exists()
 
 
 @pytest.mark.django_db
