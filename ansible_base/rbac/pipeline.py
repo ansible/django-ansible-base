@@ -131,12 +131,8 @@ def _lookup_object_roles(resolved: list[ResolvedAssignment]) -> ObjectRoleLookup
     return lookup
 
 
-def _ensure_object_roles(requested_assignments: list[ResolvedAssignment]) -> ObjectRoleLookup:
-    """Look up existing ObjectRoles, create any that are missing, and return the full lookup."""
-    object_ids_by_rd: dict[int, tuple[int, set[str]]] = {}
-    # Key by (rd_id, object_id) so batches with the same object_id across different
-    # role definitions / content types do not overwrite each other's parent_reference.
-    parent_refs: dict[tuple[int, str], str] = {}
+def _build_parent_refs(requested_assignments, object_ids_by_rd) -> dict[tuple[int, str], str]:
+    parent_refs = {}
     for ra in requested_assignments:
         rd_id = ra.role_definition.pk
         if rd_id not in object_ids_by_rd:
@@ -144,29 +140,52 @@ def _ensure_object_roles(requested_assignments: list[ResolvedAssignment]) -> Obj
         object_ids_by_rd[rd_id][1].add(ra.object_id)
         if ra.parent_reference:
             parent_refs[(rd_id, ra.object_id)] = ra.parent_reference
+    return parent_refs
+
+
+def _create_missing_object_roles(lookup, rd_id, parent_refs, ct_id, object_ids):
+    missing = [oid for oid in object_ids if (rd_id, oid) not in lookup]
+    if not missing:
+        return lookup
+
+    ObjectRole.objects.bulk_create(
+        [
+            ObjectRole(
+                role_definition_id=rd_id,
+                content_type_id=ct_id,
+                object_id=oid,
+                parent_reference=parent_refs.get((rd_id, oid), ''),
+            )
+            for oid in missing
+        ],
+        ignore_conflicts=True,
+    )
+    # Re-fetch to get PKs — bulk_create(ignore_conflicts=True) doesn't populate them.
+    # unique_together on (role_definition, content_type, object_id) guarantees one row per oid.
+    for obj_role in ObjectRole.objects.filter(role_definition_id=rd_id, content_type_id=ct_id, object_id__in=missing):
+        lookup[(rd_id, obj_role.object_id)] = obj_role
+    return lookup
+
+
+def _ensure_object_roles(requested_assignments: list[ResolvedAssignment]) -> ObjectRoleLookup:
+    """Look up existing ObjectRoles, create any that are missing, and return the full lookup."""
+    object_ids_by_rd: dict[int, tuple[int, set[str]]] = {}
+    # Key by (rd_id, object_id) so batches with the same object_id across different
+    # role definitions / content types do not overwrite each other's parent_reference.
+    parent_refs: dict[tuple[int, str], str] = _build_parent_refs(requested_assignments, object_ids_by_rd)
 
     lookup: ObjectRoleLookup = {}
+    EMPTY_PARENT_REF = Q(parent_reference='') | Q(parent_reference__isnull=True)
     for rd_id, (ct_id, object_ids) in object_ids_by_rd.items():
         for obj_role in ObjectRole.objects.filter(role_definition_id=rd_id, content_type_id=ct_id, object_id__in=object_ids):
             lookup[(rd_id, obj_role.object_id)] = obj_role
-        missing = [oid for oid in object_ids if (rd_id, oid) not in lookup]
-        if missing:
-            ObjectRole.objects.bulk_create(
-                [
-                    ObjectRole(
-                        role_definition_id=rd_id,
-                        content_type_id=ct_id,
-                        object_id=oid,
-                        parent_reference=parent_refs.get((rd_id, oid), ''),
-                    )
-                    for oid in missing
-                ],
-                ignore_conflicts=True,
-            )
-            # Re-fetch to get PKs — bulk_create(ignore_conflicts=True) doesn't populate them.
-            # unique_together on (role_definition, content_type, object_id) guarantees one row per oid.
-            for obj_role in ObjectRole.objects.filter(role_definition_id=rd_id, content_type_id=ct_id, object_id__in=missing):
-                lookup[(rd_id, obj_role.object_id)] = obj_role
+            incoming_parent = parent_refs.get((rd_id, obj_role.object_id))
+            if incoming_parent and not obj_role.parent_reference:
+                updated = ObjectRole.objects.filter(pk=obj_role.pk).filter(EMPTY_PARENT_REF).update(parent_reference=incoming_parent)
+
+                if updated:
+                    obj_role.parent_reference = incoming_parent
+        lookup = _create_missing_object_roles(lookup, rd_id, parent_refs, ct_id, object_ids)
 
     return lookup
 
