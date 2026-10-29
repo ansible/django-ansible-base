@@ -66,7 +66,7 @@ class AuthenticatorMapViewSet(AnsibleBaseDjangoAppApiView, ModelViewSet):
 
     resource_purpose = "conditional rule for granting access, membership or roles based on user attributes or groups"
 
-    queryset = AuthenticatorMap.objects.all().order_by("id")
+    queryset = AuthenticatorMap.objects.select_related("authenticator", "created_by", "modified_by").order_by("id")
     serializer_class = AuthenticatorMapSerializer
     metadata_class = AuthenticatorMapMetadata
     allow_service_token = True
