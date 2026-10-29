@@ -51,8 +51,27 @@ jobs:
       - name: Install MS SQL Server ODBC Driver
         if: contains(matrix.tests.env, 'mssql')
         run: |
-          curl https://packages.microsoft.com/keys/microsoft.asc | sudo tee /etc/apt/trusted.gpg.d/microsoft.asc
-          curl https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
+          set -euo pipefail
+          key_dir="$(mktemp -d)"
+          trap 'rm -rf "$key_dir"' EXIT
+
+          curl --fail --silent --show-error --location \
+            https://packages.microsoft.com/keys/microsoft.asc \
+            --output "$key_dir/microsoft.asc"
+          key_fingerprint="$(gpg --show-keys --with-colons "$key_dir/microsoft.asc" | awk -F: '$1 == "fpr" { print $10; exit }')"
+          # Microsoft publishes this signing-key fingerprint for the Ubuntu 24.04 repository.
+          expected_fingerprint="BC528686B50D79E339D3721CEB3E94ADBE1229CF"
+          if [[ "$key_fingerprint" != "$expected_fingerprint" ]]; then
+            printf 'Unexpected Microsoft signing key fingerprint: %s\n' "$key_fingerprint" >&2
+            exit 1
+          fi
+
+          gpg --dearmor --output "$key_dir/microsoft.gpg" "$key_dir/microsoft.asc"
+          sudo install -d -m 0755 /usr/share/keyrings
+          sudo install -o root -g root -m 0644 "$key_dir/microsoft.gpg" /usr/share/keyrings/microsoft-archive-keyring.gpg
+          printf 'deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-archive-keyring.gpg] https://packages.microsoft.com/ubuntu/%s/prod %s main\n' \
+            "$(lsb_release -rs)" "$(lsb_release -cs)" \
+            | sudo tee /etc/apt/sources.list.d/mssql-release.list >/dev/null
           sudo apt-get update
           sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev
 
