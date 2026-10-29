@@ -4,7 +4,7 @@ import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
-from ansible_base.rbac.caching import recompute_all_role_evaluations, recompute_role_evaluations_for_created
+from ansible_base.rbac.caching import recompute_all_role_evaluations, recompute_role_evaluations_for_object
 from ansible_base.rbac.models import ObjectRole, RoleEvaluation
 from ansible_base.rbac.permission_registry import permission_registry
 from ansible_base.rbac.remote import GenericObject
@@ -79,7 +79,7 @@ def test_created_recompute_removes_stale_rows_and_adds_missing(rando, organizati
 
     to_update = object_roles_for_parents({GenericObject(_org_ct_id(), organization.pk)})
     assert {org_role, member_role} <= to_update
-    recompute_role_evaluations_for_created(
+    recompute_role_evaluations_for_object(
         to_update, look_ahead=GenericObject(_inv_ct_id(), inv.pk), target_parents=[GenericObject(_org_ct_id(), organization.pk)]
     )
 
@@ -94,6 +94,6 @@ def test_created_recompute_with_no_roles_is_a_no_op(organization, django_assert_
 
     types_prefetch = TypesPrefetch.from_db()
     with django_assert_num_queries(0):
-        recompute_role_evaluations_for_created(
+        recompute_role_evaluations_for_object(
             [], look_ahead=GenericObject(_inv_ct_id(), 1), target_parents=[GenericObject(_org_ct_id(), organization.pk)], types_prefetch=types_prefetch
         )

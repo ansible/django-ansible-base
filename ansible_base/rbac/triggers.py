@@ -15,10 +15,11 @@ from ansible_base.rbac.caching import (
     cleanup_orphaned_object_roles,
     compute_team_member_roles,
     defer_rbac_state,
+    get_parent_ids,
     object_roles_for_parents,
     recompute_all_role_evaluations,
     recompute_role_evaluations,
-    recompute_role_evaluations_for_created,
+    recompute_role_evaluations_for_object,
     team_ids_from_role_target,
 )
 from ansible_base.rbac.models import ObjectRole, RoleDefinition, get_evaluation_model
@@ -302,27 +303,6 @@ def rbac_post_init_set_original_parent(sender, instance, **kwargs):
     instance.__rbac_original_parent_id = getattr(instance, parent_id_name)
 
 
-def get_parent_ids(instance) -> list[GenericObject]:
-    """Return the instance's whole parent chain, nearest parent first."""
-    parent_field_name = permission_registry.get_parent_fd_name(instance)
-    if not parent_field_name:
-        return []
-    parent_cls = permission_registry.get_parent_model(instance)
-
-    if permission_registry.get_parent_fd_name(parent_cls):
-        # has another level of model
-        parent_obj = getattr(instance, parent_field_name)
-        if parent_obj:
-            parent_ct = permission_registry.content_type_model.objects.get_for_model(parent_cls)
-            return [GenericObject(parent_ct.id, parent_obj.pk)] + get_parent_ids(parent_obj)
-    else:
-        parent_id = getattr(instance, f'{parent_field_name}_id')
-        if parent_id:
-            parent_ct = permission_registry.content_type_model.objects.get_for_model(parent_cls)
-            return [GenericObject(parent_ct.id, parent_id)]
-    return []
-
-
 def _get_parent_gfks_for_update(instance):
     """Return the parent GFKs to recompute for this object and, on a move, the roles that granted on it before."""
     parent_gfks = get_parent_ids(instance)
@@ -371,7 +351,7 @@ def post_save_update_obj_permissions(instance, look_ahead: bool = False):
         if look_ahead:
             obj_ct = permission_registry.content_type_model.objects.get_for_model(instance)
             target = GenericObject(obj_ct.id, instance.pk)
-            recompute_role_evaluations_for_created(to_update, look_ahead=target, target_parents=parent_gfks)
+            recompute_role_evaluations_for_object(to_update, look_ahead=target, target_parents=parent_gfks)
         else:
             recompute_role_evaluations(to_update)
 
