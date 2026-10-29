@@ -13,9 +13,9 @@ from rest_framework.request import Request
 from ansible_base.authentication.authenticator_plugins.utils import get_authenticator_plugin
 from ansible_base.authentication.models import Authenticator
 from ansible_base.lib.logging import log_auth_event, log_auth_exception
+from ansible_base.lib.utils.auth import get_authentication_challenge, record_authentication_challenge
 
 logger = logging.getLogger("ansible_base.authentication.bearer_authentication")
-_REQUEST_CHALLENGE_ATTRIBUTE = "_ansible_base_bearer_authentication_challenge"
 
 
 @dataclass(frozen=True)
@@ -184,10 +184,7 @@ class BearerAuthentication(BaseAuthentication):
 
     def authenticate_header(self, request: Request) -> str:
         """Return the OAuth2-provided Bearer challenge for rejected Bearer credentials."""
-        # APIView.handle_exception obtains the response header from this method,
-        # rather than from an AuthenticationFailed instance. Preserve a safe
-        # per-request challenge recorded by ``_raise_failure`` above.
-        challenge = getattr(request, _REQUEST_CHALLENGE_ATTRIBUTE, None)
+        challenge = get_authentication_challenge(request)
         if challenge:
             return challenge
 
@@ -220,7 +217,7 @@ class BearerAuthentication(BaseAuthentication):
     def _raise_failure(request: Request, failure: BearerTokenValidationError | None = None) -> NoReturn:
         """Raise a final Bearer failure and retain its challenge for DRF response handling."""
         exception = BearerAuthenticationFailed(failure)
-        setattr(request, _REQUEST_CHALLENGE_ATTRIBUTE, exception.auth_header)
+        record_authentication_challenge(request, exception.auth_header)
         raise exception
 
     def _api_authentication_backends(self) -> OrderedDict[int, Any]:
